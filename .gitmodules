@@ -1,0 +1,6 @@
+[submodule "Algorithm"]
+	path = Algorithm
+	url = https://gitlab.com/haxscamper-misc/cpp/Algorithm.git
+[submodule "DebugMacro"]
+	path = DebugMacro
+	url = https://gitlab.com/haxscamper-misc/cpp/DebugMacro.git
