@@ -27,110 +27,186 @@
         "0" : {
             "0" : {
                 "name" : "esc",
-                "code" : 41
+                "code" : 41,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             },
             "2" : {
                 "name" : "f1",
-                "code" : 58
+                "code" : 58,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             },
             "3" : {
                 "name" : "f2",
-                "code" : 59
+                "code" : 59,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             },
             "4" : {
                 "name" : "f3",
-                "code" : 60
+                "code" : 60,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             },
             "5" : {
                 "name" : "f4",
-                "code" : 61
+                "code" : 61,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             },
             "6" : {
                 "name" : "f5",
-                "code" : 61
+                "code" : 61,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             },
             "7" : {
                 "name" : "f6",
-                "code" : 63
+                "code" : 63,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             },
             "8" : {
                 "name" : "f7",
-                "code" : 64
+                "code" : 64,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             },
             "9" : {
                 "name" : "f8",
-                "code" : 65
+                "code" : 65,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             },
             "10" : {
                 "name" : "f9",
-                "code" : 66
+                "code" : 66,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             },
             "11" : {
                 "name" : "f10",
-                "code" : 67
+                "code" : 67,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             },
             "12" : {
                 "name" : "f11",
-                "code" : 68
+                "code" : 68,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             },
             "13" : {
                 "name" : "f12",
-                "code" : 69
+                "code" : 69,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             }
         },
         "1" : {
             "0" : {
                 "name" : " ` and ~",
-                "code" : 53
+                "code" : 53,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             },
             "1" : {
                 "name" : "1 and !",
-                "code" : 30
+                "code" : 30,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             },
             "2" : {
                 "name" : "2 and @",
-                "code" : 31
+                "code" : 31,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             },
             "3" : {
                 "name" : "3 and #",
-                "code" : 32
+                "code" : 32,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             },
             "4" : {
                 "name" : "4 and $",
-                "code" : 33
+                "code" : 33,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             },
             "5" : {
                 "name" : "5 and %",
-                "code" : 34
+                "code" : 34,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             },
             "6" : {
                 "name" : "6 and ^",
-                "code" : 35
+                "code" : 35,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             },
             "7" : {
                 "name" : "7 and &",
-                "code" : 36
+                "code" : 36,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             },
             "8" : {
                 "name" : "8 and *",
-                "code" : 37
+                "code" : 37,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             },
             "9" : {
                 "name" : "9 and (",
-                "code" : 38
+                "code" : 38,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             },
             "10" : {
                 "name" : "0 and )",
-                "code" : 39
+                "code" : 39,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             },
             "11" : {
                 "name" : "- and _",
-                "code" : 45
+                "code" : 45,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
             },
             "12" : {
                 "name" : "= and +",
-                "code" : 46
-            },
+                "code" : 46,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+           },
             "13" : {
                 "name" : "Backspace",
                 "code" : 42,
@@ -139,195 +215,333 @@
             },
             "14" : {
                 "name" : "Delete forward",
-                "code" : 76
+                "code" : 76,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             },
             "15" : {
                 "name" : "Home",
-                "code" : 74
+                "code" : 74,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             },
             "16" : {
                 "name" : "Page Up",
-                "code" : 75
+                "code" : 75,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             }
         },
         "2" : {
             "0" : {
                 "name" : "tab",
-                "code" : 43
+                "code" : 43,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             },
             "1" : {
                 "name" : "q and Q",
-                "code" : 20
+                "code" : 20,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             },
             "2" : {
                 "name" : "w and W",
-                "code" : 26
+                "code" : 26,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             },
             "3" : {
                 "name" : "e and E",
-                "code" : 8
+                "code" : 8,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             },
             "4" : {
                 "name" : "r and R",
-                "code" : 21
+                "code" : 21,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             },
             "5" : {
                 "name" : "t and T",
-                "code" : 23
+                "code" : 23,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             },
             "6" : {
                 "name" : "y and Y",
-                "code" : 28
+                "code" : 28,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             },
             "7" : {
                 "name" : "u and U",
-                "code" : 24
+                "code" : 24,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             },
             "8" : {
                 "name" : "i and I",
-                "code" : 12
+                "code" : 12,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             },
             "9" : {
                 "name" : "o and O",
-                "code" : 18
+                "code" : 18,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             },
             "10" : {
                 "name" : "p and P",
-                "code" : 19
+                "code" : 19,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             },
             "11" : {
                 "name" : "[ and {",
-                "code" : 47
+                "code" : 47,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             },
             "12" : {
                 "name" : "] and }",
-                "code" : 48
+                "code" : 48,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             },
             "13" : {
                 "name" : "\\ and |",
-                "code" : 49
+                "code" : 49,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             },
             "15" : {
                 "name" : "End",
-                "code" : 74
+                "code" : 77,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             },
             "16" : {
                 "name" : "Page Down",
-                "code" : 78
+                "code" : 78,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             }
         },
         "3" : {
             "2" : {
                 "name" : "a and A",
-                "code" : 4
+                "code" : 4,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             },
             "3" : {
                 "name" : "s and S",
-                "code" : 22
+                "code" : 22,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             },
             "4" : {
                 "name" : "d and D",
-                "code" : 7
+                "code" : 7,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             },
             "5" : {
                 "name" : "f and F",
-                "code" : 9
+                "code" : 9,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             },
             "6" : {
                 "name" : "g and G",
-                "code" : 10
+                "code" : 10,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             },
             "7" : {
                 "name" : "h and H",
-                "code" : 11
+                "code" : 11,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             },
             "8" : {
                 "name" : "j and J",
-                "code" : 13
+                "code" : 13,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             },
             "9" : {
                 "name" : "k and K",
-                "code" : 14
+                "code" : 14,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             },
             "10" : {
                 "name" : "l and L",
-                "code" : 15
+                "code" : 15,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             },
             "11" : {
                 "name" : "; and :",
-                "code" :51
+                "code" :51,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             },
             "12" : {
                 "name" : "' and \"",
-                "code" : 52
+                "code" : 52,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             },
             "13" : {
                 "name" : "Return (Enter)",
-                "code" : 40
+                "code" : 40,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             }
         },
         "4" : {
             "3" : {
                 "name" : "z and Z",
-                "code" : 29
+                "code" : 29,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             },
             "4" : {
                 "name" : "x and X",
-                "code" : 27
+                "code" : 27,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             },
             "5" : {
                 "name" : "c and C",
-                "code" : 6
+                "code" : 6,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             },
             "6" : {
                 "name" : "v nad V",
-                "code" : 25
+                "code" : 25,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             },
             "7" : {
                 "name" : "b and B",
-                "code" : 5
+                "code" : 5,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             },
             "8" : {
                 "name" : "n and N",
-                "code" : 17
+                "code" : 17,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             },
             "9" : {
                 "name" : "m and M",
-                "code" : 16
+                "code" : 16,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             },
             "10" : {
                 "name" : ", and <",
-                "code" : 54
+                "code" : 54,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             },
             "11" : {
                 "name" : ". and >",
-                "code" : 55
+                "code" : 55,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             },
             "12" : {
                 "name" : "/ and ?",
-                "code" : 56
+                "code" : 56,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             },
             "15" : {
                 "name" : "Up Arrow",
-                "code" : 82
+                "code" : 82,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             }
         },
         "5" : {
             "8" : {
                 "name" : "Spacebar",
-                "code" : 44
+                "code" : 44,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             },
             "14" : {
                 "name" : "Left Arrow",
-                "code" : 80
+                "code" : 80,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             },
             "15" : {
                 "name" : "Down Arrow",
-                "code" : 81
+                "code" : 81,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             },
             "16" : {
                 "name" : "Right Arrow",
-                "code" : 79
+                "code" : 79,
+                "first_repeat_after" : 120,
+                "repeat_after" : 20
+
             }
         }
     }
