@@ -1,1 +1,1 @@
-cargo build
+cp --update ../settings/keymap.json .
