@@ -109,7 +109,7 @@ for row in row_pins:
 # Write control functions
 def write_report(report):
     with open('/dev/hidg0', 'rb+') as fd:
-        fd.write(report.encode())
+        fd.write(report.encode('latin1'))
 
 
 def release_keys():
@@ -123,21 +123,25 @@ def get_modifiers():
         [modifier_keys["ctrl"]["row"]] \
         [modifier_keys["ctrl"]["col"]]:
         result = result | ( 1 )
+        print ("ctrl")
 
     if already_pressed                 \
        [modifier_keys["shift"]["row"]] \
        [modifier_keys["shift"]["col"]]:
        result = result | ( 1 << 1 )
+       print("shift")
 
     if already_pressed               \
        [modifier_keys["alt"]["row"]] \
        [modifier_keys["alt"]["col"]]:
        result = result | ( 1 << 2 )
+       print("alt")
 
     if already_pressed                \
        [modifier_keys["meta"]["row"]] \
        [modifier_keys["meta"]["col"]]:
        result = result | ( 1 << 3 )
+       print("meta")
 
     return chr(result)
 
@@ -145,10 +149,11 @@ def get_modifiers():
 def get_keys(row, col):
     char_key_code = char_keymap[row][col]["code"]
     modifier_key_code = get_modifiers();
-    return modifier_key_code + NULL_CHAR + char_key_code + NULL_CHAR*5
+
+    res = modifier_key_code + NULL_CHAR + char_key_code + NULL_CHAR*5
+    return res
 
 def scan_keys():
-    state_changed = False
     for pin in row_pins:
         GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
 
@@ -167,9 +172,10 @@ def scan_keys():
             if GPIO.input(row) == GPIO.HIGH:
                 already_pressed[row][col] = press_count + 1
                 if press_required or press_continues:
+                    print("----")
+                    print(char_keymap[row][col]["name"])
                     write_report(get_keys(row, col))
                     release_keys()
-                    state_changed = True
             elif GPIO.input(row) == GPIO.LOW and not press_required:
                 already_pressed[row][col] = 0
 
@@ -182,6 +188,13 @@ def scan_keys():
 
         GPIO.output(col, GPIO.LOW)
 
+print "Starting"
 
-while True:
+control_pin = 16
+GPIO.setup(control_pin, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+
+
+while GPIO.input(control_pin) != GPIO.HIGH:
     scan_keys()
+
+print "Done"

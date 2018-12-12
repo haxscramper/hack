@@ -27,7 +27,7 @@
         "0" : {
             "0" : {
                 "name" : "esc",
-                "code" : 41,
+                "code" : 177,
                 "first_repeat_after" : 120,
                 "repeat_after" : 20
 
