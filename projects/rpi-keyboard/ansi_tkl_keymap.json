@@ -1,0 +1,287 @@
+{
+    "0" : {
+        "0" : {
+            "name" : "esc",
+            "code" : 41
+        },
+        "2" : {
+            "name" : "f1",
+            "code" : 58
+        },
+        "3" : {
+            "name" : "f2",
+            "code" : 59
+        },
+        "4" : {
+            "name" : "f3",
+            "code" : 60
+        },
+        "5" : {
+            "name" : "f4",
+            "code" : 61
+        },
+        "6" : {
+            "name" : "f5",
+            "code" : 61
+        },
+        "7" : {
+            "name" : "f6",
+            "code" : 63
+        },
+        "8" : {
+            "name" : "f7",
+            "code" : 64
+        },
+        "9" : {
+            "name" : "f8",
+            "code" : 65
+        },
+        "10" : {
+            "name" : "f9",
+            "code" : 66
+        },
+        "11" : {
+            "name" : "f10",
+            "code" : 67
+        },
+        "12" : {
+            "name" : "f11",
+            "code" : 68
+        },
+        "13" : {
+            "name" : "f12",
+            "code" : 69
+        }
+    },
+    "1" : {
+        "0" : {
+            "name" : " ` and ~",
+            "code" : 53
+        },
+        "1" : {
+            "name" : "1 and !",
+            "code" : 30
+        },
+        "2" : {
+            "name" : "2 and @",
+            "code" : 31
+        },
+        "3" : {
+            "name" : "3 and #",
+            "code" : 32
+        },
+        "4" : {
+            "name" : "4 and $",
+            "code" : 33
+        },
+        "5" : {
+            "name" : "5 and %",
+            "code" : 34
+        },
+        "6" : {
+            "name" : "6 and ^",
+            "code" : 35
+        },
+        "7" : {
+            "name" : "7 and &",
+            "code" : 36
+        },
+        "8" : {
+            "name" : "8 and *",
+            "code" : 37
+        },
+        "9" : {
+            "name" : "9 and (",
+            "code" : 38
+        },
+        "10" : {
+            "name" : "0 and )",
+            "code" : 39
+        },
+        "11" : {
+            "name" : "- and _",
+            "code" : 45
+        },
+        "12" : {
+            "name" : "= and +",
+            "code" : 46
+        },
+        "13" : {
+            "name" : "Backspace",
+            "code" : 42,
+            "repeat_after" : 10
+        }
+    },
+    "2" : {
+        "0" : {
+            "name" : "tab",
+            "code" : 43
+        },
+        "1" : {
+            "name" : "q and Q",
+            "code" : 20
+        },
+        "2" : {
+            "name" : "w and W",
+            "code" : 26
+        },
+        "3" : {
+            "name" : "e and E",
+            "code" : 8
+        },
+        "4" : {
+            "name" : "r and R",
+            "code" : 21
+        },
+        "5" : {
+            "name" : "t and T",
+            "code" : 23
+        },
+        "6" : {
+            "name" : "y and Y",
+            "code" : 28
+        },
+        "7" : {
+            "name" : "u and U",
+            "code" : 24
+        },
+        "8" : {
+            "name" : "i and I",
+            "code" : 12
+        },
+        "9" : {
+            "name" : "o and O",
+            "code" : 18
+        },
+        "10" : {
+            "name" : "p and P",
+            "code" : 19
+        },
+        "11" : {
+            "name" : "[ and {",
+            "code" : 47
+        },
+        "12" : {
+            "name" : "] and }",
+            "code" : 48
+        },
+        "13" : {
+            "name" : "\\ and |",
+            "code" : 49
+        }
+    },
+    "3" : {
+        "2" : {
+            "name" : "a and A",
+            "code" : 4
+        },
+        "3" : {
+            "name" : "s and S",
+            "code" : 22
+        },
+        "4" : {
+            "name" : "d and D",
+            "code" : 7
+        },
+        "5" : {
+            "name" : "f and F",
+            "code" : 9
+        },
+        "6" : {
+            "name" : "g and G",
+            "code" : 10
+        },
+        "7" : {
+            "name" : "h and H",
+            "code" : 11
+        },
+        "8" : {
+            "name" : "j and J",
+            "code" : 13
+        },
+        "9" : {
+            "name" : "k and K",
+            "code" : 14
+        },
+        "10" : {
+            "name" : "l and L",
+            "code" : 15
+        },
+        "11" : {
+            "name" : "; and :",
+            "code" :51
+        },
+        "12" : {
+            "name" : "' and \"",
+            "code" : 52
+        },
+        "13" : {
+            "name" : "Return (Enter)",
+            "code" : 40
+        }
+    },
+    "4" : {
+        "3" : {
+            "name" : "z and Z",
+            "code" : 29
+        },
+        "4" : {
+            "name" : "x and X",
+            "code" : 27
+        },
+        "5" : {
+            "name" : "c and C",
+            "code" : 6
+        },
+        "6" : {
+            "name" : "v nad V",
+            "code" : 25
+        },
+        "7" : {
+            "name" : "b and B",
+            "code" : 5
+        },
+        "8" : {
+            "name" : "n and N",
+            "code" : 17
+        },
+        "9" : {
+            "name" : "m and M",
+            "code" : 16
+        },
+        "10" : {
+            "name" : ", and <",
+            "code" : 54
+        },
+        "11" : {
+            "name" : ". and >",
+            "code" : 55
+        },
+        "12" : {
+            "name" : "/ and ?",
+            "code" : 56
+        },
+        "15" : {
+            "name" : "Up Arrow",
+            "code" : 82
+        }
+    },
+    "5" : {
+        "8" : {
+            "name" : "Spacebar",
+            "code" : 44
+        },
+        "14" : {
+            "name" : "Left Arrow",
+            "code" : 80
+        },
+        "15" : {
+            "name" : "Down Arrow",
+            "code" : 81
+        },
+        "16" : {
+            "name" : "Right Arrow",
+            "code" : 79
+        }
+    }
+}
