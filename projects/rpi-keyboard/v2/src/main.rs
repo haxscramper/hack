@@ -1,4 +1,7 @@
-#[derive(Debug)]
+use std::fs::File;
+use std::io::prelude::*;
+
+
 struct Key {
     name: String,
     code: i32,
@@ -17,4 +20,9 @@ impl Default for Key {
     }
 }
 
-fn main() {}
+fn main() {
+let mut file = File::open("")?;
+    let mut contents = String::new();
+    file.read_to_string(&mut contents)?;
+
+}
