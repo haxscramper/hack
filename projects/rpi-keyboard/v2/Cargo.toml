@@ -5,3 +5,4 @@ authors = ["kamanji <maxiartem969@gmail.com>"]
 edition = "2018"
 
 [dependencies]
+json = "*"
