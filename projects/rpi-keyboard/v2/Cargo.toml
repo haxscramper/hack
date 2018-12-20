@@ -7,3 +7,4 @@ edition = "2018"
 [dependencies]
 json = "*"
 sysfs_gpio = "0.5"
+rhai = "0.8.1"

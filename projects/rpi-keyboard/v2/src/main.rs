@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::collections::HashSet;
+use std::error::Error;
 use std::fs::File;
 use std::io::prelude::*;
 extern crate json;
@@ -20,8 +20,6 @@ enum StateChange {
 
 #[derive(Debug, Eq, Hash, Clone)]
 struct Key {
-    name: String,
-    code: i32,
     first_repeat: Option<i32>,
     repeat_after: Option<i32>,
     state_change: Option<StateChange>,
@@ -30,18 +28,13 @@ struct Key {
 
 impl PartialEq for Key {
     fn eq(&self, other: &Key) -> bool {
-        self.name == other.name
-            && self.code == other.code
-            && self.first_repeat == other.first_repeat
-            && self.repeat_after == other.repeat_after
+        self.first_repeat == other.first_repeat && self.repeat_after == other.repeat_after
     }
 }
 
 impl Default for Key {
     fn default() -> Key {
         Key {
-            name: String::from("none"),
-            code: 0,
             first_repeat: None,
             repeat_after: None,
             state_change: None,
@@ -76,8 +69,9 @@ impl Default for Keypad {
 }
 
 impl Keypad {
-    fn scan(&mut self) -> HashSet<Key> {
-        let mut res = HashSet::<Key>::new();
+    /// Get vector pf keys that have changed state between scans
+    fn scan(&mut self) -> Vec<Key> {
+        let mut res = Vec::<Key>::new();
 
         for (logic_col, physic_col) in &self.cols {
             // TODO Set column at hight output
@@ -109,7 +103,7 @@ impl Keypad {
                     key.state_change = Some(StateChange::Changedreleased);
                 }
 
-                res.insert(key.clone());
+                res.push(key.clone());
 
                 if key.first_repeat.is_some()
                     && key.repeat_after.is_some()
@@ -131,16 +125,16 @@ impl Keypad {
     }
 }
 
-fn file_as_json(path: &str) -> json::Result<json::JsonValue> {
+fn json_from_file(path: &str) -> Result<json::JsonValue, Box<Error>> {
     let mut file: File = File::open(path)?;
     let mut contents: String = String::new();
     file.read_to_string(&mut contents)?;
-    let parsed = json::parse(&contents);
-    return parsed;
+
+    Ok(json::parse(&contents)?)
 }
 
 fn main() -> std::io::Result<()> {
-    let parsed = file_as_json("../../settings/keymap.json")?;
+    let parsed = json_from_file("../../settings/keymap.json");
     let rows: HashMap<usize, i32> = HashMap::new();
     let cols: HashMap<usize, i32> = HashMap::new();
     let keymap: Vec<Vec<Key>> = Vec::new();
@@ -151,11 +145,13 @@ fn main() -> std::io::Result<()> {
         keymap: keymap,
         pressed: HashMap::new(),
     };
-    let mut looping: bool = true;
 
+    let mut looping: bool = true;
     while looping {
-        let pressed_keys: HashSet<Key> = keypad.scan();
+        // Get all keys that changed state
+        let pressed_keys: Vec<Key> = keypad.scan();
+        // Execute actions based on key state change
     }
 
-    return Ok(());
+    Ok(())
 }
