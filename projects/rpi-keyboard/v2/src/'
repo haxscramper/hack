@@ -1,0 +1,115 @@
+use std::collections::HashMap;
+use std::collections::HashSet;
+use std::fs::File;
+use std::io::prelude::*;
+extern crate json;
+
+enum State {
+    changedPressed,
+    changedReleased,
+    idlePressed,
+    idleReleased,
+}
+
+#[derive(Debug)]
+struct Key {
+    name: String,
+    code: i32,
+    first_repeat: Option<i32>,
+    repeat_after: Option<i32>,
+    is_valid: bool,
+}
+
+impl Eq for Key {
+    fn eq(&self, other: &Key) -> bool {
+        self.name == other.name
+            && self.code == other.code
+            && self.first_repeat == other.first_repeat
+            && self.repeat_after == other.repeat_after
+    }
+}
+
+impl Default for Key {
+    fn default() -> Key {
+        Key {
+            name: String::from("none"),
+            code: 0,
+            first_repeat: -1,
+            repeat_after: -1,
+            is_valid: false,
+        }
+    }
+}
+
+#[derive(Debug)]
+struct Keypad {
+    /// Mapping between logical and physical rows
+    rows: HashMap<i8, i8>,
+    /// Mapping between logical and physical columns
+    cols: HashMap<i8, i8>,
+    /// Logical layout of keys on the keypad. I.e where each key is
+    /// positioned (Ex: on default keyboard esc will be placed at [0][0])
+    keymap: Vec<Vec<i8>>,
+    /// Set of keys that were already pressed during one of the previous
+    /// scans and amount of scans that thay have sustained this state
+    pressed: HashMap<Key, i8>,
+}
+
+impl Keypad {
+    fn scan(&mut self) -> HashSet<Key> {
+        let mut res = HashSet::<Key>::new();
+
+        for (logic_col, physic_col) in &self.cols {
+            // TODO Set column at hight output
+            for (logic_row, physic_row) in &self.rows {
+                let key: Key = self.keymap[logic_row][logic_col];
+                if !key.is_valid {
+                    continue;
+                }
+
+                let press_count: &mut i8 = &mut self.pressed.get(key);
+                let press_required: bool = press_count == 0;
+                let press_continues: bool = press_count == key.first_repeat;
+                // TODO Read GPIO state
+                let gpio_high = false;
+
+                if gpio_high {
+                    press_count = press_count + 1;
+                    if press_required || press_continues {
+                        res.insert(key);
+                    } else if !gpio_high && !press_required {
+                        press_count = 0;
+                    }
+                }
+
+                if press_count >= key.first_repeat + key.repeat_after && key.first_repeat.is_some()
+                {
+                    press_count = key.first_repeat;
+                } else if press_count >= key.first_repeat
+                    && key.repeat_after.is_some()
+                    && key.first_repeat.is_some()
+                {
+                    press_count = 0;
+                }
+            }
+        }
+
+        &self.pressed = res;
+        return res;
+    }
+}
+
+fn main() -> std::io::Result<()> {
+    let mut file: File = File::open("")?;
+    let mut contents: String = String::new();
+    file.read_to_string(&mut contents)?;
+    let parsed = json::parse(&contents);
+
+    let mut keypad: Keypad;
+
+    loop {
+        let pressed_keys: HashSet<Key> = keypad.scan();
+    }
+
+    return Ok(());
+}
