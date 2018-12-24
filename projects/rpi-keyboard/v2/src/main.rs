@@ -79,12 +79,14 @@ impl Keypad {
         for (logic_col, physic_col) in &self.cols {
             // TODO Set column at hight output
             for (logic_row, physic_row) in &self.rows {
-                let mut key: Key = self.keymap[*logic_row][*logic_col].clone();
+                let mut key: Key =
+                    self.keymap[*logic_row][*logic_col].clone();
                 if !key.is_valid {
                     continue;
                 }
 
-                let mut press_count: i32 = *self.pressed.get(&key).unwrap();
+                let mut press_count: i32 =
+                    *self.pressed.get(&key).unwrap();
                 // TODO Read GPIO state
                 let mut gpio_high = false;
 
@@ -95,7 +97,8 @@ impl Keypad {
                     if press_count == 0
                     // For the first time
                     {
-                        key.state_change = Some(StateChange::Changedpressed);
+                        key.state_change =
+                            Some(StateChange::Changedpressed);
                     }
                 // TODO Repeat keys
                 } else {
@@ -159,6 +162,7 @@ enum Action {
     Script(ScriptAction),
 }
 
+#[derive(Debug, PartialEq, Eq, Hash, Clone)]
 enum ModifierKeys {
     Ctrl,
     Meta,
@@ -167,9 +171,34 @@ enum ModifierKeys {
     Hyper,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+struct PressedModifiers {
+    Shift: bool,
+    Ctrl: bool,
+    Meta: bool,
+    Super: bool,
+    Hyper: bool,
+}
+
+impl PressedModifiers {
+    fn new() -> PressedModifiers {
+        PressedModifiers {
+            Shift: false,
+            Ctrl: false,
+            Meta: false,
+            Super: false,
+            Hyper: false,
+        }
+    }
+}
+
 struct ActionResolver {
+    /// Action assigned to each key on the keypad:
     actions: HashMap<(usize, usize), Action>,
+    /// Set of modifier keys pressed on the keypad
     pressedModifiers: HashMap<(usize, usize), ModifierKeys>,
+    /// Set of modifier keys pressed outisde of the keypad
+    external_modifiers: PressedModifiers,
 }
 
 impl ActionResolver {
@@ -186,11 +215,21 @@ impl ActionResolver {
         Ok(())
     }
 
-    fn processKeys(&mut self, keys: Vec<Key>) {
-        for key in keys {
-            let action = self.actions.get(&(key.row, key.column));
-            if (action.is_some()) {
-                let action = action.unwrap();
+    fn set_external_modifiers(&mut self, modifiers: &PressedModifiers) {
+        self.external_modifiers = modifiers.clone();
+    }
+
+    fn process_keys(&mut self, keys: Vec<Key>) {
+        for phys_key in keys {
+            let action =
+                self.actions.get(&(phys_key.row, phys_key.column));
+            if action.is_some() {
+                if let Action::Key(key) = action.unwrap() {
+                    if key.switchModifier.is_some() {
+                        println!("Pressed key");
+                    }
+                }
+
                 // TODO Check keys is modifier key
             }
         }
@@ -205,7 +244,24 @@ impl ActionResolver {
         ActionResolver {
             actions: HashMap::new(),
             pressedModifiers: HashMap::new(),
+            external_modifiers: PressedModifiers::new(),
         }
+    }
+
+    /// Get modifier keys *including* external modifiers
+    fn get_modifiers(&self) -> PressedModifiers {
+        let mut res = self.external_modifiers.clone();
+        for (pos, val) in &self.pressedModifiers {
+            match val {
+                ModifierKeys::Ctrl => res.Ctrl = true,
+                ModifierKeys::Shift => res.Shift = true,
+                ModifierKeys::Meta => res.Meta = true,
+                ModifierKeys::Super => res.Super = true,
+                ModifierKeys::Hyper => res.Hyper = true,
+            }
+        }
+
+        return res;
     }
 }
 
@@ -218,13 +274,31 @@ fn json_from_file(path: &str) -> Result<json::JsonValue, Box<Error>> {
 }
 
 fn main() -> std::io::Result<()> {
-    let mut central = Keypad::new();
-    let mut keypad = Keypad::new();
-    let mut centralResolver = ActionResolver::new();
+    let mut central_keypad = Keypad::new();
+    let mut numpad_keypad = Keypad::new();
+    let mut central_resolver = ActionResolver::new();
+    let mut keypad_resolver = ActionResolver::new();
 
-    central.mapping_from_jsom("settings/main_area_convertion.json");
-    keypad.mapping_from_jsom("settings/numpad_conversion.json");
-    centralResolver.config_from_json("settings/main_area_keymap.json");
+    central_keypad.mapping_from_jsom("settings/main_area_convertion.json");
+    numpad_keypad.mapping_from_jsom("settings/numpad_conversion.json");
+    central_resolver.config_from_json("settings/main_area_keymap.json");
+    keypad_resolver.config_from_json("settings/keypad_keymap.json");
+
+    {
+        // Read all changed keys, without looking at what they actually are
+        let mut central_changed = central_keypad.scan();
+        let mut numpad_changed = numpad_keypad.scan();
+
+        // Process all keys in the main area, find modifier keys that are pressed
+        central_resolver.process_keys(central_changed);
+        let modifier_keys = central_resolver.get_modifiers();
+
+        // Process all keys in numpad area, use local modifier keys and
+        // modifers pressed in previous area
+        keypad_resolver.set_external_modifiers(&modifier_keys);
+        keypad_resolver.process_keys(numpad_changed);
+        let modifier_keys = keypad_resolver.get_modifiers();
+    }
 
     println!("Finished reading config");
 
