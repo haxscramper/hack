@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::error::Error;
 use std::fs::File;
 use std::io::prelude::*;
@@ -20,23 +21,25 @@ enum StateChange {
 
 #[derive(Debug, Eq, Hash, Clone)]
 struct Key {
-    first_repeat: Option<i32>,
-    repeat_after: Option<i32>,
+    row: usize,
+    column: usize,
     state_change: Option<StateChange>,
     is_valid: bool,
+    repetitions: Option<Vec<i32>>,
 }
 
 impl PartialEq for Key {
     fn eq(&self, other: &Key) -> bool {
-        self.first_repeat == other.first_repeat && self.repeat_after == other.repeat_after
+        self.row == other.row && self.column == other.column
     }
 }
 
-impl Default for Key {
-    fn default() -> Key {
+impl Key {
+    fn default(_row: usize, _col: usize) -> Key {
         Key {
-            first_repeat: None,
-            repeat_after: None,
+            row: _row,
+            column: _col,
+            repetitions: None,
             state_change: None,
             is_valid: false,
         }
@@ -93,11 +96,8 @@ impl Keypad {
                     // For the first time
                     {
                         key.state_change = Some(StateChange::Changedpressed);
-                    } else if key.first_repeat.is_some() && press_count == key.first_repeat.unwrap()
-                    // Continue press
-                    {
-                        key.state_change = Some(StateChange::Changedrepeat);
                     }
+                // TODO Repeat keys
                 } else {
                     press_count = 0;
                     key.state_change = Some(StateChange::Changedreleased);
@@ -105,14 +105,7 @@ impl Keypad {
 
                 res.push(key.clone());
 
-                if key.first_repeat.is_some()
-                    && key.repeat_after.is_some()
-                    && press_count >= key.first_repeat.unwrap() + key.repeat_after.unwrap()
-                // Press count reached maximum, repeating press on
-                // the next run
-                {
-                    press_count = key.first_repeat.unwrap();
-                }
+                // TODO Repeat keys
 
                 self.pressed.insert(key, press_count);
             }
@@ -122,6 +115,97 @@ impl Keypad {
         // TODO Remove released keys from already pressed
         // TODO Set changed states to returned keys
         return res;
+    }
+
+    fn new() -> Keypad {
+        Keypad {
+            keymap: Vec::new(),
+            pressed: HashMap::new(),
+            cols: HashMap::new(),
+            rows: HashMap::new(),
+        }
+    }
+
+    fn mapping_from_jsom(&mut self, path: &str) -> Result<(), Box<Error>> {
+        let config: json::JsonValue = json_from_file(path)?;
+
+        Ok(())
+    }
+}
+
+struct KeyAction {
+    /// Textual name of the key
+    name: String,
+    /// Default keyboard key code
+    defaultCode: i32,
+    /// Key code to send if shift is pressed. Other modifer keys should be relased
+    onShiftCode: Option<i32>,
+    /// Key code to send if ctrl is pressed.  Other modifer keys should be relased
+    onCtrlCode: Option<i32>,
+    /// Key code to send if meta is pressed.  Other modifer keys should be relased
+    onMetaCode: Option<i32>,
+    /// Key code to send if super is pressed. Other modifer keys should be relased
+    onSuperCode: Option<i32>,
+    /// Which modifier will be enabled when key is pressed
+    switchModifier: Option<ModifierKeys>,
+}
+
+struct ScriptAction {
+    // TODO implement
+}
+
+enum Action {
+    Key(KeyAction),
+    Script(ScriptAction),
+}
+
+enum ModifierKeys {
+    Ctrl,
+    Meta,
+    Shift,
+    Super,
+    Hyper,
+}
+
+struct ActionResolver {
+    actions: HashMap<(usize, usize), Action>,
+    pressedModifiers: HashMap<(usize, usize), ModifierKeys>,
+}
+
+impl ActionResolver {
+    fn config_from_json(&mut self, path: &str) -> Result<(), Box<Error>> {
+        let config: json::JsonValue = json_from_file(path)?;
+
+        let mappings = &config["mappings"];
+        for (row, val) in mappings.entries() {
+            for (col, val) in mappings[row].entries() {
+                println!("{} {} maps to {}", row, col, val);
+            }
+        }
+
+        Ok(())
+    }
+
+    fn processKeys(&mut self, keys: Vec<Key>) {
+        for key in keys {
+            let action = self.actions.get(&(key.row, key.column));
+            if (action.is_some()) {
+                let action = action.unwrap();
+                // TODO Check keys is modifier key
+            }
+        }
+        // * Find switched modifier keys in new keys
+
+        // * If modifier key has been released check if
+        //   it is not present and then turn it off
+        // * For all input keys perform required actions
+    }
+
+    fn new() -> ActionResolver {
+        ActionResolver {
+            actions: HashMap::new(),
+            pressedModifiers: HashMap::new(),
+        }
     }
 }
 
@@ -134,24 +218,15 @@ fn json_from_file(path: &str) -> Result<json::JsonValue, Box<Error>> {
 }
 
 fn main() -> std::io::Result<()> {
-    let parsed = json_from_file("../../settings/keymap.json");
-    let rows: HashMap<usize, i32> = HashMap::new();
-    let cols: HashMap<usize, i32> = HashMap::new();
-    let keymap: Vec<Vec<Key>> = Vec::new();
+    let mut central = Keypad::new();
+    let mut keypad = Keypad::new();
+    let mut centralResolver = ActionResolver::new();
 
-    let mut keypad: Keypad = Keypad {
-        cols: cols,
-        rows: rows,
-        keymap: keymap,
-        pressed: HashMap::new(),
-    };
+    central.mapping_from_jsom("settings/main_area_convertion.json");
+    keypad.mapping_from_jsom("settings/numpad_conversion.json");
+    centralResolver.config_from_json("settings/main_area_keymap.json");
 
-    let mut looping: bool = true;
-    while looping {
-        // Get all keys that changed state
-        let pressed_keys: Vec<Key> = keypad.scan();
-        // Execute actions based on key state change
-    }
+    println!("Finished reading config");
 
     Ok(())
 }
