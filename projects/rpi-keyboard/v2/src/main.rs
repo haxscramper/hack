@@ -213,12 +213,31 @@ struct ActionResolver {
 
 impl ActionResolver {
     fn config_from_json(&mut self, path: &str) -> Result<(), Box<Error>> {
+        println!("Parsing config for action resolver");
         let config: json::JsonValue = json_from_file(path)?;
 
         let mappings = &config["mappings"];
         for (row, val) in mappings.entries() {
             for (col, val) in mappings[row].entries() {
-                println!("{} {} maps to {}", row, col, val);
+                let action = KeyAction {
+                    defaultCode: val["code"].as_u8().unwrap(),
+                    name: val["name"].as_str().unwrap().to_string(),
+                    modified_codes: HashMap::new(),
+                    switchModifier: None,
+                };
+
+                println!(
+                    "    Key at {:3} {:3} will send code {:4}",
+                    row, col, action.defaultCode
+                );
+
+                self.actions.insert(
+                    (
+                        row.parse::<usize>().unwrap(),
+                        col.parse::<usize>().unwrap(),
+                    ),
+                    action,
+                );
             }
         }
 
