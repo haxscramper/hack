@@ -23,7 +23,7 @@ enum StateChange {
 struct Key {
     row: usize,
     column: usize,
-    state_change: Option<StateChange>,
+    state_change: StateChange,
     is_valid: bool,
     repetitions: Option<Vec<i32>>,
 }
@@ -40,7 +40,7 @@ impl Key {
             row: _row,
             column: _col,
             repetitions: None,
-            state_change: None,
+            state_change: StateChange::Idlereleased,
             is_valid: false,
         }
     }
@@ -97,13 +97,12 @@ impl Keypad {
                     if press_count == 0
                     // For the first time
                     {
-                        key.state_change =
-                            Some(StateChange::Changedpressed);
+                        key.state_change = StateChange::Changedpressed;
                     }
                 // TODO Repeat keys
                 } else {
                     press_count = 0;
-                    key.state_change = Some(StateChange::Changedreleased);
+                    key.state_change = StateChange::Changedreleased;
                 }
 
                 res.push(key.clone());
@@ -140,26 +139,23 @@ struct KeyAction {
     /// Textual name of the key
     name: String,
     /// Default keyboard key code
-    defaultCode: i32,
-    /// Key code to send if shift is pressed. Other modifer keys should be relased
-    onShiftCode: Option<i32>,
-    /// Key code to send if ctrl is pressed.  Other modifer keys should be relased
-    onCtrlCode: Option<i32>,
-    /// Key code to send if meta is pressed.  Other modifer keys should be relased
-    onMetaCode: Option<i32>,
-    /// Key code to send if super is pressed. Other modifer keys should be relased
-    onSuperCode: Option<i32>,
+    defaultCode: u8,
+    /// Key codes that will be sent if one of the modifiers is pressed
+    modified_codes: HashMap<PressedModifiers, u8>,
     /// Which modifier will be enabled when key is pressed
     switchModifier: Option<ModifierKeys>,
 }
 
-struct ScriptAction {
-    // TODO implement
-}
-
-enum Action {
-    Key(KeyAction),
-    Script(ScriptAction),
+impl KeyAction {
+    fn get_key_code(&self, modifiers: &PressedModifiers) -> u8 {
+        let modified_code: Option<&u8> =
+            self.modified_codes.get(&modifiers);
+        if modified_code.is_some() {
+            return (*modified_code.unwrap()).clone();
+        } else {
+            return self.defaultCode;
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
@@ -171,7 +167,7 @@ enum ModifierKeys {
     Hyper,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct PressedModifiers {
     Shift: bool,
     Ctrl: bool,
@@ -192,9 +188,23 @@ impl PressedModifiers {
     }
 }
 
+struct HidReport {
+    mod_l_shift: bool,
+    mod_l_ctrl: bool,
+    mod_l_meta: bool,
+    mod_l_super: bool,
+
+    mod_r_shift: bool,
+    mod_r_ctrl: bool,
+    mod_r_meta: bool,
+    mod_r_super: bool,
+
+    report_codes: Vec<u8>,
+}
+
 struct ActionResolver {
     /// Action assigned to each key on the keypad:
-    actions: HashMap<(usize, usize), Action>,
+    actions: HashMap<(usize, usize), KeyAction>,
     /// Set of modifier keys pressed on the keypad
     pressedModifiers: HashMap<(usize, usize), ModifierKeys>,
     /// Set of modifier keys pressed outisde of the keypad
@@ -219,25 +229,66 @@ impl ActionResolver {
         self.external_modifiers = modifiers.clone();
     }
 
-    fn process_keys(&mut self, keys: Vec<Key>) {
-        for phys_key in keys {
+    /// Update modifier keys, return key codes for keys that are pressed
+    fn get_active_keys(&mut self, keys: Vec<Key>) -> Vec<u8> {
+        // Update modifier keys
+        let mut changed_modifiers: Vec<Key> = Vec::new();
+        'key_loop: for phys_key in &keys {
             let action =
                 self.actions.get(&(phys_key.row, phys_key.column));
-            if action.is_some() {
-                if let Action::Key(key) = action.unwrap() {
-                    if key.switchModifier.is_some() {
-                        println!("Pressed key");
-                    }
-                }
+            if action.is_none() {
+                continue 'key_loop;
+            }
 
-                // TODO Check keys is modifier key
+            let key: &KeyAction = action.unwrap();
+
+            match phys_key.state_change {
+                StateChange::Changedpressed => {
+                    self.pressedModifiers.insert(
+                        (phys_key.row, phys_key.column),
+                        key.switchModifier.clone().unwrap(),
+                    );
+                }
+                StateChange::Changedreleased => {
+                    self.pressedModifiers
+                        .remove(&(phys_key.row, phys_key.column));
+                }
+                _ => {}
             }
         }
-        // * Find switched modifier keys in new keys
 
-        // * If modifier key has been released check if
-        //   it is not present and then turn it off
-        // * For all input keys perform required actions
+        // Set modifier keys
+        let mut key_modifiers: PressedModifiers =
+            self.external_modifiers.clone();
+        for (pos, key) in &self.pressedModifiers {
+            match key {
+                ModifierKeys::Ctrl => key_modifiers.Ctrl = true,
+                ModifierKeys::Shift => key_modifiers.Shift = true,
+                ModifierKeys::Meta => key_modifiers.Meta = true,
+                ModifierKeys::Super => key_modifiers.Super = true,
+                ModifierKeys::Hyper => key_modifiers.Hyper = true,
+            }
+        }
+
+        // Determine result codes
+        let mut result_keys: Vec<u8> = Vec::new();
+
+        for key in keys {
+            let action = self.actions.get(&(key.row, key.column));
+            if action.is_some() {
+                let action = action.unwrap();
+
+                match key.state_change {
+                    StateChange::Changedpressed => result_keys
+                        .push(action.get_key_code(&key_modifiers)),
+                    StateChange::Changedrepeat => result_keys
+                        .push(action.get_key_code(&key_modifiers)),
+                    _ => {}
+                }
+            }
+        }
+
+        return result_keys;
     }
 
     fn new() -> ActionResolver {
@@ -290,13 +341,15 @@ fn main() -> std::io::Result<()> {
         let mut numpad_changed = numpad_keypad.scan();
 
         // Process all keys in the main area, find modifier keys that are pressed
-        central_resolver.process_keys(central_changed);
+        let mut active_keys =
+            central_resolver.get_active_keys(central_changed);
         let modifier_keys = central_resolver.get_modifiers();
 
         // Process all keys in numpad area, use local modifier keys and
         // modifers pressed in previous area
         keypad_resolver.set_external_modifiers(&modifier_keys);
-        keypad_resolver.process_keys(numpad_changed);
+        active_keys
+            .append(&mut keypad_resolver.get_active_keys(numpad_changed));
         let modifier_keys = keypad_resolver.get_modifiers();
     }
 
