@@ -1,3 +1,4 @@
+use colored::*;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::error::Error;
@@ -143,7 +144,7 @@ struct KeyAction {
     /// Key codes that will be sent if one of the modifiers is pressed
     modified_codes: HashMap<PressedModifiers, u8>,
     /// Which modifier will be enabled when key is pressed
-    switchModifier: Option<ModifierKeys>,
+    switchModifier: PressedModifiers,
 }
 
 impl KeyAction {
@@ -219,16 +220,35 @@ impl ActionResolver {
         let mappings = &config["mappings"];
         for (row, val) in mappings.entries() {
             for (col, val) in mappings[row].entries() {
+                let mut modifiers = PressedModifiers::new();
+
+                if val.has_key("modifiers") {
+                    for mod_key in val["modifiers"].members() {
+                        match mod_key.as_str().unwrap() {
+                            "ctrl" => modifiers.Ctrl = true,
+                            "shift" => modifiers.Shift = true,
+                            "meta" => modifiers.Meta = true,
+                            "super" => modifiers.Super = true,
+                            "hyper" => modifiers.Hyper = true,
+                            _ => {
+                                // TODO Print error message
+                            }
+                        }
+                    }
+                }
+
                 let action = KeyAction {
                     defaultCode: val["code"].as_u8().unwrap(),
                     name: val["name"].as_str().unwrap().to_string(),
                     modified_codes: HashMap::new(),
-                    switchModifier: None,
+                    switchModifier: PressedModifiers::new(),
                 };
 
                 println!(
                     "    Key at {:3} {:3} will send code {:4}",
-                    row, col, action.defaultCode
+                    row.red(),
+                    col.red(),
+                    action.defaultCode
                 );
 
                 self.actions.insert(
@@ -268,10 +288,12 @@ impl ActionResolver {
                         key.switchModifier.clone().unwrap(),
                     );
                 }
+
                 StateChange::Changedreleased => {
                     self.pressedModifiers
                         .remove(&(phys_key.row, phys_key.column));
                 }
+
                 _ => {}
             }
         }
