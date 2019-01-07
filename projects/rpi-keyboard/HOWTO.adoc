@@ -58,12 +58,45 @@ curl https://gitlab.com/snippets/1770471/raw >> ~/.config/nvim/init.vim
 ----
 
 
-===== Install rust
+===== Build everything
+
+Clone keyboard repo
 
 [source, bash]
 ----
-sudo apt-get install rustc
+git clone https://gitlab.com/haxscramper/rpi-keyboard.git
+cd rpi-keyboard
 ----
+
+Install rust
+
+[source, bash]
+----
+curl https://sh.rustup.rs -sSf | sh  # Install rust
+export PATH="$HOME./cargo/bin:$PATH" # For zsh/bash shell
+set PATH $PATH ~/.cargo/bin # For fish shell
+----
+
+Add the toolchain for rust
+
+[source, bash]
+----
+rustup target add armv7-unknown-linux-gnueabihf
+sudo apt-get install gcc-4.7-multilib-arm-linux-gnueabihf
+echo "[target.armv7-unknown-linux-gnueabihf]
+linker = \"arm-linux-gnueabihf-gcc-4.7\"" >> ~/.cargo/config
+----
+
+Launch build
+
+[source, bash]
+----
+cd v2
+chmod +x build.sh
+./build.sh
+----
+
+// https://hackernoon.com/compiling-rust-for-the-raspberry-pi-49fdcd7df658
 
 == Devnotes
 
