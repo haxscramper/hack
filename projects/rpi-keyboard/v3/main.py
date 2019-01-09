@@ -1,0 +1,241 @@
+#!/usr/bin/env python
+
+# Temporary disabled
+# import RPi.GPIO as GPIO  # Import Raspberry Pi GPIO library
+# GPIO.setwarnings(False)  # Ignore warning for now
+# GPIO.setmode(GPIO.BOARD)  # Use physical pin numbering
+# GPIO.setup(10, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+from collections import defaultdict
+import json
+from pprint import pprint
+
+from enum import Enum
+from typing import Dict, List, Optional, MutableMapping
+from copy import deepcopy
+
+
+def _decode_list(data):
+    rv = []
+    for item in data:
+        if isinstance(item, unicode):
+            item = item.encode('utf-8')
+        elif isinstance(item, list):
+            item = _decode_list(item)
+        elif isinstance(item, dict):
+            item = _decode_dict(item)
+        rv.append(item)
+    return rv
+
+
+def _decode_dict(data):
+    rv = {}
+    for key, value in data.iteritems():
+        if isinstance(key, unicode):
+            key = key.encode('utf-8')
+        if isinstance(value, unicode):
+            value = value.encode('utf-8')
+        elif isinstance(value, list):
+            value = _decode_list(value)
+        elif isinstance(value, dict):
+            value = _decode_dict(value)
+        rv[key] = value
+    return rv
+
+
+class StateChange(Enum):
+    Changedpressed = 1
+    Changedreleased = 2
+    Changedrepeat = 3
+    Idlepresed = 4
+    Idlereleased = 5
+
+
+class Key:
+    def __init__(self, _row: int, _col: int):
+        self.row: int = _row
+        self.columnt: int = _col
+        self.state_change: StateChange = StateChange.Idlereleased
+        self.is_valid: bool = False
+        self.repetitions: Optional[List[int]] = None
+
+
+class Keypad:
+    def __init__(self):
+        self.rows: MutableMapping[int, int] = {}
+        self.cols: MutableMapping[int, int] = {}
+        self.keymap: List[List[Key]] = [[]]
+        self.pressed: MutableMapping[Key, int] = []
+
+    def scan(self) -> List[Key]:
+        res: List[Key] = []
+
+        for logic_col, physic_col in self.cols.items():
+            for logic_row, physic_row in self.rows.items():
+                key: Key = self.keymap[logic_row][logic_col]
+                if not key.is_valid:
+                    continue
+
+                press_count: int = self.pressed[key]
+                gpio_high: bool = False
+
+                if gpio_high:
+                    if press_count == 0:
+                        key.state_change = StateChange.Changedpressed
+
+                    press_count = press_count + 1
+                else:
+                    press_count = 0
+                    key.state_change = StateChange.Changedreleased
+
+                res.append(key)
+                self.pressed.append[key] = press_count
+
+        return res
+
+    def mapping_from_json(self, path: str) -> None:
+        pass
+
+
+class PressedModifiers:
+    def __init__(self):
+        self.shift: bool = False
+        self.ctrl: bool = False
+        self.meta: bool = False
+        self.super: bool = False
+        self.hyper: bool = False
+
+        self.right_shift: bool = False
+        self.right_ctrl: bool = False
+        self.right_meta: bool = False
+        self.right_super: bool = False
+
+    def logical_or_pressed(self, other):
+        self.shift = self.shift or other.shift
+        self.ctrl = self.ctrl or other.ctrl
+        self.meta = self.meta or other.meta
+        self.super = self.super or other.super
+        self.hyper = self.hyper or other.hyper
+
+        self.right_shift = self.right_shift or other.right_shift
+        self.right_ctrl = self.right_ctrl or other.right_ctrl
+        self.right_meta = self.right_meta or other.right_meta
+        self.right_super = self.right_super or other.right_super
+
+
+class KeyAction:
+    def __init__(self, _default_code: int):
+        self.name: str = "none"
+        self.defaultCode: int = _default_code
+        self.modified_codes: MutableMapping[PressedModifiers, int] = {}
+        self.modifiers: PressedModifiers = PressedModifiers()
+
+
+class HidReport:
+    def __init__(self):
+        self.mod_l_shift: bool = False
+        self.mod_l_ctrl: bool = False
+        self.mod_l_meta: bool = False
+        self.mod_l_super: bool = False
+
+        self.mod_r_shift: bool = False
+        self.mod_r_ctrl: bool = False
+        self.mod_r_meta: bool = False
+        self.mod_r_super: bool = False
+
+        self.report_codes: List[int] = []
+
+
+class ActionResolver:
+    def __init__(self):
+        self.actions: MutableMapping[Tuple[int, int], KeyAction] = {}
+        self.pressed_modifiers: MutableMapping[Tuple[int, int],
+                                               PressedModifiers] = {}
+        self.external_modifiers: PressedModifiers = PressedModifiers()
+
+    def config_from_json(self) -> None:
+        print("Parsing config for action resolver")
+        config = json.loads(
+            open("keymap.json", "r").read(), object_hook=_decode_dict)
+
+        mappings = config["mappings"]
+        for row, val in mappings.items():
+            for col, val in mappings[row].items():
+                modifiers: PressedModifiers = PressedModifiers()
+
+                if "modifiers" in val:
+                    for mod_key in val["modifiers"]:
+                        if mod_key == "ctrl":
+                            modifiers.ctrl = True
+                        elif mod_key == "shift":
+                            modifiers.shift = True
+                        elif mod_key == "meta":
+                            modifiers.meta = True
+                        elif mod_key == "super":
+                            modifiers.hyper = True
+                        elif mod_key == "hyper":
+                            modifiers.hyper = True
+                        # TODO Add right modifiers
+
+                action: KeyAction = KeyAction()
+                action.defaultCode = int(val["code"])
+                action.name = val["name"]
+                action.modified_codes = {}
+                action.modifiers = PressedModifiers()
+
+    def get_active_keys(self, keys: List[Key]) -> List[int]:
+        changed_modifiers: List[Key] = []
+        for phys_key in keys:
+            pos: Tuple[int, int] = (phys_key.row, phys_key.col)
+            if not pos in self.actions:
+                continue
+
+            action = self.actions[pos]
+
+            if phys_key.state_change == StateChange.Changedpressed:
+                self.pressed_modifiers[pos] = action
+            elif phys_key.state_change == StateChange.Changedreleased:
+                self.pressed_modifiers.pop(pos)
+
+        key_modifiers: PressedModifiers = deepcopy(self.external_modifiers)
+        for key, val in self.pressed_modifiers.items():
+            key_modifiers.logical_or_pressed(val)
+
+        result_codes: List[int] = []
+
+        for key in keys:
+            pos: Tuple[int, int] = (key.row, key.column)
+            if not pos in self.actions:
+                continue
+
+            action: KeyAction = actions[pos]
+            if key.state_change == StateChange.Changedpressed or \
+               key.state_change == StateChange.Changedrepeat:
+                result_codes.append(action.get_key_code(key_modifiers))
+
+        return result_codes
+
+    def get_modifiers(self) -> PressedModifiers:
+        res: PressedModifiers = deepcopy(self.external_modifiers)
+        for pos, val in self.pressed_modifiers.items():
+            res.logical_or_pressed(val)
+
+
+def main_loop():
+    central_keypad = Keypad()
+    numpad_keypad = Keypad()
+    central_resolver = ActionResolver()
+    keypad_resolver = ActionResolver()
+
+    while True:
+        central_changes = central_keypad.scan()
+        numpad_changes = numpad_keypad.scan()
+
+        active_keys = central_resolver.get_active_keys(central_changes)
+        keypad_resolver.external_modifiers = central_resolver.get_modifiers()
+        active_keys.append(keypad_resolver.get_active_keys(numpad_changes))
+
+        modifier_keys = keypad_resolver.get_modifiers()
+
+
+if __name__ == '__main__':
+    main_loop()
