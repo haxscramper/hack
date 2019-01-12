@@ -10,7 +10,7 @@ import json
 from pprint import pprint
 
 from enum import Enum
-from typing import Dict, List, Optional, MutableMapping
+from typing import Dict, List, Optional, MutableMapping, Tuple
 from copy import deepcopy
 
 
@@ -53,7 +53,7 @@ class StateChange(Enum):
 class Key:
     def __init__(self, _row: int, _col: int):
         self.row: int = _row
-        self.columnt: int = _col
+        self.column: int = _col
         self.state_change: StateChange = StateChange.Idlereleased
         self.is_valid: bool = False
         self.repetitions: Optional[List[int]] = None
@@ -64,32 +64,64 @@ class Keypad:
         self.rows: MutableMapping[int, int] = {}
         self.cols: MutableMapping[int, int] = {}
         self.keymap: List[List[Key]] = [[]]
-        self.pressed: MutableMapping[Key, int] = []
+        self.pressed: MutableMapping[Key, int] = {}
+        self._test_pressed: List[Tuple[int, int]] = []
 
     def scan(self) -> List[Key]:
-        res: List[Key] = []
+        active: List[Key] = []  # List ok keys that physically pressed
 
+        # Scan button grid
+        print(" -> Scanning button grid")
+        # Test code
+        active = active + [
+            self.keymap[row][col] for row, col in self._test_pressed
+        ]
+
+        # Work code
         for logic_col, physic_col in self.cols.items():
             for logic_row, physic_row in self.rows.items():
                 key: Key = self.keymap[logic_row][logic_col]
                 if not key.is_valid:
                     continue
 
-                press_count: int = self.pressed[key]
                 gpio_high: bool = False
-
                 if gpio_high:
-                    if press_count == 0:
-                        key.state_change = StateChange.Changedpressed
+                    active.append(key)
 
-                    press_count = press_count + 1
-                else:
-                    press_count = 0
-                    key.state_change = StateChange.Changedreleased
+        print(" -> Active keys")
+        for key in active:
+            print("    ", key.column, key.row)
 
+        res: List[Key] = []  # List of keys that changed between scans
+
+        for key, _ in self.pressed.items():
+            if not key in active:
+                key.state_change = StateChange.Changedreleased
                 res.append(key)
-                self.pressed.append[key] = press_count
 
+        for key in res:
+            self.pressed.pop(key)
+
+        # Process each key that is currently active and keys that
+        # have been deactivated
+        for key in active:
+            press_count: int = 0
+            if key in self.pressed:
+                press_count = self.pressed[key]
+
+            if press_count == 0:
+                key.state_change = StateChange.Changedpressed
+                press_count = press_count + 1
+            else:
+                press_count = 0
+                key.state_change = StateChange.Changedreleased
+
+            res.append(key)
+            self.pressed[key] = press_count
+
+        print("")
+
+        self._test_pressed = []
         return res
 
     def mapping_from_json(self, path: str) -> None:
@@ -128,6 +160,9 @@ class KeyAction:
         self.defaultCode: int = _default_code
         self.modified_codes: MutableMapping[PressedModifiers, int] = {}
         self.modifiers: PressedModifiers = PressedModifiers()
+
+    def get_key_code(self, modifiers: PressedModifiers) -> int:
+        return self.defaultCode
 
 
 class HidReport:
@@ -183,17 +218,21 @@ class ActionResolver:
                 action.modifiers = PressedModifiers()
 
     def get_active_keys(self, keys: List[Key]) -> List[int]:
+        print("--- Determine which codes to send")
         changed_modifiers: List[Key] = []
         for phys_key in keys:
-            pos: Tuple[int, int] = (phys_key.row, phys_key.col)
+            pos: Tuple[int, int] = (phys_key.row, phys_key.column)
+            print(" -> Key at", pos, "changed state")
             if not pos in self.actions:
                 continue
 
             action = self.actions[pos]
 
             if phys_key.state_change == StateChange.Changedpressed:
-                self.pressed_modifiers[pos] = action
+                print("    New state: pressed")
+                self.pressed_modifiers[pos] = action.modifiers
             elif phys_key.state_change == StateChange.Changedreleased:
+                print("    New state: released")
                 self.pressed_modifiers.pop(pos)
 
         key_modifiers: PressedModifiers = deepcopy(self.external_modifiers)
@@ -207,7 +246,7 @@ class ActionResolver:
             if not pos in self.actions:
                 continue
 
-            action: KeyAction = actions[pos]
+            action: KeyAction = self.actions[pos]
             if key.state_change == StateChange.Changedpressed or \
                key.state_change == StateChange.Changedrepeat:
                 result_codes.append(action.get_key_code(key_modifiers))
@@ -220,14 +259,52 @@ class ActionResolver:
             res.logical_or_pressed(val)
 
 
+
+central_pressed: List[List[Tuple[int,int]]] = [
+    [(0,0), (0,1), (0,3), (5,4)],
+    [(0,0), (0,1)],
+    [(0,0), (0,3), (5,4)],
+    [(0,0), (0,1), (0,3), (5,4)],
+    [(0,3), (5,4)],
+    [(3,4)]
+] # yapf: disable
+
+numpad_pressed: List[List[Tuple[int, int]]] = [
+    [(3,4)],
+    [(3,4), (6,5)],
+    [(5,3), (3,4)],
+    [(4,5)],
+    [(4,5)],
+    [(4,5)]
+] # yapf: disable
+
+
 def main_loop():
     central_keypad = Keypad()
     numpad_keypad = Keypad()
     central_resolver = ActionResolver()
     keypad_resolver = ActionResolver()
 
-    while True:
+    central_keypad.keymap = [[Key(x, y) for x in range(100)]
+                             for y in range(100)]
+
+    numpad_keypad.keymap = [[Key(x, y) for x in range(100)]
+                            for y in range(100)]
+
+    central_resolver.actions = {(x, y): KeyAction(100 * x + y)
+                                for x, y in zip(range(100), range(100))}
+
+    keypad_resolver.actions = {(x, y): KeyAction(100 * x + y)
+                               for x, y in zip(range(100), range(100))}
+
+    for central, numpad in zip(central_pressed, numpad_pressed):
+        print("=== ===")
+        central_keypad._test_pressed = central
+        numpad_keypad._test_pressed = numpad
+
+        print("--- Central keypad")
         central_changes = central_keypad.scan()
+        print("--- Numpad keypad")
         numpad_changes = numpad_keypad.scan()
 
         active_keys = central_resolver.get_active_keys(central_changes)
