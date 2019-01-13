@@ -12,6 +12,7 @@ from pprint import pprint
 from enum import Enum
 from typing import Dict, List, Optional, MutableMapping, Tuple
 from copy import deepcopy
+from itertools import product
 
 
 def _decode_list(data):
@@ -211,8 +212,7 @@ class ActionResolver:
                             modifiers.hyper = True
                         # TODO Add right modifiers
 
-                action: KeyAction = KeyAction()
-                action.defaultCode = int(val["code"])
+                action: KeyAction = KeyAction(int(val["code"]))
                 action.name = val["name"]
                 action.modified_codes = {}
                 action.modifiers = PressedModifiers()
@@ -224,6 +224,7 @@ class ActionResolver:
             pos: Tuple[int, int] = (phys_key.row, phys_key.column)
             print(" -> Key at", pos, "changed state")
             if not pos in self.actions:
+                print("    No actions for pos", pos)
                 continue
 
             action = self.actions[pos]
@@ -233,7 +234,8 @@ class ActionResolver:
                 self.pressed_modifiers[pos] = action.modifiers
             elif phys_key.state_change == StateChange.Changedreleased:
                 print("    New state: released")
-                self.pressed_modifiers.pop(pos)
+                if pos in self.pressed_modifiers:
+                    self.pressed_modifiers.pop(pos)
 
         key_modifiers: PressedModifiers = deepcopy(self.external_modifiers)
         for key, val in self.pressed_modifiers.items():
@@ -257,6 +259,8 @@ class ActionResolver:
         res: PressedModifiers = deepcopy(self.external_modifiers)
         for pos, val in self.pressed_modifiers.items():
             res.logical_or_pressed(val)
+
+        return res
 
 
 
@@ -292,10 +296,10 @@ def main_loop():
                             for y in range(100)]
 
     central_resolver.actions = {(x, y): KeyAction(100 * x + y)
-                                for x, y in zip(range(100), range(100))}
+                                for x, y in product(range(100), range(100))}
 
     keypad_resolver.actions = {(x, y): KeyAction(100 * x + y)
-                               for x, y in zip(range(100), range(100))}
+                               for x, y in product(range(100), range(100))}
 
     for central, numpad in zip(central_pressed, numpad_pressed):
         print("=== ===")
@@ -304,14 +308,20 @@ def main_loop():
 
         print("--- Central keypad")
         central_changes = central_keypad.scan()
-        print("--- Numpad keypad")
-        numpad_changes = numpad_keypad.scan()
-
         active_keys = central_resolver.get_active_keys(central_changes)
         keypad_resolver.external_modifiers = central_resolver.get_modifiers()
-        active_keys.append(keypad_resolver.get_active_keys(numpad_changes))
 
+        print("--- Numpad keypad")
+        numpad_changes = numpad_keypad.scan()
+        active_keys = active_keys + keypad_resolver.get_active_keys(
+            numpad_changes)
         modifier_keys = keypad_resolver.get_modifiers()
+
+        print (" -> After current scan sending codes")
+        for code in active_keys:
+            print(code)
+
+        print("")
 
 
 if __name__ == '__main__':
