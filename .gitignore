@@ -1,4 +1,8 @@
-
+*
+!*.*
+!/**/
+!**/build/
+**/*.html
 # Created by https://www.gitignore.io/api/c,qt,c++,perl,cmake,emacs,python,haskell,assembler,commonlisp
 # Edit at https://www.gitignore.io/?templates=c,qt,c++,perl,cmake,emacs,python,haskell,assembler,commonlisp
 
@@ -374,7 +378,3 @@ target_wrapper.*
 CMakeLists.txt.user*
 
 # End of https://www.gitignore.io/api/c,qt,c++,perl,cmake,emacs,python,haskell,assembler,commonlisp
-*
-!*.*
-!/**/
-**/build/*
