@@ -40,23 +40,17 @@ my $buttons = "";
 $buttons = "{\"buttons\":$buttons}";
 my $json_arr = ( decode_json $buttons)->{buttons};
 
+my @buttons_;
+
 for my $row (@$json_arr) {
+    say "===";
     try {
-        my $button_name;
-        my $button_hash;
-        my $button_count = ( scalar @$row / 2 );
-
+        my $button_count = ( scalar @$row );
         for my $pos (0..$button_count) {
-            say $pos * 2;
-        }
-
-        for my $button (@$row) {
-            if ( ref($button) eq "HASH" ) {
-                $button_hash = $button;
-            }
-            else {
-                $button_name = $button;
-            }
+            my $button_name = $row->[$pos * 2];
+            my $button_hash = $row->[$pos * 2 + 1];
+            $button_name =~ s/\n*//g;
+            say $button_name;
         }
     }
     catch { }
