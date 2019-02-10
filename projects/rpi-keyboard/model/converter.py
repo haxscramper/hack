@@ -26,48 +26,57 @@ def json2keyboard(path: str) -> List[Row]:
     keyboard: List[Row] = []
 
     key_count = 0
+    current_y = 0
+    current_rot = 0
+    current_rot_x = 0
+    current_rot_y = 0
 
     for kbd_row in model_json[1:]:
         row: Row = Row()
 
-        if "x" in kbd_row[0]:
-            row.pos_x = kbd_row[0]["x"]
+        # X position is reset after each row
+        row.pos_x = kbd_row[0]["x"]
 
+        # Y position is incremented
         if "y" in kbd_row[0]:
-            row.pos_y = kbd_row[0]["y"]
+            current_y = current_y + kbd_row[0]["y"]
+        else:
+            current_y = current_y + 1
 
+        row.pos_y = current_y
+
+        # Rotation is carried on, not incremented
         if "r" in kbd_row[0]:
-            row.rotation_angle = kbd_row[0]["r"]
+            current_rot = current_rot + kbd_row[0]["r"]
 
+        row.rotation_angle = current_rot
+
+        # Rotation center is carried on, not incremented
         if "rx" in kbd_row[0]:
-            row.rotation_x = kbd_row[0]["rx"]
+            current_rot_x = kbd_row[0]["rx"]
+
+        row.rotation_x = current_rot_x
 
         if "ry" in kbd_row[0]:
-            row.rotation_y = kbd_row[0]["ry"]
+            current_rot_y = kbd_row[0]["ry"]
+
+        row.rotation_y = current_rot_y
 
         idx = 1
         while idx < len(kbd_row[1:]):
             key: Key = Key()
 
-            print("idx is string", isinstance(kbd_row[idx], str))
-            print("next is string", isinstance(kbd_row[idx + 1], str))
-
-            print("idx:", kbd_row[idx])
-            print("next:", kbd_row[idx + 1])
-
             # Key description is omitted
             if (isinstance(kbd_row[idx], str) and
-                (idx + 1 == len(kbd_row[1:]) or \
+                (idx + 1 >= len(kbd_row) or \
                  isinstance(kbd_row[idx + 1], str))):
 
                 idx = idx + 1
-                print("Incrementing idx by one")
 
             # Key description is availiable
             else:
                 json_key = kbd_row[idx + 1]
                 idx = idx + 2
-                print("Incrementing idx by two")
                 if "w" in json_key:
                     key.width = json_key["w"]
 
@@ -87,7 +96,8 @@ def json2keyboard(path: str) -> List[Row]:
 keyboard: List[Row] = json2keyboard("raw_data.json")
 
 with open("keyboard.scad", "w+") as file:
-    file.write("include <keyboard_lib.scad>;\n")
+    file.write("include <keyboard_lib.scad>;\n\n\n")
+    row_num: int = 1
     for row in keyboard:
         start_x: int = row.pos_x
         start_y: int = row.pos_y
@@ -97,7 +107,10 @@ with open("keyboard.scad", "w+") as file:
         for key in row.keys:
             keylist.append([start_x, start_y, key.width, key.height])
             start_x = start_x + key.width
-            start_y = start_y + key.height
 
-        file.write("row({}, {}, {});\n\n".format(
-            keylist, row.rotation_angle, [row.rotation_x, row.rotation_y, 0]))
+        file.write("// Row num {}\n".format(row_num))
+        file.write(
+            "row({}, {}, {});\n\n".format(keylist, 90 - row.rotation_angle,
+                                          [row.rotation_x, row.rotation_y, 0]))
+
+        row_num = row_num + 1
