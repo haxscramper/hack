@@ -142,6 +142,20 @@ class PressedModifiers:
         self.right_meta: bool = False
         self.right_super: bool = False
 
+    def __str__(self) -> str:
+        res: str = \
+            "shift:  " + str(self.shift) + " \n" + \
+            "ctrl:   " + str(self.ctrl) + " \n" + \
+            "meta:   " + str(self.meta) + " \n" + \
+            "super:  " + str(self.super) + " \n" + \
+            "hyper:  " + str(self.hyper) + " \n" + \
+            "rshift: " + str(self.right_shift) + " \n" + \
+            "rctrl:  " + str(self.right_ctrl) + " \n" + \
+            "rmeta:  " + str(self.right_meta) + " \n" + \
+            "rsuper: " + str(self.right_super)
+
+        return res
+
     def logical_or_pressed(self, other):
         self.shift = self.shift or other.shift
         self.ctrl = self.ctrl or other.ctrl
@@ -168,17 +182,39 @@ class KeyAction:
 
 class HidReport:
     def __init__(self):
-        self.mod_l_shift: bool = False
-        self.mod_l_ctrl: bool = False
-        self.mod_l_meta: bool = False
-        self.mod_l_super: bool = False
-
-        self.mod_r_shift: bool = False
-        self.mod_r_ctrl: bool = False
-        self.mod_r_meta: bool = False
-        self.mod_r_super: bool = False
-
+        self.modifiers: PressedModifiers = PressedModifiers()
         self.report_codes: List[int] = []
+
+    def send(self) -> None:
+        print(" -> Sending report")
+        print("    Key codes")
+        for code in self.report_codes:
+            print("    - ", code)
+
+        print("    Modifier keys")
+        for line in str(self.modifiers).split("\n"):
+            print("    -", line)
+
+
+        mods = 0
+        if self.modifiers.ctrl:
+            mods = mods | (1)
+
+        if self.modifiers.shift:
+            mods = mods | (1 << 1)
+
+        if self.modifiers.meta:
+            mods = mods | (1 << 2)
+
+        if self.modifiers.super:
+            mods = mods | (1 << 3)
+
+        modifiers = chr(mods)
+        msg = str(modifiers)
+
+
+        with open('temp.txt', 'wb+') as file:
+            file.write(msg.encode('latin1'))
 
 
 class ActionResolver:
@@ -317,11 +353,10 @@ def main_loop():
             numpad_changes)
         modifier_keys = keypad_resolver.get_modifiers()
 
-        print (" -> After current scan sending codes")
-        for code in active_keys:
-            print(code)
-
-        print("")
+        report: HidReport = HidReport()
+        report.modifiers = modifier_keys
+        report.report_codes = active_keys
+        report.send()
 
 
 if __name__ == '__main__':
