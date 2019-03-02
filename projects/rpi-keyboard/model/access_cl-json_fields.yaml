@@ -1,0 +1,22 @@
+type: "howto"
+name: "Access cl-json fields"
+creation-date: 2019-03-02
+creation-time: 15:05:50
+howto::text-type: "asciidoctor"
+howto::type: "problem-solution"
+howto::tags:
+  - lisp
+  - emacs
+  - json
+howto::text: |
+  decode-json appears to return an association list (at least in this case;
+  see documentation). You can access the values with the function assoc:
+
+  [source, lisp]
+  ----
+  (defun test-json ()
+  (with-input-from-string
+    (s "{\"foo\": [1, 2, 3], \"bar\": true, \"baz\": \"!\"}")
+      (let ((data (json:decode-json s)))
+        (format t "~a~%" (rest (assoc :foo data))))))
+  ----
