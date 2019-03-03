@@ -26,7 +26,6 @@ module row(keylist, rot_angle = 0, rot_center = [ 0, 0, 1 ]) {
                 for (key_arr = keylist) {
                     key(position   = [ current_x, 0 ],
                         dimensions = [ key_arr[0], key_arr[1] ]);
-
                 }
             }
         }

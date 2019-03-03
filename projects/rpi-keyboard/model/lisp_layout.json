@@ -2,14 +2,25 @@
     "sections" : [
         {
             "rotation-angle" : 0,
-            "rows" : [ {
-                "keys" : [
-                    {"legend" : "test"},
-                    {"legend" : "test"},
-                    {"legend" : "test"},
-                    {"legend" : "test"}
-                ]
-            } ]
+            "rows" : [
+                {
+                    "keys" : [
+                        {"legend" : "test"},
+                        {"legend" : "test"},
+                        {"legend" : "test"},
+                        {"legend" : "test"}
+                    ]
+                },
+                {
+                    "keys" : [
+                        {"legend" : "test"},
+                        {"legend" : "test"},
+                        {"legend" : "test"},
+                        {"legend" : "test"}
+                    ]
+                }
+
+            ]
         },
         {
             "rotation-angle" : 0,
@@ -18,7 +29,7 @@
                     {"legend" : "test"},
                     {"legend" : "test"},
                     {"legend" : "test"},
-                    {"legend" : "test"}
+                    {"height" : 3}
                 ]
             } ]
         }
