@@ -1,0 +1,242 @@
+
+\makeatletter
+\newcommand\currentcoordinate{\the\tikz@lastxsaved,\the\tikz@lastysaved}
+\makeatother
+
+\def\DFFsync(#1)#2{%
+  \begin{scope}[shift={(#1)}]
+    \node at (0.5,1.2) {$D$};
+    \draw (0,0) rectangle (1,1);
+    \draw (0.5,1) -- (0.5,0);
+    \draw (0.5,0.5) -- (1,0.5);
+    % Input
+    \node at (0.75,0.75) {$Q$};
+    \node at (0.75,0.25) {$\bar{Q}$};
+    \draw (1,0.8) -- +(0.25,0) coordinate ({#2}Q);
+    \draw (1,0.2) -- +(0.25,0) coordinate ({#2}nQ);
+
+    % Output
+    \draw (0,0.8) node[right] {$D$} -- +(-0.25,0) coordinate ({#2}D);
+    \draw (0,0.2) node[right] {$C$} -- +(-0.25,0) coordinate ({#2}C);
+  \end{scope}
+}
+
+\def\TFF(#1)#2{%
+  \begin{scope}[shift={(#1)}]
+    \node at (0.5,1.2) {$T$};
+    \draw (0,0) rectangle (1,1);
+    \draw (0.5,1) -- (0.5,0);
+    \draw (0.5,0.5) -- (1,0.5);
+    % Input
+    \node at (0.75,0.75) {$Q$};
+    \node at (0.75,0.25) {$\bar{Q}$};
+    \draw (1,0.8) -- +(0.25,0) coordinate (#2 Q);
+    \draw (1,0.2) -- +(0.25,0) coordinate (#2 nQ);
+    % Output
+    \draw (0,0.8) node[right] {$T$} -- +(-0.25,0) coordinate (#2 T);
+    \draw (0,0.2) node[right] {$C$} -- +(-0.25,0) coordinate (#2 C);
+  \end{scope}
+}
+
+
+\def\JKFFsync(#1)#2{%
+  \begin{scope}[shift={(#1)}]
+    \node at (0.5,1.8) {$JK$};
+    \draw (0,0) rectangle (1,1.6);
+    \draw (0.5,1.6) -- (0.5,0);
+    \draw (0.5,0.8) -- (1,0.8);
+% Input
+    \node at (0.75,1.2) {$Q$};
+    \node at (0.75,0.4) {$\bar{Q}$};
+    \draw (1,1.2) -- +(0.25,0) coordinate (#2 Q);
+    \draw (1,0.4) -- +(0.25,0) coordinate (#2 nQ);
+% Output
+    \draw (0,0.2) node[right] {$\bar{R}$} -- +(-0.25,0) coordinate (#2 nR);
+    \draw (0,0.5) node[right] {$K$} -- +(-0.25,0) coordinate (#2 K);
+    \draw (0,0.8) node[right] {$C$} -- +(-0.25,0) coordinate (#2 C);
+    \draw (0,1.1) node[right] {$J$} -- +(-0.25,0) coordinate (#2 J);
+    \draw (0,1.4) node[right] {$\bar{S}$} -- +(-0.25,0) coordinate (#2 nS);
+  \end{scope}
+}
+
+
+\def\JKFF(#1)#2{%
+  \begin{scope}[shift={(#1)}]
+    \node at (0.5,1.2) {$JK$};
+    \draw (0,0) rectangle (1,1);
+    \draw (0.5,1) -- (0.5,0);
+    \draw (0.5,0.5) -- (1,0.5);
+    % Input
+    \node at (0.75,0.75) {$Q$};
+    \node at (0.75,0.25) {$\bar{Q}$};
+    \draw (1,0.75) -- +(0.25,0) coordinate (#2 Q);
+    \draw (1,0.25) -- +(0.25,0) coordinate (#2 nQ);
+    % Output
+    \draw (0,0.2) node[right] {$K$} -- +(-0.25,0) coordinate (#2 K);
+    \draw (0,0.5) node[right] {$T$} -- +(-0.25,0) coordinate (#2 T);
+    \draw (0,0.8) node[right] {$J$} -- +(-0.25,0) coordinate (#2 J);
+  \end{scope}
+}
+
+
+
+\def\DEMUX1:4(#1)#2{%
+  \begin{scope}[shift={(#1)}]
+    \node at (0.5,2.2) {$DMUX$};
+    \draw (0,0) rectangle (1,2);
+    \draw (0.5,2) -- (0.5,0);
+    % Output
+
+    \draw (1,0.25) -- +(0.25,0) coordinate (#2 x3);
+    \node at (0.75,0.25) {$x_3$};
+    \draw (0,0.5) -- (1,0.5);
+
+    \draw (1,0.75) -- +(0.25,0) coordinate (#2 x2);
+    \node at (0.75,0.75) {$x_2$};
+    \draw (0,1) -- (1,1);
+
+    \draw (1,1.25) -- +(0.25,0) coordinate (#2 x1);
+    \node at (0.75,1.25) {$x_1$};
+    \draw (0,1.5) -- (1,1.5);
+
+    \draw (1,1.75) -- +(0.25,0) coordinate (#2 x0);
+    \node at (0.75,1.75) {$x_0$};
+
+    % Input
+    \draw (0,1.75) node [right] {$I$} -- +(-0.25,0) coordinate (#2 I);
+    \draw (0,1.25) node [right] {$E$} -- +(-0.25,0) coordinate (#2 E);
+    \draw (-0.05,0.75) node [right] {$S_0$} ++(0.05,0) -- +(-0.25,0) coordinate (#2 S0);
+    \draw (-0.05,0.25) node [right] {$S_1$} ++(0.05,0) -- +(-0.25,0) coordinate (#2 S1);
+  \end{scope}
+}
+
+
+
+\def\MUX4:1(#1)#2{%
+  \begin{scope}[shift={(#1)}]
+    \node at (0.5,3.7) {$MUX$};
+    \draw (0,0) rectangle (1,3.5);
+    \draw (0.5,3.5) -- (0.5,0);
+    % Output
+    \draw (1,1.75) -- +(0.25,0) coordinate (#2 X);
+    \node at (0.75,1.75) {$X$};
+
+    % Input
+    \draw (-0.05,3.25) node [right] {$a_0$} ++(0.05,0) -- +(-0.25,0) coordinate (#2 S0);
+    \draw (-0.05,2.75) node [right] {$a_1$} ++(0.05,0) -- +(-0.25,0) coordinate (#2 S1);
+    \draw (-0.05,2.25) node [right] {$a_2$} ++(0.05,0) -- +(-0.25,0) coordinate (#2 S2);
+    \draw (-0.05,1.75) node [right] {$a_3$} ++(0.05,0) -- +(-0.25,0) coordinate (#2 S3);
+
+
+    \draw (0,1.25) node [right] {$E$} -- +(-0.25,0) coordinate (#2 E);
+    \draw (-0.05,0.75) node [right] {$S_0$} ++(0.05,0) -- +(-0.25,0) coordinate (#2 S0);
+    \draw (-0.05,0.25) node [right] {$S_1$} ++(0.05,0) -- +(-0.25,0) coordinate (#2 S1);
+  \end{scope}
+}
+
+%#== Decoder N-2^n
+
+\ExplSyntaxOn
+
+\tl_new:N \l_DECDn_inports_tl
+
+\keys_define:nn { DECDnC }
+{
+  innum .tl_set:N = \l_DECDn_inports_tl,
+  innum .initial:n = 2,
+}
+
+\NewDocumentCommand{\DECDn}{o m m}{
+
+  \IfNoValueF{#1}{
+    \keys_set:nn { DECDnC }{ #1 }
+  }
+
+  \group_begin:
+
+  \int_zero_new:N \l_out_ports_int
+  \int_set:Nn \l_out_ports_int {\fp_to_int:n { 2 ** \l_DECDn_inports_tl }}
+  \fp_zero_new:N \l_rectangle_size_fp
+  \fp_set:Nn \l_rectangle_size_fp {\l_out_ports_int / 2}
+
+  \begin{scope}[shift={(#2)}]
+    \node
+    (#3~center)
+    at (0.75, \fp_eval:n{\l_rectangle_size_fp / 2})
+    {};
+
+    \node
+    at (0.75,\fp_eval:n{\l_out_ports_int / 2 + 0.2})
+    {DECD{\l_DECDn_inports_tl}:{\int_use:N \l_out_ports_int}};
+
+    \draw (0,0) rectangle (1.5, \l_out_ports_int / 2 );
+
+    \int_step_inline:nnn{0}{\int_use:N \l_out_ports_int - 1}{
+      \draw
+      (0.75,\fp_eval:n {\l_rectangle_size_fp - 0.25 - 0.5 * ##1})
+      node[right] {$x\sb{##1}$}
+      ++(0.75,0) -- +(0.25,0)
+      coordinate (#3~x##1);
+    }
+
+    \int_step_inline:nnn{0}{\l_DECDn_inports_tl - 1}{
+      \draw
+      (0.65, \fp_eval:n {2 ** (\l_DECDn_inports_tl - 1) - 0.5 * ##1 - 0.25})
+      node[left] {$a\sb{##1}$}
+      ++(-0.65,0) -- +(-0.25,0)
+      coordinate (#3~a##1);
+    }
+
+    \draw (0.6, 0.25) node[left] {$E$} ++(-0.6,0) -- +(-0.25,0) coordinate (#3~E);
+  \end{scope}
+
+  \group_end:
+}
+
+
+\tl_new:N \l_ENCn_inports_tl
+
+\keys_define:nn { ENCnC }
+{
+  innum .tl_set:N = \l_ENCn_inports_tl,
+  innum .initial:n = 2,
+}
+
+\NewDocumentCommand{\ENCn}{o m m}{
+
+  \IfNoValueF{#1}{
+    \keys_set:nn { ENCnC }{ #1 }
+  }
+
+  \group_begin:
+
+  \int_zero_new:N \l_out_ports_int
+  \int_set:Nn \l_out_ports_int {\fp_to_int:n { 2 ** \l_ENCn_inports_tl }}
+  \fp_zero_new:N \l_rectangle_size_fp
+  \fp_set:Nn \l_rectangle_size_fp {\l_out_ports_int / 2 + 0.5}
+
+  \begin{scope}[shift={(#2)}]
+    \node at (0.75,\fp_eval:n{\fp_use:N \l_rectangle_size_fp + 0.2})
+      {ENC{\l_ENCn_inports_tl}:{\int_use:N \l_out_ports_int}};
+
+    \draw (0,0) rectangle (1.5, \fp_use:N \l_rectangle_size_fp);
+
+    \int_step_inline:nnn{0}{\int_use:N \l_out_ports_int - 1}{
+      \draw (0.75, 0.75 + 0.5 * ##1) node[left] {$x\sb{##1}$}
+      ++(0.75,0) -- +(0.25,0) coordinate (#3~x##1);
+    }
+
+    \int_step_inline:nnn{0}{\l_ENCn_inports_tl - 1}{
+      \draw (0.75, \fp_eval:n {\fp_use:N \l_rectangle_size_fp - 0.5 * ##1 - 0.25})
+      node[right] {$a\sb{##1}$}
+      ++(-0.75,0) -- +(-0.25,0) coordinate (#3~a##1);
+    }
+
+    \draw (0.6, 0.25) node[left] {$E$} ++(-0.6,0) -- +(-0.25,0) coordinate (#3~E);
+  \end{scope}
+
+  \group_end:
+}
+
+
+\ExplSyntaxOff

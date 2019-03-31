@@ -1,0 +1,39 @@
+
+\begin{tikzpicture}[circuit logic IEC]
+  \DECDn[innum=2]{0,0}{decd1}
+
+  \node[or gate, inputs={nnnn}] (or) at (6,4.5) {};
+
+  \foreach \idx in {0,1,2,3}{
+    \node
+    [and gate, inputs={nn}]
+    (and\idx) at (4,3.2+1.2*\idx) {};
+
+    \draw
+    [very thick, red]
+    (decd1 x\idx) -- ++(right:0.3+0.2*\idx) |- ({and\idx}.input 1);
+
+    \pgfmathsetmacro{\num}{int(\idx+1)}
+
+    \draw
+    [very thick]
+    ({and\idx}.output)
+    -- ++(right:0.2 + 0.2*\idx)
+    |- (or.input \num);
+
+    \node
+    [buffer gate, inputs={n}]
+    (buffer\idx) at ({decd1 center} |- {{and\idx}.input 2}) {};
+
+    \draw
+    [very thick]
+    ({buffer\idx}.output)
+    |- ({and\idx}.input 2);
+
+    \draw
+    [very thick]
+    ({buffer\idx}.input)
+    -- ++(left:0.3);
+  }
+
+\end{tikzpicture}

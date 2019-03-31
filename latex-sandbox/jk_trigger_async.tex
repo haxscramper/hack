@@ -1,0 +1,60 @@
+\begin{tikzpicture}[circuit logic IEC]
+  \node
+  [nor gate, inputs={nn}]
+  (nor1) at (3,2) {};
+
+  \node
+  [nor gate, inputs={nn}]
+  (nor2) at (3,0) {};
+
+  \node
+  [buffer gate, inputs={n}]
+  (R) at ($(nor1.input 1) + (-2,0)$) {$R$};
+
+  \node
+  [buffer gate, inputs={n}]
+  (S) at ($(nor2.input 1) + (-2,0)$) {$S$};
+
+
+  \node
+  [buffer gate, inputs={n}]
+  (outQ) at (5,2) {$Q$};
+
+  \node
+  [buffer gate, inputs={n}]
+  (outnQ) at (5,0) {$\bar{Q}$};
+
+  \draw
+  [very thick]
+  (nor1.output) -- (outQ.input);
+
+  \draw
+  [very thick]
+  (nor2.output) -- (outnQ.input);
+
+  \draw
+  [very thick]
+  (R.output) --  (nor1.input 1);
+
+  \draw
+  [very thick]
+  (S.output) --  (nor2.input 1);
+
+  \draw
+  [very thick]
+  (nor1.input 2)
+  -- ++ (left:0.2)
+  -- ++ (down:0.6)
+  -- ++ (right:1.5)
+  -- (\currentcoordinate |- nor2.output);
+
+  \draw
+  [very thick]
+  (nor2.input 2)
+  -- ++ (left:0.3)
+  -- ++ (up:1)
+  -- ++ (right:1.5)
+  -- (\currentcoordinate |- nor1.output);
+
+  \node at (3,-1) {RS trigger (asynchronous)};
+\end{tikzpicture}

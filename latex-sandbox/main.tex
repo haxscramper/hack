@@ -1,0 +1,135 @@
+\documentclass[tikz, border=1mm]{standalone}
+\usepackage{tikz}
+\usepackage{xparse}
+\usetikzlibrary{calc,arrows}
+% \usepackage[european]{circuitikz}
+\usetikzlibrary{circuits.logic.IEC}
+
+\input{lib}
+\begin{document}
+
+% \begin{tikzpicture}
+%   \ENCn[innum=2]{0,0}{mux2}
+%   \ENCn[innum=3]{2,0}{mux3}
+%   \ENCn[innum=4]{4,0}{mux4}
+% \end{tikzpicture}
+%
+% \input{encoder}
+% \input{decoder}
+% \input{jk_trigger_async}
+%
+
+\def\MUX21(#1)#2{%
+  \begin{scope}[shift={(#1)}]
+    \draw (0,0) rectangle (0.75,1.2);
+    \draw (0,0.6) -- (0.375, 0.6);
+    \draw (0.375,0) -- (0.375, 1.2);
+    \node at (0.17, 0.32) {{$\&$}};
+    \node at (0.17, 0.92) {{$\&$}};
+    \node at (0.55, 0.6) {$1$};
+
+    \draw[very thick] (0.75, 0.6)
+    -- ++(right:0.25)
+    coordinate ({#2}out);
+
+    \draw[very thick] (0, 0.2)
+    -- ++(left:0.25)
+    coordinate ({#2}in1);
+
+    \draw[very thick] (0, 0.4)
+    -- ++(left:0.25)
+    coordinate ({#2}en1);
+
+    \draw[very thick] (0, 0.7)
+    -- ++(left:0.25)
+    coordinate ({#2}in2);
+
+    \draw[very thick] (0, 0.9)
+    -- ++(left:0.25)
+    coordinate ({#2}en2);
+  \end{scope}
+}
+
+\begin{tikzpicture}[circuit logic IEC]
+  \node
+  [buffer gate, inputs={n}]
+  (inClock) at (2,6.5) {$C$};
+
+  \node
+  [buffer gate, inputs={n}]
+  (modeSelector) at (2,5) {$E$};
+
+  \def\spacing{6}
+  \def\initoffset{4.5}
+  \def\lastindex{3}
+
+  \foreach \idx in {0,1,...,\lastindex}{
+    \node
+    [buffer gate, inputs={n}]
+    (inD\idx) at (2,3-\idx*1.2) {$D_{\idx}$};
+
+    \DFFsync(\initoffset+2+\idx*\spacing,7){Dff\idx};
+
+    \MUX21(\initoffset+\idx*\spacing,8){MUX\idx};
+
+    %#== Input selector to trigger
+    \draw
+    [very thick]
+    ({MUX\idx}out)
+    -- ++ (right:0.1)
+    |- ({Dff\idx}D);
+
+    %#== Input selector chooser
+    \draw
+    [very thick, black!40!green]
+    (modeSelector.output)
+    -- ++($(\idx*\spacing+0.5,0)$)
+    |- ({MUX\idx}en1);
+
+    \node
+    [not gate, inputs={n}]
+    (not\idx) at ($(modeSelector.output) + (\idx*\spacing+1,4.3)$) {};
+
+    \draw
+    [very thick, black!60!green]
+    ({not\idx}.output)
+    -- ++(right:0.1)
+    |- ({MUX\idx}en2);
+
+    \draw
+    [very thick, black!60!green]
+    (modeSelector.output)
+    -- ++($(\idx*\spacing+0.5,0)$)
+    |- ({not\idx}.input);
+
+    %#== Clock
+    \draw
+    [very thick, gray, densely dash dot]
+    (inClock.output)
+    -- ++ (right:{\idx*\spacing + 1.5})
+    |- ({Dff\idx}C);
+
+    %#== Parallel input
+    \draw
+    [very thick, blue]
+    ({inD\idx}.output)
+    -- ++($(\idx*\spacing + 0.25, 0)$)
+    |- ({MUX\idx}in2);
+
+  }
+
+  \foreach \idx in {1,2,...,\lastindex}{
+    %#== Trigger connection
+    \pgfmathsetmacro{\num}{int(\idx-1)}
+    \draw
+    [very thick, gray]
+    ({Dff\num}Q)
+    --  ++(right:0.25)
+    |- ({MUX\idx}in1);
+  }
+
+
+\end{tikzpicture}
+
+
+\end{document}

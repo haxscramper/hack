@@ -1,0 +1,41 @@
+
+\begin{tikzpicture}[circuit logic IEC]
+  \DECDn[innum=2]{0,0}{decd1}
+  \foreach \idx in {0,1,2,3}{
+    \node
+    [and gate, inputs={nn}]
+    (and\idx) at (4,3+1.2*\idx) {};
+
+    \draw
+    [very thick, red]
+    (decd1 x\idx) -- ++(right:0.3+0.2*\idx) |- ({and\idx}.input 1);
+
+    \node
+    [buffer gate, inputs={n}]
+    (buffer\idx) at ($(and\idx) + (right:1)$) {};
+
+    \draw
+    [very thick]
+    ({buffer\idx}.output) -- ++(0.25,0);
+
+    \draw
+    [very thick]
+    ({and\idx}.output) -- ({buffer\idx}.input);
+  }
+
+  \node [buffer gate, inputs={n}] (buffer) at (decd1 center |- or) {};
+
+  \draw
+  [very thick]
+  (buffer.output)
+  -- ++(right:0.4)
+  coordinate (splitter);
+
+  \foreach \idx in {0,1,2,3}{
+    \draw
+    [very thick]
+    (splitter)
+    -- ++(right:0.2 + 0.2 * \idx)
+    |- ({and\idx}.input 2);
+  }
+\end{tikzpicture}
