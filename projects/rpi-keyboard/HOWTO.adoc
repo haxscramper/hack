@@ -1,10 +1,15 @@
-
+NOTE: This is not exactly step-by-step guide but rather a
+documentation for the very frustrating process of setting it up
+manually for the first time. In most cases you won't need most of this
+guide and will be able to setup everything using provided scripts
+(TODO write scripts)
 
 == Requirements
 
 * Raspberry pi zero
 * 8+GB micro sd card
 * Couple of usb wires
+* Linux desktop
 
 == Keyboard setup
 
@@ -77,6 +82,8 @@ Dealing with errors::
     * If `ssh localhost` giving you the same error it is likely that
       ssh daemon is not running. You can start it using `sudo
       rc-service sshd start` or `sudo systemctl start sshd.service`
+  Connection reset by port 22:::
+    * ?????
 
 ./boot/cmdline.txt
 ****
@@ -138,6 +145,122 @@ network={
   target is busy` error. If you want to force unmount sd card you
   might use `-l` option.
 
+==== Connect to the internet over USB
+
+* On the Pi,
+** Once a connection to the Pi using Avahi is established, SSH into
+   the Pi. Disable the avahi service because it’s not needed for a
+   static IP address:
++
+----
+    sudo systemctl disable avahi-daemon
+----
+
+** Add the following lines to /etc/network/interfaces:
++
+----
+allow-hotplug usb0
+iface usb0 inet static
+    address 192.168.2.2
+    netmask 255.255.255.0
+    network 192.168.2.0
+    broadcast 192.168.2.255
+    gateway 192.168.2.1
+    dns-nameservers 8.8.8.8
+----
+iface usb0 inet static::
+address::
+netmask::
+network::
+broadcast::
+gateway:: A gateway is a node or a router that acts as an access point
+to passes network data from local networks to remote networks.
+dns-nameservers::
+
+
+**    Reboot:
++
+----
+sudo reboot
+----
+
+* On the host,
+** Assign an IP address to the usb0 device:
++
+----
+ifconfig usb0 192.168.2.1
+----
+** Allow IP forwarding on the host:
++
+----
+echo 1 > /proc/sys/net/ipv4/ip_forward # Enable ip forwarding
+iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+----
++
+When enabled, "IP forwarding" allows a Linux machine to receive
+incoming packets and forward them. A Linux machine acting as an
+ordinary host would not need to have IP forwarding enabled, because it
+just generates and receives IP traffic for its own purposes. In our
+case we need to route packages from the RPI to the network so this
+option should be enabled on the host machine (it is disabled by
+default). Another option to enable ip forwarding might be to use
+`sysctl -w net.ipv4.ip_forward=1` command (this will result in ip
+forwarding enabled until reboot). To permanently enable it modify
+`/etc/sysctl.conf` to use `net.ipv3.ip_forward = 1` and run `sysctl -p
+/etc/sysctl.conf` to account for new changes.
+
+-o eth0::: this rule is valid for packets that leave on the second
+  network interface (-o stands for "output")
+-j MASQUERADE::: the action that should take place is to 'masquerade'
+  packets, i.e. replacing the sender's address by the router's
+  address.
++
+See more
+https://web.archive.org/web/20190408144331/https://access.redhat.com/documentation/en-US/Red_Hat_Enterprise_Linux/4/html/Security_Guide/s1-firewall-ipt-fwd.html[here]
+
+** SSH into the Pi:
++
+----
+ssh pi@192.168.2.2
+----
+
+
+
+
+
+* https://web.archive.org/web/20190205235603/https://www.karlrupp.net/en/computer/nat_tutorial[Nat tutorial]
+* https://web.archive.org/web/20181130124259/http://shallowsky.com/blog/linux/raspberry-pi-ethernet-gadget-2.html[RPI ethernet gadget tutorial]
+* https://web.archive.org/web/20181130114734/https://idea.isnew.info/how-to-connect-to-the-internet-over-usb-from-the-raspberry-pi-zero.html[Another one]
+
+===== Dealing with errors
+
+.Gentoo linux iptables
+
+----
+iptables v1.6.1: can't initialize iptables table `NAT': Table does not exist (do you need to insmod?)
+Perhaps iptables or your kernel needs to be upgraded.
+----
+
+Enable iptables NAT support option. Depending on your kernel it might
+be located in different place, to locate where exactly search for
+`IP_NF_NAT` in the menuconfig.
+
+----
+Symbol: IP_NF_NAT [=n]
+Type  : tristate
+Prompt: iptables NAT support
+  Location:
+    -> Networking support (NET [=y])
+      -> Networking options
+        -> Network packet filtering framework (Netfilter) (NETFILTER [=y])
+          -> IP: Netfilter Configuration
+(1)         -> IP tables support (required for filtering/masq/NAT) (IP_NF_IPTABLES [=m
+  Defined at net/ipv4/netfilter/Kconfig:266
+  Depends on: NET [=y] && INET [=y] && NETFILTER [=y] && IP_NF_IPTABLES [=m] && NF_CON
+  Selects: NF_NAT [=m] && NF_NAT_IPV4 [=m] && NETFILTER_XT_NAT [=n]
+----
+
+
 ==== Install required packages
 
 Before proceding with packages that are mandatory for installation I
@@ -154,6 +277,36 @@ sudo apt-get install neovim zsh
 mkdir -p ~/.config/nvim/
 curl https://gitlab.com/snippets/1770471/raw >> ~/.config/nvim/init.vim
 ----
+
+===== Configure tools
+
+.VIM
+----
+set autowrite
+set ignorecase
+set incsearch
+set nocompatible
+set number
+set showcmd
+set showmatch
+set showmode
+set smartcase
+set number relativenumber
+
+set whichwrap+=<,>,h,l,[,]
+
+set tabstop=4
+set shiftwidth=4
+set expandtab
+----
+
+
+==== Enable keyboard emulation in RPI
+
+* Add `dtoverlay=dwc2` to the end of `/boot/config.txt`
+* Add `dwc2` and `libcomposite` to the `/etc/modules` or
+  `dwc2,libcomposite` to the `modules-load` in `/boot/cmdline.txt` to
+  load required kernel modules at boot
 
 
 == Devnotes
