@@ -1,0 +1,94 @@
+# Language
+Language: Cpp
+Standard: Cpp11
+
+# Indentation
+IndentWidth: 4
+MaxEmptyLinesToKeep: 2
+NamespaceIndentation: Inner
+PenaltyBreakBeforeFirstCallParameter: 10
+ColumnLimit: 75
+# PenaltyBreakTemplateDeclaration: 10
+PenaltyExcessCharacter: 5000
+AccessModifierOffset: -2
+IndentCaseLabels: true
+UseTab: Never
+
+# Comments
+AlignTrailingComments: true
+FixNamespaceComments: true
+PenaltyBreakComment: 10
+ReflowComments: true
+SpacesBeforeTrailingComments: 1
+
+# Braces
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterClass:      true
+  AfterControlStatement: false
+  AfterEnum:       true
+  AfterFunction:   false
+  AfterNamespace:  false
+  AfterStruct:     false
+  AfterUnion:      false
+  BeforeCatch:     false
+  BeforeElse:      false
+  IndentBraces:    false
+
+# SpaceBeforeCpp11BracedList: true
+SpacesInParentheses: false
+SpacesInSquareBrackets: false
+Cpp11BracedListStyle: true
+AlignAfterOpenBracket: AlwaysBreak
+
+# Functions
+AllowAllParametersOfDeclarationOnNextLine: false
+BinPackParameters: false
+BinPackArguments: false
+ExperimentalAutoDetectBinPacking: true
+AllowShortFunctionsOnASingleLine: false
+IndentWrappedFunctionNames: true
+KeepEmptyLinesAtTheStartOfBlocks: true
+PenaltyReturnTypeOnItsOwnLine: 1000000
+AlwaysBreakAfterDefinitionReturnType: None
+# IndentWrappedFunctionNames: true
+
+# Classes
+# SpaceBeforeInheritanceColon: true
+ConstructorInitializerAllOnOneLineOrOnePerLine: true
+BreakBeforeInheritanceComma: true
+BreakConstructorInitializers: BeforeComma
+# BreakInheritanceList: BeforeComma
+
+
+# Preprocessor
+SortIncludes: true
+IndentPPDirectives: AfterHash
+
+CommentPragmas: '#.*'
+
+
+# Other
+AlignConsecutiveAssignments: true
+AlignConsecutiveDeclarations: true
+
+AllowShortBlocksOnASingleLine: true
+AllowShortCaseLabelsOnASingleLine: true
+
+AlwaysBreakBeforeMultilineStrings: true
+AlwaysBreakTemplateDeclarations: true
+
+PointerAlignment: Left
+SortUsingDeclarations: true
+SpaceBeforeAssignmentOperators: true
+PenaltyBreakAssignment: 1000000
+AlignOperands: true
+
+BreakBeforeTernaryOperators: true
+CompactNamespaces: false
+
+# SpaceBeforeRangeBasedForLoopColon: true
+
+
+BreakBeforeBinaryOperators: All
+SpaceAfterCStyleCast: false
