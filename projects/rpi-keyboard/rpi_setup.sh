@@ -19,12 +19,12 @@ EOF
 fi
 
 run() {
-    colecho -w0 "$@"
+    colecho -w0 -- "$@"
     sudo "$@"
 }
 
 write() {
-    colecho -w2 "Writing to $2:"
+    colecho -w2 -- "Writing to $2:"
     echo -e "$1" | sed 's/^/    /'
     echo -e "$1" | sudo tee -a "$2" > /dev/null
 }
@@ -32,6 +32,7 @@ write() {
 
 I_DEVICE="/dev/sd$1" # Enter your installation device here
 sdroot="/mnt/sdcard" # Mount point
+
 
 colecho -i2 "Block devices:"
 { lsblk | head -n1 ; lsblk | grep "sd$1" ; } | sed 's/^/    /'
@@ -51,8 +52,15 @@ root="${I_DEVICE}$(echo -e "$parts" | tail -n1)"
 colecho "Boot partition: $boot"
 colecho "Root partition: $root"
 
+if mountpoint -q "$sdroot"; then
+    run umount "$sdroot/boot"
+    run umount "$sdroot"
+fi
+
 run mount "$root" "$sdroot"
 run mount "$boot" "$sdroot/boot"
+
+./backup_default_config.sh p "$sdroot"
 
 run touch "$sdroot/boot/ssh"
 write "dtoverlay=dwc2" "$sdroot/boot/config.txt"
@@ -70,10 +78,6 @@ colecho -i1 "RPI IP address: $RPI_IP"
 colecho -i1 "Gateway IP address: $HOST_IP"
 
 gadget_name="hax_usb"
-gadget_file="$sdroot/usr/bin/$gadget_name"
-
-run touch "$gadget_file"
-run chmod +x "$gadget_file"
 
 
 report_desc=$(cat "$PWD/report_desc")
@@ -81,6 +85,9 @@ report_desc=$(cat "$PWD/report_desc")
 
 gadget_creator=$(
 cat << EOF
+err_file=\$HOME/usb_setup_err
+
+{
 cd /sys/kernel/config/usb_gadget/
 mkdir -p $gadget_name
 cd $gadget_name
@@ -117,24 +124,35 @@ ls /sys/class/udc > UDC
 
 ifconfig usb0 $RPI_IP netmask 255.255.255.0 up
 route add -net default gw $HOST_IP
+} >> \$err_file 2>&1
+
 EOF
 )
 
-creator_script="create_usb_gadgets"
+creator_file="$sdroot/usr/bin/create_usb_gadget"
 
-colecho -w3 "Gadget creator script:"
+run rm -f "$creator_file"
+run touch "$creator_file"
+run chmod +x "$creator_file"
+
+colecho -w3 "Gadget creator script: $creator_file"
 colecho -i1 "It will run on RPI on each startup to create usb gadgets"
-# echo -e "\n$gadget_creator\n" | sed 's/^/    /' | bat -pl bash
+run sed -i 's/exit 0//' "$sdroot/etc/rc.local"
+write "/usr/bin/create_usb_gadget" "$sdroot/etc/rc.local"
+write "exit 0" "$sdroot/etc/rc.local"
+write "$gadget_creator" "$creator_file" > /dev/null
 
-
-write "/usr/bin/gadget_creator" "$sdroot/etc/rc.local"
-
-write "$gadget_creator"  "$sdroot/boot/gadget_creator" > /dev/null
 
 colecho "Gadget creation script has been added to $sdroot/boot/gadget_creator"
 colecho "it will run each time RPI starts up and create usb ehternet interface"
 colecho "with ip address: $RPI_IP and gateway $HOST_IP"
 
+bat -l bash "$sdroot/etc/rc.local"
+bat -l bash "$creator_file"
+bat -l bash "$sdroot/etc/modules"
+bat --line-range="40:" --paging=never -l bash "$sdroot/boot/config.txt"
+
+colecho -i3 "DONE!!!"
 
 cd /
 
