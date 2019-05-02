@@ -20,6 +20,46 @@ and ssh into it.
 
 ==== Install raspbian
 
+.All installation commands
+
+.RPI setup
+----
+I_DEVICE="/dev/sdX" # Enter your installation device here
+I_PATH="/mnt/sdcard/" # Mount point
+
+dd bs=4M 2017-07-05-raspbian-jessie-lite.img of=$I_DEVICE conf=fsync
+mkdir -p $I_PATH
+mount "${I_DEVICE}2" $I_PATH
+
+cd $I_PATH
+
+touch ssh
+echo "dtoverlay=dwc2" >>  boot/config.txt
+echo -e "dwc2\ng_ether" >>  etc/modules
+
+IP_ADDR=2
+
+cat << EOF >> etc/network/interfaces
+allow-hotplug usb0
+iface usb0 inet static
+    address 192.168.7.2
+    netmask 255.255.255.0
+    network 192.168.7.0
+    broadcast 192.168.7.255
+    gateway 192.168.7.1
+    dns-nameservers 192.168.7.1 8.8.8.8
+EOF
+----
+
+.After booting RPI
+----
+ip a add 192.168.7.1/24 dev enp0s26u1u1
+ip link set dev enp0s26u1u1 up
+----
+
+
+
+
 *Burn Raspbian image*::
   ** Download the Raspbian jessie image from
      https://downloads.raspberrypi.org/raspbian_lite/images/raspbian_lite-2017-07-05/[here]
@@ -52,7 +92,7 @@ sd card.
 *Enabling Ethernet over usb*::
   ** Append `dtoverlay=dwc2` to the `config.txt` (`echo
      "dtoverlay=dwc2" | sudo tee -a boot/config.txt`)
-  ** `echo "dwc2\ng_ether" | sudo tee -a etc/modules` _or_ Insert
+  ** `echo -e "dwc2\ng_ether" | sudo tee -a etc/modules` _or_ Insert
      modules-load=dwc2,g_ether after rootwait in the
      `boot/cmdline.txt` file
 
@@ -81,7 +121,12 @@ Dealing with errors::
   ssh: connect to host localhost port 22: Connection refused:::
     * If `ssh localhost` giving you the same error it is likely that
       ssh daemon is not running. You can start it using `sudo
-      rc-service sshd start` or `sudo systemctl start sshd.service`
+      rc-service sshd start` (for systems that use OpenRC (gentoo)) or
+      `sudo systemctl start sshd.service` (for systems with systemd
+      (debian, arch, ubuntu and almost all others)).
+  ssh: connect to host 192.168.2.1 port 22: Connection refused::
+    * `192.168.2.1` is IP address of the RPI. Try connecting to the
+      localhost (`127.0.0.1`) if this does not work see issue above.
   Connection reset by port 22:::
     * ?????
 
@@ -156,26 +201,19 @@ network={
     sudo systemctl disable avahi-daemon
 ----
 
-** Add the following lines to /etc/network/interfaces:
+** Configure your address in Raspbian via dhcpcd. Edit /etc/dhcpcd.conf and add this:
 +
 ----
-allow-hotplug usb0
-iface usb0 inet static
-    address 192.168.2.2
-    netmask 255.255.255.0
-    network 192.168.2.0
-    broadcast 192.168.2.255
-    gateway 192.168.2.1
-    dns-nameservers 8.8.8.8
+interface usb0
+static ip_address=192.168.7.2
+static routers=192.168.7.1
+static domain_name_servers=192.168.7.1
 ----
-iface usb0 inet static::
-address::
-netmask::
-network::
-broadcast::
-gateway:: A gateway is a node or a router that acts as an access point
-to passes network data from local networks to remote networks.
-dns-nameservers::
++
+This will tell Raspbian to use address 192.168.7.2 for its USB
+interface. You'll set up your other computer to use 192.168.7.1.
++
+Then reboot RPI.
 
 
 **    Reboot:
@@ -196,6 +234,8 @@ ifconfig usb0 192.168.2.1
 echo 1 > /proc/sys/net/ipv4/ip_forward # Enable ip forwarding
 iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
 ----
++
+NOTE: `nat` is in *lowercase* and this is *case-sensentive* argument
 +
 When enabled, "IP forwarding" allows a Linux machine to receive
 incoming packets and forward them. A Linux machine acting as an
@@ -223,6 +263,23 @@ https://web.archive.org/web/20190408144331/https://access.redhat.com/documentati
 ----
 ssh pi@192.168.2.2
 ----
+
+*** Use main pc as gateway: `sudo route add default gw <addres of
+    interface to which you connected RPI on main pc>`. To find out
+    required addres use `avahi-browse -atr` to find IP interface
+    name of the RPI:
++
+----
+= enp3s0f0u6u1 IPv6 raspberrypi [**:**:**:**:**:**]
+   hostname = [raspberrypi.local]
+   address = [****:****:****:****:****]
+   port = [*]
+   txt = []
+----
++
+Your output should look like this (IP addresses and ports were
+replaced with `*`). Then you need to run `ifconfig`, locate interface
+(in this case it is `enp3s0f0u6u1`) and get
 
 
 
@@ -259,6 +316,11 @@ Prompt: iptables NAT support
   Depends on: NET [=y] && INET [=y] && NETFILTER [=y] && IP_NF_IPTABLES [=m] && NF_CON
   Selects: NF_NAT [=m] && NF_NAT_IPV4 [=m] && NETFILTER_XT_NAT [=n]
 ----
+
+
+.modprobe: ERROR: could not insert 'g_hid': No such device
+
+
 
 
 ==== Install required packages

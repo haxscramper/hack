@@ -3,3 +3,5 @@ keymap.json
 v2/v2
 HOWTO.html
 .mypy_cache/
+/*.img
+/*.tmp
