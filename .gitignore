@@ -5,3 +5,6 @@ HOWTO.html
 .mypy_cache/
 /*.img
 /*.tmp
+*.tmp2
+/rpi_files/bin/nc.openbsd
+rpi_files/
