@@ -24,7 +24,9 @@ parts=$(lsblk -b |
 boot="/dev/sd${1}$(echo -e "$parts" | head -n1)"
 root="/dev/sd${1}$(echo -e "$parts" | tail -n1)"
 
-sdroot="/mnt/sdcard"
+
+sdroot="${2:-/mnt/sdcard}"
+
 
 colecho "Boot partition: $boot"
 colecho "Root partition: $root"
@@ -37,9 +39,31 @@ fi
 run mount "$root" "$sdroot"
 run mount "$boot" "$sdroot/boot"
 
-run cp "$sdroot/var/log/syslog" \
-    "$HOME/defaultdirs/transient/rpi_logs/$(date -Is)_syslog"
-run cp "$sdroot/usb_setup_err" \
-    "$HOME/defaultdirs/transient/rpi_logs/$(date -Is)_usb_setup_err"
-run cp "$sdroot/usr/bin/create_usb_gadget" \
-    "$HOME/defaultdirs/transient/rpi_logs/$(date -Is)_create_usb_gadget"
+run chmod +r "$sdroot/etc/wpa_supplicant/wpa_supplicant.conf"
+
+case "${3:-none}" in
+    nobackup)
+        colecho "Done"
+        ;;
+    *)
+        if [ -f "$sdroot/var/log/syslog" ]; then
+            run cp "$sdroot/var/log/syslog" \
+                "$HOME/defaultdirs/transient/rpi_logs/$(date -Is)_syslog"
+        fi
+
+
+        if [ -f "$sdroot/usb_setup_err" ]; then
+            run cp "$sdroot/usb_setup_err" \
+                "$HOME/defaultdirs/transient/rpi_logs/$(date -Is)_usb_setup_err"
+
+        fi
+
+        if [ -f "$sdroot/usr/bin/create_usb_gadget" ]; then
+            run cp "$sdroot/usr/bin/create_usb_gadget" \
+                "$HOME/defaultdirs/transient/rpi_logs/$(date -Is)_create_usb_gadget"
+
+        fi
+
+        colecho "Copied log files"
+        ;;
+esac

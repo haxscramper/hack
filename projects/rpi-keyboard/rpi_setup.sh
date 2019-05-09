@@ -18,17 +18,7 @@ EOF
     exit 1
 fi
 
-run() {
-    colecho -w0 -- "$@"
-    sudo "$@"
-}
-
-write() {
-    colecho -w2 -- "Writing to $2:"
-    echo -e "$1" | sed 's/^/    /'
-    echo -e "$1" | sudo tee -a "$2" > /dev/null
-}
-
+source common.sh
 
 if [[ $# -ne 2 ]]; then
     colecho -e1 "Invalid number of arguments. Expected 2 got $#."
@@ -37,37 +27,16 @@ if [[ $# -ne 2 ]]; then
 fi
 
 
-I_DEVICE="/dev/sd$1" # Enter your installation device here
 IP_ADDR="$2"
 sdroot="/mnt/sdcard" # Mount point
 
-
-colecho -i2 "Block devices:"
-{ lsblk | head -n1 ; lsblk | grep "sd$1" ; } | sed 's/^/    /'
+boot=$(get_partitions "$1" boot)
+root=$(get_partitions "$1" root)
 
 mkdir -p $sdroot
 
-parts=$(lsblk -b |
-        grep -e "sd${1}"[0-9] |
-        sed -E 's/^.{5}//' |
-        awk '{ print $4" "$1}' |
-        sort -n |
-        cut -d' ' -f2)
 
-boot="${I_DEVICE}$(echo -e "$parts" | head -n1)"
-root="${I_DEVICE}$(echo -e "$parts" | tail -n1)"
-
-colecho "Boot partition: $boot"
-colecho "Root partition: $root"
-
-if mountpoint -q "$sdroot"; then
-    run umount "$sdroot/boot"
-    run umount "$sdroot"
-fi
-
-run mount "$root" "$sdroot"
-run mount "$boot" "$sdroot/boot"
-
+./mount.sh "$1" "$sdroot"
 ./backup_default_config.sh p "$sdroot"
 
 run touch "$sdroot/boot/ssh"
@@ -76,10 +45,10 @@ write "dwc2\nlibcomposite" "$sdroot/etc/modules"
 
 colecho "Required modules were added to $sdroot/etc/modules"
 
-IP_SUBNET=7
+IP_SUBNET=2
 
-HOST_IP="192.168.$IP_SUBNET.1"
-RPI_IP="192.168.$IP_SUBNET.$IP_ADDR"
+HOST_IP="192.168.$IP_SUBNET.150"
+RPI_IP="192.168.$IP_SUBNET.$2"
 
 colecho -i1 "RPI IP address: $RPI_IP"
 colecho -i1 "Gateway IP address: $HOST_IP"
@@ -96,9 +65,7 @@ cat << EOF
 err_file=\$HOME/usb_setup_err
 
 echo "Time: \$(date -Ins)" >> \$err_file
-
 echo 'Running setup script' >> \$err_file
-
 
 {
 ##= Create usb gadget
@@ -108,10 +75,10 @@ cd hax_usb
 
 
 ##= Provide gadget configuration info
-echo 0x1d6b > idVendor 
+echo 0x1d6b > idVendor
 echo 0x0104 > idProduct
 echo 0x0100 > bcdDevice
-echo 0x0200 > bcdUSB 
+echo 0x0200 > bcdUSB
 
 mkdir -p strings/0x409
 echo "fedcba9876543210" > strings/0x409/serialnumber
@@ -123,10 +90,8 @@ mkdir -p functions/ecm.usb0
 mkdir -p functions/hid.usb0
 
 ##== Describe emc function
-HOST="48:6f:73:74:50:43" 
-SELF="42:61:64:55:53:42"
-echo \$HOST > functions/ecm.usb0/host_addr
-echo \$SELF > functions/ecm.usb0/dev_addr
+echo "48:6f:73:74:50:43" > functions/ecm.usb0/host_addr
+echo "42:61:64:55:53:42" > functions/ecm.usb0/dev_addr
 echo 'Created ethernet functions'
 
 ##== Descrive hid function
@@ -147,12 +112,16 @@ ln -s functions/ecm.usb0 configs/c.1/
 ln -s functions/hid.usb0 configs/c.1/
 echo 'Added functions'
 
-
 ls /sys/class/udc > UDC
 
-echo 'Done'
+ifconfig usb0 $RPI_IP netmask 255.255.255.0 up
+route add -net default gw $HOST_IP
 
-cat UDC
+ifconfig -a
+route -n
+ls /dev | grep hid
+
+echo 'Done'
 } >> \$err_file 2>&1
 EOF
 )
