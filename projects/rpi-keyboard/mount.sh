@@ -5,14 +5,10 @@ cd "$(dirname "$0")"
 set -o nounset
 set -o errexit
 
+source common.sh
 
-run() {
-    colecho -w0 -- "$@"
-    sudo "$@"
-}
-
-if [[ $# -ne 1 ]]; then
-    colecho -e1 "Invalid number of arguments. Expected 1 got $#."
+if [[ $# -lt 1 ]]; then
+    colecho -e1 "Invalid number of arguments."
     colecho -i2 "Specify block device"
     exit 1
 fi
