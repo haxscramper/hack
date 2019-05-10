@@ -44,6 +44,7 @@ case "$1" in
 
             if [ "$run_mode" != "test" ]; then
                 cp "$from" "$to"
+                colecho -I1 "Done"
             fi
         done
         ;;

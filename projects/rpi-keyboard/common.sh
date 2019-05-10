@@ -3,6 +3,11 @@
 # bash
 
 run_mode="nottest"
+#run_mode="test"
+
+space() {
+    colecho -l2 " "
+}
 
 run() {
     colecho -w0 -- "$@"
@@ -11,11 +16,22 @@ run() {
     fi
 }
 
+show () {
+    colecho -i0 "Showing $1"
+    if [ $run_mode != "test" ]; then
+        space
+        cat "$1" | sed 's/^/    /'
+        space
+    fi
+}
+
 write() {
     colecho -w2 -- "Writing to $2:"
     echo -e "$1" | sed 's/^/    /'
     if [ $run_mode != "test" ]; then
+        space
         echo -e "$1" | sudo tee -a "$2" > /dev/null
+        space
     fi
 }
 

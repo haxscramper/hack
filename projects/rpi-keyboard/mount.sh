@@ -46,19 +46,19 @@ case "${3:-none}" in
         colecho "Done"
         ;;
     *)
-        if [ -f "$sdroot/var/log/syslog" ]; then
+        if [ -f "$sdroot/var/log/syslog" ] && [ $run_mode != "test" ]; then
             run cp "$sdroot/var/log/syslog" \
                 "$HOME/defaultdirs/transient/rpi_logs/$(date -Is)_syslog"
         fi
 
 
-        if [ -f "$sdroot/usb_setup_err" ]; then
+        if [ -f "$sdroot/usb_setup_err" ] && [ $run_mode != "test"  ]; then
             run cp "$sdroot/usb_setup_err" \
                 "$HOME/defaultdirs/transient/rpi_logs/$(date -Is)_usb_setup_err"
 
         fi
 
-        if [ -f "$sdroot/usr/bin/create_usb_gadget" ]; then
+        if [ -f "$sdroot/usr/bin/create_usb_gadget" ] && [ $run_mode != "test" ]; then
             run cp "$sdroot/usr/bin/create_usb_gadget" \
                 "$HOME/defaultdirs/transient/rpi_logs/$(date -Is)_create_usb_gadget"
 

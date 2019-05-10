@@ -57,43 +57,44 @@ mkdir -p $sdroot
 ./mount.sh "$1" "$sdroot"
 ./backup_default_config.sh p "$sdroot"
 
-wpa_conf_file="/etc/wpa_supplicant/wpa_supplicant.conf"
+run touch "$sdroot/boot/ssh"
 
 wpa_config=$(cat << EOF
-auto wlan0
-$(cat $sdroot${wpa_conf_file})
-
-allow-hotplug wlan0
-iface wlan0 inet dhcp
-wpa-conf $wpa_conf_file
-iface default inet dhcp
+ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev
+update_config=1
+country=GB
 
 network={
-ssid=$wifi_name
-psk=$wifi_password
-proto=RSN
-key_mgmt=WPA-PSK
-pairwise=CCMP
-auth_alg=OPEN
+	ssid=$wifi_name
+	psk=$wifi_password
+	key_mgmt=WPA-PSK
 }
 EOF
 )
 
-run rm "$sdroot${wpa_conf_file}"
-write "$wpa_config" "$sdroot${wpa_conf_file}"
+colecho -i0 "Wpa config file:"
+
+wpa_file="$sdroot/boot/wpa_supplicant.conf"
+
+if [ -f "$wpa_file" ]; then
+    run rm "$wpa_file"
+fi
+
+write "$wpa_config" "$sdroot/boot/wpa_supplicant.conf"
 
 
 interfaces=$(
     cat << EOF
-address 192.168.$subnet.$rpi_ip
-netmask 255.255.255.0
-gateway 192.168.$subnet.$router_ip
+iface wlan0 inet static
+    address 192.168.$subnet.$rpi_ip
+    netmask 255.255.255.0
+    gateway 192.168.$subnet.$router_ip
 EOF
 )
 
-write "iface wlan0 inet static" "$sdroot/etc/network/interfaces"
 write "$interfaces" "$sdroot/etc/network/interfaces"
 write "dwc2\ng_hid" "$sdroot/etc/modules"
 write "dtoverlay=dwc2" "$sdroot/boot/config.txt"
 
-run bat -lconf "$sdroot/etc/network/interfaces"
+show "$sdroot/etc/network/interfaces"
+
