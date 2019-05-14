@@ -1,54 +1,56 @@
-== Working with lists
+** Working with lists
 
-=== *P01* Find last item in list
+*** *P00* Hello world
 
-=== *P02* Find last but one item in list
+*** *P01* Find last item in list
 
-=== *P03* Find the K'th element in a list
+*** *P02* Find last but one item in list
 
-=== *P04* Find number of elements of a list
+*** *P03* Find the K'th element in a list
 
-=== *P05* Reverse a list
+*** *P04* Find number of elements of a list
 
-=== *P06* Find out whether list is a palindrome
+*** *P05* Reverse a list
 
-=== *P07* Flatten nested list structure
+*** *P06* Find out whether list is a palindrome
+
+*** *P07* Flatten nested list structure
 
 Transform a list, possibly holding lists as elements into a
 `flat' list by replacing each list with its elements (recursively).
 
 
-=== *P08* Elimination consecutive duplicates of list elements
+*** *P08* Elimination consecutive duplicates of list elements
 
 If a list contains repeated elements they should be replaced
 with a single copy of the element. The order of the elements
 should not be changed.
 
-=== *P09* Pack consecutive duplicates of list elements into sublists
+*** *P09* Pack consecutive duplicates of list elements into sublists
 
 If a list contains repeated elements they should be placed in separate
 sublists.
 
 
-=== *P10* Run length-encoding of a list
+*** *P10* Run length-encoding of a list
 
 Use the result of problem P09 to implement the so-called
 run-length encoding data compression method. Consecutive
 duplicates of elements are encoded as lists (N E) where
 N is the number of duplicates of the element E.
 
-=== *P11*  Modified run-length encoding.
+*** *P11*  Modified run-length encoding.
 
 Modify the result of problem P10 in such a way that if an element
 has no duplicates it is simply copied into the result list.
 Only elements with duplicates are transferred as (N E) lists.
 
-=== *P12* Modified run-length encoded list
+*** *P12* Modified run-length encoded list
 
 Given a run-length code list generated as specified in problem
 P11. Construct its uncompressed version.
 
-=== *P13*   Run-length encoding of a list (direct solution).
+*** *P13*   Run-length encoding of a list (direct solution).
 
 Implement the so-called run-length encoding data compression
 method directly. I.e. don't explicitly create the sublists
@@ -56,34 +58,34 @@ containing the duplicates, as in problem P09, but only count
 them. As in problem P11, simplify the result list by replacing
 the singleton lists (1 X) by X.
 
-=== *P14* Duplicate the elements of a list
+*** *P14* Duplicate the elements of a list
 
-=== *P15* Replicate the elements of a list a given number of times
+*** *P15* Replicate the elements of a list a given number of times
 
-=== *P16* Drop every N'th element from a list
+*** *P16* Drop every N'th element from a list
 
-=== *P17* Split a list into two parts. The length of the first part is given
+*** *P17* Split a list into two parts. The length of the first part is given
 
-=== *P18* Extract a slice from list
+*** *P18* Extract a slice from list
 
 Given two indices, I and K, the slice is the list containing
 the elements between the I'th and K'th element of the original
 list (both limits included). Start counting the elements with 1.
 
-=== *P19* Rotate a list N places to the left.
+*** *P19* Rotate a list N places to the left.
 
-=== *P20* Remove the K'th element from a list.
+*** *P20* Remove the K'th element from a list.
 
-=== *P22* Create a list containing all integers within a given range.
+*** *P22* Create a list containing all integers within a given range.
 
-=== *P23* Extract a given number of randomly selected elements from a list.
+*** *P23* Extract a given number of randomly selected elements from a list.
 
-=== *P24* Lotto: Draw N different random numbers from the set 1..M.
+*** *P24* Lotto: Draw N different random numbers from the set 1..M.
 The selected numbers shall be returned in a list.
 
-=== *P25* Generate a random permutation of the elements of a list.
+*** *P25* Generate a random permutation of the elements of a list.
 
-=== *P26* Generate the combinations of K distinct objects chosen from the N elements of a list
+*** *P26* Generate the combinations of K distinct objects chosen from the N elements of a list
 
 In how many ways can a committee of 3 be chosen from a group
 of 12 people? We all know that there are C(12,3) = 220
@@ -91,7 +93,7 @@ possibilities (C(N,K) denotes the well-known binomial coefficients).
 For pure mathematicians, this result may be great. But we want to really
 generate all the possibilities in a list.
 
-=== *P27* Group the elements of a set into disjoint subsets.
+*** *P27* Group the elements of a set into disjoint subsets.
 
 * In how many ways can a group of 9 people work in 3 disjoint
   subgroups of 2, 3 and 4 persons? Write a function that
@@ -104,7 +106,7 @@ Note that we do not want permutations of the group members
 You may find more about this combinatorial problem in a good
 book on discrete mathematics under the term "multinomial coefficients".
 
-=== *P28* Sorting a list of lists according to length of sublists
+*** *P28* Sorting a list of lists according to length of sublists
 
 * We suppose that a list contains elements that are lists
   emselves. The objective is to sort the elements of this
@@ -116,19 +118,19 @@ book on discrete mathematics under the term "multinomial coefficients".
   the default, where sorting is done ascendingly, lists with
   rare lengths are placed first, others with a more frequent length come later.
 
-== Arithmetic
+** Arithmetic
 
-=== *P31* Determine whether a given integer number is prime.
+*** *P31* Determine whether a given integer number is prime.
 
-=== *P32*   Determine the greatest common divisor of two positive integer numbers.
+*** *P32*   Determine the greatest common divisor of two positive integer numbers.
 
 Use Euclid's algorithm.
 
-=== *P33*   Determine whether two positive integer numbers are coprime.
+*** *P33*   Determine whether two positive integer numbers are coprime.
 
 Two numbers are coprime if their greatest common divisor equals 1.
 
-=== *P34*   Calculate Euler's totient function phi(m).
+*** *P34*   Calculate Euler's totient function phi(m).
 
 Euler's so-called totient function phi(m) is defined as the number of
 positive integers r (1 <= r < m) that are coprime to m.
@@ -139,15 +141,15 @@ used public key cryptography methods (RSA). In this exercise you
 should use the most primitive method to calculate this function (there
 are smarter ways that we shall discuss later).
 
-=== *P35*   Determine the prime factors of a given positive integer.
+*** *P35*   Determine the prime factors of a given positive integer.
 
 Construct a flat list containing the prime factors in ascending order.
 
-=== *P36*   Determine the prime factors of a given positive integer (2).
+*** *P36*   Determine the prime factors of a given positive integer (2).
 
 Construct a list containing the prime factors and their multiplicity.
 
-=== *P37*   Calculate Euler's totient function phi(m) (improved).
+*** *P37*   Calculate Euler's totient function phi(m) (improved).
 
 See problem P34 for the definition of Euler's totient function. If the
 list of the prime factors of a number m is known in the form of
@@ -160,18 +162,18 @@ can be calculated with the following formula:
 
 Note that a ** b stands for the b'th power of a.
 
-=== *P38*   Compare the two methods of calculating Euler's totient function.
+*** *P38*   Compare the two methods of calculating Euler's totient function.
 
 Use the solutions of problems P34 and P37 to compare the algorithms.
 Take the number of logical inferences as a measure for efficiency. Try
 to calculate phi(10090) as an example.
 
-=== *P39*   A list of prime numbers.
+*** *P39*   A list of prime numbers.
 
 Given a range of integers by its lower and upper limit, construct a
 list of all prime numbers in that range.
 
-=== *P40*   Goldbach's conjecture.
+*** *P40*   Goldbach's conjecture.
 
 Goldbach's conjecture says that every positive even number greater
 than 2 is the sum of two prime numbers. Example: 28 = 5 + 23. It is
@@ -181,7 +183,7 @@ up to very large numbers (much larger than we can go with our Prolog
 system). Write a predicate to find the two prime numbers that sum up
 to a given even integer.
 
-=== *P41*   A list of Goldbach compositions.
+*** *P41*   A list of Goldbach compositions.
 
 Given a range of integers by its lower and upper limit, print a list
 of all even numbers and their Goldbach composition.
@@ -192,9 +194,9 @@ bigger than say 50. Try to find out how many such cases there are in
 the range 2..3000.
 
 
-== Logic and Codes
+** Logic and Codes
 
-=== *P46*   Truth tables for logical expressions.
+*** *P46*   Truth tables for logical expressions.
 
 Define predicates and/2, or/2, nand/2, nor/2, xor/2, impl/2 and equ/2
 (for logical equivalence) which succeed or fail according to the
@@ -209,7 +211,7 @@ Now, write a predicate table/3 which prints the truth table of a given
 logical expression in two variables.
 
 
-=== *P47*   Truth tables for logical expressions (2).
+*** *P47*   Truth tables for logical expressions (2).
 
 Continue problem P46 by defining and/2, or/2, etc as being operators.
 This allows to write the logical expression in the more natural way,
@@ -217,14 +219,14 @@ as in the example: A and (A or not B). Define operator precedence as
 usual; i.e. as in Java.
 
 
-=== *P48*   Truth tables for logical expressions (3).
+*** *P48*   Truth tables for logical expressions (3).
 
 Generalize problem P47 in such a way that the logical expression may
 contain any number of logical variables. Define table/2 in a way that
 table(List,Expr) prints the truth table for the expression Expr, which
 contains the logical variables enumerated in List.
 
-=== *P49*   Gray code.
+*** *P49*   Gray code.
 
 An n-bit Gray code is a sequence of n-bit strings constructed
 according to certain rules. For example,
@@ -241,7 +243,7 @@ following specification:
 Can you apply the method of "result caching" in order to make the
 predicate more efficient, when it is to be used repeatedly?
 
-=== *P50*   Huffman code.
+*** *P50*   Huffman code.
 
 First of all, consult a good book on discrete mathematics or
 algorithms for a detailed description of Huffman codes!
@@ -251,17 +253,17 @@ fr(S,F) terms.
 
 % huffman(Fs,Hs) :- Hs is the Huffman code table for the frequency table Fs
 
-== Binary Trees
+** Binary Trees
 
 A binary tree is either empty or it is composed of a root element and
 two successors, which are binary trees themselves.
 
-=== *P54* A  Check whether a given term represents a binary tree
+*** *P54* A  Check whether a given term represents a binary tree
 
 Write a predicate istree which returns true if and only if its
 argument is a list representing a binary tree.
 
-=== *P55*   Construct completely balanced binary trees
+*** *P55*   Construct completely balanced binary trees
 
 In a completely balanced binary tree, the following property holds for
 every node: The number of nodes in its left subtree and the number of
@@ -273,7 +275,7 @@ trees for a given number of nodes. The predicate should generate all
 solutions via backtracking. Put the letter 'x' as information into all
 nodes of the tree.
 
-=== *P56*   Symmetric binary trees
+*** *P56*   Symmetric binary trees
 
 Let us call a binary tree symmetric if you can draw a vertical line
 through the root node and then the right subtree is the mirror image
@@ -282,7 +284,7 @@ given binary tree is symmetric. Hint: Write a predicate mirror/2 first
 to check whether one tree is the mirror image of another. We are only
 interested in the structure, not in the contents of the nodes.
 
-=== *P57*   Binary search trees (dictionaries)
+*** *P57*   Binary search trees (dictionaries)
 
 Use the predicate add/3, developed in chapter 4 of the course, to
 write a predicate to construct a binary search tree from a list of
@@ -290,7 +292,7 @@ integer numbers.
 
 Then use this predicate to test the solution of the problem P56.
 
-=== *P58*   Generate-and-test paradigm
+*** *P58*   Generate-and-test paradigm
 
 Apply the generate-and-test paradigm to construct all symmetric,
 completely balanced binary trees with a given number of nodes.
@@ -299,7 +301,7 @@ How many such trees are there with 57 nodes? Investigate about how
 many solutions there are for a given number of nodes? What if the
 number is even? Write an appropriate predicate.
 
-=== *P59*   Construct height-balanced binary trees
+*** *P59*   Construct height-balanced binary trees
 
 In a height-balanced binary tree, the following property holds for
 every node: The height of its left subtree and the height of its right
@@ -312,7 +314,7 @@ trees for a given height. The predicate should generate all solutions
 via backtracking. Put the letter 'x' as information into all nodes of
 the tree.
 
-=== *P60*   Construct height-balanced binary trees with a given number of nodes
+*** *P60*   Construct height-balanced binary trees with a given number of nodes
 
 Consider a height-balanced binary tree of height H. What is the maximum number of nodes it can contain?
 Clearly, MaxN = 2**H - 1. However, what is the minimum number MinN? This question is more difficult. Try to find a recursive statement and turn it into a predicate minNodes/2 defined as follwos:
@@ -333,26 +335,26 @@ binary trees with a given nuber of nodes.
 
 Find out how many height-balanced trees exist for N = 15.
 
-=== *P61*   Count the leaves of a binary tree
+*** *P61*   Count the leaves of a binary tree
 
 A leaf is a node with no successors. Write a predicate count-leaves/2 to count them.
 
 % count-leaves(T,N) :- the binary tree T has N leaves
 
-=== *P61* A  Collect the leaves of a binary tree in a list
+*** *P61* A  Collect the leaves of a binary tree in a list
 
 A leaf is a node with no successors. Write a predicate leaves/2 to collect them in a list.
 
 % leaves(T,S) :- S is the list of all leaves of the binary tree T
 
-=== *P62*   Collect the internal nodes of a binary tree in a list
+*** *P62*   Collect the internal nodes of a binary tree in a list
 
 An internal node of a binary tree has either one or two non-empty
 successors. Write a predicate internals/2 to collect them in a list.
 
 % internals(T,S) :- S is the list of internal nodes of the binary tree T.
 
-=== *P62* B  Collect the nodes at a given level in a list
+*** *P62* B  Collect the nodes at a given level in a list
 
 A node of a binary tree is at level N if the path from the root to the
 node has length N-1. The root node is at level 1. Write a predicate
@@ -364,7 +366,7 @@ Using atlevel/3 it is easy to construct a predicate levelorder/2 which
 creates the level-order sequence of the nodes. However, there are more
 efficient ways to do that.
 
-=== *P63*   Construct a complete binary tree
+*** *P63*   Construct a complete binary tree
 
 A complete binary tree with height H is defined as follows: The levels
 1,2,3,...,H-1 contain the maximum number of nodes (i.e 2**(i-1) at the
@@ -391,7 +393,7 @@ following specification:
 
 Test your predicate in an appropriate way.
 
-=== *P64*   Layout a binary tree (1)
+*** *P64*   Layout a binary tree (1)
 
 Given a binary tree as the usual Prolog term t(X,L,R) (or nil). As a
 preparation for drawing the tree, a layout algorithm is required to
@@ -416,7 +418,7 @@ Write a predicate layout-binary-tree/2 with the following specification:
 
 Test your predicate in an appropriate way.
 
-=== *P65*   Layout a binary tree (2)
+*** *P65*   Layout a binary tree (2)
 
 An alternative layout method is depicted in the illustration opposite.
 Find out the rules and write the corresponding Prolog predicate. Hint:
@@ -424,7 +426,7 @@ On a given level, the horizontal distance between neighboring nodes is
 constant.
 
 Use the same conventions as in problem P64 and test your predicate in an appropriate way.
-=== *P66*   Layout a binary tree (3)
+*** *P66*   Layout a binary tree (3)
 
 Yet another layout strategy is shown in the illustration opposite. The
 method yields a very compact layout while maintaining a certain
@@ -438,7 +440,7 @@ predicate in an appropriate way. Note: This is a difficult problem.
 Don't give up too early!
 
 Which layout do you like most?
-=== *P67*   A string representation of binary trees
+*** *P67*   A string representation of binary trees
 
 Somebody represents binary trees as strings of the following type (see
 example opposite):
@@ -458,7 +460,7 @@ example opposite):
 For simplicity, suppose the information in the nodes is a single
 letter and there are no spaces in the string.
 
-=== *P68*   Preorder and inorder sequences of binary trees
+*** *P68*   Preorder and inorder sequences of binary trees
 
 We consider binary trees with nodes that are identified by single
 lower-case letters, as in the example of problem P67.
@@ -479,7 +481,7 @@ lower-case letters, as in the example of problem P67.
 What happens if the same character appears in more than one node. Try
 for instance pre-in-tree(aba,baa,T).
 
-=== *P69*   Dotstring representation of binary trees
+*** *P69*   Dotstring representation of binary trees
 
 We consider again binary trees with nodes that are identified by
 single lower-case letters, as in the example of problem P67. Such a
@@ -490,7 +492,7 @@ is represented as 'abd..e..c.fg...'. First, try to establish a syntax
 (BNF or syntax diagrams) and then write a predicate tree-dotstring/2
 which does the conversion in both directions. Use difference lists.
 
-== Multiway Trees
+** Multiway Trees
 
 A multiway tree is composed of a root element and a (possibly empty)
 set of successors which are multiway trees themselves. A multiway tree
@@ -503,14 +505,14 @@ Prolog list). The example tree depicted opposite is therefore
 represented by the following Prolog term: T =
 t(a,[t(f,[t(g,[])]),t(c,[]),t(b,[t(d,[]),t(e,[])])])
 
-=== *P70* B  Check whether a given term represents a multiway tree
+*** *P70* B  Check whether a given term represents a multiway tree
 
 Write a predicate istree/1 which succeeds if and only if its argument is a Prolog term representing a multiway tree.
 Example:
 * istree(t(a,[t(f,[t(g,[])]),t(c,[]),t(b,[t(d,[]),t(e,[])])])).
 Yes
 
-=== *P70* C  Count the nodes of a multiway tree
+*** *P70* C  Count the nodes of a multiway tree
 
 Write a predicate nnodes/1 which counts the nodes of a given multiway tree.
 Example:
@@ -519,7 +521,7 @@ N = 2
 
 Write another version of the predicate that allows for a flow pattern (o,i).
 
-=== *P70*   Tree construction from a node string
+*** *P70*   Tree construction from a node string
 
 We suppose that the nodes of a multiway tree contain single
 characters. In the depth-first order sequence of its nodes, a special
@@ -534,7 +536,7 @@ tree(String,Tree) to construct the Tree when the String is given. Work
 with atoms (instead of strings). Make your predicate work in both
 directions.
 
-=== *P71*   Determine the internal path length of a tree
+*** *P71*   Determine the internal path length of a tree
 
 We define the internal path length of a multiway tree as the total sum
 of the path lengths from the root to all nodes of the tree. By this
@@ -542,13 +544,13 @@ definition, the tree in the figure of problem P70 has an internal path
 length of 9. Write a predicate ipl(Tree,IPL) for the flow pattern
 (+,-).
 
-=== *P72*   Construct the bottom-up order sequence of the tree nodes
+*** *P72*   Construct the bottom-up order sequence of the tree nodes
 
 Write a predicate bottom-up(Tree,Seq) which constructs the bottom-up
 sequence of the nodes of the multiway tree Tree. Seq should be a
 Prolog list. What happens if you run your predicate backwords?
 
-=== *P73*   Lisp-like tree representation
+*** *P73*   Lisp-like tree representation
 
 There is a particular notation for multiway trees in Lisp. Lisp is a
 prominent functional programming language, which is used primarily for
@@ -573,7 +575,7 @@ Example:
 LTL = ['(', a, '(', b, c, ')', ')']
 As a second, even more interesting exercise try to rewrite tree-ltl/2 in a way that the inverse conversion is also possible: Given the list LTL, construct the Prolog tree T. Use difference lists.
 
-== Graphs
+** Graphs
 
 A graph is defined as a set of nodes and a set of edges, where each edge is a pair of nodes.
 There are several ways to represent graphs in Prolog. One method is to represent each edge separately as one clause (fact). In this form, the graph depicted below is represented as the following predicate:
@@ -635,26 +637,26 @@ The notation for labelled graphs can also be used for so-called
 multi-graphs, where more than one edge (or arc) are allowed between
 two given nodes.
 
-=== *P80*   Conversions
+*** *P80*   Conversions
 
 Write predicates to convert between the different graph
 representations. With these predicates, all representations are
 equivalent; i.e. for the following problems you can always pick freely
 the most convenient form.
 
-=== *P81*   Path from one node to another one
+*** *P81*   Path from one node to another one
 
 Write a predicate path(G,A,B,P) to find an acyclic path P from node A
 to node b in the graph G. The predicate should return all paths via
 backtracking.
 
-=== *P82*   Cycle from a given node
+*** *P82*   Cycle from a given node
 
 Write a predicate cycle(G,A,P) to find a closed path (cycle) P
 starting at a given node A in the graph G. The predicate should return
 all cycles via backtracking.
 
-=== *P83*   Construct all spanning trees
+*** *P83*   Construct all spanning trees
 
 Write a predicate s-tree(Graph,Tree) to construct (by backtracking)
 all spanning trees of a given graph. With this predicate, find out how
@@ -664,7 +666,7 @@ have a correct solution for the s-tree/2 predicate, use it to define
 two other useful predicates: is-tree(Graph) and is-connected(Graph).
 Both are five-minutes tasks!
 
-=== *P84*   Construct the minimal spanning tree
+*** *P84*   Construct the minimal spanning tree
 
 Write a predicate ms-tree(Graph,Tree,Sum) to construct the minimal
 spanning tree of a given labelled graph. Hint: Use the algorithm of
@@ -672,7 +674,7 @@ Prim. A small modification of the solution of P83 does the trick. The
 data of the example graph to the right can be found in the file
 p84.dat.
 
-=== *P85*   Graph isomorphism
+*** *P85*   Graph isomorphism
 
 Two graphs `G1(N1,E1)` and `G2(N2,E2)` are isomorphic if there is a
 bijection `f: N1 -> N2` such that for any nodes `X,Y` of `N1, X` and Y
@@ -681,7 +683,7 @@ are adjacent if and only if f(X) and f(Y) are adjacent.
 Write a predicate that determines whether two graphs are isomorphic.
 Hint: Use an open-ended list to represent the function f.
 
-=== *P86*   Node degree and graph coloration
+*** *P86*   Node degree and graph coloration
 
 * Write a predicate degree(Graph,Node,Deg) that determines the degree
   of a given node.
@@ -690,24 +692,24 @@ Hint: Use an open-ended list to represent the function f.
 * Use Welch-Powell's algorithm to paint the nodes of a graph in such a
   way that adjacent nodes have different colors.
 
-=== *P87*   Depth-first order graph traversal (alternative solution)
+*** *P87*   Depth-first order graph traversal (alternative solution)
 
 Write a predicate that generates a depth-first order graph traversal
 sequence. The starting point should be specified, and the output
 should be a list of nodes that are reachable from this starting point
 (in depth-first order).
 
-=== *P88*   Connected components (alternative solution)
+*** *P88*   Connected components (alternative solution)
 
 Write a predicate that splits a graph into its connected components.
 
-=== *P89*   Bipartite graphs
+*** *P89*   Bipartite graphs
 
 Write a predicate that finds out whether a given graph is bipartite.
 
-== Miscellaneous Problems
+** Miscellaneous Problems
 
-=== *P90*   Eight queens problem
+*** *P90*   Eight queens problem
 
 This is a classical problem in computer science. The objective is to
 place eight queens on a chessboard so that no two queens are attacking
@@ -720,7 +722,7 @@ Example: `[4,2,7,3,6,8,5,1]` means that the queen in the first column is
 in row 4, the queen in the second column is in row 2, etc. Use the
 generate-and-test paradigm.
 
-=== *P91*   Knight's tour
+*** *P91*   Knight's tour
 
 Another famous problem is this one: How can a knight jump on an NxN
 chessboard in such a way that it visits every square exactly once?
@@ -732,7 +734,7 @@ jump(N,X/Y,U/V) to express the fact that a knight can jump from X/Y to
 U/V on a NxN chessboard. And finally, represent the solution of our
 problem as a list of N*N knight positions (the knight's tour).
 
-=== *P92*   Von Koch's conjecture
+*** *P92*   Von Koch's conjecture
 
 Several years ago I met a mathematician who was intrigued by a problem
 for which he didn't know a solution. His name was Von Koch, and I
@@ -752,28 +754,28 @@ is always a solution!
 Write a predicate that calculates a numbering scheme for a given tree.
 What is the solution for the larger tree pictured above?
 
-=== *P93*   An arithmetic puzzle
+*** *P93*   An arithmetic puzzle
 
 Given a list of integer numbers, find a correct way of inserting
 arithmetic signs (operators) such that the result is a correct
 equation. Example: With the list of numbers [2,3,5,7,11] we can form
 the equations 2-3+5+7 = 11 or 2 = (3*5+7)/11 (and ten others!).
 
-=== *P94*   Generate K-regular simple graphs with N nodes
+*** *P94*   Generate K-regular simple graphs with N nodes
 
 In a K-regular graph all nodes have a degree of K; i.e. the number of
 edges incident in each node is K. How many (non-isomorphic!) 3-regular
 graphs with 6 nodes are there? See also a table of results and a Java
 applet that can represent graphs geometrically.
 
-=== *P95*   English number words
+*** *P95*   English number words
 
 On financial documents, like cheques, numbers must sometimes be
 written in full words. Example: 175 must be written as one-seven-five.
 Write a predicate full-words/1 to print (non-negative) integer numbers
 in full words.
 
-=== *P96*   Syntax checker (alternative solution with difference lists)
+*** *P96*   Syntax checker (alternative solution with difference lists)
 
 In a certain programming language (Ada) identifiers are defined by the
 syntax diagram (railroad chart) opposite. Transform the syntax diagram
@@ -784,7 +786,7 @@ a legal identifier.
 
 `% identifier(Str) :- Str is a legal identifier`
 
-=== *P97*  Sudoku
+*** *P97*  Sudoku
 
 Sudoku puzzles go like this:
 
@@ -819,7 +821,7 @@ missing spots with digits in such a way that every number between 1
 and 9 appears exactly once in each row, in each column, and in each
 square.
 
-=== *P98*   Nonograms
+*** *P98*   Nonograms
 
 Around 1994, a certain kind of puzzles was very popular in England.
 The "Sunday Telegraph" newspaper wrote: "Nonograms are puzzles from
@@ -858,7 +860,7 @@ lengths of the rows and columns, top-to-bottom and left-to-right,
 respectively. Published puzzles are larger than this example, e.g. 25
 x 20, and apparently always have unique solutions.
 
-=== *P99*   Crossword puzzle
+*** *P99*   Crossword puzzle
 
 Given an empty (or almost empty) framework of a crossword puzzle and a
 set of words. The problem is to place the words into the framework.
