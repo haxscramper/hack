@@ -1,4 +1,5 @@
 #include "../../common/cpp/log.hpp"
+#include <cstring>
 #include <iostream>
 #include <map>
 #include <utility>
@@ -15,7 +16,7 @@ using signal_func = void (C::*)(std::string&);
 
 struct signal_compare {
     bool operator()(const signal_func& lhs, const signal_func& rhs) {
-        return std::less<void*>()(lhs, rhs);
+        return std::memcmp(&lhs, &rhs, sizeof(lhs)) < 0;
     }
 };
 
