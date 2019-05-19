@@ -53,12 +53,13 @@ class C
 
     // Signals
   public:
-    void signal_1(std::string&) {
+    void signal_1(std::string& arg) {
         LOG << "Executed signal 1";
+        emit_signal(&C::signal_1, arg);
     }
-    void signal_2(std::string&) {
+    void signal_2(std::string& arg) {
         LOG << "Executed signal 2";
-        INFO << "test:";
+        emit_signal(&C::signal_2, arg);
     }
 
     // Slots
@@ -71,12 +72,6 @@ class C
         LOG << "Called slot 2" << arg;
     }
 
-
-    // Special member functions
-  public:
-    C() {
-    }
-
   private:
     signal_map connects;
 };
@@ -86,6 +81,8 @@ int main() {
     C c;
 
     c.set_connection(&C::signal_1, &c, &C::slot_1);
+    std::string arg = "hello";
+    c.signal_1(arg);
 
     LOG << "Hello";
 }
