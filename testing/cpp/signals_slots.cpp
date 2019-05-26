@@ -206,28 +206,50 @@ class C
     // Фукнции-слоты еще более обычни: они не вызывают никаких другий
     // функций а просто печатают свои аргумент
     void slot_1(std::string& arg) {
-        std::cout << "Called slot 1" << arg;
+        std::cout << "Called slot 1: " << arg;
     }
 
     void slot_2(std::string& arg) {
-        std::cout << "Called slot 2" << arg;
+        std::cout << "Called slot 2: " << arg;
     }
 
   private:
     signal_map connects;
 };
 
+void signal_slots_test() {
+    {
+        std::cout << "test 1\n\n\n";
+
+        C c;
+
+        c.set_connection(&C::signal_1, &c, &C::slot_1);
+        std::string arg = "hello\n";
+        c.signal_1(arg);
+    }
+
+    {
+        std::cout << "test 2\n\n\n";
+
+        C emitter;
+        C reciever;
+
+        std::string arg = "argument string\n";
+
+        emitter.set_connection(&C::signal_2, &reciever, &C::slot_2);
+
+        std::cout << "testing signal 2\n";
+        emitter.signal_2(arg); // Должно вызвать второй слот
+
+        std::cout << "testing signal 1\n";
+        emitter.signal_1(arg); // Никакх слотов вызвано не будет так
+                               // как подключений нет
+    }
+}
+
 
 int main() {
     func_pointer_test();
     method_pointer_test();
-
-
-    C c;
-
-    c.set_connection(&C::signal_1, &c, &C::slot_1);
-    std::string arg = "hello\n";
-    c.signal_1(arg);
-
-    std::cout << "Hello\n";
+    signal_slots_test();
 }
