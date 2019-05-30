@@ -1,0 +1,5 @@
+** C++
+
+*** TODO Move Vec<T> and similar declarations to common/macro
+    + [ ] Check if std header has been included and then use using
+      declaration
