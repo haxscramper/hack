@@ -1,3 +1,12 @@
 ** Signals slots
 *** TODO write hash function for unordered_multimap and use it
 *** TODO [#B] Add support for passing pointer to constant data
+*** TODO [#A] Add exception handing for errors and slots data casting
+
+
+** Idea
+
+*** TODO Class for integer types that discards is clamped to the range
+    This might be very helpful for ~grid_converter.cpp~ or make
+    function to make bounded clamper increments: this is even more
+    convinient

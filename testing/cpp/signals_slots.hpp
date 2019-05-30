@@ -62,7 +62,6 @@ class signal_base
         signal_func  signal,
         signal_base* target,
         slot_func    slot) {
-        LOG << "Adding connection";
         connects.insert({signal, {target, slot}});
     }
 
