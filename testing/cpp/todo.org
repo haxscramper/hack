@@ -1,0 +1,3 @@
+** Signals slots
+*** TODO write hash function for unordered_multimap and use it
+*** TODO [#B] Add support for passing pointer to constant data
