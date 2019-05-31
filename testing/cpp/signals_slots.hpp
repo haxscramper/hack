@@ -5,7 +5,6 @@
 #include <typeinfo>
 #include <utility>
 
-#define DEBUG
 
 class signal_base;
 
@@ -106,7 +105,9 @@ class signal_base
                 std::cout << "    `-> " << ctx_signal_name << "\n";
             }
 
-            std::cout << "       `-> " << connection.second.slot_name
+            std::cout << "       `-> " << connection.second.target_name
+                      << "\n"
+                      << "           " << connection.second.slot_name
                       << "\n";
         }
     };
@@ -121,11 +122,6 @@ class signal_base
 
 
   public:
-    signal_base() {
-        idx = idx_counter;
-        ++idx_counter;
-    }
-
     void set_connection(
         signal_func  signal,
         signal_base* target,
@@ -151,10 +147,4 @@ class signal_base
 
   private:
     signal_map connects;
-
-
-    static size_t idx_counter;
-    size_t        idx;
 };
-
-size_t signal_base::idx_counter = 0;

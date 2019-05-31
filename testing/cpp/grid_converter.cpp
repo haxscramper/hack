@@ -1,5 +1,4 @@
 #include "../../common/cpp/macro.hpp"
-#include "../../common/cpp/using.hpp"
 
 // Include and declarations were made in the middle of include to
 // provide operator overloading for logging macro
@@ -7,9 +6,8 @@
 #include <string>
 #include <vector>
 
-template <class T>
-using Vec  = std::vector<T>;
-using Str  = std::string;
+#include "../../common/cpp/using.hpp"
+
 using Grid = Vec<Str>;
 
 struct Pos {
