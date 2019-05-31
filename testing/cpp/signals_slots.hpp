@@ -5,6 +5,8 @@
 #include <typeinfo>
 #include <utility>
 
+#define DEBUG
+
 class signal_base;
 
 template <class T>
@@ -33,11 +35,27 @@ signal_func signal_cast(void (C::*func)(signal_msg)) {
     return static_cast<signal_func>(func);
 }
 
-#define connect(emitter, signal, target, slot)                            \
-    (emitter)->set_connection(                                            \
-        static_cast<signal_func>(signal),                                 \
-        target,                                                           \
-        static_cast<slot_func>(slot))
+#ifdef DEBUG
+
+
+#    define connect(emitter, signal, target, slot)                        \
+        (emitter)->set_connection(                                        \
+            static_cast<signal_func>(signal),                             \
+            target,                                                       \
+            static_cast<slot_func>(slot));                                \
+        (emitter)->set_connection_name(                                   \
+            static_cast<signal_func>(signal),                             \
+            {#emitter, #signal, #target, #slot});
+
+#elif
+
+#    define connect(emitter, signal, target, slot)                        \
+        (emitter)->set_connection(                                        \
+            static_cast<signal_func>(signal),                             \
+            target,                                                       \
+            static_cast<slot_func>(slot))
+
+#endif
 
 
 class signal_base
@@ -49,6 +67,7 @@ class signal_base
         }
     };
 
+
     using signal_map = std::multimap<
         signal_func,
         std::pair<signal_base*, slot_func>,
@@ -57,7 +76,56 @@ class signal_base
     using signal_iter = signal_map::iterator;
 
 
+#ifdef DEBUG
+
   public:
+    struct signal_debug_name {
+        std::string emitter_name;
+        std::string signal_name;
+        std::string target_name;
+        std::string slot_name;
+    };
+
+    std::multimap<signal_func, signal_debug_name, signal_compare>
+        connects_debug;
+
+    void print_connections() {
+        auto              it = connects_debug.begin();
+        signal_debug_name names;
+        if (it != connects_debug.end()) {
+            names = (*it).second;
+            std::cout << "    " << names.emitter_name << "\n";
+        } else {
+            return;
+        }
+
+        std::string ctx_signal_name = "";
+        for (auto& connection : connects_debug) {
+            if (connection.second.signal_name != ctx_signal_name) {
+                ctx_signal_name = connection.second.signal_name;
+                std::cout << "    `-> " << ctx_signal_name << "\n";
+            }
+
+            std::cout << "       `-> " << connection.second.slot_name
+                      << "\n";
+        }
+    };
+
+    void set_connection_name(
+        signal_func       signal,
+        signal_debug_name debug_name) {
+        connects_debug.insert({signal, debug_name});
+    }
+
+#endif
+
+
+  public:
+    signal_base() {
+        idx = idx_counter;
+        ++idx_counter;
+    }
+
     void set_connection(
         signal_func  signal,
         signal_base* target,
@@ -69,9 +137,6 @@ class signal_base
         std::pair<signal_iter, signal_iter>
             equal_range = connects.equal_range(signal);
 
-        LOG << "Emitting signal";
-        LOG << "Number of targets: "
-            << std::distance(equal_range.first, equal_range.second);
         for (signal_iter slot = equal_range.first;
              slot != equal_range.second;
              ++slot) {
@@ -86,4 +151,10 @@ class signal_base
 
   private:
     signal_map connects;
+
+
+    static size_t idx_counter;
+    size_t        idx;
 };
+
+size_t signal_base::idx_counter = 0;

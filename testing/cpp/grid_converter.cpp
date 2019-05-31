@@ -174,14 +174,14 @@ class Stepper : public signal_base
         }
 
         size_t ctx = 0;
-        while (ctx < 100 && currentPos.col < col_count(grid) - 1) {
+        while (ctx < 100 && currentPos.col < col_count(grid)) {
 
             CheckRequest request = {currentPos, grid};
             signal_check_cell(&request);
 
             ++ctx;
 
-            INFO << "ctx" << ctx;
+            // INFO << "ctx" << ctx;
         }
 
 
@@ -196,14 +196,14 @@ class Stepper : public signal_base
         Pos   pos  = scastp<CheckRequest>(request).pos;
         Grid& grid = scastp<CheckRequest>(request).grid;
 
-        LOG << "signal_check_cell"
-            << "Pos: " << pos << "Grid:" << grid << grid.at(0).size();
+        // LOG << "signal_check_cell"
+        //    << "Pos: " << pos << "Grid:" << grid << grid.at(0).size();
 
         emit_signal(signal_cast(&Stepper::signal_check_cell), request);
     }
 
     void slot_found_match(signal_msg msg) {
-        LOG << "slot_found_match";
+        //        LOG << "slot_found_match";
         CheckRequest request = scastp<CheckRequest>(msg);
         Pos&         pos     = request.pos;
 
@@ -258,10 +258,8 @@ class Checker : public signal_base
         request.pos = pos;
 
         if (grid.at(pos.row).at(pos.col) == path_char) {
-            LOG << "Found match";
             signal_found_match(&request);
         } else {
-            LOG << "Missed match";
             signal_missed_match(&request);
         }
     }
@@ -330,6 +328,14 @@ int main() {
     CONNECT_STEPPER_TO_CHECKER(up, missed_match)
     CONNECT_STEPPER_TO_CHECKER(down, missed_match)
     CONNECT_STEPPER_TO_CHECKER(forward, missed_match)
+
+    reader.print_connections();
+    stepper.print_connections();
+    writer.print_connections();
+    upChecker.print_connections();
+    downChecker.print_connections();
+    forwardChecker.print_connections();
+
 
     Grid grid = generate_grid(30, 10);
 
