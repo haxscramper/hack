@@ -13,8 +13,8 @@ using Str  = std::string;
 using Grid = Vec<Str>;
 
 struct Pos {
-    size_t row;
-    size_t col;
+    size_t row = 0;
+    size_t col = 0;
 };
 
 std::ostream& operator<<(std::ostream& os, const Grid& grid) {
@@ -138,7 +138,9 @@ class Writer : public signal_base
                         case path_char:
                             printf("\033[32m%c\033[0m", c);
                             break;
-                        case change_char: printf("%c", c); break;
+                        case change_char:
+                            printf("\033[31m%c\033[0m", c);
+                            break;
                         default: printf("%c", c); break;
                     }
                 }
@@ -162,10 +164,27 @@ class Stepper : public signal_base
 
         // Some algorihm goes here
 
-        Pos          pos     = {0, 0};
-        CheckRequest request = {pos, grid};
+        for_i(i, row_count(grid)) {
+            Pos pos;
+            pos.row = i;
 
-        signal_check_cell(&request);
+            CheckRequest request = {pos, grid};
+
+            signal_check_cell(&request);
+        }
+
+        size_t ctx = 0;
+        while (ctx < 100 && currentPos.col < col_count(grid) - 1) {
+
+            CheckRequest request = {currentPos, grid};
+            signal_check_cell(&request);
+
+            ++ctx;
+
+            INFO << "ctx" << ctx;
+        }
+
+
         signal_done_search(&grid);
     }
 
@@ -186,6 +205,12 @@ class Stepper : public signal_base
     void slot_found_match(signal_msg msg) {
         LOG << "slot_found_match";
         CheckRequest request = scastp<CheckRequest>(msg);
+        Pos&         pos     = request.pos;
+
+        grid.at(pos.row).at(pos.col) = change_char;
+
+        prevPos    = currentPos;
+        currentPos = pos;
     }
 
     void slot_missed_match(signal_msg msg) {
@@ -193,6 +218,9 @@ class Stepper : public signal_base
 
   private:
     Grid grid;
+
+    Pos currentPos;
+    Pos prevPos;
 };
 
 class Checker : public signal_base
@@ -219,9 +247,11 @@ class Checker : public signal_base
 
 
         switch (direction) {
-            case Forward: bound_increment(pos.col, col_count(grid)); break;
+            case Forward:
+                bound_increment(pos.col, col_count(grid) - 1);
+                break;
             case Down: bound_decrement(pos.row); break;
-            case Up: bound_increment(pos.row, row_count(grid)); break;
+            case Up: bound_increment(pos.row, row_count(grid) - 1); break;
         }
 
 
@@ -234,8 +264,6 @@ class Checker : public signal_base
             LOG << "Missed match";
             signal_missed_match(&request);
         }
-
-        LOG << "slot done";
     }
 
     void signal_found_match(signal_msg request) {
