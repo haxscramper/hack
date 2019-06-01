@@ -35,5 +35,27 @@ class Logger
     }
 };
 
-#define LOG Logger::log()
-#define INFO Logger::log(Logger::Type::Info)
+class VoidLogger
+{
+  public:
+    template <class T>
+    VoidLogger& operator<<(T t) {
+        return *this;
+    }
+
+    static VoidLogger log() {
+        return VoidLogger();
+    }
+};
+
+#ifdef DEBUG
+
+#    define LOG Logger::log()
+#    define INFO Logger::log(Logger::Type::Info)
+
+#else
+
+#    define LOG VoidLogger::log()
+#    define INFO VoidLogger::log()
+
+#endif

@@ -160,9 +160,7 @@ class Stepper : public signal_base
     void slot_accept_grid(signal_msg data) {
         grid = scastp<Grid>(data);
 
-        signal_request_grid_print(&grid);
-
-        LOG << "Modifying grid";
+        LOG << "Modifing grid";
 
         // Some algorihm goes here
 
@@ -176,7 +174,8 @@ class Stepper : public signal_base
         }
 
         size_t ctx = 0;
-        while (ctx < 100 && currentPos.col < col_count(grid)) {
+        while (ctx < col_count(grid) * 5
+               && currentPos.col < col_count(grid)) {
 
             CheckRequest request = {currentPos, grid};
             signal_check_cell(&request);
