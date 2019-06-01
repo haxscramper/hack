@@ -46,7 +46,7 @@ signal_func signal_cast(void (C::*func)(signal_msg)) {
             static_cast<signal_func>(signal),                             \
             {#emitter, #signal, #target, #slot});
 
-#elif
+#else
 
 #    define connect(emitter, signal, target, slot)                        \
         (emitter)->set_connection(                                        \

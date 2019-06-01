@@ -327,12 +327,16 @@ int main() {
     CONNECT_STEPPER_TO_CHECKER(down, missed_match)
     CONNECT_STEPPER_TO_CHECKER(forward, missed_match)
 
+#ifdef DEBUG
+
     reader.print_connections();
     stepper.print_connections();
     writer.print_connections();
     upChecker.print_connections();
     downChecker.print_connections();
     forwardChecker.print_connections();
+
+#endif
 
 
     Grid grid = generate_grid(30, 10);
