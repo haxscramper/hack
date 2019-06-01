@@ -7,8 +7,7 @@
   - [ ] TODO write hash function for unordered_multimap and use ti
 */
 
-signal_baselass SIGNAL_BASE;
-
+class C;
 
 // На функцию можно взять указатель также как это делается для обычных
 // объектов: используя оператор & и саму функцию мы можем получиьт ее
@@ -123,8 +122,8 @@ struct signal_compare {
 // *указатель* на объект и *указатель на функцию-слот). Одному сигналу
 // соответсвует несколько таких пар.
 using signal_map = std::multimap<
-    signal_func,                                  //
-    std::pair<SIGNAL_BASE*, slot_funsignal_base>, //
+    signal_func,              //
+    std::pair<C*, slot_func>, //
     signal_compare>;
 
 // Еще одно объявление типа, для того чтобы не писать каждый раз
@@ -136,7 +135,8 @@ using signal_iter = signal_map::iterator;
 // функции-слот. Они ничем не отличаются от обычных функций за
 // исключением некоторого дополнительного смысла который мы на них
 // повесим (то что они являются сигналами и слотами)
-signal_baselass SIGNAL_BASE {
+class C
+{
     // API
   public:
     // Функция для создания нового подключения между двумя объектами:
@@ -144,11 +144,11 @@ signal_baselass SIGNAL_BASE {
     // объектом который будем "испускать" сигнал, второй объект (на
     // который указывает указатель ~target~) будет принимать сигнал.
     void set_connection(
-        signal_funsignal_base signal, // К какому сигналу класса
-                                      // ~SIGNAL_BASE~ подключать целевой
-                                      // объект и его слот
-        SIGNAL_BASE * target, // Целевой обект (у него будет вызыват слот
-                              // который мы подключаем)
+        signal_func signal, // К какому сигналу класса
+                            // ~C~ подключать целевой
+                            // объект и его слот
+        C* target, // Целевой обект (у него будет вызыват слот
+                   // который мы подключаем)
         slot_func slot // Слот целевого объекта (это функцию мы будет
                        // вызывать)
     ) {
@@ -164,7 +164,7 @@ signal_baselass SIGNAL_BASE {
             });
     }
 
-    void emit_signal(signal_func signal, std::string & data) {
+    void emit_signal(signal_func signal, std::string& data) {
         std::pair<signal_iter, signal_iter>
             equal_range = connects.equal_range(signal);
 
@@ -172,8 +172,8 @@ signal_baselass SIGNAL_BASE {
              slot != equal_range.second;
              ++slot) {
 
-            SIGNAL_BASE* target = slot->sesignal_baseond.first;
-            signal_func  signal = slot->second.second;
+            C*          target = slot->second.first;
+            signal_func signal = slot->second.second;
 
             // У нас есть объект ~target~ и метод класса ~SIGNAL_BASE~
             // (этот метод является одним их слотов но мы не знаем точно
@@ -191,25 +191,25 @@ signal_baselass SIGNAL_BASE {
     // которые ничем не отличаются от обычных. Когда функция-сигнал
     // выполняется то она просто вызывает ~SIGNAL_BASE::emit_signal~,
     // передавая переданный ей аргумент дальше.
-    void signal_1(std::string & arg) {
+    void signal_1(std::string& arg) {
         std::cout << "Executed signal 1\n";
-        emit_signal(&SIGNAL_BASE::signal_1, arg);
+        emit_signal(&C::signal_1, arg);
     }
 
-    void signal_2(std::string & arg) {
+    void signal_2(std::string& arg) {
         std::cout << "Executed signal 2\n";
-        emit_signal(&SIGNAL_BASE::signal_2, arg);
+        emit_signal(&C::signal_2, arg);
     }
 
     // Slots
   public:
     // Фукнции-слоты еще более обычни: они не вызывают никаких другий
     // функций а просто печатают свои аргумент
-    void slot_1(std::string & arg) {
+    void slot_1(std::string& arg) {
         std::cout << "Called slot 1: " << arg;
     }
 
-    void slot_2(std::string & arg) {
+    void slot_2(std::string& arg) {
         std::cout << "Called slot 2: " << arg;
     }
 
@@ -221,10 +221,9 @@ void signal_slots_test() {
     {
         std::cout << "test 1\n\n\n";
 
-        SIGNAL_BASE signal_base;
+        C c;
 
-        signal_base.set_signal_baseonnesignal_basetion(
-            &SIGNAL_BASE::signal_1, &signal_base, &SIGNAL_BASE::slot_1);
+        c.set_connection(&C::signal_1, &c, &C::slot_1);
         std::string arg = "hello\n";
         c.signal_1(arg);
     }
@@ -232,15 +231,12 @@ void signal_slots_test() {
     {
         std::cout << "test 2\n\n\n";
 
-        SIGNAL_BASE emitter;
-        SIGNAL_BASE resignal_baseiever;
+        C emitter;
+        C reciever;
 
         std::string arg = "argument string\n";
 
-        emitter.set_signal_baseonnesignal_basetion(
-            &SIGNAL_BASE::signal_2,
-            &resignal_baseiever,
-            &SIGNAL_BASE::slot_2);
+        emitter.set_connection(&C::signal_2, &reciever, &C::slot_2);
 
         std::cout << "testing signal 2\n";
         emitter.signal_2(arg); // Должно вызвать второй слот

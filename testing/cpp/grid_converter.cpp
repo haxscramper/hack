@@ -160,6 +160,10 @@ class Stepper : public signal_base
     void slot_accept_grid(signal_msg data) {
         grid = scastp<Grid>(data);
 
+        signal_request_grid_print(&grid);
+
+        LOG << "Modifying grid";
+
         // Some algorihm goes here
 
         for_i(i, row_count(grid)) {
@@ -183,11 +187,12 @@ class Stepper : public signal_base
         }
 
 
-        signal_done_search(&grid);
+        signal_request_grid_print(&grid);
     }
 
-    void signal_done_search(signal_msg data) {
-        emit_signal(signal_cast(&Stepper::signal_done_search), data);
+    void signal_request_grid_print(signal_msg data) {
+        emit_signal(
+            signal_cast(&Stepper::signal_request_grid_print), data);
     }
 
     void signal_check_cell(signal_msg request) {
@@ -295,7 +300,7 @@ int main() {
 
     connect(
         &stepper,
-        &Stepper::signal_done_search,
+        &Stepper::signal_request_grid_print,
         &writer,
         &Writer::slot_write_grid);
 
@@ -339,7 +344,7 @@ int main() {
 #endif
 
 
-    Grid grid = generate_grid(30, 10);
+    Grid grid = generate_grid(60, 20);
 
     reader.set_grid(grid);
 
