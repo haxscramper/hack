@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <iostream>
 #include <sstream>
 #include <vector>
@@ -16,6 +17,8 @@ enum class kwd
     Direct,
     Reversed,
 };
+
+
 template <class Container>
 struct vector_subrange {
     using value_type = typename Container::value_type;
@@ -68,7 +71,8 @@ struct vector_subrange {
     bool                      is_reversed = false;
 };
 
-int vector_subrange::iterator::operator*() const {
+template <class Container>
+int vector_subrange<Container>::iterator::operator*() const {
     return container.at(index);
 }
 
@@ -86,16 +90,30 @@ struct zip_view {
         }
 
         std::pair<int&, int&> operator*() const;
-        iterator&             operator++();
-        iterator              operator++(int);
+
+        iterator& operator++();
+        iterator  operator++(int);
+        bool      operator==(const iterator& other) {
+            return this->index == other.index;
+        }
 
       private:
         size_t    index = 0;
         zip_view& view;
     };
 
+    iterator begin() {
+        return iterator(*this, 0);
+    }
+
+    iterator end() {
+        return iterator(
+            *this,
+            std::max(containers.first.size(), containers.second.size()));
+    }
+
     zip_view(Container1& _first, Container2& _second)
-        : containers(std::make_pair(_first, _second)) {
+        : containers({_first, _second}) {
     }
 
     value_type at(size_t pos) {
@@ -117,10 +135,19 @@ using int_subr = vector_subrange<std::vector<int>>;
 
 auto is_palindrome(std::vector<int>& data) -> bool {
     int_subr left(data, {0, data.size() / 2});
-    int_subr right(
-        data, {data.size() / 2, data.size()}, kwd::Reversed);
+    int_subr right(data, {data.size() / 2, data.size()}, kwd::Reversed);
 
     zip_view<int_subr, int_subr> view(left, right);
+
+    std::vector<bool> results;
+
+    std::transform(
+        view.begin(),
+        view.end(),
+        std::back_inserter(results),
+        [](std::pair<int&, int&> pair) {
+            return pair.first == pair.second;
+        });
 
     return false;
 }

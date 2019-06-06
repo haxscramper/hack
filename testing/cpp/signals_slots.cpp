@@ -267,8 +267,16 @@ class C
   public:
     // Фукнции-слоты еще более обычны они не вызывают никаких другий
     // функций а просто печатают свои аргумент
-    void slot_1(signal_msg arg) {
-        std::cout << "Called slot 1: " << scastp<std::string>(arg);
+    void slot_1(signal_msg _arg) {
+        // Так как мы не можем напрямую вывести на которую указывает
+        // _arg нам нужно сначала привести ее к нужному типу а уже
+        // потом использовать ее. Важно! если слот был вызван с
+        // неприавильным аргументом (например вместо того чтобы
+        // передать указатель на строку был использован указатель на
+        // int) то это приведет к ошибке в работы программы (скорее
+        // всего все просто упадет)
+        std::string& arg = scastp<std::string>(_arg);
+        std::cout << "Called slot 1: " << arg;
     }
 
     void slot_2(signal_msg arg) {
@@ -280,6 +288,7 @@ class C
 };
 
 
+// Макрос для подключения слотов и сигналов
 #define connect(emitter, signal, target, slot)                            \
     (emitter)->set_connection(                                            \
         static_cast<signal_func>(signal),                                 \
