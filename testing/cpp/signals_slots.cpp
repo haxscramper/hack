@@ -85,16 +85,78 @@ void method_pointer_test() {
     std::cout << " [ " << (val.*method_pointer)(0) << " ] \n";
 }
 
+// В C++ есть специальный тип указателей ~void*~, которые могут
+// указывать на любой тип данных. Указатель на переменную любого типа
+// можно привести к типу ~void*~ и обратно (указатель на ~void*~ можно
+// скастовать в любой другой указатель).
+
+void void_ptr_test() {
+    int var = 10; // Создаем перемемнную
+
+    // Берем ее адрес как указатель на ~void*~
+    void* void_ptr = &var;
+    // Берем адрес как указатель на нормальный
+    int* int_ptr = &var;
+
+    if (* // Разыменовываем указатель для того чтобы получить то значение
+          // на которое он указывает
+        static_cast // Приведение перемемнной к типу
+        <int*>      // Указатель на int
+        (void_ptr) // Переменна которую мы приводим типу
+        == var // Сравниваем с исходным значением, должны совпадать
+    ) {
+        // Печатаем адреса на которые указывают указатели, должны совпадать
+        std::cout << void_ptr << "\n";
+        std::cout << int_ptr << "\n";
+    }
+}
+
+
+// для того чтобы не писать каждый раз ~*static_cast<TYPE*>(void_ptr)~
+// можно сделать вспомогательную функцию. Это шаблон функции, который
+// возвращает ссылку на разыменованный объект. То есть если есть
+// указатель типа void* и нужно получить из него переменную типа int
+// то нужно использовать ~scastp<int>(void_ptr)~ где void_ptr -
+// указатель типа void
+template <class T>
+T& scastp(void* arg) {
+    return *static_cast<T*>(arg);
+}
+
+// Объявляем тип переменных которые беде передаваться при помощи
+// сигналов. Это не является обязавтельным (вообще все последующие
+// объявления типов можно опустить, они сделаны для удобства
+// (~slot_func func~ явно лучше чем ~void (C::*func)(void*)~ ))
+using signal_msg = void*;
 
 // ОПисываем новый тип переменных. Вместо того чтобы каждый раз каждый
-// раз писать ~void (C::*)(std::string&)~ мы можем писать ~slot_func~
+// раз писать ~void (C::*)(signal_msg)~ мы можем писать ~slot_func~
 // или ~signal_func~. Это *типы* переменных, также как и ~int~ или
 // ~char~. То есть если бы мы написали ~slot_func var~ это было бы
-// тоже самое что ~void (C::*var)(std::string&)~ --- в обоих случаях
+// тоже самое что ~void (C::*var)(signal_msg)~ --- в обоих случаях
 // это означает "указатель на метод класса C, принимающий строку и
 // ничего не возвращающий (тип возвращаемого значения ~void~)"
-using slot_func   = void (C::*)(std::string&);
-using signal_func = void (C::*)(std::string&);
+using slot_func   = void (C::*)(signal_msg);
+using signal_func = void (C::*)(signal_msg);
+
+
+// Указатели на методы одного класса не могут бит приведены к
+// указателям на методы другого класса (даже если один класса публично
+// наследуется от другого и все методы-слоты публичные) неявно ---
+// должно быть использовано явнове приведение типов (в данном случае
+// static_cast)
+
+// Если класс D унаследован от класса C то тогда для подключения
+// сигналов нужно использвать slot_cast (или signal_cast)
+template <class D>
+slot_func slot_cast(void (D::*func)(signal_msg)) {
+    return static_cast<slot_func>(func);
+}
+
+template <class D>
+signal_func signal_cast(void (D::*func)(signal_msg)) {
+    return static_cast<signal_func>(func);
+}
 
 
 // Из-за внутренних особенностех std::multimap ключи, используемые для
@@ -164,7 +226,7 @@ class C
             });
     }
 
-    void emit_signal(signal_func signal, std::string& data) {
+    void emit_signal(signal_func signal, signal_msg data) {
         std::pair<signal_iter, signal_iter>
             equal_range = connects.equal_range(signal);
 
@@ -191,65 +253,72 @@ class C
     // которые ничем не отличаются от обычных. Когда функция-сигнал
     // выполняется то она просто вызывает ~SIGNAL_BASE::emit_signal~,
     // передавая переданный ей аргумент дальше.
-    void signal_1(std::string& arg) {
+    void signal_1(signal_msg arg) {
         std::cout << "Executed signal 1\n";
         emit_signal(&C::signal_1, arg);
     }
 
-    void signal_2(std::string& arg) {
+    void signal_2(signal_msg arg) {
         std::cout << "Executed signal 2\n";
         emit_signal(&C::signal_2, arg);
     }
 
     // Slots
   public:
-    // Фукнции-слоты еще более обычни: они не вызывают никаких другий
+    // Фукнции-слоты еще более обычны они не вызывают никаких другий
     // функций а просто печатают свои аргумент
-    void slot_1(std::string& arg) {
-        std::cout << "Called slot 1: " << arg;
+    void slot_1(signal_msg arg) {
+        std::cout << "Called slot 1: " << scastp<std::string>(arg);
     }
 
-    void slot_2(std::string& arg) {
-        std::cout << "Called slot 2: " << arg;
+    void slot_2(signal_msg arg) {
+        std::cout << "Called slot 2: " << scastp<std::string>(arg);
     }
 
   private:
     signal_map connects;
 };
 
+
+#define connect(emitter, signal, target, slot)                            \
+    (emitter)->set_connection(                                            \
+        static_cast<signal_func>(signal),                                 \
+        target,                                                           \
+        static_cast<slot_func>(slot))
+
+
 void signal_slots_test() {
-    {
-        std::cout << "test 1\n\n\n";
+    std::cout << "test 2\n\n\n";
 
-        C c;
+    C emitter;
+    C reciever;
 
-        c.set_connection(&C::signal_1, &c, &C::slot_1);
-        std::string arg = "hello\n";
-        c.signal_1(arg);
-    }
+    std::string arg = "argument string\n";
 
-    {
-        std::cout << "test 2\n\n\n";
+    connect(
+        // Объект который будет выдавать сигналы
+        &emitter,
+        // Сигнал *к* которому будт подключен оюъект-обработчик
+        &C::signal_2,
+        // Указатель на оюъект-обработчик
+        &reciever,
+        // Слот который будет вызван
+        &C::slot_2);
 
-        C emitter;
-        C reciever;
+    std::cout << "testing signal 2\n";
+    emitter.signal_2(&arg); // Должно вызвать второй слот
 
-        std::string arg = "argument string\n";
-
-        emitter.set_connection(&C::signal_2, &reciever, &C::slot_2);
-
-        std::cout << "testing signal 2\n";
-        emitter.signal_2(arg); // Должно вызвать второй слот
-
-        std::cout << "testing signal 1\n";
-        emitter.signal_1(arg); // Никакх слотов вызвано не будет так
-                               // как подключений нет
-    }
+    std::cout << "testing signal 1\n";
+    emitter.signal_1(&arg); // Никакх слотов вызвано не будет так
+                            // как подключений нет
 }
 
 
 int main() {
     func_pointer_test();
     method_pointer_test();
+
+    void_ptr_test();
+
     signal_slots_test();
 }
