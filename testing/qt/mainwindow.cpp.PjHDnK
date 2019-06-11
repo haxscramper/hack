@@ -1,0 +1,102 @@
+#include "mainwindow.hpp"
+#include <debugmacro/all.hpp>
+
+
+#define for_i(var_name, max_range)                                        \
+    for (int var_name = 0; var_name < max_range; ++var_name)
+
+void MainWindow::run_computations() {
+    LOG << "Running computations";
+    view->clear();
+}
+
+MainWindow::MainWindow(QWidget* parent)
+    : QMainWindow(parent)
+    , input_lyt(false)
+    , input_wgt(true, this)
+    , compute_pbtn(true, this)
+    , view(true, this)
+    , input_tbl(true, this)
+    , output_tbl(true, this)
+    , addRow_pbtn(true, this)
+    , splitter(true, this)
+//  ,
+{
+    LOG << "HEllo";
+
+    setCentralWidget(splitter);
+    splitter->addWidget(view);
+
+
+    { // Input fields layout
+        LOG << "HEllo";
+        splitter->addWidget(input_wgt);
+
+        input_wgt->setLayout(input_lyt);
+
+        input_lyt->addWidget(input_tbl);
+        input_lyt->addWidget(addRow_pbtn);
+        input_lyt->addWidget(output_tbl);
+        input_lyt->addWidget(compute_pbtn);
+        LOG << "HEllo";
+        { // Input table layout
+            input_tbl->setColumnCount(3);
+
+            input_tbl->setColumnWidth(0, 140);
+            input_tbl->setColumnWidth(1, 140);
+
+            LOG << "123123";
+
+            input_tbl->horizontalHeaderItem(0)->setText("Name");
+            input_tbl->horizontalHeaderItem(1)->setText("Dependency");
+            input_tbl->horizontalHeaderItem(2)->setText("Type");
+
+            LOG << "123123";
+
+            addRow_pbtn->setText("Add row");
+            compute_pbtn->setText("Compute");
+
+            LOG << "123123";
+        }
+    }
+
+    LOG << "HEllo";
+
+    connect(addRow_pbtn, &QPushButton::clicked, [&]() {
+        input_tbl->insertRow(input_tbl->rowCount());
+
+        size_t row = input_tbl->rowCount() - 1;
+        size_t col = 2;
+
+        QComboBox* select = new QComboBox(input_tbl);
+        select->addItem("Assembly item");
+        select->addItem("Assembly step");
+
+        select->setStyleSheet("QComboBox { background-color: green; }");
+
+        select->setAutoFillBackground(true);
+
+        input_tbl->resizeColumnToContents(2);
+
+        connect(
+            select,
+            QOverload<int>::of(&QComboBox::activated),
+            [select](int index) {
+                if (index == 0) {
+                    select->setStyleSheet(
+                        "QComboBox { background-color: green; }");
+                } else {
+                    select->setStyleSheet(
+                        "QComboBox { background-color: orange; }");
+                }
+            });
+
+        input_tbl->setCellWidget(row, col, select);
+    });
+
+    LOG << "HEllo";
+
+    connect(compute_pbtn, &QPushButton::clicked, [&]() {
+        run_computations();
+    });
+}
