@@ -1,0 +1,74 @@
+diff --git a/misc/support.cpp b/misc/support.cpp
+index 66cf467..4665eb7 100755
+--- a/misc/support.cpp
++++ b/misc/support.cpp
+@@ -40,63 +40,21 @@
+ //#  //////////////////////////////////////////////////////////////////////
+ 
+ namespace spt {
+-QDomElement listVariantToXML(
+-    boost::variant<QStringList, QStringList*> list,
+-    QDomDocument&                             document,
+-    QString                                   listName,
+-    QString                                   elementName) {
+-    if (list.which() == 0) {
+-        return listToXML(
+-            boost::get<QStringList>(list),
+-            document,
+-            listName,
+-            elementName);
+-    } else {
+-        return listToXML(
+-            *boost::get<QStringList*>(list),
+-            document,
+-            listName,
+-            elementName);
+-    }
+-}
+-
+-
+-QDomElement listToXML(
+-    const QStringList& list,
+-    QDomDocument&      document,
+-    QString            listName,
+-    QString            elementName) {
+-    QDomElement XMLList = document.createElement(listName);
+-    for (const QString& item : list) {
+-        QDomElement XMLItem = document.createElement(elementName);
+-        XMLItem.appendChild(document.createTextNode(item));
+-        XMLList.appendChild(XMLItem);
+-    }
+-
+-    return XMLList;
+-}
+-
+-
+-void writeDocument(QDomDocument& document, QString path) {
+-    QFile file(path);
+-    file.open(QIODevice::WriteOnly | QIODevice::Text);
+-    QTextStream stream(&file);
+-    stream << document.toString();
+-    file.close();
+-}
+ 
+ 
+ void writeDocument(QDomDocument& document, QFile& file) {
+-    QTextStream stream(&file);
+-    stream << document.toString();
++    file.open(QFile::WriteOnly);
++    QTextStream(&file) << document.toString();
+     file.close();
+ }
+ 
+ 
+ void overrideFile(QDomDocument& document, QString path) {
+     QFile file(path);
+-    if (file.remove()) {
+-        writeDocument(document, path);
++    if (!file.exists() || file.remove()) {
++        file.open(QFile::WriteOnly);
++        QTextStream(&file) << document.toString();
++        file.close();
+     }
+ }
+ 

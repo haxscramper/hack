@@ -1,0 +1,50 @@
+diff --git a/algorithm_getters.hpp b/algorithm_getters.hpp
+index f53b63e..d4481e2 100644
+--- a/algorithm_getters.hpp
++++ b/algorithm_getters.hpp
+@@ -11,6 +11,7 @@ inline namespace algorithm {
+ 
+     /*!
+      * \brief Return base if iterator points to end of container
++     * \todo Rename to iter_val_or
+      */
+     template <class Container>
+     typename Container::value_type safe_iter_get(
+@@ -29,14 +30,15 @@ inline namespace algorithm {
+     /// \todo Repalce function with std::function(typename
+     /// InputContainer::value_type) ReturnType return type or something
+     /// like that
+-    template <class ReturnType, class InputContainer>
++    template <class InputContainer, class ReturnType, class GetterFunction>
+     std::vector<ReturnType> get_from_each(
+         const InputContainer& container,
+         std::function<ReturnType(typename InputContainer::value_type)>
+-            funciton) {
++            function) {
+         std::vector<ReturnType> result;
++        result.reserve(container.size());
+         for (const typename InputContainer::value_type& item : container) {
+-            result.push_back(funciton(item));
++            result.push_back(function(item));
+         }
+ 
+         return result;
+diff --git a/qwidget_cptr.hpp b/qwidget_cptr.hpp
+index 5c4b450..7e5aea1 100644
+--- a/qwidget_cptr.hpp
++++ b/qwidget_cptr.hpp
+@@ -36,6 +36,14 @@ inline namespace wrappers {
+             // TODO Static check nullptr
+         }
+ 
++        qwidget_cptr(bool initialize, QWidget* parent = nullptr)
++            : cptr(new T(initialize ? parent : nullptr)) {
++            if (initialize && parent == nullptr) {
++                throw std::invalid_argument(
++                    "nullptr used for initialization.");
++            }
++        }
++
+         qwidget_cptr(const qwidget_cptr<T>& other)  = delete;
+         qwidget_cptr(const qwidget_cptr<T>&& other) = delete;
+         qwidget_cptr<T>& operator=(const qwidget_cptr<T>& other) = delete;
