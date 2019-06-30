@@ -2,6 +2,9 @@
 
 // Include and declarations were made in the middle of include to
 // provide operator overloading for logging macro
+
+// TODO Add numeration for grid rows and columns (is it possible to
+// display rotated numbers in ternminal)
 #include <iostream>
 #include <string>
 #include <vector>
@@ -69,8 +72,7 @@ Grid generate_grid(uS grid_cols, uS grid_rows = 0) {
     }
 
 
-    Pos pos = {rand() % grid_rows, 0};
-
+    Pos pos = {rand() % grid_rows, rand() % grid_cols / 5};
 
     size_t dir = 1;
     // down: 0, forward: 1,3, up: 2
@@ -112,12 +114,14 @@ Grid generate_grid(uS grid_cols, uS grid_rows = 0) {
 class Reader : public signal_base
 {
   public:
-    void signal_emit_grid(signal_msg grid) {
-        emit_signal(signal_cast(&Reader::signal_emit_grid), grid);
+    void signal_emit_grid(Grid* grid) {
+        METHOD_DBG
+        emit_signal(&Reader::signal_emit_grid, grid);
     }
 
-    void set_grid(Grid& grid) {
-        this->signal_emit_grid(&grid);
+    void set_grid(Grid* grid) {
+        METHOD_DBG
+        this->signal_emit_grid(grid);
     }
 };
 
@@ -125,25 +129,26 @@ class Writer : public signal_base
 {
 
   public:
-    void slot_write_grid(signal_msg data) {
-        if (true) {
-            Grid& grid = scastp<Grid>(data);
+    void slot_write_grid(Grid& grid) {
+        Vec<Str> top;
 
-            for (Str& row : grid) {
-                printf("    ");
-                for (char c : row) {
-                    switch (c) {
-                        case path_char:
-                            printf("\033[32m%c\033[0m", c);
-                            break;
-                        case change_char:
-                            printf("\033[31m%c\033[0m", c);
-                            break;
-                        default: printf("%c", c); break;
-                    }
+        // TODO print index in header row
+        for_i(i, grid.size()) {
+        }
+
+        for_i(i, grid.size()) {
+            Str& row = grid[i];
+            printf(" %2d ", i);
+            for (char c : row) {
+                switch (c) {
+                    case path_char: printf("\033[32m%c\033[0m", c); break;
+                    case change_char:
+                        printf("\033[31m%c\033[0m", c);
+                        break;
+                    default: printf("%c", c); break;
                 }
-                printf("\n");
             }
+            printf("\n");
         }
     }
 };
@@ -157,72 +162,65 @@ struct CheckRequest {
 class Stepper : public signal_base
 {
   public:
-    void slot_accept_grid(signal_msg data) {
-        grid = scastp<Grid>(data);
+    void slot_accept_grid(Grid* _grid) {
+        METHOD_DBG
+        Grid& grid = *_grid;
 
-        LOG << "Modifing grid";
-
-        // Some algorihm goes here
-
-        for_i(i, row_count(grid)) {
-            Pos pos;
-            pos.row = i;
-
-            CheckRequest request = {pos, grid};
-
-            signal_check_cell(&request);
+        for_i(col, col_count(grid)) {
+            for_i(row, row_count(grid)) {
+                if (grid.at(row).at(col) == path_char) {
+                    currentPos.row = row;
+                    currentPos.col = col;
+                    goto found;
+                }
+            }
         }
 
-        size_t ctx = 0;
-        while (ctx < col_count(grid) * 5
-               && currentPos.col < col_count(grid)) {
+    found:
+        for (size_t ctx = 0;
+             ctx < col_count(grid) * 5 && currentPos.col < col_count(grid);
+             ++ctx) {
 
             CheckRequest request = {currentPos, grid};
-            signal_check_cell(&request);
-
-            ++ctx;
-
-            // INFO << "ctx" << ctx;
+            signal_check_cell(request);
         }
 
 
         signal_request_grid_print(&grid);
     }
 
-    void signal_request_grid_print(signal_msg data) {
-        emit_signal(
-            signal_cast(&Stepper::signal_request_grid_print), data);
+    void signal_request_grid_print(Grid* grid) {
+        emit_signal(&Stepper::signal_request_grid_print, grid);
     }
 
-    void signal_check_cell(signal_msg request) {
-        Pos   pos  = scastp<CheckRequest>(request).pos;
-        Grid& grid = scastp<CheckRequest>(request).grid;
+    void signal_check_cell(CheckRequest request) {
+        // Pos   pos  = scastp<CheckRequest>(request).pos;
+        // Grid& grid = scastp<CheckRequest>(request).grid;
 
         // LOG << "signal_check_cell"
         //    << "Pos: " << pos << "Grid:" << grid << grid.at(0).size();
 
-        emit_signal(signal_cast(&Stepper::signal_check_cell), request);
+        emit_signal(&Stepper::signal_check_cell, request);
     }
 
-    void slot_found_match(signal_msg msg) {
+    void slot_found_match(CheckRequest request) {
         //        LOG << "slot_found_match";
-        CheckRequest request = scastp<CheckRequest>(msg);
-        Pos&         pos     = request.pos;
+        // CheckRequest request = scastp<CheckRequest>(msg);
+        Pos& pos = request.pos;
 
         grid.at(pos.row).at(pos.col) = change_char;
 
-        prevPos    = currentPos;
+        LOG << pos;
+
         currentPos = pos;
     }
 
-    void slot_missed_match(signal_msg msg) {
+    void slot_missed_match(CheckRequest msg) {
     }
 
   private:
     Grid grid;
-
-    Pos currentPos;
-    Pos prevPos;
+    Pos  currentPos;
 };
 
 class Checker : public signal_base
@@ -240,13 +238,9 @@ class Checker : public signal_base
     }
 
 
-    void slot_check_cell(signal_msg msg) {
-        CheckRequest request = scastp<CheckRequest>(msg);
-
-
+    void slot_check_cell(CheckRequest request) {
         Grid& grid = request.grid;
         Pos   pos  = request.pos;
-
 
         switch (direction) {
             case Forward:
@@ -260,18 +254,18 @@ class Checker : public signal_base
         request.pos = pos;
 
         if (grid.at(pos.row).at(pos.col) == path_char) {
-            signal_found_match(&request);
+            signal_found_match(request);
         } else {
-            signal_missed_match(&request);
+            signal_missed_match(request);
         }
     }
 
-    void signal_found_match(signal_msg request) {
-        emit_signal(signal_cast(&Checker::signal_found_match), request);
+    void signal_found_match(CheckRequest& request) {
+        emit_signal(&Checker::signal_found_match, request);
     }
 
-    void signal_missed_match(signal_msg request) {
-        emit_signal(signal_cast(&Checker::signal_missed_match), request);
+    void signal_missed_match(CheckRequest& request) {
+        emit_signal(&Checker::signal_missed_match, request);
     }
 
   private:
@@ -345,7 +339,7 @@ int main() {
 
     Grid grid = generate_grid(60, 20);
 
-    reader.set_grid(grid);
+    reader.set_grid(&grid);
 
     LOG << "Done main";
 }

@@ -10,7 +10,7 @@ colecho -i1 "Running test.sh"
 ##== Only edit lines after this comment
 
 # Build target
-clang++ -std=c++17 signals_slots_varargs.cpp
+clang++ -std=c++17 -g -DDEBUG grid_converter.cpp
 
 # Run target
 ./a.out

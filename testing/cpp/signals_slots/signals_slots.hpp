@@ -1,3 +1,4 @@
+#include "../../common/cpp/bit_utils.hpp"
 #include "../../common/cpp/log.hpp"
 #include <cstring>
 #include <functional>
@@ -14,54 +15,68 @@ T& scastp(void* arg) {
     return *static_cast<T*>(arg);
 }
 
-using signal_msg = void*;
+namespace internal {
+struct C {
+    void member_method();
+};
+
+
+const size_t ptr_size = sizeof(&C::member_method);
+using ptr_arr         = char[sizeof(&C::member_method)];
 
 template <class T, typename... Args>
-using signal_method_ptr = void (T::*)(Args...);
+void memcpy(
+    void (T::*method)(Args...),
+    ptr_arr& pointer,
+    bool     from_method) {
+    if (from_method) {
+        std::memcpy(&pointer, &method, ptr_size);
+    } else {
+        std::memcpy(&method, &pointer, ptr_size);
+    }
+}
 
-template <class T, typename... Args>
-using slot_method_ptr = void (T::*)(Args...);
+
+} // namespace internal
 
 struct slot_func {
+    internal::ptr_arr pointer;
+
     template <class T, typename... Args>
-    static slot_func to_slot_func(slot_method_ptr<T, Args...> method) {
-        slot_func res;
-        res.slot_ptr = &method;
-        return res;
+    slot_func(void (T::*method)(Args...)) {
+        internal::memcpy(method, pointer, true);
     }
 
-    // TODO Implement without std::invoke to use on C++11 compiler
-    template <typename... Args>
-    void invoke(signal_base* obj, Args&&... args) {
-        using ptr_type = slot_method_ptr<signal_base, Args...>*;
-        // Casting slot pointer to method with required signature
-        ptr_type method = static_cast<ptr_type>(slot_ptr);
-        // Invoking method with argments
-        std::invoke(*method, obj, std::forward<Args>(args)...);
-    }
+    template <class T, typename... Args>
+    void invoke(T* obj, Args... args) {
+        METHOD_DBG
 
-  private:
-    void* slot_ptr;
+        void (T::*method)(Args...);
+
+        internal::memcpy(method, pointer, false);
+
+        LINE_DBG;
+
+        bit_print(method);
+
+        (obj->*method)(args...);
+    }
 };
 
-
+/// Wrapper on class methods.
 struct signal_func {
+    internal::ptr_arr pointer;
+
     template <class T, typename... Args>
-    static signal_func to_signal_func(
-        signal_method_ptr<T, Args...> method) {
-        signal_func res;
-        res.signal_ptr = &method;
-        return res;
+    signal_func(void (T::*method)(Args...)) {
+        internal::memcpy(method, pointer, true);
     }
 
-  private:
-    void* signal_ptr;
+    bool operator<(const signal_func& rhs) const {
+        return std::memcmp(
+            &pointer, &rhs.pointer, sizeof(&internal::C::member_method));
+    }
 };
-
-template <class T, typename... Args>
-signal_func signal_cast(signal_method_ptr<T, Args...> method) {
-    return signal_func::to_signal_func(method);
-}
 
 class signal_base
 {
@@ -69,7 +84,7 @@ class signal_base
     struct signal_compare {
         bool operator()(const signal_func& lhs, const signal_func& rhs)
             const {
-            return std::memcmp(&lhs, &rhs, sizeof(lhs)) < 0;
+            return lhs < rhs;
         }
     };
 
@@ -96,6 +111,7 @@ class signal_base
         connects_debug;
 
     void print_connections() {
+        LOG << "Printing connections" << connects.size();
         auto              it = connects_debug.begin();
         signal_debug_name names;
         if (it != connects_debug.end()) {
@@ -133,13 +149,15 @@ class signal_base
         signal_func  signal,
         signal_base* target,
         slot_func    slot) {
-        LOG << "Inserting connection";
         connects.insert({signal, {target, slot}});
     }
 
     template <typename... Args>
     void emit_signal(signal_func signal, Args... args) {
+        METHOD_DBG
+
         LOG << "Emitting signal";
+
         // Find range of all handler-slot pairs that correspond to given
         // signal
         std::pair<signal_iter, signal_iter>
@@ -156,9 +174,9 @@ class signal_base
              ++slot) {
 
             signal_base* target      = slot->second.first;
-            slot_func    slot_method = slot->second.second;
+            slot_func*   slot_method = &slot->second.second;
 
-            slot_method.invoke(target, std::forward<Args>(args)...);
+            slot_method->invoke(target, std::forward<Args>(args)...);
         }
     }
 
@@ -176,21 +194,17 @@ void __connect(
     slot_func    slot
 #ifdef DEBUG
     ,
-    std::tuple<      //
-        std::string, //
-        std::string, //
-        std::string, //
-        std::string> names
+    signal_base::signal_debug_name names
 #endif
 ) {
-#ifdef DEBUG
-    INFO << "Connecting" << std::get<1>(names) << "to"
-         << std::get<3>(names);
-#endif
 
     emitter->set_connection(signal, handler, slot);
 
-    LOG << "Done connecting";
+    LOG << "Connecting" << names.signal_name << "to" << names.slot_name;
+
+#ifdef DEBUG
+    emitter->set_connection_name(signal, names);
+#endif
 }
 
 #ifdef DEBUG
@@ -198,19 +212,15 @@ void __connect(
 #    define connect(emitter, signal, target, slot)                        \
         __connect(                                                        \
             emitter,                                                      \
-            signal_func::to_signal_func(signal),                          \
+            signal,                                                       \
             target,                                                       \
-            slot_func::to_slot_func(slot),                                \
+            slot,                                                         \
             {#emitter, #signal, #target, #slot});
 
 #else
 
 #    define connect(emitter, signal, target, slot)                        \
-        __connect(                                                        \
-            emitter,                                                      \
-            signal_func::to_signal_func(signal),                          \
-            target,                                                       \
-            slot_func::to_slot_func(slot));
+        __connect(emitter, signal, target, slot);
 
 
 #endif

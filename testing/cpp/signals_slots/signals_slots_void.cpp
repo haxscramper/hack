@@ -1,5 +1,5 @@
+#define DEBUG
 #include "signals_slots.hpp"
-
 
 struct custom_data {
     int         number;
@@ -43,6 +43,8 @@ class signal_test : public signal_base
 
 int main() {
     signal_test c;
+
+    LOG << "Stariting";
 
     connect(
         &c,
