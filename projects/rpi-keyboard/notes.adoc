@@ -1,0 +1,11 @@
+
+== Numbering
+
+Enumeration starts from `esc` key. Horizontal: `x`, vertical: `y`.
+
+
+== Notes
+
+Backspace position::
+    * Logical: [1][13]
+    * Physical: [38][31]

@@ -1,0 +1,16 @@
+{
+    "sections" : [
+        {
+            "rotation-angle" : 0,
+            "rows" : [
+                {"keys" : [ {"legend" : "test"}, {"legend" : "test"} ]},
+                {"keys" : [ {"legend" : "test"}, {"legend" : "test"} ]}
+
+            ]
+        },
+        {
+            "rotation-angle" : 0,
+            "rows" : [ {"keys" : [ {"legend" : "test"}, {"height" : 3} ]} ]
+        }
+    ]
+}

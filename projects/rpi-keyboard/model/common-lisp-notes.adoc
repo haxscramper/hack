@@ -1,0 +1,48 @@
+== Classes and structures
+
+=== Structures
+
+https://lisp-journey.gitlab.io/blog/data-structures-structs/
+
+Create structure instance with parameters:
+
+[source, lisp]
+----
+(make-structure :field value)
+----
+
+== Documentation
+
+Project https://github.com/mmontone/docstring-parser
+
+[source, lisp]
+----
+(defun my-function (foo bar)
+    "A //short// **description** goes here.
+
+     Args:
+        - foo (string): The **foo** argument.
+        - bar (integer): The **bar** argument.
+
+     Returns: the concatenation of **foo** and **bar**.
+
+     An optional long description starts here.
+
+     Look at **this** example:
+
+     ``(my-function \"foo\" 22)``.
+
+     This is useful for:
+        * Testing
+        * Prototyping
+
+     TODO: improve.
+     See: `person`(class), `print`(function)
+     Tags: example, testing
+     Categories: Printing
+     Author: Mariano Montone"
+
+    (print foo)
+    (print bar)
+    (format nil "~A~A" foo bar))
+----

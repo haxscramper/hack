@@ -1,0 +1,11 @@
+[package]
+name = "v2"
+version = "0.1.0"
+authors = ["kamanji <maxiartem969@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+json = "*"
+sysfs_gpio = "0.5"
+rhai = "0.8.1"
+colored = "1.6"

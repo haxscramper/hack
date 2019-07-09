@@ -1,0 +1,10 @@
+rpi-keyboard.sublime-workspace
+keymap.json
+v2/v2
+HOWTO.html
+.mypy_cache/
+/*.img
+*.tmp2
+/rpi_files/bin/nc.openbsd
+rpi_files/
+/*.json_private

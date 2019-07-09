@@ -1,0 +1,479 @@
+NOTE: This is not exactly step-by-step guide but rather a
+documentation for the very frustrating process of setting it up
+manually for the first time. In most cases you won't need most of this
+guide and will be able to setup everything using provided scripts
+(TODO write scripts)
+
+== Requirements
+
+* Raspberry pi zero
+* 8+GB micro sd card
+* Couple of usb wires
+* Linux desktop
+
+== Keyboard setup
+
+=== Setup raspberry pi
+
+Setup raspberry pi, connect to your wifi in headless mode
+and ssh into it.
+
+==== Install raspbian
+
+.All installation commands
+
+.RPI setup
+----
+I_DEVICE="/dev/sdX" # Enter your installation device here
+I_PATH="/mnt/sdcard/" # Mount point
+
+dd bs=4M 2017-07-05-raspbian-jessie-lite.img of=$I_DEVICE conf=fsync
+mkdir -p $I_PATH
+mount "${I_DEVICE}2" $I_PATH
+
+cd $I_PATH
+
+touch ssh
+echo "dtoverlay=dwc2" >>  boot/config.txt
+echo -e "dwc2\ng_ether" >>  etc/modules
+
+IP_ADDR=2
+
+cat << EOF >> etc/network/interfaces
+allow-hotplug usb0
+iface usb0 inet static
+    address 192.168.7.2
+    netmask 255.255.255.0
+    network 192.168.7.0
+    broadcast 192.168.7.255
+    gateway 192.168.7.1
+    dns-nameservers 192.168.7.1 8.8.8.8
+EOF
+----
+
+.After booting RPI
+----
+ip a add 192.168.7.1/24 dev enp0s26u1u1
+ip link set dev enp0s26u1u1 up
+----
+
+
+
+
+*Burn Raspbian image*::
+  ** Download the Raspbian jessie image from
+     https://downloads.raspberrypi.org/raspbian_lite/images/raspbian_lite-2017-07-05/[here]
+  ** Burn it on sd card using
+  `sudo dd bs=4M if=<raspbian image> of=/dev/sdX conv=fsync`
+*Cd to sd card*::
+  ** Create mount point `sudo mkdir /mnt/sdcard`
+  ** Mount sd card to previously created folder `sudo mount /dev/sdX2
+     /mnt/sdcard` - mount root parition
+  ** `cd /mnt/sdcard`
+  ** `sudo mount /dev/sdX1 /mnt/sdcard/boot` - mount boot parition.
+
+NOTE: Paritions numbers in `/dev/sdX1` and `/dev/sdX2` might differ.
+
+IMPORTANT: After you flashed installation image to the sd card it
+should have *two* partitions - first one is small (around hundred
+megabyte) and second one taking up all remaining space. First one is a
+boot parition, and it should be mounted to the `boot` directory of the
+sd card.
+
+
+*Enabling ssh*::
+  ** Create a file named `ssh` in the root of the boot volume using
+   `touch ssh`
+  ** To preconfigure the Pi to connect to a WiFi network, create a
+    file called wpa_supplicant.conf in the root of the boot volume
+    with the following contents.
+
+
+*Enabling Ethernet over usb*::
+  ** Append `dtoverlay=dwc2` to the `config.txt` (`echo
+     "dtoverlay=dwc2" | sudo tee -a boot/config.txt`)
+  ** `echo -e "dwc2\ng_ether" | sudo tee -a etc/modules` _or_ Insert
+     modules-load=dwc2,g_ether after rootwait in the
+     `boot/cmdline.txt` file
+
+NOTE: If you are completely paranoid you might check if everything is
+set up correctly by executing `cd /mnt/sdcard/boot && grep -q
+"modules-load=dwc2,g_ether" < cmdline.txt && echo "cmdline correct" &&
+grep -q "dtoverlay=dwc2" < config.txt && echo "config correct"` in
+terminal (this is a single command).
+
+*Connecting to the RPI*::
+  ** Make sure that `avahi-daemon` is up and running TODO how?
+     ** For gentoo linux you can install and enable it using
+        *** `sudo emerge --ask --tree --verbose net-dns/avahi`
+        *** `sudo rc-service avahi-daemon start` - to start daemon
+        *** `sudo rc-service avahi-daemon enable` - to enable daemon
+            on startup
+     ** To check whether or not your raspberry has been detected by
+        avahi daemon you can run `avahi-browse -atr | grep -A 4
+        raspberry`
+  ** Connect to raspberry pi using `ssh pi@raspberry.local`. Default
+     credentials are
+     *** `username: pi`
+     *** `password: raspberry`
+
+Dealing with errors::
+  ssh: connect to host localhost port 22: Connection refused:::
+    * If `ssh localhost` giving you the same error it is likely that
+      ssh daemon is not running. You can start it using `sudo
+      rc-service sshd start` (for systems that use OpenRC (gentoo)) or
+      `sudo systemctl start sshd.service` (for systems with systemd
+      (debian, arch, ubuntu and almost all others)).
+  ssh: connect to host 192.168.2.1 port 22: Connection refused::
+    * `192.168.2.1` is IP address of the RPI. Try connecting to the
+      localhost (`127.0.0.1`) if this does not work see issue above.
+  Connection reset by port 22:::
+    * ?????
+
+./boot/cmdline.txt
+****
+The Linux kernel accepts a command line of parameters during boot. On
+the Raspberry Pi, this command line is defined in a file in the boot
+partition, called cmdline.txt. This is a simple text file that can be
+edited using any text editor, e.g. vi.
+
+`sudo vi /boot/cmdline.txt` (or `sudo vi boot/cmdline.txt` if you have
+RPI sd card mounted in different PC)
+
+Be careful with this file, it is very picky with its formatting! Each
+parameter is seperated by a single space (it does not use newlines).
+
+Unmodified content of the cmdline.txt: `dwc_otg.lpm_enable=0
+console=ttyAMA0,115200 console=tty1 root=/dev/mmcblk0p2
+rootfstype=ext4 elevator=deadline rootwait` and after modifications it
+should look like this: `dwc_otg.lpm_enable=0 console=serial0,115200
+console=tty1 root=PARTUUID=00f1f24d-02 rootfstype=ext4
+elevator=deadline fsck.repair=yes rootwait modules-load=dwc2,g_ether`
+****
+
+./etc/modules
+****
+The /etc/modules file contains the names of kernel modules that are to
+be loaded at boot time, one per line. Arguments can be given in the
+same line as the module name. Lines beginning with a `#` are ignored.
+****
+
+./boot/config.txt
+****
+The Raspberry Pi uses a configuration file instead of the BIOS you
+would expect to find on a conventional PC. The system configuration
+parameters, which would traditionally be edited and stored using a
+BIOS, are stored instead in an optional text file named config.txt.
+This is read by the GPU before the ARM CPU and Linux are initialised.
+It must therefore be located on the first (boot) partition of your SD
+card, alongside bootcode.bin and start.elf. This file is normally
+accessible as /boot/config.txt from Linux, and must be edited as root.
+****
+
+
+*Enabling Wifi*::
+----
+ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev
+update_config=1
+country=<TWO_LETTER_ISO_COUNTRY_CODE>
+
+network={
+    ssid="<WIFI_NETWORK_NAME>"
+    psk="<WIFI_PASSWORD>"
+    key_mgmt=WPA-PSK
+}
+----
+
+* Unmount sd card using `sudo umount /mnt/sdcard`, eject it and insert
+  it into the Raspberry PI. When unmounting make sure that you are not
+  in the same folder because this might cause `umount: /mnt/sdcard:
+  target is busy` error. If you want to force unmount sd card you
+  might use `-l` option.
+
+==== Connect to the internet over USB
+
+* On the Pi,
+** Once a connection to the Pi using Avahi is established, SSH into
+   the Pi. Disable the avahi service because it’s not needed for a
+   static IP address:
++
+----
+    sudo systemctl disable avahi-daemon
+----
+
+** Configure your address in Raspbian via dhcpcd. Edit /etc/dhcpcd.conf and add this:
++
+----
+interface usb0
+static ip_address=192.168.7.2
+static routers=192.168.7.1
+static domain_name_servers=192.168.7.1
+----
++
+This will tell Raspbian to use address 192.168.7.2 for its USB
+interface. You'll set up your other computer to use 192.168.7.1.
++
+Then reboot RPI.
+
+
+**    Reboot:
++
+----
+sudo reboot
+----
+
+* On the host,
+** Assign an IP address to the usb0 device:
++
+----
+ifconfig usb0 192.168.2.1
+----
+** Allow IP forwarding on the host:
++
+----
+echo 1 > /proc/sys/net/ipv4/ip_forward # Enable ip forwarding
+iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+----
++
+NOTE: `nat` is in *lowercase* and this is *case-sensentive* argument
++
+When enabled, "IP forwarding" allows a Linux machine to receive
+incoming packets and forward them. A Linux machine acting as an
+ordinary host would not need to have IP forwarding enabled, because it
+just generates and receives IP traffic for its own purposes. In our
+case we need to route packages from the RPI to the network so this
+option should be enabled on the host machine (it is disabled by
+default). Another option to enable ip forwarding might be to use
+`sysctl -w net.ipv4.ip_forward=1` command (this will result in ip
+forwarding enabled until reboot). To permanently enable it modify
+`/etc/sysctl.conf` to use `net.ipv3.ip_forward = 1` and run `sysctl -p
+/etc/sysctl.conf` to account for new changes.
+
+-o eth0::: this rule is valid for packets that leave on the second
+  network interface (-o stands for "output")
+-j MASQUERADE::: the action that should take place is to 'masquerade'
+  packets, i.e. replacing the sender's address by the router's
+  address.
++
+See more
+https://web.archive.org/web/20190408144331/https://access.redhat.com/documentation/en-US/Red_Hat_Enterprise_Linux/4/html/Security_Guide/s1-firewall-ipt-fwd.html[here]
+
+** SSH into the Pi:
++
+----
+ssh pi@192.168.2.2
+----
+
+*** Use main pc as gateway: `sudo route add default gw <addres of
+    interface to which you connected RPI on main pc>`. To find out
+    required addres use `avahi-browse -atr` to find IP interface
+    name of the RPI:
++
+----
+= enp3s0f0u6u1 IPv6 raspberrypi [**:**:**:**:**:**]
+   hostname = [raspberrypi.local]
+   address = [****:****:****:****:****]
+   port = [*]
+   txt = []
+----
++
+Your output should look like this (IP addresses and ports were
+replaced with `*`). Then you need to run `ifconfig`, locate interface
+(in this case it is `enp3s0f0u6u1`) and get
+
+
+
+
+
+* https://web.archive.org/web/20190205235603/https://www.karlrupp.net/en/computer/nat_tutorial[Nat tutorial]
+* https://web.archive.org/web/20181130124259/http://shallowsky.com/blog/linux/raspberry-pi-ethernet-gadget-2.html[RPI ethernet gadget tutorial]
+* https://web.archive.org/web/20181130114734/https://idea.isnew.info/how-to-connect-to-the-internet-over-usb-from-the-raspberry-pi-zero.html[Another one]
+
+===== Dealing with errors
+
+.Gentoo linux iptables
+
+----
+iptables v1.6.1: can't initialize iptables table `NAT': Table does not exist (do you need to insmod?)
+Perhaps iptables or your kernel needs to be upgraded.
+----
+
+Enable iptables NAT support option. Depending on your kernel it might
+be located in different place, to locate where exactly search for
+`IP_NF_NAT` in the menuconfig.
+
+----
+Symbol: IP_NF_NAT [=n]
+Type  : tristate
+Prompt: iptables NAT support
+  Location:
+    -> Networking support (NET [=y])
+      -> Networking options
+        -> Network packet filtering framework (Netfilter) (NETFILTER [=y])
+          -> IP: Netfilter Configuration
+(1)         -> IP tables support (required for filtering/masq/NAT) (IP_NF_IPTABLES [=m
+  Defined at net/ipv4/netfilter/Kconfig:266
+  Depends on: NET [=y] && INET [=y] && NETFILTER [=y] && IP_NF_IPTABLES [=m] && NF_CON
+  Selects: NF_NAT [=m] && NF_NAT_IPV4 [=m] && NETFILTER_XT_NAT [=n]
+----
+
+
+.modprobe: ERROR: could not insert 'g_hid': No such device
+
+
+
+
+==== Install required packages
+
+Before proceding with packages that are mandatory for installation I
+recommend you to spent ~10 minutes of your time and make your life
+much more comfortable by installing `fish` and `neovim`. Of course you
+can choose any other text editor and shell. To use vim under sudo and
+still have all your settings use `sudo -E nvim`
+
+Installation as follows:
+----
+sudo apt-get install neovim zsh
+# Last one is optional: download and isntall my vim config: very minimalistic (only 18 lines).
+# You can replace it any other config you want
+mkdir -p ~/.config/nvim/
+curl https://gitlab.com/snippets/1770471/raw >> ~/.config/nvim/init.vim
+----
+
+===== Configure tools
+
+.VIM
+----
+set autowrite
+set ignorecase
+set incsearch
+set nocompatible
+set number
+set showcmd
+set showmatch
+set showmode
+set smartcase
+set number relativenumber
+
+set whichwrap+=<,>,h,l,[,]
+
+set tabstop=4
+set shiftwidth=4
+set expandtab
+----
+
+
+==== Enable keyboard emulation in RPI
+
+* Add `dtoverlay=dwc2` to the end of `/boot/config.txt`
+* Add `dwc2` and `libcomposite` to the `/etc/modules` or
+  `dwc2,libcomposite` to the `modules-load` in `/boot/cmdline.txt` to
+  load required kernel modules at boot
+
+
+== Devnotes
+
+=== USB Hid
+
+
+Input reports are those sent from the keyboard to the computer.
+
+* 1 byte: modifier keys (Control, Shift, Alt, etc.), where each bit
+  corresponds to a key
+* 1 byte: unused/reserved for OEM
+* 6 bytes: pressed key codes
+
+In order to press a regular key (e.g. A or B), its code has to be
+included inside the 6 byte segment. Remember that this segment
+represents the pressed keys, so until a key stops appearing there the
+host will keep pressing that key constantly.
+
+The modifier keys, however, are 1 bit each. The modifier byte has the
+following structure (bit 0 is on the rightmost part):
+
+1. Right Meta
+2. Right Alt
+3. Right Shift
+4. Right Control
+5. Left Meta
+6. Left Alt
+7. Left Shift
+8. Left Control
+
+If a given bit is set to 1, then the modifier key in
+question is pressed.
+
+=== General algorithm
+
+==== In short
+
+Scan all keyboard, if any changes in pressed keys form new usb report
+and send it to PC.
+
+==== More detailed
+
+Main algorithm is divided into several stages.
+. Scan all keypads to determine which keys has been changed.
+. If no keys changed between scans do nothing
+. For each changed key
+  ** If this key has controlled some of the modifiers determine
+      whether or not this modifier is still activated by some other key.
+      If this is not the case toggle modifier off.
+  ** After determining which modifers are activated on this keypad
+      add modifiers from other keypads.
+  ** For each pressed key determine key code that will be sent to the
+      PC.
+. After previous stage we have
+  1. List of currently pressed modifier keys
+  2. List of key codes that should be sent to the PC
+
+  Create report that will be sent to the pc
+
+----
+/--------------------------\
+| 8-bit modifier key codes |
++--------------------------+
+| OEM reserved             |
++--------------------------+
+| Key code                 |
++--------------------------+
+| Key code                 |
++--------------------------+
+| Key code                 |
++--------------------------+
+| Key code                 |
++--------------------------+
+| Key code                 |
++--------------------------+
+| Key code                 |
+\--------------------------/
+----
+
+
+=== Python HUD interactions
+
+----
+def write_report(report):
+    with open('/dev/hidg0', 'rb+') as fd:
+        fd.write(report.encode('latin1'))
+----
+
+
+****
+The HID Gadget driver provides emulation of USB Human Interface
+Devices (HID). The basic HID handling is done in the kernel, and HID
+reports can be sent/received through I/O on the /dev/hidgX character
+devices.
+****
+
+== Links
+
+Links to articles and forum discussions that I found to be really useful
+when making this keyboard
+
+*
+  https://www.rmedgar.com/blog/using-rpi-zero-as-keyboard-send-reports[RPI
+  as keyboard send reports]
+*
+  https://medium.com/@maheshsenni/setting-up-a-raspberry-pi-without-keyboard-and-mouse-headless-9359e0926807[Setting
+  up a Raspberry Pi without keyboard and mouse (headless)]

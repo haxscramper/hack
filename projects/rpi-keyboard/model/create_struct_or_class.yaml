@@ -1,0 +1,11 @@
+type: "howto"
+name: "How to create instance of class or structure in common lisp"
+creation-time: 16:48:53
+creation-date: 2019-03-02
+howto::text: |
+  If you use `defstruct` to declare own structure named `examplestruct`
+  you should have function `make-examplestruct` that returns instance
+  of your structure.
+
+  To create instance of your class you should use `make-instance`
+  function (example: `(make-instance yourclass)`
