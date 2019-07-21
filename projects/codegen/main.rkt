@@ -1,92 +1,11 @@
 #! /usr/bin/env racket
 #lang typed/racket
 
-(struct CNode
-  ([code : (Listof (U CNode String))]))
+(require "code-types.rkt")
+(require "make-code.rkt")
 
-(struct variable
-  ([name : String]
-   [type : String]))
-
-(define (make-CNode [s : String]) (CNode (list s)))
-(define (% [s : String]) (CNode (list s)))
-
-(define
-  (make-class
-   [name : String]
-   [inherited-from : (Listof String)]
-   [body : (Listof CNode)]) : CNode
-  (CNode
-   (append
-    (list
-     (% " class ")
-     (% name)
-     (% " : ")
-     (% (string-join
-         (map (lambda ([cls : String])
-                (string-append " public " cls))
-              inherited-from) " , "))
-     (% " { "))
-    body
-    (list (% " }; ")))))
-
-
-(define
-  (make-enum
-   [name : String]
-   [fields : (Listof String)]) : CNode
-  (CNode
-   (list
-    (% "enum class")
-    (% name)
-    (% " { ")
-    (% (string-join
-        (map
-         (lambda
-             ([s : String])
-           (string-append s " , "))
-         fields)))
-    (% "};"))))
-
-(define
-  (make-while
-   [while-cond : CNode]
-   [while-body : CNode]) : CNode
-  (let ([while-head (% "while (")]
-        [while-tail (% "}")]
-        [while-middle (% ") {")])
-    (CNode
-     (list while-head
-           while-cond
-           while-middle
-           while-body
-           while-tail))))
-
-(define (make-function
-         [return : String]
-         [name : String]
-         [args : (Listof variable)]
-         [body : (Listof CNode)]) : CNode
-  (CNode
-   (append
-    (list
-     (% return)
-     (% name)
-     (% "(")
-     (% (string-join
-         (map
-          (lambda ([var : variable])
-            (string-append (variable-type var) " "
-                           (variable-name var)))
-          args)
-         ", "))
-     (% ") {"))
-    body
-    (list (% "}")))))
-
-(define
-  (CNode->code
-   [node : CNode]) : String
+(define (CNode->code
+         [node : CNode]) : String
   (string-join
    (map
     (lambda ([var : (U CNode String)])
@@ -96,31 +15,55 @@
     (CNode-code node))
    "\n"))
 
-(let ([priorities
-       '("Undefined"
-         "NoPriority"
-         "Low"
-         "Medium"
-         "High"
-         "Critical"
-         "Blocking"
-         "CurrentlyWorking"
-         "Organization"
-         "Later")])
+(define (make-string->enum-converter
+         [enum-name : String]
+         [enum-fields : (Listof String)]
+         [from-type : String "const std::string&"]
+         [class-name : String ""]) : CNode
+  (make-function
+   enum-name
+   (string-append "strTo" enum-name)
+   (list (variable from-type "arg"))
+   (list
+    (make-if
+     (% (string-append "arg == \"" (car enum-fields) "\""))
+     (% (string-append "return " enum-name "::" (car enum-fields) ";")))
+    (CNode (map (lambda ([enum-field : String])
+                  (make-else-if
+                   (% (string-append "arg == \"" enum-field "\""))
+                   (% (string-append "return " enum-name "::" enum-field ";"))))
+                (cdr enum-fields)))
+    (% " ")
+    (% (string-append
+        "throw std::invalid_argument("
+        "\"Invalid value for enum conversion. "
+        "Expected values: "
+        (string-join enum-fields ", ")
+        " got: \"+ arg );")))))
+
+(let ([enums
+       '(("Priority" . ("Undefined"
+                        "NoPriority"
+                        "Organization"
+                        "Later")))])
   (display
    (CNode->code
     (make-class
      "QSTodo"
      '("DataItem")
-     (list
-      (make-enum
-       "Priority"
-       priorities)
-      (make-function
-       "Priority"
-       "strToPriority"
-       (list (variable "str" "const std::string&"))
-       (list (% "return 0;"))))))
+     (map
+      (lambda ([enum : (Pairof String (Listof String))])
+        (let ([enum-name (car enum)]
+              [enum-fields (cdr enum)])
+          (CNode
+           (list
+            (% (string-append "//#=== " enum-name))
+            (make-enum enum-name enum-fields)
+            (% " ")
+            (make-string->enum-converter
+             enum-name
+             enum-fields)))))
+      enums)))
 
    (open-output-file
     "parse.cpp"

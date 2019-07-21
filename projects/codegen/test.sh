@@ -5,4 +5,4 @@ cd "$(dirname "$0")"
 set -o nounset
 set -o errexit
 
-echo main.rkt | entr -rc sh -c "colecho -gi3 'Running entr' && ./main.rkt && clang-format parse.cpp | bat -lc++ -p"
+fd -e rkt | entr -rc sh -c "colecho -gi3 'Running entr' && ./main.rkt && clang-format -style=file parse.cpp | bat -lc++ -p"
