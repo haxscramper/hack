@@ -5,6 +5,8 @@
 #include <iostream>
 #include <string>
 
+// build using clang++ % -lboost_graph
+
 using namespace boost;
 
 using Str = std::string;
