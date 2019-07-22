@@ -3,36 +3,36 @@ import sequtils
 import strutils
 
 type
-  TypeProps = enum
-    pStatic
-    pConst
-    pRef
-    pPtr
-
-  Type = object
-    name: string
-    props: seq[TypeProps]
-
   Var = object
     name: string
-    vtyp: Type
+    vtyp: string
 
 type
   AcnKind = enum
     acnEnum
     acnClass
     acnFunction
+    acnPredicate
+    acnIfStmt
+    acnElseIfStmt
+    acnElseStmt
+    acnCode
   Acn = ref object
     name: string
+    body: seq[Acn]
     case kind: AcnKind
       of acnEnum:
         vFields: seq[Var]
       of acnClass:
         parents: seq[(string, string)]
-        body: seq[Acn]
       of acnFunction:
-        restype: Type
+        restype: string
         args: seq[Var]
+      of acnPredicate, acnCode:
+        code: string
+      of acnIfStmt, acnElseIfStmt, acnElseStmt:
+        cond: Acn
+
 
 type
   CNode = ref object
@@ -66,12 +66,48 @@ proc acn_class_to_cnode(acn: Acn): CNode =
 proc acn_enum_to_cnode(acn: Acn): CNode =
   CNode(code: &"enum class {acn.name}")
 
+proc var_to_string(t: Var): string = t.vtyp & " " & t.name
+
 proc acn_function_to_cnode(acn: Acn): CNode =
   CNode(
     under: @[
-      CNode(code: acn.restype.name),
-      CNode(code: acn.name)])
+      CNode(code: acn.restype),
+      CNode(code: acn.name),
+      CNode(code: "("),
+      CNode(code: join(map(acn.args, var_to_string), " ")),
+      CNode(code: ") {"),
+      CNode(under: map(acn.body, acn_to_cnode)),
+      CNode(code: "}")
+  ])
 
+proc acn_pred_to_cnode(acn: Acn): CNode =
+  CNode(code: acn.code)
+
+
+proc body_to_cnodes(body: seq[Acn], closing: string = "}"): seq[CNode] =
+  concat(
+    map(body, acn_to_cnode),
+    @[CNode(code: "}")])
+
+proc acn_if_stmt_to_cnode(acn: Acn): CNode =
+  CNode(
+    code: "if ( $# ) {" % cnode_to_string(acn_pred_to_cnode(acn.cond)),
+    under: body_to_cnodes(acn.body))
+
+
+
+proc acn_else_if_stmt_to_cnode(acn: Acn): CNode =
+  CNode(
+    code: "else of ( $# ) {" %
+    cnode_to_string(
+      acn_pred_to_cnode(acn.cond)),
+    under: body_to_cnodes(acn.body))
+
+proc acn_else_stmt_to_cnode(acn: Acn): CNode =
+  CNode(code: "else {", under: body_to_cnodes(acn.body))
+
+proc acn_code_to_cnode(acn: Acn): CNode =
+  CNode(code: acn.code)
 
 proc acn_to_cnode(acn: Acn): CNode =
   CNode(
@@ -81,6 +117,11 @@ proc acn_to_cnode(acn: Acn): CNode =
         of acnClass: acn_class_to_cnode(acn)
         of acnEnum: acn_enum_to_cnode(acn)
         of acnFunction: acn_function_to_cnode(acn)
+        of acnPredicate: acn_function_to_cnode(acn)
+        of acnIfStmt: acn_if_stmt_to_cnode(acn)
+        of acnElseIfStmt: acn_else_if_stmt_to_cnode(acn)
+        of acnElseStmt: acn_else_stmt_to_cnode(acn)
+        of acnCode: acn_code_to_cnode(acn)
   ])
 
 
@@ -92,6 +133,10 @@ echo cnode_to_string(acn_to_cnode(Acn(
   body: @[Acn(
     kind: acnFunction,
     name: "hello",
-    restype: Type(name: "int"),
-    args: @[Var(name: "arg",
-                vtyp: Type(name: "int"))])])))
+    restype: "int",
+    body: @[Acn(
+      kind: acnIfStmt,
+      cond: Acn(kind: acnPredicate, code: "1 == 2"),
+      body: @[Acn(kind: acnCode, code: "return 0;")]
+    )],
+    args: @[Var(name: "arg", vtyp: "int")])])))
