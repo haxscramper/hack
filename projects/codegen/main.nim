@@ -1,6 +1,7 @@
 import strformat
 import sequtils
 import strutils
+import osproc
 
 type
   Var = object
@@ -124,9 +125,9 @@ proc acn_to_cnode(acn: Acn): CNode =
         of acnCode: acn_code_to_cnode(acn)
   ])
 
+var file = open("parse.cpp", fmWrite)
 
-
-echo cnode_to_string(acn_to_cnode(Acn(
+write(file, (cnode_to_string(acn_to_cnode(Acn(
   kind: acnClass,
   name: "QSTodo",
   parents: @[("public", "qde::DataItem")],
@@ -139,4 +140,6 @@ echo cnode_to_string(acn_to_cnode(Acn(
       cond: Acn(kind: acnPredicate, code: "1 == 2"),
       body: @[Acn(kind: acnCode, code: "return 0;")]
     )],
-    args: @[Var(name: "arg", vtyp: "int")])])))
+    args: @[Var(name: "arg", vtyp: "int")])])))))
+
+close(file)
