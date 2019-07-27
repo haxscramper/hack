@@ -3,45 +3,20 @@ import sequtils
 import strutils
 import osproc
 
-type
-  Var = object
-    name: string ## name of the variable
-    vtyp: string ## type
-
-type
-  AcnKind = enum
-    acnEnum
-    acnClass
-    acnFunction
-    acnPredicate
-    acnIfStmt
-    acnElseIfStmt
-    acnElseStmt
-    acnCode
-  Acn = ref object
-    name: string
-    body: seq[Acn]
-    case kind: AcnKind
-      of acnEnum:
-        eFields: seq[Var]
-      of acnClass:
-        parents: seq[(string, string)]
-      of acnFunction:
-        restype: string
-        args: seq[Var]
-      of acnPredicate, acnCode:
-        code: string
-      of acnIfStmt, acnElseIfStmt, acnElseStmt:
-        cond: Acn
-
-
-type
-  CNode = ref object
-    code: string
-    under: seq[CNode]
+include acn_creator
 
 proc cnode_to_string(cnode: CNode): string =
-  cnode.code & " " & join(map(cnode.under, cnode_to_string), "\n")
+  let head = if cnode.code != nil:
+               cnode.code & " "
+             else:
+               ""
+
+  let rest = if cnode.under != nil:
+               join(map(cnode.under, cnode_to_string), "\n")
+             else:
+               ""
+
+  return head & rest
 
 proc acn_to_cnode(acn: Acn): CNode
 
@@ -66,7 +41,6 @@ proc acn_class_to_cnode(acn: Acn): CNode =
 
 
 proc var_to_string(t: Var): string = t.vtyp & " " & t.name
-proc make_acn_code(str: string): Acn = Acn(kind: acnCode, code: str)
 
 
 proc acn_enum_to_cnode(acn: Acn): CNode =
@@ -78,24 +52,6 @@ proc acn_enum_to_cnode(acn: Acn): CNode =
         CNode(code: eVar.name & ", ")), @[CNode(code: "};\n")]))
 
 
-proc make_string_to_enum(
-  acn: Acn,
-  arg: Var = Var(
-    name: "arg",
-    vtyp: "const std::string&")): Acn =
-  Acn(
-    kind: acnFunction,
-    restype: acn.name,
-    name: "$#_to_string" % acn.name,
-    args: @[arg],
-    body: concat(map(
-      acn.eFields,
-      proc(field: Var): Acn =
-        Acn(
-          kind: acnIfStmt,
-          cond: make_acn_code(
-            "$# == \"$#\" " % @[arg.name, field.name]),
-          body: @[make_acn_code("return $#::$# ;" % [acn.name, field.name])]))))
 
 
 proc acn_function_to_cnode(acn: Acn): CNode =
@@ -139,6 +95,24 @@ proc acn_else_stmt_to_cnode(acn: Acn): CNode =
 proc acn_code_to_cnode(acn: Acn): CNode =
   CNode(code: acn.code)
 
+
+proc acn_switch_to_cnode(acn: Acn): CNode =
+
+  proc make_one_case(
+    cs: tuple[
+      case_var: string,
+      action: Acn]): CNode =
+
+    CNode(
+      code:
+      "case $#: { $# } break;" % [
+        cs.case_var,
+        cnode_to_string(acn_to_cnode(cs.action))])
+
+  CNode(
+    code: "switch ($#) {" % acn.swVar.name,
+    under: map(acn.swCases, make_one_case))
+
 proc acn_to_cnode(acn: Acn): CNode =
   CNode(
     code: "",
@@ -152,6 +126,7 @@ proc acn_to_cnode(acn: Acn): CNode =
         of acnElseIfStmt: acn_else_if_stmt_to_cnode(acn)
         of acnElseStmt: acn_else_stmt_to_cnode(acn)
         of acnCode: acn_code_to_cnode(acn)
+        of acnSwitch: acn_switch_to_cnode(acn)
   ])
 
 proc print_acn_tree(acn: Acn, level: int = 0) =
@@ -177,19 +152,11 @@ proc print_acn_tree(acn: Acn, level: int = 0) =
       echo prefix, "else"
     of acnCode:
       echo prefix, acn.code
+    else:
+      echo repr(acn.kind)
 
   for node in acn.body:
     print_acn_tree(node, level + 1)
-
-proc make_enum(name: string, eFields: seq[string]): Acn =
-  Acn(
-    kind: acnEnum,
-    name: name,
-    eFields: map(eFields, proc(str: string): Var = Var(name: str)))
-
-proc make_enum(tmp: (string, seq[string])): Acn =
-  make_enum(tmp[0], tmp[1])
-
 
 
 var file = open("parse.cpp", fmWrite)
@@ -207,9 +174,11 @@ let resAcnTree = Acn(
   parents: @[("public", "qde::DataItem")],
   body: concat(
     acn_enums,
-    map(
-      acn_enums,
-      proc(enm: Acn): Acn = make_string_to_enum(enm))))
+    map(acn_enums,
+      proc(enm: Acn): Acn = make_string_to_enum(enm)),
+    map(acn_enums,
+        proc(enm: Acn): Acn =
+          make_enum_to_string(enm))))
 
 print_acn_tree(resAcnTree)
 
