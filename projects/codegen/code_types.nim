@@ -4,6 +4,18 @@ type
     vtyp: string ## type
 
 type
+  AcsType = enum
+    acsPublic
+    acsPrivate
+    acsProtected
+
+
+type
+  ClsSection = ref object
+    acsType : AcsType
+    body : seq[ref Acn]
+    comm : string
+
   AcnKind = enum
     acnEnum
     acnClass
@@ -12,8 +24,10 @@ type
     acnIfStmt
     acnElseIfStmt
     acnElseStmt
-    acnCode,
-    acnSwitch,
+    acnCode
+    acnSwitch
+    acnField
+
   Acn = ref object
     name: string
     body: seq[Acn]
@@ -24,6 +38,8 @@ type
         eFields: seq[Var]
       of acnClass:
         parents: seq[(string, string)]
+        sections: seq[ClsSection]
+
       of acnFunction:
         restype: string
         args: seq[Var]
@@ -35,6 +51,8 @@ type
         swVar: Var
         swCases: seq[(string, Acn)]
         swDefault: Acn
+      of acnField:
+        val: Var
 
 
 type

@@ -69,3 +69,35 @@ proc make_enum(name: string, eFields: seq[string]): Acn =
 
 proc make_enum(tmp: (string, seq[string])): Acn =
   make_enum(tmp[0], tmp[1])
+
+proc make_acn_field(field_var: Var): Acn =
+  Acn(kind: acnField, val: field_var)
+
+proc add_fields(cls: Acn, section_vars: seq[Var], access: AcsType = acsPrivate): Acn =
+  Acn(
+    kind: acnClass,
+    name: cls.name,
+    body: cls.body,
+    parents: cls.parents,
+    sections: concat(
+      cls.sections,
+      @[ClsSection(
+        acsType: access,
+        body:
+          section_vars
+          .map(make_acn_field))]))
+
+
+proc get_class_fields(cls: Acn): seq[(Var, AcsType)] =
+  proc get_section_fields(
+    sect: ClsSection): seq[(Var, AcsType)] =
+      let acsType = sect.acsType
+      return sect
+      .body
+      .filterIt(it.kind == acnField)
+      .mapIt((it.val, acsType))
+
+  cls
+  .sections
+  .map(get_section_fields)
+  .concat()

@@ -114,6 +114,9 @@ proc acn_switch_to_cnode(acn: Acn): CNode =
     code: "switch ($#) {" % acn.swVar.name,
     under: map(acn.swCases, make_one_case))
 
+proc acn_field_to_cnode(acn: Acn): CNode =
+  CNode()
+
 proc acn_to_cnode(acn: Acn): CNode =
   CNode(
     code: "",
@@ -128,6 +131,7 @@ proc acn_to_cnode(acn: Acn): CNode =
         of acnElseStmt: acn_else_stmt_to_cnode(acn)
         of acnCode: acn_code_to_cnode(acn)
         of acnSwitch: acn_switch_to_cnode(acn)
+        of acnField: acn_field_to_cnode(acn)
   ])
 
 proc print_acn_tree(acn: Acn, level: int = 0) =
