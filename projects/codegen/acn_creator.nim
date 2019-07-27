@@ -40,9 +40,11 @@ proc make_enum_to_string(
         proc(acn_field: Var): (string, Acn) =
           let switch_case: Acn = Acn(
             kind: acnCode,
-            code: "return $# ;" % acn_field.name)
+            code: "return \"$#\" ;" % acn_field.name)
 
-          return (acn_field.vtyp, switch_case))
+          return(
+            acn_enum.name & "::" & acn_field.name,
+            switch_case))
 
   let selector_switch: Acn = Acn(
     kind: acnSwitch,

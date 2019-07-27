@@ -19,6 +19,8 @@ type
     body: seq[Acn]
     case kind: AcnKind
       of acnEnum:
+        ## Names of the fields are stored in `name` fields of the
+        ## variable
         eFields: seq[Var]
       of acnClass:
         parents: seq[(string, string)]

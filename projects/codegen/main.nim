@@ -103,6 +103,7 @@ proc acn_switch_to_cnode(acn: Acn): CNode =
       case_var: string,
       action: Acn]): CNode =
 
+
     CNode(
       code:
       "case $#: { $# } break;" % [
@@ -140,6 +141,11 @@ proc print_acn_tree(acn: Acn, level: int = 0) =
         echo prefix, "  ", field.name
     of acnFunction:
       echo prefix, "function ",
+       # IDEA create long functions that spans several line, one line
+       # for each variable
+       # func |
+       #      | -> restype
+       #      |
        join(map(acn.args, proc(v: Var): string = v.vtyp), " X "),
        " |-> ", acn.restype
     of acnPredicate:
@@ -152,6 +158,13 @@ proc print_acn_tree(acn: Acn, level: int = 0) =
       echo prefix, "else"
     of acnCode:
       echo prefix, acn.code
+    of acnSwitch:
+      echo prefix, "switch ", acn.swVar.name
+      echo join(
+        map(
+          acn.swCases,
+          proc(cs: (string, Acn)): string = prefix & "  " & cs[0]),
+        "\n")
     else:
       echo repr(acn.kind)
 
@@ -161,7 +174,7 @@ proc print_acn_tree(acn: Acn, level: int = 0) =
 
 var file = open("parse.cpp", fmWrite)
 let enum_specs: seq[(string, seq[string])] =
-  @[("Status", @["NoStatus", "Undefined", "Completed"])]
+  @[("Status", @["NoStatus", "Completed"])]
 
 
 
