@@ -3,169 +3,72 @@ import sequtils
 import strutils
 import osproc
 
-include acn_creator
+include acn_to_cpp_cnode
 
-proc cnode_to_string(cnode: CNode): string =
-  let head = if cnode.code != nil:
-               cnode.code & " "
-             else:
-               ""
-
-  let rest = if cnode.under != nil:
-               join(map(cnode.under, cnode_to_string), "\n")
-             else:
-               ""
-
-  return head & rest
-
-proc acn_to_cnode(acn: Acn): CNode
+proc make_acn_else_if(cond: string, body: seq[Acn]): Acn =
+  Acn(
+    kind: acnElseIfStmt,
+    body: body,
+    cond: make_acn_predicate(cond))
 
 
-proc cls_section_to_cnode(sect: ClsSection): CNode =
+proc make_acn_else(body: string): Acn =
+  Acn(kind: acnElseStmt, body: @[make_acn_code(body)])
 
-  let sect_comm = if sect.comm != nil:
-                    "//#=== " & sect.comm & "\n"
-                  else: ""
-
-  let acs_type = case sect.acsType:
-                   of acsPublic: "public:"
-                   of acsPrivate: "private:"
-                   of acsProtected: "protected:"
-
-  CNode(
-    code:
-      sect_comm & acs_type,
-    under:
-      concat(
-      sect.body.mapIt(acn_to_cnode(it[])),
-      @[CNode(code: "")]))
-
-proc acn_class_to_cnode(acn: Acn): CNode =
-  let parent_cnodes =
-    if acn.parents.len == 0:
-      @[CNode(code: "{")]
-    else:
-      @[CNode(
-        code: " : " &
-          join(
-            map(
-              acn.parents,
-              proc(par: (string, string)): string =
-                par[0] & " " & par[1] & " "),
-            " , ")),
-        CNode(code: "{")]
-
-  let section_cnodes = acn.sections.map(cls_section_to_cnode)
-
-  let body_cnodes =
-    if acn.body != nil:
-      map(acn.body, acn_to_cnode)
-    else:
-      @[]
+proc make_acn_while(cond: string, body: seq[Acn]): Acn =
+  Acn(
+    kind: acnWhile,
+    body: body,
+    cond: make_acn_predicate(cond))
 
 
-  CNode(
-    code: &"class {acn.name}",
-    under: concat(
-      parent_cnodes,
-      body_cnodes,
-      section_cnodes,
-      @[CNode(code: "};")]))
+## Generate code for parsing QXmlStreamReader into instance of the
+## class
+proc acn_class_to_xml_reader(cls: Acn): Acn =
+  echo "=== acn_class_to_xml_reader"
+  let func_name = "read" & cls.name & "XML"
+  let restype = "void"
+  let args = @[
+    Var(name: "target", vtyp: cls.name & "*"),
+    Var(name: "xmlStream", vtyp: "QXmlStreamReader*"),
+    Var(name: "_tags", vtyp: "void*")
+  ]
+
+  let class_fields: seq[(Var, AcsType)] = cls.get_class_fields()
 
 
-proc var_to_string(t: Var): string = t.vtyp & " " & t.name
+  echo class_fields.mapIt(it[0].name).join("\n")
+
+  let stream_name = "xmlStream->name()"
+
+  let class_fields_readers = @[
+    make_acn_if(stream_name &
+      " == tags->" & cls.name.toLowerAscii & "." &
+      class_fields[0][0].name,
+      "target->set" & class_fields[0][0].name.capitalizeAscii & "();")]
+
+  let body = @[
+    make_acn_if(
+      "_tags == nullptr",
+      "tags = &target->xmlTags;"),
+    make_acn_else("tags = static_cast<" &
+      cls.name & "::" & cls.name & "XMLTags*>(_tags)"),
+    make_acn_code(""),
+    make_acn_while(
+      "xmlStream->readNextStartElement()",
+      class_fields_readers)]
+
+  defer:
+    echo "=== ###"
+
+  return Acn(
+    kind: acnFunction,
+    name: func_name,
+    args: args,
+    restype: restype,
+    body: body)
 
 
-proc acn_enum_to_cnode(acn: Acn): CNode =
-  CNode(
-    code: "enum class $# {" % acn.name,
-    under: concat(map(
-      acn.eFields,
-      proc (eVar: Var): CNode =
-        CNode(code: eVar.name & ", ")), @[CNode(code: "};\n")]))
-
-
-
-
-proc acn_function_to_cnode(acn: Acn): CNode =
-  CNode(
-    under: @[
-      CNode(code: acn.restype),
-      CNode(code: acn.name),
-      CNode(code: "("),
-      CNode(code: join(map(acn.args, var_to_string), " ")),
-      CNode(code: ") {"),
-      CNode(under: map(acn.body, acn_to_cnode)),
-      CNode(code: "}")
-  ])
-
-proc acn_pred_to_cnode(acn: Acn): CNode =
-  CNode(code: acn.code)
-
-
-proc body_to_cnodes(body: seq[Acn], closing: string = "}"): seq[CNode] =
-  concat(
-    map(body, acn_to_cnode),
-    @[CNode(code: "}")])
-
-proc acn_if_stmt_to_cnode(acn: Acn): CNode =
-  CNode(
-    code: "if ( $# ) {" % cnode_to_string(acn_pred_to_cnode(acn.cond)),
-    under: body_to_cnodes(acn.body))
-
-
-
-proc acn_else_if_stmt_to_cnode(acn: Acn): CNode =
-  CNode(
-    code: "else of ( $# ) {" %
-    cnode_to_string(
-      acn_pred_to_cnode(acn.cond)),
-    under: body_to_cnodes(acn.body))
-
-proc acn_else_stmt_to_cnode(acn: Acn): CNode =
-  CNode(code: "else {", under: body_to_cnodes(acn.body))
-
-proc acn_code_to_cnode(acn: Acn): CNode =
-  CNode(code: acn.code)
-
-
-proc acn_switch_to_cnode(acn: Acn): CNode =
-
-  proc make_one_case(
-    cs: tuple[
-      case_var: string,
-      action: Acn]): CNode =
-
-
-    CNode(
-      code:
-      "case $#: { $# } break;" % [
-        cs.case_var,
-        cnode_to_string(acn_to_cnode(cs.action))])
-
-  CNode(
-    code: "switch ($#) {" % acn.swVar.name,
-    under: map(acn.swCases, make_one_case))
-
-proc acn_field_to_cnode(acn: Acn): CNode =
-  CNode(code: acn.val.vtyp & " " & acn.val.name & ";")
-
-proc acn_to_cnode(acn: Acn): CNode =
-  CNode(
-    code: "",
-    under: @[
-      case acn.kind:
-        of acnClass: acn_class_to_cnode(acn)
-        of acnEnum: acn_enum_to_cnode(acn)
-        of acnFunction: acn_function_to_cnode(acn)
-        of acnPredicate: acn_function_to_cnode(acn)
-        of acnIfStmt: acn_if_stmt_to_cnode(acn)
-        of acnElseIfStmt: acn_else_if_stmt_to_cnode(acn)
-        of acnElseStmt: acn_else_stmt_to_cnode(acn)
-        of acnCode: acn_code_to_cnode(acn)
-        of acnSwitch: acn_switch_to_cnode(acn)
-        of acnField: acn_field_to_cnode(acn)
-  ])
 
 proc print_acn_tree(acn: Acn, level: int = 0) =
   let prefix = repeat(' ', level * 2)
@@ -192,7 +95,7 @@ proc print_acn_tree(acn: Acn, level: int = 0) =
        # func |
        #      | -> restype
        #      |
-       join(map(acn.args, proc(v: Var): string = v.vtyp), " X "),
+       acn.args.mapIt("[ " & it.vtyp & " ]").join(" X "),
        " |-> ", acn.restype
     of acnPredicate:
       echo prefix, "predicate"
@@ -246,8 +149,12 @@ let class_test = Acn(
   comm = "enum fields"
 )
 
+let xml_converter = acn_class_to_xml_reader(class_test)
+
 print_acn_tree(class_test)
+print_acn_tree(xml_converter)
 
 write(file, (cnode_to_string(acn_to_cnode(class_test))))
+write(file, (cnode_to_string(acn_to_cnode(xml_converter))))
 
 close(file)

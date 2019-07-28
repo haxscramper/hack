@@ -27,6 +27,7 @@ type
     acnCode
     acnSwitch
     acnField
+    acnWhile
 
   Acn = ref object
     name: string
@@ -45,7 +46,7 @@ type
         args: seq[Var]
       of acnPredicate, acnCode:
         code: string
-      of acnIfStmt, acnElseIfStmt, acnElseStmt:
+      of acnIfStmt, acnElseIfStmt, acnElseStmt, acnWhile:
         cond: Acn
       of acnSwitch:
         swVar: Var

@@ -70,6 +70,15 @@ proc make_enum(name: string, eFields: seq[string]): Acn =
 proc make_enum(tmp: (string, seq[string])): Acn =
   make_enum(tmp[0], tmp[1])
 
+proc make_acn_predicate(code: string): Acn =
+  Acn(kind: acnPredicate, code: code)
+
+proc make_acn_if(cond: string, code: string): Acn =
+  Acn(
+    kind: acnIfStmt,
+    cond: make_acn_predicate(cond),
+    body: @[make_acn_code(code)])
+
 proc make_acn_field(field_var: Var): Acn =
   Acn(kind: acnField, val: field_var)
 
