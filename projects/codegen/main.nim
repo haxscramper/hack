@@ -20,6 +20,26 @@ proc cnode_to_string(cnode: CNode): string =
 
 proc acn_to_cnode(acn: Acn): CNode
 
+
+proc cls_section_to_cnode(sect: ClsSection): CNode =
+
+  let sect_comm = if sect.comm != nil:
+                    "//#=== " & sect.comm & "\n"
+                  else: ""
+
+  let acs_type = case sect.acsType:
+                   of acsPublic: "public:"
+                   of acsPrivate: "private:"
+                   of acsProtected: "protected:"
+
+  CNode(
+    code:
+      sect_comm & acs_type,
+    under:
+      concat(
+      sect.body.mapIt(acn_to_cnode(it[])),
+      @[CNode(code: "")]))
+
 proc acn_class_to_cnode(acn: Acn): CNode =
   let parent_cnodes =
     if acn.parents.len == 0:
@@ -35,6 +55,8 @@ proc acn_class_to_cnode(acn: Acn): CNode =
             " , ")),
         CNode(code: "{")]
 
+  let section_cnodes = acn.sections.map(cls_section_to_cnode)
+
   let body_cnodes =
     if acn.body != nil:
       map(acn.body, acn_to_cnode)
@@ -47,6 +69,7 @@ proc acn_class_to_cnode(acn: Acn): CNode =
     under: concat(
       parent_cnodes,
       body_cnodes,
+      section_cnodes,
       @[CNode(code: "};")]))
 
 
@@ -125,7 +148,7 @@ proc acn_switch_to_cnode(acn: Acn): CNode =
     under: map(acn.swCases, make_one_case))
 
 proc acn_field_to_cnode(acn: Acn): CNode =
-  CNode(code: acn.val.vtyp & " " & acn.val.name)
+  CNode(code: acn.val.vtyp & " " & acn.val.name & ";")
 
 proc acn_to_cnode(acn: Acn): CNode =
   CNode(
@@ -203,7 +226,7 @@ let enum_specs: seq[(string, seq[string])] =
   @[("Status", @["NoStatus", "Completed"])]
 
 let enum_fields = ClsSection(
-  acsType: acsPublic,
+  acsType: acsPrivate,
   body: enum_specs
     .mapIt(Var(
       name: it[0][0].toLowerAscii() & it[0][1..^1],
@@ -219,7 +242,8 @@ let class_test = Acn(
 ).add_fields(
   @[Var(name: "weight", vtyp: "int")]
 ).add_section(
-  enum_fields
+  section = enum_fields,
+  comm = "enum fields"
 )
 
 print_acn_tree(class_test)

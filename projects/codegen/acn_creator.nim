@@ -92,9 +92,21 @@ proc add_fields(cls: Acn, section_vars: seq[Var], access: AcsType = acsPrivate):
           .map(to_ref))]))
 
 
-proc add_section(cls: Acn, section: ClsSection): Acn =
+proc add_section(
+  cls: Acn,
+  section: ClsSection,
+  comm: string = nil): Acn =
+
   new(result); result = cls
-  result.sections = concat(cls.sections, @[section])
+
+  if comm != nil:
+    var sect = section
+    sect.comm = comm
+    result.sections = concat(cls.sections, @[sect])
+  else:
+    result.sections = concat(cls.sections, @[section])
+
+
 
 proc get_class_fields(cls: Acn): seq[(Var, AcsType)] =
   proc get_section_fields(
