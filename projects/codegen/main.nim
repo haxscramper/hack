@@ -21,22 +21,32 @@ proc cnode_to_string(cnode: CNode): string =
 proc acn_to_cnode(acn: Acn): CNode
 
 proc acn_class_to_cnode(acn: Acn): CNode =
+  let parent_cnodes =
+    if acn.parents.len == 0:
+      @[CNode(code: "{")]
+    else:
+      @[CNode(
+        code: " : " &
+          join(
+            map(
+              acn.parents,
+              proc(par: (string, string)): string =
+                par[0] & " " & par[1] & " "),
+            " , ")),
+        CNode(code: "{")]
+
+  let body_cnodes =
+    if acn.body != nil:
+      map(acn.body, acn_to_cnode)
+    else:
+      @[]
+
+
   CNode(
     code: &"class {acn.name}",
     under: concat(
-      if acn.parents.len == 0:
-        @[CNode(code: "{")]
-      else:
-        @[CNode(
-          code: " : " &
-            join(
-              map(
-                acn.parents,
-                proc(par: (string, string)): string =
-                  par[0] & " " & par[1] & " "),
-              " , ")),
-          CNode(code: "{")],
-      map(acn.body, acn_to_cnode),
+      parent_cnodes,
+      body_cnodes,
       @[CNode(code: "};")]))
 
 
@@ -115,7 +125,7 @@ proc acn_switch_to_cnode(acn: Acn): CNode =
     under: map(acn.swCases, make_one_case))
 
 proc acn_field_to_cnode(acn: Acn): CNode =
-  CNode()
+  CNode(code: acn.val.vtyp & " " & acn.val.name)
 
 proc acn_to_cnode(acn: Acn): CNode =
   CNode(
@@ -138,7 +148,16 @@ proc print_acn_tree(acn: Acn, level: int = 0) =
   let prefix = repeat(' ', level * 2)
   case acn.kind:
     of acnClass:
-      echo prefix, "class"
+      echo prefix, "class ", acn.name
+      for sect in acn.sections:
+        echo prefix, "  ", case sect.acsType:
+               of acsPublic: "public"
+               of acsPrivate: "private"
+               of acsProtected: "protected"
+
+        for item in sect.body:
+          print_acn_tree(item[], level + 2)
+
     of acnEnum:
       echo prefix, "enum"
       for field in acn.eFields:
@@ -169,36 +188,42 @@ proc print_acn_tree(acn: Acn, level: int = 0) =
           acn.swCases,
           proc(cs: (string, Acn)): string = prefix & "  " & cs[0]),
         "\n")
+    of acnField:
+      echo prefix, acn.val.name, ": ", acn.val.vtyp
     else:
-      echo repr(acn.kind)
+      echo prefix, repr(acn.kind)
 
   for node in acn.body:
     print_acn_tree(node, level + 1)
+
 
 
 var file = open("parse.cpp", fmWrite)
 let enum_specs: seq[(string, seq[string])] =
   @[("Status", @["NoStatus", "Completed"])]
 
-
+let enum_fields = ClsSection(
+  acsType: acsPublic,
+  body: enum_specs
+    .mapIt(Var(
+      name: it[0][0].toLowerAscii() & it[0][1..^1],
+      vtyp: it[0]))
+    .map(make_acn_field)
+    .map(to_ref))
 
 let acn_enums = map(enum_specs, make_enum)
 
-
-let resAcnTree = Acn(
+let class_test = Acn(
   kind: acnClass,
-  name: "QSTodo",
-  parents: @[("public", "qde::DataItem")],
-  body: concat(
-    acn_enums,
-    map(acn_enums,
-      proc(enm: Acn): Acn = make_string_to_enum(enm)),
-    map(acn_enums,
-        proc(enm: Acn): Acn =
-          make_enum_to_string(enm))))
+  name: "QSTodo"
+).add_fields(
+  @[Var(name: "weight", vtyp: "int")]
+).add_section(
+  enum_fields
+)
 
-print_acn_tree(resAcnTree)
+print_acn_tree(class_test)
 
-write(file, (cnode_to_string(acn_to_cnode(resAcnTree))))
+write(file, (cnode_to_string(acn_to_cnode(class_test))))
 
 close(file)

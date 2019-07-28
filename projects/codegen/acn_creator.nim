@@ -73,6 +73,9 @@ proc make_enum(tmp: (string, seq[string])): Acn =
 proc make_acn_field(field_var: Var): Acn =
   Acn(kind: acnField, val: field_var)
 
+proc to_ref[T](x: T): ref T =
+  new(result); result[] = x
+
 proc add_fields(cls: Acn, section_vars: seq[Var], access: AcsType = acsPrivate): Acn =
   Acn(
     kind: acnClass,
@@ -85,8 +88,13 @@ proc add_fields(cls: Acn, section_vars: seq[Var], access: AcsType = acsPrivate):
         acsType: access,
         body:
           section_vars
-          .map(make_acn_field))]))
+          .map(make_acn_field)
+          .map(to_ref))]))
 
+
+proc add_section(cls: Acn, section: ClsSection): Acn =
+  new(result); result = cls
+  result.sections = concat(cls.sections, @[section])
 
 proc get_class_fields(cls: Acn): seq[(Var, AcsType)] =
   proc get_section_fields(
