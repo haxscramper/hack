@@ -111,7 +111,7 @@ proc acn_if_stmt_to_cnode(acn: Acn): CNode =
 
 proc acn_else_if_stmt_to_cnode(acn: Acn): CNode =
   CNode(
-    code: "else of ( $# ) {" %
+    code: "else if ( $# ) {" %
     cnode_to_string(
       acn_pred_to_cnode(acn.cond)),
     under: body_to_cnodes(acn.body))
