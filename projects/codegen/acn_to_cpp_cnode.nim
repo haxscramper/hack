@@ -2,15 +2,12 @@ include acn_creator
 
 
 proc cnode_to_string(cnode: CNode): string =
-  let head = if cnode.code != nil:
+  let head = if cnode.code != "":
                cnode.code & " "
              else:
                ""
 
-  let rest = if cnode.under != nil:
-               join(map(cnode.under, cnode_to_string), "\n")
-             else:
-               ""
+  let rest = join(map(cnode.under, cnode_to_string), "\n")
 
   return head & rest
 
@@ -28,13 +25,14 @@ proc type_to_string(t: Type): string =
       t.oName
     of string_t:
       t.sName
+    of vec_t:
+      "std::vector< " & type_to_string(t.vItem) & ">"
     else:
       "[ TMP NOT IMPLEMENTED TYPE |-> STRING ]"
 
 
-  if not t.spec.isNil:
-    res = if ptr_t in t.spec: res & "*" else: res
-    res = if const_t in t.spec: "const " & res else: res
+  res = if ptr_t in t.spec: res & "*" else: res
+  res = if const_t in t.spec: "const " & res else: res
 
   return res
 
@@ -44,7 +42,7 @@ proc var_to_string(t: Var): string =
 
 
 proc cls_section_to_cnode(sect: ClsSection): CNode =
-  let sect_comm = if sect.comm != nil:
+  let sect_comm = if sect.comm != "":
                     "//#=== " & sect.comm & "\n"
                   else: ""
 
@@ -75,11 +73,7 @@ proc acn_class_to_cnode(acn: Acn): CNode =
 
   let section_cnodes = acn.sections.map(cls_section_to_cnode)
 
-  let body_cnodes =
-    if acn.body != nil:
-      map(acn.body, acn_to_cnode)
-    else:
-      @[]
+  let body_cnodes = map(acn.body, acn_to_cnode)
 
 
   CNode(
@@ -122,7 +116,7 @@ proc body_to_cnodes(body: seq[Acn], closing: string = "}"): seq[CNode] =
     @[CNode(code: closing)])
 
 proc acn_if_stmt_to_cnode(acn: Acn): CNode =
-  let comm = if acn.comm.isNil: "" else: "\n//" & acn.comm & "\n"
+  let comm = if acn.comm == "": "" else: "\n//" & acn.comm & "\n"
 
   CNode(
     code: comm &
@@ -131,7 +125,7 @@ proc acn_if_stmt_to_cnode(acn: Acn): CNode =
 
 
 proc acn_else_if_stmt_to_cnode(acn: Acn): CNode =
-  let comm = if acn.comm.isNil: "" else: "//" & acn.comm & "\n"
+  let comm = if acn.comm == "": "" else: "//" & acn.comm & "\n"
 
   CNode(
     code: comm & "else if ( $# ) {" %

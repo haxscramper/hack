@@ -5,14 +5,14 @@ import osproc
 
 include acn_to_cpp_cnode
 
-proc make_acn_else_if(cond: string, body: seq[Acn], comm: string = nil): Acn =
+proc make_acn_else_if(cond: string, body: seq[Acn], comm: string = ""): Acn =
   Acn(
     kind: acnElseIfStmt,
     body: body,
     cond: make_acn_predicate(cond),
     comm: comm)
 
-proc make_acn_if(cond: string, body: Acn, comm: string = nil): Acn =
+proc make_acn_if(cond: string, body: Acn, comm: string = ""): Acn =
   Acn(
     kind: acnIfStmt,
     body: @[body],
@@ -36,7 +36,7 @@ proc make_ptr_type(type_name: string): Type =
   Type(kind: other_t, oName: type_name, spec: @[ptr_t])
 
 
-proc make_acn_if(predicate: Acn, body: seq[Acn], comm: string = nil): Acn =
+proc make_acn_if(predicate: Acn, body: seq[Acn], comm: string = ""): Acn =
   Acn(kind: acnIfStmt, cond: predicate, body: body, comm: comm)
 
 proc make_comm(str: string): Acn =
@@ -44,13 +44,45 @@ proc make_comm(str: string): Acn =
 
 let else_skip = make_acn_else("xmlStream->skipCurrentElement();")
 
+proc call_function_to_str(
+  function: string,
+  args: seq[Acn] = @[]): string =
+    function & "(" &
+      args.map(acn_to_cnode).map(cnode_to_string).join(", ") & ")"
+
+
+proc call_function(
+  meth: string,
+  args: seq[Acn] = @[]): Acn =
+    make_acn_code(call_function_to_str(meth, args))
+
+
+proc call_method_of(
+  obj: Var,
+  meth: string,
+  args: seq[Acn] = @[]): Acn =
+    let call_operator =
+      if ptr_t in obj.vtyp.spec: "->"
+      else:                      "."
+
+    let code: string = obj.name &
+      call_operator &
+      call_function_to_str(meth, args)
+
+    return make_acn_code(code)
+
+
 
 proc make_var_reader(
   v: Var,
-  tags_name: string,
+  cls: Acn,
   stream_name: string = "xmlStream->name()",
   read_next_elem: string = "xmlStream->readNextStartElement()"
      ): Acn =
+
+  let stream = Var(name: "xmlStream", vtyp: make_ptr_type("QXmlStreamReader"))
+  let target = Var(name: "target", vtyp: make_ptr_type(cls.name))
+  let tags_name = cls.name.toLowerAscii()
 
   return case v.vtyp.kind:
     of vec_t:
@@ -70,8 +102,20 @@ proc make_var_reader(
           else_skip
       ])
 
+    of enum_t:
+      call_method_of(
+        target,
+        "set" & v.name.capitalizeAscii,
+        @[call_function(
+          "string_to_" & v.vtyp.eName,
+          @[call_method_of(stream, "readElementText")])])
+
     else:
-      make_acn_code("target->set" & v.name.capitalizeAscii & "();")
+      call_method_of(
+        target,
+        "set" & v.name.capitalizeAscii,
+        @[call_method_of(stream, "readElementText")]
+      )
 
 
 
@@ -89,7 +133,7 @@ iterator make_field_reader(
       "." &
       field.name
 
-    let code = make_var_reader(field, cls.name.toLowerAscii)
+    let code = make_var_reader(field, cls)
     let comm = "Matches " & cls.name & "::" & field.name
 
     if i == 0:
@@ -176,9 +220,9 @@ proc print_acn_tree(acn: Acn, level: int = 0) =
       echo prefix, "class ", acn.name
       for sect in acn.sections:
         echo prefix, "  ", case sect.acsType:
-               of acsPublic: "public"
-               of acsPrivate: "private"
-               of acsProtected: "protected"
+          of acsPublic: "public"
+          of acsPrivate: "private"
+          of acsProtected: "protected"
 
         for item in sect.body:
           print_acn_tree(item[], level + 2)
@@ -190,12 +234,12 @@ proc print_acn_tree(acn: Acn, level: int = 0) =
     of acnFunction:
       echo prefix, "function ",
        # IDEA create long functions that spans several line, one line
-       # for each variable
-       # func |
-       #      | -> restype
-       #      |
-       acn.args.mapIt("[ " & type_to_string(it.vtyp) & " ]").join(" X "),
-       " |-> ", acn.restype
+         # for each variable
+         # func |
+         #      | -> restype
+         #      |
+        acn.args.mapIt("[ " & type_to_string(it.vtyp) & " ]").join(" X "),
+        " |-> ", acn.restype
     of acnPredicate:
       echo prefix, "predicate"
     of acnIfStmt:
@@ -233,11 +277,11 @@ proc make_enum_type(acn_enum: Acn): Type =
 let enum_fields = ClsSection(
   acsType: acsPrivate,
   body: enum_specs
-    .mapIt(Var(
-      name: it[0][0].toLowerAscii() & it[0][1..^1],
-      vtyp: make_enum_type(it[0])))
-    .map(make_acn_field)
-    .map(to_ref))
+  .mapIt(Var(
+    name: it[0][0].toLowerAscii() & it[0][1..^1],
+    vtyp: make_enum_type(it[0])))
+  .map(make_acn_field)
+  .map(to_ref))
 
 let acn_enums = map(enum_specs, make_enum)
 

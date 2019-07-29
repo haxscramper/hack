@@ -26,7 +26,8 @@ proc make_string_to_enum(
             kind: acnIfStmt,
             cond: make_acn_code(
               "$# == \"$#\" " % @[arg.name, field.name]),
-            body: @[make_acn_code("return $#::$# ;" % [acn_enum.name, field.name])]))))
+            body: @[make_acn_code("return $#::$# ;" % [
+              acn_enum.name, field.name])]))))
 
 
 proc make_throw_invalid_arg(message: string): Acn =
@@ -81,7 +82,7 @@ proc make_enum(tmp: (string, seq[string])): Acn =
 proc make_acn_predicate(code: string): Acn =
   Acn(kind: acnPredicate, code: code)
 
-proc make_acn_if(cond: string, code: string, comm: string = nil): Acn =
+proc make_acn_if(cond: string, code: string, comm: string = ""): Acn =
   Acn(
     kind: acnIfStmt,
     cond: make_acn_predicate(cond),
@@ -113,11 +114,11 @@ proc add_fields(cls: Acn, section_vars: seq[Var], access: AcsType = acsPrivate):
 proc add_section(
   cls: Acn,
   section: ClsSection,
-  comm: string = nil): Acn =
+  comm: string = ""): Acn =
 
   new(result); result = cls
 
-  if comm != nil:
+  if comm != "":
     var sect = section
     sect.comm = comm
     result.sections = concat(cls.sections, @[sect])
