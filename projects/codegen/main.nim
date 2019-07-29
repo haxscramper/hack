@@ -33,6 +33,61 @@ proc make_class_ptr_type(cls: Acn): Type =
 proc make_ptr_type(type_name: string): Type =
   Type(kind: other_t, oName: type_name, spec: @[ptr_t])
 
+
+proc make_acn_if(predicate: Acn, body: seq[Acn]): Acn =
+  Acn(kind: acnIfStmt, cond: predicate, body: body)
+
+proc make_var_reader(
+  v: Var,
+  tags_name: string,
+  stream_name: string = "xmlStream->name()",
+  read_next_elem: string = "xmlStream->readNextStartElement()"
+     ): Acn =
+
+  return case v.vtyp.kind:
+    of vec_t:
+      make_acn_while(
+        cond = read_next_elem,
+        body = @[
+          make_acn_if(
+            make_acn_predicate(
+              stream_name &
+                " == " &
+                tags_name &
+                "." &
+                v.name &
+                "_item"),
+            @[make_acn_code("\n // read vector item")])])
+
+    else:
+      make_acn_code("target->set" & v.name.capitalizeAscii & "();")
+
+
+
+iterator make_field_reader(
+  clFields: seq[Var],
+  cls: Acn,
+  else_skip: Acn,
+  stream_name: string = "xmlStream->name()"): Acn {.inline.} =
+
+  for i in 0..<len(clFields):
+    let field: Var = clFields[i]
+    let cond = stream_name &
+      " == tags->" &
+      cls.name.toLowerAscii &
+      "." &
+      field.name
+
+    let code = make_var_reader(field, stream_name)
+
+    if i == 0:
+      yield make_acn_if(cond, code)
+    else:
+      yield make_acn_else_if(cond, @[code])
+
+  yield else_skip
+
+
 ## Generate code for parsing QXmlStreamReader into instance of the
 ## class
 proc acn_class_to_xml_reader(cls: Acn): Acn =
@@ -66,28 +121,10 @@ proc acn_class_to_xml_reader(cls: Acn): Acn =
 
   let else_skip = make_acn_else("xmlStream->skipCurrentElement();")
 
-  iterator make_field_reader(clFields: seq[Var]): Acn {.inline.} =
-    for i in 0..<len(clFields):
-      let field: Var = clFields[i]
-      let cond = stream_name &
-        " == tags->" &
-        cls.name.toLowerAscii &
-        "." &
-        field.name
-
-      let code = make_acn_code("taget->set" &
-        field.name.capitalizeAscii &
-        "();")
-
-      if i == 0:
-        yield make_acn_if(cond, code)
-      else:
-        yield make_acn_else_if(cond, @[code])
-
-    yield else_skip
-
   let read_next_elem = "xmlStream->readNextStartElement()"
-  let field_readers = toSeq(make_field_reader(class_fields.mapIt(it[0])))
+  let field_readers = toSeq(make_field_reader(
+    class_fields.mapIt(it[0]), cls, else_skip))
+
   let tags_class = cls.name & "::" & cls.name & "XMLTags"
   let field_read_while = make_acn_while(read_next_elem, field_readers)
 
@@ -194,6 +231,9 @@ let enum_fields = ClsSection(
 
 let acn_enums = map(enum_specs, make_enum)
 
+proc make_vec_t(item_name: string): Type =
+  Type(kind: vec_t, vItem: Type(kind: other_t, oName: item_name))
+
 proc make_int_t(): Type =
   Type(kind: int_t)
 
@@ -204,7 +244,7 @@ let class_test = Acn(
   @[
     Var(name: "weight1", vtyp: make_int_t()),
     Var(name: "weight2", vtyp: make_int_t()),
-    Var(name: "weight3", vtyp: make_int_t()),
+    Var(name: "attachments", vtyp: make_vec_t("Attachment"))
   ]
 ).add_section(
   section = enum_fields,
