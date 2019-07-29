@@ -81,11 +81,12 @@ proc make_enum(tmp: (string, seq[string])): Acn =
 proc make_acn_predicate(code: string): Acn =
   Acn(kind: acnPredicate, code: code)
 
-proc make_acn_if(cond: string, code: string): Acn =
+proc make_acn_if(cond: string, code: string, comm: string = nil): Acn =
   Acn(
     kind: acnIfStmt,
     cond: make_acn_predicate(cond),
-    body: @[make_acn_code(code)])
+    body: @[make_acn_code(code)],
+    comm: comm)
 
 proc make_acn_field(field_var: Var): Acn =
   Acn(kind: acnField, val: field_var)

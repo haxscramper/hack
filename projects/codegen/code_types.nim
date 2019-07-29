@@ -63,6 +63,7 @@ type
   Acn = ref object
     name: string
     body: seq[Acn]
+    comm: string
     case kind: AcnKind
       of acnEnum:
         ## Names of the fields are stored in `name` fields of the

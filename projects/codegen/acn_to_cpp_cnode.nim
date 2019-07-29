@@ -122,15 +122,19 @@ proc body_to_cnodes(body: seq[Acn], closing: string = "}"): seq[CNode] =
     @[CNode(code: closing)])
 
 proc acn_if_stmt_to_cnode(acn: Acn): CNode =
+  let comm = if acn.comm.isNil: "" else: "\n//" & acn.comm & "\n"
+
   CNode(
-    code: "if ( $# ) {" % cnode_to_string(acn_pred_to_cnode(acn.cond)),
+    code: comm &
+      "if ( $# ) {" % cnode_to_string(acn_pred_to_cnode(acn.cond)),
     under: body_to_cnodes(acn.body))
 
 
-
 proc acn_else_if_stmt_to_cnode(acn: Acn): CNode =
+  let comm = if acn.comm.isNil: "" else: "//" & acn.comm & "\n"
+
   CNode(
-    code: "else if ( $# ) {" %
+    code: comm & "else if ( $# ) {" %
     cnode_to_string(
       acn_pred_to_cnode(acn.cond)),
     under: body_to_cnodes(acn.body))

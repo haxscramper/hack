@@ -5,17 +5,19 @@ import osproc
 
 include acn_to_cpp_cnode
 
-proc make_acn_else_if(cond: string, body: seq[Acn]): Acn =
+proc make_acn_else_if(cond: string, body: seq[Acn], comm: string = nil): Acn =
   Acn(
     kind: acnElseIfStmt,
     body: body,
-    cond: make_acn_predicate(cond))
+    cond: make_acn_predicate(cond),
+    comm: comm)
 
-proc make_acn_if(cond: string, body: Acn): Acn =
+proc make_acn_if(cond: string, body: Acn, comm: string = nil): Acn =
   Acn(
     kind: acnIfStmt,
     body: @[body],
-    cond: make_acn_predicate(cond))
+    cond: make_acn_predicate(cond),
+    comm: comm)
 
 
 proc make_acn_else(body: string): Acn =
@@ -34,8 +36,14 @@ proc make_ptr_type(type_name: string): Type =
   Type(kind: other_t, oName: type_name, spec: @[ptr_t])
 
 
-proc make_acn_if(predicate: Acn, body: seq[Acn]): Acn =
-  Acn(kind: acnIfStmt, cond: predicate, body: body)
+proc make_acn_if(predicate: Acn, body: seq[Acn], comm: string = nil): Acn =
+  Acn(kind: acnIfStmt, cond: predicate, body: body, comm: comm)
+
+proc make_comm(str: string): Acn =
+  Acn(kind: acnCode, code: "\n//" & str)
+
+let else_skip = make_acn_else("xmlStream->skipCurrentElement();")
+
 
 proc make_var_reader(
   v: Var,
@@ -49,6 +57,7 @@ proc make_var_reader(
       make_acn_while(
         cond = read_next_elem,
         body = @[
+          make_comm("Read single item from " & v.name),
           make_acn_if(
             make_acn_predicate(
               stream_name &
@@ -57,7 +66,9 @@ proc make_var_reader(
                 "." &
                 v.name &
                 "_item"),
-            @[make_acn_code("\n // read vector item")])])
+            @[]),
+          else_skip
+      ])
 
     else:
       make_acn_code("target->set" & v.name.capitalizeAscii & "();")
@@ -78,12 +89,13 @@ iterator make_field_reader(
       "." &
       field.name
 
-    let code = make_var_reader(field, stream_name)
+    let code = make_var_reader(field, cls.name.toLowerAscii)
+    let comm = "Matches " & cls.name & "::" & field.name
 
     if i == 0:
-      yield make_acn_if(cond, code)
+      yield make_acn_if(cond, code, comm)
     else:
-      yield make_acn_else_if(cond, @[code])
+      yield make_acn_else_if(cond, @[code], comm)
 
   yield else_skip
 
@@ -118,8 +130,6 @@ proc acn_class_to_xml_reader(cls: Acn): Acn =
     while i < len(s):
       yield (i, s[i])
       i += 1
-
-  let else_skip = make_acn_else("xmlStream->skipCurrentElement();")
 
   let read_next_elem = "xmlStream->readNextStartElement()"
   let field_readers = toSeq(make_field_reader(
