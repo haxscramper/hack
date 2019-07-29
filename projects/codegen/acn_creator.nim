@@ -1,5 +1,11 @@
 include code_types
 
+proc make_const_ref_string(): Type =
+  Type(kind: string_t, spec: @[const_t, ref_t])
+
+proc make_enum_type(enum_name: string): Type =
+  Type(kind: enum_t, eName: enum_name)
+
 proc make_acn_code(str: string): Acn = Acn(kind: acnCode, code: str)
 
 # TODO throw invalid argument in the end of the function
@@ -7,7 +13,7 @@ proc make_string_to_enum(
   acn_enum: Acn,
   arg: Var = Var(
     name: "arg",
-    vtyp: "const std::string&")): Acn =
+    vtyp: make_const_ref_string())): Acn =
     Acn(
       kind: acnFunction,
       restype: acn_enum.name,
@@ -33,7 +39,9 @@ proc make_enum_to_string(
   res: string = "std::string"): Acn =
 
   let arg: Var =
-    Var(name: "arg", vtyp: acn_enum.name)
+    Var(
+      name: "arg",
+      vtyp: make_enum_type(acn_enum.name))
 
   let switch_cases: seq[(string, Acn)] =
     map(acn_enum.eFields,

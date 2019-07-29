@@ -16,7 +16,30 @@ proc cnode_to_string(cnode: CNode): string =
 
 
 proc acn_to_cnode(acn: Acn): CNode
-proc var_to_string(t: Var): string = t.vtyp & " " & t.name
+
+
+proc type_to_string(t: Type): string =
+  var res = case t.kind:
+    of int_t:
+      "int"
+    of enum_t:
+      t.eName
+    of other_t:
+      t.oName
+    of string_t:
+      t.sName
+    else:
+      "[ TMP NOT IMPLEMENTED TYPE |-> STRING ]"
+
+
+  if not t.spec.isNil:
+    res = if ptr_t in t.spec: res & "*" else: res
+    res = if const_t in t.spec: "const " & res else: res
+
+  return res
+
+proc var_to_string(t: Var): string =
+  type_to_string(t.vtyp) & " " & t.name
 
 
 
@@ -31,12 +54,8 @@ proc cls_section_to_cnode(sect: ClsSection): CNode =
                    of acsProtected: "protected:"
 
   CNode(
-    code:
-      sect_comm & acs_type,
-    under:
-      concat(
-      sect.body.mapIt(acn_to_cnode(it[])),
-      @[CNode(code: "")]))
+    code: sect_comm & acs_type,
+    under: sect.body.mapIt(acn_to_cnode(it[])))
 
 
 proc acn_class_to_cnode(acn: Acn): CNode =
@@ -142,7 +161,7 @@ proc acn_switch_to_cnode(acn: Acn): CNode =
     under: map(acn.swCases, make_one_case))
 
 proc acn_field_to_cnode(acn: Acn): CNode =
-  CNode(code: acn.val.vtyp & " " & acn.val.name & ";")
+  CNode(code: var_to_string(acn.val) & ";")
 
 proc acn_while_to_cnode(acn: Acn): CNode =
   CNode(

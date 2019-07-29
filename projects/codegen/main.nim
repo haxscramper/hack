@@ -27,6 +27,11 @@ proc make_acn_while(cond: string, body: seq[Acn]): Acn =
     body: body,
     cond: make_acn_predicate(cond))
 
+proc make_class_ptr_type(cls: Acn): Type =
+  Type(kind: other_t, oName: cls.name, spec: @[ptr_t])
+
+proc make_ptr_type(type_name: string): Type =
+  Type(kind: other_t, oName: type_name, spec: @[ptr_t])
 
 ## Generate code for parsing QXmlStreamReader into instance of the
 ## class
@@ -35,9 +40,15 @@ proc acn_class_to_xml_reader(cls: Acn): Acn =
   let func_name = "read" & cls.name & "XML"
   let restype = "void"
   let args = @[
-    Var(name: "target", vtyp: cls.name & "*"),
-    Var(name: "xmlStream", vtyp: "QXmlStreamReader*"),
-    Var(name: "_tags", vtyp: "void*")
+    Var(
+      name: "target",
+      vtyp: make_class_ptr_type(cls)),
+    Var(
+      name: "xmlStream",
+      vtyp: make_ptr_type("QXmlStreamReader")),
+    Var(
+      name: "_tags",
+      vtyp: make_ptr_type("void"))
   ]
 
   let class_fields: seq[(Var, AcsType)] = cls.get_class_fields()
@@ -111,7 +122,6 @@ proc acn_class_to_xml_reader(cls: Acn): Acn =
     body: body)
 
 
-
 proc print_acn_tree(acn: Acn, level: int = 0) =
   let prefix = repeat(' ', level * 2)
   case acn.kind:
@@ -137,7 +147,7 @@ proc print_acn_tree(acn: Acn, level: int = 0) =
        # func |
        #      | -> restype
        #      |
-       acn.args.mapIt("[ " & it.vtyp & " ]").join(" X "),
+       acn.args.mapIt("[ " & type_to_string(it.vtyp) & " ]").join(" X "),
        " |-> ", acn.restype
     of acnPredicate:
       echo prefix, "predicate"
@@ -157,7 +167,7 @@ proc print_acn_tree(acn: Acn, level: int = 0) =
           proc(cs: (string, Acn)): string = prefix & "  " & cs[0]),
         "\n")
     of acnField:
-      echo prefix, acn.val.name, ": ", acn.val.vtyp
+      echo prefix, acn.val.name, ": ", type_to_string(acn.val.vtyp)
     else:
       echo prefix, repr(acn.kind)
 
@@ -170,25 +180,31 @@ var file = open("parse.cpp", fmWrite)
 let enum_specs: seq[(string, seq[string])] =
   @[("Status", @["NoStatus", "Completed"])]
 
+proc make_enum_type(acn_enum: Acn): Type =
+  Type(kind: enum_t, eName: acn_enum.name)
+
 let enum_fields = ClsSection(
   acsType: acsPrivate,
   body: enum_specs
     .mapIt(Var(
       name: it[0][0].toLowerAscii() & it[0][1..^1],
-      vtyp: it[0]))
+      vtyp: make_enum_type(it[0])))
     .map(make_acn_field)
     .map(to_ref))
 
 let acn_enums = map(enum_specs, make_enum)
+
+proc make_int_t(): Type =
+  Type(kind: int_t)
 
 let class_test = Acn(
   kind: acnClass,
   name: "QSTodo"
 ).add_fields(
   @[
-    Var(name: "weight1", vtyp: "int"),
-    Var(name: "weight2", vtyp: "int"),
-    Var(name: "weight3", vtyp: "int"),
+    Var(name: "weight1", vtyp: make_int_t()),
+    Var(name: "weight2", vtyp: make_int_t()),
+    Var(name: "weight3", vtyp: make_int_t()),
   ]
 ).add_section(
   section = enum_fields,
@@ -197,8 +213,7 @@ let class_test = Acn(
 
 let xml_converter = acn_class_to_xml_reader(class_test)
 
-print_acn_tree(class_test)
-print_acn_tree(xml_converter)
+#print_acn_tree(class_test)
 
 write(file, (cnode_to_string(acn_to_cnode(class_test))))
 write(file, (cnode_to_string(acn_to_cnode(xml_converter))))

@@ -1,7 +1,38 @@
 type
+  TypeSpec = enum
+    const_t
+    ptr_t
+    ref_t
+
+  TypeKind = enum
+    hash_t
+    vec_t
+    string_t
+    int_t
+    enum_t
+    other_t
+  Type = ref object
+    spec: seq[TypeSpec]
+    case kind: TypeKind
+      of hash_t:
+        hKey: Type
+        hVal: Type
+      of vec_t:
+        vItem: Type
+      of other_t:
+        oName: string
+      of enum_t:
+        eName: string
+      of string_t:
+        sName: string
+      of int_t:
+        nil
+
+
+type
   Var = object
     name: string ## name of the variable
-    vtyp: string ## type
+    vtyp: Type ## type
 
 type
   AcsType = enum
