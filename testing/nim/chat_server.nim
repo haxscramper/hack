@@ -54,4 +54,5 @@ proc serve() {.async.} =
     echo "Done connecting"
 
 asyncCheck serve()
+echo "Launched serve"
 runForever()
