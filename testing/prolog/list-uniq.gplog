@@ -1,0 +1,8 @@
+:- initialization(main).
+
+new([], []).
+new([H|T], [K|L]) :- K #= H + 1, new(T, L).
+
+main :-
+    new([3, 4, 1, 2, 4], L), write(L),
+    nl, halt.

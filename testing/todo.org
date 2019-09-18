@@ -1,0 +1,8 @@
+* Nim
+
+** nim ast to png
+
++ [ ] Wrap in CLI utility to generate ast of any piece of code.
++ [ ] Add support for parsing at compile time *and* at runtime (for
+  use as CLI tool)
++ [ ] More configuration options (rankdir/splines etc.)

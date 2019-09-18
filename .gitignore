@@ -383,3 +383,8 @@ CMakeLists.txt.user*
 
 # End of https://www.gitignore.io/api/c,qt,c++,perl,cmake,emacs,python,haskell,assembler,commonlisp
 parse.cpp
+
+**/*.tmp
+**/*.tmp.*
+**/*.cmi
+**/*.cmo
