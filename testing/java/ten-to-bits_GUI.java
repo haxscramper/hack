@@ -4,17 +4,8 @@ import java.util.*;
 import java.util.stream.*;
 import javax.swing.*;
 
-class Misc {
-  public static void showErrorMessage(String msg) {
-    JOptionPane.showMessageDialog(null, msg, "Err",
-                                  JOptionPane.ERROR_MESSAGE |
-                                      JOptionPane.OK_CANCEL_OPTION);
-  }
-  public static String toString(ArrayList<Boolean> in) {
-    return (
-        in.stream().map(n -> n ? "1" : "0").collect(Collectors.joining("")));
-  }
-}
+include(`misc.m4.java');
+include(`bits.m4.java');
 
 class TextFieldExample {
   static JTextArea textArea;
@@ -109,6 +100,8 @@ class NumberStructure extends JFrame {
   JTextField num_input_fld;
   JButton reverse_btn;
 
+  Bits bits;
+
   void initUI() {
     setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
 
@@ -133,6 +126,7 @@ class NumberStructure extends JFrame {
     Container contentPanel = getContentPane();
     GroupLayout groupLayout = new GroupLayout(contentPanel);
 
+    // https://www.javaworld.com/article/2077486/java-tip-121--flex-your-grid-layout.html ?
     contentPanel.setLayout(groupLayout);
 
     groupLayout.setHorizontalGroup(  //
@@ -194,55 +188,6 @@ class NumberStructure extends JFrame {
     this.pack();
   }
 
-  ArrayList<Boolean> toBits(int num) {
-    var res = new ArrayList<Boolean>();
-
-    while (num > 0) {
-      res.add(num % 2 == 1);
-      num = num / 2;
-    }
-
-    return res;
-  }
-
-  int fromBits(ArrayList<Boolean> bits) {
-    int res = 0;
-    for (int idx = 0; idx < bits.size(); ++idx) {
-      res += (int)Math.pow(2, idx) * (bits.get(idx) ? 1 : 0);
-    }
-    return res;
-  }
-
-  ArrayList<Boolean> doShift(ArrayList<Boolean> in, Boolean right) {
-    if (right) {
-      for (int i = 0; i < in.size() - 1; ++i) {
-        in.set(i, in.get(i + 1));
-      }
-      in.set(in.size() - 1, false);
-    } else {
-      for (int i = in.size() - 1; i > 1; --i) {
-        in.set(i, in.get(i - 1));
-      }
-    }
-
-    return in;
-  }
-
-  ArrayList<Boolean> resize(ArrayList<Boolean> in, int targetSize) {
-    if (in.size() > targetSize) {
-      return new ArrayList<Boolean>(
-          in.subList(targetSize - in.size() - 1, in.size() - 1));
-    } else {
-      for (int i = in.size(); i <= targetSize; ++i) {
-        in.add(false);
-      }
-      var res = new ArrayList<Boolean>(
-          Collections.nCopies(targetSize - in.size(), false));
-      res.addAll(in);
-      return res;
-    }
-  }
-
   Optional<Integer> readInt() {
     try {
       var num = Integer.parseInt(num_input_fld.getText());
@@ -268,27 +213,25 @@ class NumberStructure extends JFrame {
     initSignals();
   }
 
+  void doShift(char dir) {
+    var num = readInt();
+    if (num.isPresent()) {
+      bits = Bits.fromNum(num.get());
+
+      // XXXX Constant for selecting target integer size
+      bits.resize(32);
+      bits.doShift(dir);
+      setInt(bits.toNum());
+    }
+  }
+
   void initSignals() {
     doShiftLeft_btn.addActionListener(new ActionListener() {
-      public void actionPerformed(ActionEvent e) {
-        System.out.println("Requested shift left");
-        var num = readInt();
-        if (num.isPresent()) {
-          System.out.println("Input value is" + num.get());
-          var bits = resize(toBits(num.get()), 16);
-          System.out.println("Bit represenetation: " + Misc.toString(bits));
-          bits = doShift(bits, false);
-          System.out.println("After shift: " + Misc.toString(bits));
-
-          setInt(fromBits(bits));
-        }
-      }
+      public void actionPerformed(ActionEvent e) { doShift('l'); }
     });
 
     doShiftRight_btn.addActionListener(new ActionListener() {
-      public void actionPerformed(ActionEvent e) {
-        System.out.println("Requested right shift");
-      }
+      public void actionPerformed(ActionEvent e) { doShift('r'); }
     });
 
     reverse_btn.addActionListener(new ActionListener() {

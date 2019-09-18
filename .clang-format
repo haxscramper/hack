@@ -92,3 +92,6 @@ CompactNamespaces: false
 
 BreakBeforeBinaryOperators: All
 SpaceAfterCStyleCast: false
+
+---
+Language: Java
