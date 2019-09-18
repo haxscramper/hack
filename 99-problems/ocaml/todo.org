@@ -1,0 +1,5 @@
+** TODO p05 [0/2]
++ [ ] what is the difference between ~function~, ~fun~ and simple ~let
+  (rec)~
++ [ ] ~aux~ accepts only one argument, right? then why do we call it
+  as ~aux [] l;;~ --- isn't it two arguments?
