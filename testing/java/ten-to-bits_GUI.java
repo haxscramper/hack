@@ -6,6 +6,7 @@ import javax.swing.*;
 
 include(`misc.m4.java');
 include(`bits.m4.java');
+include(`ui-misc.m4.java');
 
 class TextFieldExample {
   static JTextArea textArea;
@@ -123,69 +124,31 @@ class NumberStructure extends JFrame {
     String column[] = {"ID", "NAME", "SALARY"};
     numberRepr_tbl = new JTable(data, column);
 
-    Container contentPanel = getContentPane();
-    GroupLayout groupLayout = new GroupLayout(contentPanel);
+    getContentPane().setLayout(
+        new BoxLayout(getContentPane(), BoxLayout.Y_AXIS));
 
-    // https://www.javaworld.com/article/2077486/java-tip-121--flex-your-grid-layout.html ?
-    contentPanel.setLayout(groupLayout);
+    add(LYTBuilder.makeHorizontalPanel(new ArrayList<JComponent>() {
+      {
+        add(base10_conversion);
+        add(doShiftLeft_btn);
+        add(doShiftRight_btn);
+      }
+    }));
 
-    groupLayout.setHorizontalGroup(  //
-        groupLayout                  //
-            .createSequentialGroup() //
-            .addGroup(               //
-                groupLayout
-                    .createParallelGroup() //
-                    .addComponent(baseLabel)
-                    .addComponent(base10_conversion)
-                    .addComponent(numberRepr_tbl)
-                    .addComponent(num_input_fld)
+    add(LYTBuilder.makeHorizontalPanel(new ArrayList<JComponent>() {
+      {
+        add(numberSign_lbl);
+        add(numberBits_lbl);
+      }
+    }));
 
-                    )
-            .addGroup( //
-                groupLayout
-                    .createParallelGroup() //
-                    .addComponent(doShiftLeft_btn)
-                    .addComponent(numberSign_lbl)
-                    .addComponent(reverse_btn)
-
-                    )
-            .addGroup( //
-                groupLayout
-                    .createParallelGroup() //
-                    .addComponent(doShiftRight_btn)
-                    .addComponent(numberBits_lbl)
-
-                    ));
-
-    groupLayout.setVerticalGroup(    //
-        groupLayout                  //
-            .createSequentialGroup() //
-            .addGroup(               //
-                groupLayout
-                    .createParallelGroup() //
-                    .addComponent(baseLabel)
-                    .addComponent(doShiftLeft_btn)
-                    .addComponent(doShiftRight_btn))
-            .addGroup( //
-                groupLayout
-                    .createSequentialGroup() //
-                    .addComponent(base10_conversion))
-            .addGroup( //
-                groupLayout
-                    .createParallelGroup() //
-                    .addComponent(numberSign_lbl)
-                    .addComponent(numberBits_lbl))
-            .addGroup( //
-                groupLayout
-                    .createParallelGroup() //
-                    .addComponent(numberRepr_tbl))
-            .addGroup( //
-                groupLayout
-                    .createParallelGroup() //
-                    .addComponent(num_input_fld)
-                    .addComponent(reverse_btn)));
-
-    this.pack();
+    add(numberRepr_tbl);
+    add(LYTBuilder.makeHorizontalPanel(new ArrayList<JComponent>() {
+      {
+        add(num_input_fld);
+        add(reverse_btn);
+      }
+    }));
   }
 
   Optional<Integer> readInt() {

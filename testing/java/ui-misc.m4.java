@@ -2,7 +2,7 @@ import java.util.*;
 import java.util.stream.*;
 import javax.swing.*;
 
-class LYTBuilder {
+public class LYTBuilder {
   static JPanel makeDirectedPanel(ArrayList<JComponent> items, int direction) {
     var panel = new JPanel();
     var layout = new BoxLayout(panel, direction);
@@ -21,6 +21,22 @@ class LYTBuilder {
 
   static JPanel makeHorizontalPanel(ArrayList<JComponent> items) {
     return makeDirectedPanel(items, BoxLayout.X_AXIS);
+  }
+
+  static JPanel makeAnnotatedInput(String label, JTextField textField,
+                                   int direction) {
+    ppnulltest(textField);
+    textField.setMaximumSize(new Dimension(Integer.MAX_VALUE, 48));
+
+    var labelWidget = new JLabel(label);
+    // FIXME does not affect width at all.
+    labelWidget.setMinimumSize(new Dimension(0, label.length() * 1000));
+    return LYTBuilder.makeDirectedPanel(new ArrayList<JComponent>() {
+      {
+        add(labelWidget);
+        add(textField);
+      }
+    }, direction);
   }
 }
 
