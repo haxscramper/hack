@@ -27,4 +27,28 @@ class Misc {
             return Optional.empty();
         }
     }
+
+    public static void addHelpMenuItem(
+        JFrame frame,
+        String message) {
+
+        JMenuBar menuBar = new JMenuBar();
+        var menu = new JMenu("...");
+
+        var helpItem = new JMenuItem("Help");
+        menu.add(helpItem);
+        helpItem.addActionListener(new ActionListener() {
+            public void actionPerformed(ActionEvent e) {
+                JOptionPane.showMessageDialog(
+                    null,
+                    message,
+                    "Help",
+                    JOptionPane.QUESTION_MESSAGE
+                        | JOptionPane.OK_CANCEL_OPTION);
+            }
+        });
+
+        menuBar.add(menu);
+        frame.setJMenuBar(menuBar);
+    }
 }
