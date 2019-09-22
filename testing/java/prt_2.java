@@ -14,6 +14,7 @@ class CountChars {
 
     void initUI() {
         frame = new JFrame("TextField Example");
+        frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
 
         BoxLayout boxLayout = new BoxLayout(
             frame.getContentPane(), BoxLayout.Y_AXIS);
@@ -82,6 +83,7 @@ class FilterNumbers {
 
     void initUI() {
         frame = new JFrame("TextField Example");
+        frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
 
         BoxLayout boxLayout = new BoxLayout(
             frame.getContentPane(), BoxLayout.Y_AXIS);
@@ -101,13 +103,10 @@ class FilterNumbers {
         frame.add(textArea);
         frame.add(runButton);
 
-        menuBar  = new JMenuBar();
-        var menu = new JMenu("...");
-
         Misc.addHelpMenuItem(
             frame,
-            "Введите текст в поле и нажмите кнопку 'Run' для подсчета"
-                + "непробельных символов в тексте.\n"
+            "Введите текст в поле ввода и нажмите кнопку 'run' для "
+            + "запуска программы\n"
                 + "Для закрытия окна помощи нажмите 'Ok'");
 
         frame.pack();

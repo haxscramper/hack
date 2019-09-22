@@ -28,12 +28,11 @@ class Misc {
         }
     }
 
-    public static void addHelpMenuItem(
-        JFrame frame,
-        String message) {
+
+    public static void addHelpMenuItem(JFrame frame, String message) {
 
         JMenuBar menuBar = new JMenuBar();
-        var menu = new JMenu("...");
+        var      menu    = new JMenu("...");
 
         var helpItem = new JMenuItem("Help");
         menu.add(helpItem);
@@ -50,5 +49,38 @@ class Misc {
 
         menuBar.add(menu);
         frame.setJMenuBar(menuBar);
+    }
+
+    public static JComponent setMin_WH(
+        JComponent in,
+        Integer    width,
+        Integer    height) {
+
+        in.setMinimumSize(new Dimension(width, height));
+        return in;
+    }
+
+    public static JComponent setMax_WH(
+
+        JComponent in,
+        Integer    width,
+        Integer    height) {
+        in.setMaximumSize(new Dimension(
+            (width < 0 ? Integer.MAX_VALUE : width),
+            (height < 0 ? Integer.MAX_VALUE : height)));
+
+        return in;
+    }
+
+    public static JTable setHeader(
+        JTable            table,
+        ArrayList<String> values) {
+        var header   = table.getTableHeader();
+        var colModel = header.getColumnModel();
+        for (int i = 0; i < values.size(); ++i) {
+            var column = colModel.getColumn(i);
+            column.setHeaderValue(values.get(i));
+        }
+        return table;
     }
 }
