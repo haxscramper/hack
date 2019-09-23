@@ -23,14 +23,26 @@ class NumberStructure extends JFrame {
                 return 1;
             }
             public int getColumnCount() {
-                return bitSize;
+                return bitSize + 1;
             }
             public Object getValueAt(int row, int col) {
+                if (col == 0) {
+                    if (row == 0) {
+                        return "Значение";
+                    }
+                }
+
+                col = col - 1;
                 if (row == 0) {
                     if (bits == null) {
                         return 0;
                     } else {
-                        return (bits.get(bitSize - col - 1) ? "1" : "0");
+                        if (col >= bits.size()) {
+                            return 0;
+                        } else {
+                            return (
+                                bits.get(bitSize - col - 1) ? "1" : "0");
+                        }
                     }
                 } else {
                     return 0;
@@ -43,12 +55,15 @@ class NumberStructure extends JFrame {
     }
 
     void updateHeader() {
-        var headerVals = new ArrayList<String>();
+        var headerVals = new ArrayList<String>() {
+            { add("Вес бита"); }
+        };
         for (int i = 0; i < bitSize; ++i) {
-            headerVals.add(Integer.toString(i));
+            headerVals.add(
+                Long.toString((long)Math.pow(2, bitSize - i - 1)));
         }
         Misc.setHeader(numberRepr_tbl, headerVals);
-}
+    }
 
     void initUI() {
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
@@ -64,10 +79,15 @@ class NumberStructure extends JFrame {
             }
         }));
 
+        numberSign_lbl.setBackground(Color.blue);
+        numberBits_lbl.setBackground(Color.yellow);
+        numberSign_lbl.setOpaque(true);
+        numberBits_lbl.setOpaque(true);
+
         add(LYTBuilder.makeHorizontalPanel(new ArrayList<JComponent>() {
             {
                 add(Misc.setMin_WH(numberSign_lbl, 96, 12));
-                add(Misc.setMin_WH(numberBits_lbl, 96, 12));
+                add(Misc.setMin_WH(numberBits_lbl, 240, 12));
             }
         }));
 
@@ -98,17 +118,15 @@ class NumberStructure extends JFrame {
         }
     }
 
-    void setInt(Integer in) {
-        num_input_fld.setText(Integer.toString(in));
+    void setInt(long in) {
+        num_input_fld.setText(Long.toString(in));
     }
 
     void update() {
         var num = readInt();
         if (num.isPresent()) {
-            if (bits == null) {
-                bits = Bits.fromNum(num.get());
-                bits.resize(bitSize);
-            }
+            bits = Bits.fromNum(num.get());
+            bits.resize(bitSize);
 
             System.out.println("Updating table and conversion");
             base10_conversion.setText(Integer.toString(num.get()));

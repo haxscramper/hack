@@ -2,7 +2,7 @@ import java.util.*;
 import java.util.stream.*;
 import javax.swing.*;
 
-include(`utils.m4')
+include(utils.m4);
 
 class Bits {
     ArrayList<Boolean> bits;
@@ -30,7 +30,7 @@ class Bits {
         bits = new ArrayList<Boolean>();
     }
 
-    public static Bits fromNum(int num) {
+    public static Bits fromNum(long num) {
         var res = new Bits();
 
         if (num == 0) {
@@ -46,10 +46,28 @@ class Bits {
         return res;
     }
 
-    public Integer toNum() {
-        Integer res = 0;
+    public static Bits fromDbl(Double flt, Integer maxDigits) {
+        var res = new Bits();
+        for (int i = 0; i < maxDigits && flt != 0; ++i) {
+            flt *= 2;
+            res.bits.add(flt > 1);
+            flt -= (flt > 1 ? 1 : 0);
+        }
+        return res;
+    }
+
+    public long toNum() {
+        long res = 0;
         for (int idx = 0; idx < bits.size(); ++idx) {
-            res += (int)Math.pow(2, idx) * (bits.get(idx) ? 1 : 0);
+            res += (long)Math.pow(2, idx) * (bits.get(idx) ? 1 : 0);
+        }
+        return res;
+    }
+
+    public Double toDbl() {
+        Double res = 0.0;
+        for (int idx = 0; idx < bits.size(); ++idx) {
+            res += Math.pow(2, -idx) * (bits.get(idx) ? 1 : 0);
         }
         return res;
     }
