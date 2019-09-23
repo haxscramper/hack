@@ -1,0 +1,29 @@
+:- initialization(main).
+
+counter(M, S, N, C, List) :-
+    C = M,
+    Mod = M mod S,
+    Mod = 0,
+    Div = M / S,
+    counter(M, S, N, Div, List).
+
+counter(M, S, N, C, [Head|Tail]) :-
+    Head = N,
+    NewN is (N + S) mod M,
+    NewC = C - 1,
+    NewC > 0,
+    counter(M, S, NewN, NewC, Tail).
+
+counter(_, _, N, _, [Head|Tail]) :- Head = N, Tail = [].
+
+test(M, S, N) :-
+    nl, counter(M, S, N, M, OutList), write(OutList).
+
+main() :-
+    %% <++>
+    test(6, 3, 1),
+    test(17, 3, 1),
+    test(5, 2, 1),
+    test(3, 4, 5),
+    test(32, 3, 10)
+    .

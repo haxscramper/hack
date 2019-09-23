@@ -1,0 +1,42 @@
+:- initialization(main).
+
+strictly_increasing([Head, Last]) :- Head < Last.
+strictly_increasing([Head1, Head2|Tail]) :-
+    Head1 < Head2,
+    strictly_increasing([Head2|Tail]).
+
+
+strictly_decreasing([Head, Last]) :- Head > Last.
+strictly_decreasing([Head1, Head2|Tail]) :-
+    Head1 > Head2,
+    strictly_decreasing([Head2|Tail]).
+
+non_increasing([Head, Last]) :- Head =< Last.
+non_increasing([Head1, Head2|Tail]) :-
+    Head1 =< Head2,
+    non_increasing([Head2|Tail]).
+
+non_decreasing([Head, Last]) :- Head >= Last.
+non_decreasing([Head1, Head2|Tail]) :-
+    Head1 >= Head2,
+    non_decreasing([Head2|Tail]).
+
+constant([Head, Last]) :- Head = Last.
+constant([Head1, Head2|Tail]) :-
+    Head1 = Head2,
+    constant([Head2, Tail]).
+
+check_list(List) :-
+    ( strictly_increasing(List), writeln("Strictly increasing")) ;
+    ( strictly_decreasing(List), writeln("Strictly decreasing")) ;
+    ( constant(List), writeln("Constant")) ;
+    ( non_increasing(List), writeln("Non-increasing")) ;
+    ( non_decreasing(List), writeln("Non-decreasing")) ;
+    ( writeln("Undefined") ).
+
+main :-
+    check_list([1, 2, 3]),
+    check_list([1, -1, -2]),
+    check_list([0, 0, 0]),
+    check_list([0, 0, 1]),
+    halt.

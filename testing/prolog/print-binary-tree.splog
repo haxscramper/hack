@@ -1,0 +1,9 @@
+:- initialization(main).
+
+
+left() :-
+
+main :-
+    %% <++>
+    write("Hello world"),
+    nl, halt.

@@ -1,0 +1,6 @@
+:- initialization(main).
+
+incr_list([], []).
+incr_list([H|T], [K|L]) :- K is H + 1, incr_list(T, L).
+
+main :- incr_list([1,2,3,4,5,5], I), write(I).
