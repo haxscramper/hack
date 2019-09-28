@@ -1,0 +1,30 @@
+:- initialization(main).
+
+is_bintree(t(_, nil, nil)).
+is_bintree(t(_, Left, nil)) :-
+    is_bintree(Left).
+
+is_bintree(t(_, nil, Right)) :-
+    is_bintree(Right).
+
+is_bintree(t(_, Left, Right)) :-
+    is_bintree(Left), is_bintree(Right).
+
+is_bindict(t((_, _), nil, nil)).
+
+is_bindict(t((_, _), Left, nil)) :-
+    is_bindict(Left).
+
+is_bindict(t((_, _), nil, Right)) :-
+    is_bindict(Right).
+
+is_bindict(t((_, _), Left, Right)) :-
+    is_bindict(Left), is_bindict(Right).
+
+main :-
+    %% <++>
+    trace(is_bindict),
+    gtrace,
+    is_bindict(t((1, 2), nil, t((2, 3), nil, nil))),
+    write("Hello world"),
+    nl, halt.
