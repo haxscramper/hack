@@ -1,30 +1,36 @@
 :- initialization(main).
 
-is_bintree(t(_, nil, nil)).
-is_bintree(t(_, Left, nil)) :-
-    is_bintree(Left).
+build_tree([Head], t(Head, nil, nil)).
 
-is_bintree(t(_, nil, Right)) :-
-    is_bintree(Right).
+build_tree([Head, LeftList], t(Head, Left, nil)) :-
+    build_tree([LeftList], Left).
 
-is_bintree(t(_, Left, Right)) :-
-    is_bintree(Left), is_bintree(Right).
+build_tree([Head, LeftList, RightList], t(Head, Left, Right)) :-
+    build_tree(LeftList, Left),
+    build_tree(RightList, Right),
+    nl.
 
-is_bindict(t((_, _), nil, nil)).
+repeat_string(String, 0, String).
+repeat_string(String, NumRepeat, OutStr) :-
+    NewRepeat is NumRepeat - 1,
+    repeat_string(String, NewRepeat, TailStr),
+    string_concat(String, TailStr, OutStr).
 
-is_bindict(t((_, _), Left, nil)) :-
-    is_bindict(Left).
+build_tree(Item, t(Item, nil, nil)).
 
-is_bindict(t((_, _), nil, Right)) :-
-    is_bindict(Right).
+print_bintree(t(Head, Left, Right), Indent) :-
+    NewIndent is Indent + 1,
+    repeat_string("  ", NewIndent, Spacing),
+    format("~a`~d~n", [Spacing, Head]),
+    (Left = nil ; print_bintree(Left, NewIndent)),
+    (Right = nil ; print_bintree(Right, NewIndent))
+.
 
-is_bindict(t((_, _), Left, Right)) :-
-    is_bindict(Left), is_bindict(Right).
+test :-
+    trace(build_tree),
+    build_tree([1, [2, [2, 2], 9], [2, 3]], TreeOut),
+    print_bintree(TreeOut, 0)
+.
 
-main :-
-    %% <++>
-    trace(is_bindict),
-    gtrace,
-    is_bindict(t((1, 2), nil, t((2, 3), nil, nil))),
-    write("Hello world"),
-    nl, halt.
+
+main :- test, halt.
