@@ -13,6 +13,7 @@ include(prt_3_text_field.java);
 include(prt_3_number_structure.java);
 include(prt_3_float_structure.java);
 include(prt_3_ieee754.java);
+include(prt_3_char_structure.java);
 
 class MainFrame extends JFrame {
     static void runA() {
@@ -29,7 +30,10 @@ class MainFrame extends JFrame {
         var frame = new IEEEStructure();
         frame.show();
     }
+
     static void runD() {
+        var frame = new CharStructure();
+        frame.show();
     }
 
     public static void main(String[] args) {

@@ -27,7 +27,7 @@ public class LYTBuilder {
 
     static JPanel makeAnnotatedInput(
         String     label,
-        JTextField textField,
+        JComponent textField,
         int        direction) {
         ppnulltest(textField);
         textField.setMaximumSize(new Dimension(Integer.MAX_VALUE, 48));
