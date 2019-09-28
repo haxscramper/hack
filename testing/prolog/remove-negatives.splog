@@ -1,0 +1,24 @@
+:- initialization(main).
+
+remove_negatives([], []).
+remove_negatives([Head|Tail], [Head|TailOut]) :-
+    Head >= 0,
+    remove_negatives(Tail, TailOut).
+
+remove_negatives([Head|Tail], ListOut) :-
+    Head < 0,
+    remove_negatives(Tail, ListOut).
+
+remove_negatives_print(List) :-
+    remove_negatives(List, Out), writeln(Out).
+
+interactive :-
+    nl
+.
+
+test :-
+    remove_negatives_print([1,2,3]),
+    remove_negatives_print([2,34,4, -2])
+.
+
+main :- test, halt.

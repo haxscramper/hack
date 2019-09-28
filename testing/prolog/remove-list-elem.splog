@@ -1,0 +1,24 @@
+:- initialization(main).
+
+remove_elem([_], Idx, []) :- Idx = 0.
+
+remove_elem([_|Tail], Idx, ListOut) :-
+    Idx = 0, ListOut = Tail.
+
+remove_elem([Head|Tail], Idx, [HeadOut|TailOut]) :-
+    Idx > 0,
+    HeadOut = Head,
+    NewIdx is Idx - 1,
+    remove_elem(Tail, NewIdx, TailOut).
+
+remove_element_print(InputList, Index) :-
+    ( remove_elem(InputList, Index, OutList), writeln(OutList) ) ;
+    ( writeln("Failed to remove element from list") ).
+
+test :-
+    remove_element_print([1,2,3,4], 3),
+    remove_element_print([1,2,3,4], 5)
+.
+
+
+main :- test, nl, halt.

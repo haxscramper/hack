@@ -1,0 +1,33 @@
+:- initialization(main).
+
+impl([], _, _, []).
+
+impl([Elem|Tail], Index, Elem, [Index|OtherOccur]) :-
+    NewIdx is Index + 1,
+    impl(Tail, NewIdx, Elem, OtherOccur).
+
+impl([Head|Tail], Index, Elem, OtherOccur) :-
+    Head =\= Elem,
+    NewIdx is Index + 1,
+    impl(Tail, NewIdx, Elem, OtherOccur).
+
+find_occur(List, Elem, Out) :-
+    impl(List, 0, Elem, Out).
+
+find_occur_print(List, Elem) :-
+    find_occur(List, Elem, Out),
+    writeln(Out).
+
+interactive :-
+    nl
+.
+
+test :-
+    %% trace(impl),
+    find_occur_print([1,2,3], 1),
+    find_occur_print([1,2,3], 0),
+    find_occur_print([1,1,1], 1),
+    find_occur_print([], 1)
+.
+
+main :- test, halt.

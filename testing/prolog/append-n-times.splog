@@ -1,0 +1,23 @@
+:- initialization(main).
+
+
+append_n_times([], _, 0, []).
+
+append_n_times([], Elem, Repeats, [Elem|TailOut]) :-
+    NewRepeats is Repeats - 1,
+    append_n_times([], Elem, NewRepeats, TailOut).
+
+append_n_times([Head|Tail], Elem, Repeats, [Head|TailOut]) :-
+    append_n_times(Tail, Elem, Repeats, TailOut).
+
+append_n_times_print(List, Elem, Repeats) :-
+    append_n_times(List, Elem, Repeats, OutList),
+    writeln(OutList).
+
+test :-
+    append_n_times_print([], 1, 2),
+    append_n_times_print([], -1, 9),
+    append_n_times_print([12,3], 1, 2)
+.
+
+main :- test, halt.

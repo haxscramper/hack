@@ -1,0 +1,29 @@
+:- initialization(main).
+
+
+sum_list([Head], Head).
+
+sum_list([Head|Tail], Out) :-
+    sum_list(Tail, TailSum),
+    Out is Head + TailSum.
+
+sum_elems_after([], _, 0).
+
+sum_elems_after([Head|Tail], Value, OutSum) :-
+    Head =\= Value,
+    sum_elems_after(Tail, Value, OutSum).
+
+sum_elems_after([Head|Tail], Head, OutSum) :-
+    sum_list(Tail, OutSum).
+
+
+sum_elems_after_print(InputList, Value) :-
+    sum_elems_after(InputList, Value, Out),
+    writeln(Out).
+
+test :-
+    sum_elems_after_print([1,2,3,4], 3),
+    sum_elems_after_print([1,2,3,4], 12),
+    sum_elems_after_print([1,2,3,4], 1).
+
+main :- test, nl, halt.
