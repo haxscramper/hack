@@ -15,11 +15,17 @@ class Bits {
         return res;
     }
 
-    public void debugPrint() {
-        Pprint(toNum() + ":");
+    public void debugPrint(char type) {
+        if(type == 'i' || type == 'I' || type == 'l' || type == 'L') {
+            Pprint(toNum() + ":");
+        } else if (type == 'f' || type == 'F' || type == 'd' || type == 'D') {
+            Pprint(toDbl() + ":");
+        }
+
         for (int i = bits.size() - 1; i >= 0; --i) {
             Pprint(i + " - " + (bits.get(i) ? "1" : "0"));
         }
+
     }
 
     public void show() {
@@ -67,7 +73,7 @@ class Bits {
     public Double toDbl() {
         Double res = 0.0;
         for (int idx = 0; idx < bits.size(); ++idx) {
-            res += Math.pow(2, -idx) * (bits.get(idx) ? 1 : 0);
+            res += Math.pow(2, -idx - 1) * (bits.get(idx) ? 1 : 0);
         }
         return res;
     }

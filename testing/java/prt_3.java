@@ -12,6 +12,7 @@ include(`ui-misc.m4.java');
 include(prt_3_text_field.java);
 include(prt_3_number_structure.java);
 include(prt_3_float_structure.java);
+include(prt_3_ieee754.java);
 
 class MainFrame extends JFrame {
     static void runA() {
@@ -25,6 +26,8 @@ class MainFrame extends JFrame {
     }
 
     static void runC() {
+        var frame = new IEEEStructure();
+        frame.show();
     }
     static void runD() {
     }
@@ -40,6 +43,8 @@ class MainFrame extends JFrame {
             } else if (args[0].equals("d")) {
                 runD();
             }
+        } else {
+            System.out.println("headless test");
         }
     }
 }
