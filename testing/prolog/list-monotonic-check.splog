@@ -1,0 +1,71 @@
+:- initialization(main).
+
+
+strictly_increasing([Head, Last]) :- Head < Last.
+strictly_increasing([Head1, Head2|Tail]) :-
+    Head1 < Head2,
+    strictly_increasing([Head2|Tail]).
+
+
+strictly_decreasing([Head, Last]) :- Head > Last.
+strictly_decreasing([Head1, Head2|Tail]) :-
+    Head1 > Head2,
+    strictly_decreasing([Head2|Tail]).
+
+non_increasing([]).
+non_increasing([_]).
+non_increasing([Head, Last]) :- Head =< Last.
+non_increasing([Head1, Head2|Tail]) :-
+    Head1 =< Head2,
+    non_increasing([Head2|Tail]).
+
+non_decreasing([]).
+non_decreasing([_]).
+non_decreasing([Head, Last]) :- Head >= Last.
+non_decreasing([Head1, Head2|Tail]) :-
+    Head1 >= Head2,
+    non_decreasing([Head2|Tail]).
+
+
+check_list(List) :-
+    write("---> "),
+    (
+        ( strictly_increasing(List), writeln("Строго возрастает")) ;
+        ( strictly_decreasing(List), writeln("Строго убывает")) ;
+        (
+            non_increasing(List),
+            non_decreasing(List),
+            writeln("Не возрастает и не убывает")
+        ) ;
+        ( non_increasing(List), writeln("Невозрастающий")) ;
+        ( non_decreasing(List), writeln("Неубывающий")) ;
+        ( writeln("Нельзя определить") )
+    ), nl.
+
+test :-
+    check_list([1, 2, 3]),
+    check_list([1, -1, -2]),
+    check_list([0, 0, 0]),
+    check_list([0, 0, 1]).
+
+
+interactive :-
+    interactive_header_list,
+    read(Input),
+    (
+        ( Input == q, writeln("done") ) ;
+        (
+            (
+                is_list(Input) , ( check_list(Input), interactive )
+            ) ;
+            (
+                writeln_err("Ввод не может быть распознан как лист."),
+                interactive
+            )
+        )
+    ).
+
+main :-
+    ensure_loaded("common.splog"),
+    startup_notice,
+    ( non_interactive_test ; run_interactively ).

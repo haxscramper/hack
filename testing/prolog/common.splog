@@ -1,0 +1,47 @@
+writeln_inf(Message) :-
+    ansi_format([bold, fg(green)], "Inf: ", []),
+    writeln(Message).
+
+writeln_err(Message) :-
+    ansi_format([bold, fg(red)], "Err: ", []),
+    writeln(Message).
+
+writeln_log(Message) :-
+    ansi_format([bold, fg(blue)], "Log: ", []),
+    writeln(Message).
+
+non_interactive_test() :-
+    exists_file("no-interactive") ,
+    writeln_log("running in non-interactive mode") ,
+    test,
+    writeln_log("done"),
+    halt.
+
+run_interactively() :-
+    writeln_log("Running in interactive mode"),
+    writeln_inf("Каждая введенная строка должна оканчиваться точкой."),
+    interactive.
+
+interactive_header_list :-
+    writeln_inf("Введите q для прекращения работы программы."),
+    writeln_inf("Либо любую строку для начала работы.").
+
+startup_notice() :-
+    ansi_format(
+        [bold, fg(red)],
+        "Все введенные строки должны оканичиваться точкой~n",
+        []).
+
+%% FIXME accept empty list
+readlist(List) :-
+    read(List), (
+        is_list(List) ;
+        ( writeln_err("Ввод не может быть распознан как лист"), fail )
+    ).
+
+
+readint(Int) :-
+    ( read(Int), integer(Int) ) ;
+    ( writeln_err("Ввод не может быть распознан как целое число"), fail ).
+
+readterm(Term) :- read(Term).
