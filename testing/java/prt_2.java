@@ -75,6 +75,7 @@ class CountChars {
 
 class FilterNumbers {
     JTextArea textArea;
+    JTextArea outText = new JTextArea();
     JFrame    frame;
     BoxLayout layout;
     JButton   runButton;
@@ -107,6 +108,8 @@ class FilterNumbers {
             "Введите текст в поле ввода и нажмите кнопку 'run' для "
                 + "запуска программы\n"
                 + "Для закрытия окна помощи нажмите 'Ok'");
+
+        frame.add(outText);
 
         frame.pack();
     }
@@ -149,11 +152,11 @@ class FilterNumbers {
         for (int i = 0; i < okNums.size();) {
             resText += okNums.get(i);
             if (++i < okNums.size()) {
-                resText += "\n\n";
+                resText += "\n";
             }
         }
 
-        textArea.setText(resText);
+        outText.setText(resText);
     }
 
     public FilterNumbers() {
