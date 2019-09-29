@@ -5,4 +5,10 @@ set -o nounset
 set -o errexit
 msg="colecho -b"
 
-swipl -t main -g halt -f bintree-test.splog
+dr=.tmp.test
+
+rm -f $dr/*
+cp *.splog $dr/
+
+cd $dr
+

@@ -3,15 +3,31 @@
 get_last([Head], Head).
 get_last([_|Tail], Elem) :- get_last(Tail, Elem).
 
-get_last_print(List) :- get_last(List, Out), writeln(Out).
-
-interactive :-
-    nl
-.
+get_last_print([]) :- writeln("-> ").
+get_last_print(List) :- get_last(List, Out), write("-> "), writeln(Out).
 
 test :-
     get_last_print([1,2,3]),
     get_last_print([1])
 .
 
-main :- test, halt.
+
+interactive :-
+    interactive_header_list,
+    (
+        (
+            readterm(Input),
+            Input == q,
+            writeln("done")
+        ) ;
+        (
+            writeln("Введите список"), readlist(List),
+            get_last_print(List), interactive ;
+            interactive()
+        )
+    ).
+
+main :-
+    ensure_loaded("common.splog"),
+    startup_notice,
+    ( non_interactive_test ; interactive ).

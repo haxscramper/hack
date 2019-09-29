@@ -20,4 +20,24 @@ test :-
     append_n_times_print([12,3], 1, 2)
 .
 
-main :- test, halt.
+interactive :-
+    interactive_header_list,
+    (
+        (
+            readterm(Input),
+            Input == q,
+            writeln("done")
+        ) ;
+        (
+          writeln("Введите список"), readlist(List),
+          writeln("Введите элемент для повториения"), readint(Elem),
+          writeln("Введите количество повторений"), readint(Repeats),
+          append_n_times_print(List, Elem, Repeats), interactive ;
+          interactive()
+        )
+    ).
+
+main :-
+    ensure_loaded("common.splog"),
+    startup_notice,
+    ( non_interactive_test ; interactive ).
