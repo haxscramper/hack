@@ -24,7 +24,7 @@ run_interactively() :-
 
 interactive_header_list :-
     writeln_inf("Введите q для прекращения работы программы."),
-    writeln_inf("Либо s для начала работы.").
+    writeln_inf("Либо s для начала/продолжения работы.").
 
 interactive :-
     interactive_header_list,
@@ -50,7 +50,7 @@ end_program :-
     writeln_inf("done").
 
 interactive_fail :-
-    writeln_err("Введите s или q"),
+    writeln_err("Ожидалось s или q"),
     interactive.
 
 

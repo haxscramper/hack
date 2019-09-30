@@ -1,0 +1,44 @@
+:- initialization(main).
+
+append([], OtherList, OtherList).
+
+append([OutHead|InTail], OtherList, [OutHead|OutTail]) :-
+    append(InTail, OtherList, OutTail).
+
+split_rhead([Head], Head, []).
+
+split_rhead([Head|Tail], RHeadOut, RTailOut) :-
+    split_rhead(Tail, RHeadOut, RLTail),
+    append([Head], RLTail, RTailOut).
+
+cyclic_shift([], []).
+cyclic_shift([Head], [Head]).
+cyclic_shift(List, OutList) :-
+    split_rhead(List, RHead, RTail),
+    append([RHead], RTail, OutList).
+
+shift_print(List) :-
+    write(List), write(" --> "),
+    cyclic_shift(List, Out), writeln(Out).
+
+run_main :-
+    writeln("Введите список"), readlist(List),
+    cyclic_shift(List, Out),
+    write(" --> "), writeln(Out),
+    interactive.
+
+test :-
+    %% trace(split_rhead),
+    %% trace(append),
+    shift_print([1,2,3]),
+    shift_print([1,2]),
+    shift_print([1]),
+    shift_print([]),
+    shift_print([1,2,3,4,5,0])
+.
+
+main :-
+    ensure_loaded("common.splog"),
+    writeln_inf("75.2 [6] циклический сдвиг списка вправо"),
+    startup_notice,
+    ( non_interactive_test ; interactive ).

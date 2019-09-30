@@ -35,7 +35,7 @@ check_list(List) :-
         (
             non_increasing(List),
             non_decreasing(List),
-            writeln("Не возрастает и не убывает")
+            writeln("Не возрастает и не убывает (постоянный)")
         ) ;
         ( non_increasing(List), writeln("Невозрастающий")) ;
         ( non_decreasing(List), writeln("Неубывающий")) ;
@@ -58,4 +58,4 @@ main :-
     ensure_loaded("common.splog"),
     writeln("61 [6] Указать характер упорядоченности списка"),
     startup_notice,
-    ( non_interactive_test ; run_interactively ).
+    ( non_interactive_test ; interactive ).
