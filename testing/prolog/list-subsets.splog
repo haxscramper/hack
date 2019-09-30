@@ -20,22 +20,20 @@ print_sets([Head|Tail]) :-
     print_set(Head),
     print_sets(Tail).
 
-%% Подмножества пустого множества - одно пустое множество.
 generate_subsets([], [[]]).
 generate_subsets([Head|Tail], SubsetsList) :-
-    %% Рекурсивно вызываем метод на списке без первого элемента.
-    %% SubsList1 - множество подмножеств хвоста списка.
     generate_subsets(Tail, SubsList1),
-    %% Для каждого из получившихся подмножеств добавляем головной
-    %% элемент исходного списка. Получившийся новый список записываем
-    %% SubsList2.
     maplist( append([Head]), SubsList1, SubsList2),
-    %% Конкатенируем два получившихся списка подмножеств (*с* и *без*
-    %% головного элемента) и результат записываем в SubsetsList
     append(SubsList1, SubsList2, SubsetsList).
 
 
+run_main :-
+    writeln("Введите список"), readlist(List),
+    generate_subsets(List, Out), print_sets(Out),
+    interactive.
+
 main :-
-    %% trace,
-    generate_subsets([1, 2, 3], Out),
-    print_sets(Out), halt.
+    ensure_loaded("common.splog"),
+    writeln("74 [10] Перечислите все разбиения множества"),
+    startup_notice,
+    ( non_interactive_test ; interactive ).

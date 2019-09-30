@@ -13,12 +13,25 @@ remove_elem([Head|Tail], Idx, [HeadOut|TailOut]) :-
 
 remove_element_print(InputList, Index) :-
     ( remove_elem(InputList, Index, OutList), writeln(OutList) ) ;
-    ( writeln("Failed to remove element from list") ).
+    (
+        write("Невозможно удалить элемент с индексом "),
+        write(Index), write(" . Список: "), writeln(InputList)
+    ).
 
 test :-
     remove_element_print([1,2,3,4], 3),
     remove_element_print([1,2,3,4], 5)
 .
 
+run_main :-
+    writeln("Введите список"), readlist(List),
+    writeln("Введите индекс"), readint(Int),
+    remove_element_print(List, Int),
+    interactive.
 
-main :- test, nl, halt.
+
+main :-
+    ensure_loaded("common.splog"),
+    writeln_inf("28 [2] Удалить элемент по индексу из списка"),
+    startup_notice,
+    ( non_interactive_test ; interactive ).

@@ -15,10 +15,6 @@ remove_nk_print(List, N, K) :-
     call_with_depth_limit(remove_nk(List, N, K, Out), 10, _),
     writeln(Out).
 
-interactive :-
-    nl
-.
-
 test :-
     %% trace(remove_nk),
     remove_nk_print([1,2,3], 1, 2),
@@ -26,4 +22,16 @@ test :-
     remove_nk_print([12], 0, 1)
 .
 
-main :- test, halt.
+run_main :-
+    writeln("Введите список"), readlist(List),
+    writeln("Введите индекс начального элемента"), readint(N),
+    writeln("Введите количество элементов для удаления"), readint(K),
+    remove_nk_print(List, N, K),
+    interactive.
+
+
+main :-
+    ensure_loaded("common.splog"),
+    writeln("54 [6] Удалить K элементов начиная с индекса N"),
+    startup_notice,
+    ( non_interactive_test ; interactive ).

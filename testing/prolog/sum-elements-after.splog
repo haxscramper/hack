@@ -1,29 +1,39 @@
 :- initialization(main).
 
+count_list([], 0).
+count_list([_], 1).
 
-sum_list([Head], Head).
+count_list([_|Tail], Out) :-
+    count_list(Tail, TailSum),
+    Out is 1 + TailCount.
 
-sum_list([Head|Tail], Out) :-
-    sum_list(Tail, TailSum),
-    Out is Head + TailSum.
+count_elems_after([], _, 0).
 
-sum_elems_after([], _, 0).
-
-sum_elems_after([Head|Tail], Value, OutSum) :-
+count_elems_after([Head|Tail], Value, OutSum) :-
     Head =\= Value,
-    sum_elems_after(Tail, Value, OutSum).
+    count_elems_after(Tail, Value, OutSum).
 
-sum_elems_after([Head|Tail], Head, OutSum) :-
-    sum_list(Tail, OutSum).
+count_elems_after([Head|Tail], Head, OutSum) :-
+    count_list(Tail, OutSum).
 
 
-sum_elems_after_print(InputList, Value) :-
-    sum_elems_after(InputList, Value, Out),
+count_elems_after_print(InputList, Value) :-
+    count_elems_after(InputList, Value, Out),
     writeln(Out).
 
 test :-
-    sum_elems_after_print([1,2,3,4], 3),
-    sum_elems_after_print([1,2,3,4], 12),
-    sum_elems_after_print([1,2,3,4], 1).
+    count_elems_after_print([1,2,3,4], 3),
+    count_elems_after_print([1,2,3,4], 12),
+    count_elems_after_print([1,2,3,4], 1).
 
-main :- test, nl, halt.
+run_main :-
+    writeln("Введите список"), readlist(List),
+    writeln("Введите элемент"), readint(Int),
+    count_elems_after_print(List, Int),
+    interactive.
+
+main :-
+    ensure_loaded("common.splog"),
+    writeln("33 [4] Вычислить число число элементов списка послэ элемента с заданным значанием"),
+    startup_notice,
+    ( non_interactive_test ; interactive ).

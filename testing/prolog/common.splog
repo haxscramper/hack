@@ -24,7 +24,20 @@ run_interactively() :-
 
 interactive_header_list :-
     writeln_inf("Введите q для прекращения работы программы."),
-    writeln_inf("Либо любую строку для начала работы.").
+    writeln_inf("Либо s для начала работы.").
+
+interactive :-
+    interactive_header_list,
+    readterm(Input),
+    (( Input = q ; Input = s) ,
+     (
+         ( Input = q, end_program ) ;
+         ( Input = s, run_main ) ;
+         interactive
+     )
+    ) ;
+    interactive_fail.
+
 
 startup_notice() :-
     ansi_format(
@@ -32,13 +45,21 @@ startup_notice() :-
         "Все введенные строки должны оканичиваться точкой~n",
         []).
 
+end_program :-
+    ( exists_file("do-halt"), halt ) ;
+    writeln_inf("done").
+
+interactive_fail :-
+    writeln_err("Введите s или q"),
+    interactive.
+
+
 %% FIXME accept empty list
 readlist(List) :-
     read(List), (
         is_list(List) ;
         ( writeln_err("Ввод не может быть распознан как лист"), fail )
     ).
-
 
 readint(Int) :-
     ( read(Int), integer(Int) ) ;

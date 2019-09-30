@@ -49,23 +49,13 @@ test :-
     check_list([0, 0, 1]).
 
 
-interactive :-
-    interactive_header_list,
-    read(Input),
-    (
-        ( Input == q, writeln("done") ) ;
-        (
-            (
-                is_list(Input) , ( check_list(Input), interactive )
-            ) ;
-            (
-                writeln_err("Ввод не может быть распознан как лист."),
-                interactive
-            )
-        )
-    ).
+run_main :-
+    writeln("Введите список"), readlist(List),
+    check_list(List),
+    interactive.
 
 main :-
     ensure_loaded("common.splog"),
+    writeln("61 [6] Указать характер упорядоченности списка"),
     startup_notice,
     ( non_interactive_test ; run_interactively ).
