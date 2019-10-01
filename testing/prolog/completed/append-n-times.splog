@@ -29,7 +29,7 @@ run_main :-
 
 
 main :-
-    ensure_loaded("common.splog"),
+    ensure_loaded("../common.splog"),
     writeln("39 [4] Дописать заданную константу в конец списка N раз"),
     startup_notice,
     ( non_interactive_test ; interactive ).

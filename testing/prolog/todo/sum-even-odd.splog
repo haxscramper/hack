@@ -3,6 +3,8 @@
 sum_even_odd([], 0, 0).
 sum_even_odd([OddHead], OddHead, 0).
 
+
+
 sum_even_odd([OddHead, EvenHead|Tail], OddSum, EvenSum) :-
     sum_even_odd(Tail, TailOddSum, TailEvenSum),
     OddSum is OddHead + TailOddSum,
@@ -10,13 +12,9 @@ sum_even_odd([OddHead, EvenHead|Tail], OddSum, EvenSum) :-
 
 
 sum_even_odd_print(List) :-
-    sum_even_odd(List, Odd, Even),
+    call_with_depth_limit(sum_even_odd(List, Odd, Even), 10, _),
     format("Odd  sum is ~d ~n", [Odd]),
     format("Even sum is ~d ~n~n", [Even]).
-
-interactive :-
-    nl
-.
 
 test :-
     sum_even_odd_print([12,3,4]),

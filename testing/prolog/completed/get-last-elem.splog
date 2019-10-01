@@ -16,7 +16,7 @@ run_main :-
     get_last_print(List), interactive.
 
 main :-
-    ensure_loaded("common.splog"),
+    ensure_loaded("../common.splog"),
     writeln("23 [2] Получиьт последнее значение в списке"),
     startup_notice,
     ( non_interactive_test ; interactive ).

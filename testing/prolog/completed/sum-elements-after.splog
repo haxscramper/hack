@@ -33,7 +33,7 @@ run_main :-
     interactive.
 
 main :-
-    ensure_loaded("common.splog"),
+    ensure_loaded("../common.splog"),
     writeln("33 [4] Вычислить число число элементов списка послэ элемента с заданным значанием"),
     startup_notice,
     ( non_interactive_test ; interactive ).

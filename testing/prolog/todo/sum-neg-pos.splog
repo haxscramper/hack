@@ -1,0 +1,32 @@
+:- initialization(main).
+
+sum_neg_pos([], 0, 0).
+sum_neg_pos([Head], Head, 0) :- Head >= 0.
+sum_neg_pos([Head], 0, Head) :- Head < 0.
+
+sum_neg_pos([Head|Tail], PosSum, NegSum) :-
+    sum_neg_pos(Tail, TailPosSum, TailNegSum),
+    (
+        (
+            Head >= 0,
+            PosSum is TailPosSum + Head,
+            NegSum = TailNegSum
+        ) ;
+        (
+            NegSum is TailNegSum + Head,
+            PosSum = TailPosSum
+        )
+    ).
+
+
+sum_neg_pos_print(List) :-
+    sum_neg_pos(List, Neg, Pos),
+    writeln(Neg), writeln(Pos).
+
+test :-
+    trace(sum_neg_pos),
+    gtrace,
+    sum_neg_pos_print([12,3,4])
+.
+
+main :- test, halt.

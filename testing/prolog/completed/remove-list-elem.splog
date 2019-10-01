@@ -31,7 +31,7 @@ run_main :-
 
 
 main :-
-    ensure_loaded("common.splog"),
+    ensure_loaded("../common.splog"),
     writeln_inf("28 [2] Удалить элемент по индексу из списка"),
     startup_notice,
     ( non_interactive_test ; interactive ).
