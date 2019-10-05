@@ -40,8 +40,10 @@ class IEEEStructure extends JFrame {
                     } else {
                         String strMant  = ieeeStr.substring(0, 51);
                         Long   longMant = Long.parseLong(strMant, 2);
-                        System.out.println("Mantissa is: " + strMant);
-                        return longMant.toString();
+                        Double doblMant = Double.longBitsToDouble(longMant);
+                        var res = doblMant;
+                        System.out.println("Mantissa is: " + res);
+                        return res.toString();
                     }
                 }
             }

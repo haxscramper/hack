@@ -38,7 +38,7 @@ run_main :-
 
 
 main :-
-    ensure_loaded("common.splog"),
+    ensure_loaded("../common.splog"),
     writeln("54 [6] Удалить K элементов начиная с индекса N"),
     startup_notice,
     ( non_interactive_test ; interactive ).
