@@ -1,0 +1,156 @@
+:- initialization(main).
+
+%% TODO
+
+print_row([]).
+print_row([Head|Tail]) :-
+    write(Head), write(" "),
+    print_row(Tail).
+
+print_matrix([]).
+print_matrix([FirstRow|Others]) :-
+    write("[ "), print_row(FirstRow), writeln("]"),
+    print_matrix(Others).
+
+first_col([], [], []).
+first_col(
+    [
+        [ Cell
+          | RowTail %% Хвост результирующей строки
+        ] | OtherRows %% Хвост матрицы будет использован для получения
+                      %% остальных частей результирующей строки.
+    ], [
+        Cell %% Первый столбец первой строки равен первому элементу
+             %% первой колонки и первому элементу результирующей
+             %% строки
+        | ResRowTail %% Хвост результирующей строки равен первой
+                     %% колонке хвоста входной матрицы.
+    ] , [
+        RowTail
+        | XXXVarName
+    ] ) :-
+    first_col(
+        OtherRows,
+        ResRowTail,
+        XXXVarName
+    ).
+
+
+transpose([[]|_], []).
+transpose(InMatrix, [FirstRow|TailRows]) :-
+    first_col( %% Находим первую колонку в матрице.
+        InMatrix,
+        FirstRow, %% Так как `FirstRow` было использовано как голова
+        %% результирующей матрицы то первая колонка входной
+        %% матрицы будет приравнена к первой строке выходной
+        %% матрицы
+
+        RestMatrix %% Оставшиеся колонки будут рекурсивно добавлены в
+        %% хвост результирующей матрицы.
+    ),
+    transpose(RestMatrix, TailRows).
+
+
+logic_mult(1, 1, 1).
+logic_mult(_, _, 0).
+logic_add(0, 0, 0).
+logic_add(_, _, 1).
+
+
+cross_mult_list([Head1], [Head2], Out) :-
+    logic_mult(Head1, Head2, Out).
+
+cross_mult_list([Head1|Tail1], [Head2|Tail2], Out) :-
+    cross_mult_list(Tail1, Tail2, TailProd),
+    logic_mult(Head1, Head2, HeadProd),
+    logic_add(TailProd, HeadProd, Out)
+.
+
+
+cross_mult_vec_matrixT(Vector, [LastRow], [Out]) :-
+    cross_mult_list(Vector, LastRow, Out).
+
+cross_mult_vec_matrixT(Vector, [Row|OtherRows], [HeadOut|TailOut]) :-
+    cross_mult_list(Vector, Row, HeadOut),
+    cross_mult_vec_matrixT(Vector, OtherRows, TailOut)
+.
+
+mult_matrix_matrixT(
+    [LastTail],
+    MatrTransp,
+    [OutTail]) :-
+    cross_mult_vec_matrixT(LastTail, MatrTransp, OutTail).
+
+
+mult_matrix_matrixT(
+    [MHead  | MTail  ],
+    MatrTransp,
+    [RHead  | RTail  ]
+) :-
+    mult_matrix_matrixT(MTail, MatrTransp, RTail),
+    cross_mult_vec_matrixT(MHead, MatrTransp, RHead),
+
+    true.
+
+
+
+matrix_square(Matrix, Res) :-
+    transpose(Matrix, Transposed),
+    cross_mult_vec_matrixT(Matrix, Transposed, Res)
+.
+
+test_mult_matrix_matrixT(M1, M2) :-
+    writeln("matrix-matrix test"),
+    writeln("in:"),
+    print_matrix(M1),
+    writeln("---"),
+    print_matrix(M2),
+    writeln("out:"),
+    %% trace(cross_mult_vec_matrixT),
+    %% trace(mult_matrix_matrixT),
+    mult_matrix_matrixT(M1, M2, Out),
+    %% writeln(Out),
+    print_matrix(Out),
+true.
+
+test_vec_mult_matrix(Vec, Matrix) :-
+    writeln("vector-matrix test"),
+    write("in: "), writeln(Vec),
+    print_matrix(Matrix),
+    cross_mult_vec_matrixT(Vec, Matrix, Out),
+    writeln("out:"),
+    writeln(Out),
+    nl
+.
+
+test_matrix_transpose(M) :-
+    writeln("in:"),
+    print_matrix(M),
+    transpose(M, T),
+    writeln("out:"),
+    print_matrix(T),
+    nl
+.
+
+test_cross_mult_list(List1, List2) :-
+    writeln("list-list test"),
+    write(List1),
+    write(" ∙ "),
+    write(List2),
+    write(" = "),
+    cross_mult_list(List1, List2, Out),
+    writeln(Out)
+.
+
+main :-
+    %% <++>
+    %% test_matrix_transpose([[1, 0], [1, 0]]),
+    %% test_matrix_transpose([[1, 1, 1], [0, 0, 0], [0, 0, 0]]),
+    %% test_cross_mult_list([1, 1, 1, 1], [0, 0, 0, 0]),
+    %% test_cross_mult_list([1, 1, 1, 1], [1, 1, 1, 1]),
+    %% test_cross_mult_list([1, 1, 1, 1], [1, 0, 1, 0]), !,
+    %% test_vec_mult_matrix([1,1], [[1,1],[0,0]]),
+    %% test_vec_mult_matrix([0, 0], [[1,1],[0,0]]), !,
+    test_mult_matrix_matrixT([[0,0], [0,0]], [[0,0], [0,0]]),
+    test_mult_matrix_matrixT([[1,1], [1,1]], [[1,1], [1,1]]),
+    halt.
