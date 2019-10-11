@@ -12,7 +12,7 @@
            (timestamp (plist-get deadline 'timestamp))
            )
         (list (cons :headline headline)
-              (cons :days-until (plist-get timestamp :raw-value))
+              (cons :days-until (org-time-stamp-to-now (plist-get timestamp :raw-value)))
               )
         ))))
 
