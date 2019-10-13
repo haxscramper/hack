@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <style>
+
+         table {
+             border-collapse: collapse;
+         }
+
+         th, td {
+             text-align: left;
+             padding: 8px;
+             min-width: 70px;
+         }
+
+         td.zerocell {
+             background-color: white;
+         }
+
+         td.onecell {
+             background-color: grey;
+             color: white;
+         }
+
+        </style>
+        <script type="text/javascript" src="prt_4.js"></script>
+    </head>
+    <body>
+        <h1> Практическая 4 </h1>
+        <p> <b> Sample text </b> </p>
+        <input type="text" id="in_field" name="input">
+        <input type="button" name="button" value="sf" onclick="evalTable()">
+        <p>
+            <table id="table">
+                <tr>
+                    <th>Вес бита</th>
+                    <th>128</th>
+                    <th>64</th>
+                    <th>32</th>
+                    <th>16</th>
+                    <th>8</th>
+                    <th>4</th>
+                    <th>2</th>
+                    <th>1</th>
+                </tr>
+                <tr>
+                    <td>Значние бита</td>
+                    <td id="bit7">0</td>
+                    <td id="bit6">0</td>
+                    <td id="bit5">0</td>
+                    <td id="bit4">0</td>
+                    <td id="bit3">0</td>
+                    <td id="bit2">0</td>
+                    <td id="bit1">0</td>
+                    <td id="bit0">0</td>
+                </tr>
+            </table>
+        </p>
+    </body>
+</html>
