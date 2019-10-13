@@ -1,0 +1,42 @@
+:- initialization(main).
+
+
+print_set_body([]).
+print_set_body([Head|Tail]) :-
+    write(", "), write(Head),
+    print_set_body(Tail).
+
+print_set(Additional, List) :-
+    write("{"), write(Additional),
+    print_set_body(List),
+    write("}"), nl.
+
+print_set([]).
+print_set([Head|Tail]) :-
+    print_set(Head, Tail).
+
+print_sets([]).
+print_sets([Head|Tail]) :-
+    print_set(Head),
+    print_sets(Tail).
+
+generate_subsets([], [[]]).
+generate_subsets([Head|Tail], SubsetsList) :-
+    generate_subsets(Tail, SubsList1),
+    maplist( append([Head]), SubsList1, SubsList2),
+    append(SubsList1, SubsList2, SubsetsList).
+
+
+run_main :-
+    writeln("Введите список"), readlist(List),
+    generate_subsets(List, Out), print_sets(Out),
+    interactive.
+
+test :-
+    writeln("Test").
+
+main :-
+    ensure_loaded("../common.splog"),
+    writeln("74 [10] Перечислите все разбиения множества"),
+    startup_notice,
+    ( non_interactive_test ; interactive ).

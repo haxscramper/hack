@@ -96,3 +96,5 @@ SpaceAfterCStyleCast: false
 Language: Java
 BraceWrapping:
   AfterClass:      false
+
+Language: JavaScript

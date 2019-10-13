@@ -5,4 +5,4 @@ set -o nounset
 set -o errexit
 msg="colecho -b"
 
-swipl -f binary-matrix-square.splog
+swipl -f binary-matrix-square.splog -t halt
