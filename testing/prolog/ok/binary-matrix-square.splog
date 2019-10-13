@@ -37,6 +37,7 @@ first_col(
 
 
 transpose([[]|_], []).
+transpose([],[]).
 transpose(InMatrix, [FirstRow|TailRows]) :-
     first_col( %% Находим первую колонку в матрице.
         InMatrix,
@@ -96,7 +97,7 @@ mult_matrix_matrixT(
 
 matrix_square(Matrix, Res) :-
     transpose(Matrix, Transposed),
-    cross_mult_vec_matrixT(Matrix, Transposed, Res)
+    mult_matrix_matrixT(Matrix, Transposed, Res)
 .
 
 test_mult_matrix_matrixT(M1, M2) :-
@@ -120,17 +121,16 @@ test_vec_mult_matrix(Vec, Matrix) :-
     cross_mult_vec_matrixT(Vec, Matrix, Out),
     writeln("out:"),
     writeln(Out),
-    nl
-.
+true.
 
 test_matrix_transpose(M) :-
+    writeln("transpose test"),
     writeln("in:"),
     print_matrix(M),
     transpose(M, T),
     writeln("out:"),
     print_matrix(T),
-    nl
-.
+true.
 
 test_cross_mult_list(List1, List2) :-
     writeln("list-list test"),
@@ -142,15 +142,75 @@ test_cross_mult_list(List1, List2) :-
     writeln(Out)
 .
 
+test_matrix_square(Matr) :-
+    writeln("matrix square test"),
+    writeln("in:"),
+    print_matrix(Matr),
+    %% trace(matrix_square),
+    %% trace(transpose),
+    matrix_square(Matr, Out), !,
+    writeln("out:"),
+    print_matrix(Out),
+true.
+
+equal_rows([], _).
+equal_rows([Row], PrevLen) :- length(Row, PrevLen).
+equal_rows([Row|Tail], PrevLen) :-
+    ( var(PrevLen) ; length(Row, PrevLen) ),
+    length(Row, PrevLen),
+    equal_rows(Tail, PrevLen).
+
+is_square([Row|Tail], Len) :-
+    length([Row|Tail], Len),
+    length(Row, Len).
+
+to_boollist([], []).
+to_boollist([Head|Tail], [HeadOut|TailOut]) :-
+    ( ( Head = 0, HeadOut = 0 ) ; HeadOut = 1 ),
+    to_boollist(Tail, TailOut).
+
+
+to_boolean([], []).
+to_boolean([Row|Tail], [RowOut|TailOut]) :-
+        to_boollist(Row, RowOut),
+        to_boolean(Tail, TailOut).
+
+read_square_matrix(Out) :-
+    read(InList),
+    ( equal_rows(InList, _) ;
+      writeln_err("Все строки должны иметь одинаковую длинну") , fail ), !,
+    ( is_square(InList, _) ;
+      writeln_err("Требуется ввести квадратную! матрицу"), fail ),
+    to_boolean(InList, Out),
+true.
+
+run_main :-
+    writeln(
+"Введите квадратную булеву матрицу как вложенный список
+(например: [[1,1], [1,1]]) Элементами матрицы должны быть
+числа, любое ненулевое число будет интерпретрованно как 1"),
+    read_square_matrix(InMatr),
+    writeln("Вы ввели:"),
+    print_matrix(InMatr),
+    matrix_square(InMatr, Square),
+    writeln("Результат:"),
+    print_matrix(Square),
+    interactive.
+
+test :-
+    test_matrix_transpose([[1]]), !,
+    test_matrix_transpose([[0,0], [1,1]]), !,
+    %% test_mult_matrix_matrixT([[0,0], [0,0]], [[0,0], [0,0]]),
+    %% test_mult_matrix_matrixT([[1,1], [1,1]], [[1,1], [1,1]]),
+    test_matrix_square([[1,1], [0,0]]), !,
+    test_matrix_square([[1,1,1], [0,0,0], [1,1,1]]), !,
+    test_matrix_square([[1,1,0,0], [1,1,0,0], [1,0,1,1], [0,0,0,1]]), !,
+halt,
+true.
+
+
 main :-
-    %% <++>
-    %% test_matrix_transpose([[1, 0], [1, 0]]),
-    %% test_matrix_transpose([[1, 1, 1], [0, 0, 0], [0, 0, 0]]),
-    %% test_cross_mult_list([1, 1, 1, 1], [0, 0, 0, 0]),
-    %% test_cross_mult_list([1, 1, 1, 1], [1, 1, 1, 1]),
-    %% test_cross_mult_list([1, 1, 1, 1], [1, 0, 1, 0]), !,
-    %% test_vec_mult_matrix([1,1], [[1,1],[0,0]]),
-    %% test_vec_mult_matrix([0, 0], [[1,1],[0,0]]), !,
-    test_mult_matrix_matrixT([[0,0], [0,0]], [[0,0], [0,0]]),
-    test_mult_matrix_matrixT([[1,1], [1,1]], [[1,1], [1,1]]),
-    halt.
+    ensure_loaded("../common.splog"),
+    writeln_inf("78 [8] булев квадрат матрицы"),
+    startup_notice,
+    ( non_interactive_test ; interactive ).
