@@ -1,0 +1,19 @@
+:- initialization(main).
+
+sublist([X|_],1,1,[X]).
+sublist([],_,_,[]).
+sublist([X|Xs],1,K,[X|Ys]):-
+       K>1,
+       K1 is K-1,
+       sublist(Xs,1,K1,Ys).
+sublist([_|Xs],I,K,Ys):-
+       I > 1,
+       I1 is I-1,
+       sublist(Xs,I1,K,Ys).
+
+main :-
+    trace(sublist),
+    gtrace,
+    sublist([1,2,3,4], 3, 2, Out),
+    writeln(Out),
+    nl, halt.
