@@ -93,8 +93,13 @@ CompactNamespaces: false
 BreakBeforeBinaryOperators: All
 SpaceAfterCStyleCast: false
 
+---
+
 Language: Java
 BraceWrapping:
   AfterClass:      false
+
+
+---
 
 Language: JavaScript
