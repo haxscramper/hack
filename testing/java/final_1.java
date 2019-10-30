@@ -8,8 +8,11 @@ import javax.imageio.*;
 import javax.swing.*;
 import javax.swing.table.*;
 
-include(utils.m4) include(misc.m4.java);
-include(`ui-misc.m4.java');
+// clang-format off
+include(utils.m4);
+include(misc.m4.java);
+include(ui-misc.m4.java);
+// clang-format on
 
 class Pos {
   public int r;
@@ -20,6 +23,10 @@ class Pos {
     res.r = Math.abs(a.r - b.r);
     res.c = Math.abs(a.c - b.c);
     return res;
+  }
+
+  public String toChessPos() {
+      return r + "-" + (char)('a' + c);
   }
 }
 
@@ -206,8 +213,8 @@ class MicroChess extends JFrame {
 
         movesModel.addRow(new Object[] {
             field.getChessletter(code),  //
-            prevPos.r + " " + prevPos.c, //
-            nowPos.r + " " + nowPos.c    //
+            prevPos.toChessPos(), //
+            nowPos.toChessPos()//
         });
 
         gameOver = field.isFinished();
@@ -341,7 +348,7 @@ class TicTacField {
     for (int row = 0; row < dim; ++row) {
       String rstring = String.join("", field[row]);
       if (rstring.equals("xxx") || rstring.equals("ooo")) {
-          Pprint("ok: " + rstring );
+        Pprint("ok: " + rstring);
         return true;
       } else {
         Pprint("Does not match:" + rstring);
@@ -350,9 +357,9 @@ class TicTacField {
 
     // check vertical
     for (int col = 0; col < dim; ++col) {
-      String cstring = field[col][0] + field[col][1] + field[col][2];
+        String cstring = field[0][col] + field[1][col] + field[2][col];
       if (cstring.equals("xxx") || cstring.equals("ooo")) {
-          Pprint("ok: " + cstring );
+        Pprint("ok: " + cstring);
         return true;
       } else {
         Pprint("Does not match:" + cstring);
@@ -385,19 +392,19 @@ class TicTacToe extends JFrame {
   void cellPressed(int rowIdx, int colIdx) {
     if (field.isEmpty(rowIdx, colIdx)) {
       field.setCell(rowIdx, colIdx);
+
+      if (!field.isFinished()) {
+          field.doMove();
+      }
+
+      gameOver = field.isFinished();
+
+      if (gameOver) {
+          Pprint("Game over");
+      }
+
+      field.drawOnTable(fieldTable);
     }
-
-    if (!field.isFinished()) {
-      field.doMove();
-    }
-
-    gameOver = field.isFinished();
-
-    if (gameOver) {
-      Pprint("Game over");
-    }
-
-    field.drawOnTable(fieldTable);
   }
 
   void initUI() {
