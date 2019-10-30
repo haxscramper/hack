@@ -7,10 +7,12 @@ proc processClient(client: AsyncSocket) {.async.} =
   # asyncrhonously it's return type is
   while true:
     # Read one line of data from socket
-    let line = await client.recvLine()
+    let line = await client.recv(1024 * 32)
     # If line is empty stop processing client
     if line.len == 0:
       break
+
+    echo "Recieved line: ", line
 
     let doDisconnect = line.contains("/disconnect")
 

@@ -5,6 +5,7 @@ import json
 import deques
 import options
 import macros
+import colechopkg/lib
 
 type
   InEventKind* = enum
@@ -42,8 +43,6 @@ macro while_let(head, body: untyped): untyped =
       `body`
       optVal = `generatorNode`
 
-  echo result.toStrLit
-
 
 proc addMonitorChange(change: MonitorChange): void =
   mchangeQueue.addLast(change)
@@ -53,9 +52,6 @@ proc getMonitorChange(): Option[MonitorChange] =
     mchangeQueue.popFirst()
 
 proc patchMonitor(monitor: var FSMonitor): void =
-  echo "applying changes to monitor"
-
-  let change = getMonitorChange()
   while_let (change = getMonitorChange()):
     case change.kind:
       of addRelativeFile:
@@ -85,16 +81,19 @@ proc handleCommand(command: JsonNode): void =
 
           echo "added monitor change"
 
-
 proc processEvent(event: InEvent): void =
   case event.kind:
     of iekSocketMessage:
       try:
         let json = parseJson(event.message)
-        handleCommand(json)
+        if json.kind == JObject:
+          handleCommand(json)
+        else:
+          ceUserError0 "accepted message can be parsed as json but contains invalid data"
       except JsonParsingError:
         # TODO write to log file/socket error message
-        echo "failed to parse string: ", event.message
+        ceUserError0 "Input string cannot be parsed as json: " & event.message
+        #discard
     of iekFileEvent:
       case event.fileEv.kind:
         of MonitorModify: handleFileModified(event.fileEv)
@@ -104,6 +103,13 @@ proc processEvent(event: InEvent): void =
 proc listenEvents(client: AsyncSocket) {.async.} =
   while true:
     let line = await client.recvLine()
+
+    if line.len == 0:
+      ceUserWarn("Zero-length line, terminathing connection")
+      break
+    else:
+      ceUserInfo0 "Processing line " & $line
+
     processEvent(InEvent(kind: iekSocketMessage, message: line))
 
 proc startListener() {.async.} =
@@ -114,6 +120,14 @@ proc startListener() {.async.} =
   server.listen()
   while true:
     let client = await server.accept()
+
+    let clAddr = client.getLocalAddr()
+    let port: Port = clAddr[1]
+    let host: string = clAddr[0]
+    #echo port
+    # echo host
+    # ceUserLog0("New connection from " & ($host) & ":" & ($port))
+
     asyncCheck listenEvents(client)
 
 proc startMonitor() {.async.} =
