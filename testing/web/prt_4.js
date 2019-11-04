@@ -15,7 +15,7 @@ function radio_select(value) {
 function evalTable() {
     var inVal = parseInt(document.getElementById("in_field").value);
     if (inVal < 0 || 255 < inVal) {
-        alert("sample text");
+        alert("Веденное число должно находится в диапазоне [0, 255]");
     } else if (inVal === NaN) {
         alert("Could not parse number");
     } else {
