@@ -9,6 +9,49 @@ include(utils.m4);
 include(misc.m4.java);
 include(`ui-misc.m4.java');
 
+
+class ConstArray extends JFrame {
+  JButton button = new JButton("Выполнить");
+  JTextArea outArea = new JTextArea();
+
+  void runComputation() {
+    float nums[] = {-2, 1.3f, 18, 6, 20, 1};
+
+    var outString = new String();
+
+    outString += "Массив а\n";
+
+    float positiveSum = 0;
+
+    for (float num : nums) {
+      outString += "\t" + num;
+      if (num > 0) {
+        positiveSum += num;
+      }
+    }
+
+    outString += "\nСумма положительных элементов массива\n";
+    outString += positiveSum;
+
+    outArea.setText(outString);
+  }
+
+  void initUI() {
+    this.add(button);
+    this.add(outArea);
+
+    button.addActionListener(new ActionListener() {
+      public void actionPerformed(ActionEvent e) { runComputation(); }
+    });
+  }
+
+  ConstArray() {
+    initUI();
+    this.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+    this.setLayout(new BoxLayout(this.getContentPane(), BoxLayout.Y_AXIS));
+  }
+}
+
 class FieldArraySort extends JFrame {
   JTextField inField = new JTextField();
   JButton button = new JButton("Выполнить");
@@ -154,7 +197,7 @@ class ArraySorter extends JFrame {
 
     add(LYTBuilder.makeAnnotatedInput("Исходый массив",
                                       LYTBuilder.makeScrollable(inputTable),
-                                      BoxLayout.Y_AXIS));
+                                      BoxLayout.Y_AXIS, Misc.whd(Integer.MAX_VALUE, 120)));
 
     add(Misc.setMax_WH(button, -1, 48));
 
@@ -165,7 +208,7 @@ class ArraySorter extends JFrame {
     add(textArea);
     add(LYTBuilder.makeAnnotatedInput("Отсортированный массив",
                                       LYTBuilder.makeScrollable(outTable),
-                                      BoxLayout.Y_AXIS));
+                                      BoxLayout.Y_AXIS, Misc.whd(Integer.MAX_VALUE, 120)));
   }
 
   ArraySorter() {
@@ -177,6 +220,13 @@ class ArraySorter extends JFrame {
 
 
 class Main {
+static void runConstArray() {
+
+    var frame = new ConstArray();
+    frame.show();
+
+}
+
   static void runTextSorter() {
     var frame = new FieldArraySort();
     frame.show();
@@ -188,7 +238,9 @@ class Main {
   }
 
   public static void main(String args[]) {
-    if (args.length > 0 && args[0].equals("b")) {
+    if (args.length > 0 && args[0].equals("a")) {
+      runConstArray();
+    }else if (args.length > 0 && args[0].equals("b")) {
       runTextSorter();
     } else if (args.length > 0 && args[0].equals("c")) {
       runArraySorter();

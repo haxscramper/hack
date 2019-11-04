@@ -30,6 +30,20 @@ class Misc {
     }
 
 
+    public static Optional<Integer> getInteger(
+                                           JTextField in,
+                                           String     errorMessage) {
+        try {
+            return Optional.of(Integer.parseInt(in.getText()));
+        } catch (Exception e) {
+            if (errorMessage.length() > 0) {
+                showErrorMessage(errorMessage);
+            }
+            return Optional.empty();
+        }
+    }
+
+
     public static void addHelpMenuItem(JFrame frame, String message) {
 
         JMenuBar menuBar = new JMenuBar();
@@ -85,4 +99,7 @@ class Misc {
         return table;
     }
 
+    static Dimension whd(int width, int height) {
+        return new Dimension(width, height);
+    }
 }

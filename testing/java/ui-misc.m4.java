@@ -24,24 +24,32 @@ public class LYTBuilder {
   }
 
   static JPanel makeAnnotatedInput(String label, JComponent textField,
-                                   int direction, int maxSize) {
+                                   int direction, Dimension dim) {
     ppnulltest(textField);
 
-    if (direction == BoxLayout.X_AXIS) {
-      textField.setMaximumSize(new Dimension(Integer.MAX_VALUE, maxSize));
-    } else {
-      textField.setMaximumSize(new Dimension(maxSize, Integer.MAX_VALUE));
-    }
+    textField.setMaximumSize(dim);
 
     var labelWidget = new JLabel(label);
     // FIXME does not affect width at all.
-    labelWidget.setMinimumSize(new Dimension(0, label.length() * 1000));
+    // labelWidget.setMinimumSize(new Dimension(0, label.length() * 1000));
     return LYTBuilder.makeDirectedPanel(new ArrayList<JComponent>() {
       {
         add(labelWidget);
         add(textField);
       }
     }, direction);
+  }
+
+  static JPanel makeAnnotatedInput(String label, JComponent textField,
+                                   int direction, int maxSize) {
+    Dimension dim;
+    if (direction == BoxLayout.X_AXIS) {
+      dim = new Dimension(Integer.MAX_VALUE, maxSize);
+    } else {
+      dim = new Dimension(maxSize, Integer.MAX_VALUE);
+    }
+
+    return makeAnnotatedInput(label, textField, direction, dim);
   }
 
   static JPanel makeAnnotatedInput(String label, JComponent textField,
