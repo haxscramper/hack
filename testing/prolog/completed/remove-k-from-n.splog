@@ -1,7 +1,7 @@
 :- initialization(main).
 
 remove_nk([], _, _, []).
-remove_nk(List, 0, _, List).
+remove_nk(List, 0, 0, List).
 
 remove_nk([_|Tail], 0, K, ListOut) :-
     NewK is K - 1,
@@ -23,10 +23,10 @@ test :-
     remove_nk_print([1], 2, 10),
     remove_nk_print([1,2,3], 10, 90),
     remove_nk_print([], 1, 2),
-    remove_nk_print([1,2,3], 90, 100)
-    %% remove_nk_print([1,2,3], 1, 2),
-    %% remove_nk_print([], 1, 2),
-    %% remove_nk_print([12], 0, 1)
+    remove_nk_print([1,2,3], 90, 100),
+    remove_nk_print([1,2,3], 1, 2),
+    remove_nk_print([], 1, 2),
+    remove_nk_print([12], 0, 1)
 .
 
 run_main :-

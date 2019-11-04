@@ -38,7 +38,7 @@ test :-
 .
 
 main :-
-    ensure_loaded("common.splog"),
+    ensure_loaded("../common.splog"),
     writeln_inf("75.2 [6] циклический сдвиг списка вправо"),
     startup_notice,
     ( non_interactive_test ; interactive ).

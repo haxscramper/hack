@@ -17,6 +17,6 @@ run_main :-
 
 main :-
     ensure_loaded("../common.splog"),
-    writeln("23 [2] Получиьт последнее значение в списке"),
+    writeln("23 [2] Получить последнее значение в списке"),
     startup_notice,
     ( non_interactive_test ; interactive ).

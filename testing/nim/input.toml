@@ -1,0 +1,76 @@
+type = "files"
+org_header = """
+#+LATEX_CLASS_OPTIONS: [a4paper,12pt]
+#+LATEX_HEADER: \\usepackage[left=1cm,right=1cm,top=3cm,bottom=1cm]{geometry}
+#+LATEX_HEADER: \\usepackage[pdfborder={0,0,0}]{hyperref}
+#+LATEX_HEADER: \\hypersetup{colorlinks=true,linkcolor=blue}
+
+#+LATEX_HEADER: \\usepackage[T2A]{fontenc}
+#+LATEX_HEADER: \\usepackage[utf8]{inputenc}
+#+LATEX_HEADER: \\usepackage[russian]{babel}
+#+LATEX_HEADER: \\usepackage{nopageno}
+
+#+OPTIONS: toc:nil 
+"""
+
+[[file]]
+name = "~39 [4]~ Дописать заданную константу в конец списка N раз"
+path = "completed/append-n-times.splog"
+images = "prolog_images/append-n-times.png"
+description = """
+Дописать заданную константу в конец списка N раз
+"""
+
+[[file]]
+name = "~78 [8]~ Квадрат 0-1 матрицы"
+path = "completed/binary-matrix-square.splog"
+images = "prolog_images/binary-matrix-square.png"
+description = "Квадрат 0-1 матрицы"
+
+
+[[file]]
+path = "completed/cycle-shift.splog"
+name = "~75.2 [6]~ циклический сдвиг списка вправо"
+images = "prolog_images/cycle-shift.png"
+description = "75.2 [6] циклический сдвиг списка вправо"
+
+[[file]]
+path = "completed/get-last-elem.splog"
+name = "~23 [2]~ Получить последнее значение в списке"
+images = "prolog_images/get-last-elem.png"
+description = "Получить последнее значение в списке"
+
+[[file]]
+path = "completed/list-monotonic-check.splog"
+name = "~61 [6]~ Указать характер упорядоченности списка"
+images = "prolog_images/list-monotonic-check.png"
+description = "Указать характер упорядоченности списка"
+
+[[file]]
+path = "completed/remove-k-from-n.splog"
+name = "~54 [6]~ Удалить K элементов начиная с индекса N"
+images = "prolog_images/remove-k-from-n.png"
+description = "Удалить K элементов начиная с индекса N"
+
+[[file]]
+path = "completed/remove-list-elem.splog"
+name = "~28 [2]~ Удалить элемент по индексу из списка"
+images = "prolog_images/remove-list-elem.png"
+description = "28 [2] Удалить элемент по индексу из списка"
+
+[[file]]
+path = "completed/sum-elements-after.splog"
+name = "~33 [4]~ Вычислить число число элементов
+списка после элемента с заданным значанием"
+images = "prolog_images/sum-elements-after.png"
+description = """Вычислить число число элементов
+списка после элемента с заданным значанием"""
+
+[[file]]
+path = "completed/sublist-start.splog"
+name = "~49 [6]~ Определить номер позиции с которой
+начинается заданный подсписок"
+images = "prolog_images/sublist-start.png"
+description = """
+Определить номер позиции с которой начинается заданный подсписок
+"""

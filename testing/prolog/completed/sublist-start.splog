@@ -1,0 +1,53 @@
+:- initialization(main).
+
+algo([H|_], [H], Idx, Idx).
+
+algo([_|T], [H], Idx,  Out) :-
+    NewIdx is Idx + 1,
+    algo(T, [H], NewIdx, Out).
+
+algo([Head|Tail1], [Head|Tail2], Idx,  Out) :-
+    algo(Tail1, Tail2, Idx, Out).
+
+algo([_|Tail1], Sublist, Idx, Out) :-
+    NewIdx is Idx + 1,
+    algo(Tail1, Sublist, NewIdx, Out).
+
+find_sublist_print(List, Sublist) :-
+    write(List), write(" - "),
+    write(Sublist), write(" -> "),
+    (
+        algo(List, Sublist, 0, Start),
+        writeln(Start)
+    ) ;
+    (
+        writeln("Исходный список не содержит подсписка")
+    )
+.
+
+test :-
+    % trace(algo),
+    find_sublist_print( [1,2     ], [1   ] ), !,
+    find_sublist_print( [1,2     ], [2   ] ), !,
+    find_sublist_print( [1,2     ], [1,2 ] ), !,
+    find_sublist_print( [1,2,3,4 ], [3,4 ] ), !,
+    find_sublist_print( [9,109   ], [1   ] ), !,
+    find_sublist_print( [1,1,1   ], [1   ] ), !,
+    find_sublist_print( [        ], [1   ] ), !,
+    find_sublist_print( [12,2    ], [    ] ), !
+.
+
+
+run_main :-
+    writeln("Введите список"), readlist(List),
+    writeln("Подсписок"), readlist(Sublist),
+    find_sublist_print(List, Sublist),
+    interactive
+.
+
+
+main :-
+    ensure_loaded("../common.splog"),
+    writeln("49 [6] Определить номер позиции с которой начинается заданный подсписок"),
+    startup_notice,
+    ( non_interactive_test ; interactive ).

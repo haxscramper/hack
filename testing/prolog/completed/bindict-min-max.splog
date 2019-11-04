@@ -1,0 +1,154 @@
+:- initialization(main).
+
+insert_item(
+    tree(Root, nil, nil),
+    Item,
+    tree(Root, Item, nil)
+) :-
+    Item < Root
+.
+
+insert_item(
+    tree(Root, nil, nil),
+    Item,
+    tree(Root, nil, Item)
+) :-
+    Item >= Root
+.
+
+insert_item(
+    tree(Root, Left, Right),
+    Item,
+    tree(Root, NewLeft, Right)
+) :-
+    Item < Root,
+    insert_item(Left, Item, NewLeft)
+.
+
+insert_item(
+    tree(Root, Left, Right),
+    Item,
+    tree(Root, Left, NewRight)
+) :-
+    Item >= Root,
+    insert_item(Right, Item, NewRight)
+.
+
+insert_item(nil, nil, nil).
+insert_item(Root, nil, Root).
+insert_item(nil,  Item, tree(Item, nil, nil)).
+insert_item(Root, Item, tree(Root, Item, nil)) :- Item < Root.
+insert_item(Root, Item, tree(Root, nil, Item)) :- Item >= Root.
+
+insertall(Tree, [], Tree).
+insertall(Tree, [Head|Tail], OutTree) :-
+    insert_item(Tree, Head, NewTree),
+    insertall(NewTree, Tail, OutTree).
+
+find_max(tree(Root, _, nil), Root).
+find_max(tree(_, _, Right), Out) :- find_max(Right, Out).
+find_max(Item, Item).
+
+find_min(tree(Root, nil, _), Root).
+find_min(tree(_, Left, _), Out) :- find_min(Left, Out).
+find_min(Item, Item).
+
+print_tree(tree(Root, nil, nil), Level) :-
+    print_ident(Root, Level).
+
+print_tree(tree(Root, Left, nil), Level) :-
+    NewLevel is Level + 1,
+    print_tree(Left, NewLevel),
+    print_tree(Root, Level).
+
+print_tree(tree(Root, nil, Right), Level) :-
+    NewLevel is Level + 1,
+    print_tree(Root, Level),
+    print_tree(Right, NewLevel).
+
+print_tree(tree(Root, Left, Right), Level) :-
+    NewLevel is Level + 1,
+    print_tree(Left, NewLevel),
+    print_ident(Root, Level),
+    print_tree(Right, NewLevel).
+
+
+print_tree(Item, Level) :-
+    print_ident(Item, Level).
+
+print_ident(Item, 0) :- writeln(Item).
+print_ident(Item, 1) :- write("|---"), writeln(Item).
+print_ident(Item, Level) :-
+    write("    "),
+    NewLevel is Level - 1,
+    print_ident(Item, NewLevel).
+
+test_insert_item(Tree, Item) :-
+    insert_item(Tree, Item, Out),
+    writeln(Out).
+
+test_insertall(Tree, Items) :-
+    insertall(Tree, Items, Out),
+    print_tree(Out, 0),
+    test_find_max(Out),
+    test_find_min(Out)
+.
+
+make_tree([Head|Tail], OutTree) :-
+    Tree = tree(Head, nil, nil),
+    insertall(Tree, Tail, OutTree).
+
+test_find_max([Head|Tail]) :-
+    Tree = tree(Head, nil, nil),
+    insertall(Tree, Tail, NewTree),
+    test_find_max(NewTree).
+
+test_find_max(Tree) :-
+    find_max(Tree, Out),
+    writeln(Out).
+
+
+test_find_min([Head|Tail]) :-
+    Tree = tree(Head, nil, nil),
+    insertall(Tree, Tail, NewTree),
+    test_find_min(NewTree).
+
+test_find_min(Tree) :-
+    find_min(Tree, Out),
+    writeln(Out).
+
+
+test :-
+    (
+        test_insert_item(9, 9),
+        test_insert_item(nil, nil),
+        test_insert_item(tree(1,2,3), 9),
+        test_insert_item(tree(1,nil, 1), 2),
+        test_insertall(4, [1,2,34, 3, 4,5,6,7,8, 999]),
+        test_find_max([1,2,3,4]),
+        test_find_min([5,6,7,9, -1]),
+        test_find_max(tree(9,0, 99)),
+        true
+    ) ;
+
+( true, halt ).
+
+
+run_main :-
+    writeln("Введите список элементов из которых будет построен бинарный справочник"),
+    writeln("Введите список"), readlist(List),
+    make_tree(List, Tree),
+    find_max(Tree, Max),
+    find_min(Tree, Min),
+    writeln("Построенный бинарный справочник:"),
+    print_tree(Tree, 0),
+    write("Максимальный элемент: "), writeln(Max),
+    write("Минимальный элемент: "), writeln(Min),
+    interactive.
+
+
+main :-
+    ensure_loaded("../common.splog"),
+    writeln("85 [4] Найти максимальный и минимальные элемент в бинарном справочнике"),
+    startup_notice,
+    ( non_interactive_test ; interactive ).
