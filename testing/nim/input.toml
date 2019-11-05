@@ -1,22 +1,30 @@
-type = "files"
 org_header = """
 #+LATEX_CLASS_OPTIONS: [a4paper,12pt]
-#+LATEX_HEADER: \\usepackage[left=1cm,right=1cm,top=3cm,bottom=1cm]{geometry}
+#+LATEX_HEADER: \\usepackage[left=1.5cm,right=2cm,top=3cm,bottom=3cm]{geometry}
 #+LATEX_HEADER: \\usepackage[pdfborder={0,0,0}]{hyperref}
 #+LATEX_HEADER: \\hypersetup{colorlinks=true,linkcolor=blue}
 
 #+LATEX_HEADER: \\usepackage[T2A]{fontenc}
 #+LATEX_HEADER: \\usepackage[utf8]{inputenc}
 #+LATEX_HEADER: \\usepackage[russian]{babel}
-#+LATEX_HEADER: \\usepackage{nopageno}
 
-#+OPTIONS: toc:nil 
+#+LATEX_HEADER: \\addto\\captionsenglish{\\renewcommand{\\contentsname}{Оглавление}}
+
+#+OPTIONS: toc:1
 """
 
-[[file]]
+
+[[file]] # Для каждгого файла который нужно добавить в отчет написать
+         # одну секцию ~[[file]]~
+
+# Заголовок в секции с задачей
 name = "~39 [4]~ Дописать заданную константу в конец списка N раз"
+# Относительный путь в файлу с кодом
 path = "completed/append-n-times.splog"
+# Путь в "примерам работы программы", если не указано то секция не
+# будет сгенерирована
 images = "prolog_images/append-n-times.png"
+# Постановка задачи
 description = """
 Дописать заданную константу в конец списка N раз
 """
@@ -73,4 +81,19 @@ name = "~49 [6]~ Определить номер позиции с которо�
 images = "prolog_images/sublist-start.png"
 description = """
 Определить номер позиции с которой начинается заданный подсписок
+"""
+
+[[file]]
+path = "completed/bindict-min-max.splog"
+name = "~85 [4]~ Найти максимальный и минимальные элемент в бинарном справочнике"
+images = "prolog_images/bindict-min-max.png"
+description = """
+85 [4] Найти максимальный и минимальные элемент в бинарном справочнике
+"""
+
+[[file]]
+name = "Вспомогательный функции"
+path = "prolog/common.splog"
+description  = """
+Вспомогательные предикаты использоваанные в программах
 """

@@ -3,9 +3,10 @@ import colechopkg/lib
 import strformat
 import strutils
 import sequtils
+import hmisc/helpers
+import hargparse, macros, tables
 import os
 
-let conf = parseFile("input.toml")
 
 #[
 proc setName(name: string): string =
@@ -42,15 +43,23 @@ proc processReport(report: TomlValueRef): string =
 
 proc processFile(file: TomlValueRef): string =
   proc gs(item: string): string = file[item].getStr()
+  proc kp(item: string): bool = file.hasKey(item)
 
-  let name = "name".gs()
-  let path = "path".gs()
-  let image_glob = "images".gs()
+  let name = tern("name".kp(), "name".gs(), "MISSING NAME !!!")
+  let path = tern("path".kp(), "path".gs(), "MISSING PATH !!!")
 
-  let description = "description".gs()
+  let image_glob = tern("images".kp(), "images".gs(), "")
+
+  let description = tern(
+    "description".kp(),
+    "description".gs(),
+    "MISSING DESCRIPTION !!!")
 
   let source_code =
-    "#+BEGIN_SRC prolog\n" & path.readFile().string() & "#+END_SRC"
+    try:
+      "#+BEGIN_SRC prolog\n" & path.readFile().string() & "#+END_SRC"
+    except:
+      "MISSING SOURCE CODE !!!"
 
   var example_images =
     block:
@@ -61,6 +70,11 @@ proc processFile(file: TomlValueRef): string =
       tmp
 
   result &= &"""
+
+#+Begin_Latex
+\pagebreak
+#+End_Latex
+
 ** {name}
 
 *** Постановка задачи
@@ -70,29 +84,54 @@ proc processFile(file: TomlValueRef): string =
 *** Исходный код программы
 
 {source_code}
-
-*** Примеры работы программы
-
-{example_images}
 """
 
-var targetFile = "report.tmp.org".open(fmWrite)
+  result &= tern(
+    example_images.len > 0,
+    "*** Примеры работы программы\n" & example_images & "\n",
+    ""
+  )
+
+parseArgs:
+  opt:
+    name: "out-file"
+    opt: ["--out-file", "-o", "--output", "+takes_value"]
+    help: "File to write generated org file"
+  opt:
+    name: "in-file"
+    opt: ["--input", "--in", "+takes_value"]
+    help: "Source file for configuration."
+
+
+
+var targetFile =
+  if "out-file".kp:
+    "out-file".k.toStr().open(fmWrite)
+  else:
+    "report.tmp.org".open(fmWrite)
+
+let conf =
+  parseFile(
+    tern("in-file".kp, "in-file".k.toStr(), "input.toml")
+  )
+
 
 proc output(text: string) =
-  echo text
+#  echo text
   targetFile.write(text)
 
 let header = conf["org_header"].getStr() & "\n\n"
 
 output header
 
-if conf["type"].getStr() == "reports":
+if conf.hasKey("report"):
   for report in conf["report"].getElems():
-    #echo processReport(report)
     discard
-elif conf["type"].getStr() == "files":
+    # echo processReport(report)
+
+if conf.hasKey("file"):
   for file in conf["file"].getElems():
     output processFile(file)
 
-
 targetFile.close()
+echo "done"
