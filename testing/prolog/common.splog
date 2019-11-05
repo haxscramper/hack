@@ -1,15 +1,19 @@
+%% Вывести сообщение с информацией для пользователя
 writeln_inf(Message) :-
     ansi_format([bold, fg(green)], "Inf: ", []),
     writeln(Message).
 
+%% Вывесте сообщение об ошибке
 writeln_err(Message) :-
     ansi_format([bold, fg(red)], "Err: ", []),
     writeln(Message).
 
+%% Вывести сообщение
 writeln_log(Message) :-
     ansi_format([bold, fg(blue)], "Log: ", []),
     writeln(Message).
 
+%% Запуск автоматических тестов и выход из программы
 non_interactive_test() :-
     exists_file("no-interactive") ,
     writeln_log("running in non-interactive mode") ,
@@ -17,11 +21,13 @@ non_interactive_test() :-
     writeln_log("done"),
     halt.
 
+%% Запуск программы в интерактивном режиме
 run_interactively() :-
     writeln_log("Running in interactive mode"),
     writeln_inf("Каждая введенная строка должна оканчиваться точкой."),
     interactive.
 
+%% Обработка пользовательского ввода и интерактивный выбор действий
 interactive :-
     writeln_inf(
 "Введите q для прекращения работы программы,
@@ -38,7 +44,6 @@ t для выполнения автоматических тестов"),
     ) ;
     interactive_fail.
 
-
 startup_notice() :-
     ansi_format(
         [bold, fg(red)],
@@ -49,18 +54,20 @@ end_program :-
     ( exists_file("do-halt"), halt ) ;
     writeln_inf("done").
 
+%% Перезапуск интерактивного режима в случае неправильного ввода
 interactive_fail :-
     writeln_err("Ожидалось s или q"),
     interactive.
 
 
-%% FIXME accept empty list
+%% Считать список
 readlist(List) :-
     read(List), (
         is_list(List) ;
         ( writeln_err("Ввод не может быть распознан как лист"), fail )
     ).
 
+% Считать целое число
 readint(Int) :-
     ( read(Int), integer(Int) ) ;
     ( writeln_err("Ввод не может быть распознан как целое число"), fail ).

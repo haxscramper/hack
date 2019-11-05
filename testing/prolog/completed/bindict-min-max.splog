@@ -1,5 +1,6 @@
 :- initialization(main).
 
+%% Добавить элемент в словарь
 insert_item(
     tree(Root, nil, nil),
     Item,
@@ -13,8 +14,14 @@ insert_item(
     Item,
     tree(Root, nil, Item)
 ) :-
-    Item >= Root
+    Item > Root
 .
+
+insert_item(
+    tree(Root, nil, nil),
+    Root,
+    tree(Root, nil, nil)
+).
 
 insert_item(
     tree(Root, Left, Right),
@@ -30,63 +37,83 @@ insert_item(
     Item,
     tree(Root, Left, NewRight)
 ) :-
-    Item >= Root,
+    Item > Root,
     insert_item(Right, Item, NewRight)
 .
+
+insert_item(
+    tree(Root, Left, Right),
+    Root,
+    tree(Root, Left, Right)
+).
 
 insert_item(nil, nil, nil).
 insert_item(Root, nil, Root).
 insert_item(nil,  Item, tree(Item, nil, nil)).
 insert_item(Root, Item, tree(Root, Item, nil)) :- Item < Root.
-insert_item(Root, Item, tree(Root, nil, Item)) :- Item >= Root.
+insert_item(Root, Item, tree(Root, nil, Item)) :- Item > Root.
+insert_item(Root, Root, Root).
 
+%% Добавить все элементы из списка в словарь
 insertall(Tree, [], Tree).
 insertall(Tree, [Head|Tail], OutTree) :-
     insert_item(Tree, Head, NewTree),
     insertall(NewTree, Tail, OutTree).
 
+%% Найти максимальный элемент в списке
 find_max(tree(Root, _, nil), Root).
 find_max(tree(_, _, Right), Out) :- find_max(Right, Out).
 find_max(Item, Item).
 
+%% Найти минимальный элемент в списке
 find_min(tree(Root, nil, _), Root).
 find_min(tree(_, Left, _), Out) :- find_min(Left, Out).
 find_min(Item, Item).
 
+%% Вывести дерево растущив внизу
+%%print_tree_down(Tree) :-
+%%    height(Tree, Height),
+
+
+%% Вывести дерево
 print_tree(tree(Root, nil, nil), Level) :-
     print_ident(Root, Level).
 
 print_tree(tree(Root, Left, nil), Level) :-
     NewLevel is Level + 1,
-    print_tree(Left, NewLevel),
-    print_tree(Root, Level).
+    print_tree(Root, Level),
+    print_tree(Left, NewLevel)
+.
 
 print_tree(tree(Root, nil, Right), Level) :-
     NewLevel is Level + 1,
-    print_tree(Root, Level),
-    print_tree(Right, NewLevel).
+    print_tree(Right, NewLevel),
+    print_tree(Root, Level)
+.
 
 print_tree(tree(Root, Left, Right), Level) :-
     NewLevel is Level + 1,
-    print_tree(Left, NewLevel),
+    print_tree(Right, NewLevel),
     print_ident(Root, Level),
-    print_tree(Right, NewLevel).
+    print_tree(Left, NewLevel).
 
 
 print_tree(Item, Level) :-
     print_ident(Item, Level).
 
 print_ident(Item, 0) :- writeln(Item).
-print_ident(Item, 1) :- write("|---"), writeln(Item).
+print_ident(Item, 1) :- write("|=== "), writeln(Item).
 print_ident(Item, Level) :-
-    write("    "),
+    write("     "),
     NewLevel is Level - 1,
     print_ident(Item, NewLevel).
 
+%% Тестирование добавление элемента в словарь
 test_insert_item(Tree, Item) :-
     insert_item(Tree, Item, Out),
     writeln(Out).
 
+%% Тестирование построения
 test_insertall(Tree, Items) :-
     insertall(Tree, Items, Out),
     print_tree(Out, 0),
@@ -94,10 +121,12 @@ test_insertall(Tree, Items) :-
     test_find_min(Out)
 .
 
+%% Построить бинарное словарь из списка
 make_tree([Head|Tail], OutTree) :-
     Tree = tree(Head, nil, nil),
     insertall(Tree, Tail, OutTree).
 
+%% Найти максимаальный элемент и напечатать результат
 test_find_max([Head|Tail]) :-
     Tree = tree(Head, nil, nil),
     insertall(Tree, Tail, NewTree),
@@ -107,7 +136,7 @@ test_find_max(Tree) :-
     find_max(Tree, Out),
     writeln(Out).
 
-
+%% Найти минимальный элемент и напечатать результат
 test_find_min([Head|Tail]) :-
     Tree = tree(Head, nil, nil),
     insertall(Tree, Tail, NewTree),
@@ -141,7 +170,7 @@ run_main :-
     find_max(Tree, Max),
     find_min(Tree, Min),
     writeln("Построенный бинарный справочник:"),
-    print_tree(Tree, 0),
+    print_tree(Tree, 1),
     write("Максимальный элемент: "), writeln(Max),
     write("Минимальный элемент: "), writeln(Min),
     interactive.

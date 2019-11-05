@@ -6,8 +6,24 @@ algo([_|T], [H], Idx,  Out) :-
     NewIdx is Idx + 1,
     algo(T, [H], NewIdx, Out).
 
-algo([Head|Tail1], [Head|Tail2], Idx,  Out) :-
-    algo(Tail1, Tail2, Idx, Out).
+algo(
+    [Head1,Head2],
+    [Head1,Head2],
+    Idx,
+    Idx).
+
+algo(
+    [Head1,Head2|Tail1],
+    [Head1,Head2|Tail2],
+    Idx,
+    Out
+) :-
+    algo(
+        [Head2|Tail1],
+        [Head2|Tail2],
+        Idx,
+        Out
+    ).
 
 algo([_|Tail1], Sublist, Idx, Out) :-
     NewIdx is Idx + 1,
@@ -16,8 +32,14 @@ algo([_|Tail1], Sublist, Idx, Out) :-
 find_sublist_print(List, Sublist) :-
     write(List), write(" - "),
     write(Sublist), write(" -> "),
+    %% (
+    %%     List = Sublist,
+    %%     List = [],
+    %%     writeln("0")
+    %% ) ;
     (
-        algo(List, Sublist, 0, Start),
+        %% trace(algo),
+        algo(List, Sublist, 1, Start),
         writeln(Start)
     ) ;
     (
@@ -26,7 +48,6 @@ find_sublist_print(List, Sublist) :-
 .
 
 test :-
-    % trace(algo),
     find_sublist_print( [1,2     ], [1   ] ), !,
     find_sublist_print( [1,2     ], [2   ] ), !,
     find_sublist_print( [1,2     ], [1,2 ] ), !,
@@ -34,8 +55,15 @@ test :-
     find_sublist_print( [9,109   ], [1   ] ), !,
     find_sublist_print( [1,1,1   ], [1   ] ), !,
     find_sublist_print( [        ], [1   ] ), !,
-    find_sublist_print( [12,2    ], [    ] ), !
-.
+    find_sublist_print( [12,2    ], [    ] ), !,
+    find_sublist_print( [1,2,3   ], [1,3 ] ), !,
+    find_sublist_print( [1,2,3,4 ], [1,4 ] ), !,
+    %%trace(algo),
+    %% gtrace,
+    find_sublist_print( [1,2,3   ], [1,2 ] ), !,
+    find_sublist_print( [1,2,3,1,2   ], [1,2 ] ), !,
+
+halt.
 
 
 run_main :-

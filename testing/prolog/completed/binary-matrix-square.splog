@@ -2,16 +2,19 @@
 
 %% TODO
 
+%% Вывести одну строку матрицы
 print_row([]).
 print_row([Head|Tail]) :-
     write(Head), write(" "),
     print_row(Tail).
 
+%% Вывести матрицу
 print_matrix([]).
 print_matrix([FirstRow|Others]) :-
     write("[ "), print_row(FirstRow), writeln("]"),
     print_matrix(Others).
 
+%% Получить первую колонку матрицы
 first_col([], [], []).
 first_col(
     [
@@ -35,7 +38,7 @@ first_col(
         XXXVarName
     ).
 
-
+%% Транспонировать матрицу
 transpose([[]|_], []).
 transpose([],[]).
 transpose(InMatrix, [FirstRow|TailRows]) :-
@@ -52,12 +55,15 @@ transpose(InMatrix, [FirstRow|TailRows]) :-
     transpose(RestMatrix, TailRows).
 
 
+%% Произвести логическое сложение
 logic_mult(1, 1, 1).
 logic_mult(_, _, 0).
+%% Произвести логическое умножение
 logic_add(0, 0, 0).
 logic_add(_, _, 1).
 
-
+%% Вычислить логическое произведение векторов (скалярное произведение
+%% в покоординатной форме используя логические сложение и умножение)
 cross_mult_list([Head1], [Head2], Out) :-
     logic_mult(Head1, Head2, Out).
 
@@ -67,7 +73,7 @@ cross_mult_list([Head1|Tail1], [Head2|Tail2], Out) :-
     logic_add(TailProd, HeadProd, Out)
 .
 
-
+%% Умножить вектор на матрицу
 cross_mult_vec_matrixT(Vector, [LastRow], [Out]) :-
     cross_mult_list(Vector, LastRow, Out).
 
@@ -76,12 +82,12 @@ cross_mult_vec_matrixT(Vector, [Row|OtherRows], [HeadOut|TailOut]) :-
     cross_mult_vec_matrixT(Vector, OtherRows, TailOut)
 .
 
+%% Умножить матрицу на транспонированную матрицу
 mult_matrix_matrixT(
     [LastTail],
     MatrTransp,
     [OutTail]) :-
     cross_mult_vec_matrixT(LastTail, MatrTransp, OutTail).
-
 
 mult_matrix_matrixT(
     [MHead  | MTail  ],
@@ -94,7 +100,7 @@ mult_matrix_matrixT(
     true.
 
 
-
+%% Вычислиьт квадрат матрицы
 matrix_square(Matrix, Res) :-
     transpose(Matrix, Transposed),
     mult_matrix_matrixT(Matrix, Transposed, Res)
@@ -153,6 +159,7 @@ test_matrix_square(Matr) :-
     print_matrix(Out),
 true.
 
+%% Проверка на равенство строк по длинне
 equal_rows([], _).
 equal_rows([Row], PrevLen) :- length(Row, PrevLen).
 equal_rows([Row|Tail], PrevLen) :-
@@ -160,6 +167,8 @@ equal_rows([Row|Tail], PrevLen) :-
     length(Row, PrevLen),
     equal_rows(Tail, PrevLen).
 
+%% Проверка на квадратность (количество строк должно быть равно
+%% количеству столбцов)
 is_square([Row|Tail], Len) :-
     length([Row|Tail], Len),
     length(Row, Len).
@@ -175,6 +184,8 @@ to_boolean([Row|Tail], [RowOut|TailOut]) :-
         to_boollist(Row, RowOut),
         to_boolean(Tail, TailOut).
 
+%% Считать квадратную матрицу, провести проверки и вывести сообщения
+%% об ошибках (если требуется)
 read_square_matrix(Out) :-
     read(InList),
     ( equal_rows(InList, _) ;
@@ -184,6 +195,7 @@ read_square_matrix(Out) :-
     to_boolean(InList, Out),
 true.
 
+%% Запуск интерактивной части
 run_main :-
     writeln(
 "Введите квадратную булеву матрицу как вложенный список

@@ -1,8 +1,7 @@
 :- initialization(main).
 
-
+%% Добавиьт элемент в список
 append_n_times([], _, 0, []).
-
 append_n_times([], Elem, Repeats, [Elem|TailOut]) :-
     NewRepeats is Repeats - 1,
     append_n_times([], Elem, NewRepeats, TailOut).
