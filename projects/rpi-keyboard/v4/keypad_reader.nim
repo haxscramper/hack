@@ -44,22 +44,6 @@ type
     rowPins: seq[int]
     colPins: seq[int]
 
-
-proc toDisplay(state: KeyState): string =
-  case state:
-    of kstChangedPressed: "CP"
-    of kstChangedReleased: "CR"
-    of kstIdleReleased: "IR"
-    of kstIdlePressed: "IP"
-
-proc show(grid: KeyGrid): void =
-  for keyRow in grid.keyGrid:
-    var result = "|"
-    for key in keyRow:
-      result &= key.state.toDisplay() & " |"
-    echo result
-
-
 proc updateKey(key: var Key, isPressed: bool): bool =
   result = false
 
@@ -135,39 +119,35 @@ proc readMatrix(grid: KeyGrid): seq[seq[bool]] =
 
     setPinModeIn(colPin)
 
-proc show(matrix: seq[seq[bool]]) =
-  for row in matrix:
-    var tmp = ""
-    for col in row:
-      tmp &= &" {cast[int](col)} "
-    echo tmp
-
-var noChangesCnt = 0
-
 type
   HIDReport = object
     modifiers: set[HIDModifiers]
     keycodes: array[6, KeyCodes]
 
-  HIDRawReport = array[8, uint8]
-
 proc createReport(grid: KeyGrid): HIDReport =
+  # TODO comment case-of for key state switching
   var keys: seq[KeyCodes]
   for keyRow in grid.keyGrid:
     for key in keyRow:
-      if key.isModifier:
-        incl(result.modifiers, key.modif)
-      else:
-        keys.add(key.code)
+      case key.state:
+        of kstChangedReleased:
+          if not key.isModifier:
+            keys.add(ccKeyNone)
+
+
+        of kstChangedPressed:
+          if key.isModifier:
+            result.modifiers.incl(key.modif)
+          else:
+            keys.add(key.code)
+
+        else:
+          discard
 
   for idx, keyCode in keys:
     if idx < result.keycodes.len:
       result.keycodes[idx] = keyCode
 
-proc printBitReport(report: HIDRawReport) =
-  echo report.mapIt(it.toHex).join(" ")
-
-var prevReport: array[8, uint8]
 proc writeHIDReport(report: HIDReport) =
   var modifiers: uint8 = 0
   for it in report.modifiers:
@@ -177,39 +157,32 @@ proc writeHIDReport(report: HIDReport) =
 
   final[0] = modifiers
   final[1] = 0 # ignored
+
   for idx, code in report.keycodes:
     final[2 + idx] = cast[uint8](code)
 
-  if final != prevReport:
-    prevReport = final
-    printBitReport(final)
-    let file = open("/dev/hidg0")
-    discard file.writeBytes(final, 0, 8)
-    file.close()
+  let file = open("/dev/hidg0", fmWrite)
+  discard file.writeBytes(final, 0, 8)
+  file.close()
 
-while true:
+
+proc updateKeyGrid(grid: var KeyGrid, matrixState: seq[seq[bool]]): bool =
   var anyChanges = false
-  let matrixState = grid.readMatrix()
 
   for rowIdx, rowState in matrixState:
     for keyIdx, keyState in rowState:
       let isChanged = grid.keyGrid[rowIdx][keyIdx].updateKey(keyState)
       anyChanges = anyChanges or isChanged
 
+  return anyChanges
+
+
+
+while true:
+  let matrixState = grid.readMatrix()
+  let anyChanges = updateKeyGrid(grid, matrixState)
+
   if anyChanges:
-    block: # debug grid state
-      echo ""
-      grid.show()
-      noChangesCnt = 0
+    let report = grid.createReport()
+    report.writeHIDReport()
 
-    block: # generate and send report
-      let report = grid.createReport()
-      report.writeHIDReport()
-
-  else:
-    inc nochangescnt
-    eraseline()
-    stdout.write "no changes (" & $nochangescnt & ")"
-    stdout.flushfile()
-
-  sleep(10)

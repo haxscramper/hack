@@ -1,4 +1,6 @@
 type KeyCodes* = enum
+  ccKeyNone = 0x00'u8 ## No key
+
   ccKeyA = 0x04'u8 ## Keyboard a and A
   ccKeyB = 0x05'u8 ## Keyboard b and B
   ccKeyC = 0x06'u8 ## Keyboard c and C
