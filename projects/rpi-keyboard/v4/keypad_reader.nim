@@ -1,0 +1,215 @@
+import terminal
+import sequtils
+import strutils, strformat
+import wiringPiNim, os
+import common
+import key_codes
+import bitops
+
+if piSetup() >= 0:
+  echo "Pi setup ok"
+else:
+  echo "Pi setup failed"
+  quit 1
+
+type
+  HIDModifiers = enum
+    hmLeftCtrl = 0
+    hmLeftShift = 1
+    hmLeftAlt = 2
+    hmLeftSuper = 3
+
+    hmRightCtrl = 4
+    hmRightShift = 5
+    hmRightAlt = 6
+    hmRightSuper = 7
+
+
+
+type
+  KeyState = enum
+    kstChangedPressed ## Previously unmodified now pressed
+    kstChangedReleased ## Previously pressed now released
+    kstIdlePressed ## Previously pressed no change now
+    kstIdleReleased ## Not pressed no change
+
+  Key = object
+    state: KeyState
+    case isModifier: bool
+    of true: modif: HIDModifiers
+    of false: code: KeyCodes
+
+  KeyGrid = object
+    keyGrid: seq[seq[Key]]
+    rowPins: seq[int]
+    colPins: seq[int]
+
+
+proc toDisplay(state: KeyState): string =
+  case state:
+    of kstChangedPressed: "CP"
+    of kstChangedReleased: "CR"
+    of kstIdleReleased: "IR"
+    of kstIdlePressed: "IP"
+
+proc show(grid: KeyGrid): void =
+  for keyRow in grid.keyGrid:
+    var result = "|"
+    for key in keyRow:
+      result &= key.state.toDisplay() & " |"
+    echo result
+
+
+proc updateKey(key: var Key, isPressed: bool): bool =
+  result = false
+
+  case key.state:
+    of kstIdleReleased:
+      if isPressed:
+        key.state = kstChangedPressed
+        result = true # Key is now pressed
+
+    of kstIdlePressed:
+      if not isPressed:
+        key.state = kstChangedReleased
+        result = true # Key is not released
+
+    of kstChangedPressed:
+      if isPressed:
+        key.state = kstIdlePressed
+        # Key is still pressed, no changes
+
+    of kstChangedReleased:
+      if not isPressed:
+        # Key is still released, no changes
+        key.state = kstIdleReleased
+
+proc makeKeyGrid(rows, cols: int): seq[seq[Key]] =
+  newSeqWith(
+    rows, newSeqWith(
+      cols, Key(
+        state: kstIdleReleased,
+        isModifier: false,
+        code: ccKeyA
+  )))
+
+
+var grid = KeyGrid(
+  keyGrid: makeKeyGrid(3, 3),
+  rowPins: @[0, 1, 2],
+  colPins: @[3, 4, 5])
+
+for col in grid.colPins:
+  setPinModeOut(col)
+  setPinPullUp(col)
+
+for row in grid.rowPins:
+  setPinModeIn(row)
+  #setPinPullDown(row)
+
+
+proc readMatrix(grid: KeyGrid): seq[seq[bool]] =
+  ## Scan grid matrix into 2d sequence of button states. `true`
+  ## indicates that button is pressed, `false` indicates that button
+  ## is released. Returned 2d sequence is of size `[grid.rowPins.len,
+  ## grid.colPins.len]`
+
+  result =
+    newSeqWith(
+      grid.rowPins.len,
+      newSeqWith(grid.colPins.len, false))
+
+  for colIdx, colPin in grid.colPins:
+    setPinModeOut(colPin)
+    digitalWrite(colPin, false)
+
+    for rowIdx, rowPin in grid.rowPins:
+      setPinModeIn(rowPin)
+      setPinPullUp(rowPin)
+
+      let state = digitalRead(rowPin)
+      #echo &"read {state} from {rowIdx}({rowPin}) {colIdx}({colPin})"
+      result[rowIdx][colIdx] = not state
+
+      setPinPullOff(rowPin)
+
+    setPinModeIn(colPin)
+
+proc show(matrix: seq[seq[bool]]) =
+  for row in matrix:
+    var tmp = ""
+    for col in row:
+      tmp &= &" {cast[int](col)} "
+    echo tmp
+
+var noChangesCnt = 0
+
+type
+  HIDReport = object
+    modifiers: set[HIDModifiers]
+    keycodes: array[6, KeyCodes]
+
+  HIDRawReport = array[8, uint8]
+
+proc createReport(grid: KeyGrid): HIDReport =
+  var keys: seq[KeyCodes]
+  for keyRow in grid.keyGrid:
+    for key in keyRow:
+      if key.isModifier:
+        incl(result.modifiers, key.modif)
+      else:
+        keys.add(key.code)
+
+  for idx, keyCode in keys:
+    if idx < result.keycodes.len:
+      result.keycodes[idx] = keyCode
+
+proc printBitReport(report: HIDRawReport) =
+  echo report.mapIt(it.toHex).join(" ")
+
+var prevReport: array[8, uint8]
+proc writeHIDReport(report: HIDReport) =
+  var modifiers: uint8 = 0
+  for it in report.modifiers:
+    modifiers.setBit(ord(it))
+
+  var final: array[8, uint8]
+
+  final[0] = modifiers
+  final[1] = 0 # ignored
+  for idx, code in report.keycodes:
+    final[2 + idx] = cast[uint8](code)
+
+  if final != prevReport:
+    prevReport = final
+    printBitReport(final)
+    let file = open("/dev/hidg0")
+    discard file.writeBytes(final, 0, 8)
+    file.close()
+
+while true:
+  var anyChanges = false
+  let matrixState = grid.readMatrix()
+
+  for rowIdx, rowState in matrixState:
+    for keyIdx, keyState in rowState:
+      let isChanged = grid.keyGrid[rowIdx][keyIdx].updateKey(keyState)
+      anyChanges = anyChanges or isChanged
+
+  if anyChanges:
+    block: # debug grid state
+      echo ""
+      grid.show()
+      noChangesCnt = 0
+
+    block: # generate and send report
+      let report = grid.createReport()
+      report.writeHIDReport()
+
+  else:
+    inc nochangescnt
+    eraseline()
+    stdout.write "no changes (" & $nochangescnt & ")"
+    stdout.flushfile()
+
+  sleep(10)
