@@ -6,6 +6,9 @@ import common
 import key_codes
 import bitops
 
+when defined(profiler):
+  import nimprof
+
 if piSetup() >= 0:
   echo "Pi setup ok"
 else:
@@ -177,12 +180,16 @@ proc updateKeyGrid(grid: var KeyGrid, matrixState: seq[seq[bool]]): bool =
   return anyChanges
 
 
-
+var cnt = 0
 while true:
   let matrixState = grid.readMatrix()
   let anyChanges = updateKeyGrid(grid, matrixState)
 
   if anyChanges:
+    inc cnt
     let report = grid.createReport()
     report.writeHIDReport()
+
+  if cnt > 100:
+    break
 

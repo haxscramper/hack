@@ -135,3 +135,9 @@ if conf.hasKey("file"):
 
 targetFile.close()
 echo "done"
+
+#[
+
+TODO automatically use emacs to genrate pdf and odt files on export
+
+]#
