@@ -6,7 +6,7 @@ teeth_count  = 8;
 teeth_length = 20;
 teeth_height = 2;
 
-center_cutout_r    = 4;
+center_cutout_r    = 2.5;
 connector_cutour_r = 3.5;
 bottom_thickness   = 5;
 
