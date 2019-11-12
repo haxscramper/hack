@@ -1,4 +1,6 @@
-function getElem(elementName) { return document.getElementById(elementName); }
+function getElem(elementName) {
+  return document.getElementById(elementName);
+}
 
 var field = [
   [ "", "", "" ],
@@ -108,20 +110,23 @@ function generateTicTacTable() {
                         `${rowIdx}, ${colIdx}` +
                         ");\"";
 
-      content = "<input type=\"button\" value=\"" + cell +
-                "\" style=\"width: 50px; heght: 50px; font-size: 32px;\"" +
-                onClickCall + ">";
+      content =
+          "<input type=\"button\" value=\"" + cell +
+          "\" style=\"width: 50px; heght: 50px; font-size: 32px;\"" +
+          onClickCall + ">";
 
       rowRes.push("<td>" + content + "</td>");
     }
     tableHTML += "<tr>" +
-                 "<td>" + (rowCount - rowIdx) + "</td>" + rowRes.join("\n") +
-                 "</tr>\n";
+                 "<td>" + (rowCount - rowIdx) + "</td>" +
+                 rowRes.join("\n") + "</tr>\n";
   }
 
   tableHTML += "<tr>" +
                "<td></td>" +
-               field[0].map((r, idx) => "<td>" + (1 + idx) + "</td>").join("") +
+               field[0]
+                   .map((r, idx) => "<td>" + (1 + idx) + "</td>")
+                   .join("") +
                "</tr>";
 
   table.innerHTML = tableHTML;
