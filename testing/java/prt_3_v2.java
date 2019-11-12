@@ -14,17 +14,21 @@ include(prt_3_conversions.java);
 // clang-format on
 
 class IntegerStructure extends JFrame {
+  int bitsNum = 16;
+
   JTextField inNum = new JTextField();
   JButton shiftLeft = new JButton("<<");
   JButton shiftRight = new JButton(">>");
-  JLabel signLbl = new JLabel("");
-  JLabel bitsLbl = new JLabel("");
+  JLabel signLbl = new JLabel("Знак");
+  JLabel bitsLbl = new JLabel("Биты числа");
+  JButton convertBack = new JButton("Обратный перевод");
 
   JTable reprTable;
   JTextField reverse = new JTextField();
 
   Optional<String> getBits() {
-    Optional<Integer> inVal = Misc.getInteger(inNum, "????");
+    Optional<Integer> inVal = Misc.getInteger(
+        inNum, "Ввод не может бысть распознан как целое число");
     if (inVal.isPresent()) {
       return Optional.of(Convert.toBits(inVal.get()));
     } else {
@@ -32,59 +36,106 @@ class IntegerStructure extends JFrame {
     }
   }
 
+  String getTableBits() {
+    String res = "";
+    for (int i = 0; i < bitsNum; ++i) {
+      res += (char)reprTable.getValueAt(0, i + 1);
+    }
+    System.out.printf("table bits  : %s\n", res);
+    return res;
+  }
+
   void numberEntered() {
     var bits = getBits();
     if (bits.isPresent()) {
+      System.out.printf("Parsed number to bits %s\n", bits.get());
       setNumber(bits.get());
     }
   }
 
   void doShiftLeft() {
-    var bits = getBits();
-    if (bits.isPresent()) {
-      setNumber(Convert.shiftLeft(bits.get()));
-    }
+    var bits = getTableBits();
+    pprint("shifting left");
+    setNumber(Convert.shiftLeft(bits));
   }
 
   void doShiftRight() {
-    var bits = getBits();
-    if (bits.isPresent()) {
-      setNumber(Convert.shiftRight(bits.get()));
-    }
+    var bits = getTableBits();
+    pprint("shifting right");
+    setNumber(Convert.shiftRight(bits));
   }
 
   void setNumber(String bits) {
-    for (int i = 0; i < 8 + 1; ++i) {
-      reprTable.setValueAt(bits.charAt(i), 8 - i, 0);
+    System.out.printf("setting bits: %s\n", bits);
+    for (int i = 0; i < bitsNum; ++i) {
+      reprTable.setValueAt(bits.charAt(i), 0, 1 + i);
     }
   }
 
+  void convertBack() {
+    short res = Convert.fromBits(getTableBits());
+    reverse.setText(String.valueOf(res));
+  }
+
   void initUI() {
-    var tModel = new DefaultTableModel(new Object[] {""}, 0);
+    var tModel = new DefaultTableModel(
+        new Object[] {            //
+                      "Вес бита", //
+
+                      "32768", //
+                      "16384", //
+                      "8192",  //
+                      "4096",  //
+
+                      "2048", //
+                      "1024", //
+                      "512",  //
+                      "256",  //
+
+                      "128", //
+                      "64",  //
+                      "32",  //
+                      "16",  //
+
+                      "8", //
+                      "4", //
+                      "2", //
+                      "1"
+
+        },
+        0);
+
     tModel.setRowCount(1);
-    tModel.setColumnCount(8 + 1);
+    tModel.setColumnCount(bitsNum + 1);
 
     reprTable = new JTable(tModel);
 
     add(LYTBuilder.makeHorizontalPanel(new ArrayList<JComponent>() {
       {
-        add(LYTBuilder.makeAnnotatedInput("annotation_string", inNum,
-                                          BoxLayout.Y_AXIS));
+        add(LYTBuilder.makeAnnotatedInput("Число в десятичной СС", inNum,
+                                          BoxLayout.Y_AXIS,
+                                          Misc.whd(360, 48)));
         add(shiftLeft);
         add(shiftRight);
       }
     }));
 
+    signLbl.setBackground(Color.blue);
+    bitsLbl.setBackground(Color.yellow);
     add(LYTBuilder.makeHorizontalPanel(new ArrayList<JComponent>() {
       {
         add(signLbl);
-        add(bitsLbl);
+        add(Misc.setMin_WH(bitsLbl, 480, 48));
       }
     }));
 
     add(LYTBuilder.makeScrollable(reprTable));
-    add(LYTBuilder.makeAnnotatedInput("annotation_string", reverse,
-                                      BoxLayout.X_AXIS));
+    add(LYTBuilder.makeHorizontalPanel(new ArrayList<JComponent>() {
+      {
+        add(Misc.setMax_WH(reverse, 360, 48));
+        add(Misc.setMax_WH(convertBack, 360, 48));
+      }
+    }));
 
     inNum.addActionListener(new ActionListener() {
       public void actionPerformed(ActionEvent e) { numberEntered(); }
@@ -96,6 +147,10 @@ class IntegerStructure extends JFrame {
 
     shiftRight.addActionListener(new ActionListener() {
       public void actionPerformed(ActionEvent e) { doShiftRight(); }
+    });
+
+    convertBack.addActionListener(new ActionListener() {
+      public void actionPerformed(ActionEvent e) { convertBack(); }
     });
   }
 
@@ -145,7 +200,16 @@ class DoubleStructure extends JFrame {
   JTextField outNum = new JTextField();
   JTable reprTable;
 
-  void run() {}
+  void run() {
+    var dbl = Misc.getDouble(
+        numIn, "Введенное число не может быть распознано как double");
+    if (dbl.isPresent()) {
+      Double num = dbl.get();
+      reprTable.setValueAt(Convert.getSign(num), 0, 0);
+      reprTable.setValueAt(Convert.getExponent(num), 0, 1);
+      reprTable.setValueAt(Convert.getMantissa(num), 0, 2);
+    }
+  }
 
   void initUI() {
     var tModel = new DefaultTableModel(new Object[] {"da"}, 0);
@@ -154,13 +218,13 @@ class DoubleStructure extends JFrame {
 
     reprTable = new JTable(tModel);
 
-    add(LYTBuilder.makeAnnotatedInput("annotation_string", numIn,
-                                      BoxLayout.Y_AXIS));
+    add(LYTBuilder.makeAnnotatedInput("Число", numIn,
+                                      BoxLayout.Y_AXIS, Misc.whd(240, 48)));
 
     add(LYTBuilder.makeScrollable(reprTable));
 
-    add(LYTBuilder.makeAnnotatedInput("annotation_string", outNum,
-                                      BoxLayout.Y_AXIS));
+    add(LYTBuilder.makeAnnotatedInput("Обратный перевод", outNum,
+                                      BoxLayout.Y_AXIS, Misc.whd(240, 48)));
 
     numIn.addActionListener(new ActionListener() {
       public void actionPerformed(ActionEvent e) { run(); }
@@ -179,6 +243,18 @@ class CharStructure extends JFrame {
   JLabel intValue = new JLabel();
   JTable reprTable;
 
+  void charEntered() {
+    char c = charIn.getText().charAt(0);
+    System.out.printf("User entered char '%s'\n", c);
+    var hex = Convert.tetrades(c);
+    var bits = Convert.hexTetrades(c);
+    for (int col = 1; col < 5; ++col) {
+      int i = col - 1;
+      reprTable.setValueAt(bits[i], 0, col);
+      reprTable.setValueAt(hex[i], 1, col);
+    }
+  }
+
   void initUI() {
     var model = new DefaultTableModel(
         new Object[] {"Тетрады", "Тетрада 3 (15-12)", "Тетрада 2 (11-8)",
@@ -192,13 +268,20 @@ class CharStructure extends JFrame {
 
     add(LYTBuilder.makeHorizontalPanel(new ArrayList<JComponent>() {
       {
-        add(LYTBuilder.makeAnnotatedInput("Символ", charIn, BoxLayout.Y_AXIS));
+        add(LYTBuilder.makeAnnotatedInput(
+            "Символ", charIn, BoxLayout.Y_AXIS, Misc.whd(240, 48)));
+
         add(LYTBuilder.makeAnnotatedInput("Десятичный код", intValue,
-                                          BoxLayout.Y_AXIS));
+                                          BoxLayout.Y_AXIS,
+                                          Misc.whd(240, 48)));
       }
     }));
 
     add(LYTBuilder.makeScrollable(reprTable));
+
+    charIn.addActionListener(new ActionListener() {
+      public void actionPerformed(ActionEvent e) { charEntered(); }
+    });
   }
 
   CharStructure() {
@@ -258,8 +341,8 @@ class MainFrame extends JFrame {
 class Main {
   public static void main(String[] args) {
     if (args.length > 0 && args[0].equals("main")) {
-        var mframe = new MainFrame();
-        mframe.show();
+      var mframe = new MainFrame();
+      mframe.show();
     } else {
       System.out.println("headless test");
       Convert.runTests();

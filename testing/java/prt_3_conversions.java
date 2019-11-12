@@ -1,4 +1,11 @@
 import java.math.BigInteger;
+import java.util.*;
+import java.util.stream.*;
+
+// clang-format off
+include(utils.m4);
+include(misc.m4.java);
+// clang-format on
 
 undefine(format);
 
@@ -56,7 +63,9 @@ public class Convert {
     return (Math.abs(d) / Math.pow(2, exponent)) - 1;
   }
 
-  static Integer getExponent(Double d) { return 1021 - Math.getExponent(d); }
+  static Integer getExponent(Double d) {
+    return 1021 - Math.getExponent(d);
+  }
 
   static Double getMantissa(Float f) {
     int exponent = Math.getExponent(f);
@@ -128,58 +137,102 @@ public class Convert {
     return res;
   }
 
+  static String add1WithOverflow(String in) {
+    String tmp = "";
+    Boolean hasOverflow = false;
+    for (int i = 0; i < in.length(); ++i) {
+      char c = in.charAt(i);
+      if (c == '1' && hasOverflow) {
+        tmp += tmp + "0"; // 01 + 01 = 10
+      } else if ((c == '0' && hasOverflow) || (c == '1')) {
+        hasOverflow = false;
+        tmp += "1";
+      } else { // c == '0' && !hasOverflow
+        tmp += "0";
+      }
+    }
+    in = tmp;
+
+    return in;
+  }
+
   static String toBits(Integer in) {
-    String res = "";
-    int maxDigits = 8;
+    var bits = Integer.toBinaryString(0xFFFF & in);
+    return String.format("%016d", Long.parseLong(bits));
+  }
 
-    if (in == 0) {
-      res = "0" + res;
+  static int fromPositiveBits(String in) {
+    int res = 0;
+    int valBits = in.length() - 1;
+    for (int i = valBits; i > 0; --i) {
+      res += Misc.intpow(2, valBits - i) * (in.charAt(i) == '1' ? 1 : 0);
     }
-
-    for (int i = 0; i < maxDigits && in > 0; ++i) {
-      res = (in % 2 == 1 ? "1" : "0") + res;
-      in = in / 2;
-    }
-
-    res = "0".repeat(maxDigits - res.length()) + res;
-
-    {
-      String tmp = "";
-      if (in < 0) {
-        for (int i = 0; i < res.length(); ++i) {
-          char c = res.charAt(i);
-          tmp += (c == '1' ? "0" : "1");
-        }
-      }
-      res = tmp;
-    }
-
-    {
-      String tmp = "";
-      Boolean hasOverflow = false;
-      for (int i = 0; i < res.length(); ++i) {
-        char c = res.charAt(i);
-        if (c == '1' && hasOverflow) {
-          tmp += tmp + "0"; // 01 + 01 = 10
-        } else if ((c == '0' && hasOverflow) || (c == '1')) {
-          hasOverflow = false;
-          tmp += "1";
-        } else { // c == '0' && !hasOverflow
-          tmp += "0";
-        }
-      }
-      res = tmp;
-    }
-
     return res;
   }
+
+  static short fromBits(String in) { return (short)Long.parseLong(in, 2); }
 
   static String shiftLeft(String tmp) {
     return tmp.substring(1, tmp.length()) + "0";
   }
 
   static String shiftRight(String tmp) {
-    return "0" + tmp.substring(0, tmp.length() - 1);
+    return "1" + tmp.substring(0, tmp.length() - 1);
+  }
+
+  static String toBits(Float in) {
+    int maxDigits = 16;
+    String res = "";
+
+    {
+      String tmp = "";
+      int num = in.intValue();
+
+      if (num == 0) {
+        tmp = "0";
+      } else {
+        while (num > 0) {
+          tmp += (num % 2 == 1 ? "1" : "0");
+          num = num / 2;
+        }
+
+        tmp = String.format("%16s", tmp).replace(' ', '0');
+      }
+    }
+
+    {
+      String tmp = "";
+      Float flt = in - in.intValue();
+
+      for (int i = 0; i < maxDigits && flt != 0; ++i) {
+        flt *= 2;
+        tmp += (flt > 1 ? "1" : "0");
+        flt -= (flt > 1 ? 1 : 0);
+      }
+
+      tmp = String.format("%-16s", tmp).replace(' ', '0');
+      res = res + tmp;
+    }
+
+    return res;
+  }
+
+  static Float floatFromBits(String bits) {
+    Float out = 0.0f;
+
+    { String numBits = bits.substring(0, 16); }
+
+    {
+      String decBits = bits.substring(16, 33);
+      Float res = 0.0f;
+      for (int idx = 0; idx < decBits.length(); ++idx) {
+        res += (float)Math.pow(2, -idx - 1) *
+               (decBits.charAt(idx) == '1' ? 1 : 0);
+      }
+      out += res;
+    }
+
+    return out;
   }
 
   static void run(Double d) {
@@ -192,8 +245,89 @@ public class Convert {
     System.out.println("");
   }
 
-  public static void runTests() {
-      System.out.println(shiftLeft("001"));
-      System.out.println(shiftRight("001"));
+  public static String[] tetrades(char c) {
+    pprint("--------");
+    run(0.5);
+    run(0.7);
+
+    String res[] = {"", "", "", ""};
+
+    for (int i = 0; i < res.length; ++i) {
+      String bin = Integer.toBinaryString((int)c);
+      var start = 4 * i;
+      var end = 4 * i + 4;
+      bin = "0".repeat(16 - bin.length()) + bin;
+      // System.out.println("Binary string is " + bin +
+      //                    ", substr range = " + start + " - " + end);
+
+      res[i] = bin.substring(start, end);
+    }
+
+    return res;
   }
+
+  public static String[] hexTetrades(char c) {
+
+    String res[] = {"", "", "", ""};
+    for (int i = 0; i < res.length; ++i) {
+      String hex = Integer.toHexString((int)c);
+      hex = "0".repeat(4 - hex.length()) + hex;
+      res[i] += hex.charAt(i);
+    }
+    return res;
+  }
+
+  public static void runTests() {
+    pprint(toBits(12));
+
+    {
+      pprint("Char tetrades test");
+      char chars[] = {'c', '→', '2'};
+      for (char c : chars) {
+        System.out.printf("%s -> %s\n", c, Misc.toString(tetrades(c)));
+        System.out.printf("%s -> %s\n", c, Misc.toString(hexTetrades(c)));
+      }
+    }
+
+    {
+      pprint("Shift left test");
+      var test = toBits(17);
+      for (int i = 0; i < 4; ++i) {
+        pprint(test);
+        test = shiftLeft(test);
+      }
+
+      for (int i = 0; i < 4; ++i) {
+        pprint(test);
+        test = shiftRight(test);
+      }
+      pprint("shift test ok");
+    }
+
+    pprint(fromBits("01111111111111111"));
+
+    {
+      pprint("Bit conversion test");
+      int nums[] = {1, -1, 127, 0, -120, 3, -3};
+      for (int i = 0; i < nums.length; ++i) {
+        var bits = toBits(nums[i]);
+        System.out.printf("%5d -> %s -> %5d\n", nums[i], bits,
+                          fromBits(bits));
+      }
+    }
+
+    {
+      pprint("float conversion test");
+      float flts[] = {1.2f, 12.3f, 0.3f};
+      for (int i = 0; i < flts.length; ++i) {
+        String bits = toBits(flts[i]);
+        Float reverse = floatFromBits(bits);
+
+        System.out.printf("%3.3f -> %s -> %3.24f\n", flts[i], bits,
+                          reverse);
+      }
+    }
+  }
+
+  public static void main(String[] args) { runTests(); }
 }

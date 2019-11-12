@@ -99,6 +99,8 @@ Language: Java
 BraceWrapping:
   AfterClass:      false
 
+ColumnLimit: 75
+
 
 ---
 
