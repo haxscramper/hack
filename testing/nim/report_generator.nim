@@ -5,6 +5,7 @@ import strutils
 import sequtils
 import hmisc/helpers
 import hargparse, macros, tables
+import shell
 import os
 
 
@@ -41,6 +42,8 @@ proc processReport(report: TomlValueRef): string =
 
 ]#
 
+var imageSize = 300
+
 proc processFile(file: TomlValueRef): string =
   proc gs(item: string): string = file[item].getStr()
   proc kp(item: string): bool = file.hasKey(item)
@@ -57,7 +60,7 @@ proc processFile(file: TomlValueRef): string =
 
   let source_code =
     try:
-      "#+BEGIN_SRC prolog\n" & path.readFile().string() & "#+END_SRC"
+      "#+BEGIN_SRC txt\n" & path.readFile().string() & "\n#+END_SRC"
     except:
       "MISSING SOURCE CODE !!!"
 
@@ -65,7 +68,7 @@ proc processFile(file: TomlValueRef): string =
     block:
       var tmp = ""
       for img in walkPattern(image_glob):
-        tmp &= "#+attr_latex: :width 400px :placement [!h]\n"
+        tmp &= &"#+attr_latex: :width {imageSize}px :placement [!h]\n"
         tmp &= "[[./" & img & "]]\n"
       tmp
 
@@ -98,29 +101,64 @@ parseArgs:
     opt: ["--out-file", "-o", "--output", "+takes_value"]
     help: "File to write generated org file"
   opt:
-    name: "in-file"
+    name: "in-dir"
     opt: ["--input", "--in", "+takes_value"]
     help: "Source file for configuration."
+  opt:
+    name: "compile-pdf"
+    opt: ["--compile"]
+    help: "Run emacs to compile pdf"
+  opt:
+    name: "image-size"
+    opt: ["--imsize", "+takes_value"]
+    help: "Image width"
 
+if "image-size".kp:
+  imageSize = "image-size".k.toInt()
 
+echo &"Image size is {imageSize}"
 
-var targetFile =
-  if "out-file".kp:
-    "out-file".k.toStr().open(fmWrite)
+var sourceDir =
+  if "in-dir".kp:
+    "in-dir".k.tostr()
   else:
-    "report.tmp.org".open(fmWrite)
+    echo "Missing input directory"
+    quit(1)
 
-let conf =
-  parseFile(
-    tern("in-file".kp, "in-file".k.toStr(), "input.toml")
-  )
+setCurrentDir(sourceDir);
 
+var targetFileName =
+  if "out-file".kp:
+    "out-file".k.toStr()
+  else:
+    "report.tmp.org"
+
+var targetFile = targetFileName.open(fmWrite)
+let conf = parseFile("input.toml")
 
 proc output(text: string) =
 #  echo text
   targetFile.write(text)
 
-let header = conf["org_header"].getStr() & "\n\n"
+let header =
+  if conf.hasKey("org_header"):
+    conf["org_header"].getStr() & "\n\n"
+  else:
+"""
+#+LATEX_CLASS_OPTIONS: [a4paper,12pt]
+#+LATEX_HEADER: \\usepackage[left=1.5cm,right=2cm,top=3cm,bottom=3cm]{geometry}
+#+LATEX_HEADER: \\usepackage[pdfborder={0,0,0}]{hyperref}
+#+LATEX_HEADER: \\hypersetup{colorlinks=true,linkcolor=blue}
+
+#+LATEX_HEADER: \\usepackage[T2A]{fontenc}
+#+LATEX_HEADER: \\usepackage[utf8]{inputenc}
+#+LATEX_HEADER: \\usepackage[russian]{babel}
+
+#+LATEX_HEADER: \\addto\\captionsenglish{\\renewcommand{\\contentsname}{Оглавление}}
+
+#+OPTIONS: toc:1
+
+"""
 
 output header
 
@@ -134,7 +172,20 @@ if conf.hasKey("file"):
     output processFile(file)
 
 targetFile.close()
-echo "done"
+
+
+
+if "compile-pdf".kp:
+  let (user, exit) = execShell("id -un")
+  echo user
+  let command = "emacs -u " & user &
+    " --batch " & &"\"{targetFileName}\"" &
+    " --eval '(load user-init-file)' " &
+    " -f org-latex-export-to-pdf"
+
+  let (outp, code) = execShell(command)
+  echo outp
+
 
 #[
 

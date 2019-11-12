@@ -1,2 +1,4 @@
 test.dot
-*.png
+*.png*.toml.tex
+*.toml.org
+*.toml.tex
