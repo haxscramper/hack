@@ -192,12 +192,17 @@ public class Convert {
         tmp = "0";
       } else {
         while (num > 0) {
-          tmp += (num % 2 == 1 ? "1" : "0");
+          tmp = ((num % 2 == 1) ? "1" : "0") + tmp;
+          // System.out.printf("num: %d, tmp: %s, num %% 2: %d\n", num, tmp,
+          //                   num % 2);
           num = num / 2;
         }
-
-        tmp = String.format("%16s", tmp).replace(' ', '0');
       }
+
+      tmp = String.format("%16s", tmp).replace(' ', '0');
+      System.out.printf("Integer part: %s\n", tmp);
+
+      res = tmp;
     }
 
     {
@@ -211,6 +216,8 @@ public class Convert {
       }
 
       tmp = String.format("%-16s", tmp).replace(' ', '0');
+      System.out.printf("Decimal part: %s\n", tmp);
+
       res = res + tmp;
     }
 
@@ -220,10 +227,13 @@ public class Convert {
   static Float floatFromBits(String bits) {
     Float out = 0.0f;
 
-    { String numBits = bits.substring(0, 16); }
+    {
+      String numBits = bits.substring(0, 16);
+      out += fromPositiveBits(numBits);
+    }
 
     {
-      String decBits = bits.substring(16, 33);
+      String decBits = bits.substring(16, 32);
       Float res = 0.0f;
       for (int idx = 0; idx < decBits.length(); ++idx) {
         res += (float)Math.pow(2, -idx - 1) *
@@ -318,13 +328,20 @@ public class Convert {
 
     {
       pprint("float conversion test");
-      float flts[] = {1.2f, 12.3f, 0.3f};
+      float flts[] = {1.2f, 12.3f, 0.3f,   0.5f, 0.7f,
+                      0.1f, 2.4f,  0.001f, 17.4f};
       for (int i = 0; i < flts.length; ++i) {
         String bits = toBits(flts[i]);
-        Float reverse = floatFromBits(bits);
 
-        System.out.printf("%3.3f -> %s -> %3.24f\n", flts[i], bits,
-                          reverse);
+        var startBits = bits.substring(0, 16);
+        var endBits = bits.substring(16, 32);
+
+        System.out.printf("%3.3f -> [%d:%s][%d:%s]", flts[i],
+                          startBits.length(), startBits, endBits.length(),
+                          endBits);
+
+        Float reverse = floatFromBits(bits);
+        System.out.printf(" -> %3.24f\n", reverse);
       }
     }
   }

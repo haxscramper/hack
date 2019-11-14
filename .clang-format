@@ -105,3 +105,4 @@ ColumnLimit: 75
 ---
 
 Language: JavaScript
+ColumnLimit: 70

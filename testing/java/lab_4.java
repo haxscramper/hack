@@ -132,13 +132,12 @@ class ArraySorter extends JFrame {
         num = Float.parseFloat(model.getValueAt(0, i).toString());
         input.add(num);
       } catch (Exception e) {
-          System.out.println(e);
+        System.out.println(e);
         Misc.showErrorMessage(
             "Ошибка при обработке значение в колонке " + (i - 1) +
-            "\nВведенная строка не можут быть обработана как Float");
+            "\nВведенная строка не можeт быть обработана как Float");
       }
     }
-
 
     var outString = new String();
 
@@ -147,7 +146,7 @@ class ArraySorter extends JFrame {
     Float positiveSum = 0f;
 
     for (Float num : input) {
-       outString += num  + " ";
+      outString += num + " ";
       if (num > 0) {
         positiveSum += num;
       }
@@ -157,14 +156,14 @@ class ArraySorter extends JFrame {
     outString += "Сумма положительных элементов массива\n";
     outString += positiveSum;
 
-   textArea.setText(outString);
-
+    textArea.setText(outString);
 
     var N = input.size() - 1;
     for (int i = 0; i <= N - 1; i++) {
       for (int j = i + 1; j <= N; j++) {
-        if (input.get(i) < input.get(j))
+        if (input.get(i) < input.get(j)) {
           Collections.swap(input, i, j);
+        }
       }
     }
 
@@ -195,9 +194,9 @@ class ArraySorter extends JFrame {
     outTable = new JTable(outTableModel);
     outTable.setValueAt("Значения ячеек", 0, 0);
 
-    add(LYTBuilder.makeAnnotatedInput("Исходый массив",
-                                      LYTBuilder.makeScrollable(inputTable),
-                                      BoxLayout.Y_AXIS, Misc.whd(Integer.MAX_VALUE, 120)));
+    add(LYTBuilder.makeAnnotatedInput(
+        "Исходый массив", LYTBuilder.makeScrollable(inputTable),
+        BoxLayout.Y_AXIS, Misc.whd(Integer.MAX_VALUE, 120)));
 
     add(Misc.setMax_WH(button, -1, 48));
 
@@ -206,9 +205,9 @@ class ArraySorter extends JFrame {
     });
 
     add(textArea);
-    add(LYTBuilder.makeAnnotatedInput("Отсортированный массив",
-                                      LYTBuilder.makeScrollable(outTable),
-                                      BoxLayout.Y_AXIS, Misc.whd(Integer.MAX_VALUE, 120)));
+    add(LYTBuilder.makeAnnotatedInput(
+        "Отсортированный массив", LYTBuilder.makeScrollable(outTable),
+        BoxLayout.Y_AXIS, Misc.whd(Integer.MAX_VALUE, 120)));
   }
 
   ArraySorter() {
@@ -220,12 +219,11 @@ class ArraySorter extends JFrame {
 
 
 class Main {
-static void runConstArray() {
+  static void runConstArray() {
 
     var frame = new ConstArray();
     frame.show();
-
-}
+  }
 
   static void runTextSorter() {
     var frame = new FieldArraySort();
@@ -240,7 +238,7 @@ static void runConstArray() {
   public static void main(String args[]) {
     if (args.length > 0 && args[0].equals("a")) {
       runConstArray();
-    }else if (args.length > 0 && args[0].equals("b")) {
+    } else if (args.length > 0 && args[0].equals("b")) {
       runTextSorter();
     } else if (args.length > 0 && args[0].equals("c")) {
       runArraySorter();

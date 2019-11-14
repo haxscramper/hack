@@ -79,28 +79,13 @@ class IntegerStructure extends JFrame {
 
   void initUI() {
     var tModel = new DefaultTableModel(
-        new Object[] {            //
-                      "Вес бита", //
+        new Object[] {
+            "Вес бита", //
 
-                      "32768", //
-                      "16384", //
-                      "8192",  //
-                      "4096",  //
-
-                      "2048", //
-                      "1024", //
-                      "512",  //
-                      "256",  //
-
-                      "128", //
-                      "64",  //
-                      "32",  //
-                      "16",  //
-
-                      "8", //
-                      "4", //
-                      "2", //
-                      "1"
+            "32768", "16384", "8192", "4096", //
+            "2048", "1024", "512", "256",     //
+            "128", "64", "32", "16",          //
+            "8", "4", "2", "1"                //
 
         },
         0);
@@ -109,6 +94,7 @@ class IntegerStructure extends JFrame {
     tModel.setColumnCount(bitsNum + 1);
 
     reprTable = new JTable(tModel);
+    reprTable.setValueAt("Значение", 0, 0);
 
     add(LYTBuilder.makeHorizontalPanel(new ArrayList<JComponent>() {
       {
@@ -120,14 +106,15 @@ class IntegerStructure extends JFrame {
       }
     }));
 
-    signLbl.setBackground(Color.blue);
-    bitsLbl.setBackground(Color.yellow);
     add(LYTBuilder.makeHorizontalPanel(new ArrayList<JComponent>() {
       {
         add(signLbl);
         add(Misc.setMin_WH(bitsLbl, 480, 48));
       }
     }));
+
+    signLbl.setBackground(Color.blue);
+    bitsLbl.setBackground(Color.yellow);
 
     add(LYTBuilder.makeScrollable(reprTable));
     add(LYTBuilder.makeHorizontalPanel(new ArrayList<JComponent>() {
@@ -166,22 +153,93 @@ class FloatStructure extends JFrame {
   JTable reprTable;
   JTextField reverse = new JTextField();
 
-  void run() {}
+  void run() {
+    var fltIn = Misc.getFloat(
+        inNum, "Введенное число не может быть распознано как float");
+    if (fltIn.isPresent()) {
+      var bits = Convert.toBits(fltIn.get());
+      var reversed = Convert.floatFromBits(bits);
+      for (int col = 1; col < 32 + 1; ++col) {
+        int idx = col - 1;
+        reprTable.setValueAt(bits.charAt(idx), 3, col);
+      }
+      reverse.setText(Convert.asString(reversed));
+    }
+  }
 
   void initUI() {
-    var tModel = new DefaultTableModel(new Object[] {""}, 0);
-    tModel.setRowCount(4);
+    var tModel = new DefaultTableModel(
+        new Object[] {"",  "Зн", "Х", "А", "Р", "А", "К", "Т", "Е",
+                      "Р", "М",  "А", "Н", "Т", "И", "С", "С", "А",
+                      "",  "",   "",  "",  "",  "",  "",  "",  "",
+                      "",  "",   "",  "",  "",  ""},
+        0);
+
     tModel.setColumnCount(32 + 1);
+
+    tModel.addRow(new Object[] {
+        "Байт",                                  //
+        "Б",    "а", "й", "т", "№", "3", "", "", //
+        "Б",    "а", "й", "т", "№", "2", "", "", //
+        "Б",    "а", "й", "т", "№", "1", "", "", //
+        "Б",    "а", "й", "т", "№", "0", "", "", //
+    });
+
+    tModel.addRow(new Object[] {
+        "№ бита",                                           //
+        "31",     "30", "29", "28", "27", "26", "25", "24", //
+        "23",     "22", "21", "20", "19", "18", "17", "16", //
+        "15",     "14", "13", "12", "11", "10", "9",  "8",  //
+        "7",      "6",  "5",  "4",  "3",  "2",  "1",  "0",  //
+    });
+
+    tModel.addRow(new Object[] {
+        "Вес бита",   //
+        "256",        //
+        "128",        //
+        "64",         //
+        "32",         //
+        "16",         //
+        "8",          //
+        "4",          //
+        "2",          //
+        "1",          //
+        "0.5",        //
+        "0.25",       //
+        "0.125",      //
+        "0.0625",     //
+        "0.03125",    //
+        "0.015625",   //
+        "0.0078125",  //
+        "0.00390625", //
+        "0.00195312", //
+        "0.00097656", //
+        "0.00048828", //
+        "0.00024414", //
+        "0.00012207", //
+        "0.00006104", //
+        "0.00003052", //
+        "0.00001526", //
+        "0.00000763", //
+        "0.00000381", //
+        "0.00000191", //
+        "0.00000095", //
+        "0.00000048", //
+        "0.00000024", //
+        "0.00000012"  //
+    });
+
+    tModel.addRow(new Object[] {});
 
     reprTable = new JTable(tModel);
 
-    add(LYTBuilder.makeAnnotatedInput("annotation_string", inNum,
-                                      BoxLayout.X_AXIS, 48));
+    add(LYTBuilder.makeAnnotatedInput("Число", inNum, BoxLayout.X_AXIS,
+                                      48));
 
     add(LYTBuilder.makeScrollable(reprTable));
 
-    add(LYTBuilder.makeAnnotatedInput("annotation_string", reverse,
-                                      BoxLayout.X_AXIS, 48));
+    add(LYTBuilder.makeAnnotatedInput("Обратный побитовый перевод",
+                                      reverse, BoxLayout.X_AXIS, 48));
 
     inNum.addActionListener(new ActionListener() {
       public void actionPerformed(ActionEvent e) { run(); }
@@ -205,26 +263,39 @@ class DoubleStructure extends JFrame {
         numIn, "Введенное число не может быть распознано как double");
     if (dbl.isPresent()) {
       Double num = dbl.get();
-      reprTable.setValueAt(Convert.getSign(num), 0, 0);
+      reprTable.setValueAt(Convert.getSign(num) ? "1" : "0", 0, 0);
       reprTable.setValueAt(Convert.getExponent(num), 0, 1);
       reprTable.setValueAt(Convert.getMantissa(num), 0, 2);
+
+
+      Long longBits = Double.doubleToLongBits(dbl.get());
+    String strBits = Long.toBinaryString(longBits);
+    Long parsed = new BigInteger(strBits, 2).longValue();
+    Double reversed = Double.longBitsToDouble(parsed);
+
+    outNum.setText(Convert.asString(reversed));
+
     }
   }
 
   void initUI() {
-    var tModel = new DefaultTableModel(new Object[] {"da"}, 0);
+    var tModel = new DefaultTableModel(
+        new Object[] {"Знак (63)", "Характеристика (62-52)",
+                      "Мантисса (51-0)"},
+        0);
+
     tModel.setRowCount(1);
     tModel.setColumnCount(3);
 
     reprTable = new JTable(tModel);
 
-    add(LYTBuilder.makeAnnotatedInput("Число", numIn,
-                                      BoxLayout.Y_AXIS, Misc.whd(240, 48)));
+    add(LYTBuilder.makeAnnotatedInput("Число", numIn, BoxLayout.Y_AXIS,
+                                      Misc.whd(240, 48)));
 
     add(LYTBuilder.makeScrollable(reprTable));
 
-    add(LYTBuilder.makeAnnotatedInput("Обратный перевод", outNum,
-                                      BoxLayout.Y_AXIS, Misc.whd(240, 48)));
+    add(LYTBuilder.makeAnnotatedInput(
+        "Обратный перевод", outNum, BoxLayout.Y_AXIS, Misc.whd(240, 48)));
 
     numIn.addActionListener(new ActionListener() {
       public void actionPerformed(ActionEvent e) { run(); }
@@ -246,8 +317,8 @@ class CharStructure extends JFrame {
   void charEntered() {
     char c = charIn.getText().charAt(0);
     System.out.printf("User entered char '%s'\n", c);
-    var hex = Convert.tetrades(c);
-    var bits = Convert.hexTetrades(c);
+    var bits = Convert.tetrades(c);
+    var hex = Convert.hexTetrades(c);
     for (int col = 1; col < 5; ++col) {
       int i = col - 1;
       reprTable.setValueAt(bits[i], 0, col);
@@ -265,6 +336,9 @@ class CharStructure extends JFrame {
     model.setColumnCount(5);
 
     reprTable = new JTable(model);
+
+    reprTable.setValueAt("Биты в тетраде", 0, 0);
+    reprTable.setValueAt("16-ричная цифра", 1, 0);
 
     add(LYTBuilder.makeHorizontalPanel(new ArrayList<JComponent>() {
       {
@@ -341,11 +415,12 @@ class MainFrame extends JFrame {
 class Main {
   public static void main(String[] args) {
     if (args.length > 0 && args[0].equals("main")) {
+      System.out.println("Starting main application");
       var mframe = new MainFrame();
       mframe.show();
     } else {
       System.out.println("headless test");
-      Convert.runTests();
+      // Convert.runTests();
     }
   }
 }

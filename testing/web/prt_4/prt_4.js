@@ -6,9 +6,9 @@ function update_image() {
 
 function radio_select(value) {
     if (value === "1") {
-        document.getElementById("image").src = "image_1.tmp.png";
+        document.getElementById("image").src = "image_egg.tmp.png";
     } else {
-        document.getElementById("image").src = "image_2.tmp.png";
+        document.getElementById("image").src = "image_chicken.tmp.png";
     }
 }
 
@@ -39,9 +39,9 @@ function getElem(elementName) {
 }
 
 var boardSet = [
-    [ 'b-k', 'b-h', "b-h" ],
+    [ 'w-p', 'w-p', 'w-p' ],
     [ '', '', '' ],
-    [ 'w-k', 'w-h', 'w-q' ],
+    [ 'b-h', 'b-h', "b-h" ],
 ];
 
 var prevPos;
@@ -72,7 +72,7 @@ function canGoThere(pieceCode, d) {
             case 'k': return d.r <= 1 && d.c <= 1;
             case 't':
                 return (d.r == 0 && d.c != 0) || (d.c == 0 && d.c != 0);
-            case 'p': return (d.r <= 1);
+            case 'p': return (d.r <= 1 && d.c == 0);
             default:
                 console.log("Unknown piece type:", last);
                 return false;
@@ -90,8 +90,11 @@ function buttonPressed(rowIdx, colIdx) {
         if (canGoThere(code, dist(prevPos, nowPos))) {
             console.log(
                 "Can place chess piece", code, "to position", nowPos);
+
+            tmp = boardSet[rowIdx][colIdx];
             boardSet[rowIdx][colIdx]       = code;
-            boardSet[prevPos.r][prevPos.c] = "";
+            boardSet[prevPos.r][prevPos.c] = tmp;
+
             generateChessTable();
         }
         prevPos = undefined; // Series of press has ended
