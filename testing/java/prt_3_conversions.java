@@ -78,9 +78,9 @@ public class Convert {
 
   static Boolean getSign(Float f) { return f >= 0; }
 
-  static String asString(Double d) { return String.format("%.23f", d); }
+  static String asString(Double d) { return String.format("%.25f", d); }
 
-  static String asString(Float f) { return String.format("%.23f", f); }
+  static String asString(Float f) { return String.format("%.25f", f); }
 
   static Double getConverted(Double inputValue) {
     Long longBits = Double.doubleToLongBits(inputValue);

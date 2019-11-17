@@ -289,8 +289,7 @@ class DoubleStructure extends JFrame {
 
     reprTable = new JTable(tModel);
 
-    add(LYTBuilder.makeAnnotatedInput("Число", numIn, BoxLayout.Y_AXIS,
-                                      Misc.whd(240, 48)));
+    add(LYTBuilder.makeAnnotatedInput("Число", numIn, BoxLayout.Y_AXIS));
 
     add(LYTBuilder.makeScrollable(reprTable));
 
