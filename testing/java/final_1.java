@@ -25,9 +25,7 @@ class Pos {
     return res;
   }
 
-  public String toChessPos() {
-      return r + "-" + (char)('a' + c);
-  }
+  public String toChessPos() { return r + "-" + (char)('a' + c); }
 }
 
 class ChessField {
@@ -38,20 +36,23 @@ class ChessField {
   }
 
   String[][] field;
-  HashMap<String, ImageIcon> chessImages = new HashMap<String, ImageIcon>();
+  HashMap<String, ImageIcon> chessImages =
+      new HashMap<String, ImageIcon>();
   HashMap<String, String> chessLetters = new HashMap<>() {
     {
       put("b-k", "♚"); // black-king
       put("b-q", "♛"); // black-queen
       put("b-t", "♜"); // black-tower
       put("b-b", "♝"); // black-bishop
-      put("b-h", "♞"); // black-knight (aka 'horse' (for key // consistency))
+      put("b-h",
+          "♞"); // black-knight (aka 'horse' (for key // consistency))
       put("b-p", "♟"); // black-pawn
       put("w-k", "♔"); // white-king
       put("w-q", "♕"); // white-queen
       put("w-t", "♖"); // white-tower
       put("w-b", "♗"); // white-bishop
-      put("w-h", "♘"); // white-knight (aka 'horse' (for key // consistency))
+      put("w-h",
+          "♘"); // white-knight (aka 'horse' (for key // consistency))
       put("w-p", "♙"); // white-pawn
     }
   };
@@ -133,8 +134,8 @@ class ChessField {
           } else if (d.c == 1) {
             // If we try to move to side column we need to check
             // whether or not there is something we can attack.
-            // (Cell is not empty) and color of the chess piece is opposite of
-            // ours
+            // (Cell is not empty) and color of the chess piece is opposite
+            // of ours
             var adjCode = field[target.r][target.c];
             return (!adjCode.equals("") && adjCode.charAt(0) != color);
           } else {
@@ -184,12 +185,35 @@ class MicroChess extends JFrame {
   DefaultTableModel fieldModel;
 
   DefaultTableModel movesModel = new DefaultTableModel(
-      new Object[] {"Фигура", "Клетка n-1", "Клетка n"}, 0);
+      new Object[] {"Фигура", "Клетка n-1", "Клетка n"}, 0) {
+    @Override
+    public boolean isCellEditable(int row, int column) {
+      return false;
+    }
+  };
 
   JButton gameInit = new JButton("Начать игру");
 
   ChessField field;
   Pos prevPos;
+
+  void resetField() {
+    gameOver = false;
+    field = new ChessField(
+        // --
+        new String[][] {
+            {"w-p", "w-p", "w-p"}, //
+            {"", "", ""},          //
+            {"b-h", "b-h", "b-h"}  //
+        });
+
+    var dm = (DefaultTableModel)moveTable.getModel();
+    while (dm.getRowCount() > 0) {
+      dm.removeRow(0);
+    }
+
+    field.drawOnTable(gameField);
+  }
 
   void cellPressed(int rowIdx, int colIdx) {
     var nowPos = new Pos();
@@ -212,9 +236,9 @@ class MicroChess extends JFrame {
         System.out.println("Updated table");
 
         movesModel.addRow(new Object[] {
-            field.getChessletter(code),  //
-            prevPos.toChessPos(), //
-            nowPos.toChessPos()//
+            field.getChessletter(code), //
+            prevPos.toChessPos(),       //
+            nowPos.toChessPos()         //
         });
 
         gameOver = field.isFinished();
@@ -231,16 +255,26 @@ class MicroChess extends JFrame {
   }
 
   void initUI() {
-    fieldModel = new DefaultTableModel(new Object[] {"", "A", "B", "C"}, 0) {
-      @Override
-      public Class<?> getColumnClass(int column) {
-        if (column > 0) {
-          return ImageIcon.class;
-        }
+    fieldModel =
+        new DefaultTableModel(new Object[] {"", "A", "B", "C"}, 0) {
+          @Override
+          public Class<?> getColumnClass(int column) {
+            if (column > 0) {
+              return ImageIcon.class;
+            }
 
-        return Object.class;
-      }
-    };
+            return Object.class;
+          }
+
+          @Override
+          public boolean isCellEditable(int row, int column) {
+            return false;
+          }
+        };
+
+    gameInit.addActionListener(new ActionListener() {
+      public void actionPerformed(ActionEvent e) { resetField(); }
+    });
 
     field = new ChessField(
         // --
@@ -259,21 +293,28 @@ class MicroChess extends JFrame {
     gameField = new JTable(fieldModel);
     moveTable = new JTable(movesModel);
 
+    gameField.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+
     add(LYTBuilder.makeHorizontalPanel(new ArrayList<JComponent>() {
       {
-        add(LYTBuilder.makeAnnotatedInput("Игровое поле",
-                                          LYTBuilder.makeScrollable(gameField),
-                                          BoxLayout.Y_AXIS));
+        add(LYTBuilder.makeAnnotatedInput(
+            "Игровое поле", LYTBuilder.makeScrollable(gameField),
+            BoxLayout.Y_AXIS));
 
-        add(LYTBuilder.makeAnnotatedInput("Таблица ходов",
-                                          LYTBuilder.makeScrollable(moveTable),
-                                          BoxLayout.Y_AXIS));
+        add(LYTBuilder.makeAnnotatedInput(
+            "Таблица ходов", LYTBuilder.makeScrollable(moveTable),
+            BoxLayout.Y_AXIS));
       }
     }));
 
     add(Misc.setMax_WH(gameInit, 96, 24));
 
     gameField.getColumnModel().getColumn(0).setMaxWidth(8);
+
+    for (int i = 1; i < 4; ++i) {
+      gameField.getColumnModel().getColumn(i).setMaxWidth(100);
+    }
+
     gameField.setRowHeight(100);
 
     gameField.addMouseListener(new java.awt.event.MouseAdapter() {
@@ -286,9 +327,10 @@ class MicroChess extends JFrame {
           cellPressed(row, col);
           if (gameOver) {
 
-            JOptionPane.showMessageDialog(null, "Game over", "Err",
-                                          JOptionPane.INFORMATION_MESSAGE |
-                                              JOptionPane.OK_CANCEL_OPTION);
+            JOptionPane.showMessageDialog(
+                null, "Игра окончена !", "",
+                JOptionPane.INFORMATION_MESSAGE |
+                    JOptionPane.OK_CANCEL_OPTION);
           }
         }
       }
@@ -307,22 +349,103 @@ class MicroChess extends JFrame {
 class TicTacField {
   String[][] field = {{"", "", ""}, {"", "", ""}, {"", "", ""}};
 
+  final int noValue = -1;
+  final char empty = ' ';
+  final char computer = 'o';
+  final char human = 'x';
+
+  public int[] calculateMove(char[][] fieldIn) {
+    int[] result = new int[] {noValue, noValue, noValue};
+
+    int[][][] diagonals = new int[][][] {
+
+        // {{row1, col1}, {row2, col2}, {row3, col3}}
+        {{0, 0}, {0, 1}, {0, 2}},
+        {{1, 0}, {1, 1}, {1, 2}},
+        {{2, 0}, {2, 1}, {2, 2}}
+        // ---
+
+    };
+
+    Boolean doneMove = false;
+
+    for (int d = 0; d < diagonals.length && !doneMove; ++d) {
+      int missingRow = -1;
+      int missingCol = -1;
+      int missingCount = 0;
+
+      for (int cell = 0; cell < 3; ++cell) {
+        int row = diagonals[d][cell][0];
+        int col = diagonals[d][cell][1];
+        char inCell = fieldIn[row][col];
+
+        if (inCell == empty) {
+          ++missingCount;
+          missingRow = row;
+          missingCol = col;
+        } else if (inCell == human) {
+          ++missingRow;
+        }
+      }
+
+      if (
+          // only one cell is missing
+          missingCount == 1 &&
+          // and it was empty
+          missingRow != -1 && missingCol != -1) {
+        result[0] = missingRow;
+        result[1] = missingCol;
+        doneMove = true;
+      }
+    }
+
+    if (doneMove) {
+      System.out.printf("Finishing move to [%d %d]\n", result[0],
+                        result[1]);
+
+      return result;
+    } else {
+      int attempts = 1;
+      Random rand = new Random();
+      int row = rand.nextInt(3);
+      int col = rand.nextInt(3);
+      while ((fieldIn[row][col] != empty) && attempts < 9) {
+        ++attempts;
+        row = rand.nextInt(3);
+        col = rand.nextInt(3);
+      }
+
+      if (attempts > 9) {
+        System.out.println("Made more than 9 attempts to find empty cell");
+      }
+
+      result[0] = row;
+      result[1] = col;
+
+      System.out.printf("Random move to[%d %d]\n", result[0], result[1]);
+
+      return result;
+    }
+  }
+
   void doMove() {
-    int attempts = 1;
-    Random rand = new Random();
-    int row = rand.nextInt(3);
-    int col = rand.nextInt(3);
-    while (!isEmpty(row, col) && attempts < 9) {
-      ++attempts;
-      row = rand.nextInt(3);
-      col = rand.nextInt(3);
+    char[][] fieldIn = new char[3][3];
+    for (int row = 0; row < 3; ++row) {
+      for (int col = 0; col < 3; ++col) {
+        var inCell = field[row][col];
+        if (inCell.length() > 0) {
+          fieldIn[row][col] = inCell.charAt(0);
+        } else {
+          fieldIn[row][col] = empty;
+        }
+      }
     }
 
-    if (attempts > 9) {
-      Pprint("Made more than 9 attempts to find empty cell");
-    }
+    var result = calculateMove(fieldIn);
 
-    field[row][col] = "o";
+    int row = result[0];
+    int col = result[1];
+    field[row][col] = "" + computer;
   }
 
   void setCell(int row, int col) {
@@ -342,25 +465,33 @@ class TicTacField {
     }
   }
 
-  Boolean isFinished() {
+  String isFinished() {
     int dim = 3;
     // check horizontal
+    System.out.println("Checking horizontal");
     for (int row = 0; row < dim; ++row) {
       String rstring = String.join("", field[row]);
-      if (rstring.equals("xxx") || rstring.equals("ooo")) {
+      if (rstring.equals("xxx")) {
         Pprint("ok: " + rstring);
-        return true;
+        return "human";
+      } else if (rstring.equals("ooo")) {
+        Pprint("ok: " + rstring);
+        return "computer";
       } else {
         Pprint("Does not match:" + rstring);
       }
     }
 
     // check vertical
+    System.out.println("Checking vertical");
     for (int col = 0; col < dim; ++col) {
-        String cstring = field[0][col] + field[1][col] + field[2][col];
-      if (cstring.equals("xxx") || cstring.equals("ooo")) {
+      String cstring = field[0][col] + field[1][col] + field[2][col];
+      if (cstring.equals("xxx")) {
         Pprint("ok: " + cstring);
-        return true;
+        return "human";
+      } else if (cstring.equals("ooo")) {
+        Pprint("ok: " + cstring);
+        return "computer";
       } else {
         Pprint("Does not match:" + cstring);
       }
@@ -369,17 +500,16 @@ class TicTacField {
     String ldiag = field[0][0] + field[1][1] + field[2][2];
     String rdiag = field[0][2] + field[1][1] + field[2][0];
 
-    if (ldiag.equals("xxx")    //
-        || ldiag.equals("ooo") //
-        || rdiag.equals("xxx") //
-        || rdiag.equals("ooo")) {
-      return true;
+    if (ldiag.equals("ooo") || rdiag.equals("ooo")) {
+      return "computer";
+    } else if (ldiag.equals("xxx") || rdiag.equals("xxx")) {
+      return "human";
     } else {
       Pprint("Does not match:" + ldiag);
       Pprint("Does not match:" + rdiag);
     }
 
-    return false;
+    return "none";
   }
 }
 
@@ -387,24 +517,47 @@ class TicTacToe extends JFrame {
   JTable fieldTable = new JTable();
   JButton computerMove = new JButton("Начинает компьютер");
   Boolean gameOver = false;
+  String gameResult = "none";
   TicTacField field = new TicTacField();
+
+  void checkIsFinished() {
+    gameResult = field.isFinished();
+    if (gameResult.equals("none")) {
+      gameOver = false;
+      System.out.println("No winner");
+    } else if (gameResult.equals("human") ||
+               gameResult.equals("computer")) {
+      gameOver = true;
+    } else {
+      System.out.println("Unknow game result " + gameResult);
+    }
+  }
 
   void cellPressed(int rowIdx, int colIdx) {
     if (field.isEmpty(rowIdx, colIdx)) {
       field.setCell(rowIdx, colIdx);
 
-      if (!field.isFinished()) {
-          field.doMove();
+      checkIsFinished();
+
+      if (!gameOver) {
+        field.doMove();
+      } else {
+        Pprint("Game over");
       }
 
-      gameOver = field.isFinished();
-
-      if (gameOver) {
-          Pprint("Game over");
-      }
+      checkIsFinished();
 
       field.drawOnTable(fieldTable);
+    } else {
+      System.out.printf("Cell %d %d is occupied\n", rowIdx, colIdx);
     }
+  }
+
+  void resetField() {
+    field = new TicTacField();
+    gameOver = false;
+    field.doMove();
+    field.drawOnTable(fieldTable);
   }
 
   void initUI() {
@@ -419,8 +572,18 @@ class TicTacToe extends JFrame {
     field.doMove();
     field.drawOnTable(fieldTable);
 
+    for (int i = 0; i < 3; ++i) {
+      fieldTable.getColumnModel().getColumn(i).setMaxWidth(100);
+    }
+
     fieldTable.setRowHeight(100);
+
     fieldTable.setFont(new Font("Serif", Font.BOLD, 72));
+    computerMove.addActionListener(new ActionListener() {
+      public void actionPerformed(ActionEvent e) { resetField(); }
+    });
+
+    LYTBuilder.setCellsAlignment(fieldTable, SwingConstants.CENTER);
 
     fieldTable.addMouseListener(new java.awt.event.MouseAdapter() {
       @Override
@@ -431,9 +594,16 @@ class TicTacToe extends JFrame {
           System.out.println("Pressed at: " + row + " " + col);
           cellPressed(row, col);
           if (gameOver) {
-            JOptionPane.showMessageDialog(null, "Game over", "Err",
-                                          JOptionPane.INFORMATION_MESSAGE |
-                                              JOptionPane.OK_CANCEL_OPTION);
+            String winnerMessage = "";
+            if (gameResult.equals("human")) {
+              winnerMessage = "Игра окончена выиграл человек";
+            } else if (gameResult.equals("computer")) {
+              winnerMessage = "Игра окончена выиграл компьютер";
+            }
+            JOptionPane.showMessageDialog(
+                null, winnerMessage, "",
+                JOptionPane.INFORMATION_MESSAGE |
+                    JOptionPane.OK_CANCEL_OPTION);
           }
         }
       }
@@ -447,16 +617,75 @@ class TicTacToe extends JFrame {
   }
 }
 
-class MainFrame extends JFrame {
+class ChessFrame extends JFrame {
   JTabbedPane tabs = new JTabbedPane();
+  JTextArea help = new JTextArea();
 
   void initUI() {
     var chess = new MicroChess();
-    var ticTacToe = new TicTacToe();
+    help.setText(
+        "Для хода нажмите на исходную ячейку и затем на целевую. Для сброса ходов нажмите на кнопку");
     tabs.addTab("Переставь фигуры", chess.getContentPane());
-    tabs.addTab("Крестики-нолики", ticTacToe.getContentPane());
-
+    tabs.addTab("Помощь", help);
     add(tabs);
+  }
+
+  ChessFrame() {
+    initUI();
+    this.setDefaultCloseOperation(JFrame.HIDE_ON_CLOSE);
+    this.setLayout(new BoxLayout(this.getContentPane(), BoxLayout.Y_AXIS));
+  }
+}
+
+class TicTacFrame extends JFrame {
+  JTabbedPane tabs = new JTabbedPane();
+  JTextArea help = new JTextArea();
+
+  void initUI() {
+    var ticTacToe = new TicTacToe();
+    help.setText(
+        "Для хода нажмите на исходную ячейку. Если игра не законцена то компьютер автоматически сделает ход. Для сброса ходов нажмите на кнопку");
+    tabs.addTab("Крестики-нолики", ticTacToe.getContentPane());
+    tabs.addTab("Помощь", help);
+    add(tabs);
+  }
+
+  TicTacFrame() {
+    initUI();
+    this.setDefaultCloseOperation(JFrame.HIDE_ON_CLOSE);
+    this.setLayout(new BoxLayout(this.getContentPane(), BoxLayout.Y_AXIS));
+  }
+}
+
+class MainFrame extends JFrame {
+  JMenuBar menuBar = new JMenuBar();
+  JMenu menu = new JMenu("...");
+  TicTacFrame tictacFrame = new TicTacFrame();
+  ChessFrame chessFrame = new ChessFrame();
+
+  void initUI() {
+    var chess = new JMenuItem("Переставь фигуры");
+    var tictac = new JMenuItem("Крестики-нолики");
+    var quit = new JMenuItem("Выход");
+
+    menu.add(chess);
+    menu.add(tictac);
+    menu.add(quit);
+
+    chess.addActionListener(new ActionListener() {
+      public void actionPerformed(ActionEvent e) { chessFrame.show(); }
+    });
+
+    tictac.addActionListener(new ActionListener() {
+      public void actionPerformed(ActionEvent e) { tictacFrame.show(); }
+    });
+
+    quit.addActionListener(new ActionListener() {
+      public void actionPerformed(ActionEvent e) { System.exit(0); }
+    });
+
+    menuBar.add(menu);
+    this.setJMenuBar(menuBar);
   }
 
   MainFrame() {

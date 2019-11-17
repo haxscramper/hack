@@ -1,7 +1,7 @@
 class YogaFieldMove {
   private static char[][] field;
 
-  public static void setFromStringlist(String[] fieldInit) {
+  public static void setFromStringlist(String[] fieldInit)toCharArray();
 
     for (int row = 0; row < 7; ++row) {
       field[row] = fieldInit[row].toCharArray();

@@ -3,7 +3,8 @@ import java.util.stream.*;
 import javax.swing.*;
 
 public class LYTBuilder {
-  static JPanel makeDirectedPanel(ArrayList<JComponent> items, int direction) {
+  static JPanel makeDirectedPanel(ArrayList<JComponent> items,
+                                  int direction) {
     var panel = new JPanel();
     var layout = new BoxLayout(panel, direction);
     panel.setLayout(layout);
@@ -54,13 +55,29 @@ public class LYTBuilder {
 
   static JPanel makeAnnotatedInput(String label, JComponent textField,
                                    int direction) {
-    return makeAnnotatedInput(label, textField, direction, Integer.MAX_VALUE);
+    return makeAnnotatedInput(label, textField, direction,
+                              Integer.MAX_VALUE);
   }
 
   public static JScrollPane makeScrollable(JComponent component) {
     ppnulltest(component);
     var pane = new JScrollPane(component);
     return pane;
+  }
+
+  public static void setCellsAlignment(JTable table, int alignment) {
+    DefaultTableCellRenderer rightRenderer =
+        new DefaultTableCellRenderer();
+    rightRenderer.setHorizontalAlignment(alignment);
+
+    TableModel tableModel = table.getModel();
+
+    for (int columnIndex = 0; columnIndex < tableModel.getColumnCount();
+         columnIndex++) {
+      table.getColumnModel()
+          .getColumn(columnIndex)
+          .setCellRenderer(rightRenderer);
+    }
   }
 }
 
