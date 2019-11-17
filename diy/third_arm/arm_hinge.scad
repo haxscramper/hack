@@ -2,12 +2,12 @@
 use <common.scad>;
 // clang-format on
 
-teeth_count  = 8;
-teeth_length = 20;
-teeth_height = 2;
+teeth_count  = 16;
+teeth_length = 15;
+teeth_height = 1.5;
 
-center_cutout_r    = 2.5;
-connector_cutour_r = 3.5;
+center_cutout_r    = 2 - 0.125;
+connector_cutour_r = 2.25;
 bottom_thickness   = 5;
 
 teeth_angle = 360 / (teeth_count * 2);
@@ -51,14 +51,20 @@ module triangle_beveled(angle, height, length) {
 
 
 module flat_teeth() {
-    for (idx = [0:2:teeth_count * 2]) {
-        angle = (360 / (teeth_count * 2)) * idx;
-        rotate([ 0, 0, angle ]) {
-            triangle_beveled(
-                angle  = 360 / (teeth_count * 2),
-                height = teeth_height,
-                length = teeth_length);
+    difference () {
+        for (idx = [0:2:teeth_count * 2]) {
+            angle = (360 / (teeth_count * 2)) * idx;
+            rotate([ 0, 0, angle ]) {
+                triangle_beveled(
+                    angle  = 360 / (teeth_count * 2),
+                    height = teeth_height,
+                    length = teeth_length);
+            }
         }
+        cylinder(
+        teeth_height, 
+        r1 = center_cutout_r * 2, 
+        r2 = center_cutout_r * 2);
     }
 }
 
@@ -77,7 +83,12 @@ module cube_cylinder_cutout(height, radius) {
 
 
 module cutting_cylinder(radius, height) {
-    translate([ 0, 0, -1 ]) cylinder(height + 2, r1 = radius, r2 = radius);
+    translate([ 0, 0, -1 ]) cylinder(
+    height + 2, 
+    r1 = radius, 
+    r2 = radius,
+    $fn = radius * 8
+    );
 }
 
 
