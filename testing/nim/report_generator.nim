@@ -17,7 +17,11 @@ proc decho(args: varargs[string, `$`], ind = 0) =
   if doDebug:
     ceUserLog0(args.join(" "), ind)
 
-proc compileOrgFile(targetFileName: string) =
+proc compileOrgFile(
+  targetFileName: string,
+  fakeCompile: bool = false
+     ): bool =
+
   decho "Compiling file " & targetFileName
   let (user, exit) = execShell("id -un")
   echo user
@@ -29,9 +33,21 @@ proc compileOrgFile(targetFileName: string) =
       &"\"{targetFileName}\"" &
       " -f org-latex-export-to-pdf"
 
-    let (outp, code) = execShell(command)
+    let (outp, code) =
+      if fakeCompile:
+        ("none", 0)
+      else:
+        execShell(command)
+
     if code != 0:
+      result = false
       echo outp
+    else:
+      result = true
+
+  ceUserInfo2 "Compilation completed for " & targetFileName
+  defer:
+    echo &"compile-org result: {result}"
 
   # block:
   #   let texFile = targetFileName.splitFile.name & ".tex"
@@ -52,8 +68,12 @@ proc checkForKey(table: TomlValueRef, key: string, tableName: string = "table") 
     ceUserError0(&"Table '{tableName}' is missing {key}")
     quit 1
 
-proc processReport(report: TomlValueRef, header: string, runCompile = false) =
+proc processReport(
+  report: TomlValueRef,
+  header: string,
+  runCompile = false): bool =
   report.checkForKey("name");
+  result = true
 
   let name = report["name"].getStr()
 
@@ -64,10 +84,12 @@ proc processReport(report: TomlValueRef, header: string, runCompile = false) =
   report.checkForKey("image_globs", name)
   report.checkForKey("description", name)
   report.checkForKey("flowchart_globs", name)
+  report.checkForKey("title_page", name)
   report.checkForKey("file", name)
 
   var imageWidth = 400
   let description = report["description"].getStr()
+
 
   var hasImages = false
   decho "program images", ind = 2
@@ -158,17 +180,35 @@ proc processReport(report: TomlValueRef, header: string, runCompile = false) =
   createdir(workdir)
   setcurrentdir(workdir)
 
-  decho "file name is", filename, ind = 4
+  decho "file name is", filename, ind = 2
   let file = (fileName).open(fmWrite)
   file.write(outText)
   file.close()
 
   if runCompile:
-    decho "compiling file", filename, ind = 4
-    compileOrgFile(fileName)
-
+    decho "compiling file", filename, ind = 2
+    result = result and compileOrgFile(fileName)
+  else:
+    decho "Skipping compilation for", filename, ind = 2
 
   setcurrentdir(startdir)
+
+  let pageFile = report["title_page"].getstr()
+  if fileExists(pageFile):
+    let fileName = fileName.splitFile.name
+    let reportPdf = joinpath(workDir, fileName & ".pdf")
+    let finalPdf = &"00_{fileName}.pdf"
+    decho &"Title page file is {pageFile}, report: {reportPdf}. Final: {finalPdf}. Merging pdfs"
+    shell:
+      pdfunite ($pageFile) ($reportPdf) ($finalPdf)
+  else:
+    ceUserWarn &"Missing title page {pageFile}"
+
+
+  ceUserInfo2 &"Completed processing report for \"{name}\""
+
+  defer:
+    echo result
 
 
 
@@ -292,15 +332,22 @@ let header =
 output header
 
 if conf.hasKey("report"):
+  var noErrors = true
   for report in conf["report"].getElems():
-    processReport(report, runCompile = "compile-pdf".kp, header = header)
+    noErrors = noErrors and processReport(
+      report,
+      runCompile = "compile-pdf".kp,
+      header = header)
+
+  if noErrors:
+    ceUserInfo2 "No errors during compilation"
 
 if conf.hasKey("file"):
   for file in conf["file"].getElems():
     output processFile(file)
 
   if "compile-pdf".kp:
-    compileOrgFile(targetFileName)
+    discard compileOrgFile(targetFileName)
 
 
 targetFile.close()

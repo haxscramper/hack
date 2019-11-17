@@ -1,6 +1,7 @@
-cell_h = 2;
-cell_w = 10;
+cell_w = 1;
 cell_d = 4;
+cell_h = 2;
+
 mult = 10;
 hole_r = 2.1;
 over = 0.1;
