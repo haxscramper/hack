@@ -3,7 +3,7 @@ cell_d = 4;
 cell_h = 2;
 
 mult = 10;
-hole_r = 2.1;
+hole_r = 2.3;
 over = 0.1;
 do_bolt_cutouts = false;
 cut_radius = 3;
