@@ -7,6 +7,7 @@ import xmltree
 import colechopkg/lib
 import os
 import strtabs
+import hmisc/helpers
 
 const svgMulti = 50
 
@@ -73,6 +74,26 @@ proc indent(row: Row): float = row.keys[0].space
 proc width(blc: Block): float =
   blc.rows.mapIt(it.space + it.row.width).sum()
 
+proc flipUp(node: XmlNode): XmlNode =
+  newXmlTree(
+    "g", [node],
+    {
+      "transform" : "scale(1, -1)"
+    }.toXmlAttributes())
+
+proc newXmlTree(
+  node: string,
+  children: openarray[XmlNode],
+  attributes: varargs[tuple[key, val: string]]
+     ): XmlNode =
+    newXmlTree(node, children, attributes.toXmlAttributes())
+
+proc svgScale(node: XmlNode, scale: (float, float)): XmlNode =
+  newXmlTree(
+    "g", [node], {
+      "transform" : &"scale({scale[0]}, {scale[1]})"
+    })
+
 proc toSVG(key: Key): XmlNode =
   newXmlTree(
     "rect", [],
@@ -120,7 +141,7 @@ proc `<->`(comm: string): XmlNode = newComment(comm)
 proc toSVGsize(num: float): string = $(num * svgMulti).toInt()
 
 proc fitLine(
-  pivots: seq[(float, float)],
+  pivots: tuple[upper, lower: (float, float)],
   pointsIn: seq[(float, float)]
      ): tuple[startP, endP: (float, float)] =
   ## Find line that passes through one of the pivot points and have
@@ -128,10 +149,34 @@ proc fitLine(
 
   let points =
     block:
-      let tmp = pointsIn.filterIt(pivots.find(it) == -1)
+      let tmp = pointsIn.filterIt(
+        pivots.upper != it and pivots.lower != it)
       tmp.sortedByIt(arctan(it[1] / it[0]))
 
-  result = ((0.0, 0.0), (0.0, 0.0))
+  let endP = points[^1]
+  echo points
+
+  defer:
+    echo result
+
+  let fit: tuple[s, e: (float, float)] = (
+    tern(
+      arctan(endP[1] / endP[0]) > 90,
+      pivots.lower,
+      pivots.upper
+    ), endP)
+
+  let lineAngle =
+    arctan((fit.e[1] - fit.s[1]) / (fit.s[0] - fit.e[0]))
+
+  let maxY: float = points.sortedByIt(it[1])[^1][1]
+
+  result = (
+    (fit.s[0] - fit.s[1] * tan(lineAngle - PI / 2), 0.0),
+    (fit.e[0] + (maxY - fit.e[1]) * tan(lineAngle - PI / 2), maxY),
+  )
+
+
 
 proc makeControlPoints(blc: Block): seq[XmlNode] =
   let row0 = blc.rows[0]
@@ -150,15 +195,15 @@ proc makeControlPoints(blc: Block): seq[XmlNode] =
       (row0.row.totalLength(), row0.space + row0.row.width)
     ]
 
+  var points: seq[(float, float)]
   let leftFitLine =
     block:
-      let pivots: seq[(float, float)] = @[
+      let pivots = (
           (0.0, row0.space + row0.row.width),
           (0.0, row0.space)
-        ]
+      )
 
       var rowSpacing = 0.0
-      var points: seq[(float, float)]
 
       for it in blc.rows:
         rowSpacing += it.space
@@ -170,7 +215,7 @@ proc makeControlPoints(blc: Block): seq[XmlNode] =
 
         rowSpacing += rowWidth
 
-
+      echo points
       fitLine(pivots, points)
 
   result &=
@@ -183,22 +228,28 @@ proc makeControlPoints(blc: Block): seq[XmlNode] =
             "cx" : it[0].toSVGsize(),
             "cy" : it[1].toSVGsize()
           }))) &
+    <-> "left bounding line" &
     makeSVG("line", {
-      "x1" : ctrlLeft[0][0].toSVGSize(),
-      "y1" : ctrlLeft[0][1].toSVGSize(),
-      "x2" : ctrlLeft[1][0].toSVGSize(),
-      "y2" : ctrlLeft[1][1].toSVGSize(),
-      "stroke" : "black",
-      "style" : "stroke-width:3"
+      "x1" : leftFitLine.startP[0].toSVGsize(),
+      "y1" : leftFitLine.startP[1].toSVGsize(),
+      "x2" : leftFitLine.endP[0].toSVGsize(),
+      "y2" : leftFitLine.endP[1].toSVGsize(),
+      "stroke" : "green",
+      "stroke-width" : "3"
     }) &
-    makeSVG("line", {
-      "x1" : ctrlRight[0][0].toSVGSize(),
-      "y1" : ctrlRight[0][1].toSVGSize(),
-      "x2" : ctrlRight[1][0].toSVGSize(),
-      "y2" : ctrlRight[1][1].toSVGSize(),
-      "stroke" : "black",
-      "style" : "stroke-width:3"
-    }) &
+    toSeq(points.mapIt(
+      block:
+        var txt = makeSVG("text", {
+          "x" : $1,
+          "y" : $(-5),
+          "transform" : &"""
+translate ({it[0].toSVGsize()}, {it[1].toSVGsize()})
+scale(1, -1)
+"""
+        })
+        txt.add newText &"{it[0]} {it[1]}"
+        txt
+    )) &
     <-> "base control points end"
 
 
