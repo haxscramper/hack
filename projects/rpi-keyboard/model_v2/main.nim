@@ -140,11 +140,25 @@ proc toSVG(row: Row): XmlNode =
 proc `<->`(comm: string): XmlNode = newComment(comm)
 proc toSVGsize(num: float): string = $(num * svgMulti).toInt()
 
+type
+  Line = object
+    x1, x2, y1, y2: float
 
-proc fitLineLeft(
+proc toSVG(line: Line): XmlNode =
+  makeSVG("line", {
+      "x1" : line.x1.toSVGsize(),
+      "y1" : line.y1.toSVGsize(),
+      "x2" : line.x2.toSVGsize(),
+      "y2" : line.y2.toSVGsize(),
+      "stroke" : "green",
+      "stroke-width" : "3"
+    })
+
+proc fitLine(
   pivots: tuple[upper, lower: (float, float)],
-  pointsIn: seq[(float, float)]
-     ): tuple[startP, endP: (float, float)] =
+  pointsIn: seq[(float, float)],
+  mode: static[string]
+     ): Line =
   ## Find line that passes through one of the pivot points and have
   ## all of the other on one side of the plane.
 
@@ -172,52 +186,32 @@ proc fitLineLeft(
 
   let maxY: float = points.sortedByIt(it[1])[^1][1]
 
-  result = (
-    (fit.s[0] - fit.s[1] * tan(lineAngle - PI / 2), 0.0),
-    (fit.e[0] + (maxY - fit.e[1]) * tan(lineAngle - PI / 2), maxY),
+  result =
+    Line(
+      x1: fit.s[0] - fit.s[1] * tan(lineAngle - PI / 2),
+      y1: 0.0,
+      x2: fit.e[0] + (maxY - fit.e[1]) * tan(lineAngle - PI / 2),
+      y2: maxY
   )
 
-  let xShift = 0.5
+  let xShift = tern(mode == "left", 0.5, -0.5)
   let yShift = 0.5
 
-  result[0][0] -= xShift
-  result[1][0] -= xShift
+  result.x1 -= xShift
+  result.x2 -= xShift
+  result.y1 -= yShift
+  result.y2 += yShift
 
-  result[0][1] -= yShift
-  result[1][1] += yShift
 
-
-proc fitLineRight(
-  pivots: tuple[upper, lower: (float, float)],
-  pointsIn: seq[(float, float)]
-     ): tuple[startP, endP: (float, float)] =
-
-    return fitLineLeft(pivots, pointsIn)
-
-proc makeControlPoints(blc: Block): seq[XmlNode] =
+proc getFitLines(blc: Block): (Line, Line) =
   let row0 = blc.rows[0]
   let rowN = blc.rows[^1]
-
-  let ctrlLeft: seq[(float, float)] =
-    @[
-      (0.0, row0.space + row0.row.width),
-      (rowN.row.keys[0].space, blc.width())
-    ]
-
-
-  let ctrlRight: seq[(float, float)] =
-    @[
-      (rowN.row.totalLength(), blc.width()),
-      (row0.row.totalLength(), row0.space + row0.row.width)
-    ]
-
-  var points: seq[(float, float)]
-  let leftFitLine =
+  let left =
     block:
+      var points: seq[(float, float)]
       let pivots = (
           (0.0, row0.space + row0.row.width),
-          (0.0, row0.space)
-      )
+          (0.0, row0.space))
 
       var rowSpacing = 0.0
 
@@ -232,41 +226,47 @@ proc makeControlPoints(blc: Block): seq[XmlNode] =
         rowSpacing += rowWidth
 
       echo points
-      fitLineLeft(pivots, points)
+      fitLine(pivots, points, "left")
+
+
+  let right =
+    block:
+      var points: seq[(float, float)]
+      let pivots = (
+          (row0.row.totalLength(), row0.space + row0.row.width),
+          (rowN.row.totalLength(), row0.space))
+
+      var rowSpacing = 0.0
+
+      for it in blc.rows:
+        rowSpacing += it.space
+        let rowLength = it.row.totalLength()
+        let rowWidth = it.row.width()
+        points &= @[
+          (rowLength, rowSpacing),
+          (rowLength, rowSpacing + rowWidth)
+        ]
+
+        rowSpacing += rowWidth
+
+      echo points
+      fitLine(pivots, points, "right")
+
+  result = (left, right)
+
+
+proc makeControlPoints(blc: Block): seq[XmlNode] =
+
+  let (left, right) = getFitLines(blc)
 
   result &=
-    <-> "base control points start" &
-    toSeq((ctrlLeft & ctrlRight).mapIt(
-          makeSVG("ellipse", {
-            "class" : "base-control-dot",
-            "rx" : $5,
-            "ry" : $5,
-            "cx" : it[0].toSVGsize(),
-            "cy" : it[1].toSVGsize()
-          }))) &
     <-> "left bounding line" &
-    makeSVG("line", {
-      "x1" : leftFitLine.startP[0].toSVGsize(),
-      "y1" : leftFitLine.startP[1].toSVGsize(),
-      "x2" : leftFitLine.endP[0].toSVGsize(),
-      "y2" : leftFitLine.endP[1].toSVGsize(),
-      "stroke" : "green",
-      "stroke-width" : "3"
-    }) &
-    toSeq(points.mapIt(
-      block:
-        var txt = makeSVG("text", {
-          "x" : $1,
-          "y" : $(-5),
-          "transform" : &"""
-translate ({it[0].toSVGsize()}, {it[1].toSVGsize()})
-scale(1, -1)
-"""
-        })
-        txt.add newText &"{it[0]} {it[1]}"
-        txt
-    )) &
-    <-> "base control points end"
+    @[
+      left.toSVG(),
+      right.toSVG(),
+      Line(x1: left.x1, x2: right.x1, y1: left.y1, y2: right.y1).toSVG(),
+      Line(x1: left.x2, x2: right.x2, y1: left.y2, y2: right.y2).toSVG()
+    ]
 
 
 proc toSVG(blc: Block): XmlNode =
