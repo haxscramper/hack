@@ -140,7 +140,8 @@ proc toSVG(row: Row): XmlNode =
 proc `<->`(comm: string): XmlNode = newComment(comm)
 proc toSVGsize(num: float): string = $(num * svgMulti).toInt()
 
-proc fitLine(
+
+proc fitLineLeft(
   pivots: tuple[upper, lower: (float, float)],
   pointsIn: seq[(float, float)]
      ): tuple[startP, endP: (float, float)] =
@@ -176,7 +177,22 @@ proc fitLine(
     (fit.e[0] + (maxY - fit.e[1]) * tan(lineAngle - PI / 2), maxY),
   )
 
+  let xShift = 0.5
+  let yShift = 0.5
 
+  result[0][0] -= xShift
+  result[1][0] -= xShift
+
+  result[0][1] -= yShift
+  result[1][1] += yShift
+
+
+proc fitLineRight(
+  pivots: tuple[upper, lower: (float, float)],
+  pointsIn: seq[(float, float)]
+     ): tuple[startP, endP: (float, float)] =
+
+    return fitLineLeft(pivots, pointsIn)
 
 proc makeControlPoints(blc: Block): seq[XmlNode] =
   let row0 = blc.rows[0]
@@ -216,7 +232,7 @@ proc makeControlPoints(blc: Block): seq[XmlNode] =
         rowSpacing += rowWidth
 
       echo points
-      fitLine(pivots, points)
+      fitLineLeft(pivots, points)
 
   result &=
     <-> "base control points start" &
