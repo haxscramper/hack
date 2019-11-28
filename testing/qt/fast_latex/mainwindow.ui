@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainWindow</class>
+ <widget class="QMainWindow" name="MainWindow">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>800</width>
+    <height>600</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>MainWindow</string>
+  </property>
+  <widget class="QWidget" name="centralwidget">
+   <layout class="QVBoxLayout" name="verticalLayout_2">
+    <item>
+     <widget class="QSplitter" name="splitter">
+      <property name="orientation">
+       <enum>Qt::Vertical</enum>
+      </property>
+      <widget class="QTabWidget" name="tabWidget">
+       <property name="currentIndex">
+        <number>0</number>
+       </property>
+       <widget class="QWidget" name="mainInput">
+        <attribute name="title">
+         <string>Main</string>
+        </attribute>
+        <layout class="QHBoxLayout" name="horizontalLayout">
+         <item>
+          <widget class="TextInput" name="textInput"/>
+         </item>
+        </layout>
+       </widget>
+       <widget class="QWidget" name="pageTemplate">
+        <attribute name="title">
+         <string>Template</string>
+        </attribute>
+        <layout class="QVBoxLayout" name="verticalLayout">
+         <item>
+          <widget class="QPlainTextEdit" name="templateInput">
+           <property name="plainText">
+            <string>&lt;!DOCTYPE html&gt;
+&lt;meta charset=&quot;utf-8&quot;&gt;
+&lt;link rel=&quot;stylesheet&quot; href=&quot;file:///home/test/tmp/katex/katex.min.css&quot;&gt;
+&lt;script src=&quot;file:///home/test/tmp/katex/katex.min.js&quot;&gt;&lt;/script&gt;
+&lt;style&gt;
+ .example {
+     font-size: 30px;
+     text-align: center;
+     margin: 30px 0;
+ }
+&lt;/style&gt;
+&lt;body&gt;
+
+    &lt;div class=&quot;example tex&quot; data-expr=&quot;&lt;++++&gt;&quot;&gt;
+    &lt;/div&gt;
+
+    &lt;script&gt;
+     window.onload = function() {
+         var tex = document.getElementsByClassName(&quot;tex&quot;);
+         Array.prototype.forEach.call(tex, function(el) {
+             katex.render(el.getAttribute(&quot;data-expr&quot;), el);
+         });
+     };
+    &lt;/script&gt;
+</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </widget>
+      </widget>
+      <widget class="QWebEngineView" name="webPreview">
+       <property name="url">
+        <url>
+         <string>about:blank</string>
+        </url>
+       </property>
+      </widget>
+     </widget>
+    </item>
+    <item>
+     <widget class="QPushButton" name="updatePreview">
+      <property name="text">
+       <string>Preview</string>
+      </property>
+     </widget>
+    </item>
+   </layout>
+  </widget>
+  <widget class="QStatusBar" name="statusbar"/>
+ </widget>
+ <customwidgets>
+  <customwidget>
+   <class>QWebEngineView</class>
+   <extends>QWidget</extends>
+   <header location="global">QtWebEngineWidgets/QWebEngineView</header>
+  </customwidget>
+  <customwidget>
+   <class>TextInput</class>
+   <extends>QPlainTextEdit</extends>
+   <header>textinput.h</header>
+  </customwidget>
+ </customwidgets>
+ <resources/>
+ <connections/>
+</ui>
