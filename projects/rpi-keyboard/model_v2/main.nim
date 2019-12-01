@@ -141,10 +141,29 @@ proc `<->`(comm: string): XmlNode = newComment(comm)
 proc toSVGsize(num: float): string = $(num * svgMulti).toInt()
 
 type
+  Pos = object
+    x, y: float
+
   Line = object
     x1, x2, y1, y2: float
 
+
+converter toPos[N: float | int](pos: (N, N)): Pos =
+  Pos(x: pos[0].toFloat(), y: pos[1].toFloat())
+
+proc makePos[N: float | int](x, y: N): Pos =
+  when N is int:
+    Pos(x: x.toFloat(), y: y.toFloat())
+  else:
+    Pos(x: x, y: y)
+
+proc `-`(a, b: Pos): Pos = makePos(a.x - b.x, a.y - b.y)
+proc begin(l: Line): Pos = Pos(x: l.x1, y: l.y1)
+proc final(l: Line): Pos = Pos(x: l.x2, y: l.y2)
+proc arg(p: Pos): float = arctan(p.y / p.x)
+
 proc toSVG(line: Line): XmlNode =
+  let a: Pos = (0,0)
   makeSVG("line", {
       "x1" : line.x1.toSVGsize(),
       "y1" : line.y1.toSVGsize(),
@@ -155,42 +174,39 @@ proc toSVG(line: Line): XmlNode =
     })
 
 proc fitLine(
-  pivots: tuple[upper, lower: (float, float)],
-  pointsIn: seq[(float, float)],
+  pivots: tuple[upper, lower: Pos],
+  pointsIn: seq[Pos],
   mode: static[string]
      ): Line =
   ## Find line that passes through one of the pivot points and have
   ## all of the other on one side of the plane.
+  echo "---"
 
   let points =
     block:
       let tmp = pointsIn.filterIt(
         pivots.upper != it and pivots.lower != it)
-      tmp.sortedByIt(arctan(it[1] / it[0]))
+      tmp.sortedByIt(it.arg())
 
   let endP = points[^1]
-  echo points
 
-  defer:
-    echo result
-
-  let fit: tuple[s, e: (float, float)] = (
+  echo endP.arg().radToDeg()
+  let fit: tuple[s, e: Pos] = (
     tern(
-      arctan(endP[1] / endP[0]) > 90,
+      endP.arg() > 90,
       pivots.lower,
       pivots.upper
     ), endP)
 
-  let lineAngle =
-    arctan((fit.e[1] - fit.s[1]) / (fit.s[0] - fit.e[0]))
-
-  let maxY: float = points.sortedByIt(it[1])[^1][1]
+  let lineAngle = (fit.e - fit.s).arg()
+  echo lineAngle.radToDeg()
+  let maxY: float = points.mapIt(it.y).max()
 
   result =
     Line(
-      x1: fit.s[0] - fit.s[1] * tan(lineAngle - PI / 2),
+      x1: fit.s.x - fit.s.y * tan(lineAngle - PI / 2),
       y1: 0.0,
-      x2: fit.e[0] + (maxY - fit.e[1]) * tan(lineAngle - PI / 2),
+      x2: fit.e.x + (maxY - fit.e.y) * tan(lineAngle - PI / 2),
       y2: maxY
   )
 
@@ -208,10 +224,11 @@ proc getFitLines(blc: Block): (Line, Line) =
   let rowN = blc.rows[^1]
   let left =
     block:
-      var points: seq[(float, float)]
+      var points: seq[Pos]
       let pivots = (
-          (0.0, row0.space + row0.row.width),
-          (0.0, row0.space))
+          makePos(0.0, row0.space + row0.row.width),
+          makePos(0.0, row0.space)
+      )
 
       var rowSpacing = 0.0
 
@@ -219,22 +236,22 @@ proc getFitLines(blc: Block): (Line, Line) =
         rowSpacing += it.space
         let rowWidth = it.row.width()
         points &= @[
-          (it.row.indent, rowSpacing),
-          (it.row.indent, rowSpacing + rowWidth)
+          makePos(it.row.indent, rowSpacing),
+          makePos(it.row.indent, rowSpacing + rowWidth)
         ]
 
         rowSpacing += rowWidth
 
-      echo points
       fitLine(pivots, points, "left")
 
 
   let right =
     block:
-      var points: seq[(float, float)]
+      var points: seq[Pos]
       let pivots = (
-          (row0.row.totalLength(), row0.space + row0.row.width),
-          (rowN.row.totalLength(), row0.space))
+          makePos(row0.row.totalLength(), row0.space + row0.row.width),
+          makePos(rowN.row.totalLength(), row0.space)
+      )
 
       var rowSpacing = 0.0
 
@@ -243,13 +260,12 @@ proc getFitLines(blc: Block): (Line, Line) =
         let rowLength = it.row.totalLength()
         let rowWidth = it.row.width()
         points &= @[
-          (rowLength, rowSpacing),
-          (rowLength, rowSpacing + rowWidth)
+          makePos(rowLength, rowSpacing),
+          makePos(rowLength, rowSpacing + rowWidth)
         ]
 
         rowSpacing += rowWidth
 
-      echo points
       fitLine(pivots, points, "right")
 
   result = (left, right)
@@ -345,6 +361,8 @@ let test = Block(
     ]), 1.0),
     (Row(keys: @[
       (Key(width: 1.5, length: 2.0), 3.0),
+      (Key(width: 1.5, length: 2.0), 1.0),
+      (Key(width: 1.5, length: 2.0), 1.0),
       (Key(width: 1.5, length: 2.0), 1.0),
     ]), 1.0),
 ])
