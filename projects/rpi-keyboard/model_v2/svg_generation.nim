@@ -4,11 +4,17 @@ import sequtils, xmltree, strtabs, strformat, strutils
 import options
 import hmisc/helpers
 
-const svgMulti* = 50
 
-proc toSVGsize*(num: float): string = $(num * svgMulti).toInt()
+const svgMulti* = 50 ## Multiplication ratio for converting float to
+                     ## svg coordinates
 
-proc `<->`*(comm: string): XmlNode = newComment(comm)
+proc toSVGsize*(num: float): string =
+  ## Convert float size to svg (multiply by `svgMulti`)
+  $(num * svgMulti).toInt()
+
+proc `<->`*(comm: string): XmlNode =
+  ## Create xml comment
+  newComment(comm)
 
 proc newXmlTree*(
   node: string,
@@ -18,6 +24,7 @@ proc newXmlTree*(
     newXmlTree(node, children, attributes.toXmlAttributes())
 
 proc flipUp*(node: XmlNode): XmlNode =
+  ## Multiply `y` axis by `-1`
   newXmlTree(
     "g", [node],
     {
@@ -27,17 +34,21 @@ proc flipUp*(node: XmlNode): XmlNode =
 # TODO proc for condensing transformations into single <g> tag
 
 proc svgScale*(node: XmlNode, scale: (float, float)): XmlNode =
+  ## Scale both dimensions of svg node
   newXmlTree(
     "g", [node], {
       "transform" : &"scale({scale[0]}, {scale[1]})"
     })
 
 proc svgScale*(node: XmlNode, x, y: float | int): XmlNode =
+  ## Scale both dimensions of svg node
   node.svgScale(
     when x is float: (x,y)
     else: (x.toFloat(), y.toFloat()))
 
 proc svgRotate*(node: XmlNode, deg: int | float): XmlNode =
+  ## Wrap node into `g` tag with `trasnform` attribute set to
+  ## `rotate(deg)`
   newXmlTree(
     "g", [node], {
       "transform" : &"rotate({deg})"
@@ -46,6 +57,8 @@ proc svgRotate*(node: XmlNode, deg: int | float): XmlNode =
 proc svgTranslate*(
   node: XmlNode,
   x, y: int | float | string): XmlNode =
+  ## Wrap node into `g` tag with `transform` attribute set to
+  ## `translate(...)`. Basically move node to position `x, y`
   when (x is int) or (x is float):
     newXmlTree(
       "g", [node], {
@@ -62,6 +75,8 @@ proc makeSVG*(
   attributes: varargs[tuple[key, val: string]],
   text: Option[string] = none(string)
      ): XmlNode =
+    ## Create svg node with `name`, `attributes` and possible child
+    ## text node that contains `text`
     newXmlTree(
       name,
       tern(
@@ -119,7 +134,15 @@ proc toSVG*(row: Row): XmlNode =
 
 
 
-proc toSVG*(p: Pos, annotate = 'n'): XmlNode =
+proc toSVG*(p: Pos, annotate: static[char] = 'n'): XmlNode =
+  ## Generate svg circle at position `p` and possibly annotate it with
+  ## coordinates. Coordinate annotation is controlled using `annoate`
+  ## and can take several values ('n' for no annotation, 'r' and 'l'
+  ## for right and left respectively)
+  static:
+    const allowed: set[char] = {'r', 'n', 'l'}
+    assert annotate in allowed, "Value of annotation position can only be one of " & $allowed
+
   let circle = makeSVG("circle", {
     "cx" : p.x.toSVGsize(),
     "cy" : p.y.toSVGsize(),
