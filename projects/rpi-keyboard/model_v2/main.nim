@@ -1,4 +1,5 @@
 import shell
+import options
 import algorithm
 import math
 import strformat
@@ -45,6 +46,15 @@ type
 
   Keyboard = object
     blocks: seq[tuple[blc: Block, pos: (float, float)]]
+
+type
+  Pos = object
+    x, y: float
+
+  Line = object
+    x1, x2, y1, y2: float
+
+proc toSVGsize(num: float): string = $(num * svgMulti).toInt()
 
 # TODO implement
 # template maxIt(sequence, operation: untyped): untyped  =
@@ -94,6 +104,33 @@ proc svgScale(node: XmlNode, scale: (float, float)): XmlNode =
       "transform" : &"scale({scale[0]}, {scale[1]})"
     })
 
+proc svgScale(node: XmlNode, x, y: float | int): XmlNode =
+  node.svgScale(
+    when x is float: (x,y)
+    else: (x.toFloat(), y.toFloat()))
+
+proc svgRotate(node: XmlNode, deg: int | float): XmlNode =
+  newXmlTree(
+    "g", [node], {
+      "transform" : &"rotate({deg})"
+    })
+
+
+proc svgTranslate(
+  node: XmlNode,
+  x, y: int | float | string): XmlNode =
+  when (x is int) or (x is float):
+    newXmlTree(
+      "g", [node], {
+      "transform" : &"translate({x.toSVGsize()}, {y.toSVGsize()})"
+    })
+  elif x is string:
+    newXmlTree(
+      "g", [node], {
+      "transform" : &"translate({x}, {y})"
+    })
+
+
 proc toSVG(key: Key): XmlNode =
   newXmlTree(
     "rect", [],
@@ -116,9 +153,28 @@ proc `&`(attrs, addition: XmlAttributes): XmlAttributes =
 
 proc makeSVG(
   name: string,
-  attributes: varargs[tuple[key, val: string]]
+  attributes: varargs[tuple[key, val: string]],
+  text: Option[string] = none(string)
      ): XmlNode =
-    newXmlTree(name, [], attributes.toXmlAttributes())
+    newXmlTree(
+      name,
+      tern(
+        text.isSome,
+        @[newText(text.get())],
+        @[],
+      ),
+      attributes.toXmlAttributes())
+
+proc makeText(text: string, p: Pos, textClass = "coordinate"): XmlNode =
+  ## Create text at position `p`
+  makeSVG(
+    "text",
+    {"x" : "0", "y" : "0", "class" : textClass},
+    text)
+  .svgTranslate(p.x, -p.y)
+  .svgScale(1, -1)
+
+
 
 proc toSVG(row: Row): XmlNode =
   var shift = 0.0
@@ -138,26 +194,45 @@ proc toSVG(row: Row): XmlNode =
   )
 
 proc `<->`(comm: string): XmlNode = newComment(comm)
-proc toSVGsize(num: float): string = $(num * svgMulti).toInt()
-
-type
-  Pos = object
-    x, y: float
-
-  Line = object
-    x1, x2, y1, y2: float
-
 
 converter toPos[N: float | int](pos: (N, N)): Pos =
   Pos(x: pos[0].toFloat(), y: pos[1].toFloat())
 
-proc makePos[N: float | int](x, y: N): Pos =
+proc makePos(x, y: int | float): Pos =
   when N is int:
     Pos(x: x.toFloat(), y: y.toFloat())
   else:
     Pos(x: x, y: y)
 
+
 proc `-`(a, b: Pos): Pos = makePos(a.x - b.x, a.y - b.y)
+proc `+`(a, b: Pos): Pos = makePos(a.x + b.x, a.y + b.y)
+
+
+proc toSVG(p: Pos, annotate = 'n'): XmlNode =
+  let circle = makeSVG("circle", {
+    "cx" : p.x.toSVGsize(),
+    "cy" : p.y.toSVGsize(),
+    "r" : $8
+  })
+  case annotate:
+    of 'n': circle
+    of 'r': newXmlTree(
+      "g",
+      [circle, makeText(&"{p.x} {p.y}", p + (0.0, 0.1))])
+    else: circle
+
+
+# proc `+`(a: Pos, shift: (int, int) | (float, float)): Pos =
+#   let b: Pos =
+#     when shift[0] is int: makePos(
+#       shift[0].toFloat,
+#       shift[1].toFloat)
+#     else: makePos(shift[0], shift[1])
+
+# return a + b
+
+
 proc begin(l: Line): Pos = Pos(x: l.x1, y: l.y1)
 proc final(l: Line): Pos = Pos(x: l.x2, y: l.y2)
 proc arg(p: Pos): float = arctan2(p.y, p.x)
@@ -176,7 +251,7 @@ proc toSVG(line: Line): XmlNode =
 proc fitLine(
   pivots: tuple[upper, lower: Pos],
   pointsIn: seq[Pos],
-  mode: static[string]
+  isLeft: static[bool]
      ): Line =
   ## Find line that passes through one of the pivot points and have
   ## all of the other on one side of the plane.
@@ -185,12 +260,15 @@ proc fitLine(
   let points =
     block:
       let tmp = pointsIn.filterIt(
-        pivots.upper != it and pivots.lower != it)
+        pivots.upper != it and
+        pivots.lower != it
+      )
+
       tmp.sortedByIt(it.arg())
 
-  let endP = points[^1]
+  echo &"Points: {points}"
+  let endP = tern(isLeft, points[^1], points[0])
 
-  echo endP, pivots
   echo &"End point argument: {endP.arg().radToDeg()} ({endP})"
   let fit: tuple[s, e: Pos] = (
     tern(
@@ -205,6 +283,7 @@ proc fitLine(
   echo lineAngle.radToDeg()
   let maxY: float = points.mapIt(it.y).max()
 
+  echo &"fit: {fit}"
 
   result =
     Line(
@@ -214,7 +293,7 @@ proc fitLine(
       y2: maxY
   )
 
-  let xShift = tern(mode == "left", 0.5, -0.5)
+  let xShift = tern(isLeft, 0.5, -0.5)
   let yShift = 0.5
 
   result.x1 -= xShift
@@ -224,55 +303,55 @@ proc fitLine(
 
   echo result
 
+proc getLeftPoints(blc: Block): seq[Pos] =
+  var points: seq[Pos]
+  var rowSpacing = 0.0
+
+  for it in blc.rows:
+    rowSpacing += it.space
+    let rowWidth = it.row.width()
+    points &= @[
+      makePos(it.row.indent, rowSpacing),
+      makePos(it.row.indent, rowSpacing + rowWidth)
+    ]
+
+    rowSpacing += rowWidth
+
+  result = points
+
+proc getRightPoints(blc: Block): seq[Pos] =
+  var points: seq[Pos]
+  var rowSpacing = 0.0
+
+  for it in blc.rows:
+    rowSpacing += it.space
+    let rowLength = it.row.totalLength()
+    let rowWidth = it.row.width()
+    points &= @[
+      makePos(rowLength, rowSpacing),
+      makePos(rowLength, rowSpacing + rowWidth)
+    ]
+
+    rowSpacing += rowWidth
+
+    result = points
+
+
 
 proc getFitLines(blc: Block): (Line, Line) =
   let row0 = blc.rows[0]
   let rowN = blc.rows[^1]
   let left =
-    block:
-      var points: seq[Pos]
-      let pivots = (
-          makePos(0.0, row0.space + row0.row.width),
-          makePos(0.0, row0.space)
-      )
-
-      var rowSpacing = 0.0
-
-      for it in blc.rows:
-        rowSpacing += it.space
-        let rowWidth = it.row.width()
-        points &= @[
-          makePos(it.row.indent, rowSpacing),
-          makePos(it.row.indent, rowSpacing + rowWidth)
-        ]
-
-        rowSpacing += rowWidth
-
-      fitLine(pivots, points, "left")
-
+    fitLine((
+        makePos(0.0, row0.space + row0.row.width),
+        makePos(0.0, row0.space)
+    ), blc.getLeftPoints(), true)
 
   let right =
-    block:
-      var points: seq[Pos]
-      let pivots = (
-          makePos(row0.row.totalLength(), row0.space + row0.row.width),
-          makePos(rowN.row.totalLength(), row0.space)
-      )
-
-      var rowSpacing = 0.0
-
-      for it in blc.rows:
-        rowSpacing += it.space
-        let rowLength = it.row.totalLength()
-        let rowWidth = it.row.width()
-        points &= @[
-          makePos(rowLength, rowSpacing),
-          makePos(rowLength, rowSpacing + rowWidth)
-        ]
-
-        rowSpacing += rowWidth
-
-      fitLine(pivots, points, "right")
+    fitLine((
+        makePos(row0.row.totalLength(), row0.space + row0.row.width),
+        makePos(rowN.row.totalLength(), row0.space)
+    ), blc.getRightPoints(), false)
 
   result = (left, right)
 
@@ -288,7 +367,11 @@ proc makeControlPoints(blc: Block): seq[XmlNode] =
       right.toSVG(),
       Line(x1: left.x1, x2: right.x1, y1: left.y1, y2: right.y1).toSVG(),
       Line(x1: left.x2, x2: right.x2, y1: left.y2, y2: right.y2).toSVG()
-    ]
+    ] &
+      <-> "Right points" &
+      blc.getRightPoints().mapIt(it.toSVG('r')) &
+      <-> "Left points" &
+      blc.getLeftPoints().mapIt(it.toSVG('l'))
 
 
 proc toSVG(blc: Block): XmlNode =
@@ -329,6 +412,9 @@ proc toSVGImage(
 }
 .base-control-dot {
   fill : rgb(255,0,0);
+}
+.coordinate {
+  font: bold 16px sans-serif;
 }
 """)]),
         newXmlTree(
