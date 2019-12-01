@@ -61,6 +61,7 @@ proc fitLine(
 
       tmp.sortedByIt(it.arg())
 
+  echo &"Pivots: {pivots}"
   echo &"Points: {points}"
   let endP = tern(isLeft, points[^1], points[0])
 
@@ -114,21 +115,24 @@ proc getLeftPoints(blc: Block): seq[Pos] =
 
   result = points
 
-proc getRightPoints(blc: Block): seq[Pos] =
+proc getRightPoints(blc: Block, noFirstRow = true): seq[Pos] =
   var points: seq[Pos]
   var rowSpacing = 0.0
 
-  for it in blc.rows:
+  for idx, it in blc.rows:
     rowSpacing += it.space
     let rowLength = it.row.totalLength()
     let rowWidth = it.row.width()
-    points &= @[
-      makePos(rowLength, rowSpacing),
-      makePos(rowLength, rowSpacing + rowWidth)
-    ]
+
+    if not noFirstRow or idx != 0:
+      points &= @[
+        makePos(rowLength, rowSpacing),
+        makePos(rowLength, rowSpacing + rowWidth)
+      ]
 
     rowSpacing += rowWidth
 
+    echo points
     result = points
 
 
@@ -145,7 +149,7 @@ proc getFitLines(blc: Block): (Line, Line) =
   let right =
     fitLine((
         makePos(row0.row.totalLength(), row0.space + row0.row.width),
-        makePos(rowN.row.totalLength(), row0.space)
+        makePos(row0.row.totalLength(), row0.space)
     ), blc.getRightPoints(), false)
 
   result = (left, right)
@@ -164,9 +168,14 @@ proc makeControlPoints(blc: Block): seq[XmlNode] =
       Line(x1: left.x2, x2: right.x2, y1: left.y2, y2: right.y2).toSVG()
     ] &
       <-> "Right points" &
-      blc.getRightPoints().mapIt(it.toSVG('r')) &
-      <-> "Left points" &
-      blc.getLeftPoints().mapIt(it.toSVG('l'))
+      (
+        block:
+          let points = blc.getRightPoints()
+          echo &"Debug points {points}"
+          points.mapIt(it.toSVG('r', makeStyle({"fill" : "red"})))
+      )
+      # <-> "Left points" &
+      # blc.getLeftPoints()[1..^1].mapIt(it.toSVG('l'))
 
 
 proc toSVG(blc: Block): XmlNode =

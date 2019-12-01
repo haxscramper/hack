@@ -86,6 +86,15 @@ proc makeSVG*(
       ),
       attributes.toXmlAttributes())
 
+
+
+
+proc makeStyle*(input: varargs[
+  tuple[key: string, val: string]]
+               ): string =
+    input.mapIt(&"{it.key}: {it.val};").join(" ")
+
+
 proc makeText*(text: string, p: Pos, textClass = "coordinate"): XmlNode =
   ## Create text at position `p`
   makeSVG(
@@ -134,19 +143,28 @@ proc toSVG*(row: Row): XmlNode =
 
 
 
-proc toSVG*(p: Pos, annotate: static[char] = 'n'): XmlNode =
+proc toSVG*(
+  p: Pos,
+  annotate: static[char] = 'n',
+  style: Option[string] = none(string)
+          ): XmlNode =
   ## Generate svg circle at position `p` and possibly annotate it with
   ## coordinates. Coordinate annotation is controlled using `annoate`
   ## and can take several values ('n' for no annotation, 'r' and 'l'
   ## for right and left respectively)
   static:
     const allowed: set[char] = {'r', 'n', 'l'}
-    assert annotate in allowed, "Value of annotation position can only be one of " & $allowed
+    assert annotate in allowed,
+          "Value of annotation position can only be one of " &
+            $allowed
 
   let circle = makeSVG("circle", {
     "cx" : p.x.toSVGsize(),
     "cy" : p.y.toSVGsize(),
-    "r" : $8
+    "r" : $8,
+    "style" :
+      if style.isSome: style.get()
+      else: "fill: black;"
   })
   case annotate:
     of 'n': circle
