@@ -30,7 +30,16 @@
         </attribute>
         <layout class="QHBoxLayout" name="horizontalLayout">
          <item>
-          <widget class="TextInput" name="textInput"/>
+          <widget class="TextInput" name="textInput">
+           <property name="plainText">
+            <string>\displaystyle \frac 12 + \sqrt{12} + \int_1^2 f(x)dx \ \text{where} \ f(x) = x^2/\log(12)
+\\
+\begin{aligned}
+\frac 12 &amp;= 1 \\
+\frac 23 &amp;= 3 + f(x)
+\end{aligned}</string>
+           </property>
+          </widget>
          </item>
         </layout>
        </widget>

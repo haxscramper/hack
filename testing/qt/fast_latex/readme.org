@@ -1,0 +1,12 @@
+* README
+
+Read latex expression in upper text input and show rendered version
+in lower input
+
+* TODO
+
+- [ ] Show katex parsing errors in small preview
+- [ ] Read template from file and fallback to hardocded string
+- [ ] Katex path is hardcoded, this needs to be fixed
+- [ ] syntax highlighting for latex code and autocompletion
+- [ ] use scinitilla instead of qplaintextedit
