@@ -1,0 +1,6 @@
+Even thougs SVG has coordinate systemd that places origin on upper
+left corner and points x, y right and downwards respectively it is
+easier to work with regulard coordinate system, especially when
+mapping 2d image to 3d model. All coordinates, calculations, notation
+etc. in this code assumes that origin is placed on lower left corner,
+starts with 0,0. X axis points right and Y axis points upwards

@@ -10,51 +10,9 @@ import os
 import strtabs
 import hmisc/helpers
 
-const svgMulti = 50
-
-
-#[
-
-Even thougs SVG has coordinate systemd that places origin on upper
-left corner and points x, y right and downwards respectively it is
-easier to work with regulard coordinate system, especially when
-mapping 2d image to 3d model. All coordinates, calculations, notation
-etc. in this code assumes that origin is placed on lower left corner,
-starts with 0,0. X axis points right and Y axis points upwards
-
-]#
-
-type
-  Key = object
-    length: float  ## On keyboard this is horizontal dimension of key
-                   ## cap. Whitespace is the longest key on keyboard
-
-    width: float ## On keyboard this is the vertical dimension of the
-                 ## key cap. Most keys have equal width, only a few
-                 ## ones on numpad have different dimensions
-
-
-  Row = object
-    ## Space before the each key and the key itself
-    keys: seq[tuple[key: Key, space: float]]
-    ## Rotation of the whole row around lower left corner
-
-  Block = object
-    ## Space before each row and the row itself
-    rows: seq[tuple[row: Row, space: float]]
-    rotation: int
-
-  Keyboard = object
-    blocks: seq[tuple[blc: Block, pos: (float, float)]]
-
-type
-  Pos = object
-    x, y: float
-
-  Line = object
-    x1, x2, y1, y2: float
-
-proc toSVGsize(num: float): string = $(num * svgMulti).toInt()
+import geometry
+import svg_generation
+import keyboard
 
 # TODO implement
 # template maxIt(sequence, operation: untyped): untyped  =
@@ -73,154 +31,7 @@ proc toSVGsize(num: float): string = $(num * svgMulti).toInt()
 #   return result
 
 
-proc width(row: Row): float =
-  row.keys.mapIt(it.key.width).max()
 
-proc totalLength(row: Row): float =
-  row.keys.mapIt(it.space + it.key.length).sum()
-
-proc indent(row: Row): float = row.keys[0].space
-
-proc width(blc: Block): float =
-  blc.rows.mapIt(it.space + it.row.width).sum()
-
-proc flipUp(node: XmlNode): XmlNode =
-  newXmlTree(
-    "g", [node],
-    {
-      "transform" : "scale(1, -1)"
-    }.toXmlAttributes())
-
-proc newXmlTree(
-  node: string,
-  children: openarray[XmlNode],
-  attributes: varargs[tuple[key, val: string]]
-     ): XmlNode =
-    newXmlTree(node, children, attributes.toXmlAttributes())
-
-proc svgScale(node: XmlNode, scale: (float, float)): XmlNode =
-  newXmlTree(
-    "g", [node], {
-      "transform" : &"scale({scale[0]}, {scale[1]})"
-    })
-
-proc svgScale(node: XmlNode, x, y: float | int): XmlNode =
-  node.svgScale(
-    when x is float: (x,y)
-    else: (x.toFloat(), y.toFloat()))
-
-proc svgRotate(node: XmlNode, deg: int | float): XmlNode =
-  newXmlTree(
-    "g", [node], {
-      "transform" : &"rotate({deg})"
-    })
-
-
-proc svgTranslate(
-  node: XmlNode,
-  x, y: int | float | string): XmlNode =
-  when (x is int) or (x is float):
-    newXmlTree(
-      "g", [node], {
-      "transform" : &"translate({x.toSVGsize()}, {y.toSVGsize()})"
-    })
-  elif x is string:
-    newXmlTree(
-      "g", [node], {
-      "transform" : &"translate({x}, {y})"
-    })
-
-
-proc toSVG(key: Key): XmlNode =
-  newXmlTree(
-    "rect", [],
-    {
-      "width" : $(key.length * svgMulti).toInt(),
-      "height" : $(key.width * svgMulti).toInt(),
-      "class" : "key-box"
-    }.toXmlAttributes()
-  )
-
-proc `&`(attrs, addition: XmlAttributes): XmlAttributes =
-  # var kvPairs: seq[tuple[key, val: string]]
-  # for attr, val in attrs:
-  #   kvPairs[attr] = val
-
-  for attr, val in addition:
-    attrs[attr] = val
-
-  return attrs
-
-proc makeSVG(
-  name: string,
-  attributes: varargs[tuple[key, val: string]],
-  text: Option[string] = none(string)
-     ): XmlNode =
-    newXmlTree(
-      name,
-      tern(
-        text.isSome,
-        @[newText(text.get())],
-        @[],
-      ),
-      attributes.toXmlAttributes())
-
-proc makeText(text: string, p: Pos, textClass = "coordinate"): XmlNode =
-  ## Create text at position `p`
-  makeSVG(
-    "text",
-    {"x" : "0", "y" : "0", "class" : textClass},
-    text)
-  .svgTranslate(p.x, -p.y)
-  .svgScale(1, -1)
-
-
-
-proc toSVG(row: Row): XmlNode =
-  var shift = 0.0
-  let keys: seq[XmlNode] =
-      row.keys.mapIt(
-        block:
-          var keyXml = it.key.toSVG()
-          shift += it.space
-          keyXml.attrs = keyXml.attrs &
-            {"x" : $(shift * svgMulti).toInt() }.toXmlAttributes()
-          shift += it.key.length
-          keyXml
-      )
-
-  newXmlTree("g",
-    newComment("row start") & keys & newComment("row end")
-  )
-
-proc `<->`(comm: string): XmlNode = newComment(comm)
-
-converter toPos[N: float | int](pos: (N, N)): Pos =
-  Pos(x: pos[0].toFloat(), y: pos[1].toFloat())
-
-proc makePos(x, y: int | float): Pos =
-  when N is int:
-    Pos(x: x.toFloat(), y: y.toFloat())
-  else:
-    Pos(x: x, y: y)
-
-
-proc `-`(a, b: Pos): Pos = makePos(a.x - b.x, a.y - b.y)
-proc `+`(a, b: Pos): Pos = makePos(a.x + b.x, a.y + b.y)
-
-
-proc toSVG(p: Pos, annotate = 'n'): XmlNode =
-  let circle = makeSVG("circle", {
-    "cx" : p.x.toSVGsize(),
-    "cy" : p.y.toSVGsize(),
-    "r" : $8
-  })
-  case annotate:
-    of 'n': circle
-    of 'r': newXmlTree(
-      "g",
-      [circle, makeText(&"{p.x} {p.y}", p + (0.0, 0.1))])
-    else: circle
 
 
 # proc `+`(a: Pos, shift: (int, int) | (float, float)): Pos =
@@ -231,22 +42,6 @@ proc toSVG(p: Pos, annotate = 'n'): XmlNode =
 #     else: makePos(shift[0], shift[1])
 
 # return a + b
-
-
-proc begin(l: Line): Pos = Pos(x: l.x1, y: l.y1)
-proc final(l: Line): Pos = Pos(x: l.x2, y: l.y2)
-proc arg(p: Pos): float = arctan2(p.y, p.x)
-
-proc toSVG(line: Line): XmlNode =
-  let a: Pos = (0,0)
-  makeSVG("line", {
-      "x1" : line.x1.toSVGsize(),
-      "y1" : line.y1.toSVGsize(),
-      "x2" : line.x2.toSVGsize(),
-      "y2" : line.y2.toSVGsize(),
-      "stroke" : "green",
-      "stroke-width" : "3"
-    })
 
 proc fitLine(
   pivots: tuple[upper, lower: Pos],
@@ -468,8 +263,8 @@ let svgBody = @[test.toSVG()].toSVGImage(
   height = imgHeight
 )
 
-let fileName = "svg_body.tmp.svg"
-let outFile = "svg_body.tmp.png"
+let fileName = "outy.tmp.svg"
+let outFile = "out.tmp.png"
 fileName.writeFile(xmlHeader & $svgBody)
 
 let convertRes = shellVerbose:
@@ -477,4 +272,4 @@ let convertRes = shellVerbose:
 
 if convertRes[1] == 0:
   ceUserLog0("Conversion ok")
-  copyFile(outFile, outFile & "res.png")
+  copyFile(outFile, "res.tmp.png")
