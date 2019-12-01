@@ -160,7 +160,7 @@ proc makePos[N: float | int](x, y: N): Pos =
 proc `-`(a, b: Pos): Pos = makePos(a.x - b.x, a.y - b.y)
 proc begin(l: Line): Pos = Pos(x: l.x1, y: l.y1)
 proc final(l: Line): Pos = Pos(x: l.x2, y: l.y2)
-proc arg(p: Pos): float = arctan(p.y / p.x)
+proc arg(p: Pos): float = arctan2(p.y, p.x)
 
 proc toSVG(line: Line): XmlNode =
   let a: Pos = (0,0)
@@ -190,7 +190,8 @@ proc fitLine(
 
   let endP = points[^1]
 
-  echo endP.arg().radToDeg()
+  echo endP, pivots
+  echo &"End point argument: {endP.arg().radToDeg()} ({endP})"
   let fit: tuple[s, e: Pos] = (
     tern(
       endP.arg() > 90,
@@ -198,15 +199,18 @@ proc fitLine(
       pivots.upper
     ), endP)
 
+  echo fit
+
   let lineAngle = (fit.e - fit.s).arg()
   echo lineAngle.radToDeg()
   let maxY: float = points.mapIt(it.y).max()
 
+
   result =
     Line(
-      x1: fit.s.x - fit.s.y * tan(lineAngle - PI / 2),
+      x1: fit.s.x + fit.s.y * tan(lineAngle - PI / 2),
       y1: 0.0,
-      x2: fit.e.x + (maxY - fit.e.y) * tan(lineAngle - PI / 2),
+      x2: fit.e.x - (maxY - fit.e.y) * tan(lineAngle - PI / 2),
       y2: maxY
   )
 
@@ -217,6 +221,8 @@ proc fitLine(
   result.x2 -= xShift
   result.y1 -= yShift
   result.y2 += yShift
+
+  echo result
 
 
 proc getFitLines(blc: Block): (Line, Line) =
@@ -355,12 +361,13 @@ let test = Block(
       (Key(width: 1.5, length: 2.0), 1.0)
     ]), 0.0),
     (Row(keys: @[
+      (Key(width: 1.5, length: 2.0), 3.0),
       (Key(width: 1.5, length: 2.0), 1.0),
       (Key(width: 1.5, length: 2.0), 1.0),
       (Key(width: 1.5, length: 2.0), 1.0)
     ]), 1.0),
     (Row(keys: @[
-      (Key(width: 1.5, length: 2.0), 3.0),
+      (Key(width: 1.5, length: 2.0), -1.0),
       (Key(width: 1.5, length: 2.0), 1.0),
       (Key(width: 1.5, length: 2.0), 1.0),
       (Key(width: 1.5, length: 2.0), 1.0),
