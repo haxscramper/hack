@@ -9,6 +9,7 @@ import colechopkg/lib
 import os
 import strtabs
 import hmisc/helpers
+import hmisc/halgorithm
 
 import geometry
 import svg_generation
@@ -32,75 +33,96 @@ import keyboard
 
 
 
+proc getFitPoints(
+  pivots: tuple[upper, lower: Pos],
+  pointsIn: seq[Pos],
+  isLeft: static[bool],
+  lineAngle: float,
+  xOffset: float,
+  gridSnap: float = 1
+     ): (tuple[s, e: Pos], seq[Pos]) =
+  ## Get control points for fitting line into. I offset is not `none`
+  ## it will be added to resulting points in direction dependent on
+  ## `isLeft` (if left then x will be subtracted, otherwise added).
+  ## Return fit point to fit line into and all other points excluding
+  ## pivots.
+
+  let points = pointsIn.filterIt(pivots.upper != it and pivots.lower != it)
+
+  echo &"Pivots: {pivots}"
+  echo &"Points: {points}"
+
+  let startP = # Find correct pivot point
+    if (lineAngle > 90 and isLeft) or (lineAngle < 90 and not isLeft):
+      pivots.lower
+    else:
+      pivots.upper
+
+  # Find farthest point's x coordinate
+  let maxPoint =
+    points.twoPassSortByIt(
+      it.x, it.y
+    )[when isLeft: 0 else: ^1][0]
+
+  echo &"Max point is {maxPoint}"
+
+  let endP = Pos(
+    x: maxPoint.x + cos(lineAngle),
+    y: maxPoint.y + sin(lineAngle)
+  )
 
 
-# proc `+`(a: Pos, shift: (int, int) | (float, float)): Pos =
-#   let b: Pos =
-#     when shift[0] is int: makePos(
-#       shift[0].toFloat,
-#       shift[1].toFloat)
-#     else: makePos(shift[0], shift[1])
+  var fit: tuple[s, e: Pos] = (maxPoint, endP)
 
-# return a + b
+  echo fit
+  fit.s.x += xOffset * tern(isLeft, -1, 1)
+  fit.e.x += xOffset * tern(isLeft, -1, 1)
+
+  echo &"control: {fit}"
+
+
+  result = (fit, points)
+
 
 proc fitLine(
   pivots: tuple[upper, lower: Pos],
   pointsIn: seq[Pos],
-  isLeft: static[bool]
+  isLeft: static[bool],
+  targetAngle: float,
+  xOffset: float
      ): Line =
   ## Find line that passes through one of the pivot points and have
   ## all of the other on one side of the plane.
   echo "---"
 
-  let points =
-    block:
-      let tmp = pointsIn.filterIt(
-        pivots.upper != it and
-        pivots.lower != it
-      )
+  let (fit, points) = getFitPoints(
+    pivots,
+    pointsIn,
+    isLeft,
+    targetAngle,
+    xOffset
+  )
 
-      tmp.sortedByIt(it.arg())
-
-  echo &"Pivots: {pivots}"
-  echo &"Points: {points}"
-  let endP = tern(isLeft, points[^1], points[0])
-
-  echo &"End point argument: {endP.arg().radToDeg()} ({endP})"
-  let fit: tuple[s, e: Pos] =
-      (tern(
-        (endP.arg() > 90 and isLeft) or
-        (endP.arg() < 90 and not isLeft)
-        ,
-        pivots.lower,
-        pivots.upper
-      ),
-       endP)
-
-  echo fit
-
-  let lineAngle = (fit.e - fit.s).arg()
-  echo lineAngle.radToDeg()
+  echo &"Line angle: {targetAngle.radToDeg()}"
   let maxY: float = points.mapIt(it.y).max()
 
   echo &"fit: {fit}"
 
   result =
     Line(
-      x1: fit.s.x + fit.s.y * tan(lineAngle - PI / 2),
+      x1: fit.s.x + fit.s.y * tan(targetAngle - PI / 2),
       y1: 0.0,
-      x2: fit.e.x - (maxY - fit.e.y) * tan(lineAngle - PI / 2),
+      x2: fit.e.x - (maxY - fit.e.y) * tan(targetAngle - PI / 2),
       y2: maxY
   )
 
-  let xShift = tern(isLeft, 0.5, -0.5)
   let yShift = 0.5
 
-  result.x1 -= xShift
-  result.x2 -= xShift
   result.y1 -= yShift
   result.y2 += yShift
 
-  echo result
+  echo &"Fit line: {result.x1}-{result.y1} {result.x2}-{result.y2}"
+
 
 proc getLeftPoints(blc: Block): seq[Pos] =
   var points: seq[Pos]
@@ -147,13 +169,23 @@ proc getFitLines(blc: Block): (Line, Line) =
     fitLine((
         makePos(0.0, row0.space + row0.row.width),
         makePos(0.0, row0.space)
-    ), blc.getLeftPoints(), true)
+    ),
+            blc.getLeftPoints(),
+            isLeft = true,
+            targetAngle = blc.angles.left,
+            xOffset = blc.offsets.left
+    )
 
   let right =
     fitLine((
         makePos(row0.row.totalLength(), row0.space + row0.row.width),
         makePos(row0.row.totalLength(), row0.space)
-    ), blc.getRightPoints(), false)
+    ),
+            blc.getRightPoints(),
+            isLeft = false,
+            targetAngle = blc.angles.right,
+            xOffset = blc.offsets.right
+    )
 
   result = (left, right)
 
@@ -264,8 +296,13 @@ let test = Block(
       (Key(width: 1.5, length: 2.0), 1.0),
       (Key(width: 1.5, length: 2.0), 1.0),
       (Key(width: 1.5, length: 2.0), 1.0),
+      (Key(width: 1.5, length: 2.0), 1.0),
+      (Key(width: 1.5, length: 2.0), 1.0),
     ]), 1.0),
-])
+],
+  angles: (PI/2, PI/2 - PI/18),
+  offsets: (0.2, 0.2)
+)
 
 let imgWidth = svgMulti * 40
 let imgHeight = svgMulti * 30

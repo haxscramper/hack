@@ -1,5 +1,6 @@
 import sequtils
 import math
+import options
 
 type
   Key* = object
@@ -19,6 +20,8 @@ type
   Block* = object
     ## Space before each row and the row itself
     rows*: seq[tuple[row: Row, space: float]]
+    angles*: tuple[left, right: float]
+    offsets*: tuple[left, right: float]
     rotation*: int
 
   Keyboard* = object
