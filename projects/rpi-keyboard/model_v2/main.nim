@@ -61,7 +61,11 @@ proc getFitPoints(
   # Find farthest point's x coordinate
   let maxPoint =
     points.twoPassSortByIt(
-      it.x, it.y
+      it.x,
+      block:
+        if (lineAngle < PI/2 and isLeft) or
+           (lineAngle > PI/2 and not isLeft): -it.y
+        else: it.y
     )[when isLeft: 0 else: ^1][0]
 
   echo &"Max point is {maxPoint}"
@@ -289,7 +293,9 @@ let test = Block(
       (Key(width: 1.5, length: 2.0), 3.0),
       (Key(width: 1.5, length: 2.0), 1.0),
       (Key(width: 1.5, length: 2.0), 1.0),
-      (Key(width: 1.5, length: 2.0), 1.0)
+      (Key(width: 1.5, length: 2.0), 1.0),
+      (Key(width: 1.5, length: 2.0), 1.0),
+      (Key(width: 1.5, length: 2.0), 1.0),
     ]), 1.0),
     (Row(keys: @[
       (Key(width: 1.5, length: 2.0), -1.0),
@@ -300,7 +306,7 @@ let test = Block(
       (Key(width: 1.5, length: 2.0), 1.0),
     ]), 1.0),
 ],
-  angles: (PI/2, PI/2 - PI/18),
+  angles: (PI/2 + PI/18, PI/2 - PI/18),
   offsets: (0.2, 0.2)
 )
 
