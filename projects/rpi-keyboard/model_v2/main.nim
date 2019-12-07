@@ -66,12 +66,15 @@ proc fitLine(
   let endP = tern(isLeft, points[^1], points[0])
 
   echo &"End point argument: {endP.arg().radToDeg()} ({endP})"
-  let fit: tuple[s, e: Pos] = (
-    tern(
-      endP.arg() > 90,
-      pivots.lower,
-      pivots.upper
-    ), endP)
+  let fit: tuple[s, e: Pos] =
+      (tern(
+        (endP.arg() > 90 and isLeft) or
+        (endP.arg() < 90 and not isLeft)
+        ,
+        pivots.lower,
+        pivots.upper
+      ),
+       endP)
 
   echo fit
 
