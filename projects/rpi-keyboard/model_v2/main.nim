@@ -69,5 +69,5 @@ proc generateSVG(blc: Block, outFile: string): void =
     ceUserLog0("Conversion ok")
     copyFile(tmpFile, outFile)
 
-# test.generateSVG("res.tmp.png")
+test.generateSVG("res.tmp.png")
 test.generateSCAD("res.tmp.scad")

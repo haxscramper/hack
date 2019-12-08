@@ -46,6 +46,13 @@ proc makeScadTree(
     children: children.toSeq()
   )
 
+proc scadOperator(
+  node: ScadNode,
+  name: string,
+  params: varargs[tuple[key, val: string]]
+     ): ScadNode =
+    makeScadTree(name, [node], params)
+
 proc scadTranslate(node: ScadNode, x = 0.0, y = 0.0, z = 0.0): ScadNode =
   makeScadTree("translate", [node], {"v" : &"[{x}, {y}, {z}]"})
 
@@ -104,26 +111,54 @@ proc toSCAD(key: Key): tuple[core, boundary: ScadNode] =
 
   result = (core, boundary)
 
-proc toSCAD(row: Row): ScadNode =
+proc toSCAD(row: Row): tuple[core, boundary: ScadNode] =
   var spacing = 0.0
   let keys: seq[tuple[
     shift: Pos3, core: ScadNode, boundary: ScadNode
-  ]] =
-    row.keys.mapIt(
-      block:
-        let (core, boundary) = it.key.toSCAD()
-        spacing += it.key.length + it.space
-        (makePos3(x = spacing), core, boundary))
+  ]] = row.keys.mapIt(
+    block:
+      let (core, boundary) = it.key.toSCAD()
+      spacing += it.key.length + it.space
+      (makePos3(x = spacing), core, boundary)
+  )
 
-  result =
+  result.core =
     makeCube(d = row.width, w = row.length, h = 1.0).
-    scadSubtract(keys.mapIt(it.boundary))
+    scadSubtract(
+      keys.mapIt(it.boundary.scadTranslate(it.shift))).
+    scadUnion(
+      keys.mapIt(it.core.scadTranslate(it.shift)))
+
+  result.boundary =
+    makeCube(d = row.width, w = row.length, h = 1.0)
 
 proc toSCAD*(blc: Block): string =
   let (left, right) = blc.getFitLines()
+  var spacing = 0.0
+  let rows: seq[tuple[
+    shift: Pos3, core, boundary: ScadNode
+  ]] = blc.rows.mapIt(
+    block:
+      let (core, boundary) = it.row.toSCAD()
+      spacing += it.space + it.row.width
+      (makePos3(x = it.row.width, y = spacing), core, boundary)
+  )
 
-  makeScadTree(
-    "translate",
-    [makeScad("test", {"r1" : "12"})],
-    {"q" : "12"})
-  .toString()
+  let polygonPoints: seq[Pos] =
+    @[left.begin, left.final, right.final, right.begin]
+
+  let blockBody =
+    makeScad(
+      "polygon", {
+        "points" :
+        "[" & polygonPoints.mapIt(&"[{it.x}, {it.y}]").join(",") & "]"
+      }).
+    scadOperator("linearExtrude", {"height" : "1"})
+
+  result =
+    blockBody.
+    scadSubtract(
+      rows.mapIt(it.boundary.scadTranslate(it.shift))).
+    scadUnion(
+      rows.mapIt(it.core.scadTranslate(it.shift))).
+    toString()
