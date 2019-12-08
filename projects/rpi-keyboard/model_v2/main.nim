@@ -13,26 +13,26 @@ import scad_generation
 let test = Block(
   rows: @[
     (Row(keys: @[
-      (Key(width: 1.5, length: 2.0), 0.0),
-      (Key(width: 1.5, length: 2.0), 1.0),
-      (Key(width: 1.5, length: 2.0), 1.0),
-      (Key(width: 1.5, length: 2.0), 1.0)
+      (Key(width: 1.5, length: 2.0, height: 1.0), 0.0),
+      (Key(width: 1.5, length: 2.0, height: 1.0), 1.0),
+      (Key(width: 1.5, length: 2.0, height: 1.0), 1.0),
+      (Key(width: 1.5, length: 2.0, height: 1.0), 1.0)
     ]), 0.0),
     (Row(keys: @[
-      (Key(width: 1.5, length: 2.0), 3.0),
-      (Key(width: 1.5, length: 2.0), 1.0),
-      (Key(width: 1.5, length: 2.0), 1.0),
-      (Key(width: 1.5, length: 2.0), 1.0),
-      (Key(width: 1.5, length: 2.0), 1.0),
-      (Key(width: 1.5, length: 2.0), 1.0),
+      (Key(width: 1.5, length: 2.0, height: 1.0), 3.0),
+      (Key(width: 1.5, length: 2.0, height: 1.0), 1.0),
+      (Key(width: 1.5, length: 2.0, height: 1.0), 1.0),
+      (Key(width: 1.5, length: 2.0, height: 1.0), 1.0),
+      (Key(width: 1.5, length: 2.0, height: 1.0), 1.0),
+      (Key(width: 1.5, length: 2.0, height: 1.0), 1.0),
     ]), 1.0),
     (Row(keys: @[
-      (Key(width: 1.5, length: 2.0), -1.0),
-      (Key(width: 1.5, length: 2.0), 1.0),
-      (Key(width: 1.5, length: 2.0), 1.0),
-      (Key(width: 1.5, length: 2.0), 1.0),
-      (Key(width: 1.5, length: 2.0), 1.0),
-      (Key(width: 1.5, length: 2.0), 1.0),
+      (Key(width: 1.5, length: 2.0, height: 1.0), -1.0),
+      (Key(width: 1.5, length: 2.0, height: 1.0), 1.0),
+      (Key(width: 1.5, length: 2.0, height: 1.0), 1.0),
+      (Key(width: 1.5, length: 2.0, height: 1.0), 1.0),
+      (Key(width: 1.5, length: 2.0, height: 1.0), 1.0),
+      (Key(width: 1.5, length: 2.0, height: 1.0), 1.0),
     ]), 1.0),
 ],
   angles: (PI/2 + PI/18, PI/2 - PI/18),
