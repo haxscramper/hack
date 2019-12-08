@@ -8,6 +8,13 @@ import sequtils
 import hmisc/halgorithm, hmisc/helpers
 import math
 import strformat
+import strutils
+
+const doDebug = false
+
+proc decho(args: varargs[string, `$`]): void =
+  when doDebug: echo args.join("")
+  else: discard
 
 proc getLeftPoints*(blc: Block): seq[Pos] =
   var points: seq[Pos]
@@ -42,7 +49,7 @@ proc getRightPoints*(blc: Block, noFirstRow = true): seq[Pos] =
 
     rowSpacing += rowWidth
 
-    echo points
+    decho points
     result = points
 
 
@@ -62,8 +69,8 @@ proc getFitPoints(
 
   let points = pointsIn.filterIt(pivots.upper != it and pivots.lower != it)
 
-  echo &"Pivots: {pivots}"
-  echo &"Points: {points}"
+  decho &"Pivots: {pivots}"
+  decho &"Points: {points}"
 
   let startP = # Find correct pivot point
     if (lineAngle > 90 and isLeft) or (lineAngle < 90 and not isLeft):
@@ -81,7 +88,7 @@ proc getFitPoints(
         else: it.y
     )[when isLeft: 0 else: ^1][0]
 
-  echo &"Max point is {maxPoint}"
+  decho &"Max point is {maxPoint}"
 
   let endP = Pos(
     x: maxPoint.x + cos(lineAngle),
@@ -91,11 +98,11 @@ proc getFitPoints(
 
   var fit: tuple[s, e: Pos] = (maxPoint, endP)
 
-  echo fit
+  decho fit
   fit.s.x += xOffset * tern(isLeft, -1, 1)
   fit.e.x += xOffset * tern(isLeft, -1, 1)
 
-  echo &"control: {fit}"
+  decho &"control: {fit}"
 
 
   result = (fit, points)
@@ -111,7 +118,7 @@ proc fitLine(
      ): Line =
   ## Find line that passes through one of the pivot points and have
   ## all of the other on one side of the plane.
-  echo "---"
+  decho "---"
 
   let (fit, points) = getFitPoints(
     pivots,
@@ -121,10 +128,10 @@ proc fitLine(
     xOffset
   )
 
-  echo &"Line angle: {targetAngle.radToDeg()}"
+  decho &"Line angle: {targetAngle.radToDeg()}"
   let maxY: float = points.mapIt(it.y).max()
 
-  echo &"fit: {fit}"
+  decho &"fit: {fit}"
 
   result =
     Line(
@@ -139,7 +146,7 @@ proc fitLine(
   result.y1 -= yShift
   result.y2 += yShift
 
-  echo &"Fit line: {result.x1}-{result.y1} {result.x2}-{result.y2}"
+  decho &"Fit line: {result.x1}-{result.y1} {result.x2}-{result.y2}"
 
 
 

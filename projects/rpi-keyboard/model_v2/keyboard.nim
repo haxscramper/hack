@@ -6,12 +6,19 @@ import options
 
 type
   Key* = object
-    length*: float  ## On keyboard this is horizontal dimension of key
-                   ## cap. Whitespace is the longest key on keyboard
+    length*: float ## On 2d keyboard this is horizontal dimension of
+                   ## key cap. Whitespace is the longest key on
+                   ## keyboard
 
-    width*: float ## On keyboard this is the vertical dimension of the
-                 ## key cap. Most keys have equal width, only a few
-                 ## ones on numpad have different dimensions
+    width*: float ## On 2d keyboard this is the vertical dimension of
+                  ## the key cap. Most keys have equal width, only a
+                  ## few ones on numpad have different width
+
+    height*: float ## On 3d keyboard this is vertical dimension of the
+                   ## key cap. Most keys have equal height. Not
+                   ## present on 2d layout
+
+
 
 
   Row* = object
@@ -36,6 +43,8 @@ proc totalLength*(row: Row): float =
   row.keys.mapIt(it.space + it.key.length).sum()
 
 proc indent*(row: Row): float = row.keys[0].space
+
+proc length*(row: Row): float = row.totalLength - row.indent
 
 proc width*(blc: Block): float =
   blc.rows.mapIt(it.space + it.row.width).sum()

@@ -1,20 +1,13 @@
 import shell
-# import options
-# import algorithm
 import math
 import strformat
 import sequtils
 import xmltree
 import colechopkg/lib
 import os
-# import strtabs
-# import hmisc/helpers
-# import hmisc/halgorithm
 
-# import geometry
 import svg_generation
 import keyboard
-# import geometry_generation
 import scad_generation
 
 let test = Block(
