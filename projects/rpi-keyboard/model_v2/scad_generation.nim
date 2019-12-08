@@ -47,7 +47,7 @@ proc toString(node: ScadNode): string =
     of sntInclude:
       result = &"""
 // clang-format off
-include <{node.path}>;
+use <{node.path}>;
 // clang-format on
 """
     of sntGroup:
@@ -94,6 +94,21 @@ proc makeScadTree(
     children: children.toSeq(),
     kind: sntInvoke
   )
+
+proc setColor(
+  node: ScadNode, r = 0.0, g = 0.0, b = 0.0, a = 1.0
+     ): ScadNode =
+  makeScadTree(
+    "color",
+    [node],
+    {"c" : &"[{r}, {r}, {b}]", "alpha" : $a}
+  )
+
+
+proc setColor(node: ScadNode, colorname: string,  a = 1.0): ScadNode =
+  makeScadTree("color", [node], {"c" : &"\"{colorname}\"", "alpha" : $a})
+
+
 
 proc scadOperator(
   node: ScadNode,
@@ -167,8 +182,9 @@ proc toSCAD(row: Row): tuple[core, boundary: ScadNode] =
   ]] = row.keys.mapIt(
     block:
       let (core, boundary) = it.key.toSCAD()
+      let tmp = (makePos3(x = spacing), core, boundary)
       spacing += it.key.length + it.space
-      (makePos3(x = spacing), core, boundary)
+      tmp
   )
 
   result.core =
@@ -177,10 +193,18 @@ proc toSCAD(row: Row): tuple[core, boundary: ScadNode] =
       keys.mapIt(it.boundary.scadTranslate(it.shift))).
     scadUnion(
       keys.mapIt(it.core.scadTranslate(it.shift))).
-    addComment("Row core")
+    addComment("Row core").
+    setColor("Cyan", 0.3)
 
   result.boundary =
-    makeCube(d = row.width, w = row.length, h = 1.0)
+    makeScad(
+      "row_boundary",
+      {
+        "width": $row.width,
+        "height": $1.0,
+        "length": $row.length
+      }).
+    setColor("Red")
 
 proc toSCAD*(blc: Block): string =
   let (left, right) = blc.getFitLines()
@@ -190,8 +214,13 @@ proc toSCAD*(blc: Block): string =
   ]] = blc.rows.mapIt(
     block:
       let (core, boundary) = it.row.toSCAD()
+      let tmp = (
+        makePos3(x = it.row.indent, y = spacing),
+        core,
+        boundary
+      )
       spacing += it.space + it.row.width
-      (makePos3(x = it.row.width, y = spacing), core, boundary)
+      tmp
   )
 
   let polygonPoints: seq[Pos] =
@@ -203,7 +232,8 @@ proc toSCAD*(blc: Block): string =
         "points" :
         "[" & polygonPoints.mapIt(&"[{it.x}, {it.y}]").join(",") & "]"
       }).
-    scadOperator("linear_extrude", {"height" : "1"})
+    scadOperator("linear_extrude", {"height" : "1"}).
+    setColor(b = 1.0, a = 0.3)
 
   result =
     blockBody.

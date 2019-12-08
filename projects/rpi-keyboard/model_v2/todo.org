@@ -1,2 +1,3 @@
 - [X] openscad comments support
 - [X] import section support
+- [ ] Use colors and transparency do debug 3d model generation
