@@ -1,3 +1,5 @@
+## Keyboard components
+
 import sequtils
 import math
 import options

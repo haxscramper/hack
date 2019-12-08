@@ -1,3 +1,5 @@
+## Basic geometric primitives and supporting functions
+
 import math
 
 type

@@ -1,8 +1,12 @@
+## THis module is used to generate 2d svg image of the keyboard. It is
+## mostly indended to be used for debugging purposes
+
 import geometry
 import keyboard
 import sequtils, xmltree, strtabs, strformat, strutils
 import options
 import hmisc/helpers
+import geometry_generation
 
 
 const svgMulti* = 50 ## Multiplication ratio for converting float to
@@ -183,3 +187,91 @@ proc toSVG*(line: Line): XmlNode =
       "stroke" : "green",
       "stroke-width" : "3"
     })
+
+
+proc makeControlPoints*(blc: Block): seq[XmlNode] =
+
+  let (left, right) = getFitLines(blc)
+
+  result &=
+    <-> "left bounding line" &
+    @[
+      left.toSVG(),
+      right.toSVG(),
+      Line(x1: left.x1, x2: right.x1, y1: left.y1, y2: right.y1).toSVG(),
+      Line(x1: left.x2, x2: right.x2, y1: left.y2, y2: right.y2).toSVG()
+    ] &
+      <-> "Right points" &
+      (
+        block:
+          let points = blc.getRightPoints()
+          echo &"Debug points {points}"
+          points.mapIt(it.toSVG('r', makeStyle({"fill" : "red"})))
+      )
+      # <-> "Left points" &
+      # blc.getLeftPoints()[1..^1].mapIt(it.toSVG('l'))
+
+
+proc toSVG*(blc: Block): XmlNode =
+  let row0 = blc.rows[0]
+  var shift = row0.space
+  let rows: seq[XmlNode] =
+    blc.rows.mapIt(
+      block:
+        var rowXml = it.row.toSVG()
+        shift += it.space
+        rowXml.attrs = {
+          "transform" : &"translate(0 {toInt(shift * svgMulti)})"
+          }.toXmlAttributes()
+        shift += it.row.width()
+        rowXml
+    )
+
+
+  newXmlTree("g",
+    newComment("block start") &
+      rows &
+      blc.makeControlPoints() &
+      newComment("block end")
+  )
+
+proc toSVGImage*(
+  body: seq[XmlNode],
+  width: int = 480,
+  height: int = 480): XmlNode =
+    newXmlTree(
+      "svg",
+      [
+        newXmlTree("style", @[newText("\n" & """
+.key-box {
+  fill : rgb(255,255,255);
+  stroke-width:3;
+  stroke:rgb(0,0,0)
+}
+.base-control-dot {
+  fill : rgb(255,0,0);
+}
+.coordinate {
+  font: bold 16px sans-serif;
+}
+""")]),
+        newXmlTree(
+          "g", body,
+          {
+            # Since 2d will be mapped to 3d it is better to worh in
+            # coordinate system that won't melt your brain when you
+            # try to think how one thing maps to another.
+            "transform" : &"""
+scale(1, -1)
+translate(100, 100)
+translate(0, -{height})
+"""
+          }.toXmlAttributes())
+      ],
+      {
+        "width" : $width,
+        "height" : $height,
+        "version" : "1.1",
+        "xmlns" : "http://www.w3.org/2000/svg"
+      }.toXmlAttributes()
+    )
