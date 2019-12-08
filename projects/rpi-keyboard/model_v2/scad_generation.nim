@@ -7,24 +7,71 @@ import strtabs
 import strformat
 import sequtils
 import strutils
+import hmisc/helpers
 
 type
+  ScadNodeType = enum
+    sntInvoke
+    sntComment
+    sntInclude
+    sntGroup
+
   ScadNode = object
-    name: string
-    params: StringTableRef
-    children: seq[ScadNode]
+    case kind: ScadNodeType
+    of sntInvoke:
+      name: string
+      params: StringTableRef
+      children: seq[ScadNode]
+    of sntComment:
+      text: string
+    of sntInclude:
+      path: string
+    of sntGroup:
+      elements: seq[ScadNode]
 
 proc toString(node: ScadNode): string =
-  result = node.name
-  result &= "(" &
-    toSeq(node.params.pairs).mapIt(&"{it.key} = {it.value}").join(",") &
-    ")"
+  case node.kind:
+    of sntInvoke:
+      result = node.name
+      result &= "(" &
+        toSeq(node.params.pairs).mapIt(&"{it.key} = {it.value}").join(",") &
+        ")"
 
-  if node.children.len == 0: result &= ";\n"
-  else:
-    result &= "{\n" &
-      node.children.mapIt(it.toString).join("\n") &
-      "}\n";
+      if node.children.len == 0: result &= ";\n"
+      else:
+        result &= "{\n" &
+          node.children.mapIt(it.toString).join("\n") &
+          "}\n";
+    of sntComment:
+      result = &"//{node.text}\n"
+    of sntInclude:
+      result = &"""
+// clang-format off
+include <{node.path}>;
+// clang-format on
+"""
+    of sntGroup:
+      result = node.elements.map(toString).join("\n")
+
+proc makeScadComment(text: string): ScadNode =
+  ScadNode(text: text, kind: sntComment)
+
+proc makeScadInclude(path: string): ScadNode =
+  ScadNode(path: path, kind: sntInclude)
+
+proc makeGroupWith(
+  node: ScadNode,
+  other: openarray[ScadNode],
+  reverse: bool = false,
+     ): ScadNode =
+  ScadNode(elements:
+    reverse.tern(
+      toSeq(other) & @[node], @[node] & toSeq(other)
+    ),
+    kind: sntGroup)
+
+proc addComment(node: ScadNode, comment: string): ScadNode =
+  makeScadComment(comment).makeGroupWith([node])
 
 proc makeScad(
   name: string,
@@ -32,7 +79,8 @@ proc makeScad(
      ): ScadNode =
   ScadNode(
     name: name,
-    params: newStringTable(params)
+    params: newStringTable(params),
+    kind: sntInvoke
   )
 
 proc makeScadTree(
@@ -43,7 +91,8 @@ proc makeScadTree(
   ScadNode(
     name: name,
     params: newStringTable(params),
-    children: children.toSeq()
+    children: children.toSeq(),
+    kind: sntInvoke
   )
 
 proc scadOperator(
@@ -127,7 +176,8 @@ proc toSCAD(row: Row): tuple[core, boundary: ScadNode] =
     scadSubtract(
       keys.mapIt(it.boundary.scadTranslate(it.shift))).
     scadUnion(
-      keys.mapIt(it.core.scadTranslate(it.shift)))
+      keys.mapIt(it.core.scadTranslate(it.shift))).
+    addComment("Row core")
 
   result.boundary =
     makeCube(d = row.width, w = row.length, h = 1.0)
@@ -153,7 +203,7 @@ proc toSCAD*(blc: Block): string =
         "points" :
         "[" & polygonPoints.mapIt(&"[{it.x}, {it.y}]").join(",") & "]"
       }).
-    scadOperator("linearExtrude", {"height" : "1"})
+    scadOperator("linear_extrude", {"height" : "1"})
 
   result =
     blockBody.
@@ -161,4 +211,7 @@ proc toSCAD*(blc: Block): string =
       rows.mapIt(it.boundary.scadTranslate(it.shift))).
     scadUnion(
       rows.mapIt(it.core.scadTranslate(it.shift))).
+    makeGroupWith(
+      [ makeScadInclude("keyboard.scad") ],
+      reverse = true).
     toString()
