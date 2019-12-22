@@ -191,7 +191,7 @@ proc toSVG*(line: Line): XmlNode =
 
 proc makeControlPoints*(blc: Block): seq[XmlNode] =
 
-  let (left, right) = getFitLines(blc)
+  let (left, right, centerShift) = getFitLines(blc)
 
   result &=
     <-> "left bounding line" &

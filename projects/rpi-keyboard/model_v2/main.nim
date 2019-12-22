@@ -36,7 +36,11 @@ let test = Block(
     ]), 1.0),
 ],
   angles: (PI/2 + PI/18, PI/2 - PI/18),
-  offsets: (0.2, 0.2)
+  offsets: (0.2, 0.2),
+  dimensions: (
+    width: 10.0,
+    lowerLen: 22.0
+  )
 )
 
 

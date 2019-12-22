@@ -8,7 +8,7 @@ module key_core(height, width, length) {
     centerZ = sizeZ / 2;
 
     difference() {
-        cube([ sizeX, sizeY, sizeZ ]);
+        color ("Orange") cube([ sizeX, sizeY, sizeZ ]);
 
         translate([ centerX, centerY, centerZ ]) {
             color("Red") cube(

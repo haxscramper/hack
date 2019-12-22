@@ -9,6 +9,7 @@ import hmisc/halgorithm, hmisc/helpers
 import math
 import strformat
 import strutils
+import common
 
 const doDebug = false
 
@@ -150,9 +151,20 @@ proc fitLine(
 
 
 
-proc getFitLines*(blc: Block): (Line, Line) =
+proc getFitLines*(blc: Block): (Line, Line, Pos) =
   ## Calculate coordinates of the left and right edge of the block
   ## boundary
+
+  let
+    width = blc.dimensions.width
+    leftAngle = blc.angles.left
+    rightAngle = blc.angles.right
+
+  if width < blc.width():
+    raise newException(Exception, "targeted width is smaller than block width")
+  else:
+    dlog "width ok"
+
   let row0 = blc.rows[0]
   let rowN = blc.rows[^1]
   let left =
@@ -160,10 +172,10 @@ proc getFitLines*(blc: Block): (Line, Line) =
         makePos(0.0, row0.space + row0.row.width),
         makePos(0.0, row0.space)
     ),
-            blc.getLeftPoints(),
-            isLeft = true,
-            targetAngle = blc.angles.left,
-            xOffset = blc.offsets.left
+    blc.getLeftPoints(),
+    isLeft = true,
+    targetAngle = leftAngle,
+    xOffset = blc.offsets.left
     )
 
   let right =
@@ -171,10 +183,37 @@ proc getFitLines*(blc: Block): (Line, Line) =
         makePos(row0.row.totalLength(), row0.space + row0.row.width),
         makePos(row0.row.totalLength(), row0.space)
     ),
-            blc.getRightPoints(),
-            isLeft = false,
-            targetAngle = blc.angles.right,
-            xOffset = blc.offsets.right
+    blc.getRightPoints(),
+    isLeft = false,
+    targetAngle = rightAngle,
+    xOffset = blc.offsets.right
     )
 
-  result = (left, right)
+  let lowerLen = right.x1 - left.x1
+
+  if lowerLen > blc.dimensions.lowerLen:
+    raise newException(Exception, "targeted lower len is smaller than fitting one")
+  else:
+    dlog &"lower len is ok ({lowerLen})"
+
+  let shiftedLeft = Line(
+    x1: left.x1,
+    y1: left.y1,
+    x2: left.x1 + cos(leftAngle) * width,
+    y2: left.y1 + sin(leftAngle) * width
+  )
+
+  let shiftedRight = Line(
+    x1: left.x1 + lowerLen,
+    y1: left.y1,
+    x2: (left.x1 + lowerLen) + cos(rightAngle) * width,
+    y2: left.y1 + sin(rightAngle) * width
+  )
+
+  let startShift = Pos(
+    x: (shiftedRight.x1 - right.x1) / 2,
+    y: (shiftedRight.y2 - right.y2) / 2
+  )
+
+
+  result = (shiftedLeft, shiftedRight, startShift)

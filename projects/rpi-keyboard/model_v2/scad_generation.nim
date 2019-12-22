@@ -209,7 +209,7 @@ proc toSCAD(row: Row): tuple[core, boundary: ScadNode] =
     setColor("Red", 0.01)
 
 proc toSCAD*(blc: Block): string =
-  let (left, right) = blc.getFitLines()
+  let (left, right, coreShift) = blc.getFitLines()
   var spacing = 0.0
   let rows: seq[tuple[
     shift: Pos3, core, boundary: ScadNode
@@ -240,9 +240,9 @@ proc toSCAD*(blc: Block): string =
   result =
     blockBody.
     scadSubtract(
-      rows.mapIt(it.boundary.scadTranslate(it.shift))).
+      rows.mapIt(it.boundary.scadTranslate(it.shift + coreShift.toPos3()))).
     scadUnion(
-      rows.mapIt(it.core.scadTranslate(it.shift))).
+      rows.mapIt(it.core.scadTranslate(it.shift + coreShift.toPos3()))).
     makeGroupWith(
       [ makeScadInclude("keyboard.scad") ],
       reverse = true).

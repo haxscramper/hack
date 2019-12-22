@@ -27,11 +27,24 @@ type
     ## Rotation of the whole row around lower left corner
 
   Block* = object
-    ## Space before each row and the row itself
-    rows*: seq[tuple[row: Row, space: float]]
+    rows*: seq[tuple[row: Row, space: float]
+    ] ## Space before each row and the row itself
+
     angles*: tuple[left, right: float]
+
     offsets*: tuple[left, right: float]
+
     rotation*: int
+
+    dimensions*: tuple[width, lowerLen: float]
+
+   ## :dimension: Targeted dimensions for the keyboard.
+   ##
+   ##   If it is possible to fit all rows in constraints given by the
+   ##   dimensions and angles block is consdered correct. Otherwise
+   ##   function for generating block fitting lines should throw an
+   ##   error. Upper lenght is calculated based on angles, width and
+   ##   lowerLength.
 
   Keyboard* = object
     blocks*: seq[tuple[blc: Block, pos: (float, float)]]
@@ -47,4 +60,5 @@ proc indent*(row: Row): float = row.keys[0].space
 proc length*(row: Row): float = row.totalLength - row.indent
 
 proc width*(blc: Block): float =
+  ## Return total width of the block including spaces between rows.
   blc.rows.mapIt(it.space + it.row.width).sum()
