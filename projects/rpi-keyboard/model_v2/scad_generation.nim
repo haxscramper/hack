@@ -209,6 +209,8 @@ proc toSCAD(row: Row): tuple[core, boundary: ScadNode] =
     setColor("Red", 0.01)
 
 proc toSCAD*(blc: Block): string =
+  ## Generate openscad code for simplified block top. Used for testing
+  ## generated 3d model, not for actual 3d model.
   let (left, right, coreShift) = blc.getFitLines()
   var spacing = 0.0
   let rows: seq[tuple[
@@ -247,3 +249,11 @@ proc toSCAD*(blc: Block): string =
       [ makeScadInclude("keyboard.scad") ],
       reverse = true).
     toString()
+
+proc toScadModules*(
+  blc: Block,
+  screwHoles: bool = true,
+                  ): tuple[top, bottom: string] =
+  ## Generate 3d mode for top and bottom parts of the block.
+  ## :screwHoles: Add screw holes for connecting top and bottom parts
+  result = ("test", "test")
