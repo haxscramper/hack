@@ -9,8 +9,9 @@ proc dlog*(args: varargs[string, `$`]): void =
   else:
     discard
 
-var doDebug = true
+var doDebug = false
 
+proc toggleDebug*() = doDebug = not doDebug
 proc enableDebug*() = doDebug = true
 proc disableDebug*() = doDebug = false
 

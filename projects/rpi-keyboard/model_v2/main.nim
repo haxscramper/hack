@@ -16,48 +16,19 @@ let kbd = readFile("keyboard.json").
   to(Keyboard).
   toRadianAngles()
 
-let test = kbd.blocks[0].blc # Block(
-#   rows: @[
-#     (Row(keys: @[
-#       (Key(width: 1.5, length: 2.0, height: 1.0), 0.0),
-#       (Key(width: 1.5, length: 2.0, height: 1.0), 1.0),
-#       (Key(width: 1.5, length: 2.0, height: 1.0), 1.0),
-#       (Key(width: 1.5, length: 2.0, height: 1.0), 1.0)
-#     ]), 0.0),
-#     (Row(keys: @[
-#       (Key(width: 1.5, length: 2.0, height: 1.0), 3.0),
-#       (Key(width: 1.5, length: 2.0, height: 1.0), 1.0),
-#       (Key(width: 1.5, length: 2.0, height: 1.0), 1.0),
-#       (Key(width: 1.5, length: 2.0, height: 1.0), 1.0),
-#       (Key(width: 1.5, length: 2.0, height: 1.0), 1.0),
-#       (Key(width: 1.5, length: 2.0, height: 1.0), 1.0),
-#     ]), 1.0),
-#     (Row(keys: @[
-#       (Key(width: 1.5, length: 2.0, height: 1.0), -1.0),
-#       (Key(width: 1.5, length: 2.0, height: 1.0), 1.0),
-#       (Key(width: 1.5, length: 2.0, height: 1.0), 1.0),
-#       (Key(width: 1.5, length: 2.0, height: 1.0), 1.0),
-#       (Key(width: 1.5, length: 2.0, height: 1.0), 1.0),
-#       (Key(width: 1.5, length: 2.0, height: 1.0), 1.0),
-#     ]), 1.0),
-# ],
-#   angles: (PI/2 + PI/18, PI/2 - PI/18),
-#   offsets: (0.2, 0.2),
-#   dimensions: (
-#     width: 10.0,
-#     lowerLen: 22.0
-#   )
-# )
+let test = kbd.blocks[0].blc
 
-
-proc generateSCAD(blc: Block, outFile: string): void =
-  let scadBody = blc.toSCAD()
+proc generateSCAD(kbd: Keyboard, outFile: string): void =
+  let scadBody = kbd.toSCAD().addSCADImports().toString()
   outFile.writeFile(scadBody)
   let clangRes = shellVerbose:
     "clang-format" -i ($outFile)
 
-  if clangRes[1] == 0:
-    ceUserLog0("Formatting ok")
+  if clangRes.code != 0:
+    ceUserError0 "Error when formatting keyboard scad file"
+  else:
+    ceUserLog0 "Formatting ok"
+
 
 proc generateSVG(blc: Block, outFile: string): void =
   let imgWidth = svgMulti * 40
@@ -80,4 +51,4 @@ proc generateSVG(blc: Block, outFile: string): void =
     copyFile(tmpFile, outFile)
 
 test.generateSVG("res.tmp.png")
-# test.generateSCAD("res.tmp.scad")
+kbd.generateSCAD("res.tmp.scad")

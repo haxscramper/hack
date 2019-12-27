@@ -29,7 +29,7 @@ type
     of sntGroup:
       elements: seq[ScadNode]
 
-proc toString(node: ScadNode): string =
+proc toString*(node: ScadNode): string =
   case node.kind:
     of sntInvoke:
       result = node.name
@@ -59,11 +59,19 @@ proc makeScadComment(text: string): ScadNode =
 proc makeScadInclude(path: string): ScadNode =
   ScadNode(path: path, kind: sntInclude)
 
+
+proc makeGroup(elements: openarray[ScadNode]): ScadNode =
+  ## Make group node
+  ScadNode(elements: toSeq(elements), kind: sntGroup)
+
 proc makeGroupWith(
   node: ScadNode,
   other: openarray[ScadNode],
   reverse: bool = false,
      ): ScadNode =
+  ## Add scad node to group with `other` elements. It will be added as
+  ## first or last based on `reverse` value: `true` to add as last,
+  ## `false` otherwise
   ScadNode(elements:
     reverse.tern(
       toSeq(other) & @[node], @[node] & toSeq(other)
@@ -208,7 +216,7 @@ proc toSCAD(row: Row): tuple[core, boundary: ScadNode] =
       }).
     setColor("Red", 0.01)
 
-proc toSCAD*(blc: Block): string =
+proc toSCAD*(blc: Block): ScadNode =
   ## Generate openscad code for simplified block top. Used for testing
   ## generated 3d model, not for actual 3d model.
   let (left, right, coreShift) = blc.getFitLines()
@@ -244,11 +252,25 @@ proc toSCAD*(blc: Block): string =
     scadSubtract(
       rows.mapIt(it.boundary.scadTranslate(it.shift + coreShift.toPos3()))).
     scadUnion(
-      rows.mapIt(it.core.scadTranslate(it.shift + coreShift.toPos3()))).
-    makeGroupWith(
+      rows.mapIt(it.core.scadTranslate(it.shift + coreShift.toPos3())))
+
+proc toSCAD*(kbd: Keyboard): ScadNode =
+  var blocksScad: seq[ScadNode]
+  for (blc, pos) in kbd.blocks:
+    blocksScad &=
+      blc.
+      toSCAD().
+      scadTranslate(pos.toPos3()).
+      makeGroupWith(
+        [makeScadComment(&"Block at position {pos}")],
+        reverse = true)
+
+  result = blocksScad.makeGroup()
+
+proc addSCADImports*(body: ScadNode): ScadNode =
+    body.makeGroupWith(
       [ makeScadInclude("keyboard.scad") ],
-      reverse = true).
-    toString()
+      reverse = true)
 
 proc toScadModules*(
   blc: Block,

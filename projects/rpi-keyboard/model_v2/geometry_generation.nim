@@ -212,7 +212,6 @@ proc getFitLines*(blc: Block): (Line, Line, Pos) =
 
   let row0 = blc.rows[0]
   let rowN = blc.rows[^1]
-  disableDebug()
   let left =
     fitLine((
         makePos(0.0, row0.space + row0.row.width),
@@ -223,7 +222,6 @@ proc getFitLines*(blc: Block): (Line, Line, Pos) =
     targetAngle = leftAngle,
     xOffset = blc.offsets.left
     )
-  enableDebug()
 
   let right =
     fitLine((
@@ -239,5 +237,5 @@ proc getFitLines*(blc: Block): (Line, Line, Pos) =
 
 
 
-  # result = shiftLines(blc, left, right)
-  result = (left, right, Pos())
+  result = shiftLines(blc, left, right)
+  # result = (left, right, Pos())

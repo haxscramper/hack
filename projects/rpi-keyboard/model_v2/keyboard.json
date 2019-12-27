@@ -10,10 +10,13 @@
                      "space" : 0.0
                     },
                     {"key" : {"width": 1.5, "length": 2.0, "height": 1.0},
-                     "space" : 0.0
+                     "space" : 1.0
                     },
                     {"key" : {"width": 1.5, "length": 2.0, "height": 1.0},
-                     "space" : 0.0
+                     "space" : 1.0
+                    },
+                    {"key" : {"width": 1.5, "length": 2.0, "height": 1.0},
+                     "space" : 1.0
                     },
                 ]},
               "space" : 0.0
@@ -24,10 +27,10 @@
                      "space" : 0.0
                     },
                     {"key" : {"width": 1.5, "length": 2.0, "height": 1.0},
-                     "space" : 0.0
+                     "space" : 1.0
                     },
                     {"key" : {"width": 1.5, "length": 2.0, "height": 1.0},
-                     "space" : 0.0
+                     "space" : 1.0
                     },
                 ]},
               "space" : 1.0
@@ -38,24 +41,88 @@
                      "space" : 0.0
                     },
                     {"key" : {"width": 1.5, "length": 2.0, "height": 1.0},
-                     "space" : 0.0
+                     "space" : 0.5
                     },
                     {"key" : {"width": 1.5, "length": 2.0, "height": 1.0},
-                     "space" : 0.0
+                     "space" : 0.5
+                    },
+                    {"key" : {"width": 1.5, "length": 2.0, "height": 1.0},
+                     "space" : 0.5
                     },
                 ]},
               "space" : 1.0
             },
         ],
-         "angles": {"left" : 135, "right" : 80},
+         "angles": {"left" : 90, "right" : 90},
          "offsets": {"left" : 0.2, "right" : 0.2},
          "rotation" : 0,
          "dimensions": {
-             "width": 10.0,
+             "width": 8.0,
              "lowerLen": 22.0
          }
          },
          "pos" : {"x" : 0, "y" : 0}
+        },
+        {"blc" :
+         {"rows" : [
+            { "row" : {
+                "keys": [
+                    {"key" : {"width": 2, "length": 2.0, "height": 1.0},
+                     "space" : 0.0
+                    },
+                    {"key" : {"width": 1.5, "length": 2.0, "height": 1.0},
+                     "space" : 3.0
+                    },
+                    {"key" : {"width": 1.5, "length": 2.0, "height": 1.0},
+                     "space" : 1.0
+                    },
+                ]},
+              "space" : 0.0
+            },
+            { "row" : {
+                "keys": [
+                    {"key" : {"width": 1.5, "length": 2.0, "height": 1.0},
+                     "space" : 0.0
+                    },
+                    {"key" : {"width": 1.5, "length": 2.0, "height": 1.0},
+                     "space" : 1.0
+                    },
+                    {"key" : {"width": 1.5, "length": 2.0, "height": 1.0},
+                     "space" : 1.0
+                    },
+                ]},
+              "space" : 1.0
+            },
+            { "row" : {
+                "keys": [
+                    {"key" : {"width": 1.5, "length": 2.0, "height": 1.0},
+                     "space" : 0.0
+                    },
+                    {"key" : {"width": 1.5, "length": 2.0, "height": 1.0},
+                     "space" : 0.5
+                    },
+                    {"key" : {"width": 1.5, "length": 2.0, "height": 1.0},
+                     "space" : 0.5
+                    },
+                    {"key" : {"width": 1.5, "length": 2.0, "height": 1.0},
+                     "space" : 0.5
+                    },
+                    {"key" : {"width": 1.5, "length": 2.0, "height": 1.0},
+                     "space" : 0.5
+                    },
+                ]},
+              "space" : 1.0
+            },
+        ],
+         "angles": {"left" : 90, "right" : 75},
+         "offsets": {"left" : 0.2, "right" : 0.2},
+         "rotation" : 0,
+         "dimensions": {
+             "width": 8.0,
+             "lowerLen": 22.0
+         }
+         },
+         "pos" : {"x" : 12, "y" : 0}
         }
         ]
     }
