@@ -8,3 +8,13 @@ proc dlog*(args: varargs[string, `$`]): void =
     ceUserLog0 args.join(" ")
   else:
     discard
+
+var doDebug = true
+
+proc enableDebug*() = doDebug = true
+proc disableDebug*() = doDebug = false
+
+proc decho*(args: varargs[string, `$`]): void =
+  if doDebug: echo args.join("")
+  else: discard
+

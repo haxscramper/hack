@@ -11,11 +11,6 @@ import strformat
 import strutils
 import common
 
-const doDebug = false
-
-proc decho(args: varargs[string, `$`]): void =
-  when doDebug: echo args.join("")
-  else: discard
 
 proc getLeftPoints*(blc: Block): seq[Pos] =
   var points: seq[Pos]
@@ -23,32 +18,30 @@ proc getLeftPoints*(blc: Block): seq[Pos] =
 
   for it in blc.rows:
     rowSpacing += it.space
-    let rowWidth = it.row.width()
     points &= @[
       makePos(it.row.indent, rowSpacing),
-      makePos(it.row.indent, rowSpacing + rowWidth)
+      makePos(it.row.indent, rowSpacing + it.row.keys[0].key.width)
     ]
 
-    rowSpacing += rowWidth
+    rowSpacing += it.row.width()
 
   result = points
 
-proc getRightPoints*(blc: Block, noFirstRow = true): seq[Pos] =
+proc getRightPoints*(blc: Block, noFirstRow = false): seq[Pos] =
   var points: seq[Pos]
   var rowSpacing = 0.0
 
   for idx, it in blc.rows:
     rowSpacing += it.space
     let rowLength = it.row.totalLength()
-    let rowWidth = it.row.width()
 
     if not noFirstRow or idx != 0:
       points &= @[
         makePos(rowLength, rowSpacing),
-        makePos(rowLength, rowSpacing + rowWidth)
+        makePos(rowLength, rowSpacing + it.row.keys[^1].key.width)
       ]
 
-    rowSpacing += rowWidth
+    rowSpacing += it.row.width()
 
     decho points
     result = points
@@ -62,13 +55,13 @@ proc getFitPoints(
   xOffset: float,
   gridSnap: float = 1
      ): (tuple[s, e: Pos], seq[Pos]) =
-  ## Get control points for fitting line into. I offset is not `none`
+  ## Get control points for fitting line into. If offset is not `none`
   ## it will be added to resulting points in direction dependent on
   ## `isLeft` (if left then x will be subtracted, otherwise added).
   ## Return fit point to fit line into and all other points excluding
   ## pivots.
 
-  let points = pointsIn.filterIt(pivots.upper != it and pivots.lower != it)
+  let points = pointsIn
 
   decho &"Pivots: {pivots}"
   decho &"Points: {points}"
@@ -79,20 +72,21 @@ proc getFitPoints(
     else:
       pivots.upper
 
-  # Find farthest point's x coordinate
-  let maxPoint =
-    points.twoPassSortByIt(
-      it.x,
-      block:
-        if (lineAngle < PI/2 and isLeft) or
-           (lineAngle > PI/2 and not isLeft): -it.y
-        else: it.y
-    )[when isLeft: 0 else: ^1][0]
+  # Find point whose coordinates have maximum x value for right (or
+  # minimum x value for left). Then sort all points with equal (max
+  # ones or min ones) `x` values and find the one with smallest `y`
+  # value - it will be used as starting point for line.
+  let sortedFitPoints = points.twoPassSortByIt(it.x, it.y)
+  let maxPoint = sortedFitPoints[when isLeft: 0 else: ^1][0]
 
+  decho &"Sorted points: {sortedFitPoints}"
   decho &"Max point is {maxPoint}"
 
-  let endP = Pos(
-    x: maxPoint.x + cos(lineAngle),
+  let endP = Pos( # Position for the line endpoint. It does not have
+                  # to account for coorrect line length: it will be
+                  # fixed later when required y coordinates will be
+                  # available
+    x: maxPoint.x + cos(lineAngle), #
     y: maxPoint.y + sin(lineAngle)
   )
 
@@ -117,8 +111,26 @@ proc fitLine(
   targetAngle: float,
   xOffset: float
      ): Line =
-  ## Find line that passes through one of the pivot points and have
-  ## all of the other on one side of the plane.
+  ##[
+
+Find line that passes through one of the pivot points and have all of
+the other on one side of the plane.
+
+:pivots:
+
+  Line will pass through one of the points. Wich one is determined
+  based on `isLeft` value
+
+:isLeft:
+
+  If `true` line will pass through lower pivot, otherwise upper one
+  will be used
+
+:targetAngle: Angle in **radians** for angle between line and x-axis
+:xOffset: additional offset for line from it's calculated position.
+
+  ]##
+
   decho "---"
 
   let (fit, points) = getFitPoints(
@@ -147,47 +159,13 @@ proc fitLine(
   result.y1 -= yShift
   result.y2 += yShift
 
-  decho &"Fit line: {result.x1}-{result.y1} {result.x2}-{result.y2}"
+  decho &"Fit line: ({result.x1} {result.y1}) ({result.x2} {result.y2})"
 
-
-
-proc getFitLines*(blc: Block): (Line, Line, Pos) =
-  ## Calculate coordinates of the left and right edge of the block
-  ## boundary
-
+proc shiftLines(blc: Block, left, right: Line): (Line, Line, Pos) =
   let
     width = blc.dimensions.width
     leftAngle = blc.angles.left
     rightAngle = blc.angles.right
-
-  if width < blc.width():
-    raise newException(Exception, "targeted width is smaller than block width")
-  else:
-    dlog "width ok"
-
-  let row0 = blc.rows[0]
-  let rowN = blc.rows[^1]
-  let left =
-    fitLine((
-        makePos(0.0, row0.space + row0.row.width),
-        makePos(0.0, row0.space)
-    ),
-    blc.getLeftPoints(),
-    isLeft = true,
-    targetAngle = leftAngle,
-    xOffset = blc.offsets.left
-    )
-
-  let right =
-    fitLine((
-        makePos(row0.row.totalLength(), row0.space + row0.row.width),
-        makePos(row0.row.totalLength(), row0.space)
-    ),
-    blc.getRightPoints(),
-    isLeft = false,
-    targetAngle = rightAngle,
-    xOffset = blc.offsets.right
-    )
 
   let lowerLen = right.x1 - left.x1
 
@@ -215,5 +193,51 @@ proc getFitLines*(blc: Block): (Line, Line, Pos) =
     y: (shiftedRight.y2 - right.y2) / 2
   )
 
-
   result = (shiftedLeft, shiftedRight, startShift)
+
+
+proc getFitLines*(blc: Block): (Line, Line, Pos) =
+  ## Calculate coordinates of the left and right edge of the block
+  ## boundary
+
+  let
+    width = blc.dimensions.width
+    leftAngle = blc.angles.left
+    rightAngle = blc.angles.right
+
+  if width < blc.width():
+    raise newException(Exception, "targeted width is smaller than block width")
+  else:
+    dlog "width ok"
+
+  let row0 = blc.rows[0]
+  let rowN = blc.rows[^1]
+  disableDebug()
+  let left =
+    fitLine((
+        makePos(0.0, row0.space + row0.row.width),
+        makePos(0.0, row0.space)
+    ),
+    blc.getLeftPoints(),
+    isLeft = true,
+    targetAngle = leftAngle,
+    xOffset = blc.offsets.left
+    )
+  enableDebug()
+
+  let right =
+    fitLine((
+        makePos(row0.row.totalLength(), row0.space + row0.row.width),
+        makePos(row0.row.totalLength(), row0.space)
+    ),
+    blc.getRightPoints(),
+    isLeft = false,
+    targetAngle = rightAngle,
+    xOffset = blc.offsets.right
+    )
+
+
+
+
+  # result = shiftLines(blc, left, right)
+  result = (left, right, Pos())

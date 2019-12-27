@@ -80,4 +80,4 @@ proc generateSVG(blc: Block, outFile: string): void =
     copyFile(tmpFile, outFile)
 
 test.generateSVG("res.tmp.png")
-test.generateSCAD("res.tmp.scad")
+# test.generateSCAD("res.tmp.scad")

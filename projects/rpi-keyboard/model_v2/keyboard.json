@@ -6,7 +6,7 @@
          {"rows" : [
             { "row" : {
                 "keys": [
-                    {"key" : {"width": 1.5, "length": 2.0, "height": 1.0},
+                    {"key" : {"width": 2, "length": 2.0, "height": 1.0},
                      "space" : 0.0
                     },
                     {"key" : {"width": 1.5, "length": 2.0, "height": 1.0},

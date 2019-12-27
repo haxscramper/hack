@@ -205,11 +205,14 @@ proc makeControlPoints*(blc: Block): seq[XmlNode] =
       (
         block:
           let points = blc.getRightPoints()
-          echo &"Debug points {points}"
           points.mapIt(it.toSVG('r', makeStyle({"fill" : "red"})))
+      ) &
+      <-> "Left points" &
+      (
+        block:
+          let points = blc.getLeftPoints()
+          points.mapIt(it.toSVG('r', makeStyle({"fill" : "blue"})))
       )
-      # <-> "Left points" &
-      # blc.getLeftPoints()[1..^1].mapIt(it.toSVG('l'))
 
 
 proc toSVG*(blc: Block): XmlNode =
