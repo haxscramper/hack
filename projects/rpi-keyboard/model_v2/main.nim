@@ -1,4 +1,5 @@
 import shell
+import json
 import math
 import strformat
 import sequtils
@@ -10,38 +11,43 @@ import svg_generation
 import keyboard
 import scad_generation
 
-let test = Block(
-  rows: @[
-    (Row(keys: @[
-      (Key(width: 1.5, length: 2.0, height: 1.0), 0.0),
-      (Key(width: 1.5, length: 2.0, height: 1.0), 1.0),
-      (Key(width: 1.5, length: 2.0, height: 1.0), 1.0),
-      (Key(width: 1.5, length: 2.0, height: 1.0), 1.0)
-    ]), 0.0),
-    (Row(keys: @[
-      (Key(width: 1.5, length: 2.0, height: 1.0), 3.0),
-      (Key(width: 1.5, length: 2.0, height: 1.0), 1.0),
-      (Key(width: 1.5, length: 2.0, height: 1.0), 1.0),
-      (Key(width: 1.5, length: 2.0, height: 1.0), 1.0),
-      (Key(width: 1.5, length: 2.0, height: 1.0), 1.0),
-      (Key(width: 1.5, length: 2.0, height: 1.0), 1.0),
-    ]), 1.0),
-    (Row(keys: @[
-      (Key(width: 1.5, length: 2.0, height: 1.0), -1.0),
-      (Key(width: 1.5, length: 2.0, height: 1.0), 1.0),
-      (Key(width: 1.5, length: 2.0, height: 1.0), 1.0),
-      (Key(width: 1.5, length: 2.0, height: 1.0), 1.0),
-      (Key(width: 1.5, length: 2.0, height: 1.0), 1.0),
-      (Key(width: 1.5, length: 2.0, height: 1.0), 1.0),
-    ]), 1.0),
-],
-  angles: (PI/2 + PI/18, PI/2 - PI/18),
-  offsets: (0.2, 0.2),
-  dimensions: (
-    width: 10.0,
-    lowerLen: 22.0
-  )
-)
+let kbd = readFile("keyboard.json").
+  parseJson().
+  to(Keyboard).
+  toRadianAngles()
+
+let test = kbd.blocks[0].blc # Block(
+#   rows: @[
+#     (Row(keys: @[
+#       (Key(width: 1.5, length: 2.0, height: 1.0), 0.0),
+#       (Key(width: 1.5, length: 2.0, height: 1.0), 1.0),
+#       (Key(width: 1.5, length: 2.0, height: 1.0), 1.0),
+#       (Key(width: 1.5, length: 2.0, height: 1.0), 1.0)
+#     ]), 0.0),
+#     (Row(keys: @[
+#       (Key(width: 1.5, length: 2.0, height: 1.0), 3.0),
+#       (Key(width: 1.5, length: 2.0, height: 1.0), 1.0),
+#       (Key(width: 1.5, length: 2.0, height: 1.0), 1.0),
+#       (Key(width: 1.5, length: 2.0, height: 1.0), 1.0),
+#       (Key(width: 1.5, length: 2.0, height: 1.0), 1.0),
+#       (Key(width: 1.5, length: 2.0, height: 1.0), 1.0),
+#     ]), 1.0),
+#     (Row(keys: @[
+#       (Key(width: 1.5, length: 2.0, height: 1.0), -1.0),
+#       (Key(width: 1.5, length: 2.0, height: 1.0), 1.0),
+#       (Key(width: 1.5, length: 2.0, height: 1.0), 1.0),
+#       (Key(width: 1.5, length: 2.0, height: 1.0), 1.0),
+#       (Key(width: 1.5, length: 2.0, height: 1.0), 1.0),
+#       (Key(width: 1.5, length: 2.0, height: 1.0), 1.0),
+#     ]), 1.0),
+# ],
+#   angles: (PI/2 + PI/18, PI/2 - PI/18),
+#   offsets: (0.2, 0.2),
+#   dimensions: (
+#     width: 10.0,
+#     lowerLen: 22.0
+#   )
+# )
 
 
 proc generateSCAD(blc: Block, outFile: string): void =

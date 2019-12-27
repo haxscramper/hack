@@ -84,10 +84,23 @@ Parameters for the block connectors
     offsets*: tuple[left, right: float]
     rotation*: int
     dimensions*: tuple[width, lowerLen: float]
-    interlocks*: tuple[left, right, upper, lower: Option[Interlock]]
 
   Keyboard* = object
-    blocks*: seq[tuple[blc: Block, pos: (float, float)]]
+    interlockConf*: tuple[
+      depth: float
+    ]
+    blocks*: seq[tuple[blc: Block, pos: Pos]]
+
+proc toRadianAngles*(blc: Block): Block =
+  result = blc
+  result.angles.left = result.angles.left.degToRad()
+  result.angles.right = result.angles.right.degToRad()
+
+proc toRadianAngles*(kbd: Keyboard): Keyboard =
+  result.blocks = kbd.blocks.mapIt((
+    blc: it.blc.toRadianAngles,
+    pos: it.pos
+  ))
 
 proc width*(row: Row): float =
   row.keys.mapIt(it.key.width).max()
