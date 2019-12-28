@@ -16,7 +16,7 @@ let kbd = readFile("keyboard.json").
   to(Keyboard).
   toRadianAngles()
 
-let test = kbd.blocks[0].blc
+let test = kbd.blocks[0]
 
 proc generateSCAD(kbd: Keyboard, outFile: string): void =
   let scadBody = kbd.toSCAD().addSCADImports().toString()

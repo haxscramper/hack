@@ -44,10 +44,10 @@ type
     w*, d*, h*: float
 
 
-proc makePos3*(x = 0.0, y = 0.0, z = 0.0): Pos3 =
+proc makePos3*(x: float = 0.0, y: float = 0.0, z: float = 0.0): Pos3 =
   Pos3(x: x, y: y, z: z)
 
-proc makePos3*(x = 0, y = 0, z = 0): Pos3 =
+func makePos3*(x: int = 0, y: int = 0, z: int = 0): Pos3 =
   Pos3(x: x.toFloat(), y: y.toFloat(), z: z.toFloat())
 
 proc makeSize3*(w,d,h: int | float): Size3 =
@@ -60,7 +60,13 @@ proc makeSize3*(w,d,h: int | float): Size3 =
   else:
     Size3(w: w, d: d, h: h)
 
-proc toPos3*(pos: Pos): Pos3 = Pos3(x: pos.x, y: pos.y, z: 0)
+func toPos3*(pos: Pos): Pos3 = Pos3(x: pos.x, y: pos.y, z: 0)
 
-proc `+`*(a, b: Pos3): Pos3 = makePos3(a.x + b.x, a.y + b.y, a.z + b.z)
+func `+`*(a, b: Pos3): Pos3 = makePos3(a.x + b.x, a.y + b.y, a.z + b.z)
+func magnitude*(a: Pos3): float =
+  sqrt(a.x ^ 2 + a.y ^ 2 + a.z ^ 2)
 
+func `/`*(a: Pos3, denom: float): Pos3 =
+  makePos3(a.x / denom, a.y / denom, a.z / denom)
+
+func norm*(a: Pos3): Pos3 = a / a.magnitude()

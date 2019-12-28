@@ -216,14 +216,12 @@ proc toSCAD(row: Row): tuple[core, boundary: ScadNode] =
       }).
     setColor("Red", 0.01)
 
-proc toSCAD*(blc: Block): ScadNode =
-  ## Generate openscad code for simplified block top. Used for testing
-  ## generated 3d model, not for actual 3d model.
-  let (left, right, coreShift) = blc.getFitLines()
+proc toSCAD*(blc: PositionedBlock): ScadNode =
+  let (left, right, coreShift) = blc.hull
   var spacing = 0.0
   let rows: seq[tuple[
     shift: Pos3, core, boundary: ScadNode
-  ]] = blc.rows.mapIt(
+  ]] = blc.blc.rows.mapIt(
     block:
       let (core, boundary) = it.row.toSCAD()
       spacing += it.space
@@ -254,16 +252,20 @@ proc toSCAD*(blc: Block): ScadNode =
     scadUnion(
       rows.mapIt(it.core.scadTranslate(it.shift + coreShift.toPos3())))
 
+
+
 proc toSCAD*(kbd: Keyboard): ScadNode =
-  var blocksScad: seq[ScadNode]
-  for (blc, pos) in kbd.blocks:
-    blocksScad &=
-      blc.
-      toSCAD().
-      scadTranslate(pos.toPos3()).
-      makeGroupWith(
-        [makeScadComment(&"Block at position {pos}")],
-        reverse = true)
+  let positioned = kbd.arrangeBlocks()
+  var blocksScad: seq[ScadNode] = positioned.map(toSCAD)
+  # for blc in kbd.blocks:
+
+  #   blocksScad &=
+  #     blc.
+  #     toSCAD().
+  #     scadTranslate(pos.toPos3()).
+  #     makeGroupWith(
+  #       [makeScadComment(&"Block at position {pos}")],
+  #       reverse = true)
 
   result = blocksScad.makeGroup()
 

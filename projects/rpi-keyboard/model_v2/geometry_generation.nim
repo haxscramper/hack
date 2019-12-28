@@ -5,11 +5,12 @@
 import geometry
 import keyboard
 import sequtils
-import hmisc/halgorithm, hmisc/helpers
+import hmisc/[halgorithm, helpers]
 import math
 import strformat
 import strutils
 import common
+import tables
 
 
 proc getLeftPoints*(blc: Block): seq[Pos] =
@@ -239,3 +240,34 @@ proc getFitLines*(blc: Block): (Line, Line, Pos) =
 
   result = shiftLines(blc, left, right)
   # result = (left, right, Pos())
+
+proc arrangeBlocks*(kbd: Keyboard): seq[PositionedBlock] =
+  type RelPos = enum onTop, onBottom, onLeft, onRight
+  # Find out which blocks are positioned around any given one
+  var relPositions: Table[int, seq[(RelPos, int, float)]]
+
+  for current in kbd.blocks:
+    let currPos = current.positioning
+    iflet (pos = currPos.leftOf):
+      relPositions[currPos.id].add((onRight, pos.id, pos.offset))
+
+    iflet (pos = currPos.rightOf):
+      relPositions[currPos.id].add((onLeft, pos.id, pos.offset))
+
+    iflet (pos = currPos.aboveOf):
+      relPositions[currPos.id].add((onBottom, pos.id, pos.offset))
+
+    iflet (pos = currPos.belowOf):
+      relPositions[currPos.id].add((onTop, pos.id, pos.offset))
+
+  let (start, other) =
+    block:
+      let tmp = kbd.blocks.mapIt(PositionedBlock(
+        blc: it,
+        hull: it.getFitLines()))
+
+      tmp.sortedByIt(it.blc.positioning.id)
+      .splitList()
+
+  var arranged = {start.blc.positioning.id : start}.newTable()
+  # for blc in other:
