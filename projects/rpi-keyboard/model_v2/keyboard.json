@@ -118,8 +118,8 @@
          "positioning" : {
              "id" : 2,
              "relativeTo" : 1,
-             "pos" : "rpLeft",
-             "offset" : 0
+             "pos" : "rpTop",
+             "offset" : 0.25
          },
          "dimensions": {"width": 8.0, "lowerLen": 22.0}
          },

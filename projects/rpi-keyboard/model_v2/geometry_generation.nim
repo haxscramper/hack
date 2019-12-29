@@ -83,7 +83,7 @@ proc getFitPoints(
   decho &"Sorted points: {sortedFitPoints}"
   decho &"Max point is {maxPoint}"
 
-  let endP = Vec( # Vecition for the line endpoint. It does not have
+  let endP = Vec( # Position for the line endpoint. It does not have
                   # to account for coorrect line length: it will be
                   # fixed later when required y coordinates will be
                   # available
@@ -247,23 +247,23 @@ proc addTable[K, V](t: var Table[K, seq[V]], key: K, val: V) =
   else:
     t[key] = @[val]
 
-proc arrangeBlocks*(kbd: Keyboard): seq[VecitionedBlock] =
-  # var relVecitions: Table[int, seq[(RelVec, int, float)]]
+proc arrangeBlocks*(kbd: Keyboard): seq[PositionedBlock] =
+  # var relPositions: Table[int, seq[(RelVec, int, float)]]
 
   # for current in kbd.blocks:
   #   let curr = current.positioning
-  #   relVecitions.addTable curr.id, (curr.pos.invert, curr.id, curr.offset)
+  #   relPositions.addTable curr.id, (curr.pos.invert, curr.id, curr.offset)
 
   let (start, other) =
     block:
-      let tmp = kbd.blocks.mapIt(VecitionedBlock(
+      let tmp = kbd.blocks.mapIt(PositionedBlock(
         blc: it,
         hull: it.getFitLines()))
 
       tmp.sortedByIt(it.blc.positioning.id)
       .splitList()
 
-  var unarranged: Table[int, VecitionedBlock]
+  var unarranged: Table[int, PositionedBlock]
   for blc in other:
     unarranged[blc.blc.positioning.id] = blc
 
@@ -294,10 +294,24 @@ proc arrangeBlocks*(kbd: Keyboard): seq[VecitionedBlock] =
         ).toLine()
 
         let stationVec = stationLine.toVec()
+        let shift = (stationLine.magnitude() - movedLine.magnitude())
+        let originPos =
+          stationary.position +
+          stationary.hull.left.toVec() +
+          (shift / 2) * stationLine.toVec().norm() +
+          stationLine.toVec().perp().norm() * movedBlock.blc.positioning.offset
 
-        discard
+        movedBlock.position = originPos
+        movedBlock.rotation = stationary.rotation
       of rpBottom: discard
 
     dlog "Arranged id", blId
     arranged[blId] = movedBlock
     unarranged.del blId
+
+  for id, blc in arranged:
+    result &= blc
+
+  defer:
+    for blc in result:
+      dlog "id:", blc.blc.positioning.id, "@", blc.position

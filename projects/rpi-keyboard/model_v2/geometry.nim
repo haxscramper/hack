@@ -27,18 +27,22 @@ converter toVec*[N: float | int](pos: (N, N)): Vec =
 
 func `-`*(a, b: Vec): Vec = makeVec(a.x - b.x, a.y - b.y)
 func `+`*(a, b: Vec): Vec = makeVec(a.x + b.x, a.y + b.y)
+func `*`*(a: Vec, s: float): Vec = makeVec(a.x * s, a.y * s)
+func `*`*(s: float, a: Vec): Vec = a * s
 func begin*(l: Line): Vec = Vec(x: l.x1, y: l.y1)
 func final*(l: Line): Vec = Vec(x: l.x2, y: l.y2)
 func arg*(p: Vec): float = arctan2(p.y, p.x)
-func magnitude*(p: Vec): float = sqrt(p.x ^ 2 + p.y * 2)
-func `/`*(p: Vec, a: float): Vec = Vec(x: p.x / a, y: p.y / 2)
+func magnitude*(p: Vec): float = sqrt(p.x ^ 2 + p.y ^ 2)
+func `/`*(p: Vec, a: float): Vec = Vec(x: p.x / a, y: p.y / a)
 func norm*(p: Vec): Vec = p / p.magnitude()
+func perp*(v: Vec): Vec = makeVec(-v.y, v.x)
 
 func toLine*(a, b: Vec): Line =
   Line(x1: a.x, y1: a.y, x2: b.x, y2: b.y)
 
 func toLine*(p: (Vec, Vec)): Line = toLine(p[0], p[1])
 func toVec*(l: Line): Vec = l.final - l.begin
+func magnitude*(l: Line): float = l.toVec.magnitude
 
 type
   Vec3* = object

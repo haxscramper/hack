@@ -131,6 +131,9 @@ proc scadTranslate(node: ScadNode, x = 0.0, y = 0.0, z = 0.0): ScadNode =
 proc scadTranslate(node: ScadNode, pos: Vec3): ScadNode =
   scadTranslate(node, x = pos.x, y = pos.y, z = pos.z)
 
+proc scadTranslate(node: ScadNode, pos: Vec): ScadNode =
+  scadTranslate(node, x = pos.x, y = pos.y, 0)
+
 proc scadRotate(
   node: ScadNode,
   angle: float,
@@ -216,7 +219,7 @@ proc toSCAD(row: Row): tuple[core, boundary: ScadNode] =
       }).
     setColor("Red", 0.01)
 
-proc toSCAD*(blc: VecitionedBlock): ScadNode =
+proc toSCAD*(blc: PositionedBlock): ScadNode =
   let (left, right, coreShift) = blc.hull
   var spacing = 0.0
   let rows: seq[tuple[
@@ -246,11 +249,13 @@ proc toSCAD*(blc: VecitionedBlock): ScadNode =
     scadOperator("linear_extrude", {"height" : "1"})
 
   result =
-    blockBody.
-    scadSubtract(
-      rows.mapIt(it.boundary.scadTranslate(it.shift + coreShift.toVec3()))).
-    scadUnion(
+    blockBody
+    .scadSubtract(
+      rows.mapIt(it.boundary.scadTranslate(it.shift + coreShift.toVec3())))
+    .scadUnion(
       rows.mapIt(it.core.scadTranslate(it.shift + coreShift.toVec3())))
+    .scadRotate(blc.rotation)
+    .scadTranslate(blc.position)
 
 
 

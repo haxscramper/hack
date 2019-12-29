@@ -46,7 +46,7 @@ type
 Parameters for the block connectors
 
 :position: Coordinates of the *bottom right* corner of the block
-:direction: Vector placed at `position`
+:direction: Postor placed at `position`
 :size: Bounding box for interlocing part
 :oddHoles: if `true` then holes start at 'bump'.
 
@@ -91,7 +91,7 @@ Parameters for the block connectors
     dimensions*: tuple[width, lowerLen: float]
     positioning*: tuple[id: int, pos: RelVec, offset: float, relativeTo: int]
 
-  VecitionedBlock* = object
+  PositionedBlock* = object
     ##[
 :blc: Body of the positioned block
 :rotation: rotation angle (in radians) around origin of the block.
