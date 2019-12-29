@@ -128,7 +128,7 @@ proc scadOperator(
 proc scadTranslate(node: ScadNode, x = 0.0, y = 0.0, z = 0.0): ScadNode =
   makeScadTree("translate", [node], {"v" : &"[{x}, {y}, {z}]"})
 
-proc scadTranslate(node: ScadNode, pos: Pos3): ScadNode =
+proc scadTranslate(node: ScadNode, pos: Vec3): ScadNode =
   scadTranslate(node, x = pos.x, y = pos.y, z = pos.z)
 
 proc scadRotate(
@@ -155,7 +155,7 @@ proc makeCube(size: Size3, center: bool = false): ScadNode =
     "center": $center
   })
 
-proc makeCube(size: Size3, center: Pos3): ScadNode =
+proc makeCube(size: Size3, center: Vec3): ScadNode =
   makeCube(size, false).scadTranslate(center)
 
 
@@ -187,12 +187,12 @@ proc toSCAD(row: Row): tuple[core, boundary: ScadNode] =
   var xOffset = -row.indent # negative to ignore indent on the first
                             # key, it will be added on the block level
   let keys: seq[tuple[
-    shift: Pos3, core: ScadNode, boundary: ScadNode
+    shift: Vec3, core: ScadNode, boundary: ScadNode
   ]] = row.keys.mapIt(
     block:
       let (core, boundary) = it.key.toSCAD()
       xOffset += it.space
-      let tmp = (makePos3(x = xOffset), core, boundary)
+      let tmp = (makeVec3(x = xOffset), core, boundary)
       xOffset += it.key.length
       tmp
   )
@@ -216,17 +216,17 @@ proc toSCAD(row: Row): tuple[core, boundary: ScadNode] =
       }).
     setColor("Red", 0.01)
 
-proc toSCAD*(blc: PositionedBlock): ScadNode =
+proc toSCAD*(blc: VecitionedBlock): ScadNode =
   let (left, right, coreShift) = blc.hull
   var spacing = 0.0
   let rows: seq[tuple[
-    shift: Pos3, core, boundary: ScadNode
+    shift: Vec3, core, boundary: ScadNode
   ]] = blc.blc.rows.mapIt(
     block:
       let (core, boundary) = it.row.toSCAD()
       spacing += it.space
       let tmp = (
-        makePos3(x = it.row.indent, y = spacing),
+        makeVec3(x = it.row.indent, y = spacing),
         core,
         boundary
       )
@@ -234,7 +234,7 @@ proc toSCAD*(blc: PositionedBlock): ScadNode =
       tmp
   )
 
-  let polygonPoints: seq[Pos] =
+  let polygonPoints: seq[Vec] =
     @[left.begin, left.final, right.final, right.begin]
 
   let blockBody =
@@ -248,9 +248,9 @@ proc toSCAD*(blc: PositionedBlock): ScadNode =
   result =
     blockBody.
     scadSubtract(
-      rows.mapIt(it.boundary.scadTranslate(it.shift + coreShift.toPos3()))).
+      rows.mapIt(it.boundary.scadTranslate(it.shift + coreShift.toVec3()))).
     scadUnion(
-      rows.mapIt(it.core.scadTranslate(it.shift + coreShift.toPos3())))
+      rows.mapIt(it.core.scadTranslate(it.shift + coreShift.toVec3())))
 
 
 
@@ -262,7 +262,7 @@ proc toSCAD*(kbd: Keyboard): ScadNode =
   #   blocksScad &=
   #     blc.
   #     toSCAD().
-  #     scadTranslate(pos.toPos3()).
+  #     scadTranslate(pos.toVec3()).
   #     makeGroupWith(
   #       [makeScadComment(&"Block at position {pos}")],
   #       reverse = true)

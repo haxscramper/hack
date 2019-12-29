@@ -13,23 +13,23 @@ import common
 import tables
 
 
-proc getLeftPoints*(blc: Block): seq[Pos] =
-  var points: seq[Pos]
+proc getLeftPoints*(blc: Block): seq[Vec] =
+  var points: seq[Vec]
   var rowSpacing = 0.0
 
   for it in blc.rows:
     rowSpacing += it.space
     points &= @[
-      makePos(it.row.indent, rowSpacing),
-      makePos(it.row.indent, rowSpacing + it.row.keys[0].key.width)
+      makeVec(it.row.indent, rowSpacing),
+      makeVec(it.row.indent, rowSpacing + it.row.keys[0].key.width)
     ]
 
     rowSpacing += it.row.width()
 
   result = points
 
-proc getRightPoints*(blc: Block, noFirstRow = false): seq[Pos] =
-  var points: seq[Pos]
+proc getRightPoints*(blc: Block, noFirstRow = false): seq[Vec] =
+  var points: seq[Vec]
   var rowSpacing = 0.0
 
   for idx, it in blc.rows:
@@ -38,8 +38,8 @@ proc getRightPoints*(blc: Block, noFirstRow = false): seq[Pos] =
 
     if not noFirstRow or idx != 0:
       points &= @[
-        makePos(rowLength, rowSpacing),
-        makePos(rowLength, rowSpacing + it.row.keys[^1].key.width)
+        makeVec(rowLength, rowSpacing),
+        makeVec(rowLength, rowSpacing + it.row.keys[^1].key.width)
       ]
 
     rowSpacing += it.row.width()
@@ -49,13 +49,13 @@ proc getRightPoints*(blc: Block, noFirstRow = false): seq[Pos] =
 
 
 proc getFitPoints(
-  pivots: tuple[upper, lower: Pos],
-  pointsIn: seq[Pos],
+  pivots: tuple[upper, lower: Vec],
+  pointsIn: seq[Vec],
   isLeft: static[bool],
   lineAngle: float,
   xOffset: float,
   gridSnap: float = 1
-     ): (tuple[s, e: Pos], seq[Pos]) =
+     ): (tuple[s, e: Vec], seq[Vec]) =
   ## Get control points for fitting line into. If offset is not `none`
   ## it will be added to resulting points in direction dependent on
   ## `isLeft` (if left then x will be subtracted, otherwise added).
@@ -83,7 +83,7 @@ proc getFitPoints(
   decho &"Sorted points: {sortedFitPoints}"
   decho &"Max point is {maxPoint}"
 
-  let endP = Pos( # Position for the line endpoint. It does not have
+  let endP = Vec( # Vecition for the line endpoint. It does not have
                   # to account for coorrect line length: it will be
                   # fixed later when required y coordinates will be
                   # available
@@ -92,7 +92,7 @@ proc getFitPoints(
   )
 
 
-  var fit: tuple[s, e: Pos] = (maxPoint, endP)
+  var fit: tuple[s, e: Vec] = (maxPoint, endP)
 
   decho fit
   fit.s.x += xOffset * tern(isLeft, -1, 1)
@@ -106,8 +106,8 @@ proc getFitPoints(
 
 
 proc fitLine(
-  pivots: tuple[upper, lower: Pos],
-  pointsIn: seq[Pos],
+  pivots: tuple[upper, lower: Vec],
+  pointsIn: seq[Vec],
   isLeft: static[bool],
   targetAngle: float,
   xOffset: float
@@ -162,7 +162,7 @@ the other on one side of the plane.
 
   decho &"Fit line: ({result.x1} {result.y1}) ({result.x2} {result.y2})"
 
-proc shiftLines(blc: Block, left, right: Line): (Line, Line, Pos) =
+proc shiftLines(blc: Block, left, right: Line): (Line, Line, Vec) =
   let
     width = blc.dimensions.width
     leftAngle = blc.angles.left
@@ -189,7 +189,7 @@ proc shiftLines(blc: Block, left, right: Line): (Line, Line, Pos) =
     y2: left.y1 + sin(rightAngle) * width
   )
 
-  let startShift = Pos(
+  let startShift = Vec(
     x: (shiftedRight.x1 - right.x1) / 2,
     y: (shiftedRight.y2 - right.y2) / 2
   )
@@ -197,7 +197,7 @@ proc shiftLines(blc: Block, left, right: Line): (Line, Line, Pos) =
   result = (shiftedLeft, shiftedRight, startShift)
 
 
-proc getFitLines*(blc: Block): (Line, Line, Pos) =
+proc getFitLines*(blc: Block): (Line, Line, Vec) =
   ## Calculate coordinates of the left and right edge of the block
   ## boundary
 
@@ -215,8 +215,8 @@ proc getFitLines*(blc: Block): (Line, Line, Pos) =
   let rowN = blc.rows[^1]
   let left =
     fitLine((
-        makePos(0.0, row0.space + row0.row.width),
-        makePos(0.0, row0.space)
+        makeVec(0.0, row0.space + row0.row.width),
+        makeVec(0.0, row0.space)
     ),
     blc.getLeftPoints(),
     isLeft = true,
@@ -226,8 +226,8 @@ proc getFitLines*(blc: Block): (Line, Line, Pos) =
 
   let right =
     fitLine((
-        makePos(row0.row.totalLength(), row0.space + row0.row.width),
-        makePos(row0.row.totalLength(), row0.space)
+        makeVec(row0.row.totalLength(), row0.space + row0.row.width),
+        makeVec(row0.row.totalLength(), row0.space)
     ),
     blc.getRightPoints(),
     isLeft = false,
@@ -239,7 +239,7 @@ proc getFitLines*(blc: Block): (Line, Line, Pos) =
 
 
   result = shiftLines(blc, left, right)
-  # result = (left, right, Pos())
+  # result = (left, right, Vec())
 
 proc addTable[K, V](t: var Table[K, seq[V]], key: K, val: V) =
   if t.hasKey(key):
@@ -247,23 +247,23 @@ proc addTable[K, V](t: var Table[K, seq[V]], key: K, val: V) =
   else:
     t[key] = @[val]
 
-proc arrangeBlocks*(kbd: Keyboard): seq[PositionedBlock] =
-  # var relPositions: Table[int, seq[(RelPos, int, float)]]
+proc arrangeBlocks*(kbd: Keyboard): seq[VecitionedBlock] =
+  # var relVecitions: Table[int, seq[(RelVec, int, float)]]
 
   # for current in kbd.blocks:
   #   let curr = current.positioning
-  #   relPositions.addTable curr.id, (curr.pos.invert, curr.id, curr.offset)
+  #   relVecitions.addTable curr.id, (curr.pos.invert, curr.id, curr.offset)
 
   let (start, other) =
     block:
-      let tmp = kbd.blocks.mapIt(PositionedBlock(
+      let tmp = kbd.blocks.mapIt(VecitionedBlock(
         blc: it,
         hull: it.getFitLines()))
 
       tmp.sortedByIt(it.blc.positioning.id)
       .splitList()
 
-  var unarranged: Table[int, PositionedBlock]
+  var unarranged: Table[int, VecitionedBlock]
   for blc in other:
     unarranged[blc.blc.positioning.id] = blc
 
@@ -293,7 +293,7 @@ proc arrangeBlocks*(kbd: Keyboard): seq[PositionedBlock] =
           stationary.hull.right.final
         ).toLine()
 
-        let stationVec = stationLine.toPos()
+        let stationVec = stationLine.toVec()
 
         discard
       of rpBottom: discard

@@ -3,7 +3,7 @@
 import math
 
 type
-  Pos* = object
+  Vec* = object
     x*, y*: float
 
   Line* = object
@@ -11,52 +11,52 @@ type
 
 
 
-proc makePos*(x, y: int | float): Pos =
+proc makeVec*(x, y: int | float): Vec =
   when x is int:
-    Pos(x: x.toFloat(), y: y.toFloat())
+    Vec(x: x.toFloat(), y: y.toFloat())
   else:
-    Pos(x: x, y: y)
+    Vec(x: x, y: y)
 
-converter toPos*[N: float | int](pos: (N, N)): Pos =
+converter toVec*[N: float | int](pos: (N, N)): Vec =
   when N is int:
-    Pos(x: pos[0].toFloat(), y: pos[1].toFloat())
+    Vec(x: pos[0].toFloat(), y: pos[1].toFloat())
   else:
-    Pos(x: pos[0], y: pos[1])
+    Vec(x: pos[0], y: pos[1])
 
 
 
-func `-`*(a, b: Pos): Pos = makePos(a.x - b.x, a.y - b.y)
-func `+`*(a, b: Pos): Pos = makePos(a.x + b.x, a.y + b.y)
-func begin*(l: Line): Pos = Pos(x: l.x1, y: l.y1)
-func final*(l: Line): Pos = Pos(x: l.x2, y: l.y2)
-func arg*(p: Pos): float = arctan2(p.y, p.x)
-func magnitude*(p: Pos): float = sqrt(p.x ^ 2 + p.y * 2)
-func `/`*(p: Pos, a: float): Pos = Pos(x: p.x / a, y: p.y / 2)
-func norm*(p: Pos): Pos = p / p.magnitude()
+func `-`*(a, b: Vec): Vec = makeVec(a.x - b.x, a.y - b.y)
+func `+`*(a, b: Vec): Vec = makeVec(a.x + b.x, a.y + b.y)
+func begin*(l: Line): Vec = Vec(x: l.x1, y: l.y1)
+func final*(l: Line): Vec = Vec(x: l.x2, y: l.y2)
+func arg*(p: Vec): float = arctan2(p.y, p.x)
+func magnitude*(p: Vec): float = sqrt(p.x ^ 2 + p.y * 2)
+func `/`*(p: Vec, a: float): Vec = Vec(x: p.x / a, y: p.y / 2)
+func norm*(p: Vec): Vec = p / p.magnitude()
 
-func toLine*(a, b: Pos): Line =
+func toLine*(a, b: Vec): Line =
   Line(x1: a.x, y1: a.y, x2: b.x, y2: b.y)
 
-func toLine*(p: (Pos, Pos)): Line = toLine(p[0], p[1])
-func toPos*(l: Line): Pos = l.final - l.begin
+func toLine*(p: (Vec, Vec)): Line = toLine(p[0], p[1])
+func toVec*(l: Line): Vec = l.final - l.begin
 
 type
-  Pos3* = object
+  Vec3* = object
     x*, y*, z*: float
 
   Line3* = object
-    s*, e*: Pos3
+    s*, e*: Vec3
 
   Size3* = object
     w*, d*, h*: float
 
 
-proc makePos3*(x: float = 0.0, y: float = 0.0, z: float = 0.0): Pos3 =
-  Pos3(x: x, y: y, z: z)
+proc makeVec3*(x: float = 0.0, y: float = 0.0, z: float = 0.0): Vec3 =
+  Vec3(x: x, y: y, z: z)
 
 
-func makePos3*(x: int = 0, y: int = 0, z: int = 0): Pos3 =
-  Pos3(x: x.toFloat(), y: y.toFloat(), z: z.toFloat())
+func makeVec3*(x: int = 0, y: int = 0, z: int = 0): Vec3 =
+  Vec3(x: x.toFloat(), y: y.toFloat(), z: z.toFloat())
 
 proc makeSize3*(w,d,h: int | float): Size3 =
   when w is int:
@@ -68,25 +68,25 @@ proc makeSize3*(w,d,h: int | float): Size3 =
   else:
     Size3(w: w, d: d, h: h)
 
-func toPos3*(pos: Pos): Pos3 = Pos3(x: pos.x, y: pos.y, z: 0)
+func toVec3*(pos: Vec): Vec3 = Vec3(x: pos.x, y: pos.y, z: 0)
 
-func `+`*(a, b: Pos3): Pos3 = makePos3(a.x + b.x, a.y + b.y, a.z + b.z)
-func magnitude*(a: Pos3): float =
+func `+`*(a, b: Vec3): Vec3 = makeVec3(a.x + b.x, a.y + b.y, a.z + b.z)
+func magnitude*(a: Vec3): float =
   sqrt(a.x ^ 2 + a.y ^ 2 + a.z ^ 2)
 
-func `/`*(a: Pos3, denom: float): Pos3 =
-  makePos3(a.x / denom, a.y / denom, a.z / denom)
+func `/`*(a: Vec3, denom: float): Vec3 =
+  makeVec3(a.x / denom, a.y / denom, a.z / denom)
 
-func norm*(a: Pos3): Pos3 = a / a.magnitude()
+func norm*(a: Vec3): Vec3 = a / a.magnitude()
 
 type
-  RelPos* = enum
+  RelVec* = enum
     rpLeft
     rpRight
     rpBottom
     rpTop
 
-func invert*(pos: RelPos): RelPos =
+func invert*(pos: RelVec): RelVec =
   case pos:
     of rpLeft: rpRight
     of rpRight: rpLeft

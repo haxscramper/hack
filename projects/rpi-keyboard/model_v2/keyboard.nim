@@ -57,8 +57,8 @@ Parameters for the block connectors
 
     ]##
 
-    position*: Pos
-    direction*: Pos
+    position*: Vec
+    direction*: Vec
     size*: Size3
     positive*: bool
     oddHoles*: bool
@@ -89,9 +89,9 @@ Parameters for the block connectors
     angles*: tuple[left, right: float]
     offsets*: tuple[left, right: float]
     dimensions*: tuple[width, lowerLen: float]
-    positioning*: tuple[id: int, pos: RelPos, offset: float, relativeTo: int]
+    positioning*: tuple[id: int, pos: RelVec, offset: float, relativeTo: int]
 
-  PositionedBlock* = object
+  VecitionedBlock* = object
     ##[
 :blc: Body of the positioned block
 :rotation: rotation angle (in radians) around origin of the block.
@@ -110,8 +110,8 @@ Parameters for the block connectors
     ]##
     blc*: Block
     rotation*: float
-    position*: Pos
-    hull*: tuple[left, right: Line, coreShift: Pos]
+    position*: Vec
+    hull*: tuple[left, right: Line, coreShift: Vec]
     interlocks*: tuple[
       left: Option[Interlock],
       right: Option[Interlock],

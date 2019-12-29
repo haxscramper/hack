@@ -99,7 +99,7 @@ proc makeStyle*(input: varargs[
     input.mapIt(&"{it.key}: {it.val};").join(" ")
 
 
-proc makeText*(text: string, p: Pos, textClass = "coordinate"): XmlNode =
+proc makeText*(text: string, p: Vec, textClass = "coordinate"): XmlNode =
   ## Create text at position `p`
   makeSVG(
     "text",
@@ -148,7 +148,7 @@ proc toSVG*(row: Row): XmlNode =
 
 
 proc toSVG*(
-  p: Pos,
+  p: Vec,
   annotate: static[char] = 'n',
   style: Option[string] = none(string)
           ): XmlNode =
@@ -178,7 +178,7 @@ proc toSVG*(
     else: circle
 
 proc toSVG*(line: Line): XmlNode =
-  let a: Pos = (0,0)
+  let a: Vec = (0,0)
   makeSVG("line", {
       "x1" : line.x1.toSVGsize(),
       "y1" : line.y1.toSVGsize(),
