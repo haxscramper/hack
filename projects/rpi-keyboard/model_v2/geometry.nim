@@ -36,6 +36,11 @@ func magnitude*(p: Vec): float = sqrt(p.x ^ 2 + p.y ^ 2)
 func `/`*(p: Vec, a: float): Vec = Vec(x: p.x / a, y: p.y / a)
 func norm*(p: Vec): Vec = p / p.magnitude()
 func perp*(v: Vec): Vec = makeVec(-v.y, v.x)
+func flip*(v: Vec): Vec = makeVec(-v.x, -v.y)
+func rotate*(v: Vec, a: float): Vec =
+  makeVec(
+    v.x * cos(a) - v.y * sin(a),
+    v.x * sin(a) + v.y * cos(a))
 
 func toLine*(a, b: Vec): Line =
   Line(x1: a.x, y1: a.y, x2: b.x, y2: b.y)

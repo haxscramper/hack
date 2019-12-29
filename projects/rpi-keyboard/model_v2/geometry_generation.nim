@@ -172,8 +172,6 @@ proc shiftLines(blc: Block, left, right: Line): (Line, Line, Vec) =
 
   if lowerLen > blc.dimensions.lowerLen:
     raise newException(Exception, "targeted lower len is smaller than fitting one")
-  else:
-    dlog &"lower len is ok ({lowerLen})"
 
   let shiftedLeft = Line(
     x1: left.x1,
@@ -208,8 +206,6 @@ proc getFitLines*(blc: Block): (Line, Line, Vec) =
 
   if width < blc.width():
     raise newException(Exception, "targeted width is smaller than block width")
-  else:
-    dlog "width ok"
 
   let row0 = blc.rows[0]
   let rowN = blc.rows[^1]
@@ -247,13 +243,105 @@ proc addTable[K, V](t: var Table[K, seq[V]], key: K, val: V) =
   else:
     t[key] = @[val]
 
+
+func moveTopOf(movedBlock, stationary: PositionedBlock): PositionedBlock =
+  let movedLine = (
+    movedBlock.hull.left.begin,
+    movedBlock.hull.right.begin
+  ).toLine()
+
+  let stationLine = (
+    stationary.hull.left.final,
+    stationary.hull.right.final
+  ).toLine()
+
+  let stationVec = stationLine.toVec()
+  let shift = (stationLine.magnitude() - movedLine.magnitude())
+  let originPos =
+    stationary.position +
+    stationary.hull.left.toVec() +
+    (shift / 2) * stationLine.toVec().norm() +
+    stationLine.toVec().perp().norm() * movedBlock.blc.positioning.offset
+
+  result = movedBlock
+  result.position = originPos
+  result.rotation = stationary.rotation
+
+
+func moveLeftOf(movedBlock, stationary: PositionedBlock): PositionedBlock =
+  # let movedLine = movedBlock.hull.right
+  # let stationLine = stationary.hull.left
+
+  let origRotation =
+    stationary.rotation +
+    stationary.blc.angles.left -
+    movedBlock.blc.angles.right
+
+  let movedBottom = toLine(
+    movedBlock.hull.left.begin,
+    movedBlock.hull.right.begin)
+
+  let stationLeft = stationary.hull.left
+
+  let originPos =
+    stationary.position +
+    stationLeft.toVec().perp().norm() * movedBlock.blc.positioning.offset +
+    movedBottom.toVec().flip().rotate(origRotation)
+
+  result = movedBlock
+  result.position = originPos
+  result.rotation = origRotation
+
+func moveRightOf(movedBlock, stationary: PositionedBlock): PositionedBlock =
+  let movedLine = movedBlock.hull.left
+  let stationLine = stationary.hull.right
+
+  let originPos =
+    stationLine.begin() +
+    stationLine.toVec().perp().flip().norm() * movedBlock.blc.positioning.offset
+
+  let origRotation =
+    PI -
+    stationary.rotation -
+    stationary.blc.angles.left -
+    movedBlock.blc.angles.left
+
+  result = movedBlock
+  result.position = originPos
+  result.rotation = origRotation
+
+func moveBottomOf(movedBlock, stationary: PositionedBlock): PositionedBlock =
+  let movedLine = (
+    movedBlock.hull.left.final,
+    movedBlock.hull.right.final
+  ).toLine()
+
+  let stationLine = (
+    stationary.hull.left.final,
+    stationary.hull.right.final
+  ).toLine()
+
+  let stationVec = stationLine.toVec()
+  let shift = (stationLine.magnitude() - movedLine.magnitude())
+  let originPos =
+    stationary.position +
+    movedBlock.hull.left.toVec().flip() +
+    (shift / 2) * stationLine.toVec().norm() +
+    stationLine.toVec().perp().flip().norm() * movedBlock.blc.positioning.offset
+
+  result = movedBlock
+  result.position = originPos
+  result.rotation = stationary.rotation
+
+func moveRelativeTo(movedBlock, stationary: PositionedBlock): PositionedBlock =
+  case movedBlock.blc.positioning.pos:
+    of rpLeft: movedBlock.moveLeftOf stationary
+    of rpRight: movedBlock.moveRightOf stationary
+    of rpTop: movedBlock.moveTopOf stationary
+    of rpBottom: movedBlock.moveBottomOf stationary
+
+
 proc arrangeBlocks*(kbd: Keyboard): seq[PositionedBlock] =
-  # var relPositions: Table[int, seq[(RelVec, int, float)]]
-
-  # for current in kbd.blocks:
-  #   let curr = current.positioning
-  #   relPositions.addTable curr.id, (curr.pos.invert, curr.id, curr.offset)
-
   let (start, other) =
     block:
       let tmp = kbd.blocks.mapIt(PositionedBlock(
@@ -269,44 +357,16 @@ proc arrangeBlocks*(kbd: Keyboard): seq[PositionedBlock] =
 
   var arranged = {start.blc.positioning.id : start}.newTable()
   for blId in toSeq(unarranged.keys()):
-    dlog "Arranging block ", blId
+    # dlog "Arranging block ", blId
     var movedBlock = unarranged[blId]
     let putAround = movedBlock.blc.positioning.relativeTo
-    if not arranged.hasKey(putAround):
-      dlog "Block with id", putAround, "has not been arranged yet"
-      continue
-    else:
-      dlog "Putting it relative to id", putAround
+    # if not arranged.hasKey(putAround):
+    #   dlog "Block with id", putAround, "has not been arranged yet"
+    #   continue
+    # else:
+    #   dlog "Putting it relative to id", putAround
 
-    let stationary = arranged[putAround]
-    case movedBlock.blc.positioning.pos:
-      of rpLeft: discard
-      of rpRight: discard
-      of rpTop:
-        let movedLine = (
-          movedBlock.hull.left.begin,
-          movedBlock.hull.right.begin
-        ).toLine()
-
-        let stationLine = (
-          stationary.hull.left.final,
-          stationary.hull.right.final
-        ).toLine()
-
-        let stationVec = stationLine.toVec()
-        let shift = (stationLine.magnitude() - movedLine.magnitude())
-        let originPos =
-          stationary.position +
-          stationary.hull.left.toVec() +
-          (shift / 2) * stationLine.toVec().norm() +
-          stationLine.toVec().perp().norm() * movedBlock.blc.positioning.offset
-
-        movedBlock.position = originPos
-        movedBlock.rotation = stationary.rotation
-      of rpBottom: discard
-
-    dlog "Arranged id", blId
-    arranged[blId] = movedBlock
+    arranged[blId] = movedBlock.moveRelativeTo arranged[putAround]
     unarranged.del blId
 
   for id, blc in arranged:
@@ -314,4 +374,7 @@ proc arrangeBlocks*(kbd: Keyboard): seq[PositionedBlock] =
 
   defer:
     for blc in result:
-      dlog "id:", blc.blc.positioning.id, "@", blc.position
+      dlog "id:",
+        blc.blc.positioning.id,
+        blc.blc.positioning.pos,
+        "@", blc.position, blc.rotation

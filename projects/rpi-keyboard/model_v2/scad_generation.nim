@@ -8,6 +8,7 @@ import strformat
 import sequtils
 import strutils
 import hmisc/helpers
+import math
 
 type
   ScadNodeType = enum
@@ -137,10 +138,10 @@ proc scadTranslate(node: ScadNode, pos: Vec): ScadNode =
 proc scadRotate(
   node: ScadNode,
   angle: float,
-  x = 0.0, y = 0.0, z = 0.0
+  x = 0.0, y = 0.0, z = 1.0
      ): ScadNode =
   makeScadTree("rotate", [node], {
-    "a" : $angle,
+    "a" : $(angle.radToDeg()),
     "v" : &"[{x}, {y}, {z}]"
   })
 
