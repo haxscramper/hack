@@ -34,6 +34,12 @@ func magnitude*(p: Pos): float = sqrt(p.x ^ 2 + p.y * 2)
 func `/`*(p: Pos, a: float): Pos = Pos(x: p.x / a, y: p.y / 2)
 func norm*(p: Pos): Pos = p / p.magnitude()
 
+func toLine*(a, b: Pos): Line =
+  Line(x1: a.x, y1: a.y, x2: b.x, y2: b.y)
+
+func toLine*(p: (Pos, Pos)): Line = toLine(p[0], p[1])
+func toPos*(l: Line): Pos = l.final - l.begin
+
 type
   Pos3* = object
     x*, y*, z*: float
@@ -47,6 +53,7 @@ type
 
 proc makePos3*(x: float = 0.0, y: float = 0.0, z: float = 0.0): Pos3 =
   Pos3(x: x, y: y, z: z)
+
 
 func makePos3*(x: int = 0, y: int = 0, z: int = 0): Pos3 =
   Pos3(x: x.toFloat(), y: y.toFloat(), z: z.toFloat())
@@ -78,3 +85,10 @@ type
     rpRight
     rpBottom
     rpTop
+
+func invert*(pos: RelPos): RelPos =
+  case pos:
+    of rpLeft: rpRight
+    of rpRight: rpLeft
+    of rpBottom: rpTop
+    of rpTop: rpBottom

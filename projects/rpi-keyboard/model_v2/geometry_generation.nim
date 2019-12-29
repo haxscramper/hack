@@ -241,24 +241,18 @@ proc getFitLines*(blc: Block): (Line, Line, Pos) =
   result = shiftLines(blc, left, right)
   # result = (left, right, Pos())
 
+proc addTable[K, V](t: var Table[K, seq[V]], key: K, val: V) =
+  if t.hasKey(key):
+    t[key].add(val)
+  else:
+    t[key] = @[val]
+
 proc arrangeBlocks*(kbd: Keyboard): seq[PositionedBlock] =
-  type RelPos = enum onTop, onBottom, onLeft, onRight
-  # Find out which blocks are positioned around any given one
-  var relPositions: Table[int, seq[(RelPos, int, float)]]
+  # var relPositions: Table[int, seq[(RelPos, int, float)]]
 
   # for current in kbd.blocks:
-  #   let currPos = current.positioning
-  #   iflet (pos = currPos.leftOf):
-  #     relPositions[currPos.id].add((onRight, pos.id, pos.offset))
-
-  #   iflet (pos = currPos.rightOf):
-  #     relPositions[currPos.id].add((onLeft, pos.id, pos.offset))
-
-  #   iflet (pos = currPos.aboveOf):
-  #     relPositions[currPos.id].add((onBottom, pos.id, pos.offset))
-
-  #   iflet (pos = currPos.belowOf):
-  #     relPositions[currPos.id].add((onTop, pos.id, pos.offset))
+  #   let curr = current.positioning
+  #   relPositions.addTable curr.id, (curr.pos.invert, curr.id, curr.offset)
 
   let (start, other) =
     block:
@@ -269,5 +263,41 @@ proc arrangeBlocks*(kbd: Keyboard): seq[PositionedBlock] =
       tmp.sortedByIt(it.blc.positioning.id)
       .splitList()
 
+  var unarranged: Table[int, PositionedBlock]
+  for blc in other:
+    unarranged[blc.blc.positioning.id] = blc
+
   var arranged = {start.blc.positioning.id : start}.newTable()
-  # for blc in other:
+  for blId in toSeq(unarranged.keys()):
+    dlog "Arranging block ", blId
+    var movedBlock = unarranged[blId]
+    let putAround = movedBlock.blc.positioning.relativeTo
+    if not arranged.hasKey(putAround):
+      dlog "Block with id", putAround, "has not been arranged yet"
+      continue
+    else:
+      dlog "Putting it relative to id", putAround
+
+    let stationary = arranged[putAround]
+    case movedBlock.blc.positioning.pos:
+      of rpLeft: discard
+      of rpRight: discard
+      of rpTop:
+        let movedLine = (
+          movedBlock.hull.left.begin,
+          movedBlock.hull.right.begin
+        ).toLine()
+
+        let stationLine = (
+          stationary.hull.left.final,
+          stationary.hull.right.final
+        ).toLine()
+
+        let stationVec = stationLine.toPos()
+
+        discard
+      of rpBottom: discard
+
+    dlog "Arranged id", blId
+    arranged[blId] = movedBlock
+    unarranged.del blId

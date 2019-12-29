@@ -89,7 +89,7 @@ Parameters for the block connectors
     angles*: tuple[left, right: float]
     offsets*: tuple[left, right: float]
     dimensions*: tuple[width, lowerLen: float]
-    positioning*: tuple[id: int, pos: RelPos, offset: float]
+    positioning*: tuple[id: int, pos: RelPos, offset: float, relativeTo: int]
 
   PositionedBlock* = object
     ##[
