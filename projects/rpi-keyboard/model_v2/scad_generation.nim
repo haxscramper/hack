@@ -9,6 +9,7 @@ import sequtils
 import strutils
 import hmisc/helpers
 import math
+import common
 
 type
   ScadNodeType = enum
@@ -220,7 +221,9 @@ proc toSCAD(row: Row): tuple[core, boundary: ScadNode] =
       }).
     setColor("Red", 0.01)
 
-proc toSCAD*(blc: PositionedBlock): ScadNode =
+proc makeBlockTop(blc: PositionedBlock, topThickness: float = 1): ScadNode =
+  ## Generate upper part of the block including mounting holes for key
+  ## switches and screw holes.
   let (left, right, coreShift) = blc.hull
   var spacing = 0.0
   let rows: seq[tuple[
@@ -247,7 +250,7 @@ proc toSCAD*(blc: PositionedBlock): ScadNode =
         "points" :
         "[" & polygonPoints.mapIt(&"[{it.x}, {it.y}]").join(",") & "]"
       }).
-    scadOperator("linear_extrude", {"height" : "1"})
+    scadOperator("linear_extrude", {"height" : $topThickness})
 
   result =
     blockBody
@@ -255,25 +258,66 @@ proc toSCAD*(blc: PositionedBlock): ScadNode =
       rows.mapIt(it.boundary.scadTranslate(it.shift + coreShift.toVec3())))
     .scadUnion(
       rows.mapIt(it.core.scadTranslate(it.shift + coreShift.toVec3())))
+
+
+proc makeBlockBottom(
+  blc: PositionedBlock,
+  bottomTickness: float = 5.0,
+  shellThickness: float = 0.5
+     ): ScadNode =
+  ## Generate bottom part of the block including interlocks, wiring
+  ## and screw holes etc.
+  let (left, right, coreShift) = blc.hull
+
+  let polygonPoints: seq[Vec] =
+    @[left.begin, left.final, right.final, right.begin]
+
+  let innerPoints: seq[Vec] =
+    block:
+      let inLines: seq[Line] = @[
+        left
+          .shiftNormal(shellThickness),
+        makeLine(left.final, right.final)
+          .shiftnormal(shellthickness),
+        right
+          .shiftnormal(shellthickness),
+        makeLine(right.begin, left.begin)
+          .shiftnormal(shellthickness)
+      ]
+
+      @[(0,1), (1,2), (2,3), (3,0)]
+        .mapIt(
+          block:
+            let res = (inlines[it[0]], inlines[it[1]]).intersect()
+            dlog &"for pair {it}, intersection is {res}"
+            res.get()
+        )
+
+
+  let blockBody =
+    makeScad(
+      "polygon", {
+        "points" :
+        "[" & polygonPoints.mapIt(&"[{it.x}, {it.y}]").join(",") & "]"
+      }).
+    scadOperator("linear_extrude", {"height" : "1"})
+
+  result = blockBody
+
+proc toSCAD*(blc: PositionedBlock): ScadNode =
+  let bottomThickness = 3.0
+  let topThickness = 1.0
+  let top = blc.makeBlockTop(topThickness)
+  let bottom = blc.makeBlockBottom(bottomThickness)
+
+  @[top.scadTranslate(z = bottomThickness), bottom].makeGroup()
     .scadRotate(blc.rotation)
     .scadTranslate(blc.position)
 
 
 
 proc toSCAD*(kbd: Keyboard): ScadNode =
-  let positioned = kbd.arrangeBlocks()
-  var blocksScad: seq[ScadNode] = positioned.map(toSCAD)
-  # for blc in kbd.blocks:
-
-  #   blocksScad &=
-  #     blc.
-  #     toSCAD().
-  #     scadTranslate(pos.toVec3()).
-  #     makeGroupWith(
-  #       [makeScadComment(&"Block at position {pos}")],
-  #       reverse = true)
-
-  result = blocksScad.makeGroup()
+  kbd.arrangeBlocks().map(toSCAD).makeGroup()
 
 proc addSCADImports*(body: ScadNode): ScadNode =
     body.makeGroupWith(

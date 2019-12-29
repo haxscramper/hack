@@ -248,12 +248,12 @@ func moveTopOf(movedBlock, stationary: PositionedBlock): PositionedBlock =
   let movedLine = (
     movedBlock.hull.left.begin,
     movedBlock.hull.right.begin
-  ).toLine()
+  ).makeLine()
 
   let stationLine = (
     stationary.hull.left.final,
     stationary.hull.right.final
-  ).toLine()
+  ).makeLine()
 
   let stationVec = stationLine.toVec()
   let shift = (stationLine.magnitude() - movedLine.magnitude())
@@ -277,7 +277,7 @@ func moveLeftOf(movedBlock, stationary: PositionedBlock): PositionedBlock =
     stationary.blc.angles.left -
     movedBlock.blc.angles.right
 
-  let movedBottom = toLine(
+  let movedBottom = makeLine(
     movedBlock.hull.left.begin,
     movedBlock.hull.right.begin)
 
@@ -314,12 +314,12 @@ func moveBottomOf(movedBlock, stationary: PositionedBlock): PositionedBlock =
   let movedLine = (
     movedBlock.hull.left.final,
     movedBlock.hull.right.final
-  ).toLine()
+  ).makeLine()
 
   let stationLine = (
     stationary.hull.left.final,
     stationary.hull.right.final
-  ).toLine()
+  ).makeLine()
 
   let stationVec = stationLine.toVec()
   let shift = (stationLine.magnitude() - movedLine.magnitude())

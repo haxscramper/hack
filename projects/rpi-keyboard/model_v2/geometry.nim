@@ -1,6 +1,6 @@
 ## Basic geometric primitives and supporting functions
 
-import math
+import math, options
 
 type
   Vec* = object
@@ -9,7 +9,13 @@ type
   Line* = object
     x1*, x2*, y1*, y2*: float
 
+func makeLine*(a, b: Vec): Line =
+  ## Create two lines using `a`, `b` as start/end point
+  Line(x1: a.x, y1: a.y, x2: b.x, y2: b.y)
 
+func makeLine*(p: (Vec, Vec)): Line =
+  ## Create two lines using `(a, b)` as start/end point
+  makeLine(p[0], p[1])
 
 proc makeVec*(x, y: int | float): Vec =
   when x is int:
@@ -24,30 +30,103 @@ converter toVec*[N: float | int](pos: (N, N)): Vec =
     Vec(x: pos[0], y: pos[1])
 
 
-
 func `-`*(a, b: Vec): Vec = makeVec(a.x - b.x, a.y - b.y)
 func `+`*(a, b: Vec): Vec = makeVec(a.x + b.x, a.y + b.y)
 func `*`*(a: Vec, s: float): Vec = makeVec(a.x * s, a.y * s)
 func `*`*(s: float, a: Vec): Vec = a * s
 func begin*(l: Line): Vec = Vec(x: l.x1, y: l.y1)
 func final*(l: Line): Vec = Vec(x: l.x2, y: l.y2)
-func arg*(p: Vec): float = arctan2(p.y, p.x)
-func magnitude*(p: Vec): float = sqrt(p.x ^ 2 + p.y ^ 2)
+func arg*(p: Vec): float =
+  ## Return vector argument in polar coordinate system
+  arctan2(p.y, p.x)
+
+func toVec*(l: Line): Vec =
+  ## Return vector with magnitude and direction equal to line
+  l.final - l.begin
+
+func magnitude*(p: Vec): float =
+  ## Calculate magnitude of 2d vector
+  sqrt(p.x ^ 2 + p.y ^ 2)
+
 func `/`*(p: Vec, a: float): Vec = Vec(x: p.x / a, y: p.y / a)
-func norm*(p: Vec): Vec = p / p.magnitude()
-func perp*(v: Vec): Vec = makeVec(-v.y, v.x)
-func flip*(v: Vec): Vec = makeVec(-v.x, -v.y)
+func norm*(p: Vec): Vec =
+  ## Return normal vector
+  p / p.magnitude()
+
+func perp*(v: Vec): Vec =
+  ## Return perpendicular vector
+  makeVec(-v.y, v.x)
+
+func flip*(v: Vec): Vec =
+  ## Return reversed vector
+  makeVec(-v.x, -v.y)
+
 func rotate*(v: Vec, a: float): Vec =
+  ## CCW rotate vector by `a` radians
   makeVec(
     v.x * cos(a) - v.y * sin(a),
     v.x * sin(a) + v.y * cos(a))
 
-func toLine*(a, b: Vec): Line =
-  Line(x1: a.x, y1: a.y, x2: b.x, y2: b.y)
+func lineEqn(l: Line): Option[tuple[a, b: float]] =
+  ## Return coefficients for line equation `f(x) = ax + b`. Empty
+  ## option will be returned for degenerate lines (with `l.begin.x ==
+  ## l.final.x`)
+  let
+    p1 = l.begin
+    p2 = l.begin
 
-func toLine*(p: (Vec, Vec)): Line = toLine(p[0], p[1])
-func toVec*(l: Line): Vec = l.final - l.begin
-func magnitude*(l: Line): float = l.toVec.magnitude
+  try:
+    let a = (p2.y - p1.y) / (p2.x - p1.x)
+    let b = p1.y - a * p1.x
+    result = some((a, b))
+  except:
+    result = none((float, float))
+
+func inRange(val: float, rng: (float, float)): bool =
+    rng[0] <= val and val <= rng[1]
+
+func intersect*(l1, l2: Line): Option[Vec] =
+  ## Calculate point of intersection between two lines if any.
+  ## Intersection is only counted if intersection point is **between**
+  ## begin and end points for both lines. Intersections 'at infinity'
+  ## does not count.
+  let eqn_l1 = l1.lineEqn()
+  let eqn_l2 = l2.lineEqn()
+  if eqn_l1.isSome() and eqn_l2.isSome():
+    let (a1, b1) = eqn_l1.get()
+    let (a2, b2) = eqn_l2.get()
+
+    try:
+      let x = (b2 - b1) / (a1 - a2)
+      let y = a1 * x + b1
+
+      debugEcho l1
+      debugEcho l2
+      debugEcho x
+      if x.inRange((l1.x1, l1.x2)) and x.inRange((l2.x1, l2.x2)):
+        result = some(Vec(x: x, y: y))
+    except:
+      discard
+
+func intersect*(l: (Line, Line)): Option[Vec] =
+  intersect l[0], l[1]
+
+func moveAlong*(l: Line, v: Vec, distance: float): Line =
+  ## Move line in the **direction** of the vector by `distance`
+  makeLine(
+    l.begin + v.norm() * distance,
+    l.final + v.norm() * distance
+  )
+
+func shiftNormal*(l: Line, distance: float): Line =
+  ## Move line by `distance` in the direction perpendicular to it's
+  ## vector direction
+  l.moveAlong(l.toVec().perp(), distance)
+
+
+func magnitude*(l: Line): float =
+  ## Return length of the line
+  l.toVec.magnitude
 
 type
   Vec3* = object
