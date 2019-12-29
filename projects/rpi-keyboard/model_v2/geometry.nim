@@ -25,13 +25,14 @@ converter toPos*[N: float | int](pos: (N, N)): Pos =
 
 
 
-proc `-`*(a, b: Pos): Pos = makePos(a.x - b.x, a.y - b.y)
-proc `+`*(a, b: Pos): Pos = makePos(a.x + b.x, a.y + b.y)
-proc begin*(l: Line): Pos = Pos(x: l.x1, y: l.y1)
-proc final*(l: Line): Pos = Pos(x: l.x2, y: l.y2)
-proc arg*(p: Pos): float = arctan2(p.y, p.x)
-
-
+func `-`*(a, b: Pos): Pos = makePos(a.x - b.x, a.y - b.y)
+func `+`*(a, b: Pos): Pos = makePos(a.x + b.x, a.y + b.y)
+func begin*(l: Line): Pos = Pos(x: l.x1, y: l.y1)
+func final*(l: Line): Pos = Pos(x: l.x2, y: l.y2)
+func arg*(p: Pos): float = arctan2(p.y, p.x)
+func magnitude*(p: Pos): float = sqrt(p.x ^ 2 + p.y * 2)
+func `/`*(p: Pos, a: float): Pos = Pos(x: p.x / a, y: p.y / 2)
+func norm*(p: Pos): Pos = p / p.magnitude()
 
 type
   Pos3* = object
@@ -70,3 +71,10 @@ func `/`*(a: Pos3, denom: float): Pos3 =
   makePos3(a.x / denom, a.y / denom, a.z / denom)
 
 func norm*(a: Pos3): Pos3 = a / a.magnitude()
+
+type
+  RelPos* = enum
+    rpLeft
+    rpRight
+    rpBottom
+    rpTop

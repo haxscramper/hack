@@ -5,6 +5,8 @@ import math
 import options
 import geometry
 
+export geometry
+
 type
   Key* = object
     ##[
@@ -87,13 +89,7 @@ Parameters for the block connectors
     angles*: tuple[left, right: float]
     offsets*: tuple[left, right: float]
     dimensions*: tuple[width, lowerLen: float]
-    positioning*: tuple[
-      id: int,
-      leftOf: Option[tuple[id: int, offset: float]],
-      rightOf: Option[tuple[id: int, offset: float]],
-      aboveOf: Option[tuple[id: int, offset: float]],
-      belowOf: Option[tuple[id: int, offset: float]],
-    ]
+    positioning*: tuple[id: int, pos: RelPos, offset: float]
 
   PositionedBlock* = object
     ##[

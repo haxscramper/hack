@@ -246,19 +246,19 @@ proc arrangeBlocks*(kbd: Keyboard): seq[PositionedBlock] =
   # Find out which blocks are positioned around any given one
   var relPositions: Table[int, seq[(RelPos, int, float)]]
 
-  for current in kbd.blocks:
-    let currPos = current.positioning
-    iflet (pos = currPos.leftOf):
-      relPositions[currPos.id].add((onRight, pos.id, pos.offset))
+  # for current in kbd.blocks:
+  #   let currPos = current.positioning
+  #   iflet (pos = currPos.leftOf):
+  #     relPositions[currPos.id].add((onRight, pos.id, pos.offset))
 
-    iflet (pos = currPos.rightOf):
-      relPositions[currPos.id].add((onLeft, pos.id, pos.offset))
+  #   iflet (pos = currPos.rightOf):
+  #     relPositions[currPos.id].add((onLeft, pos.id, pos.offset))
 
-    iflet (pos = currPos.aboveOf):
-      relPositions[currPos.id].add((onBottom, pos.id, pos.offset))
+  #   iflet (pos = currPos.aboveOf):
+  #     relPositions[currPos.id].add((onBottom, pos.id, pos.offset))
 
-    iflet (pos = currPos.belowOf):
-      relPositions[currPos.id].add((onTop, pos.id, pos.offset))
+  #   iflet (pos = currPos.belowOf):
+  #     relPositions[currPos.id].add((onTop, pos.id, pos.offset))
 
   let (start, other) =
     block:
