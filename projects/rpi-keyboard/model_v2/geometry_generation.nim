@@ -301,10 +301,9 @@ func moveRightOf(movedBlock, stationary: PositionedBlock): PositionedBlock =
     stationLine.toVec().perp().flip().norm() * movedBlock.blc.positioning.offset
 
   let origRotation =
-    PI -
-    stationary.rotation -
-    stationary.blc.angles.left -
-    movedBlock.blc.angles.left
+    -stationary.rotation +
+    (PI/2 - stationary.blc.angles.right) +
+    (PI/2 - movedBlock.blc.angles.left)
 
   result = movedBlock
   result.position = originPos
@@ -340,8 +339,35 @@ func moveRelativeTo(movedBlock, stationary: PositionedBlock): PositionedBlock =
     of rpTop: movedBlock.moveTopOf stationary
     of rpBottom: movedBlock.moveBottomOf stationary
 
+func addInterlocks(
+  inMovedBlock, inStationary: PositionedBlock
+     ): tuple[moved, stationary: PositionedBlock] =
+  ## Add interlocks for two blocks and return modified versions
+  var
+    moved = inMovedBlock
+    stationary = inStationary
+
+  # let
+  #   offset =
+
+  case moved.blc.positioning.pos:
+    of rpLeft:
+      let
+        line1 = moved.hull.right
+        line2 = stationary.hull.left
+      discard
+    of rpRight:
+      discard
+    of rpTop:
+      discard
+    of rpBottom:
+      discard
+
+  result = (moved, stationary)
 
 proc arrangeBlocks*(kbd: Keyboard): seq[PositionedBlock] =
+  ## Correctly position block in absolute coordinates, add rotation
+  ## and configure interlocks.
   let (start, other) =
     block:
       let tmp = kbd.blocks.mapIt(PositionedBlock(
@@ -357,16 +383,20 @@ proc arrangeBlocks*(kbd: Keyboard): seq[PositionedBlock] =
 
   var arranged = {start.blc.positioning.id : start}.newTable()
   for blId in toSeq(unarranged.keys()):
-    # dlog "Arranging block ", blId
     var movedBlock = unarranged[blId]
-    let putAround = movedBlock.blc.positioning.relativeTo
-    # if not arranged.hasKey(putAround):
-    #   dlog "Block with id", putAround, "has not been arranged yet"
-    #   continue
-    # else:
-    #   dlog "Putting it relative to id", putAround
+    let stationary = arranged[movedBlock.blc.positioning.relativeTo]
 
-    arranged[blId] = movedBlock.moveRelativeTo arranged[putAround]
+    let positioned = movedBlock.moveRelativeTo stationary
+    # Add interlocks to block
+    let (interlockMoved, interlockStatinary) =
+      addInterlocks(positioned, stationary)
+
+    # Add/replace newly arranged block
+    arranged[blId] = interlockMoved
+
+    # Replace old stationary block with new one with updated
+    # interlocks
+    arranged[stationary.blc.positioning.id] = interlockStatinary
     unarranged.del blId
 
   for id, blc in arranged:

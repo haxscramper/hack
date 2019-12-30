@@ -320,19 +320,20 @@ proc toSCAD*(blc: PositionedBlock): ScadNode =
     baseHeight = 1.0
     shellHeight = 4.0
     topThickness = 1.0
+    shellThickness = 0.6
     bottomHeight = shellHeight + baseHeight
 
   let top = blc.makeBlockTop(topThickness)
   let bottom = blc.makeBlockBottom(
     shellHeight = shellHeight,
-    baseHeight = baseHeight
+    baseHeight = baseHeight,
+    shellThickness = shellThickness
   )
 
   let body = @[top.scadTranslate(z = bottomHeight), bottom].makeGroup()
 
-
-  # body.scadRotate(blc.rotation)
-  bottom
+  body
+    .scadRotate(blc.rotation)
     .scadTranslate(blc.position)
 
 
