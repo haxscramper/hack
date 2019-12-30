@@ -2,7 +2,7 @@
 ## lines etc. It is used in `svg_generation` and `scad_generation` to
 ## calculate positions of the boundary edges etc.
 
-import geometry
+import geom_operations
 import keyboard
 import sequtils
 import hmisc/[halgorithm, helpers]

@@ -16,6 +16,8 @@ proc enableDebug*() = doDebug = true
 proc disableDebug*() = doDebug = false
 
 proc decho*(args: varargs[string, `$`]): void =
-  if doDebug: echo args.join("")
+  if doDebug: echo args.join(" ")
   else: discard
 
+func de*(args: varargs[string, `$`]): void =
+  debugEcho args.join(" ")

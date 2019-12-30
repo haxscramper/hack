@@ -1,6 +1,6 @@
 ## This module is used to generate openscad files for keyboard block.
 
-import geometry
+import geom_operations
 import geometry_generation
 import keyboard
 import strtabs
@@ -259,15 +259,23 @@ proc makeBlockTop(blc: PositionedBlock, topThickness: float = 1): ScadNode =
     .scadUnion(
       rows.mapIt(it.core.scadTranslate(it.shift + coreShift.toVec3())))
 
+proc makeSCADPolygon(points: seq[Vec]): ScadNode =
+  makeScad(
+      "polygon", {
+        "points" :
+        "[" & points.mapIt(&"[{it.x}, {it.y}]").join(",") & "]"
+    })
 
 proc makeBlockBottom(
   blc: PositionedBlock,
-  bottomTickness: float = 5.0,
-  shellThickness: float = 0.5
+  baseHeight: float = 1.0,
+  shellHeight: float = 4.0,
+  shellThickness: float = 0.5,
      ): ScadNode =
   ## Generate bottom part of the block including interlocks, wiring
   ## and screw holes etc.
   let (left, right, coreShift) = blc.hull
+  let blockHeight = baseHeight + shellHeight
 
   let polygonPoints: seq[Vec] =
     @[left.begin, left.final, right.final, right.begin]
@@ -275,43 +283,56 @@ proc makeBlockBottom(
   let innerPoints: seq[Vec] =
     block:
       let inLines: seq[Line] = @[
-        left
-          .shiftNormal(shellThickness),
-        makeLine(left.final, right.final)
-          .shiftnormal(shellthickness),
-        right
-          .shiftnormal(shellthickness),
-        makeLine(right.begin, left.begin)
-          .shiftnormal(shellthickness)
+        left.shiftNormal(-shellThickness),
+        makeLine(left.final, right.final).shiftnormal(-shellthickness),
+        right.shiftnormal(shellthickness),
+        makeLine(right.begin, left.begin).shiftnormal(-shellthickness)
       ]
 
       @[(0,1), (1,2), (2,3), (3,0)]
-        .mapIt(
-          block:
-            let res = (inlines[it[0]], inlines[it[1]]).intersect()
-            dlog &"for pair {it}, intersection is {res}"
-            res.get()
-        )
+        .mapIt((inlines[it[0]], inlines[it[1]]).intersect().get())
 
 
-  let blockBody =
-    makeScad(
-      "polygon", {
-        "points" :
-        "[" & polygonPoints.mapIt(&"[{it.x}, {it.y}]").join(",") & "]"
-      }).
-    scadOperator("linear_extrude", {"height" : "1"})
 
-  result = blockBody
+  let blockShell =
+    block:
+      let outer = makeSCADPolygon(polygonPoints)
+        .scadOperator("linear_extrude", {"height" : $shellHeight})
+
+      let inner = makeSCADPolygon(innerPoints)
+        .scadOperator("linear_extrude", {"height" : $(shellHeight + 0.1)})
+        .scadTranslate(z = -0.05)
+
+      let res = outer
+        .scadSubtract(inner)
+        .scadTranslate(z = baseHeight)
+
+      res
+
+  let blockBase =
+    makeSCADPolygon(polygonPoints)
+    .scadOperator("linear_extrude", {"height" : $baseHeight})
+
+  result = blockShell.scadUnion(blockBase)
 
 proc toSCAD*(blc: PositionedBlock): ScadNode =
-  let bottomThickness = 3.0
-  let topThickness = 1.0
-  let top = blc.makeBlockTop(topThickness)
-  let bottom = blc.makeBlockBottom(bottomThickness)
+  let
+    baseHeight = 1.0
+    shellHeight = 4.0
+    topThickness = 1.0
+    bottomHeight = shellHeight + baseHeight
 
-  @[top.scadTranslate(z = bottomThickness), bottom].makeGroup()
-    .scadRotate(blc.rotation)
+  let top = blc.makeBlockTop(topThickness)
+  let bottom = blc.makeBlockBottom(
+    shellHeight = shellHeight,
+    baseHeight = baseHeight
+  )
+
+  let body = @[top.scadTranslate(z = bottomHeight), bottom].makeGroup()
+
+
+  # body.scadRotate(blc.rotation)
+  bottom
     .scadTranslate(blc.position)
 
 

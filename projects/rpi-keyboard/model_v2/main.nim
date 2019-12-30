@@ -10,6 +10,7 @@ import os
 import svg_generation
 import keyboard
 import scad_generation
+import geom_operations
 
 let kbd = readFile("keyboard.json").
   parseJson().

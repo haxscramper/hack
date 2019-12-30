@@ -1,7 +1,7 @@
 ## THis module is used to generate 2d svg image of the keyboard. It is
 ## mostly indended to be used for debugging purposes
 
-import geometry
+import geom_operations
 import keyboard
 import sequtils, xmltree, strtabs, strformat, strutils
 import options
@@ -58,6 +58,9 @@ proc svgRotate*(node: XmlNode, deg: int | float): XmlNode =
       "transform" : &"rotate({deg})"
     })
 
+proc makeSVGGroup*(nodes: openarray[XmlNode]): XmlNode =
+  newXmlTree("g", nodes)
+
 proc svgTranslate*(
   node: XmlNode,
   x, y: int | float | string): XmlNode =
@@ -89,8 +92,6 @@ proc makeSVG*(
         @[],
       ),
       attributes.toXmlAttributes())
-
-
 
 
 proc makeStyle*(input: varargs[
@@ -188,6 +189,13 @@ proc toSVG*(line: Line): XmlNode =
       "stroke-width" : "3"
     })
 
+proc toSVG*(geom: Geometry): XmlNode =
+  case geom.kind:
+    of gkLine: geom.l.toSVG()
+    of gkVec: geom.v.toSVG()
+
+proc toSVG*(geoms: seq[Geometry]): XmlNode =
+  geoms.mapIt(it.toSVG).makeSVGGroup()
 
 proc makeControlPoints*(blc: Block): seq[XmlNode] =
 

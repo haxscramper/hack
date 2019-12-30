@@ -4,6 +4,7 @@ import sequtils
 import math
 import options
 import geometry
+import geom_operations
 
 export geometry
 
