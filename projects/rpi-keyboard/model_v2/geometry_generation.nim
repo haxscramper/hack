@@ -347,19 +347,75 @@ func addInterlocks(
     moved = inMovedBlock
     stationary = inStationary
 
-  # let
-  #   offset =
+  let
+    interlockWidth = 4.0
+    interlockDepth = 1.0
+    interlockHeight = 1.1
+    offset = moved.blc.positioning.offset
+    interlockBBox = Size3(
+      h: interlockHeight,
+      w: interlockWidth,
+      d: interlockDepth)
+
+    blockPlungeDepth = (interlockDepth - offset) / 2
 
   case moved.blc.positioning.pos:
     of rpLeft:
-      let
-        line1 = moved.hull.right
-        line2 = stationary.hull.left
       discard
     of rpRight:
       discard
     of rpTop:
-      discard
+      let
+        lower = stationary
+        upper = moved
+
+        lowerLine = lower.hull.bottom()
+        upperLine = upper.hull.top()
+
+        upperIsLonger = lowerLine.magnitude() >= upperLine.magnitude()
+
+        (longerLine, shorterLine) = (upperIsLonger).tern(
+          (lowerLine, upperLine), (upperLine, lowerLine))
+
+        lenDiff = (longerLine.magnitude() - shorterLine.magnitude())
+
+
+        (upperShift, lowerShift) =
+          block:
+            var
+              upperCompensation = 0.0
+              lowerCompensation = 0.0
+
+            if upperIsLonger: lowerCompensation = lenDiff / 2
+            else: upperCompensation = lenDiff / 2
+
+            (
+              (longerLine.magnitude() + interlockWidth + upperCompensation) / 2,
+              (shorterLine.magnitude() + interlockWidth + lowerCompensation) / 2
+            )
+
+      let
+        upperLock = Interlock(
+          position: makeVec(upperShift, -blockPlungeDepth),
+          rotation: PI,
+          size: interlockBBox,
+          oddHoles: true
+        )
+
+      let
+        lowerLock = Interlock(
+          position:
+            lower.hull.left.toVec() +
+            makeVec(lowerShift - interlockWidth, -blockPlungeDepth),
+          rotation: 0.0,
+          size: interlockBBOx,
+          oddHoles: false
+        )
+
+
+      moved.interlocks.bottom = upperLock
+      stationary.interlocks.top = lowerLock
+
     of rpBottom:
       discard
 

@@ -18,6 +18,12 @@ type
     sntInclude
     sntGroup
 
+  GroupModeType = enum
+    gmtRegular
+    gmtDebug
+    gmtBackground
+    gmtRoot
+
   ScadNode = object
     case kind: ScadNodeType
     of sntInvoke:
@@ -30,6 +36,7 @@ type
       path: string
     of sntGroup:
       elements: seq[ScadNode]
+      groupMod: GroupModeType
 
 proc toString*(node: ScadNode): string =
   case node.kind:
@@ -54,6 +61,23 @@ use <{node.path}>;
 """
     of sntGroup:
       result = node.elements.map(toString).join("\n")
+      case node.groupMod:
+        of gmtRegular: discard
+        of gmtDebug, gmtBackground, gmtRoot:
+          let symbol =
+            case node.groupMod:
+              of gmtRegular: ""
+              of gmtDebug: "# union()"
+              of gmtBackground: "% union()"
+              of gmtRoot: "! union()"
+
+          result = &"""
+// clang-format off
+{symbol}{{
+  {result}
+}}
+// clang-format on
+"""
 
 proc makeScadComment(text: string): ScadNode =
   ScadNode(text: text, kind: sntComment)
@@ -62,9 +86,12 @@ proc makeScadInclude(path: string): ScadNode =
   ScadNode(path: path, kind: sntInclude)
 
 
-proc makeGroup(elements: openarray[ScadNode]): ScadNode =
+proc makeGroup(
+  elements: openarray[ScadNode],
+  gType: GroupModeType =  gmtRegular
+     ): ScadNode =
   ## Make group node
-  ScadNode(elements: toSeq(elements), kind: sntGroup)
+  ScadNode(elements: toSeq(elements), kind: sntGroup, groupMod: gType)
 
 proc makeGroupWith(
   node: ScadNode,
@@ -147,7 +174,28 @@ proc scadRotate(
   })
 
 proc scadSubtract(node: ScadNode, subtract: varargs[ScadNode]): ScadNode =
-    makeScadTree(name = "difference", children = @[node] & subtract.toSeq())
+  makeScadTree(name = "difference", children = @[node] & subtract.toSeq())
+
+
+proc scadSubtract(
+  node: ScadNode,
+  subtract: seq[ScadNode],
+  traceColor: string
+     ): ScadNode =
+  @[
+    scadSubtract(node, subtract.toSeq()),
+    [makeScadTree(name = "union", children = subtract)
+      .setColor(colorname = traceColor, a = 0.3)]
+      .makeGroup(gType = gmtDebug)
+  ].makeGroup()
+
+
+proc scadSubtract(
+  node: ScadNode,
+  subtract: ScadNode,
+  traceColor: string
+     ): ScadNode =
+    scadSubtract(node, @[subtract], traceColor)
 
 proc scadUnion(node: ScadNode, subtract: varargs[ScadNode]): ScadNode =
     makeScadTree(name = "union", children = @[node] & subtract.toSeq())
@@ -266,6 +314,39 @@ proc makeSCADPolygon(points: seq[Vec]): ScadNode =
         "[" & points.mapIt(&"[{it.x}, {it.y}]").join(",") & "]"
     })
 
+proc getSCADInterlocks(
+  blc: PositionedBlock
+     ): tuple[cutouts, bodies: ScadNode] =
+  ## Generate scad code for all interlocks in the block
+  let interlocks = @[
+    blc.interlocks.left,
+    blc.interlocks.right,
+    blc.interlocks.top,
+    blc.interlocks.bottom
+  ].filterIt(it.isSome()).mapIt(it.get())
+
+  let hulls =
+    interlocks
+    .mapIt((de it;
+      makeCube(w = it.size.w, d = it.size.d, h = it.size.h + 0.1)
+      .scadRotate(it.rotation)
+      .scadTranslate(it.position)
+      .scadTranslate(z = -0.1)
+    ))
+
+  let bodies =
+    interlocks
+    .mapIt(
+      makeScad("interlock", {
+        "oddHoles" : $it.oddHoles,
+        "width" : $it.size.w,
+        "depth" : $it.size.d,
+        "height" : $it.size.h})
+      .scadRotate(it.rotation)
+      .scadTranslate(it.position))
+
+  result = (hulls.makeGroup(), bodies.makeGroup())
+
 proc makeBlockBottom(
   blc: PositionedBlock,
   baseHeight: float = 1.0,
@@ -313,7 +394,18 @@ proc makeBlockBottom(
     makeSCADPolygon(polygonPoints)
     .scadOperator("linear_extrude", {"height" : $baseHeight})
 
-  result = blockShell.scadUnion(blockBase)
+  let (interlockCutouts, interlockBodies) = blc.getSCADInterlocks()
+
+  # result = blockShell
+  #   .scadUnion(blockBase)
+  #   .scadSubtract(interlockCutouts)
+  #   .scadUnion(interlockBodies)
+
+  result = blockBase
+    .scadSubtract(interlockCutouts, "Green")
+    .addComment("Interlock cutouts")
+    .scadUnion(interlockBodies)
+    .addComment("Interlock block bodies")
 
 proc toSCAD*(blc: PositionedBlock): ScadNode =
   let
@@ -332,7 +424,8 @@ proc toSCAD*(blc: PositionedBlock): ScadNode =
 
   let body = @[top.scadTranslate(z = bottomHeight), bottom].makeGroup()
 
-  body
+  # body
+  bottom
     .scadRotate(blc.rotation)
     .scadTranslate(blc.position)
 

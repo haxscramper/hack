@@ -51,17 +51,14 @@ Parameters for the block connectors
 :size: Bounding box for interlocing part
 :oddHoles: if `true` then holes start at 'bump'.
 
-:positive: Direction for the bounding box
-
   If `true` then box is facing 'counterclocwise', otherwise it is
   facing 'clockwise'
 
     ]##
 
     position*: Vec
-    direction*: Vec
+    rotation*: float
     size*: Size3
-    positive*: bool
     oddHoles*: bool
     # holeAngles*: float
     # holeUpperWidth*: float
@@ -117,7 +114,7 @@ Parameters for the block connectors
       left: Option[Interlock],
       right: Option[Interlock],
       top: Option[Interlock],
-      below: Option[Interlock],
+      bottom: Option[Interlock],
     ]
 
 
@@ -152,3 +149,10 @@ proc length*(row: Row): float = row.totalLength - row.indent
 proc width*(blc: Block): float =
   ## Return total width of the block including spaces between rows.
   blc.rows.mapIt(it.space + it.row.width).sum()
+
+func top*(hull: tuple[left, right: Line, coreShift: Vec]): Line =
+  makeLine(hull.left.final, hull.right.final)
+
+
+func bottom*(hull: tuple[left, right: Line, coreShift: Vec]): Line =
+  makeLine(hull.left.begin, hull.right.begin)
