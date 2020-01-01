@@ -112,18 +112,18 @@ proc addComment(node: ScadNode, comment: string): ScadNode =
 
 proc wrapComment(node: ScadNode, comment: string): ScadNode =
   if comment.find("\n") == -1:
-    makeScadComment("--- begin " & comment & " ---").makeGroupWith([
+    makeScadComment(" --- begin " & comment & " ---").makeGroupWith([
       node,
-      makeScadComment("--- end " & comment & " ---")
+      makeScadComment(" --- end " & comment & " ---")
     ])
   else:
     let commLines = comment.split("\n")
-    let commHead = "--- begin " & commLines[0] & "\n" &
-      commLines[1..^1].mapIt("// " & it).join("\n")
+    let commHead = " --- begin " & commLines[0] & "\n" &
+      commLines[1..^1].mapIt("// " & it).join("\n") & "---"
 
     makeScadComment(commHead).makeGroupWith([
       node,
-      makeScadComment("--- end " & commLines[0] & "---")
+      makeScadComment(" --- end " & commLines[0] & "---")
     ])
 
 proc makeScad(
@@ -360,7 +360,22 @@ proc getSCADInterlocks(
       .scadRotate(it.rotation)
       .scadTranslate(it.position))
 
-  result = (hulls.makeGroup(), bodies.makeGroup())
+
+  result = (
+    hulls.makeGroup()
+    .wrapComment(&"""
+Interlock cutouts block id {blc.blc.positioning.id}
+Is centeral block?: {blc.blc.positioning.id == 0}
+Interlocks present:
+left   : {blc.interlocks.left.isSome()}
+right  : {blc.interlocks.right.issome()}
+top    : {blc.interlocks.top.issome()}
+bottom : {blc.interlocks.bottom.issome()}
+Positioned relative to {blc.blc.positioning.relativeTo}.
+Relative position is {blc.blc.positioning.pos}
+"""),
+    bodies.makeGroup()
+  )
 
 proc makeBlockBottom(
   blc: PositionedBlock,
@@ -418,7 +433,7 @@ proc makeBlockBottom(
   #   .scadUnion(interlockBodies)
 
   result = blockBase
-    .scadSubtract(interlockCutouts, "Green")
+    .scadSubtract(interlockCutouts)
     .wrapComment("Interlock cutouts")
     .scadUnion(interlockBodies)
     .wrapComment("Interlock block bodies")
@@ -441,8 +456,8 @@ proc toSCAD*(blc: PositionedBlock): ScadNode =
   let body = @[top.scadTranslate(z = bottomHeight), bottom].makeGroup()
 
   result =
-  # body
-    bottom
+    body
+    # bottom
     .wrapComment("Block bottom")
     .scadRotate(blc.rotation)
     .scadTranslate(blc.position)

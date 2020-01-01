@@ -280,24 +280,15 @@ func moveLeftOf(movedBlock, stationary: PositionedBlock): PositionedBlock =
   let movedBottom = movedBlock.hull.bottom()
   let stationLeft = stationary.hull.left
 
-  # let originPos =
-  #   stationary.position +
-  #   stationLeft.toVec().perp().norm() * movedBlock.blc.positioning.offset +
-  #   movedBottom.toVec().flip().rotate(origRotation) +
-  #   stationary.hull.left.toVec().norm() * (
-  #     stationary.hull.left.magnitude() -
-  #     movedBlock.hull.right.magnitude()) / 2
-
-
   let originPos =
     block:
       let offsetVector =
-        stationLine.toVec().perp().norm() *
+        stationary.hull.left.nperp()
+          .rotate(stationary.rotation) *
         movedBlock.blc.positioning.offset
 
       let justificationOffset =
-        stationLine.tovec().norm() *
-        ((stationLine.magnitude() - movedLine.magnitude()) / 2)
+        stationLine.norm() * ((stationLine.len() - movedLine.len()) / 2)
 
       stationary.position +
       movedBottom.toVec().flip().rotate(origRotation) +
@@ -445,8 +436,8 @@ func addInterlocks(
         depth = interlockDepth
       )
 
-      moved.interlocks.left = lowerLock
-      stationary.interlocks.right = upperLock
+      moved.interlocks.right = lowerLock
+      stationary.interlocks.left = upperLock
     of rpTop:
       let (upperLock, lowerLock) = generateInterlocks(
         upperLine = moved.hull.bottom(),
@@ -456,8 +447,8 @@ func addInterlocks(
         depth = interlockDepth
       )
 
-      moved.interlocks.bottom = upperLock
-      stationary.interlocks.top = lowerLock
+      moved.interlocks.top = upperLock
+      stationary.interlocks.bottom = lowerLock
     of rpBottom:
       let (lowerLock, upperLock) = generateInterlocks(
         upperLine = stationary.hull.bottom(),
@@ -508,10 +499,3 @@ proc arrangeBlocks*(kbd: Keyboard): seq[PositionedBlock] =
 
   for id, blc in arranged:
     result &= blc
-
-  defer:
-    for blc in result:
-      dlog "id:",
-        blc.blc.positioning.id,
-        blc.blc.positioning.pos,
-        "@", blc.position, blc.rotation
