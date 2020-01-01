@@ -440,8 +440,9 @@ proc toSCAD*(blc: PositionedBlock): ScadNode =
 
   let body = @[top.scadTranslate(z = bottomHeight), bottom].makeGroup()
 
-  result = body
-  # bottom
+  result =
+  # body
+    bottom
     .wrapComment("Block bottom")
     .scadRotate(blc.rotation)
     .scadTranslate(blc.position)

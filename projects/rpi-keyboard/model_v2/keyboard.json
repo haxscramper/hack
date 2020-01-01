@@ -40,7 +40,7 @@
              "id" : 0,
              "relativeTo" : 1,
              "pos" : "rpLeft",
-             "offset" : 0.0
+             "offset" : 0.25
          },
          "dimensions": {"width": 8.0, "lowerLen": 14.0}
          },
@@ -124,7 +124,7 @@
              "id" : 2,
              "relativeTo" : 0,
              "pos" : "rpTop",
-             "offset" : 0.0
+             "offset" : 0.25
          },
          "dimensions": {"width": 8.0, "lowerLen": 22.0}
          },
@@ -166,7 +166,7 @@
              "id" : 3,
              "relativeTo" : 0,
              "pos" : "rpBottom",
-             "offset" : 0.0
+             "offset" : 0.25
          },
          "dimensions": {"width": 8.0, "lowerLen": 18.0}
          },
@@ -208,7 +208,7 @@
              "id" : 4,
              "relativeTo" : 0,
              "pos" : "rpLeft",
-             "offset" : 0.0
+             "offset" : 0.25
          },
          "dimensions": {"width": 8.0, "lowerLen": 22.0}
          },
@@ -250,7 +250,7 @@
              "id" : 5,
              "relativeTo" : 0,
              "pos" : "rpRight",
-             "offset" : 0.0
+             "offset" : 0.25
          },
          "dimensions": {"width": 8.0, "lowerLen": 22.0}
          },
@@ -292,7 +292,7 @@
              "id" : 6,
              "relativeTo" : 4,
              "pos" : "rpLeft",
-             "offset" : 0.0
+             "offset" : 0.25
          },
          "dimensions": {"width": 8.0, "lowerLen": 22.0}
          }

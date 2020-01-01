@@ -46,29 +46,6 @@ func rotate*(v: Vec, a: float): Vec =
 func `=~=`(a, b: float): bool =
   abs(a - b) < 0.00000000001
 
-# func lineEqn(l: Line): Option[tuple[a, b: float]] =
-#   ## Return coefficients for line equation `f(x) = ax + b`. Empty
-#   ## option will be returned for degenerate lines (with `l.begin.x ==
-#   ## l.final.x`)
-#   # defer:
-#   #   de &"l:\n\t{l}\n\t{result}"
-#   let
-#     p1 = l.begin
-#     p2 = l.final
-
-#   if p1.y =~= p2.y:
-#     result = some()
-#   if not (p2.x =~= p1.x):
-#     # de "different values"
-#     let a = (p2.y - p1.y) / (p2.x - p1.x)
-#     let b = p1.y - a * p1.x
-#     result = some((a, b))
-#   else:
-#     # de "almost equal"
-#     let a = 0.0
-#     let b = p2.y
-#     result = some((a, b))
-
 func inRange(val: float, rng: (float, float)): bool =
     rng[0] <= val and val <= rng[1]
 
@@ -141,14 +118,20 @@ func magnitude*(l: Line): float =
   ## Return length of the line
   l.toVec.magnitude
 
+func len*(l: Line): float = l.toVec().magnitude()
+
 func `+`*(a, b: Vec3): Vec3 = makeVec3(a.x + b.x, a.y + b.y, a.z + b.z)
 func magnitude*(a: Vec3): float =
   sqrt(a.x ^ 2 + a.y ^ 2 + a.z ^ 2)
+
 
 func `/`*(a: Vec3, denom: float): Vec3 =
   makeVec3(a.x / denom, a.y / denom, a.z / denom)
 
 func norm*(a: Vec3): Vec3 = a / a.magnitude()
+func norm*(l: Line): Vec = l.toVec().norm()
+func nperp*(l: Line): Vec = l.toVec().perp().norm()
+func arg*(l: Line): float = l.toVec().arg()
 
 type
   RelVec* = enum

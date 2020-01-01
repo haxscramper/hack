@@ -11,6 +11,7 @@ import strformat
 import strutils
 import common
 import tables
+import macros
 
 
 proc getLeftPoints*(blc: Block): seq[Vec] =
@@ -267,8 +268,8 @@ func moveTopOf(movedBlock, stationary: PositionedBlock): PositionedBlock =
 
 
 func moveLeftOf(movedBlock, stationary: PositionedBlock): PositionedBlock =
-  # let movedLine = movedBlock.hull.right
-  # let stationLine = stationary.hull.left
+  let movedLine = movedBlock.hull.right
+  let stationLine = stationary.hull.left
 
   let origRotation =
     -PI +
@@ -279,10 +280,29 @@ func moveLeftOf(movedBlock, stationary: PositionedBlock): PositionedBlock =
   let movedBottom = movedBlock.hull.bottom()
   let stationLeft = stationary.hull.left
 
+  # let originPos =
+  #   stationary.position +
+  #   stationLeft.toVec().perp().norm() * movedBlock.blc.positioning.offset +
+  #   movedBottom.toVec().flip().rotate(origRotation) +
+  #   stationary.hull.left.toVec().norm() * (
+  #     stationary.hull.left.magnitude() -
+  #     movedBlock.hull.right.magnitude()) / 2
+
+
   let originPos =
-    stationary.position +
-    stationLeft.toVec().perp().norm() * movedBlock.blc.positioning.offset +
-    movedBottom.toVec().flip().rotate(origRotation)
+    block:
+      let offsetVector =
+        stationLine.toVec().perp().norm() *
+        movedBlock.blc.positioning.offset
+
+      let justificationOffset =
+        stationLine.tovec().norm() *
+        ((stationLine.magnitude() - movedLine.magnitude()) / 2)
+
+      stationary.position +
+      movedBottom.toVec().flip().rotate(origRotation) +
+      offsetVector +
+      justificationOffset
 
   result = movedBlock
   result.position = originPos
@@ -322,12 +342,20 @@ func moveBottomOf(movedBlock, stationary: PositionedBlock): PositionedBlock =
   let stationLine = stationary.hull.bottom()
 
   let stationVec = stationLine.toVec()
-  let shift = (stationLine.magnitude() - movedLine.magnitude())
   let originPos =
-    stationary.position +
-    movedBlock.hull.left.toVec().flip() +
-    (shift / 2) * stationLine.toVec().norm() +
-    stationLine.toVec().perp().flip().norm() * movedBlock.blc.positioning.offset
+    block:
+      let offsetVector =
+        stationLine.toVec().perp().norm().flip() *
+        movedBlock.blc.positioning.offset
+
+      let justificationOffset =
+        stationLine.tovec().norm() *
+        ((stationLine.magnitude() - movedLine.magnitude()) / 2)
+
+      stationary.position +
+      movedBlock.hull.left.toVec().flip() +
+      offsetVector +
+      justificationOffset
 
   result = movedBlock
   result.position = originPos
@@ -340,6 +368,46 @@ func moveRelativeTo(movedBlock, stationary: PositionedBlock): PositionedBlock =
     of rpTop: movedBlock.moveTopOf stationary
     of rpBottom: movedBlock.moveBottomOf stationary
 
+func generateInterlocks(
+  upperLine, lowerLine: Line,
+  blockPlungeDepth: float,
+  height, depth: float
+     ): tuple[upper, lower: Interlock] =
+
+
+  let
+    interlockWidth = (upperLine.len() + lowerLine.len()) * 0.25
+    upperShift = (upperLine.magnitude() + interlockWidth) / 2
+    lowerShift = (lowerLine.magnitude() - interlockWidth) / 2
+    interlockBBox = Size3(h: height, w: interlockWidth, d: depth)
+
+    upperOrigShift = upperLine.begin()
+    lowerOrigShift = lowerLine.begin()
+
+  let
+    upperLock = Interlock(
+      position:
+        upperOrigShift +
+        upperLine.norm() * upperShift +
+        upperLine.nperp() * blockPlungeDepth,
+      rotation: PI + upperLine.arg(),
+      size: interlockBBox,
+      oddHoles: true
+    )
+
+  let
+    lowerLock = Interlock(
+      position:
+        lowerOrigShift +
+        lowerLine.norm() * lowerShift -
+        lowerLine.nperp() * blockPlungeDepth,
+      rotation: lowerLine.arg(),
+      size: interlockBBOx,
+      oddHoles: false
+    )
+
+  result = (upperLock, lowerLock)
+
 func addInterlocks(
   inMovedBlock, inStationary: PositionedBlock
      ): tuple[moved, stationary: PositionedBlock] =
@@ -350,52 +418,57 @@ func addInterlocks(
 
   let
     interlockWidth = 4.0
-    interlockDepth = 1.0
+    interlockDepth = 2.0
     interlockHeight = 1.1
     offset = moved.blc.positioning.offset
-    interlockBBox = Size3(
-      h: interlockHeight,
-      w: interlockWidth,
-      d: interlockDepth)
 
     blockPlungeDepth = (interlockDepth - offset) / 2
 
   case moved.blc.positioning.pos:
     of rpLeft:
-      discard
+      let (upperLock, lowerLock) = generateInterlocks(
+        upperLine = stationary.hull.left,
+        lowerLine = moved.hull.right,
+        blockPlungeDepth = blockPlungeDepth,
+        height = interlockHeight,
+        depth = interlockDepth
+      )
+
+      moved.interlocks.left = lowerLock
+      stationary.interlocks.right = upperLock
     of rpRight:
-      discard
+      let (upperLock, lowerLock) = generateInterlocks(
+        upperLine = stationary.hull.right,
+        lowerLine = moved.hull.left,
+        blockPlungeDepth = blockPlungeDepth,
+        height = interlockHeight,
+        depth = interlockDepth
+      )
+
+      moved.interlocks.left = lowerLock
+      stationary.interlocks.right = upperLock
     of rpTop:
-      let
-        lowerLine = stationary.hull.top()
-        upperLine = moved.hull.bottom()
-
-        upperShift = (upperLine.magnitude() + interlockWidth) / 2
-        lowerShift = (lowerLine.magnitude() - interlockWidth) / 2
-
-      let
-        upperLock = Interlock(
-          position: makeVec(upperShift, blockPlungeDepth),
-          rotation: PI,
-          size: interlockBBox,
-          oddHoles: true
-        )
-
-      let
-        lowerLock = Interlock(
-          position:
-            stationary.hull.left.toVec() +
-            makeVec(lowerShift, -blockPlungeDepth),
-          rotation: 0.0,
-          size: interlockBBOx,
-          oddHoles: false
-        )
+      let (upperLock, lowerLock) = generateInterlocks(
+        upperLine = moved.hull.bottom(),
+        lowerLine = stationary.hull.top(),
+        blockPlungeDepth = blockPlungeDepth,
+        height = interlockHeight,
+        depth = interlockDepth
+      )
 
       moved.interlocks.bottom = upperLock
       stationary.interlocks.top = lowerLock
-
     of rpBottom:
-      discard
+      let (lowerLock, upperLock) = generateInterlocks(
+        upperLine = stationary.hull.bottom(),
+        lowerLine = moved.hull.top(),
+        blockPlungeDepth = blockPlungeDepth,
+        height = interlockHeight,
+        depth = interlockDepth
+      )
+
+      moved.interlocks.bottom = upperLock
+      stationary.interlocks.top = lowerLock
 
   result = (moved, stationary)
 
