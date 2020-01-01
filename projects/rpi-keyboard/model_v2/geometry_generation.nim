@@ -94,13 +94,6 @@ proc getFitPoints(
 
   var fit: tuple[s, e: Vec] = (maxPoint, endP)
 
-  decho fit
-  fit.s.x += xOffset * tern(isLeft, -1, 1)
-  fit.e.x += xOffset * tern(isLeft, -1, 1)
-
-  decho &"control: {fit}"
-
-
   result = (fit, points)
 
 
@@ -154,11 +147,6 @@ the other on one side of the plane.
       x2: fit.e.x - (maxY - fit.e.y) * tan(targetAngle - PI / 2),
       y2: maxY
   )
-
-  let yShift = 0.5
-
-  result.y1 -= yShift
-  result.y2 += yShift
 
   decho &"Fit line: ({result.x1} {result.y1}) ({result.x2} {result.y2})"
 
@@ -230,9 +218,6 @@ proc getFitLines*(blc: Block): (Line, Line, Vec) =
     targetAngle = rightAngle,
     xOffset = blc.offsets.right
     )
-
-
-
 
   result = shiftLines(blc, left, right)
   # result = (left, right, Vec())
@@ -391,12 +376,12 @@ func addInterlocks(
 
             (
               (longerLine.magnitude() + interlockWidth + upperCompensation) / 2,
-              (shorterLine.magnitude() + interlockWidth + lowerCompensation) / 2
+              (shorterLine.magnitude() - interlockWidth + lowerCompensation) / 2
             )
 
       let
         upperLock = Interlock(
-          position: makeVec(upperShift, -blockPlungeDepth),
+          position: makeVec(upperShift, blockPlungeDepth),
           rotation: PI,
           size: interlockBBox,
           oddHoles: true
@@ -406,12 +391,11 @@ func addInterlocks(
         lowerLock = Interlock(
           position:
             lower.hull.left.toVec() +
-            makeVec(lowerShift - interlockWidth, -blockPlungeDepth),
+            makeVec(lowerShift, -blockPlungeDepth),
           rotation: 0.0,
           size: interlockBBOx,
           oddHoles: false
         )
-
 
       moved.interlocks.bottom = upperLock
       stationary.interlocks.top = lowerLock

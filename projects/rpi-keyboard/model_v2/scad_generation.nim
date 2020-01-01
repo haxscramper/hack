@@ -110,6 +110,11 @@ proc makeGroupWith(
 proc addComment(node: ScadNode, comment: string): ScadNode =
   makeScadComment(comment).makeGroupWith([node])
 
+proc wrapComment(node: ScadNode, comment: string): ScadNode =
+  makeScadComment("--- begin " & comment & " ---").makeGroupWith([
+    node,
+    makeScadComment("--- end " & comment & " ---")])
+
 proc makeScad(
   name: string,
   params: varargs[tuple[key, val: string]]
@@ -269,6 +274,13 @@ proc toSCAD(row: Row): tuple[core, boundary: ScadNode] =
       }).
     setColor("Red", 0.01)
 
+proc makeSCADPolygon(points: seq[Vec]): ScadNode =
+  makeScad(
+      "polygon", {
+        "points" :
+        "[" & points.mapIt(&"[{it.x}, {it.y}]").join(",") & "]"
+    })
+
 proc makeBlockTop(blc: PositionedBlock, topThickness: float = 1): ScadNode =
   ## Generate upper part of the block including mounting holes for key
   ## switches and screw holes.
@@ -293,12 +305,8 @@ proc makeBlockTop(blc: PositionedBlock, topThickness: float = 1): ScadNode =
     @[left.begin, left.final, right.final, right.begin]
 
   let blockBody =
-    makeScad(
-      "polygon", {
-        "points" :
-        "[" & polygonPoints.mapIt(&"[{it.x}, {it.y}]").join(",") & "]"
-      }).
-    scadOperator("linear_extrude", {"height" : $topThickness})
+    makeSCADPolygon(polygonPoints)
+    .scadOperator("linear_extrude", {"height" : $topThickness})
 
   result =
     blockBody
@@ -307,12 +315,6 @@ proc makeBlockTop(blc: PositionedBlock, topThickness: float = 1): ScadNode =
     .scadUnion(
       rows.mapIt(it.core.scadTranslate(it.shift + coreShift.toVec3())))
 
-proc makeSCADPolygon(points: seq[Vec]): ScadNode =
-  makeScad(
-      "polygon", {
-        "points" :
-        "[" & points.mapIt(&"[{it.x}, {it.y}]").join(",") & "]"
-    })
 
 proc getSCADInterlocks(
   blc: PositionedBlock
@@ -327,7 +329,7 @@ proc getSCADInterlocks(
 
   let hulls =
     interlocks
-    .mapIt((de it;
+    .mapIt((
       makeCube(w = it.size.w, d = it.size.d, h = it.size.h + 0.1)
       .scadRotate(it.rotation)
       .scadTranslate(it.position)
@@ -388,11 +390,12 @@ proc makeBlockBottom(
         .scadSubtract(inner)
         .scadTranslate(z = baseHeight)
 
-      res
+      res.wrapComment("Block shell")
 
   let blockBase =
     makeSCADPolygon(polygonPoints)
     .scadOperator("linear_extrude", {"height" : $baseHeight})
+    .wrapComment("Block base")
 
   let (interlockCutouts, interlockBodies) = blc.getSCADInterlocks()
 
@@ -403,9 +406,9 @@ proc makeBlockBottom(
 
   result = blockBase
     .scadSubtract(interlockCutouts, "Green")
-    .addComment("Interlock cutouts")
+    .wrapComment("Interlock cutouts")
     .scadUnion(interlockBodies)
-    .addComment("Interlock block bodies")
+    .wrapComment("Interlock block bodies")
 
 proc toSCAD*(blc: PositionedBlock): ScadNode =
   let
@@ -426,8 +429,10 @@ proc toSCAD*(blc: PositionedBlock): ScadNode =
 
   # body
   bottom
+    .wrapComment("Block bottom")
     .scadRotate(blc.rotation)
     .scadTranslate(blc.position)
+    .wrapComment("block body")
 
 
 

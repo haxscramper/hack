@@ -124,7 +124,7 @@
              "id" : 2,
              "relativeTo" : 0,
              "pos" : "rpTop",
-             "offset" : 0.25
+             "offset" : 0.5
          },
          "dimensions": {"width": 8.0, "lowerLen": 22.0}
          }
