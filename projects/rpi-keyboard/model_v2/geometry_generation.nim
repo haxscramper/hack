@@ -151,33 +151,39 @@ the other on one side of the plane.
   decho &"Fit line: ({result.x1} {result.y1}) ({result.x2} {result.y2})"
 
 proc shiftLines(blc: Block, left, right: Line): (Line, Line, Vec) =
+  ## Correct line positions to match expected sizes (width of the
+  ## block, it's origin position etc.). Fitting line sizes are mostly
+  ## discarded and only used to calculate shift of the block core.
   let
     width = blc.dimensions.width
     leftAngle = blc.angles.left
     rightAngle = blc.angles.right
 
-  let lowerLen = right.x1 - left.x1
+  let
+    lowerLen = right.x1 - left.x1
+    targetLen = blc.dimensions.lowerLen
 
-  if lowerLen > blc.dimensions.lowerLen:
+
+  if lowerLen > targetLen:
     raise newException(Exception, "targeted lower len is smaller than fitting one")
 
   let shiftedLeft = Line(
-    x1: left.x1,
-    y1: left.y1,
-    x2: left.x1 + cos(leftAngle) * width,
+    x1: 0.0,
+    y1: 0.0,
+    x2: cos(leftAngle) * width,
     y2: width
   )
 
   let shiftedRight = Line(
-    x1: left.x1 + lowerLen,
-    y1: left.y1,
-    x2: (left.x1 + lowerLen) + cos(rightAngle) * width,
+    x1: targetLen,
+    y1: 0.0,
+    x2: targetLen - cos(rightAngle) * width,
     y2: width
   )
 
   let startShift = Vec(
     x: (shiftedRight.x1 - right.x1) / 2,
-    y: (shiftedRight.y2 - right.y2) / 2
+    y: (shiftedRight.y2 - right.y2 - blc.row0Space()) / 2
   )
 
   result = (shiftedLeft, shiftedRight, startShift)
@@ -220,7 +226,6 @@ proc getFitLines*(blc: Block): (Line, Line, Vec) =
     )
 
   result = shiftLines(blc, left, right)
-  # result = (left, right, Vec())
 
 proc addTable[K, V](t: var Table[K, seq[V]], key: K, val: V) =
   if t.hasKey(key):
@@ -281,29 +286,34 @@ func moveRightOf(movedBlock, stationary: PositionedBlock): PositionedBlock =
   let movedLine = movedBlock.hull.left
   let stationLine = stationary.hull.right
 
+
   let originPos =
-    stationLine.begin() +
-    stationLine.toVec().perp().flip().norm() * movedBlock.blc.positioning.offset
+    block:
+      let offsetVector =
+        stationLine.toVec().perp().norm().flip() *
+        movedBlock.blc.positioning.offset
+
+      let justificationOffset =
+        stationLine.tovec().norm() *
+        ((stationLine.magnitude() - movedLine.magnitude()) / 2)
+
+      stationary.position +
+      stationary.hull.bottom().toVec().rotate(stationary.rotation) +
+      offsetVector +
+      justificationOffset
 
   let origRotation =
-    -stationary.rotation +
-    (PI/2 - stationary.blc.angles.right) +
-    (PI/2 - movedBlock.blc.angles.left)
+    stationary.rotation +
+    PI -
+    (stationary.blc.angles.right + movedBlock.blc.angles.left)
 
   result = movedBlock
   result.position = originPos
   result.rotation = origRotation
 
 func moveBottomOf(movedBlock, stationary: PositionedBlock): PositionedBlock =
-  let movedLine = (
-    movedBlock.hull.left.final,
-    movedBlock.hull.right.final
-  ).makeLine()
-
-  let stationLine = (
-    stationary.hull.left.final,
-    stationary.hull.right.final
-  ).makeLine()
+  let movedLine = movedBlock.hull.top()
+  let stationLine = stationary.hull.bottom()
 
   let stationVec = stationLine.toVec()
   let shift = (stationLine.magnitude() - movedLine.magnitude())

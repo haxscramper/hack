@@ -111,9 +111,20 @@ proc addComment(node: ScadNode, comment: string): ScadNode =
   makeScadComment(comment).makeGroupWith([node])
 
 proc wrapComment(node: ScadNode, comment: string): ScadNode =
-  makeScadComment("--- begin " & comment & " ---").makeGroupWith([
-    node,
-    makeScadComment("--- end " & comment & " ---")])
+  if comment.find("\n") == -1:
+    makeScadComment("--- begin " & comment & " ---").makeGroupWith([
+      node,
+      makeScadComment("--- end " & comment & " ---")
+    ])
+  else:
+    let commLines = comment.split("\n")
+    let commHead = "--- begin " & commLines[0] & "\n" &
+      commLines[1..^1].mapIt("// " & it).join("\n")
+
+    makeScadComment(commHead).makeGroupWith([
+      node,
+      makeScadComment("--- end " & commLines[0] & "---")
+    ])
 
 proc makeScad(
   name: string,
@@ -256,13 +267,13 @@ proc toSCAD(row: Row): tuple[core, boundary: ScadNode] =
   )
 
   result.core =
-    makeCube(d = row.width, w = row.length, h = 1.0).
-    scadSubtract(
-      keys.mapIt(it.boundary.scadTranslate(it.shift))).
-    setColor("Green").
-    scadUnion(
-      keys.mapIt(it.core.scadTranslate(it.shift))).
-    addComment("Row core")
+    makeCube(d = row.width, w = row.length, h = 1.0)
+    .scadSubtract(
+      keys.mapIt(it.boundary.scadTranslate(it.shift)))
+    .setColor("Green")
+    .scadUnion(
+      keys.mapIt(it.core.scadTranslate(it.shift)))
+    .wrapComment("Row core")
 
   result.boundary =
     makeScad(
@@ -271,8 +282,10 @@ proc toSCAD(row: Row): tuple[core, boundary: ScadNode] =
         "width": $row.width,
         "height": $1.0,
         "length": $row.length
-      }).
-    setColor("Red", 0.01)
+      })
+    .setColor("Red", 0.01)
+    .wrapComment("row boundary")
+
 
 proc makeSCADPolygon(points: seq[Vec]): ScadNode =
   makeScad(
@@ -427,13 +440,21 @@ proc toSCAD*(blc: PositionedBlock): ScadNode =
 
   let body = @[top.scadTranslate(z = bottomHeight), bottom].makeGroup()
 
-  # body
-  bottom
+  result = body
+  # bottom
     .wrapComment("Block bottom")
     .scadRotate(blc.rotation)
     .scadTranslate(blc.position)
     .wrapComment("block body")
 
+  result = result.wrapComment(&"""
+block id {blc.blc.positioning.id}
+id:  blc.blc.positioning.id
+rot: {blc.rotation.radToDeg():3.1f} deg ccw
+pos: blc.position
+hull: {blc.hull.left}
+    : {blc.hull.right}
+""")
 
 
 proc toSCAD*(kbd: Keyboard): ScadNode =

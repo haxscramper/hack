@@ -80,6 +80,8 @@ Parameters for the block connectors
 
   :id: mandatory field, used as unique identifier for block
   :offset: for each relative position - offset between blocks.
+
+:offsets: minimal distance between keys and hull
     ]##
 
     rows*: seq[tuple[row: Row, space: float]]
@@ -143,8 +145,8 @@ proc totalLength*(row: Row): float =
   row.keys.mapIt(it.space + it.key.length).sum()
 
 proc indent*(row: Row): float = row.keys[0].space
-
 proc length*(row: Row): float = row.totalLength - row.indent
+func row0Space*(blc: Block): float = blc.rows[0].space
 
 proc width*(blc: Block): float =
   ## Return total width of the block including spaces between rows.
@@ -152,7 +154,6 @@ proc width*(blc: Block): float =
 
 func top*(hull: tuple[left, right: Line, coreShift: Vec]): Line =
   makeLine(hull.left.final, hull.right.final)
-
 
 func bottom*(hull: tuple[left, right: Line, coreShift: Vec]): Line =
   makeLine(hull.left.begin, hull.right.begin)

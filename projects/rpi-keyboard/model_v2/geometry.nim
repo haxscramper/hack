@@ -51,7 +51,6 @@ converter toVec*[N: float | int](pos: (N, N)): Vec =
     Vec(x: pos[0], y: pos[1])
 
 
-
 type
   Vec3* = object
     x*, y*, z*: float

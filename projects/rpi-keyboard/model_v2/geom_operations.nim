@@ -4,6 +4,7 @@ import geometry,
 
 export geometry
 import options
+import strformat
 
 func `-`*(a, b: Vec): Vec = makeVec(a.x - b.x, a.y - b.y)
 func `+`*(a, b: Vec): Vec = makeVec(a.x + b.x, a.y + b.y)
@@ -162,6 +163,9 @@ func invert*(pos: RelVec): RelVec =
     of rpRight: rpLeft
     of rpBottom: rpTop
     of rpTop: rpBottom
+
+func `$`*(v: Vec): string = &"({v.x:4.2f}, {v.y:4.2f})"
+func `$`*(l: Line): string = &"({l.begin()} {l.final()})"
 
 when isMainModule:
   echo lineEqn(makeLine(Vec(x: 0, y: 0), Vec(x: 0, y: 1)))
