@@ -34,7 +34,7 @@
               "space" : 1.0
             },
         ],
-         "angles": {"left" : 135, "right" : 125},
+         "angles": {"left" : 135, "right" : 90},
          "offsets": {"left" : 0.2, "right" : 0.2},
          "positioning" : {
              "id" : 0,
@@ -160,7 +160,7 @@
               "space" : 1.0
             },
         ],
-         "angles": {"left" : 90 , "right" : 90},
+         "angles": {"left" : 75 , "right" : 75},
          "offsets": {"left" : 0.2, "right" : 0.2},
          "positioning" : {
              "id" : 3,
@@ -168,7 +168,7 @@
              "pos" : "rpBottom",
              "offset" : 0.0
          },
-         "dimensions": {"width": 8.0, "lowerLen": 22.0}
+         "dimensions": {"width": 8.0, "lowerLen": 18.0}
          },
          {"rows" : [
             { "row" : {
@@ -244,7 +244,7 @@
               "space" : 1.0
             },
         ],
-         "angles": {"left" : 125 , "right" : 75},
+         "angles": {"left" : 125, "right" : 90},
          "offsets": {"left" : 0.2, "right" : 0.2},
          "positioning" : {
              "id" : 5,

@@ -161,16 +161,24 @@ proc shiftLines(blc: Block, left, right: Line): (Line, Line, Vec) =
 
   let
     lowerLen = right.x1 - left.x1
+    upperLen = right.x2 - left.x2
     targetLen = blc.dimensions.lowerLen
+    upperTarget = targetLen - width / tan(leftAngle) - width / tan(rightAngle)
 
-
+  # TODO provide fix in error message (i.e. increase lower len or
+  # increase angles (for upper len))
   if lowerLen > targetLen:
-    raise newException(Exception, "targeted lower len is smaller than fitting one")
+    raise newException(Exception,
+                       "targeted lower len is smaller than fitting one")
+
+  if upperLen > upperTarget:
+    raise newException(Exception,
+                       "target upper len is smaller than fitting one")
 
   let shiftedLeft = Line(
     x1: 0.0,
     y1: 0.0,
-    x2: cos(leftAngle) * width,
+    x2: width * tan(PI/2 - leftAngle),
     y2: width
   )
 
@@ -263,14 +271,12 @@ func moveLeftOf(movedBlock, stationary: PositionedBlock): PositionedBlock =
   # let stationLine = stationary.hull.left
 
   let origRotation =
-    stationary.rotation +
-    stationary.blc.angles.left -
-    movedBlock.blc.angles.right
+    -PI +
+    stationary.blc.angles.left +
+    movedBlock.blc.angles.right -
+    -stationary.rotation
 
-  let movedBottom = makeLine(
-    movedBlock.hull.left.begin,
-    movedBlock.hull.right.begin)
-
+  let movedBottom = movedBlock.hull.bottom()
   let stationLeft = stationary.hull.left
 
   let originPos =
