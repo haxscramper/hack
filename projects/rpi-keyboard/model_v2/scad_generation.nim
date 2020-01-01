@@ -427,16 +427,19 @@ proc makeBlockBottom(
 
   let (interlockCutouts, interlockBodies) = blc.getSCADInterlocks()
 
-  # result = blockShell
-  #   .scadUnion(blockBase)
-  #   .scadSubtract(interlockCutouts)
-  #   .scadUnion(interlockBodies)
-
-  result = blockBase
+  result = blockShell
+    .scadUnion(blockBase)
+    .wrapComment("Block base")
     .scadSubtract(interlockCutouts)
     .wrapComment("Interlock cutouts")
     .scadUnion(interlockBodies)
     .wrapComment("Interlock block bodies")
+
+  # result = blockBase
+  #   .scadSubtract(interlockCutouts)
+  #   .wrapComment("Interlock cutouts")
+  #   .scadUnion(interlockBodies)
+  #   .wrapComment("Interlock block bodies")
 
 proc toSCAD*(blc: PositionedBlock): ScadNode =
   let

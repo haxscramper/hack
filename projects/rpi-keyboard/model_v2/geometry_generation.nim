@@ -196,6 +196,7 @@ proc shiftLines(blc: Block, left, right: Line): (Line, Line, Vec) =
   )
 
   result = (shiftedLeft, shiftedRight, startShift)
+  # result = (left, right, Vec(x: 0, y: 0))
 
 
 proc getFitLines*(blc: Block): (Line, Line, Vec) =
