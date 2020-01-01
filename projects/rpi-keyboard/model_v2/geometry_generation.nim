@@ -165,14 +165,14 @@ proc shiftLines(blc: Block, left, right: Line): (Line, Line, Vec) =
     x1: left.x1,
     y1: left.y1,
     x2: left.x1 + cos(leftAngle) * width,
-    y2: left.y1 + sin(leftAngle) * width
+    y2: width
   )
 
   let shiftedRight = Line(
     x1: left.x1 + lowerLen,
     y1: left.y1,
     x2: (left.x1 + lowerLen) + cos(rightAngle) * width,
-    y2: left.y1 + sin(rightAngle) * width
+    y2: width
   )
 
   let startShift = Vec(
@@ -351,33 +351,11 @@ func addInterlocks(
       discard
     of rpTop:
       let
-        lower = stationary
-        upper = moved
+        lowerLine = stationary.hull.top()
+        upperLine = moved.hull.bottom()
 
-        lowerLine = lower.hull.bottom()
-        upperLine = upper.hull.top()
-
-        upperIsLonger = lowerLine.magnitude() >= upperLine.magnitude()
-
-        (longerLine, shorterLine) = (upperIsLonger).tern(
-          (lowerLine, upperLine), (upperLine, lowerLine))
-
-        lenDiff = (longerLine.magnitude() - shorterLine.magnitude())
-
-
-        (upperShift, lowerShift) =
-          block:
-            var
-              upperCompensation = 0.0
-              lowerCompensation = 0.0
-
-            if upperIsLonger: lowerCompensation = lenDiff / 2
-            else: upperCompensation = lenDiff / 2
-
-            (
-              (longerLine.magnitude() + interlockWidth + upperCompensation) / 2,
-              (shorterLine.magnitude() - interlockWidth + lowerCompensation) / 2
-            )
+        upperShift = (upperLine.magnitude() + interlockWidth) / 2
+        lowerShift = (lowerLine.magnitude() - interlockWidth) / 2
 
       let
         upperLock = Interlock(
@@ -390,7 +368,7 @@ func addInterlocks(
       let
         lowerLock = Interlock(
           position:
-            lower.hull.left.toVec() +
+            stationary.hull.left.toVec() +
             makeVec(lowerShift, -blockPlungeDepth),
           rotation: 0.0,
           size: interlockBBOx,
