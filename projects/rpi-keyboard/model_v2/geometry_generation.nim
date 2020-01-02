@@ -431,8 +431,8 @@ proc addInterlocks(
         outerDirection = false
       )
 
-      moved.interlocks.right = upperLock
-      stationary.interlocks.left = lowerLock
+      moved.interlocks.left = upperLock
+      stationary.interlocks.right = lowerLock
     of rpRight:
       let (upperLock, lowerLock) = generateInterlocks(
         upperLine = stationary.hull.right,

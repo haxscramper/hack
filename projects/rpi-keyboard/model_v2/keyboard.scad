@@ -46,86 +46,96 @@ module interlock(
     offsetSize,
     outerDirection) {
 
-    step = width / 10;
-    if (oddHoles) {
-        color("red") {
-            cube([ step, depth, height ]);
-            translate([ step * 9, 0, 0 ]) {
+    test = false;
+    if (test) {
+        step = width / 10;
+        if (oddHoles) {
+            color("red") {
                 cube([ step, depth, height ]);
+                translate([ step * 9, 0, 0 ]) {
+                    cube([ step, depth, height ]);
+                }
+            }
+        } else {
+            translate([ step * 2, 0, 0 ]) color("blue")
+                cube([ 6 * step, depth, height ]);
+        }
+
+    } else {
+        baseWidth = sectionWidth - lockWidth;
+        baseTmp   = outerDirection ? baseWidth : lockWidth;
+        lockTmp   = outerDirection ? lockWidth : baseWidth;
+        plunge    = 2 * offsetSize;
+        let(baseWidth = baseTmp, lockWidth = lockTmp) {
+            lockCount = floor(width / sectionWidth);
+            shift     = (width - (lockCount * sectionWidth)) / 2;
+            if (!oddHoles && shift > offsetSize) {
+                padding = shift - offsetSize;
+                translate([ offsetSize, -plunge, 0 ])
+                    cube([ padding, depth + offsetSize, height ]);
+                translate([ width - padding - offsetSize, -plunge, 0 ])
+                    cube([ padding, depth + offsetSize, height ]);
+            }
+            translate([ shift, 0, 0 ]) {
+                if (oddHoles) {
+                    for (lock = [0:lockCount - 1]) {
+                        translate([ lock * sectionWidth, 0, 0 ]) {
+                            linear_extrude(height = height + 0.01) {
+                                offset(r = -offsetSize) polygon(
+                                    [[baseWidth / 2, 0],
+                                     [lockWidth / 2, depth + plunge],
+                                     [lockWidth / 2 + baseWidth,
+                                      depth + plunge],
+                                     [baseWidth / 2 + lockWidth, 0]]);
+                            }
+                        }
+                    }
+                } else {
+                    for (lock = [0:lockCount - 1]) {
+                        translate([
+                            lock * (lockWidth + baseWidth),
+                            0,
+                            -0.005
+                        ]) {
+                            linear_extrude(height = height) {
+                                polygon([
+                                    [ 0, -plunge ],
+                                    [ 0, depth - offsetSize ],
+                                    [
+                                        (sectionWidth - baseWidth) / 2,
+                                        depth -
+                                        offsetSize
+                                    ],
+                                    [
+                                        (sectionWidth - lockWidth) / 2,
+                                        -plunge
+                                    ]
+                                ]);
+                            }
+
+                            linear_extrude(height = height) {
+                                polygon([
+                                    [
+                                        (sectionWidth - baseWidth) / 2
+                                            + baseWidth,
+                                        depth -
+                                        offsetSize
+                                    ],
+                                    [
+                                        (sectionWidth - lockWidth) / 2
+                                            + lockWidth,
+                                        -plunge
+                                    ],
+                                    [ sectionWidth, -plunge ],
+                                    [ sectionWidth, depth - offsetSize ]
+                                ]);
+                            }
+                        }
+                    }
+                }
             }
         }
-    } else {
-        translate([ step * 2, 0, 0 ]) color("blue")
-            cube([ 6 * step, depth, height ]);
     }
-    /* baseWidth = sectionWidth - lockWidth; */
-    /* baseTmp   = outerDirection ? baseWidth : lockWidth; */
-    /* lockTmp   = outerDirection ? lockWidth : baseWidth; */
-    /* plunge    = 2 * offsetSize; */
-    /* let(baseWidth = baseTmp, lockWidth = lockTmp) { */
-    /*     lockCount = floor(width / sectionWidth); */
-    /*     shift     = (width - (lockCount * sectionWidth)) / 2; */
-    /*     if (!oddHoles) { */
-    /*         translate([ 0, -plunge, 0 ]) */
-    /*             cube([ shift, depth + offsetSize, height ]); */
-    /*         translate([ width - shift, -plunge, 0 ]) */
-    /*             cube([ shift, depth + offsetSize, height ]); */
-    /*     } */
-    /*     translate([ shift, 0, 0 ]) { */
-    /*         if (oddHoles) { */
-    /*             for (lock = [0:lockCount - 1]) { */
-    /*                 translate([ lock * sectionWidth, 0, 0 ]) { */
-    /*                     linear_extrude(height = height + 0.01) { */
-    /*                         offset(r = -offsetSize) polygon( */
-    /*                             [[baseWidth / 2, 0], */
-    /*                              [lockWidth / 2, depth + plunge], */
-    /*                              [lockWidth / 2 + baseWidth, */
-    /*                               depth + plunge], */
-    /*                              [baseWidth / 2 + lockWidth, 0]]); */
-    /*                     } */
-    /*                 } */
-    /*             } */
-    /*         } else { */
-    /*             for (lock = [0:lockCount - 1]) { */
-    /*                 translate( */
-    /*                     [ lock * (lockWidth + baseWidth), 0, -0.005 ]) {
-     */
-    /*                     linear_extrude(height = height) { */
-    /*                         polygon([ */
-    /*                             [ 0, -plunge ], */
-    /*                             [ 0, depth - offsetSize ], */
-    /*                             [ */
-    /*                                 (sectionWidth - baseWidth) / 2, */
-    /*                                 depth - */
-    /*                                 offsetSize */
-    /*                             ], */
-    /*                             [ (sectionWidth - lockWidth) / 2,
-     * -plunge ] */
-    /*                         ]); */
-    /*                     } */
-
-    /*                     linear_extrude(height = height) { */
-    /*                         polygon([ */
-    /*                             [ */
-    /*                                 (sectionWidth - baseWidth) / 2 */
-    /*                                     + baseWidth, */
-    /*                                 depth - */
-    /*                                 offsetSize */
-    /*                             ], */
-    /*                             [ */
-    /*                                 (sectionWidth - lockWidth) / 2 */
-    /*                                     + lockWidth, */
-    /*                                 -plunge */
-    /*                             ], */
-    /*                             [ sectionWidth, -plunge ], */
-    /*                             [ sectionWidth, depth - offsetSize ] */
-    /*                         ]); */
-    /*                     } */
-    /*                 } */
-    /*             } */
-    /*         } */
-    /*     } */
-    /* } */
 }
 
 

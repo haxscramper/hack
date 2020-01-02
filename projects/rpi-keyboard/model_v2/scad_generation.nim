@@ -17,7 +17,7 @@ type
    baseAndKeys
    wholeKeyboard
 
-const generateWhat = onlyBase
+const generateWhat = wholeKeyboard
 
 type
   ScadNodeType = enum
