@@ -391,7 +391,7 @@ proc getSCADInterlocks(
       .scadRotate(it.rotation)
       .scadTranslate(it.position)
       .scadTranslate(z = -0.1)
-    ))
+    ).wrapComment("Interlock cutout block"))
 
   let bodies =
     interlocks
@@ -406,6 +406,7 @@ proc getSCADInterlocks(
         "offsetSize": $globalLockConf.offsetSize,
         "outerDirection": $it.outerDirection,
       })
+      .wrapComment("Interlock body")
       .scadRotate(it.rotation)
       .scadTranslate(it.position))
 

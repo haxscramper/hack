@@ -37,6 +37,9 @@ func flip*(v: Vec): Vec =
   ## Return reversed vector
   makeVec(-v.x, -v.y)
 
+func flip*(l: Line): Line =
+  Line(x1: l.x2, x2: l.x1, y1: l.y2, y2: l.y1)
+
 func rotate*(v: Vec, a: float): Vec =
   ## CCW rotate vector by `a` radians
   makeVec(

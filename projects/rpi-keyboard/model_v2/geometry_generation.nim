@@ -373,6 +373,7 @@ proc generateInterlocks(
     upperShift = (upperLine.magnitude() - interlockWidth) / 2
     lowerShift = (lowerLine.magnitude() - interlockWidth) / 2
     interlockBBox = Size3(h: height, w: interlockWidth, d: depth)
+    blockPlungeDepth = (depth - offset) / 2
 
     upperOrigShift = upperLine.begin()
     lowerOrigShift = lowerLine.begin()
@@ -382,7 +383,7 @@ proc generateInterlocks(
       position:
         upperOrigShift +
         upperLine.norm() * upperShift -
-        upperLine.nperp() * offset,
+        upperLine.nperp() * offset / 2,
       rotation: upperLine.arg(),
       size: interlockBBox,
       oddHoles: true,
@@ -393,8 +394,8 @@ proc generateInterlocks(
     lowerLock = Interlock(
       position:
         lowerOrigShift +
-        lowerLine.norm() * lowerShift# -
-        # lowerLine.nperp() * offset
+        lowerLine.norm() * lowerShift # -
+        # lowerLine.nperp() * offset / 2
       ,
       rotation: lowerLine.arg(),
       size: interlockBBOx,
@@ -414,25 +415,24 @@ proc addInterlocks(
     stationary = inStationary
 
   let
-    # interlockWidth = globalLockConf.width
-    interlockDepth = globalLockConf.depth
+    interlockDepth = globalLockConf.depth + 2
     interlockHeight = globalLockConf.height
     offset = moved.blc.positioning.offset
 
   case moved.blc.positioning.pos:
     of rpLeft:
       let (upperLock, lowerLock) = generateInterlocks(
-        upperLine = stationary.hull.left,
-        lowerLine = moved.hull.right,
+        upperLine = moved.hull.right,
+        lowerLine = stationary.hull.left,
         offset = offset,
         height = interlockHeight,
         depth = interlockDepth,
         conf = conf,
-        outerDirection = true
+        outerDirection = false
       )
 
-      moved.interlocks.left = lowerLock
-      stationary.interlocks.right = upperLock
+      moved.interlocks.right = upperLock
+      stationary.interlocks.left = lowerLock
     of rpRight:
       let (upperLock, lowerLock) = generateInterlocks(
         upperLine = stationary.hull.right,
@@ -454,7 +454,7 @@ proc addInterlocks(
         height = interlockHeight,
         depth = interlockDepth,
         conf = conf,
-        outerDirection = true
+        outerDirection = false
       )
 
       moved.interlocks.top = upperLock
