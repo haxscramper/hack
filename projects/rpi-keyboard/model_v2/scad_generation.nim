@@ -25,6 +25,8 @@ type
     sntComment
     sntInclude
     sntGroup
+    sntModule
+    sntVariable
 
   GroupModeType = enum
     gmtRegular
@@ -33,6 +35,7 @@ type
     gmtRoot
 
   ScadNode = object
+    # DOC
     case kind: ScadNodeType
     of sntInvoke:
       name: string
@@ -45,6 +48,13 @@ type
     of sntGroup:
       elements: seq[ScadNode]
       groupMod: GroupModeType
+    of sntModule:
+      modName: string
+      argList: StringTableRef ## Argument and it's default value
+      body: seq[ScadNode]
+    of sntVariable:
+      varName: string
+      defValue: string
 
 proc toString*(node: ScadNode): string =
   case node.kind:
@@ -67,6 +77,14 @@ proc toString*(node: ScadNode): string =
 use <{node.path}>;
 // clang-format on
 """
+    of sntModule:
+      result = &"module {node.modName} (" &
+        toSeq(node.argList.pairs).mapIt(&"{it.key} = {it.value}").join(",") &
+        ") {\n" &
+        node.body.map(toString).join("\n") &
+        "\n}"
+    of sntVariable:
+      result = &"{node.varName} = {node.defValue};"
     of sntGroup:
       result = node.elements.map(toString).join("\n")
       case node.groupMod:
@@ -93,6 +111,20 @@ proc makeScadComment(text: string): ScadNode =
 proc makeScadInclude(path: string): ScadNode =
   ScadNode(path: path, kind: sntInclude)
 
+proc makeScadVar(name, defValue: string): ScadNode =
+  ScadNode(kind: sntVariable, varName: name, defValue: defValue)
+
+proc makeScadModule(
+  name: string,
+  body: openarray[ScadNode],
+  args: varargs[tuple[key, val: string]]
+     ): ScadNode =
+  ScadNode(
+    modName: name,
+    body: toSeq(body),
+    argList: newStringTable(args),
+    kind: sntModule
+  )
 
 proc makeGroup(
   elements: openarray[ScadNode],
@@ -181,6 +213,9 @@ proc scadOperator(
 proc scadTranslate(node: ScadNode, x = 0.0, y = 0.0, z = 0.0): ScadNode =
   makeScadTree("translate", [node], {"v" : &"[{x}, {y}, {z}]"})
 
+proc scadTranslate(node: ScadNode, pos: string): ScadNode =
+  makeScadTree("translate", [node], {"v" : pos})
+
 proc scadTranslate(node: ScadNode, pos: Vec3): ScadNode =
   scadTranslate(node, x = pos.x, y = pos.y, z = pos.z)
 
@@ -189,13 +224,14 @@ proc scadTranslate(node: ScadNode, pos: Vec): ScadNode =
 
 proc scadRotate(
   node: ScadNode,
-  angle: float,
+  angle: float | string,
   x = 0.0, y = 0.0, z = 1.0
      ): ScadNode =
   makeScadTree("rotate", [node], {
-    "a" : $(angle.radToDeg()),
+    "a" : (when angle is float: $(angle.radToDeg()) else: angle),
     "v" : &"[{x}, {y}, {z}]"
   })
+
 
 proc scadSubtract(node: ScadNode, subtract: varargs[ScadNode]): ScadNode =
   makeScadTree(name = "difference", children = @[node] & subtract.toSeq())
@@ -455,7 +491,12 @@ proc makeBlockBottom(
       .scadUnion(interlockBodies)
       .wrapComment("Interlock block bodies")
 
-proc toSCAD*(blc: PositionedBlock): ScadNode =
+proc toSCAD*(blc: PositionedBlock, asModule: bool = false): ScadNode =
+  ## Convert positioned block into openscad node. If `asModule` is
+  ## true then generate module with `xPos`, `yPos` and `rotation`
+  ## arguments. Current positioning arguments of the input block will
+  ## be used as default values for arguments. Generated module name is
+  ## `positioned_block_id_<block-id>`
   let
     baseHeight = 1.0
     shellHeight = 4.0
@@ -477,9 +518,17 @@ proc toSCAD*(blc: PositionedBlock): ScadNode =
       when generateWhat == wholeKeyboard: body else: bottom
     )
     .wrapComment("Block bottom")
-    .scadRotate(blc.rotation)
-    .scadTranslate(blc.position)
-    .wrapComment("block body")
+
+  if asModule:
+    result = result
+      .scadRotate("rotation")
+      .scadTranslate("[xPos, yPos]")
+      .wrapComment("block body")
+  else:
+    result = result
+      .scadRotate(blc.rotation)
+      .scadTranslate(blc.position)
+      .wrapComment("block body")
 
   result = result.wrapComment(&"""
 block id {blc.blc.positioning.id}
@@ -490,9 +539,20 @@ hull: {blc.hull.left}
     : {blc.hull.right}
 """)
 
+  if asModule:
+    result = makeScadModule(
+      name = &"positioned_block_id_{blc.blc.positioning.id}",
+      args = {
+        "xPos" : $blc.position.x,
+        "yPos" : $blc.position.y,
+        "rotation" : $blc.rotation
+        },
+      body = @[result]
+    )
+
 
 proc toSCAD*(kbd: Keyboard): ScadNode =
-  kbd.arrangeBlocks().map(toSCAD).makeGroup()
+  kbd.arrangeBlocks().mapIt(it.toSCAD).makeGroup()
 
 proc addSCADImports*(body: ScadNode): ScadNode =
     body.makeGroupWith(
