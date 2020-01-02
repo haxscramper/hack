@@ -48,31 +48,6 @@ module interlockTeeth(
     lockWidth,
     offsetSize,
     outerDirection) {
-
-    baseWidth = lockWidth + 2 * tan(baseAngles - 90);
-
-    baseTmp = outerDirection ? baseWidth : lockWidth;
-    lockTmp = outerDirection ? lockWidth : baseWidth;
-
-    let(baseWidth = baseTmp, lockWidth = lockTmp) {
-        sectionWidth = baseWidth + lockWidth;
-        lockCount    = floor(width / (baseWidth * 2));
-        shift        = (width - (lockCount * baseWidth)) / 2;
-        translate([ shift + lockWidth / 2, 0, 0 ]) {
-            for (lock = [0:lockCount - 1]) {
-                translate([ lock * (lockWidth + baseWidth), 0, -0.005 ]) {
-                    linear_extrude(height = height + 0.01) {
-                        translate([ 0, offsetSize, 0 ])
-                            offset(r = offsetSize) polygon(
-                                [[baseWidth / 2, 0],
-                                 [lockWidth / 2, depth],
-                                 [lockWidth / 2 + baseWidth, depth],
-                                 [baseWidth / 2 + lockWidth, 0]]);
-                    }
-                }
-            }
-        }
-    }
 }
 
 module interlock(
@@ -80,51 +55,123 @@ module interlock(
     width,    // float
     oddHoles, // bool
     depth,    // float
-    baseAngles,
+    sectionWidth,
     lockWidth,
     offsetSize,
     outerDirection) {
 
-    if (oddHoles) {
-        interlockTeeth(
-            height         = height,
-            width          = width,
-            depth          = depth,
-            baseAngles     = baseAngles,
-            lockWidth      = lockWidth,
-            offsetSize     = -offsetSize,
-            outerDirection = outerDirection);
-    } else {
-        difference() {
-            translate([ 0, offsetSize, 0 ])
-                cube([ width, depth - offsetSize, height ]);
-            interlockTeeth(
-                height         = height,
-                width          = width,
-                depth          = depth,
-                baseAngles     = baseAngles,
-                lockWidth      = lockWidth,
-                offsetSize     = offsetSize,
-                outerDirection = outerDirection);
+    baseWidth = sectionWidth - lockWidth;
+    baseTmp   = outerDirection ? baseWidth : lockWidth;
+    lockTmp   = outerDirection ? lockWidth : baseWidth;
+    plunge    = 2 * offsetSize;
+    let(baseWidth = baseTmp, lockWidth = lockTmp) {
+        lockCount = floor(width / sectionWidth);
+        shift     = (width - (lockCount * sectionWidth)) / 2;
+        if (!oddHoles) {
+            translate([ 0, -plunge, 0 ])
+                cube([ shift, depth + offsetSize, height ]);
+            translate([ width - shift, -plunge, 0 ])
+                cube([ shift, depth + offsetSize, height ]);
+        }
+        translate([ shift, 0, 0 ]) {
+            if (oddHoles) {
+                for (lock = [0:lockCount - 1]) {
+                    translate([ lock * sectionWidth, 0, 0 ]) {
+                        linear_extrude(height = height + 0.01) {
+                            offset(r = -offsetSize) polygon(
+                                [[baseWidth / 2, 0],
+                                 [lockWidth / 2, depth + plunge],
+                                 [lockWidth / 2 + baseWidth,
+                                  depth + plunge],
+                                 [baseWidth / 2 + lockWidth, 0]]);
+                        }
+                    }
+                }
+            } else {
+                for (lock = [0:lockCount - 1]) {
+                    translate(
+                        [ lock * (lockWidth + baseWidth), 0, -0.005 ]) {
+                        linear_extrude(height = height) {
+                            polygon([
+                                [ 0, -plunge ],
+                                [ 0, depth - offsetSize ],
+                                [
+                                    (sectionWidth - baseWidth) / 2,
+                                    depth -
+                                    offsetSize
+                                ],
+                                [ (sectionWidth - lockWidth) / 2, -plunge ]
+                            ]);
+                        }
+
+                        linear_extrude(height = height) {
+                            polygon([
+                                [
+                                    (sectionWidth - baseWidth) / 2
+                                        + baseWidth,
+                                    depth -
+                                    offsetSize
+                                ],
+                                [
+                                    (sectionWidth - lockWidth) / 2
+                                        + lockWidth,
+                                    -plunge
+                                ],
+                                [ sectionWidth, -plunge ],
+                                [ sectionWidth, depth - offsetSize ]
+                            ]);
+                        }
+                    }
+                }
+            }
         }
     }
 }
 
-interlock(
-    height     = 1.1,
-    width      = 8.5,
-    oddHoles   = true,
-    depth      = 2.0,
-    lockWidth  = 2,
-    baseAngles = 115,
-    offsetSize = 0.05);
 
+height       = 1.1;
+width        = 9.2;
+depth        = 2.0;
+lockWidth    = 2;
+sectionWidth = 3;
+offsetSize   = 0.05;
 
 interlock(
-    height     = 1.1,
-    width      = 8.5,
-    oddHoles   = false,
-    depth      = 2.0,
-    lockWidth  = 2,
-    baseAngles = 115,
-    offsetSize = 0.05);
+    height       = height,
+    width        = width,
+    oddHoles     = true,
+    depth        = depth,
+    lockWidth    = lockWidth,
+    sectionWidth = sectionWidth,
+    offsetSize   = offsetSize);
+
+interlock(
+    height       = height,
+    width        = width,
+    oddHoles     = false,
+    depth        = depth,
+    lockWidth    = lockWidth,
+    sectionWidth = sectionWidth,
+    offsetSize   = offsetSize);
+
+translate([ 0, 2 * depth, 0 ]) {
+    interlock(
+        height         = height,
+        width          = width,
+        oddHoles       = true,
+        depth          = depth,
+        lockWidth      = lockWidth,
+        sectionWidth   = sectionWidth,
+        offsetSize     = offsetSize,
+        outerDirection = true);
+
+    interlock(
+        height         = height,
+        width          = width,
+        oddHoles       = false,
+        depth          = depth,
+        lockWidth      = lockWidth,
+        sectionWidth   = sectionWidth,
+        offsetSize     = offsetSize,
+        outerDirection = true);
+}

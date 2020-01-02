@@ -397,13 +397,13 @@ proc getSCADInterlocks(
     interlocks
     .mapIt(
       makeScad("interlock", {
-        "lockWidth" : $it.conf.lockWidth,
-        "baseAngles" : $it.conf.baseAngles.radToDeg(),
+        "lockWidth" : $globalLockConf.lockWidth,
+        "sectionWidth" : $globalLockConf.sectionWidth,
         "oddHoles" : $it.oddHoles,
         "width" : $it.size.w,
         "depth" : $it.size.d,
         "height" : $it.size.h,
-        "offsetSize": $it.conf.offsetSize,
+        "offsetSize": $globalLockConf.offsetSize,
         "outerDirection": $it.outerDirection,
       })
       .scadRotate(it.rotation)
@@ -553,6 +553,7 @@ hull: {blc.hull.left}
 
 
 proc toSCAD*(kbd: Keyboard): ScadNode =
+  globalLockConf = kbd.interlockConf
   kbd.arrangeBlocks().mapIt(it.toSCAD).makeGroup()
 
 proc addSCADImports*(body: ScadNode): ScadNode =

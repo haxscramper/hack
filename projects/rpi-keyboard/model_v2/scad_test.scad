@@ -1,23 +1,14 @@
-a = 2;
-b = 3;
-cond = false;
-
-atmp = cond ? a : b;
-btmp = cond ? b : a;
-
-echo ("--");
-echo (atmp);
-echo (btmp);
-echo ("--");
-
-let(a = atmp, b = btmp) {
-    echo (a);
-    echo (b);
-}
-/*
-a = atmp;
-b = btmp;
+a = 1;
 
 echo (a);
-echo (b);
-*/
+
+if(true) {
+    a = 2;
+    echo (a);
+}
+
+let (a = a +12) {
+    echo (a);
+}
+
+echo (a);

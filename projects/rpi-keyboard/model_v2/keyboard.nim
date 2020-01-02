@@ -42,9 +42,11 @@ type
 
   InterlockConf* = object
     depth*: float
-    baseAngles*: float
+    sectionWidth*: float
     lockWidth*: float
     offsetSize*: float
+    widthMultiplier*: float
+    height*: float
 
   Interlock* = object
     ##[
@@ -65,8 +67,6 @@ Parameters for the block connectors
     rotation*: float
     size*: Size3
     oddHoles*: bool
-
-    conf*: InterlockConf
     # holeAngles*: float
     # holeUpperWidth*: float
     outerDirection*: bool
@@ -145,7 +145,6 @@ proc toRadianAngles*(kbd: Keyboard): Keyboard =
   ## degree angles to radian angles.
   result = kbd
   result.blocks = kbd.blocks.mapIt(it.toRadianAngles)
-  result.interlockConf.baseAngles = kbd.interlockConf.baseAngles.degToRad()
 
 proc width*(row: Row): float =
   row.keys.mapIt(it.key.width).max()
@@ -166,3 +165,5 @@ func top*(hull: tuple[left, right: Line, coreShift: Vec]): Line =
 
 func bottom*(hull: tuple[left, right: Line, coreShift: Vec]): Line =
   makeLine(hull.left.begin, hull.right.begin)
+
+var globalLockConf*: InterlockConf

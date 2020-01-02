@@ -359,7 +359,7 @@ func moveRelativeTo(movedBlock, stationary: PositionedBlock): PositionedBlock =
     of rpTop: movedBlock.moveTopOf stationary
     of rpBottom: movedBlock.moveBottomOf stationary
 
-func generateInterlocks(
+proc generateInterlocks(
   upperLine, lowerLine: Line,
   offset: float,
   height, depth: float,
@@ -369,7 +369,7 @@ func generateInterlocks(
 
 
   let
-    interlockWidth = (upperLine.len() + lowerLine.len()) * 0.25
+    interlockWidth = (upperLine.len() + lowerLine.len()) * 0.5 * globalLockConf.widthMultiplier
     upperShift = (upperLine.magnitude() - interlockWidth) / 2
     lowerShift = (lowerLine.magnitude() - interlockWidth) / 2
     interlockBBox = Size3(h: height, w: interlockWidth, d: depth)
@@ -386,7 +386,6 @@ func generateInterlocks(
       rotation: upperLine.arg(),
       size: interlockBBox,
       oddHoles: true,
-      conf: conf,
       outerDirection: outerDirection
     )
 
@@ -400,13 +399,12 @@ func generateInterlocks(
       rotation: lowerLine.arg(),
       size: interlockBBOx,
       oddHoles: false,
-      conf: conf,
       outerDirection: outerDirection
     )
 
   result = (upperLock, lowerLock)
 
-func addInterlocks(
+proc addInterlocks(
   inMovedBlock, inStationary: PositionedBlock,
   conf: InterlockConf
      ): tuple[moved, stationary: PositionedBlock] =
@@ -416,9 +414,9 @@ func addInterlocks(
     stationary = inStationary
 
   let
-    interlockWidth = 4.0
-    interlockDepth = 2.0
-    interlockHeight = 1.1
+    # interlockWidth = globalLockConf.width
+    interlockDepth = globalLockConf.depth
+    interlockHeight = globalLockConf.height
     offset = moved.blc.positioning.offset
 
   case moved.blc.positioning.pos:
@@ -443,7 +441,7 @@ func addInterlocks(
         height = interlockHeight,
         depth = interlockDepth,
         conf = conf,
-        outerDirection = true
+        outerDirection = false
       )
 
       moved.interlocks.right = lowerLock
@@ -469,7 +467,7 @@ func addInterlocks(
         height = interlockHeight,
         depth = interlockDepth,
         conf = conf,
-        outerDirection = true
+        outerDirection = false
       )
 
       moved.interlocks.bottom = upperLock
