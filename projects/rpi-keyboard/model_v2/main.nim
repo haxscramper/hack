@@ -1,8 +1,6 @@
 import shell
 import json
-import math
 import strformat
-import sequtils
 import xmltree
 import colechopkg/lib
 import os

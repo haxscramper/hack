@@ -36,27 +36,39 @@ module row_boundary(width, height, length) {
     }
 }
 
+function canWeHaveFuckingIfElse(condition, ifTrue, ifFalse) = condition
+                                                                  ? ifTrue
+                                                                  : ifFalse;
+
 module interlockTeeth(
     height, // float
     width,  // float
     depth,  // float
     baseAngles,
     lockWidth,
-    offsetSize) {
+    offsetSize,
+    outerDirection) {
 
     baseWidth = lockWidth + 2 * tan(baseAngles - 90);
-    sectionWidth = baseWidth + lockWidth;
-    lockCount = floor(width / (baseWidth * 2));
-    shift     = (width - (lockCount * baseWidth)) / 2;
-    translate([ shift + lockWidth / 2, 0, 0 ]) {
-        for (lock = [0:lockCount - 1]) {
-            translate([ lock * (lockWidth + baseWidth), 0, -0.005 ]) {
-                linear_extrude(height = height + 0.01) {
-                  translate([0,offsetSize,0]) offset(r = offsetSize) polygon(
-                        [[baseWidth / 2, 0],
-                         [lockWidth / 2, depth],
-                         [lockWidth / 2 + baseWidth, depth],
-                         [baseWidth / 2 + lockWidth, 0]]);
+
+    baseTmp = outerDirection ? baseWidth : lockWidth;
+    lockTmp = outerDirection ? lockWidth : baseWidth;
+
+    let(baseWidth = baseTmp, lockWidth = lockTmp) {
+        sectionWidth = baseWidth + lockWidth;
+        lockCount    = floor(width / (baseWidth * 2));
+        shift        = (width - (lockCount * baseWidth)) / 2;
+        translate([ shift + lockWidth / 2, 0, 0 ]) {
+            for (lock = [0:lockCount - 1]) {
+                translate([ lock * (lockWidth + baseWidth), 0, -0.005 ]) {
+                    linear_extrude(height = height + 0.01) {
+                        translate([ 0, offsetSize, 0 ])
+                            offset(r = offsetSize) polygon(
+                                [[baseWidth / 2, 0],
+                                 [lockWidth / 2, depth],
+                                 [lockWidth / 2 + baseWidth, depth],
+                                 [baseWidth / 2 + lockWidth, 0]]);
+                    }
                 }
             }
         }
@@ -70,26 +82,30 @@ module interlock(
     depth,    // float
     baseAngles,
     lockWidth,
-    offsetSize) {
+    offsetSize,
+    outerDirection) {
 
     if (oddHoles) {
         interlockTeeth(
-            height     = height,
-            width      = width,
-            depth      = depth,
-            baseAngles = baseAngles,
-            lockWidth  = lockWidth,
-            offsetSize = -offsetSize);
+            height         = height,
+            width          = width,
+            depth          = depth,
+            baseAngles     = baseAngles,
+            lockWidth      = lockWidth,
+            offsetSize     = -offsetSize,
+            outerDirection = outerDirection);
     } else {
         difference() {
-            cube([ width, depth, height ]);
+            translate([ 0, offsetSize, 0 ])
+                cube([ width, depth - offsetSize, height ]);
             interlockTeeth(
-                height     = height,
-                width      = width,
-                depth      = depth,
-                baseAngles = baseAngles,
-                lockWidth  = lockWidth,
-                offsetSize = offsetSize);
+                height         = height,
+                width          = width,
+                depth          = depth,
+                baseAngles     = baseAngles,
+                lockWidth      = lockWidth,
+                offsetSize     = offsetSize,
+                outerDirection = outerDirection);
         }
     }
 }

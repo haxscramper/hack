@@ -17,7 +17,7 @@ type
    baseAndKeys
    wholeKeyboard
 
-const generateWhat = wholeKeyboard
+const generateWhat = onlyBase
 
 type
   ScadNodeType = enum
@@ -403,7 +403,8 @@ proc getSCADInterlocks(
         "width" : $it.size.w,
         "depth" : $it.size.d,
         "height" : $it.size.h,
-        "offsetSize": $it.conf.offsetSize
+        "offsetSize": $it.conf.offsetSize,
+        "outerDirection": $it.outerDirection,
       })
       .scadRotate(it.rotation)
       .scadTranslate(it.position))

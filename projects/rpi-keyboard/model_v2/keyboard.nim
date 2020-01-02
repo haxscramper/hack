@@ -69,6 +69,7 @@ Parameters for the block connectors
     conf*: InterlockConf
     # holeAngles*: float
     # holeUpperWidth*: float
+    outerDirection*: bool
 
   Block* = object
     ##[

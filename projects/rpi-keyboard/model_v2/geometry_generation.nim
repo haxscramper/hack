@@ -8,7 +8,6 @@ import sequtils
 import hmisc/[halgorithm, helpers]
 import math
 import strformat
-import strutils
 import common
 import tables
 import macros
@@ -364,7 +363,8 @@ func generateInterlocks(
   upperLine, lowerLine: Line,
   offset: float,
   height, depth: float,
-  conf: InterlockConf
+  conf: InterlockConf,
+  outerDirection: bool
      ): tuple[upper, lower: Interlock] =
 
 
@@ -386,7 +386,8 @@ func generateInterlocks(
       rotation: upperLine.arg(),
       size: interlockBBox,
       oddHoles: true,
-      conf: conf
+      conf: conf,
+      outerDirection: outerDirection
     )
 
   let
@@ -399,7 +400,8 @@ func generateInterlocks(
       rotation: lowerLine.arg(),
       size: interlockBBOx,
       oddHoles: false,
-      conf: conf
+      conf: conf,
+      outerDirection: outerDirection
     )
 
   result = (upperLock, lowerLock)
@@ -427,7 +429,8 @@ func addInterlocks(
         offset = offset,
         height = interlockHeight,
         depth = interlockDepth,
-        conf = conf
+        conf = conf,
+        outerDirection = true
       )
 
       moved.interlocks.left = lowerLock
@@ -439,7 +442,8 @@ func addInterlocks(
         offset = offset,
         height = interlockHeight,
         depth = interlockDepth,
-        conf = conf
+        conf = conf,
+        outerDirection = true
       )
 
       moved.interlocks.right = lowerLock
@@ -451,7 +455,8 @@ func addInterlocks(
         offset = offset,
         height = interlockHeight,
         depth = interlockDepth,
-        conf = conf
+        conf = conf,
+        outerDirection = true
       )
 
       moved.interlocks.top = upperLock
@@ -463,7 +468,8 @@ func addInterlocks(
         offset = offset,
         height = interlockHeight,
         depth = interlockDepth,
-        conf = conf
+        conf = conf,
+        outerDirection = true
       )
 
       moved.interlocks.bottom = upperLock

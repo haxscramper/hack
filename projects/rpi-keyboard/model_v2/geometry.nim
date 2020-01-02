@@ -1,7 +1,6 @@
 ## Basic geometric primitives and supporting functions
 
-import math, options
-import common
+import options
 import strformat
 
 type
