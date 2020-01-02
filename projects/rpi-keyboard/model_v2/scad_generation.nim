@@ -12,6 +12,14 @@ import math
 import common
 
 type
+  GenerateWhat = enum
+   onlyBase
+   baseAndKeys
+   wholeKeyboard
+
+const generateWhat = wholeKeyboard
+
+type
   ScadNodeType = enum
     sntInvoke
     sntComment
@@ -353,10 +361,14 @@ proc getSCADInterlocks(
     interlocks
     .mapIt(
       makeScad("interlock", {
+        "lockWidth" : $it.conf.lockWidth,
+        "baseAngles" : $it.conf.baseAngles.radToDeg(),
         "oddHoles" : $it.oddHoles,
         "width" : $it.size.w,
         "depth" : $it.size.d,
-        "height" : $it.size.h})
+        "height" : $it.size.h,
+        "offsetSize": $it.conf.offsetSize
+      })
       .scadRotate(it.rotation)
       .scadTranslate(it.position))
 
@@ -427,19 +439,21 @@ proc makeBlockBottom(
 
   let (interlockCutouts, interlockBodies) = blc.getSCADInterlocks()
 
-  result = blockShell
-    .scadUnion(blockBase)
-    .wrapComment("Block base")
-    .scadSubtract(interlockCutouts)
-    .wrapComment("Interlock cutouts")
-    .scadUnion(interlockBodies)
-    .wrapComment("Interlock block bodies")
+  when generateWhat == wholeKeyboard:
+    result = blockShell
+      .scadUnion(blockBase)
+      .wrapComment("Block base")
+      .scadSubtract(interlockCutouts)
+      .wrapComment("Interlock cutouts")
+      .scadUnion(interlockBodies)
+      .wrapComment("Interlock block bodies")
 
-  # result = blockBase
-  #   .scadSubtract(interlockCutouts)
-  #   .wrapComment("Interlock cutouts")
-  #   .scadUnion(interlockBodies)
-  #   .wrapComment("Interlock block bodies")
+  else:
+    result = blockBase
+      .scadSubtract(interlockCutouts)
+      .wrapComment("Interlock cutouts")
+      .scadUnion(interlockBodies)
+      .wrapComment("Interlock block bodies")
 
 proc toSCAD*(blc: PositionedBlock): ScadNode =
   let
@@ -459,8 +473,9 @@ proc toSCAD*(blc: PositionedBlock): ScadNode =
   let body = @[top.scadTranslate(z = bottomHeight), bottom].makeGroup()
 
   result =
-    body
-    # bottom
+    (
+      when generateWhat == wholeKeyboard: body else: bottom
+    )
     .wrapComment("Block bottom")
     .scadRotate(blc.rotation)
     .scadTranslate(blc.position)

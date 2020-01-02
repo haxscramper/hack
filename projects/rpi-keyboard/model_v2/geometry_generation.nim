@@ -362,14 +362,15 @@ func moveRelativeTo(movedBlock, stationary: PositionedBlock): PositionedBlock =
 
 func generateInterlocks(
   upperLine, lowerLine: Line,
-  blockPlungeDepth: float,
-  height, depth: float
+  offset: float,
+  height, depth: float,
+  conf: InterlockConf
      ): tuple[upper, lower: Interlock] =
 
 
   let
     interlockWidth = (upperLine.len() + lowerLine.len()) * 0.25
-    upperShift = (upperLine.magnitude() + interlockWidth) / 2
+    upperShift = (upperLine.magnitude() - interlockWidth) / 2
     lowerShift = (lowerLine.magnitude() - interlockWidth) / 2
     interlockBBox = Size3(h: height, w: interlockWidth, d: depth)
 
@@ -380,28 +381,32 @@ func generateInterlocks(
     upperLock = Interlock(
       position:
         upperOrigShift +
-        upperLine.norm() * upperShift +
-        upperLine.nperp() * blockPlungeDepth,
-      rotation: PI + upperLine.arg(),
+        upperLine.norm() * upperShift -
+        upperLine.nperp() * offset,
+      rotation: upperLine.arg(),
       size: interlockBBox,
-      oddHoles: true
+      oddHoles: true,
+      conf: conf
     )
 
   let
     lowerLock = Interlock(
       position:
         lowerOrigShift +
-        lowerLine.norm() * lowerShift -
-        lowerLine.nperp() * blockPlungeDepth,
+        lowerLine.norm() * lowerShift# -
+        # lowerLine.nperp() * offset
+      ,
       rotation: lowerLine.arg(),
       size: interlockBBOx,
-      oddHoles: false
+      oddHoles: false,
+      conf: conf
     )
 
   result = (upperLock, lowerLock)
 
 func addInterlocks(
-  inMovedBlock, inStationary: PositionedBlock
+  inMovedBlock, inStationary: PositionedBlock,
+  conf: InterlockConf
      ): tuple[moved, stationary: PositionedBlock] =
   ## Add interlocks for two blocks and return modified versions
   var
@@ -414,16 +419,15 @@ func addInterlocks(
     interlockHeight = 1.1
     offset = moved.blc.positioning.offset
 
-    blockPlungeDepth = (interlockDepth - offset) / 2
-
   case moved.blc.positioning.pos:
     of rpLeft:
       let (upperLock, lowerLock) = generateInterlocks(
         upperLine = stationary.hull.left,
         lowerLine = moved.hull.right,
-        blockPlungeDepth = blockPlungeDepth,
+        offset = offset,
         height = interlockHeight,
-        depth = interlockDepth
+        depth = interlockDepth,
+        conf = conf
       )
 
       moved.interlocks.left = lowerLock
@@ -432,9 +436,10 @@ func addInterlocks(
       let (upperLock, lowerLock) = generateInterlocks(
         upperLine = stationary.hull.right,
         lowerLine = moved.hull.left,
-        blockPlungeDepth = blockPlungeDepth,
+        offset = offset,
         height = interlockHeight,
-        depth = interlockDepth
+        depth = interlockDepth,
+        conf = conf
       )
 
       moved.interlocks.right = lowerLock
@@ -443,9 +448,10 @@ func addInterlocks(
       let (upperLock, lowerLock) = generateInterlocks(
         upperLine = moved.hull.bottom(),
         lowerLine = stationary.hull.top(),
-        blockPlungeDepth = blockPlungeDepth,
+        offset = offset,
         height = interlockHeight,
-        depth = interlockDepth
+        depth = interlockDepth,
+        conf = conf
       )
 
       moved.interlocks.top = upperLock
@@ -454,9 +460,10 @@ func addInterlocks(
       let (lowerLock, upperLock) = generateInterlocks(
         upperLine = stationary.hull.bottom(),
         lowerLine = moved.hull.top(),
-        blockPlungeDepth = blockPlungeDepth,
+        offset = offset,
         height = interlockHeight,
-        depth = interlockDepth
+        depth = interlockDepth,
+        conf = conf
       )
 
       moved.interlocks.bottom = upperLock
@@ -488,7 +495,7 @@ proc arrangeBlocks*(kbd: Keyboard): seq[PositionedBlock] =
     let positioned = movedBlock.moveRelativeTo stationary
     # Add interlocks to block
     let (interlockMoved, interlockStatinary) =
-      addInterlocks(positioned, stationary)
+      addInterlocks(positioned, stationary, kbd.interlockConf)
 
     # Add/replace newly arranged block
     arranged[blId] = interlockMoved

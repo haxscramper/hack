@@ -8,7 +8,7 @@ module key_core(height, width, length) {
     centerZ = sizeZ / 2;
 
     difference() {
-        color ("Orange") cube([ sizeX, sizeY, sizeZ ]);
+        color("Orange") cube([ sizeX, sizeY, sizeZ ]);
 
         translate([ centerX, centerY, centerZ ]) {
             color("Red") cube(
@@ -35,3 +35,80 @@ module row_boundary(width, height, length) {
         cube([ length, width, height + 2 * shift ]);
     }
 }
+
+module interlockTeeth(
+    height, // float
+    width,  // float
+    depth,  // float
+    baseAngles,
+    lockWidth,
+    offsetSize) {
+
+    baseWidth = lockWidth + 2 * tan(baseAngles - 90);
+    sectionWidth = baseWidth + lockWidth;
+    lockCount = floor(width / (baseWidth * 2));
+    shift     = (width - (lockCount * baseWidth)) / 2;
+    translate([ shift + lockWidth / 2, 0, 0 ]) {
+        for (lock = [0:lockCount - 1]) {
+            translate([ lock * (lockWidth + baseWidth), 0, -0.005 ]) {
+                linear_extrude(height = height + 0.01) {
+                  translate([0,offsetSize,0]) offset(r = offsetSize) polygon(
+                        [[baseWidth / 2, 0],
+                         [lockWidth / 2, depth],
+                         [lockWidth / 2 + baseWidth, depth],
+                         [baseWidth / 2 + lockWidth, 0]]);
+                }
+            }
+        }
+    }
+}
+
+module interlock(
+    height,   // float
+    width,    // float
+    oddHoles, // bool
+    depth,    // float
+    baseAngles,
+    lockWidth,
+    offsetSize) {
+
+    if (oddHoles) {
+        interlockTeeth(
+            height     = height,
+            width      = width,
+            depth      = depth,
+            baseAngles = baseAngles,
+            lockWidth  = lockWidth,
+            offsetSize = -offsetSize);
+    } else {
+        difference() {
+            cube([ width, depth, height ]);
+            interlockTeeth(
+                height     = height,
+                width      = width,
+                depth      = depth,
+                baseAngles = baseAngles,
+                lockWidth  = lockWidth,
+                offsetSize = offsetSize);
+        }
+    }
+}
+
+interlock(
+    height     = 1.1,
+    width      = 8.5,
+    oddHoles   = true,
+    depth      = 2.0,
+    lockWidth  = 2,
+    baseAngles = 115,
+    offsetSize = 0.05);
+
+
+interlock(
+    height     = 1.1,
+    width      = 8.5,
+    oddHoles   = false,
+    depth      = 2.0,
+    lockWidth  = 2,
+    baseAngles = 115,
+    offsetSize = 0.05);

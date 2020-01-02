@@ -1,6 +1,11 @@
 {
     // Keyboard blocks
-    "interlockConf" : { "depth" : 0.25 },
+    "interlockConf" : {
+        "depth" : 0.25,
+        "baseAngles": 115,
+        "lockWidth": 1.0,
+        "offsetSize": 0.05
+    },
     "blocks" : [
          {"rows" : [
             { "row" : {

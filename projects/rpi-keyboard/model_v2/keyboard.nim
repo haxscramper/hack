@@ -40,6 +40,11 @@ type
     keys*: seq[tuple[key: Key, space: float]]
     ## Rotation of the whole row around lower left corner
 
+  InterlockConf* = object
+    depth*: float
+    baseAngles*: float
+    lockWidth*: float
+    offsetSize*: float
 
   Interlock* = object
     ##[
@@ -60,6 +65,8 @@ Parameters for the block connectors
     rotation*: float
     size*: Size3
     oddHoles*: bool
+
+    conf*: InterlockConf
     # holeAngles*: float
     # holeUpperWidth*: float
 
@@ -120,10 +127,9 @@ Parameters for the block connectors
     ]
 
 
+
   Keyboard* = object
-    interlockConf*: tuple[
-      depth: float
-    ]
+    interlockConf*: InterlockConf
     blocks*: seq[Block]
 
 proc toRadianAngles*(blc: Block): Block =
@@ -136,7 +142,9 @@ proc toRadianAngles*(blc: Block): Block =
 proc toRadianAngles*(kbd: Keyboard): Keyboard =
   ## Convert left and right angle of all blocks in keyboard from
   ## degree angles to radian angles.
+  result = kbd
   result.blocks = kbd.blocks.mapIt(it.toRadianAngles)
+  result.interlockConf.baseAngles = kbd.interlockConf.baseAngles.degToRad()
 
 proc width*(row: Row): float =
   row.keys.mapIt(it.key.width).max()
