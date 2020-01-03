@@ -27,7 +27,7 @@ proc getS(t: Toml, key: string): string =
 proc parseLockConf(table: Toml): void =
   dlog "Parsing lock configuration"
   globalLockConf.depth = table.getF("depth")
-  globalLockConf.sectionWidth = table.getF("depth")
+  globalLockConf.sectionWidth = table.getF("sectionWidth")
   globalLockConf.lockWidth = table.getF("lockWidth")
   globalLockConf.offsetSize = table.getF("offsetSize")
   globalLockConf.widthMultiplier = table.getF("widthMultiplier")

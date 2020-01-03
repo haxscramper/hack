@@ -58,6 +58,7 @@ module interlock(
         plunge    = 2 * offsetSize;
         let(baseWidth = baseTmp, lockWidth = lockTmp) {
             lockCount = floor(width / sectionWidth);
+            echo ("Lock count:", lockCount);
             shift     = (width - (lockCount * sectionWidth)) / 2;
             if (!oddHoles && shift > offsetSize) {
                 padding = shift - offsetSize;
