@@ -180,5 +180,6 @@ var blockConf*: tuple[
 var defaultConf*: tuple[
   keyInnerLength: float,
   keyInnerWidth: float,
+  firstKeySpacing: float,
   keyWidth, keyHeight, keyLength, keySpacing, rowSpacing: float
 ]

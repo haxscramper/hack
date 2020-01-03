@@ -5,6 +5,7 @@ import keyboard
 import common
 import strutils
 import geometry
+import hmisc/helpers
 
 type
   Toml = TomlValueRef
@@ -51,6 +52,7 @@ proc parseDefaultConf(table: Toml): void =
   defaultConf.rowSpacing = table.getF("rowSpacing")
   defaultConf.keyInnerLength = table.getF("keyInnerLength")
   defaultConf.keyInnerWidth = table.getF("keyInnerWidth")
+  defaultConf.firstKeySpacing = table.getF("firstKeySpacing")
   dlog "Done"
 
 proc makeDefaultKey(
@@ -102,17 +104,23 @@ proc parseKeys(row: Toml): seq[tuple[key: Key, space: float]] =
     echo "parsed total of ", result.len, " keys"
 
   case row.kind:
-    of Int: result = newSeqWith(
-      row.getInt(),
-      (key: makeDefaultKey(), space: defaultConf.keySpacing)
+    of Int: result = (0..<row.getInt()).mapIt(
+      (key: makeDefaultKey(),
+       space: (it == 0).tern(
+         defaultConf.firstKeySpacing,
+         defaultConf.keySpacing)
+       )
     )
     of Array:
-      for key in row.getElems():
+      for idx, key in row.getElems():
         case key.kind:
           of String:
             result.add (
               key: makeDefaultKey(keyCode = some(key.getStr())),
-              space: defaultConf.keySpacing
+              space: (idx == 0).tern(
+                defaultConf.firstKeySpacing,
+                defaultConf.keySpacing
+              )
             )
           of TomlValueKind.Table:
             result.add (
@@ -124,7 +132,10 @@ proc parseKeys(row: Toml): seq[tuple[key: Key, space: float]] =
                 innerLength = key.optF("innerLength"),
                 innerWidth = key.optF("innerWidth"),
               ),
-              space: key["space"].optF().get(defaultConf.keySpacing)
+              space: key["space"].optF().get((idx == 0).tern(
+                defaultConf.firstKeySpacing,
+                defaultConf.keySpacing
+              ))
             )
           else:
             raise newException(

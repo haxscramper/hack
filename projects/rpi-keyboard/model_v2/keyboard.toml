@@ -24,6 +24,7 @@ keySpacing = 0.5
 rowSpacing = 0.25
 keyInnerLength = 1.4
 keyInnerWidth = 1.4
+firstKeySpacing = 0.0
 
 [[block]]
 # Size of the left and right angle in the block

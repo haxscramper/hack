@@ -169,11 +169,11 @@ proc shiftLines(blc: Block, left, right: Line): (Line, Line, Vec) =
   # increase angles (for upper len))
   if lowerLen > targetLen:
     raise newException(Exception,
-                       "targeted lower len is smaller than fitting one")
+                       &"targeted lower len ({targetLen}) is smaller than fitting one ({lowerLen})")
 
   if upperLen > upperTarget:
     raise newException(Exception,
-                       "target upper len is smaller than fitting one")
+                       &"target upper len ({upperTarget}) is smaller than fitting one ({upperLen})")
 
   let shiftedLeft = Line(
     x1: 0.0,
