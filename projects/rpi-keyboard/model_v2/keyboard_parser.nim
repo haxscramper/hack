@@ -90,6 +90,9 @@ func optS(table: TomlVal, default: Option[string] = none(string)): Option[string
   else: default
 
 proc parseKeys(row: Toml): seq[tuple[key: Key, space: float]] =
+  defer:
+    echo "parsed total of ", result.len, " keys"
+
   case row.kind:
     of Int: result = newSeqWith(
       row.getInt(),
@@ -126,6 +129,9 @@ proc parseKeys(row: Toml): seq[tuple[key: Key, space: float]] =
   # discard
 
 proc parseRows(blc: Toml): seq[tuple[row: Row, space: float]] =
+  defer:
+    echo "parsed total of ", result.len, " rows"
+
   for row in blc["row"].getElems():
     var newRow: tuple[row: Row, space: float]
     if row.hasKey("space"):
@@ -152,7 +158,10 @@ proc parseBlocks(blocks: seq[Toml]): seq[Block] =
         pos: pos.getS("pos").parseEnum(rpLeft),
         offset: pos.getF("offset"),
         relativeTo: pos.getI("relativeTo")
-      )
+      ),
+      dimensions: (
+        blc["dimensions"].getF("width"),
+        blc["dimensions"].getF("lowerLen")),
     )
 
 
@@ -162,6 +171,7 @@ proc parseKeyboard*(file: string): Keyboard =
 
   parseLockConf(conf["keyboard"]["interlockConf"])
   parseBlockConf(conf["keyboard"]["blockConf"])
+  parseDefaultConf(conf["keyboard"]["defaultConf"])
 
   result.blocks = parseBlocks(conf["block"].getElems())
 

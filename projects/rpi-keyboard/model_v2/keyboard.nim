@@ -131,7 +131,6 @@ Parameters for the block connectors
 
 
   Keyboard* = object
-    interlockConf*: InterlockConf
     blocks*: seq[Block]
 
 proc toRadianAngles*(blc: Block): Block =

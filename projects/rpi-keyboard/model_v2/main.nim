@@ -11,6 +11,7 @@ import scad_generation
 import geom_operations
 
 import keyboard_parser
+import hmisc/hpprint
 
 # let kbd = readFile("keyboard.json").
 #   parseJson().
@@ -18,6 +19,7 @@ import keyboard_parser
 #   toRadianAngles()
 
 let kbd = "keyboard.toml".parseKeyboard()
+# "keyboard.tmp.out".writeFile(pformat(kbd, 0))
 
 proc generateSCAD(kbd: Keyboard, outFile: string): void =
   let scadBody = kbd.toSCAD().addSCADImports().toString()
@@ -52,4 +54,4 @@ proc generateSVG(blc: Block, outFile: string): void =
     copyFile(tmpFile, outFile)
 
 # test.generateSVG("res.tmp.png")
-# kbd.generateSCAD("res.tmp.scad")
+kbd.generateSCAD("res.tmp.scad")

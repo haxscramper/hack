@@ -499,7 +499,7 @@ proc arrangeBlocks*(kbd: Keyboard): seq[PositionedBlock] =
     let positioned = movedBlock.moveRelativeTo stationary
     # Add interlocks to block
     let (interlockMoved, interlockStatinary) =
-      addInterlocks(positioned, stationary, kbd.interlockConf)
+      addInterlocks(positioned, stationary, globalLockConf)
 
     # Add/replace newly arranged block
     arranged[blId] = interlockMoved

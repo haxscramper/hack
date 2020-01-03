@@ -556,7 +556,6 @@ hull: {blc.hull.left}
 
 
 proc toSCAD*(kbd: Keyboard): ScadNode =
-  globalLockConf = kbd.interlockConf
   kbd.arrangeBlocks().mapIt(it.toSCAD).makeGroup()
 
 proc addSCADImports*(body: ScadNode): ScadNode =
