@@ -43,6 +43,7 @@ width = 8.0 # Width of the keyboard block
 lowerLen = 12.0 # Length of the lower side of the block.
 
 [[block.row]]
+indent = 0.25
 # Define key using only button codes
 keys = ["q", "w", "e", "9", "1"]
 

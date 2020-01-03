@@ -99,17 +99,24 @@ func optS(
   if table.kind == String: some(table.getStr())
   else: default
 
-proc parseKeys(row: Toml): seq[tuple[key: Key, space: float]] =
+
+proc parseKeys(
+  row: Toml,
+  rowDefaultSpacing: Option[float] = none(float)
+     ): seq[tuple[key: Key, space: float]] =
   defer:
     echo "parsed total of ", result.len, " keys"
 
+  proc getSpacing(idx: int): float =
+    if idx == 0:
+      rowDefaultSpacing.get(defaultConf.firstKeySpacing)
+    else:
+      defaultConf.keySpacing
+
+
   case row.kind:
     of Int: result = (0..<row.getInt()).mapIt(
-      (key: makeDefaultKey(),
-       space: (it == 0).tern(
-         defaultConf.firstKeySpacing,
-         defaultConf.keySpacing)
-       )
+      (key: makeDefaultKey(), space: getSpacing(it))
     )
     of Array:
       for idx, key in row.getElems():
@@ -117,10 +124,7 @@ proc parseKeys(row: Toml): seq[tuple[key: Key, space: float]] =
           of String:
             result.add (
               key: makeDefaultKey(keyCode = some(key.getStr())),
-              space: (idx == 0).tern(
-                defaultConf.firstKeySpacing,
-                defaultConf.keySpacing
-              )
+              space: getSpacing(idx)
             )
           of TomlValueKind.Table:
             result.add (
@@ -160,7 +164,11 @@ proc parseRows(blc: Toml): seq[tuple[row: Row, space: float]] =
     else:
       newRow.space = defaultConf.rowSpacing
 
-    newRow.row.keys = parseKeys row["keys"]
+    newRow.row.keys = parseKeys(
+      row["keys"],
+      row.hasKey("indent").tern(
+        some(row.getF("indent")), none(float))
+    )
     result.add(newRow)
 
 proc parseBlocks(blocks: seq[Toml]): seq[Block] =
