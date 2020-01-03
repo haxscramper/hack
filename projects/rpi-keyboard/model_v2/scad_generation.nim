@@ -500,10 +500,11 @@ proc toSCAD*(blc: PositionedBlock, asModule: bool = false): ScadNode =
   ## be used as default values for arguments. Generated module name is
   ## `positioned_block_id_<block-id>`
   let
-    baseHeight = 1.0
-    shellHeight = 4.0
-    topThickness = 1.0
-    shellThickness = 0.6
+    baseHeight =  blockConf.baseHeight
+    shellHeight =  blockConf.shellHeight
+    topThickness =  blockConf.topThickness
+    shellThickness =  blockConf.shellThickness
+    lidElevation =  blockConf.lidElevation
     bottomHeight = shellHeight + baseHeight
 
   let top = blc.makeBlockTop(topThickness)
@@ -513,7 +514,8 @@ proc toSCAD*(blc: PositionedBlock, asModule: bool = false): ScadNode =
     shellThickness = shellThickness
   )
 
-  let body = @[top.scadTranslate(z = bottomHeight), bottom].makeGroup()
+  let body = @[top.scadTranslate(z = bottomHeight + lidElevation),
+               bottom].makeGroup()
 
   result =
     (

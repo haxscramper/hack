@@ -79,3 +79,10 @@ proc makeSize3*(w,d,h: int | float): Size3 =
     Size3(w: w, d: d, h: h)
 
 func toVec3*(pos: Vec): Vec3 = Vec3(x: pos.x, y: pos.y, z: 0)
+
+type
+  RelVec* = enum
+    rpLeft
+    rpRight
+    rpBottom
+    rpTop

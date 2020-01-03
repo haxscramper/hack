@@ -136,13 +136,6 @@ func norm*(l: Line): Vec = l.toVec().norm()
 func nperp*(l: Line): Vec = l.toVec().perp().norm()
 func arg*(l: Line): float = l.toVec().arg()
 
-type
-  RelVec* = enum
-    rpLeft
-    rpRight
-    rpBottom
-    rpTop
-
 func invert*(pos: RelVec): RelVec =
   case pos:
     of rpLeft: rpRight

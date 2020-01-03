@@ -33,6 +33,7 @@ type
     length*: float
     width*: float
     height*: float
+    keyCode*: Option[string]
 
 
   Row* = object
@@ -167,3 +168,14 @@ func bottom*(hull: tuple[left, right: Line, coreShift: Vec]): Line =
   makeLine(hull.left.begin, hull.right.begin)
 
 var globalLockConf*: InterlockConf
+var blockConf*: tuple[
+  baseHeight,
+  shellHeight,
+  topThickness,
+  shellThickness,
+  lidElevation: float
+]
+
+var defaultConf*: tuple[
+  keyWidth, keyHeight, keyLength, keySpacing, rowSpacing: float
+]

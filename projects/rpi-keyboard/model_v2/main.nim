@@ -10,12 +10,14 @@ import keyboard
 import scad_generation
 import geom_operations
 
-let kbd = readFile("keyboard.json").
-  parseJson().
-  to(Keyboard).
-  toRadianAngles()
+import keyboard_parser
 
-let test = kbd.blocks[0]
+# let kbd = readFile("keyboard.json").
+#   parseJson().
+#   to(Keyboard).
+#   toRadianAngles()
+
+let kbd = "keyboard.toml".parseKeyboard()
 
 proc generateSCAD(kbd: Keyboard, outFile: string): void =
   let scadBody = kbd.toSCAD().addSCADImports().toString()
@@ -33,7 +35,7 @@ proc generateSVG(blc: Block, outFile: string): void =
   let imgWidth = svgMulti * 40
   let imgHeight = svgMulti * 30
 
-  let svgBody = @[test.toSVG()].toSVGImage(
+  let svgBody = @[blc.toSVG()].toSVGImage(
     width = imgWidth,
     height = imgHeight
   )
@@ -50,4 +52,4 @@ proc generateSVG(blc: Block, outFile: string): void =
     copyFile(tmpFile, outFile)
 
 # test.generateSVG("res.tmp.png")
-kbd.generateSCAD("res.tmp.scad")
+# kbd.generateSCAD("res.tmp.scad")
