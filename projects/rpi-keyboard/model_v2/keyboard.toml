@@ -26,7 +26,7 @@ exportMode = "emSinglePiece"
 
 [[block]]
 # Size of the left and right angle in the block
-angles = { left = 90, right = 90 }
+angles = { left = 80, right = 90 }
 # Offset hull in the left and right from the convex hull
 offsets = { left = 0.2, right = 0.2 }
 
@@ -79,7 +79,7 @@ offset = 0.25
 
 
 [[block]]
-angles = { left = 125, right = 125 }
+angles = { left = 90, right = 125 }
 offsets = { left = 0.2, right = 0.2 }
 row = [ { keys = 6 }, { keys = 5 } ]
 dimensions = { width = 8.0, lowerLen = 17.0 }
@@ -102,3 +102,15 @@ id = 5
 relativeTo = 0
 pos = "rpBottom"
 offset = 0.25
+
+# [[block]]
+# angles = { left = 75, right = 75 }
+# offsets = { left = 0.2, right = 0.2 }
+# row = [ { keys = 5 }, { keys = 5 } ]
+# dimensions = { width = 8.0, lowerLen = 17.0 }
+
+# [block.positioning]
+# id = 8
+# relativeTo = 4
+# pos = "rpLeft"
+# offset = 0.25

@@ -105,9 +105,6 @@ proc parseKeys(
   row: Toml,
   rowDefaultSpacing: Option[float] = none(float)
      ): seq[tuple[key: Key, space: float]] =
-  defer:
-    echo "parsed total of ", result.len, " keys"
-
   proc getSpacing(idx: int): float =
     if idx == 0:
       rowDefaultSpacing.get(defaultConf.firstKeySpacing)
@@ -155,9 +152,6 @@ proc parseKeys(
   # discard
 
 proc parseRows(blc: Toml): seq[tuple[row: Row, space: float]] =
-  defer:
-    echo "parsed total of ", result.len, " rows"
-
   for row in blc["row"].getElems():
     var newRow: tuple[row: Row, space: float]
     if row.hasKey("space"):

@@ -271,11 +271,28 @@ func moveLeftOf(movedBlock, stationary: PositionedBlock): PositionedBlock =
   let movedLine = movedBlock.hull.right
   let stationLine = stationary.hull.left
 
+  de "--"
+  de "id:", movedBlock.blc.positioning.id
+  de stationary.blc.angles.left.radToDeg()
+  de movedBlock.blc.angles.right.radToDeg()
+  de stationary.rotation.radToDeg()
+  de "--"
+
+  # FIXME for some unknow reason (I was unable to figure it out even
+  # after manually calculating positions) this generates perfectly
+  # correct values for angles, but they are displayed incorrecly on
+  # the openscad preview.
   let origRotation =
     -PI +
     stationary.blc.angles.left +
-    movedBlock.blc.angles.right -
-    -stationary.rotation
+    movedBlock.blc.angles.right +
+    stationary.rotation # - 4.5.degToRad()
+
+  # for right angle of 165: (-31.0).degToRad()
+
+  de 31.0.degtorad()
+  de origrotation.radToDeg()
+  de origrotation
 
   let movedBottom = movedBlock.hull.bottom()
   let stationLeft = stationary.hull.left
@@ -288,12 +305,30 @@ func moveLeftOf(movedBlock, stationary: PositionedBlock): PositionedBlock =
         movedBlock.blc.positioning.offset
 
       let justificationOffset =
-        stationLine.norm() * ((stationLine.len() - movedLine.len()) / 2)
+        stationLine
+          .tovec()
+          .rotate(-stationary.rotation)
+          .norm() *
+          ((stationLine.len() - movedLine.len()) / 2)
+
+      # de "offset vector:        ", offsetvector
+      # de "justification offset: ", justificationoffset
+      # de "just + bottom:        ", justificationoffset + movedBottom.toVec().flip().rotate(origRotation)
 
       stationary.position +
       movedBottom.toVec().flip().rotate(origRotation) +
       offsetVector +
       justificationOffset
+
+  # block:
+  #   let bott = movedBottom.tovec().flip()
+  #   let bl = bott.magnitude()
+  #   de "origin pos:              ", originPos
+  #   de "bottom length:           ", bott.magnitude()
+  #   de "origin rotation:         ", origRotation.radToDeg()
+  #   de "bottom vector:           ", bott.flip()
+  #   de &"manually rotated values: x: {bl * sin(origRotation)}, y: {bl * cos(origRotation)}"
+  #   de "moved bottom:            ", bott.rotate(origRotation)
 
   result = movedBlock
   result.position = originPos

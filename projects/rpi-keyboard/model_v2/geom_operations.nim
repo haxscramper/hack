@@ -16,6 +16,8 @@ func arg*(p: Vec): float =
   ## Return vector argument in polar coordinate system
   arctan2(p.y, p.x)
 
+func scalar*(a, b: Vec): float = a.x * b.x + a.y * b.y
+
 func toVec*(l: Line): Vec =
   ## Return vector with magnitude and direction equal to line
   l.final - l.begin
