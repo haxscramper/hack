@@ -13,9 +13,6 @@ topThickness = 0.7
 shellThickness = 0.6
 lidElevation = 0.5
 
-[keyboard.exportConf]
-exportMode = "modular"
-
 [keyboard.defaultConf]
 keyWidth = 1.8
 keyHeight = 0.8
@@ -25,6 +22,7 @@ rowSpacing = 0.25
 keyInnerLength = 1.4
 keyInnerWidth = 1.4
 firstKeySpacing = 0.0
+exportMode = "emModular"
 
 [[block]]
 # Size of the left and right angle in the block

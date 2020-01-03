@@ -177,7 +177,13 @@ var blockConf*: tuple[
   lidElevation: float
 ]
 
+type
+  ExportMode* = enum
+    emModular
+    emSinglePiece
+
 var defaultConf*: tuple[
+  exportMode: ExportMode,
   keyInnerLength: float,
   keyInnerWidth: float,
   firstKeySpacing: float,

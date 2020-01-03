@@ -53,6 +53,7 @@ proc parseDefaultConf(table: Toml): void =
   defaultConf.keyInnerLength = table.getF("keyInnerLength")
   defaultConf.keyInnerWidth = table.getF("keyInnerWidth")
   defaultConf.firstKeySpacing = table.getF("firstKeySpacing")
+  defaultConf.exportMode = table.getS("exportMode").parseEnum(emSinglePiece)
   dlog "Done"
 
 proc makeDefaultKey(

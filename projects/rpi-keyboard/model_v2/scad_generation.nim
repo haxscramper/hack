@@ -497,46 +497,70 @@ proc makeBlockBottom(
       .scadUnion(interlockBodies)
       .wrapComment("Interlock block bodies")
 
-proc toSCAD*(blc: PositionedBlock, asModule: bool = false): ScadNode =
+proc toSCAD*(blc: PositionedBlock): ScadNode =
   ## Convert positioned block into openscad node. If `asModule` is
   ## true then generate module with `xPos`, `yPos` and `rotation`
   ## arguments. Current positioning arguments of the input block will
   ## be used as default values for arguments. Generated module name is
   ## `positioned_block_id_<block-id>`
-  let
-    baseHeight =  blockConf.baseHeight
-    shellHeight =  blockConf.shellHeight
-    topThickness =  blockConf.topThickness
-    shellThickness =  blockConf.shellThickness
-    lidElevation =  blockConf.lidElevation
-    bottomHeight = shellHeight + baseHeight
+  let exMode = defaultConf.exportMode
 
-  let top = blc.makeBlockTop(topThickness)
-  let bottom = blc.makeBlockBottom(
-    shellHeight = shellHeight,
-    baseHeight = baseHeight,
-    shellThickness = shellThickness
-  )
+  proc position(node: ScadNode): ScadNode =
+    if exMode == emModular:
+      node
+        .scadRotate("rotation")
+        .scadTranslate("[xPos, yPos]")
+        .wrapComment("positioning")
+    else:
+      node
+        .scadRotate(blc.rotation)
+        .scadTranslate(blc.position)
+        .wrapComment("positioning")
 
-  let body = @[top.scadTranslate(z = bottomHeight + lidElevation),
-               bottom].makeGroup()
 
-  result =
-    (
-      when generateWhat == wholeKeyboard: body else: bottom
-    )
-    .wrapComment("Block bottom")
+  let top =
+    block:
+      let tmp = blc
+        .makeBlockTop(blockConf.topThickness)
+        .wrapComment("Block top")
 
-  if asModule:
-    result = result
-      .scadRotate("rotation")
-      .scadTranslate("[xPos, yPos]")
-      .wrapComment("block body")
-  else:
-    result = result
-      .scadRotate(blc.rotation)
-      .scadTranslate(blc.position)
-      .wrapComment("block body")
+      let defZ = blockConf.shellHeight +
+        blockConf.baseHeight + blockConf.lidElevation
+
+      if exMode == emModular:
+        makeScadModule(
+          name = &"block_top_id_{blc.blc.positioning.id}",
+          args = {
+              "xPos" : $blc.position.x, "yPos" : $blc.position.y,
+              "zPos" : $defZ, "rotation" : $blc.rotation
+            },
+          body = @[tmp.scadTranslate("[xPos, yPos, zPos]").position()]
+        )
+      else:
+        tmp.scadTranslate(z = defZ).position()
+
+  let bottom =
+    block:
+      let tmp =
+        blc.makeBlockBottom(
+        shellHeight = blockConf.shellHeight,
+        baseHeight = blockConf.baseHeight,
+        shellThickness = blockConf.shellThickness)
+
+      if exMode == emModular:
+        makeScadModule(
+              name = &"block_bottom_id_{blc.blc.positioning.id}",
+              args = {
+                "xPos" : $blc.position.x,
+                "yPos" : $blc.position.y,
+                "rotation" : $blc.rotation
+                },
+              body = @[tmp.position()]
+            )
+      else:
+        tmp.position()
+
+  result = @[top.wrapComment("top"), bottom.wrapComment("bottom")].makeGroup()
 
   result = result.wrapComment(&"""
 block id {blc.blc.positioning.id}
@@ -547,20 +571,9 @@ hull: {blc.hull.left}
     : {blc.hull.right}
 """)
 
-  if asModule:
-    result = makeScadModule(
-      name = &"positioned_block_id_{blc.blc.positioning.id}",
-      args = {
-        "xPos" : $blc.position.x,
-        "yPos" : $blc.position.y,
-        "rotation" : $blc.rotation
-        },
-      body = @[result]
-    )
-
 
 proc toSCAD*(kbd: Keyboard): ScadNode =
-  kbd.arrangeBlocks().mapIt(it.toSCAD).makeGroup()
+  kbd.arrangeBlocks().map(toSCAD).makeGroup()
 
 proc addSCADImports*(body: ScadNode): ScadNode =
     body.makeGroupWith(
