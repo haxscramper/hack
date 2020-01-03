@@ -31,7 +31,9 @@ type
     ]##
 
     length*: float
+    innerLength*: float
     width*: float
+    innerWidth*: float
     height*: float
     keyCode*: Option[string]
 
@@ -176,5 +178,7 @@ var blockConf*: tuple[
 ]
 
 var defaultConf*: tuple[
+  keyInnerLength: float,
+  keyInnerWidth: float,
   keyWidth, keyHeight, keyLength, keySpacing, rowSpacing: float
 ]

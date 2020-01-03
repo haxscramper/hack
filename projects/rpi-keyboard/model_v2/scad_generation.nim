@@ -283,7 +283,9 @@ proc toSCAD(key: Key): tuple[core, boundary: ScadNode] =
     params = {
       "width" : $key.width,
       "length" : $key.length,
-      "height" : $key.height
+      "height" : $key.height,
+      "innerWidth" : $key.innerWidth,
+      "innerLength" : $key.innerLength,
       })
 
   let boundary = makeScad(
@@ -291,7 +293,9 @@ proc toSCAD(key: Key): tuple[core, boundary: ScadNode] =
     params = {
         "width" : $key.width,
         "length" : $key.length,
-        "height" : $key.height
+        "height" : $key.height,
+        "innerWidth" : $key.innerWidth,
+        "innerLength" : $key.innerLength,
   })
 
   result = (core, boundary)
@@ -311,7 +315,7 @@ proc toSCAD(row: Row): tuple[core, boundary: ScadNode] =
   )
 
   result.core =
-    makeCube(d = row.width, w = row.length, h = 1.0)
+    makeCube(d = row.width, w = row.length, h = blockConf.topThickness)
     .scadSubtract(
       keys.mapIt(it.boundary.scadTranslate(it.shift)))
     .setColor("Green")

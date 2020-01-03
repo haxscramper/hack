@@ -1,36 +1,26 @@
-module key_core(height, width, length) {
-    sizeX = length;
-    sizeY = width;
-    sizeZ = height + 0.2;
-
-    centerX = sizeX / 2;
-    centerY = sizeY / 2;
-    centerZ = sizeZ / 2;
+module key_core(height, width, length, innerWidth, innerLength) {
+    lenShift = (length - innerLength) / 2;
+    widShift = (width - innerWidth) / 2;
 
     difference() {
-        color("Orange") cube([ sizeX, sizeY, sizeZ ]);
+        color("Orange") cube([ length, width, height ]);
 
-        translate([ centerX, centerY, centerZ ]) {
-            color("Red") cube(
-                [
-                    sizeX * 0.7, //
-                    sizeY * 0.7, //
-                    sizeZ + 0.1
-                ],
-                center = true);
+        translate([ lenShift, widShift, -height / 2]) {
+            color("Red")
+                cube([ innerLength, innerWidth, 2 * height]);
         }
     }
 }
 
-module key_boundary(height, width, length, length) {
-    shift = 0.1;
+module key_boundary(height, width, length, length, innerWidth, innerLength) {
+    shift = 0.05;
     translate([ 0, 0, -shift ]) {
         cube([ length, width, height + 2 * shift ]);
     }
 }
 
 module row_boundary(width, height, length) {
-    shift = 0.1;
+    shift = 0.05;
     translate([ 0, 0, -shift ]) {
         cube([ length, width, height + 2 * shift ]);
     }

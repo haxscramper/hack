@@ -49,18 +49,24 @@ proc parseDefaultConf(table: Toml): void =
   defaultConf.keyLength = table.getF("keyLength")
   defaultConf.keySpacing = table.getF("keySpacing")
   defaultConf.rowSpacing = table.getF("rowSpacing")
+  defaultConf.keyInnerLength = table.getF("keyInnerLength")
+  defaultConf.keyInnerWidth = table.getF("keyInnerWidth")
   dlog "Done"
 
 proc makeDefaultKey(
   length: Option[float] = none(float),
   width: Option[float] = none(float),
   height: Option[float] = none(float),
-  keyCode: Option[string] = none(string)
+  keyCode: Option[string] = none(string),
+  innerLength: Option[float] = none(float),
+  innerWidth: Option[float] = none(float)
      ): Key =
   Key(
     length: length.get(defaultConf.keyLength),
     width: width.get(defaultConf.keyWidth),
     height: height.get(defaultConf.keyHeight),
+    innerLength: innerLength.get(defaultConf.keyInnerLength),
+    innerWidth: innerWidth.get(defaultConf.keyInnerWidth),
     keyCode: keyCode
   )
 
@@ -85,7 +91,9 @@ func optS(
     default
 
 
-func optS(table: TomlVal, default: Option[string] = none(string)): Option[string] =
+func optS(
+  table: TomlVal, default: Option[string] = none(string)
+     ): Option[string] =
   if table.kind == String: some(table.getStr())
   else: default
 
@@ -112,7 +120,9 @@ proc parseKeys(row: Toml): seq[tuple[key: Key, space: float]] =
                 width = key.optF("width"),
                 height = key.optF("height"),
                 length = key.optF("length"),
-                keyCode = key.optS("keyCode")
+                keyCode = key.optS("keyCode"),
+                innerLength = key.optF("innerLength"),
+                innerWidth = key.optF("innerWidth"),
               ),
               space: key["space"].optF().get(defaultConf.keySpacing)
             )

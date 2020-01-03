@@ -9,7 +9,7 @@ height = 1.1
 [keyboard.blockConf]
 baseHeight = 1.0
 shellHeight = 3.0
-topThickness = 1.0
+topThickness = 0.7
 shellThickness = 0.6
 lidElevation = 0.5
 
@@ -17,15 +17,17 @@ lidElevation = 0.5
 exportMode = "modular"
 
 [keyboard.defaultConf]
-keyWidth = 1
-keyHeight = 1
-keyLength = 2
+keyWidth = 1.8
+keyHeight = 0.8
+keyLength = 1.8
 keySpacing = 0.5
 rowSpacing = 0.25
+keyInnerLength = 1.4
+keyInnerWidth = 1.4
 
 [[block]]
 # Size of the left and right angle in the block
-angles = { left = 105, right = 105 }
+angles = { left = 90, right = 90 }
 # Offset hull in the left and right from the convex hull
 offsets = { left = 0.2, right = 0.2 }
 
@@ -36,22 +38,17 @@ pos = "rpLeft"
 offset = 0.25
 
 [block.dimensions]
-width = 10.0 # Width of the keyboard block
-lowerLen = 18.0 # Length of the lower side of the block.
+width = 8.0 # Width of the keyboard block
+lowerLen = 12.0 # Length of the lower side of the block.
 
 [[block.row]]
 # Define key using only button codes
-keys = ["q", "w", "e", "r", "t", "y"]
+keys = ["q", "w", "e", "9", "1"]
 
 [[block.row]]
 # Specify only number of keys in the row
 keys = 5
 
 [[block.row]]
-keys = [
-  # Manually specify each key's configuration. Omitted values will be
-  # taken from defauilt configuration
-  { width = 1, length = 2, height = 1, space = 0.5, },
-  { width = 1, length = 2, height = 1, space = 0.5, },
-  { width = 1, length = 2, height = 1, space = 0.5, },
-]
+# Specify only number of keys in the row
+keys = 5
