@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+
+<html>
+    <head>
+        <title>Title</title>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+
+         table {
+             border-collapse: collapse;
+         }
+
+         th, td {
+             text-align: center;
+             padding: 8px;
+             min-width: 70px;
+         }
+
+         th {
+             font-weight: bold;
+         }
+
+         tr:nth-child(even) {background-color: #f2f2f2;}
+        </style>
+    </head>
+    <body onload="onPageLoad();">
+        <table width="100%">
+            <tr>
+                <th style="text-align: center">Surname</td>
+                <th style="text-align: center">Name</td>
+                <th style="text-align: center">Middle name</td>
+            </tr>
+            <tr>
+                <td><input type="text" id="Surname" required></td>
+                <td align="center"><input type="text" id="Name" required></td>
+                <td><input type="text" id="Middle_name" required><br></td>
+            </tr>
+            <tr>
+                <th style="text-align: center">Age</td>
+                <th style="text-align: center">Experience</td>
+                <th style="text-align:center">Salary</td>
+            </tr>
+            <tr>
+                <td><input id="Age" type="number" required></td>
+                <td align="center"><input id="Experience" type="number" required></td>
+                <td><input id="Salary" type="number" required></td>
+            </tr>
+            <tr>
+                <td></td>
+                <td><button style="margin-top: 20px; height: 30px" onClick="addPerson()">
+                    Add person
+                </button></td> <td></td>
+            </tr>
+        </table>
+
+        <div style="text-align:center">
+            <svg id="salaryPlot" width="700" height="500" style="border:1px solid black"> </svg>
+        </div>
+
+        <table id="List" border="1" style="margin-top: 50px" width="100%">
+            <tr>
+                <th onclick="sortable('List', 0)">Surname</td>
+                <th onclick="sortable('List', 1)">Name</td>
+                <th onclick="sortable('List', 2)">Middle_name</td>
+                <th onclick="sortable('List', 3)">Age</td>
+                <th onclick="sortable('List', 4)">Experience</td>
+                <th onclick="sortable('List', 5)">Salary</td>
+            </tr>
+        </table>
+
+
+        <script>
+
+
+
+            var t=0, p = [];
+            var list = document.getElementById("List");
+            function person(surname,name,middle_name,age,experience,salary){
+                this.surname = surname;
+                this.name = name;
+                this.middle_name = middle_name;
+                this.age = age;
+                this.experience = experience;
+                this.salary = salary;
+            }
+            function addPerson(){
+                var surname = document.getElementById("Surname");
+                var name = document.getElementById("Name");
+                var middle_name = document.getElementById("Middle_name");
+                var age = document.getElementById("Age");
+                var experience = document.getElementById("Experience");
+                var salary = document.getElementById("Salary");
+                p[t] = new person(surname.value, name.value,
+                middle_name.value, age.value, experience.value,
+                salary.value);
+
+                t++;
+
+                surname.value=getRandomInt(0, 1000);
+                name.value="sdfsdf";
+                middle_name.value=getRandomInt(0, 1000);
+                age.value=getRandomInt(0, 1000);
+                experience.value=getRandomInt(0, 1000);
+                salary.value=getRandomInt(0, 1000);
+
+                outList();
+                plotSalary();
+            }
+
+         var sortOrders = {};
+         function sortable(tableId, sortIndex) {
+             var order = -1;
+             if (sortOrders[tableId] === order) {order = -order;}
+             sortOrders[tableId] = order;
+
+             table = document.getElementById(tableId);
+             table_array = Array.from(table.rows).slice(1).map(
+                 tr => Array.from(tr.cells).map(function (td) {
+                     var text = td.innerText;
+                     if (!isNaN(text)) { return Number(text); }
+                     else { return text; }
+                 }));
+
+             table_array.sort((lhs, rhs) => lhs[sortIndex] < rhs[sortIndex] ? order : -order);
+
+             var tableBody = table_array.map(
+                   tr => "<tr> " +
+                       tr.map(td => "\t<td>" + td + "</td>").join(" ") +
+                   " </tr>").join("\n");
+
+             document.getElementById(tableId).innerHTML = table.rows[0].innerHTML + tableBody;
+         }
+
+
+         function getRandomInt(min, max) {
+             return Math.floor(Math.random() * (max - min) + min);
+         }
+
+         function plotSalary () {
+             var salaries = p.map(v => Number(v.salary));
+             salaries.sort();
+             var xDiff = 500 / salaries.length;
+             var line = salaries.map(function (s, idx) { return {
+                 lines: "", idx: idx, salary: s}}).
+                 reduce(function (lhs, rhs) {
+                     return {
+                         lines: lhs.lines +
+                                '<line stroke="black" stroke-width="3" x1="' + lhs.idx * xDiff + '" ' +
+                                'x2="' + rhs.idx * xDiff + '" ' +
+                                'y1="' + lhs.salary / 2 + '" ' +
+                                'y2="' + rhs.salary / 2 + '"></line>\n',
+                         idx: rhs.idx,
+                         salary: rhs.salary
+                     }}).lines;
+
+             document.getElementById("salaryPlot").innerHTML =
+                 '<g transform="scale(1,-1) translate(0, -500)">' + line + "</g>";
+         }
+
+         function onPageLoad() {
+             for (i = 0; i < 18; ++i) {
+                 addPerson();
+             }
+             sortable('List', 3);
+             plotSalary();
+         }
+
+            var e,tds;
+            var c;
+            function outList(){
+                c=list.rows.length;
+                for (var i = 0; i < c-1; i++) {
+                    list.removeChild(list.lastChild);
+                }
+
+                for (var i = 0; i < t; i++)
+                {
+                    list.appendChild(document.createElement("tr"));
+                }
+
+                e=list.getElementsByTagName("tr");
+                for (var i = 1; i < e.length; i++)
+                {
+                    for (var j = 0; j < 6; j++)
+                    {
+                        e[i].appendChild(document.createElement("td"));
+                    }
+                }
+
+                for (var i = 1; i < e.length; i++) {
+                    tds = e[i].getElementsByTagName("td");
+                    tds[0].innerHTML = p[i-1].surname;
+                    tds[1].innerHTML = p[i-1].name;
+                    tds[2].innerHTML = p[i-1].middle_name;
+                    tds[3].innerHTML = p[i-1].age;
+                    tds[4].innerHTML = p[i-1].experience;
+                    tds[5].innerHTML = p[i-1].salary;
+                }
+            }
+        </script>
+    </body>
+</html>
