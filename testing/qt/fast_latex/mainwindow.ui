@@ -22,7 +22,7 @@
       </property>
       <widget class="QTabWidget" name="tabWidget">
        <property name="currentIndex">
-        <number>0</number>
+        <number>1</number>
        </property>
        <widget class="QWidget" name="mainInput">
         <attribute name="title">
@@ -62,19 +62,20 @@
      margin: 30px 0;
  }
 &lt;/style&gt;
+ &lt;script&gt;
+ window.onload = function() {
+     var tex = document.getElementsByClassName(&quot;tex&quot;);
+     Array.prototype.forEach.call(tex, function(el) {
+         katex.render(el.getAttribute(&quot;data-expr&quot;), el);
+     });
+ };
+&lt;/script&gt;
 &lt;body&gt;
 
     &lt;div class=&quot;example tex&quot; data-expr=&quot;&lt;++++&gt;&quot;&gt;
     &lt;/div&gt;
 
-    &lt;script&gt;
-     window.onload = function() {
-         var tex = document.getElementsByClassName(&quot;tex&quot;);
-         Array.prototype.forEach.call(tex, function(el) {
-             katex.render(el.getAttribute(&quot;data-expr&quot;), el);
-         });
-     };
-    &lt;/script&gt;
+
 </string>
            </property>
           </widget>

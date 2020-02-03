@@ -3,6 +3,9 @@
 cd "$(dirname "$0")"
 set -o nounset
 
+#DOCS: recompile ncurses application, and reopen new window on each
+#rebuild.
+
 bin_file="ncurses.c.bin"
 tab_titl="${bin_file}.tab"
 
