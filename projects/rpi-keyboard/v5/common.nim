@@ -1,4 +1,5 @@
-import wiringPiNim, os
+import wiringPiNim
+# import os
 import strutils, strformat
 
 proc debug*(msg: string) =
