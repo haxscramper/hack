@@ -12,11 +12,6 @@ import bitops
 when defined(profiler):
   import nimprof
 
-if piSetup() >= 0:
-  echo "Pi setup ok"
-else:
-  echo "Pi setup failed"
-  quit 1
 
 type
   HIDModifiers = enum
@@ -106,12 +101,12 @@ proc makeKeyGrid(
     assert colPins.hasDifferentValues()
 
   KeyGrid(
-    keyGrid: newSeqWith(
-      rowPins.len, newSeqWith(
-        colPins.len, Key(
+    keyGrid: codes.mapIt(
+      it.mapIt(
+        Key(
           state: kstIdleReleased,
           isModifier: false,
-          code: ccKeyA))),
+          code: it))),
     rowPins: rowPins,
     colPins: colPins)
 
@@ -182,6 +177,8 @@ proc writeHIDReport(report: HIDReport) =
   final[1] = 0 # ignored
 
   for idx, code in report.keycodes:
+    if idx == 0 or code != ccKeyNone:
+      echo code
     final[2 + idx] = cast[uint8](code)
 
   let file = open("/dev/hidg0", fmWrite)
@@ -199,33 +196,42 @@ proc updateKeyGrid(grid: var KeyGrid, matrixState: seq[seq[bool]]): bool =
 
   return anyChanges
 
-var grid = makeKeyGrid(
-  codes = @[
-    @[ccKeyA, ccKeyB, ccKey0],
-    @[ccKeyJ, ccKeyU, ccKey8],
-    @[ccKeyH, ccKeyE, ccKeyN]
-  ],
-  rowPins = @[0, 1, 2],
-  colPins = @[3, 4, 5]
-)
+proc main() =
+  var grid = makeKeyGrid(
+    codes = @[
+      @[ccKeyA, ccKeyB, ccKey0],
+      @[ccKeyJ, ccKeyU, ccKey8],
+      @[ccKeyH, ccKeyE, ccKeyN]
+    ],
+    rowPins = @[0, 1, 2],
+    colPins = @[3, 4, 5]
+  )
 
-for col in grid.colPins:
-  setPinModeOut(col)
-  setPinPullUp(col)
+  if piSetup() >= 0:
+    echo "Pi setup ok"
+  else:
+    echo "Pi setup failed"
+    quit 1
 
-for row in grid.rowPins:
-  setPinModeIn(row)
-  #setPinPullDown(row)
+  for col in grid.colPins:
+    setPinModeOut(col)
+    setPinPullUp(col)
 
-var cnt = 0
-while true:
-  let matrixState = grid.readMatrix()
-  let anyChanges = updateKeyGrid(grid, matrixState)
+  for row in grid.rowPins:
+    setPinModeIn(row)
+    #setPinPullDown(row)
 
-  if anyChanges:
-    inc cnt
-    let report = grid.createReport()
-    report.writeHIDReport()
+  var cnt = 0
+  while true:
+    let matrixState = grid.readMatrix()
+    let anyChanges = updateKeyGrid(grid, matrixState)
 
-  if cnt > 100:
-    break
+    if anyChanges:
+      inc cnt
+      let report = grid.createReport()
+      report.writeHIDReport()
+
+    if cnt > 100:
+      break
+
+main()

@@ -8,3 +8,4 @@ HOWTO.html
 /rpi_files/bin/nc.openbsd
 rpi_files/
 /*.json_private
+*.bin
