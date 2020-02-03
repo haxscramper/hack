@@ -1,0 +1,10 @@
+* TODO Test 1
+  :PROPERTIES:
+  :CREATED:  <2020-01-17 Fri 12:06>
+  :CUSTOM_ID: test-1
+  :END:
+* TODO Test 2
+  :PROPERTIES:
+  :CREATED:  <2020-01-17 Fri 12:06>
+  :DEPENDS: test-1
+  :END:
