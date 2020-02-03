@@ -22,7 +22,7 @@ rowSpacing = 0.25
 keyInnerLength = 1.4
 keyInnerWidth = 1.4
 firstKeySpacing = 0.0
-exportMode = "emSinglePiece"
+exportMode = "emModular"
 
 [[block]]
 # Size of the left and right angle in the block

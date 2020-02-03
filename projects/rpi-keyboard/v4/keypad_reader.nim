@@ -27,8 +27,6 @@ type
     hmRightAlt = 6
     hmRightSuper = 7
 
-
-
 type
   KeyState = enum
     kstChangedPressed ## Previously unmodified now pressed
