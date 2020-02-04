@@ -1,0 +1,181 @@
+####################################
+#         System information       #
+####################################
+# Date:                   2020:02:04 
+# Time:                   22:27:55 
+# Xnee program:           cnee 
+# Xnee version:           3.19 
+# Xnee home:              http://www.gnu.org/software/xnee/ 
+# Xnee info mailing list: info-xnee@gnu.org 
+# Xnee bug mailing list:  bug-xnee@gnu.org 
+# X version:              11 
+# X revision:             0 
+# X vendor:               The X.Org Foundation 
+# X vendor release:       12007000 
+# Record version major:   1
+# Record version minor:   13
+# OS name:                Linux 
+# OS Release:             5.5.1-arch1-1 
+# OS Version:             #1 SMP PREEMPT Sat, 01 Feb 2020 16:38:40 +0000 
+# Machine:                x86_64 
+# Nodename:               hax-desktop 
+# Display name:           :1
+# Dimension:              958x1014
+
+
+
+##############################################
+#      Xnee application arguments            #
+##############################################
+#  cnee --record --keyboard --pause-key F10 --resume-key F11 --stop-key F12 --store-mouse-position --out-file save-test.xns 
+
+
+##############################################
+#      Displays                              #
+##############################################
+# display :1
+# distribute
+
+
+##############################################
+#      Files                                 #
+##############################################
+# out-file save-test.xns
+# err-file stderr
+
+
+##############################################
+#      Key Grabs                             #
+##############################################
+# stop-key         F12
+# pause-key        F10
+# resume-key       F11
+# insert-key       0
+# exec-key         0
+# exec-program-key         xnee-exec-no-program
+
+
+##############################################
+#      Recording limits etc                  #
+##############################################
+
+events-to-record        -1
+data-to-record          -1
+seconds-to-record       -1
+# first-last
+
+# Record  all (including current) clients or only future ones
+all-clients
+# future-clients
+
+# Store the starting mouse position 
+store-mouse-position
+
+
+##############################################
+#      Resolution                            #
+##############################################
+
+# Resolution
+#recorded-resolution  958x1014
+#replay-resolution  1x1
+#resolution-adjustment  0
+
+
+##############################################
+#      Speed                                 #
+##############################################
+
+# Speed
+#speed-percent  100
+
+
+##############################################
+#      Replaying limits etc                  #
+##############################################
+
+max-threshold 20 
+min-threshold 20 
+tot-threshold 40 
+
+
+##############################################
+#      Feedback                              #
+##############################################
+#feedback-none
+#feedback-stderr
+feedback-xosd
+ 
+
+
+##############################################
+#      Various                               #
+##############################################
+
+# Plugin file 
+
+# Modes (currently not used)
+# synchronised-replay
+
+# Replay offset
+#replay-offset 0x0
+
+# Human printout of X11 data (instead of Xnee format)
+# human-printout  
+
+# Delay before starting record/replay
+# time 0
+
+# No recording of ReparentNotify
+# no-reparent-recording 
+
+# Various
+#########################################
+#          Record settings              #
+#########################################
+#   data_flags          7
+#   rState              0x55f8708802b0
+#   xids[0]             3
+#   xids[1]             0
+# Number of Ranges      2
+# RecordRange[0]
+request-range            0-0
+reply-range                   0-0 
+extension-request-major-range  0-0 
+extension-request-minor-range  0-0 
+extension-reply-major-range   0-0
+extension-reply-minor-range   0-0 
+delivered-event-range         21-21 
+device-event-range            2-3 
+error-range                   0-0 
+# RecordRange[1]
+request-range            0-0
+reply-range                   0-0 
+extension-request-major-range  0-0 
+extension-request-minor-range  0-0 
+extension-reply-major-range   0-0
+extension-reply-minor-range   0-0 
+delivered-event-range         0-0 
+device-event-range            67-68 
+error-range                   0-0 
+fake-motion x=23 y=0 
+7,2,0,0,0,37,0,45539540,6,Xephyr virtual keyboard
+6,2,0,0,0,37,0,45539540,3,Virtual core keyboard
+7,2,0,0,0,50,0,45539578,6,Xephyr virtual keyboard
+6,2,0,0,0,50,0,45539578,3,Virtual core keyboard
+7,2,0,0,0,39,0,45540178,6,Xephyr virtual keyboard
+6,2,0,0,0,39,0,45540178,3,Virtual core keyboard
+7,3,0,0,0,39,0,45540276,6,Xephyr virtual keyboard
+6,3,0,0,0,39,0,45540276,3,Virtual core keyboard
+7,2,0,0,0,39,0,45540386,6,Xephyr virtual keyboard
+6,2,0,0,0,39,0,45540386,3,Virtual core keyboard
+7,3,0,0,0,39,0,45540466,6,Xephyr virtual keyboard
+6,3,0,0,0,39,0,45540466,3,Virtual core keyboard
+7,2,0,0,0,39,0,45540572,6,Xephyr virtual keyboard
+6,2,0,0,0,39,0,45540572,3,Virtual core keyboard
+7,3,0,0,0,39,0,45540684,6,Xephyr virtual keyboard
+6,3,0,0,0,39,0,45540684,3,Virtual core keyboard
+7,3,0,0,0,50,0,45540900,6,Xephyr virtual keyboard
+6,3,0,0,0,50,0,45540900,3,Virtual core keyboard
+7,3,0,0,0,37,0,45540978,6,Xephyr virtual keyboard
+6,3,0,0,0,37,0,45540978,3,Virtual core keyboard

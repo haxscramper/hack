@@ -1,5 +1,13 @@
 #!/usr/bin/env bash
+
+if ! shellcheck \
+     --exclude=SC2034 "$0"; then
+    exit 1
+fi
+
 shopt -s extglob
+set -o errexit
+set -o nounset
 
 msg="colecho -i --"
 log="colecho --"
@@ -11,7 +19,7 @@ target_display=":1"
 
 DISPLAY=":1"
 
-if $(ps | grep -q Xephyr); then
+if pgrep -x Xephyr; then
     $msg Xephyr instance is already running
 else
     target_display=":$RANDOM"
@@ -23,21 +31,29 @@ DISPLAY=$target_display
 
 target_file="gtk_application.nim"
 output_file=$target_file.bin
+tmp_output_file=$target_file.tmp.bin
 build_status=0
 function run_build () {
     $msg Running compilation of $target_file
+    $log Outputting to $tmp_output_file
 
-    nim c                  \
-        --cc:tcc           \
-        --out:$output_file \
-        --hints:off        \
-        --verbosity:0      \
+#    --hotCodeReloading:on       \
+
+
+    nim c                           \
+        --out:$tmp_output_file      \
+        --hints:off                 \
+        --verbosity:0               \
+        --forceBuild \
+        --nimCache:nimcache         \
+        --warning[UnusedImport]:off \
         $target_file
 
     build_status=$?
 
     if [[ $build_status ]]; then
-        $log Compilation completed succesfully
+        $log Compilation completed succesfully "($build_status)"
+        mv -v $tmp_output_file $output_file
     else
         $err Errors during compilation
     fi
@@ -53,7 +69,7 @@ function auto_rebuild () {
         -qe close_write,moved_to,create -m . |
     while read -r directory events filename; do
         if [[ $filename == !(.*|*.bin|*.tmp.*) ]]; then
-            $log File $filename has changed
+            $log File "$filename" has changed
             run_build
             after_rebuild
         fi
@@ -62,34 +78,27 @@ function auto_rebuild () {
 
 app_pid=""
 rebuild_conf="restart-all"
-default_cnee="none"
 function after_rebuild () {
-    $log Executing after rebuild action
-    case $rebuild_conf in
-        "restart-all" )
-            $msg Restarting whole application
-            if [[ $(ps | grep -q "$app_pid") && -z $app_pid ]]; then
-                $msg Application is still running, executing kill
-                kill $app_pid
-            elif [[ -z $app_pid ]]; then
-                $msg App pid is empty, this is first run
-            fi
+    $msg Restarting whole application
+    if [[ -z $app_pid ]]; then
+        $msg App pid is empty, this is first run
+    elif kill $app_pid; then
+        $msg Killed application
+    else
+        $msg Application is not running
+    fi
 
-            $log Launching application on display $DISPLAY
-            ./$output_file &
-            app_pid=$!
-            $log Done
+    $log Launching application "(./$output_file)" on display $DISPLAY
+    ./$output_file &
+    app_pid=$!
+    $log Done
 
-            ;;
-        "run-cnee" )
-            $msg Running cnee action
-            execute_cnee_action $default_cnee
-            ;;
-        * )
-            $err Unknown after rebuild action $rebuild_conf
-            ;;
-    esac
+    execute_cnee_action "save-test"
 
+    $log "Executing using xdotool"
+
+    xdotool click 1
+    xdotool click 1
 }
 
 
@@ -98,32 +107,28 @@ function after_rebuild () {
 function execute_cnee_action () {
     $log Running cnee actions
     command=$1
-    case $default_cnee in
-        "none" )
-            $msg Default action is none
-            ;;
-        * )
-            file=$command.xns
-            $msg Running actions from file $file
-            if [[ ! -f $file ]]; then
-                $err No file corresponds to action $command
-            fi
-            ;;
-    esac
-
+    file="$command.xns"
+    $msg Running actions from file "$file"
+    if [[ ! -f $file ]]; then
+        $err No file corresponds to action "$command"
+    else
+        cnee --replay --file "$file" 2> /dev/null
+    fi
 }
 
 function change_configuration () {
     $log Updating configuration
     local command=$1
-    IFS="=" conf action < <($echo $command)
+    #IFS="=" conf action < <(echo $command)
+    conf=$(echo "$command" | cut -d'=' -f1)
+    action=$(echo "$command" | cut -d'=' -f2)
     case $conf in
         "restart-all" )
             rebuild_conf=$conf
             ;;
         "set-cnee" )
-            $rebuild_conf="run-cnee"
-            default_cnee=$action
+            rebuild_conf="run-cnee"
+            default_cnee="$action"
             ;;
     esac
 
@@ -132,19 +137,19 @@ function change_configuration () {
 command_port=12345
 function listen_commands () {
     $msg Listening for commands on port $command_port
-    nc -kl $command_port |
+    nc -kl "$command_port" |
     while read -r kind command; do
-        $log Accepted command $command of kind $kind
-        echo $command
-        case $kind in
+        $log Accepted command "$command" of kind "$kind"
+        echo "$command"
+        case "$kind" in
             cnee )
-                execute_cnee_action $command
+                execute_cnee_action "$command"
                 ;;
             config )
-                change_configuration $command
+                change_configuration "$command"
                 ;;
             * )
-                $err Accepted undefined command kind: $kind
+                $err Accepted undefined command kind: "$kind"
                 ;;
         esac
     done
