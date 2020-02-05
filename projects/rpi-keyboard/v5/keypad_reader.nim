@@ -4,44 +4,71 @@ import terminal
 import sequtils
 import strutils
 import strformat
+import macros
 import algorithm
 import os
 import common
 import key_codes
 import bitops
+import hmisc/helpers
+
+import grid
 
 when defined(profiler):
   import nimprof
 
-type
-  HIDModifiers = enum
-    hmLeftCtrl = 0
-    hmLeftShift = 1
-    hmLeftAlt = 2
-    hmLeftSuper = 3
 
-    hmRightCtrl = 4
-    hmRightShift = 5
-    hmRightAlt = 6
-    hmRightSuper = 7
 
-type
-  KeyState = enum
-    kstChangedPressed ## Previously unmodified now pressed
-    kstChangedReleased ## Previously pressed now released
-    kstIdlePressed ## Previously pressed no change now
-    kstIdleReleased ## Not pressed no change
 
-  Key = object
-    state: KeyState
-    case isModifier: bool
-    of true: modif: HIDModifiers
-    of false: code: KeyCode
+proc willGenerate(state: string, grid: KeyGrid, report: string): bool =
+  let rows = state.split("|")
+  asserteq rows.len, grid.keyGrid.len
+  for (stateRow, gridRow) in zip(rows, grid.keyGrid):
+    asserteq stateRow.len, gridRow.len
 
-  KeyGrid = object
-    keyGrid: seq[seq[Key]]
-    rowPins: seq[int]
-    colPins: seq[int]
+  var gridCopy = grid
+  let boolState: seq[seq[bool]] = rows.mapIt(
+    it.mapIt((it == '0').tern(false, true)).concat()
+  )
+  let anyChanges: bool = updateGrid(gridCopy, boolState)
+  if anyChanges:
+    let gridReport = gridCopy.createReport()
+    return gridReport.toEmacsNotation() == report
+
+  true
+
+
+macro transitionAssert(head, body: untyped): untyped =
+  defer: echo result.toStrLit()
+
+  result = newStmtList()
+  result.add quote do:
+    var hasErrors {.inject.} = false
+
+  for transition in body:
+    if not (transition.kind == nnkInfix and transition[0].strVal == "->"):
+      raise newException(ValueError, "each element has to be infix transition")
+
+    let lhs = transition[1]
+    let rhs = transition[2]
+    result.add quote do:
+      block:
+        let state = `lhs`
+        let report = `rhs`
+        if not (state.willGenerate(`head`, report)):
+          hasErrors = true
+
+  result.add quote do:
+    if hasErrors:
+      raise newException(AssertionError, "one of the transitions failed")
+    else:
+      echo "all transitions are ok"
+
+
+  result = quote do:
+    block:
+      `result`
+
 
 proc `[]`(grid: var KeyGrid, row, col: int): var Key =
   result = grid.keyGrid[row][col]
@@ -200,6 +227,22 @@ proc updateKeyGrid(grid: var KeyGrid, matrixState: seq[seq[bool]]): bool =
       anyChanges = anyChanges or isChanged
 
   return anyChanges
+
+block:
+  var testGrid = makeKeyGrid(
+    codes = @[
+      @[ccKeyA, ccKeyB, ccKey0],
+      @[ccKeyJ, ccKeyU, ccKey8],
+      @[ccKeyH, ccKeyE, ccKeyN]
+    ],
+    rowPins = @[0, 1, 2],
+    colPins = @[3, 4, 5]
+  )
+
+  transitionAssert testGrid:
+    "010|000|001" -> "C-S-s-M-q"
+
+
 
 proc main() =
   var grid = makeKeyGrid(

@@ -47,3 +47,17 @@ proc setPinPullUp*(pin: int): void =
 
 proc setPinPullOff*(pin: int): void =
   piPullOff(cast[cint](pin))
+
+
+###########################  assertion macros  ############################
+
+template assertEq*(lhs, rhs): untyped =
+  block:
+    let lhsRes = lhs
+    let rhsRes = rhs
+
+    if lhsRes != rhsRes:
+      raise newException(
+        AssertionError,
+        "Equality assertion failed, left argument evaluated as" &
+          $lhsRes & "and right one as" & $rhsRes)
