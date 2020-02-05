@@ -1,3 +1,6 @@
+import tables
+import enum_iterate
+
 type KeyCode* = enum
   ccKeyNone = 0x00'u8 ## No key
 
@@ -248,3 +251,265 @@ type KeyCode* = enum
   ccKeyMEDIA_REFRESH = 0xfa'u8
   ccKeyMEDIA_CALC = 0xfb'u8
 
+proc getEmacsKeyName*(key: KeyCode): string =
+  case key:
+    of ccKeyNone: "None"
+
+    of ccKeyA: "a"
+    of ccKeyB: "b"
+    of ccKeyC: "c"
+    of ccKeyD: "d"
+    of ccKeyE: "e"
+    of ccKeyF: "f"
+    of ccKeyG: "g"
+    of ccKeyH: "h"
+    of ccKeyI: "i"
+    of ccKeyJ: "j"
+    of ccKeyK: "k"
+    of ccKeyL: "l"
+    of ccKeyM: "m"
+    of ccKeyN: "n"
+    of ccKeyO: "o"
+    of ccKeyP: "p"
+    of ccKeyQ: "q"
+    of ccKeyR: "r"
+    of ccKeyS: "s"
+    of ccKeyT: "t"
+    of ccKeyU: "u"
+    of ccKeyV: "v"
+    of ccKeyW: "w"
+    of ccKeyX: "x"
+    of ccKeyY: "y"
+    of ccKeyZ: "z"
+
+    of ccKey1: "1"
+    of ccKey2: "2"
+    of ccKey3: "3"
+    of ccKey4: "4"
+    of ccKey5: "5"
+    of ccKey6: "6"
+    of ccKey7: "7"
+    of ccKey8: "8"
+    of ccKey9: "9"
+    of ccKey0: "0"
+
+    of ccKeyENTER: "ENTER"
+    of ccKeyESC: "ESC"
+    of ccKeyBACKSPACE: "BACKSPACE"
+    of ccKeyTAB: "TAB"
+    of ccKeySPACE: "SPACE"
+    of ccKeyMINUS: "MINUS"
+    of ccKeyEQUAL: "EQUAL"
+    of ccKeyLEFTBRACE: "("
+    of ccKeyRIGHTBRACE: ")"
+    of ccKeyBACKSLASH: "\\"
+    of ccKeyHASHTILDE: "HASHTILDE"
+    of ccKeySEMICOLON: ":"
+    of ccKeyAPOSTROPHE: "'"
+    of ccKeyGRAVE: "GRAVE"
+    of ccKeyCOMMA: ","
+    of ccKeyDOT: "."
+    of ccKeySLASH: "/"
+    of ccKeyCAPSLOCK: "CAPSLOCK"
+
+    of ccKeyF1: "<F1>"
+    of ccKeyF2: "<F2>"
+    of ccKeyF3: "<F3>"
+    of ccKeyF4: "<F4>"
+    of ccKeyF5: "<F5>"
+    of ccKeyF6: "<F6>"
+    of ccKeyF7: "<F7>"
+    of ccKeyF8: "<F8>"
+    of ccKeyF9: "<F9>"
+    of ccKeyF10: "<F10>"
+    of ccKeyF11: "<F11>"
+    of ccKeyF12: "<F12>"
+
+    of ccKeySYSRQ: "<SYSRQ>"
+    of ccKeySCROLLLOCK: "<SCROLLLOCK>"
+    of ccKeyPAUSE: "<PAUSE>"
+    of ccKeyINSERT: "<INSERT>"
+    of ccKeyHOME: "<HOME>"
+    of ccKeyPAGEUP: "<PAGEUP>"
+    of ccKeyDELETE: "<DELETE>"
+    of ccKeyEND: "<END>"
+    of ccKeyPAGEDOWN: "<PAGEDOWN>"
+    of ccKeyRIGHT: "<RIGHT>"
+    of ccKeyLEFT: "<LEFT>"
+    of ccKeyDOWN: "<DOWN>"
+    of ccKeyUP: "<UP>"
+
+    of ccKeyNUMLOCK: "<NUMLOCK>"
+    of ccKeyKPSLASH: "<KPSLASH>"
+    of ccKeyKPASTERISK: "<KPASTERISK>"
+    of ccKeyKPMINUS: "<KPMINUS>"
+    of ccKeyKPPLUS: "<KPPLUS>"
+    of ccKeyKPENTER: "<KPENTER>"
+    of ccKeyKP1: "<KP1>"
+    of ccKeyKP2: "<KP2>"
+    of ccKeyKP3: "<KP3>"
+    of ccKeyKP4: "<KP4>"
+    of ccKeyKP5: "<KP5>"
+    of ccKeyKP6: "<KP6>"
+    of ccKeyKP7: "<KP7>"
+    of ccKeyKP8: "<KP8>"
+    of ccKeyKP9: "<KP9>"
+    of ccKeyKP0: "<KP0>"
+    of ccKeyKPDOT: "<KPDOT>"
+
+    of ccKey102ND: "<102ND>"
+    of ccKeyCOMPOSE: "<COMPOSE>"
+    of ccKeyPOWER: "<POWER>"
+    of ccKeyKPEQUAL: "<KPEQUAL>"
+
+    of ccKeyF13: "<F13>"
+    of ccKeyF14: "<F14>"
+    of ccKeyF15: "<F15>"
+    of ccKeyF16: "<F16>"
+    of ccKeyF17: "<F17>"
+    of ccKeyF18: "<F18>"
+    of ccKeyF19: "<F19>"
+    of ccKeyF20: "<F20>"
+    of ccKeyF21: "<F21>"
+    of ccKeyF22: "<F22>"
+    of ccKeyF23: "<F23>"
+    of ccKeyF24: "<F24>"
+
+    of ccKeyOPEN: "<OPEN>"
+    of ccKeyHELP: "<HELP>"
+    of ccKeyPROPS: "<PROPS>"
+    of ccKeyFRONT: "<FRONT>"
+    of ccKeySTOP: "<STOP>"
+    of ccKeyAGAIN: "<AGAIN>"
+    of ccKeyUNDO: "<UNDO>"
+    of ccKeyCUT: "<CUT>"
+    of ccKeyCOPY: "<COPY>"
+    of ccKeyPASTE: "<PASTE>"
+    of ccKeyFIND: "<FIND>"
+    of ccKeyMUTE: "<MUTE>"
+    of ccKeyVOLUMEUP: "<VOLUMEUP>"
+    of ccKeyVOLUMEDOWN: "<VOLUMEDOWN>"
+    # 0x82'u8  ccKeyboard Locking Caps Lock
+    # 0x83'u8  ccKeyboard Locking Num Lock
+    # 0x84  ccKeyboard Locking Scroll Lock
+    of ccKeyKPCOMMA: "<KPCOMMA>"
+    # 0x86'u8  ccKeypad Equal Sign
+    of ccKeyRO: "<RO>"
+    of ccKeyKATAKANAHIRAGANA: "<KATAKANAHIRAGANA>"
+    of ccKeyYEN: "<YEN>"
+    of ccKeyHENKAN: "<HENKAN>"
+    of ccKeyMUHENKAN: "<MUHENKAN>"
+    of ccKeyKPJPCOMMA: "<KPJPCOMMA>"
+    # 0x8d'u8  ccKeyboard International7
+    # 0x8e'u8  ccKeyboard International8
+    # 0x8f'u8  ccKeyboard International9
+    of ccKeyHANGEUL: "<HANGEUL>"
+    of ccKeyHANJA: "<HANJA>"
+    of ccKeyKATAKANA: "<KATAKANA>"
+    of ccKeyHIRAGANA: "<HIRAGANA>"
+    of ccKeyZENKAKUHANKAKU: "<ZENKAKUHANKAKU>"
+    # 0x95'u8  ccKeyboard LANG6
+    # 0x96'u8  ccKeyboard LANG7
+    # 0x97'u8  ccKeyboard LANG8
+    # 0x98'u8  ccKeyboard LANG9
+    # 0x99'u8  ccKeyboard Alternate Erase
+    # 0x9a'u8  ccKeyboard SysReq/Attention
+    # 0x9b'u8  ccKeyboard Cancel
+    # 0x9c'u8  ccKeyboard Clear
+    # 0x9d'u8  ccKeyboard Prior
+    # 0x9e'u8  ccKeyboard Return
+    # 0x9f'u8  ccKeyboard Separator
+    # 0xa0'u8  ccKeyboard Out
+    # 0xa1'u8  ccKeyboard Oper
+    # 0xa2'u8  ccKeyboard Clear/Again
+    # 0xa3'u8  ccKeyboard CrSel/Props
+    # 0xa4'u8  ccKeyboard ExSel
+
+    # 0xb0'u8  ccKeypad 00
+    # 0xb1'u8  ccKeypad 000
+    # 0xb2'u8  Thousands Separator
+    # 0xb3'u8  Decimal Separator
+    # 0xb4'u8  Currency Unit
+    # 0xb5'u8  Currency Sub-unit
+    of ccKeyKPLEFTPAREN: "<KPLEFTPAREN>"
+    of ccKeyKPRIGHTPAREN: "<KPRIGHTPAREN>"
+    # 0xb8'u8  ccKeypad {
+    # 0xb9'u8  ccKeypad }
+    # 0xba'u8  ccKeypad Tab
+    # 0xbb'u8  ccKeypad Backspace
+    # 0xbc'u8  ccKeypad A
+    # 0xbd'u8  ccKeypad B
+    # 0xbe'u8  ccKeypad C
+    # 0xbf'u8  ccKeypad D
+    # 0xc0'u8  ccKeypad E
+    # 0xc1'u8  ccKeypad F
+    # 0xc2'u8  ccKeypad XOR
+    # 0xc3'u8  ccKeypad ^
+    # 0xc4'u8  ccKeypad %
+    # 0xc5'u8  ccKeypad <
+    # 0xc6'u8  ccKeypad >
+    # 0xc7'u8  ccKeypad &
+    # 0xc8'u8  ccKeypad &&
+    # 0xc9'u8  ccKeypad |
+    # 0xca'u8  ccKeypad ||
+    # 0xcb'u8  ccKeypad :
+    # 0xcc'u8  ccKeypad #
+    # 0xcd'u8  ccKeypad Space
+    # 0xce'u8  ccKeypad @
+    # 0xcf'u8  ccKeypad !
+    # 0xd0'u8  ccKeypad Memory Store
+    # 0xd1'u8  ccKeypad Memory Recall
+    # 0xd2'u8  ccKeypad Memory Clear
+    # 0xd3'u8  ccKeypad Memory Add
+    # 0xd4'u8  ccKeypad Memory Subtract
+    # 0xd5'u8  ccKeypad Memory Multiply
+    # 0xd6'u8  ccKeypad Memory Divide
+    # 0xd7'u8  ccKeypad +/-
+    # 0xd8'u8  ccKeypad Clear
+    # 0xd9'u8  ccKeypad Clear Entry
+    # 0xda'u8  ccKeypad Binary
+    # 0xdb'u8  ccKeypad Octal
+    # 0xdc'u8  ccKeypad Decimal
+    # 0xdd'u8  ccKeypad Hexadecimal
+
+    of ccKeyLEFTCTRL: "<LEFTCTRL>"
+    of ccKeyLEFTSHIFT: "<LEFTSHIFT>"
+    of ccKeyLEFTALT: "<LEFTALT>"
+    of ccKeyLEFTMETA: "<LEFTMETA>"
+    of ccKeyRIGHTCTRL: "<RIGHTCTRL>"
+    of ccKeyRIGHTSHIFT: "<RIGHTSHIFT>"
+    of ccKeyRIGHTALT: "<RIGHTALT>"
+    of ccKeyRIGHTMETA: "<RIGHTMETA>"
+
+    of ccKeyMEDIA_PLAYPAUSE: "<MEDIA_PLAYPAUSE>"
+    of ccKeyMEDIA_STOPCD: "<MEDIA_STOPCD>"
+    of ccKeyMEDIA_PREVIOUSSONG: "<MEDIA_PREVIOUSSONG>"
+    of ccKeyMEDIA_NEXTSONG: "<MEDIA_NEXTSONG>"
+    of ccKeyMEDIA_EJECTCD: "<MEDIA_EJECTCD>"
+    of ccKeyMEDIA_VOLUMEUP: "<MEDIA_VOLUMEUP>"
+    of ccKeyMEDIA_VOLUMEDOWN: "<MEDIA_VOLUMEDOWN>"
+    of ccKeyMEDIA_MUTE: "<MEDIA_MUTE>"
+    of ccKeyMEDIA_WWW: "<MEDIA_WWW>"
+    of ccKeyMEDIA_BACK: "<MEDIA_BACK>"
+    of ccKeyMEDIA_FORWARD: "<MEDIA_FORWARD>"
+    of ccKeyMEDIA_STOP: "<MEDIA_STOP>"
+    of ccKeyMEDIA_FIND: "<MEDIA_FIND>"
+    of ccKeyMEDIA_SCROLLUP: "<MEDIA_SCROLLUP>"
+    of ccKeyMEDIA_SCROLLDOWN: "<MEDIA_SCROLLDOWN>"
+    of ccKeyMEDIA_EDIT: "<MEDIA_EDIT>"
+    of ccKeyMEDIA_SLEEP: "<MEDIA_SLEEP>"
+    of ccKeyMEDIA_COFFEE: "<MEDIA_COFFEE>"
+    of ccKeyMEDIA_REFRESH: "<MEDIA_REFRESH>"
+    of ccKeyMEDIA_CALC: "<MEDIA_CALC>"
+
+# TODO Convert to compile-time lookup table
+let reverseLookup: TableRef[string, KeyCode] =
+  block:
+    var tbl = newTable[string, KeyCode]()
+    for code in disjointIter(KeyCode):
+      tbl[getEmacsKeyName(code)] = code
+
+    tbl
+
+proc fromEmacsKeyName*(key: string): KeyCode =
+  reverseLookup[key]

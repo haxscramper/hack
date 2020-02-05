@@ -11,14 +11,12 @@ import common
 import key_codes
 import bitops
 import hmisc/helpers
+import report
 
 import grid
 
 when defined(profiler):
   import nimprof
-
-
-
 
 proc willGenerate(state: string, grid: KeyGrid, report: string): bool =
   let rows = state.split("|")
@@ -30,10 +28,10 @@ proc willGenerate(state: string, grid: KeyGrid, report: string): bool =
   let boolState: seq[seq[bool]] = rows.mapIt(
     it.mapIt((it == '0').tern(false, true)).concat()
   )
-  let anyChanges: bool = updateGrid(gridCopy, boolState)
+  let anyChanges: bool = updateKeyGrid(gridCopy, boolState)
   if anyChanges:
     let gridReport = gridCopy.createReport()
-    return gridReport.toEmacsNotation() == report
+    return gridReport == report.fromEmacsNotation()
 
   true
 
@@ -73,29 +71,6 @@ macro transitionAssert(head, body: untyped): untyped =
 proc `[]`(grid: var KeyGrid, row, col: int): var Key =
   result = grid.keyGrid[row][col]
 
-proc updateKey(key: var Key, isPressed: bool): bool =
-  result = false
-
-  case key.state:
-    of kstIdleReleased:
-      if isPressed:
-        key.state = kstChangedPressed
-        result = true # Key is now pressed
-
-    of kstIdlePressed:
-      if not isPressed:
-        key.state = kstChangedReleased
-        result = true # Key is not released
-
-    of kstChangedPressed:
-      if isPressed:
-        key.state = kstIdlePressed
-        # Key is still pressed, no changes
-
-    of kstChangedReleased:
-      if not isPressed:
-        # Key is still released, no changes
-        key.state = kstIdleReleased
 
 proc makeKeyGrid(rowPins, colPins: seq[int]): KeyGrid =
   KeyGrid(
@@ -165,68 +140,6 @@ proc readMatrix(grid: KeyGrid): seq[seq[bool]] =
 
     setPinModeIn(colPin)
 
-type
-  HIDReport = object
-    modifiers: set[HIDModifiers]
-    keycodes: array[6, KeyCode]
-
-proc createReport(grid: KeyGrid): HIDReport =
-  # TODO comment case-of for key state switching
-  var keys: seq[KeyCode]
-  for keyRow in grid.keyGrid:
-    for key in keyRow:
-      case key.state:
-        of kstChangedReleased:
-          if not key.isModifier:
-            keys.add(ccKeyNone)
-
-        of kstChangedPressed:
-          if key.isModifier:
-            result.modifiers.incl(key.modif)
-          else:
-            keys.add(key.code)
-
-        else:
-          discard
-
-  for idx, keyCode in keys:
-    if idx < result.keycodes.len:
-      result.keycodes[idx] = keyCode
-
-proc writeHIDReport(report: HIDReport) =
-  var modifiers: uint8 = 0
-  for it in report.modifiers:
-    modifiers.setBit(ord(it))
-
-  var final: array[8, uint8]
-
-  final[0] = modifiers
-  final[1] = 0 # ignored
-
-  for idx, code in report.keycodes:
-    # if idx == 0 or code != ccKeyNone:
-    #   echo code
-    final[2 + idx] = cast[uint8](code)
-
-
-  when mockRun:
-    echo (0..<final.len).mapIt(&"{it:^3}").join("|")
-    echo final.mapIt(&"{it:^3}").join(" ")
-  else:
-    let file = open("/dev/hidg0", fmWrite)
-    discard file.writeBytes(final, 0, 8)
-    file.close()
-
-
-proc updateKeyGrid(grid: var KeyGrid, matrixState: seq[seq[bool]]): bool =
-  var anyChanges = false
-
-  for rowIdx, rowState in matrixState:
-    for keyIdx, keyState in rowState:
-      let isChanged = grid.keyGrid[rowIdx][keyIdx].updateKey(keyState)
-      anyChanges = anyChanges or isChanged
-
-  return anyChanges
 
 block:
   var testGrid = makeKeyGrid(
