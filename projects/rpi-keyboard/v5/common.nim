@@ -1,4 +1,16 @@
-import wiringPiNim
+import os
+
+when fileExists("../desktop.lock"):
+  static: echo "Importing mock library"
+  import wiringPiMock
+  export wiringPiMock
+  const mockRun* = true
+else:
+  static: echo "Importing real library"
+  import wiringPiNim
+  export wiringPiNim
+  const mockRun* = false
+
 # import os
 import strutils, strformat
 
@@ -35,5 +47,3 @@ proc setPinPullUp*(pin: int): void =
 
 proc setPinPullOff*(pin: int): void =
   piPullOff(cast[cint](pin))
-
-

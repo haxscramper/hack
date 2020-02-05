@@ -1,0 +1,16 @@
+proc piSetup*(): cint = 0
+proc piSetupGPIO*(): cint = 0
+proc piSetupPhys*(): cint = 0
+proc piSetupSys*(): cint = 0
+proc piPinModeOutput*(pin: cint) = discard
+proc piPinModeInput*(pin: cint) = discard
+proc piPinModeGPIO*(pin: cint) = discard
+proc piPinModePWM*(pin: cint) = discard
+proc piDigitalPWM*(pin, value: cint) = discard
+proc piDigitalWrite*(pin, value: cint) = discard
+proc piDigitalRead*(pin: cint): cint = discard
+proc piPullOff*(pin: cint) = discard
+proc piPullDown*(pin: cint) = discard
+proc piPullUp*(pin: cint) = discard
+proc analogWrite*(pin, value: cint) = discard
+proc analogRead*(pin: cint): cint = 0

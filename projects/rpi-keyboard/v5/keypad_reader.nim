@@ -1,17 +1,17 @@
-#import terminal
+import os
+
+import terminal
 import sequtils
-# import strutils
-# import strformat
-import wiringPiNim
+import strutils
+import strformat
 import algorithm
-#import os
+import os
 import common
 import key_codes
 import bitops
 
 when defined(profiler):
   import nimprof
-
 
 type
   HIDModifiers = enum
@@ -177,13 +177,18 @@ proc writeHIDReport(report: HIDReport) =
   final[1] = 0 # ignored
 
   for idx, code in report.keycodes:
-    if idx == 0 or code != ccKeyNone:
-      echo code
+    # if idx == 0 or code != ccKeyNone:
+    #   echo code
     final[2 + idx] = cast[uint8](code)
 
-  let file = open("/dev/hidg0", fmWrite)
-  discard file.writeBytes(final, 0, 8)
-  file.close()
+
+  when mockRun:
+    echo (0..<final.len).mapIt(&"{it:^3}").join("|")
+    echo final.mapIt(&"{it:^3}").join(" ")
+  else:
+    let file = open("/dev/hidg0", fmWrite)
+    discard file.writeBytes(final, 0, 8)
+    file.close()
 
 
 proc updateKeyGrid(grid: var KeyGrid, matrixState: seq[seq[bool]]): bool =
