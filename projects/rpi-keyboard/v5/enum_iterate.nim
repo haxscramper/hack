@@ -15,12 +15,14 @@ macro disjointIterImpl(x: typed): untyped =
       newIdentNode("@"),
       nnkBracket.newTree(values)))
 
-macro disjointIter*(typ: typedesc[enum]): untyped =
-  quote do:
-    block:
-      var a: `typ`
-      disjointIterImpl(a)
+# macro disjointIter*(typ: typedesc[enum]): untyped =
+#   quote do:
+#     block:
+#       var a: `typ`
+#       disjointIterImpl(a)
 
+macro disjointIter*(x: typed): untyped =
+  nnkBracket.newTree(x.getType[1][1..^1])
 
 for val in disjointIter(EnumWithHoles):
   echo val

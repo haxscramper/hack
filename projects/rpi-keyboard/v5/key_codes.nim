@@ -502,10 +502,9 @@ proc getEmacsKeyName*(key: KeyCode): string =
     of ccKeyMEDIA_REFRESH: "<MEDIA_REFRESH>"
     of ccKeyMEDIA_CALC: "<MEDIA_CALC>"
 
-# TODO Convert to compile-time lookup table
-let reverseLookup: TableRef[string, KeyCode] =
-  block:
-    var tbl = newTable[string, KeyCode]()
+const reverseLookup: Table[string, KeyCode] =
+  static:
+    var tbl = initTable[string, KeyCode]()
     for code in disjointIter(KeyCode):
       tbl[getEmacsKeyName(code)] = code
 
