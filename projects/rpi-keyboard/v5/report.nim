@@ -1,4 +1,6 @@
 import common
+import algorithm
+import hmisc/helpers
 import key_codes
 import bitops
 import sequtils
@@ -50,10 +52,21 @@ func toArray(report: HIDReport): array[8, uint8] =
     #   echo code
     result[2 + idx] = cast[uint8](code)
 
+iterator `>..`(left, right: int): int =
+  for num in countdown(left - 1, right):
+    yield num
+
 proc printHIDReport*(report: HIDReport) =
   let final = report.toArray()
-  echo (0..<final.len).mapIt(&"{it:^3}").join("|")
-  echo final.mapIt(&"{it:^3}").join(" ")
+  var modifierBits: array[8, bool]
+  for bit in 8>..0:
+    modifierBits[bit] = final[0].testBit(bit)
+
+  let modifiers = modifierBits.reversed().mapIt(it.tern("1", "0")).join("")
+  let bitNumbers = @["₇", "₆", "₅", "₄", "₃", "₂", "₁", "₀"].join("")
+
+  echo bitNumbers, " |", (1..<final.len).mapIt(&"{it:^3}").join("|")
+  echo modifiers, "   #  ", final[2..^1].mapIt((&"{it:^3}")).join(" ")
 
 proc writeHIDReport*(report: HIDReport) =
   ## Generate HID bits and write to `/dev/hidg0`

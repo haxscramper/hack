@@ -19,8 +19,11 @@ when defined(profiler):
   import nimprof
 
 
-
-proc willGenerate(state: string, grid: KeyGrid, report: string): bool =
+func getChangeFromDefault(state: string, grid: KeyGrid
+                         ): tuple[report: HIDReport, anyChanges: bool] =
+  ## Take empty button grid (with all keys released). Transition to
+  ## state show by `state`. Report all key changes in form of output
+  ## HID report.
   let rows = state.split("|")
   asserteq rows.len, grid.keyGrid.len
   for (stateRow, gridRow) in zip(rows, grid.keyGrid):
@@ -31,21 +34,28 @@ proc willGenerate(state: string, grid: KeyGrid, report: string): bool =
     it.mapIt((it == '0').tern(false, true)).concat()
   )
   let anyChanges: bool = updateKeyGrid(gridCopy, boolState)
-  if anyChanges:
-    let gridReport = gridCopy.createReport()
-    return gridReport == report.fromEmacsNotation()
-
-  true
+  let gridReport = gridCopy.createReport()
 
 
-macro transitionAssert(head, body: untyped): untyped =
+  result = (gridReport, anyChanges)
+
+
+
+macro transitionAssert(grid, assertionList: untyped): untyped =
+  ## Convert each line into assertion: if empty grid (all keys
+  ## released and in default position) after transition to state
+  ## denoted by left side of the `->` will generate the same hid
+  ## report as keq combination denoted by the right side then
+  ## assertion succede. For example, if we had a 2x2 grid then
+  ## `"01|00" -> "n"` would assert that, given argument grid and upper
+  ## right key pressed we will get hid report that sends `"n"`.
   defer: echo result.toStrLit()
 
   result = newStmtList()
   result.add quote do:
     var hasErrors {.inject.} = false
 
-  for transition in body:
+  for transition in assertionList:
     if not (transition.kind == nnkInfix and transition[0].strVal == "->"):
       raise newException(ValueError, "each element has to be infix transition")
 
@@ -55,9 +65,14 @@ macro transitionAssert(head, body: untyped): untyped =
       block:
         let state {.inject.} = `lhs`
         let report {.inject.} = `rhs`
-        if not (state.willGenerate(`head`, report)):
+        let (gridReport {.inject.}, _) = getChangeFromDefault(state, `grid`)
+        let targetReport {.inject.} = fromEmacsNotation(report)
+        if not (gridReport == targetReport):
           echo &"Transition '{state}' -> '{report}' has failed"
-          echo "State hid report:"
+          echo "Grid hid report:"
+          printHIDReport(gridReport)
+          echo "Target hid report:"
+          printHIDReport(targetReport)
 
           hasErrors = true
 
@@ -74,8 +89,8 @@ macro transitionAssert(head, body: untyped): untyped =
 
 
 proc `[]`(grid: var KeyGrid, row, col: int): var Key =
+  ## Access one key in grid.
   result = grid.keyGrid[row][col]
-
 
 proc readMatrix(grid: KeyGrid): seq[seq[bool]] =
   ## Scan grid matrix into 2d sequence of button states. `true`
