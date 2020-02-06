@@ -18,6 +18,8 @@ import grid
 when defined(profiler):
   import nimprof
 
+
+
 proc willGenerate(state: string, grid: KeyGrid, report: string): bool =
   let rows = state.split("|")
   asserteq rows.len, grid.keyGrid.len
@@ -51,9 +53,12 @@ macro transitionAssert(head, body: untyped): untyped =
     let rhs = transition[2]
     result.add quote do:
       block:
-        let state = `lhs`
-        let report = `rhs`
+        let state {.inject.} = `lhs`
+        let report {.inject.} = `rhs`
         if not (state.willGenerate(`head`, report)):
+          echo &"Transition '{state}' -> '{report}' has failed"
+          echo "State hid report:"
+
           hasErrors = true
 
   result.add quote do:
@@ -70,47 +75,6 @@ macro transitionAssert(head, body: untyped): untyped =
 
 proc `[]`(grid: var KeyGrid, row, col: int): var Key =
   result = grid.keyGrid[row][col]
-
-
-proc makeKeyGrid(rowPins, colPins: seq[int]): KeyGrid =
-  KeyGrid(
-    keyGrid: newSeqWith(
-      rowPins.len, newSeqWith(
-        colPins.len, Key(
-          state: kstIdleReleased,
-          isModifier: false,
-          code: ccKeyA))),
-    rowPins: rowPins,
-    colPins: colPins)
-
-proc hasDifferentValues[T](arr: seq[T]): bool {.compiletime.} =
-  var sorted = arr
-  sorted.sort()
-  for idx, item in sorted[1 ..^ 1]:
-    if sorted[idx] == item:
-      return false
-
-  return true
-
-proc makeKeyGrid(
-  codes: static seq[seq[KeyCode]],
-  rowPins, colPins: static seq[int]
-     ): KeyGrid =
-  static:
-    assert codes.len == rowPins.len
-    assert codes[0].len == colPins.len
-    assert rowPins.hasDifferentValues()
-    assert colPins.hasDifferentValues()
-
-  KeyGrid(
-    keyGrid: codes.mapIt(
-      it.mapIt(
-        Key(
-          state: kstIdleReleased,
-          isModifier: false,
-          code: it))),
-    rowPins: rowPins,
-    colPins: colPins)
 
 
 proc readMatrix(grid: KeyGrid): seq[seq[bool]] =
@@ -144,8 +108,8 @@ proc readMatrix(grid: KeyGrid): seq[seq[bool]] =
 block:
   var testGrid = makeKeyGrid(
     codes = @[
-      @[ccKeyA, ccKeyB, ccKey0],
-      @[ccKeyJ, ccKeyU, ccKey8],
+      @[ccKeyLEFTALT, ccKeyLEFTCTRL, ccKeyLEFTMETA],
+      @[ccKeyLEFTSHIFT, ccKeyCOMMA, ccKeyA],
       @[ccKeyH, ccKeyE, ccKeyN]
     ],
     rowPins = @[0, 1, 2],
@@ -153,7 +117,7 @@ block:
   )
 
   transitionAssert testGrid:
-    "010|000|001" -> "C-S-s-M-q"
+    "010|000|001" -> "C-n"
 
 
 

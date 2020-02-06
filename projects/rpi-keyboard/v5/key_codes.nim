@@ -1,4 +1,5 @@
 import tables
+import strutils
 import enum_iterate
 
 type KeyCode* = enum
@@ -502,13 +503,26 @@ proc getEmacsKeyName*(key: KeyCode): string =
     of ccKeyMEDIA_REFRESH: "<MEDIA_REFRESH>"
     of ccKeyMEDIA_CALC: "<MEDIA_CALC>"
 
+
+func isModifier*(code: KeyCode): bool =
+  code in {
+    ccKeyLEFTCTRL,
+    ccKeyLEFTSHIFT,
+    ccKeyLEFTALT,
+    ccKeyLEFTMETA,
+    ccKeyRIGHTCTRL,
+    ccKeyRIGHTSHIFT,
+    ccKeyRIGHTALT,
+    ccKeyRIGHTMETA
+  }
+
 const reverseLookup: Table[string, KeyCode] =
   static:
     var tbl = initTable[string, KeyCode]()
     for code in disjointIter(KeyCode):
-      tbl[getEmacsKeyName(code)] = code
+      tbl[getEmacsKeyName(code).toLower()] = code
 
     tbl
 
 proc fromEmacsKeyName*(key: string): KeyCode =
-  reverseLookup[key]
+  reverseLookup[key.toLower()]

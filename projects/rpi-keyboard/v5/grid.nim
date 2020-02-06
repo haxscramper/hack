@@ -1,6 +1,7 @@
 import common
 import key_codes
 import report
+import sequtils
 
 
 type
@@ -50,6 +51,53 @@ proc updateKey*(key: var Key, isPressed: bool): bool =
       if not isPressed:
         # Key is still released, no changes
         key.state = kstIdleReleased
+
+
+proc hasDifferentValues[T](arr: seq[T]): bool {.compiletime.} =
+  var sorted = arr
+  sorted.sort()
+  for idx, item in sorted[1 ..^ 1]:
+    if sorted[idx] == item:
+      return false
+
+  return true
+
+proc makeKeyGrid*(rowPins, colPins: seq[int]): KeyGrid =
+  KeyGrid(
+    keyGrid: newSeqWith(
+      rowPins.len, newSeqWith(
+        colPins.len, Key(
+          state: kstIdleReleased,
+          isModifier: false,
+          code: ccKeyA))),
+    rowPins: rowPins,
+    colPins: colPins)
+
+proc makeKeyGrid*(
+  codes: static seq[seq[KeyCode]],
+  rowPins, colPins: static seq[int]
+     ): KeyGrid =
+  static:
+    assert codes.len == rowPins.len
+    assert codes[0].len == colPins.len
+    assert rowPins.hasDifferentValues()
+    assert colPins.hasDifferentValues()
+
+  KeyGrid(
+    keyGrid: codes.mapIt(
+      it.mapIt(
+        it.isModifier().tern(
+          Key(
+            state: kstIdleReleased,
+            isModifier: true,
+            modif: it.codeToModifer()),
+          Key(
+            state: kstIdleReleased,
+            isModifier: false,
+            code: it)
+        ))),
+    rowPins: rowPins,
+    colPins: colPins)
 
 
 proc updateKeyGrid*(grid: var KeyGrid, matrixState: seq[seq[bool]]): bool =

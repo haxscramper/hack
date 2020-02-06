@@ -10,44 +10,64 @@ type
     hmLeftCtrl = 0
     hmLeftShift = 1
     hmLeftAlt = 2
-    hmLeftSuper = 3
+    hmLeftMeta = 3
 
     hmRightCtrl = 4
     hmRightShift = 5
     hmRightAlt = 6
-    hmRightSuper = 7
+    hmRightMeta = 7
 
   HIDReport* = object
     modifiers*: set[HIDModifiers]
     keycodes*: array[6, KeyCode]
 
+func codeToModifer*(code: KeyCode): HIDModifiers =
+  ## Convert key code to HID modifier
+  case code:
+    of ccKeyLeftCtrl: hmLeftCtrl
+    of ccKeyLeftShift: hmLeftShift
+    of ccKeyLeftAlt: hmLeftAlt
+    of ccKeyLeftMeta: hmLeftMeta
+    of ccKeyRightCtrl: hmRightCtrl
+    of ccKeyRightShift: hmRightShift
+    of ccKeyRightAlt: hmRightAlt
+    of ccKeyRightMeta: hmRightMeta
+    else:
+      raise newException(
+        ValueError,
+        """Only modifier key codes can be converter to modifiers""")
 
-proc writeHIDReport*(report: HIDReport) =
-  ## Generate HID bits and write to `/dev/hidg0`
+func toArray(report: HIDReport): array[8, uint8] =
   var modifiers: uint8 = 0
   for it in report.modifiers:
     modifiers.setBit(ord(it))
 
-  var final: array[8, uint8]
-
-  final[0] = modifiers
-  final[1] = 0 # ignored
+  result[0] = modifiers
+  result[1] = 0 # ignored
 
   for idx, code in report.keycodes:
     # if idx == 0 or code != ccKeyNone:
     #   echo code
-    final[2 + idx] = cast[uint8](code)
+    result[2 + idx] = cast[uint8](code)
 
+proc printHIDReport*(report: HIDReport) =
+  let final = report.toArray()
+  echo (0..<final.len).mapIt(&"{it:^3}").join("|")
+  echo final.mapIt(&"{it:^3}").join(" ")
 
+proc writeHIDReport*(report: HIDReport) =
+  ## Generate HID bits and write to `/dev/hidg0`
   when mockRun:
-    echo (0..<final.len).mapIt(&"{it:^3}").join("|")
-    echo final.mapIt(&"{it:^3}").join(" ")
+    printHIDReport(report)
   else:
+    let final = report.toArray()
     let file = open("/dev/hidg0", fmWrite)
     discard file.writeBytes(final, 0, 8)
     file.close()
 
 proc fromEmacsNotation*(binding: string): HIDReport =
+  ## Convert string in emacs notation to keyboard hid report. `M` is
+  ## Alt key, `S` is shift, `C` is ctrl, `s` is meta (super/win key)
   let keys = binding.split("-")
   let key = keys[^1]
   let modifiers = keys[0..^2]
@@ -60,9 +80,11 @@ proc fromEmacsNotation*(binding: string): HIDReport =
     result.modifiers.incl hmRightAlt
 
   if "s" in modifiers:
-    result.modifiers.incl hmLeftSuper
-    result.modifiers.incl hmRightSuper
+    result.modifiers.incl hmLeftMeta
+    result.modifiers.incl hmRightMeta
 
   if "S" in modifiers:
     result.modifiers.incl hmLeftShift
     result.modifiers.incl hmRightShift
+
+  result.keycodes[0] = fromEmacsKeyName(key)
