@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 
+rm -rf nimcache
+
 nim cpp \
-    --cc:gcc \
+    --cc:clang \
     --noMain \
     --noLinking \
     --header:mylib.h \
@@ -12,10 +14,10 @@ nim cpp \
 nimdir=$HOME/.choosenim/toolchains/nim-$(
     nim --version | grep Version | cut -d' ' -f4 | tr -d '\n')
 
-g++ \
+clang++ \
     -I$nimdir/lib \
     -Inimcache \
     -o main main.cpp \
     nimcache/*.cpp -w
 
-
+./main

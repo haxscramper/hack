@@ -52,7 +52,17 @@ nim $target \
 nimdir=$HOME/.choosenim/toolchains/nim-$(
     nim --version | grep Version | cut -d' ' -f4 | tr -d '\n')
 
-$compiler \
+case $compiler in
+    gcc )
+        build_using="g++"
+        ;;
+    clang )
+        build_using="clang++"
+        ;;
+esac
+
+
+$build_using \
     -w \
     -I$nimdir/lib \
     -I$cache \
