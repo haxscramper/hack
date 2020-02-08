@@ -11,8 +11,8 @@
 
 #############################  configuration  #############################
 
-compiler=gcc
-target=c
+compiler=clang
+target=cpp
 libext=$(echo $target | tr 'c' 'h')
 cache=nimcache_${compiler}_${target}
 
@@ -26,7 +26,7 @@ if ! grep -qF "nimcace*/**" $ign; then
     echo "nimcache*/**" >> $ign
 fi
 
-rm -rf $cache
+rm -rf nimcache*
 
 ##########################  configuration debug  ##########################
 
