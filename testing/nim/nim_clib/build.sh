@@ -61,7 +61,6 @@ case $compiler in
         ;;
 esac
 
-
 $build_using \
     -w \
     -I$nimdir/lib \
