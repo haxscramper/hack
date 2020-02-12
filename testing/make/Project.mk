@@ -69,7 +69,8 @@ help:
 	  cat $(mkfile_path) |
 		sed -r '/^##/!d; s/^##(.*?)$$/makefile-doc: : ## \1/'
 	} | {
-	  tee /dev/tty
+		# tee /dev/tty
+		cat
 	} | {
 	  # Clean up target names (remove trailing newlines, dependencies)
 	  # IDEA print list of dependencies too
@@ -87,11 +88,12 @@ help:
 	  # Merge lines with the same prefix
 		gawk -F':::' -f <(cat - <<-'EOFCAT'
 		  # AWK begin
-			BEGIN { curr="default"; }
+			BEGIN { curr="default"; idx=0; }
 		  # Pattern matching begin
 		  {
 			  if ($$1 != curr) {
-					curr=$$1;
+					idx++;
+					curr=idx":::"$$1;
 			    assoc[curr]=$$2;
 				} else {
 			    assoc[curr]=assoc[curr]" "$$2;
@@ -100,16 +102,34 @@ help:
 		  # Pattern matching end
 		  END {
 			  for (key in assoc) {
-					print "# "key"\n";
-					print assoc[key]"\n";
+					printf "%s:::%s\n", key, assoc[key];
 				}
 			}
 		  # AWK end
 		  EOFCAT
 		)
 	} | {
-	  # Fortat output
+	  # Sort targets in order of documentation
+	  sort -n
+	} | {
+	  # Remove index and separate fields. Add sectioning
+	  awk -F':::' -f <(cat - <<-'EOFCAT'
+		  # Pattern matching begin
+		  {
+		    printf "# %s\n\n%s\n\n", $$2, $$3;
+		  }
+		  # Pattern matching end
+		  EOFCAT
+		)
+	} | {
+	  # format to width
 	  fmt
+	} | {
+	  # Pseudo-markdown highlighting
+		sed -r -f <(cat - <<-'EOFCAT'
+			s/^# (.*)/# \x1b[34m\1\x1b[0m/
+		  EOFCAT
+		)
 	}
 
 # IMPLEMENT format documentation as either markdown or troff
