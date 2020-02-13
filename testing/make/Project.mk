@@ -2,12 +2,19 @@
 # -*- mode: Makefile; -*-
 #? Setting emacs major mode for files that have incorrect extension
 
-# TODO IDEA makefile documentation for functions. This should be even
-# easier to implement due to very unambigous way to define functions.
-# Remove all lines except documentation, `^define` and `^endef`, then
-# run awk to add function name to each of the lines and finally merge
-# all lines into the same documenation as I used for help message
-# parsing.
+# TODO IDEA makefile documentation for functions. Due to the make's
+# invability to have comments in `define` blocks (it is not like
+# anyone will need this anyway) documentation has to be added before
+# the function defintion. This makes parsing harder because now we
+# need to distinguis between makefile documentation and docs for each
+# fucntion. This /can/ be done like this: parse all lines that match
+# `^##` and then remove all lines that are followed/not-followed
+# immediately by `^define ([-_a-zA-Z]+)`. In awk it might look like
+# this: /^##/ `{ buf = buf + $0; in_doc = true; } /^define/ { if
+# (in_doc) { func_docs[name_now] = buf; buf = ""; } END { for (func in
+# func_docs) { printf "%s:::%s", func, func_docs} } }` Somewhat
+# pseudo-code like but in general it should look like this.
+
 
 define self-launch-makefile
 #? How to use GNU make as executable script
@@ -22,21 +29,24 @@ $(self-launch-makefile)
 
 # --- start ---
 
-
-define has-software
-[[ res=$$(which $1 2> /dev/null) && ! -z "$$res" ]]
-endef
-
-define get-message-printer
+## Return name of the command if it exists (can be found by `which`)
+## or return fallback command.
+define get-software-or-fallback
 	$(shell																					\
-		if $(call has-software,colecho) ;	\
+		if [[ res=$$(which $1 2> /dev/null) && ! -z "$$res" ]] ;	\
 		then																												\
-			echo "colecho";																						\
+			echo "$1";																						\
 			else																											\
-			echo "echo -- ";																					\
+			echo "$1";																					\
 		fi																													\
 	)
 endef
+
+## Get command for printing messages
+define get-message-printer
+	$(call get-software-or-fallback,colecho,"echo --")
+endef
+
 
 printer := $(get-message-printer)
 
