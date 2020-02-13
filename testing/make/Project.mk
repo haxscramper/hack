@@ -2,22 +2,43 @@
 # -*- mode: Makefile; -*-
 #? Setting emacs major mode for files that have incorrect extension
 
+# TODO IDEA makefile documentation for functions. This should be even
+# easier to implement due to very unambigous way to define functions.
+# Remove all lines except documentation, `^define` and `^endef`, then
+# run awk to add function name to each of the lines and finally merge
+# all lines into the same documenation as I used for help message
+# parsing.
+
+define self-launch-makefile
 #? How to use GNU make as executable script
-tmp=$(mktemp "/tmp/XXXXXXXXXX.make")
+tmp=$(mktemp "/tmp/XXXXXXXXXX.mk")
 sed '0,/^# --- start ---$/ s/.*/ /' "$0" > $tmp
 echo $tmp
 exec make --directory=$(pwd) --makefile=$tmp
+endef
+
+$(self-launch-makefile)
+
 
 # --- start ---
 
-printer := $(shell																						\
-	if [[ res=$(which colecho 2> /dev/null) && ! -z "$res" ]];	\
-	then																												\
-		echo "colecho";																						\
-		else																											\
-		echo "echo -- ";																					\
-	fi																													\
-)
+
+define has-software
+[[ res=$$(which $1 2> /dev/null) && ! -z "$$res" ]]
+endef
+
+define get-message-printer
+	$(shell																					\
+		if $(call has-software,colecho) ;	\
+		then																												\
+			echo "colecho";																						\
+			else																											\
+			echo "echo -- ";																					\
+		fi																													\
+	)
+endef
+
+printer := $(get-message-printer)
 
 log := $(printer)
 wrn := $(printer) -w
@@ -26,7 +47,8 @@ err := $(printer) -e
 mkfile_path := $(abspath $(lastword $(MAKEFILE_LIST)))
 SHELL=bash
 
-## Project documentation
+## Project documentation. This line will be parsed as `makefile-doc`
+## comment and added on top of the documentation.
 
 .ONESHELL:
 default: \
@@ -43,11 +65,7 @@ show-message-printers:
 	$(wrn) test
 	$(err) asdfasdf
 
-#? Show multiline help message for commands
-.oneshell:
-help:
-	@true
-	## Show documentation for all build targets
+define parse-help
 	cat $(mkfile_path) | {
 	  # Remove everything but targets and their bodies
 	  sed -r '/(^[-_a-zA-Z]+:)|(\t.*?)/!d'
@@ -85,8 +103,9 @@ help:
 		# tee -a /dev/tty
 		cat
 	} | {
+		# TODO Refactor into separate script
 	  # Merge lines with the same prefix
-		gawk -F':::' -f <(cat - <<-'EOFCAT'
+		awk -F':::' -f <(cat - <<-'EOFCAT'
 		  # AWK begin
 			BEGIN { curr="default"; idx=0; }
 		  # Pattern matching begin
@@ -125,17 +144,37 @@ help:
 	  # format to width
 	  fmt
 	} | {
+		# TODO separate into single script for naive syntax highlighting
+		# of text. In most cases it will be more than enough.
+
 	  # Pseudo-markdown highlighting
 		sed -r -f <(cat - <<-'EOFCAT'
 			s/^# (.*)/# \x1b[34m\1\x1b[0m/
 		  EOFCAT
 		)
 	}
+endef
+
+# IDEA Generate documentation for all bash scripts by piping
+# double-hash comments into troff. This should be very simple to
+# implement. Add simple cheat-sheet for formatting help messages
+# (simple troff syntax reference). This is good enough alternative to
+# `argcheck`.
+
+#? Show multiline help message for commands
+.oneshell:
+help:
+	@true
+	## Show documentation for all build targets
+	$(parse-help)
 
 # IMPLEMENT format documentation as either markdown or troff
 
 # TODO sort documentation in order of appearance (assign index and
 # then do numerical sort of the output before formatting)
+
+# TODO Move all help parsing code into file that can be incuded into
+# other files.
 
 .oneshell:
 build:
