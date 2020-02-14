@@ -1,0 +1,3 @@
+echo test
+echo 1 + 2
+echo 12 - 122
