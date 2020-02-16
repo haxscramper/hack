@@ -1,24 +1,18 @@
 import compiler/[
-  modules, # implements the module handling
+  modules,
+  ast,
+  # astalgo,
+  passes,
+  llstream,
+  modulegraphs,
+  idents,
+  options,
 
-  ast, # type definitions of the abstract syntax tree (AST) and node
-       # constructors
-
-  astalgo, # algorithms for containers of AST nodes; converting the
-           # AST to YAML; the symbol table
-
-  passes, # implement the passes manager for passes over the AST
-
-  llstream, # Low-level streams for high performance.
-
-  modulegraphs, # This module implements the module graph data
-                # structure. The module graph represents a complete
-                # Nim project.
-
-  idents, # implements a general mapping from identifiers to an
-          # internal representation (PIdent)
-  options
+  typesrenderer
 ]
+
+import sequtils
+import strutils
 
 # Create cache of unique identifiers
 let cache: IdentCache = newIdentCache()
@@ -28,14 +22,41 @@ let config: ConfigRef = newConfigRef()
 
 proc dummyOpen(graph: ModuleGraph; module: PSym): PPassContext = discard
 
+type
+  ProcDefintion = object
+    name: string
+    args: seq[string]
+    rett: string
+
+proc registerProc(n: PNode): void =
+  # for idx, s in n.sons:
+  #   echo idx
+  #   debug s
+
+  let prc = ProcDefintion(
+    name: n[0].renderPlainSymbolName(),
+    args: n[3].sons
+      .filterIt(it.kind == nkIdentDefs)
+      .mapIt(it[1].renderPlainSymbolName()),
+    rett: n[3].sons
+      .filterIt(it.kind == nkIdent)
+      .mapIt(it.renderPlainSymbolName())
+      .join("")
+    )
+
+  echo prc
+
 proc registerToplevel(n: PNode): void =
-  echo "registering toplevel node"
+  case n.kind:
+    of nkProcDef:
+      registerProc(n)
+    else:
+      discard
+
 
 proc logASTNode(context: PPassContext, n: PNode): PNode =
-  echo "called log ast node"
   result = n
   registerToplevel(n)
-  debug(n)
 
 proc displayAST*(program: string) =
   let g: ModuleGraph = newModuleGraph(cache, config)
@@ -44,14 +65,12 @@ proc displayAST*(program: string) =
   registerPass(g, makePass(open = dummyOpen, process = logASTNode))
   processModule(g, m, llStreamOpen(program))
 
-# dumpTree:
-#   proc hi(arg: int) =
-#     ## Doc comment
-#     echo "hi"
+let thisSource = currentSourcePath().readFile().string()
 
+# displayAST("""
+# proc hi(rr: string = "12"): int =
+#   ## Doc comment
+#   echo "hi"
+# """)
 
-displayAST("""
-proc hi(arg: int) =
-  ## Doc comment
-  echo "hi"
-""")
+displayAST(thisSource)
