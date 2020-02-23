@@ -100,9 +100,76 @@ void test_message_queue() {
     }
 }
 
+#define errtest(value, errmsg, okmsg)                                     \
+    if (value == -1) {                                                    \
+        merr(errmsg);                                                     \
+        mlerr();                                                          \
+        exit(1);                                                          \
+    } else {                                                              \
+        mlog(okmsg);                                                      \
+    }
+
+union semun {
+    int              val;
+    struct semid_ds* buf;
+    unsigned short*  array;
+    struct seminfo*  _buf;
+};
+
+
+void test_semaphores() {
+    const size_t memsize = 1024 * 1024;
+    int mem_id = shmget(IPC_PRIVATE, memsize, IPC_CREAT | SHM_R | SHM_W);
+    int sem_id = semget(IPC_PRIVATE, 1, IPC_CREAT | 0666);
+    errtest(sem_id, "Failed to create semaphore", "Created semaphores");
+
+    pid_t pid = fork();
+    errtest(pid, "Fork failed", "Fork suceded");
+    if (pid) {
+        // Parent process
+        char* buff = (char*)shmat(mem_id, NULL, 0);
+        errtest(
+            (long)buff,
+            "Parent failed to read memory",
+            "Parent memory open ok");
+
+        union semun setval_arg;
+        setval_arg.val = 7;
+
+        semctl(sem_id, 0, SETVAL, setval_arg);
+        for (int i = 0; i < memsize; ++i) {
+            buff[i] = (char)(random() % 32);
+            if (rand() % 128 > 125) {
+                usleep(1);
+            }
+        }
+        mlog("Filled memory");
+        semctl(sem_id, 0, SETVAL, 0);
+
+        waitpid(pid, 0, 0);
+        shmdt(buff);
+    } else {
+        // Child process
+        int semval = semctl(sem_id, 0, GETVAL, semval);
+        mlog("Waiting for semaphore to indicate finish");
+        while (semval != 0) {
+            semval = semctl(sem_id, 0, GETVAL, NULL);
+            usleep(10);
+        }
+        mlog("Semaphore value is 0, can read memory");
+
+        char* buff = (char*)shmat(mem_id, NULL, 0);
+        errtest(
+            (long)buff,
+            "Child failed to read memory",
+            "Child memory open ok");
+    }
+}
+
 int main(int argc, char* argv[]) {
     mlog("Starting lab  6 ");
     // test_shared_memory();
-    test_message_queue();
+    // test_message_queue();
+    test_semaphores();
     return 0;
 }
