@@ -1,17 +1,16 @@
 #include "common.h"
 
+#include <stdlib.h>
 #include <sys/signal.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
 void term_evasion(int signal) {
-    merr("Child process ignores signal");
+    mlog("!!! Child process ignores signal");
 }
 
-int main(int argc, char* argv[]) {
-    mlog("parent process");
-
+void test_forks() {
     pid_t pid;
 
     milog("Initial process pid: ", getpid());
@@ -45,6 +44,41 @@ int main(int argc, char* argv[]) {
             mlog("This code will not be executed");
         }
     }
+
+    waitpid(pid, 0, 0);
+}
+
+void test_pipes() {
+    int fd[2];
+    pipe(fd);
+
+    pid_t pid = fork();
+    if (pid) {
+        // Close reading side of the process
+        // Write some data for child process to read
+        const char* str = "-------test-----";
+        write(fd[1], str, (strlen(str) + 1));
+        mlog("Wrote string");
+
+        // Parent process
+        waitpid(pid, 0, 0);
+    } else {
+        // Child process
+
+        // Close writing side of the process
+        char buff[64];
+        read(fd[0], buff, sizeof(buff));
+        printf("got string [%s]\n", buff);
+
+        exit(0);
+    }
+}
+
+int main(int argc, char* argv[]) {
+    mlog("parent process");
+
+    // test_forks();
+    test_pipes();
 
     milog("Intial process terminated", getpid());
     return 0;
