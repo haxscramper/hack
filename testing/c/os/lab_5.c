@@ -1,8 +1,13 @@
 #include "common.h"
 
+#include <sys/signal.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
+
+void term_evasion(int signal) {
+    merr("Child process ignores signal");
+}
 
 int main(int argc, char* argv[]) {
     mlog("parent process");
@@ -22,6 +27,15 @@ int main(int argc, char* argv[]) {
 
         if (pid = fork()) {
             milog("Second fork parent pid:", getpid());
+            if (pid = fork()) {
+                milog("Forked third time, child pid is", pid);
+                sleep(1);
+                kill(pid, SIGTERM);
+            } else {
+                mlog("Child process, do sleep(1000)");
+                signal(SIGTERM, &term_evasion);
+                sleep(1000);
+            }
         } else {
             milog("Child pid: ", getpid());
             mlog("Child number three");
@@ -32,5 +46,6 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    milog("Intial process terminated", getpid());
     return 0;
 }

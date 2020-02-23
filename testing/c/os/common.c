@@ -10,6 +10,15 @@ void mlog(char* msg) {
 }
 
 
+void merr(char* msg) {
+    printf("\033[31mERR:\033[0m %s\n", msg);
+}
+
+void mlerr() {
+    merr(strerror(errno));
+}
+
+
 void milog(char* msg, int value) {
     pprefix();
     printf("%s %d\n", msg, value);
