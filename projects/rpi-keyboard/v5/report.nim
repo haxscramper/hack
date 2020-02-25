@@ -23,7 +23,7 @@ type
     modifiers*: set[HIDModifiers]
     keycodes*: array[6, KeyCode]
 
-func codeToModifer*(code: KeyCode): HIDModifiers =
+func toHIDModifer*(code: KeyCode): HIDModifiers =
   ## Convert key code to HID modifier
   case code:
     of ccKeyLeftCtrl: hmLeftCtrl
@@ -56,6 +56,7 @@ iterator `>..`(left, right: int): int =
   for num in countdown(left - 1, right):
     yield num
 
+
 proc printHIDReport*(report: HIDReport) =
   let final = report.toArray()
   var modifierBits: array[8, bool]
@@ -68,6 +69,11 @@ proc printHIDReport*(report: HIDReport) =
   echo bitNumbers, " |", (1..<final.len).mapIt(&"{it:^3}").join("|")
   echo modifiers, "   #  ", final[2..^1].mapIt((&"{it:^3}")).join(" ")
 
+proc printHIDReport*(report: seq[HIDReport]) =
+  for idx, rep in report:
+    echo &"idx: {idx}"
+    printHIDReport(rep)
+
 proc writeHIDReport*(report: HIDReport) =
   ## Generate HID bits and write to `/dev/hidg0`
   when mockRun:
@@ -78,26 +84,29 @@ proc writeHIDReport*(report: HIDReport) =
     discard file.writeBytes(final, 0, 8)
     file.close()
 
-proc fromEmacsNotation*(binding: string): HIDReport =
+proc fromEmacsNotation*(binding: string): seq[HIDReport] =
   ## Convert string in emacs notation to keyboard hid report. `M` is
   ## Alt key, `S` is shift, `C` is ctrl, `s` is meta (super/win key)
-  let keys = binding.split("-")
-  let key = keys[^1]
-  let modifiers = keys[0..^2]
-  if "C" in modifiers:
-    result.modifiers.incl hmLeftCtrl
-    result.modifiers.incl hmRightCtrl
+  for chord in binding.split(" "):
+    let keys = chord.split("-")
+    let key = keys[^1]
+    let modifiers = keys[0..^2]
+    var res: HIDReport
+    if "C" in modifiers:
+      res.modifiers.incl hmLeftCtrl
+      res.modifiers.incl hmRightCtrl
 
-  if "M" in modifiers:
-    result.modifiers.incl hmLeftAlt
-    result.modifiers.incl hmRightAlt
+    if "M" in modifiers:
+      res.modifiers.incl hmLeftAlt
+      res.modifiers.incl hmRightAlt
 
-  if "s" in modifiers:
-    result.modifiers.incl hmLeftMeta
-    result.modifiers.incl hmRightMeta
+    if "s" in modifiers:
+      res.modifiers.incl hmLeftMeta
+      res.modifiers.incl hmRightMeta
 
-  if "S" in modifiers:
-    result.modifiers.incl hmLeftShift
-    result.modifiers.incl hmRightShift
+    if "S" in modifiers:
+      res.modifiers.incl hmLeftShift
+      res.modifiers.incl hmRightShift
 
-  result.keycodes[0] = fromEmacsKeyName(key)
+    res.keycodes[0] = fromEmacsKeyName(key)
+    result.add res

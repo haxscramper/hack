@@ -20,7 +20,7 @@ when defined(profiler):
 
 
 func getChangeFromDefault(state: string, grid: KeyGrid
-                         ): tuple[report: HIDReport, anyChanges: bool] =
+                         ): tuple[reports: seq[HIDReport], anyChanges: bool] =
   ## Take empty button grid (with all keys released). Transition to
   ## state show by `state`. Report all key changes in form of output
   ## HID report.
@@ -34,7 +34,7 @@ func getChangeFromDefault(state: string, grid: KeyGrid
     it.mapIt((it == '0').tern(false, true)).concat()
   )
   let anyChanges: bool = updateKeyGrid(gridCopy, boolState)
-  let gridReport = gridCopy.createReport()
+  let gridReport = gridCopy.createReports()
 
 
   result = (gridReport, anyChanges)
@@ -168,8 +168,9 @@ proc main() =
 
     if anyChanges:
       inc cnt
-      let report = grid.createReport()
-      report.writeHIDReport()
+      let reports = grid.createReports()
+      for rep in reports:
+        writeHIDReport(rep)
 
     if cnt > 100:
       break

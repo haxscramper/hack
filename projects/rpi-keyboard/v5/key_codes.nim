@@ -516,6 +516,8 @@ func isModifier*(code: KeyCode): bool =
     ccKeyRIGHTMETA
   }
 
+
+
 const reverseLookup: Table[string, KeyCode] =
   static:
     var tbl = initTable[string, KeyCode]()
