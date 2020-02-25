@@ -33,11 +33,11 @@ $(self-launch-makefile)
 ## or return fallback command.
 define get-software-or-fallback
 	$(shell																					\
-		if [[ res=$$(which $1 2> /dev/null) && ! -z "$$res" ]] ;	\
+		if $$(which colecho 2> /dev/null) ;	\
 		then																												\
 			echo "$1";																						\
 			else																											\
-			echo "$1";																					\
+			echo "$2";																					\
 		fi																													\
 	)
 endef
@@ -66,7 +66,6 @@ default: \
 	start-automatic-rebuild \
 	format-code \
 	help
-
 
 .oneshell:
 show-message-printers:
