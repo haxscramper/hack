@@ -71,7 +71,11 @@ proc fromEmacsNotation*(binding: string): seq[HIDReport] =
     if "s" in modifiers: res.modifiers.incl hmLeftMeta
     if "S" in modifiers: res.modifiers.incl hmLeftShift
 
-    res.keycodes[0] = fromEmacsKeyName(key)
+    if key == "":
+      res.keycodes[0] = ccKeyNone
+    else:
+      res.keycodes[0] = fromEmacsKeyName(key)
+
     result.add res
 
 proc toEmacsNotation*(rep: HIDReport): string =

@@ -1,10 +1,12 @@
 import common
+import parsetoml
 import strutils
 import key_codes
 import report
 import sequtils
 import hmisc/helpers
 import colechopkg/types
+import algorithm
 
 
 type
@@ -178,7 +180,7 @@ proc makeKeyGrid*(
   codes: seq[seq[ # 2d grid
     seq[(KeyCode, set[HIDModifiers])] # Key configurations
   ]],
-  rowPins, colPins: static seq[int]
+  rowPins, colPins: seq[int]
      ): KeyGrid =
   assert codes.len == rowPins.len
   assert codes[0].len == colPins.len
@@ -194,6 +196,39 @@ proc makeKeyGrid*(
     rowPins: rowPins,
     colPins: colPins)
 
+func decodeEmacsNotation*(chord: string):
+     seq[(KeyCode, set[HIDModifiers])] =
+  # for press in presses:
+    # var code: KeyCode
+    # var resMod: set[HIDModifiers]
+    # if press.endsWith("-"):
+    #   # Only modifier key
+    #   let modifs = press.split("-")[0..^1].mapIt()
+    #   for m in modifs:
+    #     resMod.incl
+    # else:
+    #   # Modifier? + some key code
+    #   let tmp = press.split("-")
+    #   let key = tmp[^1]
+    #   let modifs = tmp[0..^1]
+  fromEmacsNotation(chord).mapIt((it.keycodes[0], it.modifiers))
+
+
+proc parseGridConfig*(str: string): KeyGrid =
+  let toml = str.parseString()
+  assert toml.hasKey("rowPins")
+  assert toml.hasKey("colPins")
+
+  let codes: seq[seq[seq[(KeyCode, set[HIDModifiers])]]] =
+    toml["row"].getElems().mapIt(
+      it["keys"].getElems().mapIt(
+        it.getStr().decodeEmacsNotation()))
+
+  return makeKeyGrid(
+    rowPins = toml["rowPins"].getElems().mapIt(it.getInt()),
+    colPins = toml["colPins"].getElems().mapIt(it.getInt()),
+    codes = codes
+  )
 
 proc updateKeyGrid*(grid: var KeyGrid, matrixState: seq[seq[bool]]): bool =
   ## Determine whether or not any change ocurred in grid (based on

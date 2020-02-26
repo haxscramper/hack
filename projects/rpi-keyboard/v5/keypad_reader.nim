@@ -126,25 +126,19 @@ proc readMatrix(grid: KeyGrid): seq[seq[bool]] =
 
 
 block:
-  var testGrid = makeKeyGrid(
-    codes = @[
-      @[
-        @[ (ccKeyNone, {hmLeftAlt}) ],
-        @[ (ccKeyNone, {hmLeftCtrl}) ],
-        @[ (ccKeyNone, {hmLeftMeta}) ]
-      ], @[
-        @[ (ccKeyNone, {hmLeftShift}) ],
-        @[ (ccKeyCOMMA, noMod) ],
-        @[ (ccKeyC, {hmLeftCtrl}), (ccKeyC, {hmLeftCtrl}) ]
-      ], @[
-        @[ (ccKeyH, noMod) ],
-        @[ (ccKeyE, noMod) ],
-        @[ (ccKeyN, noMod) ]
-      ]
-    ],
-    rowPins = @[0, 1, 2],
-    colPins = @[3, 4, 5]
-  )
+  var testGrid = parseGridConfig("""
+rowPins = [0, 1, 2]
+colPins = [3, 4, 5]
+
+[[row]]
+keys = ["M-", "C-", "s-"]
+
+[[row]]
+keys = ["S-", ",", "C-c C-c"]
+
+[[row]]
+keys = ["H", "E", "N"]
+""")
 
   transitionAssert testGrid:
     "010|000|001" -> "C-n"
