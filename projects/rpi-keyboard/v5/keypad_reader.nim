@@ -56,6 +56,7 @@ macro transitionAssert(grid, assertionList: untyped): untyped =
   result = newStmtList()
   result.add quote do:
     var hasErrors {.inject.} = false
+    printGrid(`grid`)
 
   for transition in assertionList:
     if not (transition.kind == nnkInfix and transition[0].strVal == "->"):
@@ -127,9 +128,19 @@ proc readMatrix(grid: KeyGrid): seq[seq[bool]] =
 block:
   var testGrid = makeKeyGrid(
     codes = @[
-      @[ccKeyLEFTALT, ccKeyLEFTCTRL, ccKeyLEFTMETA],
-      @[ccKeyLEFTSHIFT, ccKeyCOMMA, ccKeyA],
-      @[ccKeyH, ccKeyE, ccKeyN]
+      @[
+        @[ (ccKeyNone, {hmLeftAlt}) ],
+        @[ (ccKeyNone, {hmLeftCtrl}) ],
+        @[ (ccKeyNone, {hmLeftMeta}) ]
+      ], @[
+        @[ (ccKeyNone, {hmLeftShift}) ],
+        @[ (ccKeyCOMMA, noMod) ],
+        @[ (ccKeyC, {hmLeftCtrl}), (ccKeyC, {hmLeftCtrl}) ]
+      ], @[
+        @[ (ccKeyH, noMod) ],
+        @[ (ccKeyE, noMod) ],
+        @[ (ccKeyN, noMod) ]
+      ]
     ],
     rowPins = @[0, 1, 2],
     colPins = @[3, 4, 5]
@@ -137,9 +148,12 @@ block:
 
   transitionAssert testGrid:
     "010|000|001" -> "C-n"
+    "111|100|001" -> "C-S-s-M-n"
+    "111|100|010" -> "C-S-s-M-e"
+    "000|001|000" -> "C-c C-c"
 
 
-
+#[
 proc main() =
   var grid = makeKeyGrid(
     codes = @[
@@ -181,3 +195,4 @@ proc main() =
 
 # main()
 echo "done"
+]#

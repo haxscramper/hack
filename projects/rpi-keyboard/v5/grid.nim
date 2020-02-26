@@ -64,6 +64,11 @@ func toEmacsNotation*(key: KeyResult): string =
     result = key.adder.toHIDReport().toEmacsNotation()
 
 
+# IDEA add support for arranging string grids relative to ech other
+# (above, below etc), centerin them in terminal and so on. Not
+# full-blown curses-like graphics, just very simple string
+# manipluations.
+
 # IDEA add support for printing grid transitions - output two grid
 # states and highlight changed keys.
 proc printGrid*(grid: KeyGrid) =
@@ -123,7 +128,7 @@ proc updateKey*(key: var Key, isPressed: bool): bool =
         key.state = kstIdleReleased
 
 
-proc hasDifferentValues[T](arr: seq[T]): bool {.compiletime.} =
+proc hasDifferentValues[T](arr: seq[T]): bool =
   var sorted = arr
   sorted.sort()
   for idx, item in sorted[1 ..^ 1]:
@@ -132,13 +137,31 @@ proc hasDifferentValues[T](arr: seq[T]): bool {.compiletime.} =
 
   return true
 
-func makeKeyPress(code: KeyCode = ccKeyNone, modifiers: varargs[HIDModifiers]): KeyPress =
+func makeKeyPress(
+  code: KeyCode = ccKeyNone, modifiers: set[HIDModifiers]): KeyPress =
+  ## Make single key press instance with key and modifiers
   var modifs: set[HIDModifiers]
   for m in modifiers:
     modifs.incl m
   KeyPress(code: code, modifiers: modifs)
 
+func makeKeyResult*(
+  chords: seq[tuple[code: KeyCode, modifs: set[HIDModifiers]]]
+     ): KeyResult =
+  if chords.len == 1:
+    KeyResult(
+      isFinal: false,
+      adder: makeKeyPress(chords[0].code, chords[0].modifs)
+    )
+  else:
+    KeyResult(
+      isFinal: true,
+      chord: chords.mapIt(makeKeyPress(it.code, it.modifs))
+    )
+
 proc makeKeyGrid*(rowPins, colPins: seq[int]): KeyGrid =
+  ## Create key grid instance with all keys set to single-chord
+  ## non-final letter `A`
   KeyGrid(
     keyGrid: newSeqWith(
       rowPins.len, newSeqWith(
@@ -146,28 +169,28 @@ proc makeKeyGrid*(rowPins, colPins: seq[int]): KeyGrid =
           state: kstIdleReleased,
           onPress: KeyResult(
             isFinal: false,
-            adder: makeKeyPress(ccKeyA))))),
+            adder: makeKeyPress(ccKeyA, {}))))),
     rowPins: rowPins,
     colPins: colPins)
 
+const noMod*: set[HIDModifiers] = {}
 proc makeKeyGrid*(
-  codes: static seq[seq[KeyCode]],
+  codes: seq[seq[ # 2d grid
+    seq[(KeyCode, set[HIDModifiers])] # Key configurations
+  ]],
   rowPins, colPins: static seq[int]
      ): KeyGrid =
-  static:
-    assert codes.len == rowPins.len
-    assert codes[0].len == colPins.len
-    assert rowPins.hasDifferentValues()
-    assert colPins.hasDifferentValues()
+  assert codes.len == rowPins.len
+  assert codes[0].len == colPins.len
+  assert rowPins.hasDifferentValues()
+  assert colPins.hasDifferentValues()
 
   KeyGrid(
     keyGrid: codes.mapIt(
-      it.mapIt(
-          Key(
-            state: kstIdleReleased,
-            onPress: KeyResult(
-              isFinal: false,
-              adder: it.toKeyPress())),)),
+      it.mapIt(Key(
+        state: kstIdleReleased,
+        onPress: makeKeyResult(it))
+      )),
     rowPins: rowPins,
     colPins: colPins)
 
