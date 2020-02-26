@@ -1,12 +1,12 @@
 import os
 
 when fileExists("../desktop.lock"):
-  static: echo "Importing mock library"
+  # static: echo "Importing mock library"
   import wiringPiMock
   export wiringPiMock
   const mockRun* = true
 else:
-  static: echo "Importing real library"
+  # static: echo "Importing real library"
   import wiringPiNim
   export wiringPiNim
   const mockRun* = false

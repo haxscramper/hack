@@ -19,7 +19,7 @@ when defined(profiler):
   import nimprof
 
 
-func getChangeFromDefault(state: string, grid: KeyGrid
+proc getChangeFromDefault(state: string, grid: KeyGrid
                          ): tuple[reports: seq[HIDReport], anyChanges: bool] =
   ## Take empty button grid (with all keys released). Transition to
   ## state show by `state`. Report all key changes in form of output
@@ -30,15 +30,17 @@ func getChangeFromDefault(state: string, grid: KeyGrid
     asserteq stateRow.len, gridRow.len
 
   var gridCopy = grid
-  let boolState: seq[seq[bool]] = rows.mapIt(
-    it.mapIt((it == '0').tern(false, true)).concat()
-  )
-  let anyChanges: bool = updateKeyGrid(gridCopy, boolState)
-  let gridReport = gridCopy.createReports()
 
+  let boolState: seq[seq[bool]] = # Generate mock scan run
+    rows.mapIt(it.mapIt(it == '1').concat())
+
+  let anyChanges: bool = # Check for changes
+    updateKeyGrid(gridCopy, boolState)
+
+  let gridReport = # Create report on modified grid
+    gridCopy.createReports()
 
   result = (gridReport, anyChanges)
-
 
 
 macro transitionAssert(grid, assertionList: untyped): untyped =
@@ -177,4 +179,5 @@ proc main() =
     if cnt > 100:
       break
 
-main()
+# main()
+echo "done"

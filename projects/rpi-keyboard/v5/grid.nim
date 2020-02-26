@@ -4,6 +4,7 @@ import key_codes
 import report
 import sequtils
 import hmisc/helpers
+import colechopkg/types
 
 
 type
@@ -63,26 +64,33 @@ func toEmacsNotation*(key: KeyResult): string =
     result = key.adder.toHIDReport().toEmacsNotation()
 
 
-proc printMatrix*(matr: seq[seq[string]]) =
-  ## Print 2d array. Currently only one-line strings are properly
-  ## supported
-  let colWidth = matr.mapIt(it.mapIt(it.len).max).max + 2
-  for row in matr:
-    let rItems = row.mapIt(center(it, colWidth))
-    let rStr = "|" & rItems.join("|") & "|"
-    let rSep = "+" & rItems.mapIt("-".repeat(it.len)).join("+") & "+"
-    echo rstr
-    echo rSep
-
+# IDEA add support for printing grid transitions - output two grid
+# states and highlight changed keys.
 proc printGrid*(grid: KeyGrid) =
   ## Print matrix keys as 2d array. Keys are mapped to emacs notation
   ## and. Multi-chord keys are mapped as multiple keypresses. NOTE:
   ## Currently only on-release events are printed.
-  let matrix = grid.keyGrid.mapIt(it.mapIt(
-    it.onPress.toEmacsNotation()
+  let matrix: seq[seq[ColoredString]] = grid.keyGrid.mapIt(it.mapIt(
+    block:
+      let keys: string = it.onPress.toEmacsNotation()
+      case it.state:
+        of kstChangedPressed: keys.toGreen()
+        of kstChangedReleased: keys.toRed()
+        else: keys.toDefault()
   ))
 
-  printMatrix(matrix)
+  # for r in matrix:
+  #   for c in r:
+  #     debug c
+
+  let colWidth = matrix.mapIt(it.mapIt(it.len).max).max + 2
+  echo "+", matrix[0].mapIt("-".repeat(colWidth)).join("+"), "+"
+  for row in matrix:
+    let rItems = row.mapIt(center(it.str, colWidth))
+    let rStr = "|" & rItems.mapIt($it).join("|") & "|"
+    let rSep = "+" & rItems.mapIt("-".repeat(it.len)).join("+") & "+"
+    echo rstr
+    echo rSep
 
 
 proc updateKey*(key: var Key, isPressed: bool): bool =
@@ -172,7 +180,11 @@ proc updateKeyGrid*(grid: var KeyGrid, matrixState: seq[seq[bool]]): bool =
 
   for rowIdx, rowState in matrixState:
     for keyIdx, keyState in rowState:
+      let key = grid.keyGrid[rowIdx][keyIdx]
       let isChanged = grid.keyGrid[rowIdx][keyIdx].updateKey(keyState)
+      # echo key.state, " -> ",
+      #     grid.keyGrid[rowIdx][keyIdx].state, " ",
+      #     key.onPress.toEmacsNotation()
       anyChanges = anyChanges or isChanged
 
   return anyChanges
@@ -187,12 +199,9 @@ proc createReports*(grid: KeyGrid): seq[HIDReport] =
   for keyRow in grid.keyGrid:
     for key in keyRow:
       case key.state:
-        # of kstChangedReleased:
-        #   if not key.isModifier:
-        #     keys.add(ccKeyNone)
-
         of kstChangedPressed, kstChangedReleased:
-          let kRes = (key.state == kstChangedReleased).tern(
+          # echo "key state is ", key.state
+          let kRes = (key.state == kstChangedPressed).tern(
             key.onPress,
             key.onRelease
           )
@@ -209,7 +218,4 @@ proc createReports*(grid: KeyGrid): seq[HIDReport] =
         else:
           discard
 
-  # for idx, keyCode in keys:
-  #   if idx < result.keycodes.len:
-  #     result.keycodes[idx] = keyCode
   return @[accumulatedReport]
