@@ -49,7 +49,7 @@ macro transitionAssert(grid, assertionList: untyped): untyped =
   ## assertion succede. For example, if we had a 2x2 grid then
   ## `"01|00" -> "n"` would assert that, given argument grid and upper
   ## right key pressed we will get hid report that sends `"n"`.
-  defer: echo result.toStrLit()
+  # defer: echo result.toStrLit()
 
   result = newStmtList()
   result.add quote do:
@@ -69,6 +69,8 @@ macro transitionAssert(grid, assertionList: untyped): untyped =
         let targetReport {.inject.} = fromEmacsNotation(report)
         if not (gridReport == targetReport):
           echo &"Transition '{state}' -> '{report}' has failed"
+          echo "Grid:"
+          printGrid(`grid`)
           echo "Grid hid report:"
           printHIDReport(gridReport)
           echo "Target hid report:"

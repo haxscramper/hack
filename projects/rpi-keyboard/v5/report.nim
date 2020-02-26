@@ -21,6 +21,8 @@ type
 
   HIDReport* = object
     modifiers*: set[HIDModifiers]
+    # TODO write proc for getting/setting value of nth key and add
+    # counter for number of used keys
     keycodes*: array[6, KeyCode]
 
 func toHIDModifer*(code: KeyCode): HIDModifiers =
@@ -55,7 +57,6 @@ func toArray(report: HIDReport): array[8, uint8] =
 iterator `>..`(left, right: int): int =
   for num in countdown(left - 1, right):
     yield num
-
 
 proc printHIDReport*(report: HIDReport) =
   let final = report.toArray()
@@ -110,3 +111,20 @@ proc fromEmacsNotation*(binding: string): seq[HIDReport] =
 
     res.keycodes[0] = fromEmacsKeyName(key)
     result.add res
+
+proc toEmacsNotation*(rep: HIDReport): string =
+  var buf: seq[string]
+  for modif in rep.modifiers:
+    case modif:
+      of hmLeftAlt, hmRightAlt: buf.add "M"
+      of hmLeftCtrl, hmRightCtrl: buf.add "C"
+      of hmLeftMeta, hmRightMeta: buf.add "s"
+      of hmLeftShift, hmRightShift: buf.add "S"
+
+
+  let cc = rep.keycodes[0]
+  return (buf.len > 0).tern(
+    buf.join("-") & "-", ""
+  ) & (cc != ccKeyNone).tern(
+    cc.getEmacsKeyName(), ""
+  )

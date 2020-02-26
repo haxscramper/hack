@@ -1,4 +1,5 @@
 import common
+import strutils
 import key_codes
 import report
 import sequtils
@@ -53,6 +54,35 @@ func toKeyPress*(code: KeyCode): KeyPress =
     result.modifiers.incl code.toHIDModifer()
   else:
     result.code = code
+
+func toEmacsNotation*(key: KeyResult): string =
+  ## Return key press result in form of emacs chord
+  if key.isFinal:
+    result = key.chord.mapIt(it.toHIDReport().toEmacsNotation).join(" ")
+  else:
+    result = key.adder.toHIDReport().toEmacsNotation()
+
+
+proc printMatrix*(matr: seq[seq[string]]) =
+  ## Print 2d array. Currently only one-line strings are properly
+  ## supported
+  let colWidth = matr.mapIt(it.mapIt(it.len).max).max + 2
+  for row in matr:
+    let rItems = row.mapIt(center(it, colWidth))
+    let rStr = "|" & rItems.join("|") & "|"
+    let rSep = "+" & rItems.mapIt("-".repeat(it.len)).join("+") & "+"
+    echo rstr
+    echo rSep
+
+proc printGrid*(grid: KeyGrid) =
+  ## Print matrix keys as 2d array. Keys are mapped to emacs notation
+  ## and. Multi-chord keys are mapped as multiple keypresses. NOTE:
+  ## Currently only on-release events are printed.
+  let matrix = grid.keyGrid.mapIt(it.mapIt(
+    it.onPress.toEmacsNotation()
+  ))
+
+  printMatrix(matrix)
 
 
 proc updateKey*(key: var Key, isPressed: bool): bool =

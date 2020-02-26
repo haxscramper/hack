@@ -24,5 +24,5 @@ macro disjointIterImpl(x: typed): untyped =
 macro disjointIter*(x: typed): untyped =
   nnkBracket.newTree(x.getType[1][1..^1])
 
-for val in disjointIter(EnumWithHoles):
-  echo val
+# for val in disjointIter(EnumWithHoles):
+#   echo val
