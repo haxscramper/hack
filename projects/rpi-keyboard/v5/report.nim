@@ -58,31 +58,30 @@ iterator `>..`(left, right: int): int =
   for num in countdown(left - 1, right):
     yield num
 
-proc fromEmacsNotation*(binding: string): seq[HIDReport] =
-  ## Convert string in emacs notation to keyboard hid report. `M` is
-  ## Alt key, `S` is shift, `C` is ctrl, `s` is meta (super/win key)
+proc fromKeybindingStr*(binding: string): seq[HIDReport] =
+  ## Convert string in notation to keyboard hid report.
   for chord in binding.split(" "):
     let keys = chord.split("-")
     let key = keys[^1]
     let modifiers = keys[0..^2]
     var res: HIDReport
-    if "C" in modifiers: res.modifiers.incl hmLeftCtrl
-    if "M" in modifiers: res.modifiers.incl hmLeftAlt
-    if "s" in modifiers: res.modifiers.incl hmLeftMeta
-    if "S" in modifiers: res.modifiers.incl hmLeftShift
+    if "ctrl" in modifiers: res.modifiers.incl hmLeftCtrl
+    if "alt" in modifiers: res.modifiers.incl hmLeftAlt
+    if "meta" in modifiers: res.modifiers.incl hmLeftMeta
+    if "shift" in modifiers: res.modifiers.incl hmLeftShift
 
     if key == "":
       res.keycodes[0] = ccKeyNone
     else:
-      res.keycodes[0] = fromEmacsKeyName(key)
+      res.keycodes[0] = fromKeyName(key)
 
     result.add res
 
-func decodeEmacsNotation*(chord: string):
+func decodeKeybindingStr*(chord: string):
      seq[(KeyCode, set[HIDModifiers])] =
-  fromEmacsNotation(chord).mapIt((it.keycodes[0], it.modifiers))
+  fromKeybindingStr(chord).mapIt((it.keycodes[0], it.modifiers))
 
-proc toEmacsNotation*(rep: HIDReport): string =
+proc toKeybindingStr*(rep: HIDReport): string =
   var buf: seq[string]
   for modif in rep.modifiers:
     case modif:
@@ -96,7 +95,7 @@ proc toEmacsNotation*(rep: HIDReport): string =
   return (buf.len > 0).tern(
     buf.join("-") & "-", ""
   ) & (cc != ccKeyNone).tern(
-    cc.getEmacsKeyName(), ""
+    cc.getKeyName(), ""
   )
 
 proc printHIDReport*(report: HIDReport) =
@@ -113,7 +112,7 @@ proc printHIDReport*(report: HIDReport) =
 
 proc printHIDReport*(report: seq[HIDReport]) =
   for idx, rep in report:
-    echo &"idx: {idx}, keys: {rep.toEmacsNotation()}"
+    echo &"idx: {idx}, keys: {rep.toKeybindingStr()}"
     printHIDReport(rep)
 
 

@@ -74,7 +74,7 @@ func allSubsets[T](elements: seq[T]): seq[seq[T]] =
 
     inc counter
 
-proc makeModifierMap(emacsKBD: string): ModifierMap =
+proc makeModifierMap(keybindingStr: string): ModifierMap =
   ##[
 
     Generate default modifier map
@@ -86,7 +86,7 @@ proc makeModifierMap(emacsKBD: string): ModifierMap =
     default. Any additional modifications need to be added explicitly.
 
   ]##
-  let chords = decodeEmacsNotation(emacsKBD)
+  let chords = decodeKeybindingStr(keybindingStr)
   if chords.len == 0:
     # Single key, generate all default keys
     discard
@@ -108,13 +108,39 @@ func toKeyPress*(code: KeyCode): KeyPress =
   else:
     result.code = code
 
-func toEmacsNotation*(key: KeyResult): string =
+template anyofIt(sequence: typed, predicate: untyped): bool =
+  var result = false
+  for it {.inject.} in sequence:
+    if predicate:
+      result = true
+
+  result
+
+func toKeybindingStr*(key: KeyResult): string =
   ## Return key press result in form of emacs chord
   if key.isFinal:
-    result = key.chord.mapIt(it.toHIDReport().toEmacsNotation).join(" ")
+    result = key.chord.mapIt(it.toHIDReport().toKeybindingStr).join(" ")
   else:
-    result = key.adder.toHIDReport().toEmacsNotation()
+    result = key.adder.toHIDReport().toKeybindingStr()
 
+
+func notDefaultModifier(modif: string): bool =
+  return modif notin @["default", "ctrl", "shift", "alt", "meta"]
+
+
+func toKeybindingStr*(key: ModifierMap): seq[string] =
+  if key.hasKey(toHashSet(["default"])):
+    result.add key[toHashSet(["default"])].toKeybindingStr()
+
+  for it in key.keys():
+    if anyofIt(it, it.notDefaultModifier()):
+      result.add key[it].toKeybindingStr()
+
+
+
+type
+  Seq2D[T] = seq[seq[T]]
+  Seq3D[T] = seq[seq[seq[T]]]
 
 # IDEA add support for arranging string grids relative to ech other
 # (above, below etc), centerin them in terminal and so on. Not
@@ -127,26 +153,35 @@ proc printGrid*(grid: KeyGrid) =
   ## Print matrix keys as 2d array. Keys are mapped to emacs notation
   ## and. Multi-chord keys are mapped as multiple keypresses. NOTE:
   ## Currently only on-release events are printed.
-  let matrix: seq[seq[ColoredString]] = grid.keyGrid.mapIt(it.mapIt(
-    block:
-      let keys: string = it.onPress.toEmacsNotation()
-      case it.state:
-        of kstChangedPressed: keys.toGreen()
-        of kstChangedReleased: keys.toRed()
-        else: keys.toDefault()
+  let matrix: Seq3D[string] = grid.keyGrid.mapIt(it.mapIt(
+    it.onPress.toKeybindingStr()
   ))
 
-  # for r in matrix:
-  #   for c in r:
-  #     debug c
+  proc maxLen[T](s: Seq3D[T]): int =
+    s.mapIt( # 3d
+      it.mapIt( # 2d
+        it.mapIt( # 1d
+          it.len
+        ).max()
+      ).max()
+    ).max()
 
-  let colWidth = matrix.mapIt(it.mapIt(it.len).max).max + 2
+  let colWidth = maxLen(matrix) + 2
   echo "+", matrix[0].mapIt("-".repeat(colWidth)).join("+"), "+"
   for row in matrix:
-    let rItems = row.mapIt(center(it.str, colWidth))
-    let rStr = "|" & rItems.mapIt($it).join("|") & "|"
-    let rSep = "+" & rItems.mapIt("-".repeat(it.len)).join("+") & "+"
-    echo rstr
+    static: assert row is Seq2d[string]
+
+    let rowHeight: int = row.mapIt(it.len).max()
+    for line in 0 ..< rowHeight:
+
+      let lItems = row.
+        mapIt((it.len <= line).tern("", it[line])).
+        mapIt(center(it, colWidth))
+
+      let lStr = "|" & lItems.mapIt($it).join("|") & "|"
+      echo lStr
+
+    let rSep = "+" & row.mapIt("-".repeat(colWidth)).join("+") & "+"
     echo rSep
 
 
@@ -256,7 +291,7 @@ proc parseGridConfig*(str: string): KeyGrid =
   let codes: seq[seq[seq[(KeyCode, set[HIDModifiers])]]] =
     toml["row"].getElems().mapIt(
       it["keys"].getElems().mapIt(
-        it.getStr().decodeEmacsNotation()))
+        it.getStr().decodeKeybindingStr()))
 
   return makeKeyGrid(
     rowPins = toml["rowPins"].getElems().mapIt(it.getInt()),
@@ -276,7 +311,7 @@ proc updateKeyGrid*(grid: var KeyGrid, matrixState: seq[seq[bool]]): bool =
       let isChanged = grid.keyGrid[rowIdx][keyIdx].updateKey(keyState)
       # echo key.state, " -> ",
       #     grid.keyGrid[rowIdx][keyIdx].state, " ",
-      #     key.onPress.toEmacsNotation()
+      #     key.onPress.toKeybindingStr()
       anyChanges = anyChanges or isChanged
 
   return anyChanges

@@ -69,7 +69,7 @@ macro transitionAssert(grid, assertionList: untyped): untyped =
         let state {.inject.} = `lhs`
         let report {.inject.} = `rhs`
         let (gridReport {.inject.}, _) = getChangeFromDefault(state, `grid`)
-        let targetReport {.inject.} = fromEmacsNotation(report)
+        let targetReport {.inject.} = fromKeybindingStr(report)
         if not (gridReport == targetReport):
           echo &"Transition '{state}' -> '{report}' has failed"
           echo "Grid:"

@@ -252,7 +252,7 @@ type KeyCode* = enum
   ccKeyMEDIA_REFRESH = 0xfa'u8
   ccKeyMEDIA_CALC = 0xfb'u8
 
-proc getEmacsKeyName*(key: KeyCode): string =
+proc getKeyName*(key: KeyCode): string =
   case key:
     of ccKeyNone: "None"
 
@@ -522,9 +522,9 @@ const reverseLookup: Table[string, KeyCode] =
   static:
     var tbl = initTable[string, KeyCode]()
     for code in disjointIter(KeyCode):
-      tbl[getEmacsKeyName(code).toLower()] = code
+      tbl[getKeyName(code).toLower()] = code
 
     tbl
 
-proc fromEmacsKeyName*(key: string): KeyCode =
+proc fromKeyName*(key: string): KeyCode =
   reverseLookup[key.toLower()]
