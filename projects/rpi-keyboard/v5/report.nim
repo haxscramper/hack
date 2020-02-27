@@ -78,6 +78,10 @@ proc fromEmacsNotation*(binding: string): seq[HIDReport] =
 
     result.add res
 
+func decodeEmacsNotation*(chord: string):
+     seq[(KeyCode, set[HIDModifiers])] =
+  fromEmacsNotation(chord).mapIt((it.keycodes[0], it.modifiers))
+
 proc toEmacsNotation*(rep: HIDReport): string =
   var buf: seq[string]
   for modif in rep.modifiers:
