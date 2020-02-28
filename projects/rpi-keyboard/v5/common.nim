@@ -67,12 +67,13 @@ template assertEq*(lhs, rhs): untyped =
 
 ###########################  helper algorithms  ###########################
 
-func allSubsets*[T](elements: seq[T]): seq[seq[T]] =
-  ## Generate all subsets of the sequence.
+func allSubsets*[T](elements: seq[T], emptyset: bool = false): seq[seq[T]] =
+  ## Generate all subsets of the sequence. `emptyset` - whether or not
+  ## to add empty subset
   var bitmask: seq[bool] = newSeqWith(elements.len, false)
   var counter = 1
   var prev = counter
-  result.add @[]
+  if emptyset: result.add @[]
   while counter < 2 ^ elements.len:
     let pos = firstSetBit(counter) - 1
     bitmask[pos] = not bitmask[pos]

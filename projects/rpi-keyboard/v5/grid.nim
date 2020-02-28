@@ -1,4 +1,5 @@
 import common
+import algorithm
 import parsetoml
 import strutils
 import key_codes
@@ -91,32 +92,45 @@ const defaultMods: tuple[
     meta: "meta",
     default: "default"
 )
-
 proc makeModifierMap(
-  keybind: string|seq[(KeyCode, set[HIDModifiers])]
+  keybind: string|seq[KeyPress],
+  makeFinal: bool = false,
+  addDefault: bool = true
      ): ModifierMap =
-  ##[ Generate modifier map
+  ##[ Generate modifier map for single target keybinding represented
+  as either string or sequence of key presses.
 
-  For single-key chords: create all combinations of default
-  modifiers and corresponding reports for this binding.
-  Corresponding combination of default modifiers will be added to
-  each `KeyResult` in map.
+  :makeFinal: whether or not to make resulting key final. Final keys
+  are exported immediately upon triggering, non-final ones are added
+  to accumulated modifiers. If you want to make button that works
+  performs solely as modifier you need to have `makeFinal = false`. If
+  you are interested in mapping button to more complex key combination
+  and don't want to react to already pressed modifiers use `makeFinal
+  = true`.
 
-  For multi-key shorts: create single final KeyResult and make it
-  default. Any additional modifications need to be added explicitly.
-  Modifier keys are not present in final-multi-chord keys. ]##
+  :addDefault: whether or not to add all possible combinations of
+  default modifier combinations (16 in total) to resulting keymap. If
+  you are creating one of the default keys (letters, numbers etc.) and
+  want to have them react correctly to other modifiers from the start
+  use `addDefault = true`.
 
-  let chords: seq[(KeyCode, set[HIDModifiers])] =
+  ]##
+
+  let chords: seq[KeyPress] =
     when keybind is string:
-      decodeKeybindingStr(keybindingStr)
+      decodeKeybindingStr(keybindingStr).mapIt(it.toKeyResult)
     else:
       keybind
 
-  if chords.len == 1:
+  if addDefault:
     # Single key, generate all default keys
     for comb in @[@["default"]] & allSubsets(@["ctrl", "shift", "alt", "meta"]):
-      let s = toHashSet(comb)
-      var res = KeyResult(isFinal: false)
+      var res = KeyResult(
+        isFinal: false,
+        modifiers: toHashSet(comb),
+        adder: KeyPress(code: chords[0].code)
+      )
+
       for modif in comb:
         case modif:
           of defaultMods.ctrl:
@@ -130,7 +144,8 @@ proc makeModifierMap(
 
           of defaultMods.meta:
             res.adder.modifiers.incl hmLeftMeta
-    # return
+
+      result[toHashSet(comb)] = res
   else:
     # Multiple keys, generate final chord
     discard
@@ -139,6 +154,12 @@ proc makeModifierMap(
 func toHIDReport*(press: KeyPress): HIDReport =
   result.modifiers = press.modifiers
   result.keycodes[0] = press.code
+
+func toKeyPress*(code: (KeyCode, set[HIDModifiers])): KeyPress =
+  KeyPress(
+    code: code[0],
+    modifiers: code[1]
+  )
 
 func toKeyPress*(code: KeyCode): KeyPress =
   if code.isModifier():
@@ -158,13 +179,12 @@ func notDefaultModifier(modif: string): bool =
   return modif notin @["default", "ctrl", "shift", "alt", "meta"]
 
 
-func toKeybindingStr*(key: ModifierMap): seq[string] =
-  if key.hasKey(toHashSet(["default"])):
-    result.add key[toHashSet(["default"])].toKeybindingStr()
-
+func toKeybindingStr*(key: ModifierMap, printAll: bool = false): seq[string] =
   for it in key.keys():
-    if anyofIt(it, it.notDefaultModifier()):
-      result.add key[it].toKeybindingStr()
+    if printAll or anyofIt(it, it.notDefaultModifier()):
+      result.add $it & " -> " & key[it].toKeybindingStr()
+
+  result = result.sortedByIt(it.len)
 
 
 
@@ -184,7 +204,7 @@ proc printGrid*(grid: KeyGrid) =
   ## and. Multi-chord keys are mapped as multiple keypresses. NOTE:
   ## Currently only on-release events are printed.
   let matrix: Seq3D[string] = grid.keyGrid.mapIt(it.mapIt(
-    it.onPress.toKeybindingStr()
+    it.onPress.toKeybindingStr(true)
   ))
 
   proc maxLen[T](s: Seq3D[T]): int =
@@ -202,7 +222,7 @@ proc printGrid*(grid: KeyGrid) =
   for row in matrix:
     static: assert row is Seq2d[string]
 
-    let rowHeight: int = row.mapIt(it.len).max()
+    let rowHeight: int = row.mapIt(it.len).max(0)
     for line in 0 ..< rowHeight:
 
       let lItems = row.
@@ -293,7 +313,7 @@ proc makeKeyGrid*(
     keyGrid: codes.mapIt(
       it.mapIt(Key(
         state: kstIdleReleased,
-        onPress: makeModifierMap(it))
+        onPress: makeModifierMap(it.mapIt(it.toKeyPress)))
       )),
     rowPins: rowPins,
     colPins: colPins)
