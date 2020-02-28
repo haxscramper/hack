@@ -96,3 +96,10 @@ template anyofIt*(sequence: typed, predicate: untyped): bool =
       result = true
 
   result
+
+proc max*[T](x: openArray[T], default: T): T =
+  ## The maximum value of `x`. ``T`` needs to have a ``<`` operator.
+  ## use `default` as starting value for comparison.
+  result = default
+  for i in x:
+    if result < i: result = i

@@ -85,10 +85,10 @@ proc toKeybindingStr*(rep: HIDReport): string =
   var buf: seq[string]
   for modif in rep.modifiers:
     case modif:
-      of hmLeftAlt, hmRightAlt: buf.add "M"
-      of hmLeftCtrl, hmRightCtrl: buf.add "C"
-      of hmLeftMeta, hmRightMeta: buf.add "s"
-      of hmLeftShift, hmRightShift: buf.add "S"
+      of hmLeftAlt, hmRightAlt: buf.add "alt"
+      of hmLeftCtrl, hmRightCtrl: buf.add "ctrl"
+      of hmLeftMeta, hmRightMeta: buf.add "meta"
+      of hmLeftShift, hmRightShift: buf.add "shift"
 
 
   let cc = rep.keycodes[0]

@@ -74,6 +74,16 @@ func getActivatedChord(
     else:
       none(KeyResult)
 
+const defaultMods: tuple[
+  ctrl, alt, shift, meta, default: string
+] = (
+    ctrl: "ctrl",
+    alt: "alt",
+    shift: "shift",
+    meta: "meta",
+    default: "default"
+)
+
 proc makeModifierMap(
   keybind: string|seq[(KeyCode, set[HIDModifiers])]
      ): ModifierMap =
@@ -99,7 +109,21 @@ proc makeModifierMap(
     discard
     for comb in @[@["default"]] & allSubsets(@["ctrl", "shift", "alt", "meta"]):
        let s = toHashSet(comb)
-       # result[comb] =
+       var res = KeyResult(isFinal: false)
+       for modif in comb:
+         case modif:
+           of defaultMods.ctrl:
+             res.adder.modifiers.incl hmLeftCtrl
+
+           of defaultMods.alt:
+             res.adder.modifiers.incl hmLeftAlt
+
+           of defaultMods.shift:
+             res.adder.modifiers.incl hmLeftShift
+
+           of defaultMods.meta:
+             res.adder.modifiers.incl hmLeftMeta
+
   else:
     # Multiple keys, generate final chord
     discard
@@ -157,13 +181,14 @@ proc printGrid*(grid: KeyGrid) =
   ))
 
   proc maxLen[T](s: Seq3D[T]): int =
+    echo s
     s.mapIt( # 3d
       it.mapIt( # 2d
         it.mapIt( # 1d
           it.len
-        ).max()
-      ).max()
-    ).max()
+        ).max(0)
+      ).max(0)
+    ).max(0)
 
   let colWidth = maxLen(matrix) + 2
   echo "+", matrix[0].mapIt("-".repeat(colWidth)).join("+"), "+"
