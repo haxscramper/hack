@@ -1,0 +1,3 @@
+- [ ] Add docs for all functions
+- [ ] Think about adding custom modifiers - for example each key could
+  have version which makes it type three dashes after this button.
