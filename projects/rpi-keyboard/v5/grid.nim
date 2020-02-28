@@ -34,9 +34,11 @@ type
     of true:
       chord*: seq[KeyPress] ## Set of keypresses will be executed
                             ## immediately when key is pressed
+      # TODO remove
       acceptModifiers*: bool ## Whether or not to account for already
                              ## pressed modifiers in generated event
     of false:
+      # TODO replace with single key code?
       adder*: KeyPress ##[ Modifications of the current key will be
       included to current buffer for output even ]##
 
@@ -93,9 +95,10 @@ const defaultMods: tuple[
     default: "default"
 )
 proc makeModifierMap(
-  keybind: string|seq[KeyPress],
+  keybind: seq[KeyPress],
   makeFinal: bool = false,
-  addDefault: bool = true
+  addDefault: bool = true,
+  additionalMap: ModifierMap = ModifierMap()
      ): ModifierMap =
   ##[ Generate modifier map for single target keybinding represented
   as either string or sequence of key presses.
@@ -116,6 +119,9 @@ proc makeModifierMap(
 
   ]##
 
+  echo "creating modifier map for", keybind
+
+  result = additionalMap
   let chords: seq[KeyPress] =
     when keybind is string:
       decodeKeybindingStr(keybindingStr).mapIt(it.toKeyResult)
@@ -147,8 +153,10 @@ proc makeModifierMap(
 
       result[toHashSet(comb)] = res
   else:
-    # Multiple keys, generate final chord
-    discard
+    result[toHashSet(["default"])] = KeyResult(
+      isFinal: true,
+      chord: chords
+    )
 
 
 func toHIDReport*(press: KeyPress): HIDReport =
@@ -313,7 +321,14 @@ proc makeKeyGrid*(
     keyGrid: codes.mapIt(
       it.mapIt(Key(
         state: kstIdleReleased,
-        onPress: makeModifierMap(it.mapIt(it.toKeyPress)))
+        onPress:
+          block:
+            let chord = it.mapIt(it.toKeyPress)
+            makeModifierMap(
+              keybind = chord,
+              makeFinal = chord.len > 1,
+              addDefault = chord.len == 1)
+      )
       )),
     rowPins: rowPins,
     colPins: colPins)
