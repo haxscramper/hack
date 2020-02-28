@@ -1,4 +1,7 @@
 import os
+import sequtils
+import bitops
+import math
 
 when fileExists("../desktop.lock"):
   # static: echo "Importing mock library"
@@ -61,3 +64,35 @@ template assertEq*(lhs, rhs): untyped =
         AssertionError,
         "Equality assertion failed, left argument evaluated as" &
           $lhsRes & "and right one as" & $rhsRes)
+
+###########################  helper algorithms  ###########################
+
+func allSubsets*[T](elements: seq[T]): seq[seq[T]] =
+  ## Generate all subsets of the sequence.
+  var bitmask: seq[bool] = newSeqWith(elements.len, false)
+  var counter = 1
+  var prev = counter
+  result.add @[]
+  while counter < 2 ^ elements.len:
+    let pos = firstSetBit(counter) - 1
+    bitmask[pos] = not bitmask[pos]
+    # echo bitmask.mapIt(if it: "1" else: "0").join("")
+
+    var buff: seq[string]
+    for (ok, item) in zip(bitmask, elements):
+      if ok:
+        buff.add item
+
+    result.add buff
+
+    inc counter
+
+template anyofIt*(sequence: typed, predicate: untyped): bool =
+  ## Return `true` if for any of the items in sequence `predicate`
+  ## evaluates as `true`. Otherwise return false.
+  var result = false
+  for it {.inject.} in sequence:
+    if predicate:
+      result = true
+
+  result
