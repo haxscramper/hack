@@ -1,6 +1,6 @@
 import common
 import algorithm
-import parsetoml
+import json
 import strutils
 import key_codes
 import report
@@ -13,6 +13,23 @@ import sets
 import hmisc/helpers
 
 ## .. include:: notes.rst
+
+#==============================  constants  ==============================#
+
+const defaultMods: tuple[
+  ctrl, alt, shift, meta, default: string
+] = (
+    ctrl: "ctrl",
+    alt: "alt",
+    shift: "shift",
+    meta: "meta",
+    default: "default"
+)
+#===========================  type definition  ===========================#
+
+type
+  Seq2D[T] = seq[seq[T]]
+  Seq3D[T] = seq[seq[seq[T]]]
 
 type
   KeyState* = enum
@@ -71,6 +88,65 @@ type
     rowPins*: seq[int] ##[ Physical pins to scan rows ]##
     colPins*: seq[int] ##[ Physical pins to scan columns ]##
 
+#============================  helper procs  =============================#
+
+func notDefaultModifier(modif: string): bool =
+  return modif notin @["default", "ctrl", "shift", "alt", "meta"]
+
+proc hasDifferentValues[T](arr: seq[T]): bool =
+  var sorted = arr
+  sorted.sort()
+  for idx, item in sorted[1 ..^ 1]:
+    if sorted[idx] == item:
+      return false
+
+  return true
+
+#========================  conversion functions  =========================#
+
+func toHIDReport*(press: KeyPress): HIDReport =
+  ## Convert key press configuration into hid report. NOTE: only first
+  ## of the key codes in report is filled.
+  result.modifiers = press.modifiers
+  result.keycodes[0] = press.code
+
+func toKeyPress*(code: (KeyCode, set[HIDModifiers])): KeyPress =
+  ## Convert single key code and modifiers into key press.
+  KeyPress(
+    code: code[0],
+    modifiers: code[1]
+  )
+
+func toKeyPress*(code: KeyCode): KeyPress =
+  ## Convert key code to modifier. If the code `isModifier()` then add
+  ## corresponding code to modifiers. Otherwise add it to the result's
+  ## `code`
+  if code.isModifier():
+    result.modifiers.incl code.toHIDModifer()
+  else:
+    result.code = code
+
+func toKeybindingStr*(key: KeyResult): string =
+  ## Return key press result in form of emacs chord
+  if key.isFinal:
+    result = key.chord.mapIt(it.toHIDReport().toKeybindingStr).join(" ")
+  else:
+    result = key.adder.toHIDReport().toKeybindingStr()
+
+
+
+
+
+func decodeKeyPress*(press: string): seq[KeyPress] =
+  ## Decode sequence of key presses from string into `KeyPress`
+  ## object.
+  fromKeybindingStr(press)
+    .mapIt((it.keycodes[0], it.modifiers))
+    .mapIt(it.toKeyPress())
+
+
+
+#================  creating key grid, modifier map etc.  =================#
 
 func getActivatedChord(
   key: Key, modifiers: HashSet[string], onPress: bool = true
@@ -84,22 +160,7 @@ func getActivatedChord(
       some(trigger[modifiers])
     else:
       none(KeyResult)
-
-const defaultMods: tuple[
-  ctrl, alt, shift, meta, default: string
-] = (
-    ctrl: "ctrl",
-    alt: "alt",
-    shift: "shift",
-    meta: "meta",
-    default: "default"
-)
-proc makeModifierMap(
-  keybind: seq[KeyPress],
-  makeFinal: bool = false,
-  addDefault: bool = true,
-  additionalMap: ModifierMap = ModifierMap()
-     ): ModifierMap =
+proc makeModifierMap(conf: KeyConfig): ModifierMap =
   ##[ Generate modifier map for single target keybinding represented
   as either string or sequence of key presses.
 
@@ -115,21 +176,27 @@ proc makeModifierMap(
   default modifier combinations (16 in total) to resulting keymap. If
   you are creating one of the default keys (letters, numbers etc.) and
   want to have them react correctly to other modifiers from the start
-  use `addDefault = true`.
+  use `addDefault = true`. Value will be taken from 'default' pair in
+  the configuration. This value *must* be present in configuration
+  `(@["default"], "<your-keybinding>")`
 
   ]##
 
-  echo "creating modifier map for", keybind
+  let default = # Get default keybinding for the key
+    block:
+      let pos: int = conf.modifierMap.findIt(it[0] == @["default"])
+      if pos == -1:
+        raise newException(
+          AssertionError,
+          "Argument must contain 'default' keybinding")
+      else:
+        conf.modifierMap[pos][1]
 
-  result = additionalMap
-  let chords: seq[KeyPress] =
-    when keybind is string:
-      decodeKeybindingStr(keybindingStr).mapIt(it.toKeyResult)
-    else:
-      keybind
+  # Decode default keybindings and convert it into key press
+  let chords: seq[KeyPress] = default.decodeKeyPress()
 
-  if addDefault:
-    # Single key, generate all default keys
+  # Add default modifiers.
+  if conf.makeDefault:
     for comb in @[@["default"]] & allSubsets(@["ctrl", "shift", "alt", "meta"]):
       var res = KeyResult(
         isFinal: false,
@@ -137,55 +204,63 @@ proc makeModifierMap(
         adder: KeyPress(code: chords[0].code)
       )
 
-      for modif in comb:
-        case modif:
-          of defaultMods.ctrl:
-            res.adder.modifiers.incl hmLeftCtrl
+      #[
+        for modif in comb:
+          case modif:
+            of defaultMods.ctrl:
+              res.adder.modifiers.incl hmLeftCtrl
 
-          of defaultMods.alt:
-            res.adder.modifiers.incl hmLeftAlt
+            of defaultMods.alt:
+              res.adder.modifiers.incl hmLeftAlt
 
-          of defaultMods.shift:
-            res.adder.modifiers.incl hmLeftShift
+            of defaultMods.shift:
+              res.adder.modifiers.incl hmLeftShift
 
-          of defaultMods.meta:
-            res.adder.modifiers.incl hmLeftMeta
+            of defaultMods.meta:
+              res.adder.modifiers.incl hmLeftMeta
+      ]#
 
       result[toHashSet(comb)] = res
-  else:
-    result[toHashSet(["default"])] = KeyResult(
+
+  # Add all modifiers in the configuration
+  for comb in conf.modifierMap:
+    result[toHashSet(comb[0])] = KeyResult(
       isFinal: true,
-      chord: chords
+      # chord:
     )
 
 
-func toHIDReport*(press: KeyPress): HIDReport =
-  result.modifiers = press.modifiers
-  result.keycodes[0] = press.code
+proc updateKey*(key: var Key, isPressed: bool): bool =
+  ## Transition between key states based on whether or not it is
+  ## pressed
+  # IDEA write macro for function that perform role of state automata.
+  # Provide DSL for writing transition rules (base it on some language
+  # that is related to automata)
+  result = false
 
-func toKeyPress*(code: (KeyCode, set[HIDModifiers])): KeyPress =
-  KeyPress(
-    code: code[0],
-    modifiers: code[1]
-  )
+  case key.state:
+    of kstIdleReleased:
+      if isPressed:
+        key.state = kstChangedPressed
+        result = true # Key is now pressed
 
-func toKeyPress*(code: KeyCode): KeyPress =
-  if code.isModifier():
-    result.modifiers.incl code.toHIDModifer()
-  else:
-    result.code = code
+    of kstIdlePressed:
+      if not isPressed:
+        key.state = kstChangedReleased
+        result = true # Key is not released
 
-func toKeybindingStr*(key: KeyResult): string =
-  ## Return key press result in form of emacs chord
-  if key.isFinal:
-    result = key.chord.mapIt(it.toHIDReport().toKeybindingStr).join(" ")
-  else:
-    result = key.adder.toHIDReport().toKeybindingStr()
+    of kstChangedPressed:
+      if isPressed:
+        key.state = kstIdlePressed
+        # Key is still pressed, no changes
+
+    of kstChangedReleased:
+      if not isPressed:
+        # Key is still released, no changes
+        key.state = kstIdleReleased
 
 
-func notDefaultModifier(modif: string): bool =
-  return modif notin @["default", "ctrl", "shift", "alt", "meta"]
-
+#=================  pretty-printing grid configuration  ==================#
 
 func toKeybindingStr*(key: ModifierMap, printAll: bool = false): seq[string] =
   for it in key.keys():
@@ -194,23 +269,20 @@ func toKeybindingStr*(key: ModifierMap, printAll: bool = false): seq[string] =
 
   result = result.sortedByIt(it.len)
 
-
-
-type
-  Seq2D[T] = seq[seq[T]]
-  Seq3D[T] = seq[seq[seq[T]]]
-
-# IDEA add support for arranging string grids relative to ech other
-# (above, below etc), centerin them in terminal and so on. Not
-# full-blown curses-like graphics, just very simple string
-# manipluations.
-
-# IDEA add support for printing grid transitions - output two grid
-# states and highlight changed keys.
 proc printGrid*(grid: KeyGrid) =
   ## Print matrix keys as 2d array. Keys are mapped to emacs notation
   ## and. Multi-chord keys are mapped as multiple keypresses. NOTE:
   ## Currently only on-release events are printed.
+
+  # IDEA add support for arranging string grids relative to ech other
+  # (above, below etc), centerin them in terminal and so on. Not
+  # full-blown curses-like graphics, just very simple string
+  # manipluations.
+
+  # IDEA add support for printing grid transitions - output two grid
+  # states and highlight changed keys.
+
+
   let matrix: Seq3D[string] = grid.keyGrid.mapIt(it.mapIt(
     it.onPress.toKeybindingStr(true)
   ))
@@ -244,44 +316,7 @@ proc printGrid*(grid: KeyGrid) =
     echo rSep
 
 
-proc updateKey*(key: var Key, isPressed: bool): bool =
-  ## Transition between key states based on whether or not it is
-  ## pressed
-  # IDEA write macro for function that perform role of state automata.
-  # Provide DSL for writing transition rules (base it on some language
-  # that is related to automata)
-  result = false
 
-  case key.state:
-    of kstIdleReleased:
-      if isPressed:
-        key.state = kstChangedPressed
-        result = true # Key is now pressed
-
-    of kstIdlePressed:
-      if not isPressed:
-        key.state = kstChangedReleased
-        result = true # Key is not released
-
-    of kstChangedPressed:
-      if isPressed:
-        key.state = kstIdlePressed
-        # Key is still pressed, no changes
-
-    of kstChangedReleased:
-      if not isPressed:
-        # Key is still released, no changes
-        key.state = kstIdleReleased
-
-
-proc hasDifferentValues[T](arr: seq[T]): bool =
-  var sorted = arr
-  sorted.sort()
-  for idx, item in sorted[1 ..^ 1]:
-    if sorted[idx] == item:
-      return false
-
-  return true
 
 func makeKeyPress(
   code: KeyCode = ccKeyNone, modifiers: set[HIDModifiers]): KeyPress =
@@ -305,13 +340,14 @@ func makeKeyResult*(
       chord: chords.mapIt(makeKeyPress(it.code, it.modifs))
     )
 
+
 const noMod*: set[HIDModifiers] = {}
 proc makeKeyGrid*(
-  codes: seq[seq[ # 2d grid
-    seq[(KeyCode, set[HIDModifiers])] # Key configurations
-  ]],
+  codes: Seq2D[tuple[onPress, onRelease: KeyConfig]],
   rowPins, colPins: seq[int]
-     ): KeyGrid =
+                ): KeyGrid =
+  ##[ Create key grid from configuration ]##
+
   assert codes.len == rowPins.len
   assert codes[0].len == colPins.len
   assert rowPins.hasDifferentValues()
@@ -321,29 +357,22 @@ proc makeKeyGrid*(
     keyGrid: codes.mapIt(
       it.mapIt(Key(
         state: kstIdleReleased,
-        onPress:
-          block:
-            let chord = it.mapIt(it.toKeyPress)
-            makeModifierMap(
-              keybind = chord,
-              makeFinal = chord.len > 1,
-              addDefault = chord.len == 1)
+        onPress: makeModifierMap(it.onPress),
+        onRelease: makeModifierMap(it.onRelease)
       )
       )),
     rowPins: rowPins,
     colPins: colPins)
 
-
-
 proc parseGridConfig*(str: string): KeyGrid =
-  let toml = str.parseString()
+  let toml = str.parseJson()
   assert toml.hasKey("rowPins")
   assert toml.hasKey("colPins")
 
-  let codes: seq[seq[seq[(KeyCode, set[HIDModifiers])]]] =
-    toml["row"].getElems().mapIt(
-      it["keys"].getElems().mapIt(
-        it.getStr().decodeKeybindingStr()))
+  let codes: Seq2D[(KeyConfig, KeyConfig)] =
+    toml["rows"].getElems().mapIt(
+      it.getElems().mapIt(
+        decodeKeybindingConf(it)))
 
   return makeKeyGrid(
     rowPins = toml["rowPins"].getElems().mapIt(it.getInt()),

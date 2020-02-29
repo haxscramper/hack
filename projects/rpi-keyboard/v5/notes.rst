@@ -1,3 +1,8 @@
+.. contents::
+
+   Well, let's not make anything overcomplicated. -- me, couple months
+   ago
+
 Devnotes
 ========
 

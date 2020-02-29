@@ -1,4 +1,5 @@
 import common
+import json
 import algorithm
 import hmisc/helpers
 import key_codes
@@ -24,6 +25,12 @@ type
     # TODO write proc for getting/setting value of nth key and add
     # counter for number of used keys
     keycodes*: array[6, KeyCode]
+
+  KeyConfig* = object
+    isFinal*: bool
+    makeDefault*: bool
+    modifierMap*: seq[(seq[string], string)]
+
 
 func toHIDModifer*(code: KeyCode): HIDModifiers =
   ## Convert key code to HID modifier
@@ -77,9 +84,10 @@ proc fromKeybindingStr*(binding: string): seq[HIDReport] =
 
     result.add res
 
-func decodeKeybindingStr*(chord: string):
-     seq[(KeyCode, set[HIDModifiers])] =
-  fromKeybindingStr(chord).mapIt((it.keycodes[0], it.modifiers))
+func decodeKeybindingConf*(conf: JsonNode): (KeyConfig, KeyConfig) =
+  ## Convert keybinding configuration from json node into `KeyConfig`
+  discard
+
 
 proc toKeybindingStr*(rep: HIDReport): string =
   var buf: seq[string]

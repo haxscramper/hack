@@ -4,6 +4,7 @@ import math
 import strutils
 import sets
 import tables
+import parsetoml
 
 import algorithm
 
@@ -27,3 +28,5 @@ echo t.hasKey(toHashSet(["ctrl", "alt"]))
 #          value)).sorted(cmp = proc(lhs, rhs: type(value)): )
 
 # echo sortedByIt(@["sdf", "22222", "121222"], it.len)
+
+echo "config.toml".readFile().parseString()

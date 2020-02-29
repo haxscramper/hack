@@ -126,20 +126,7 @@ proc readMatrix(grid: KeyGrid): seq[seq[bool]] =
 
 
 block:
-  var testGrid = parseGridConfig("""
-rowPins = [1 ]
-colPins = [3, 4, 5]
-modifiers = ["math"]
-
-# [[row]]
-# keys = ["alt-", "ctrl-", "meta-"]
-
-[[row]]
-keys = ["shift-", ",", "ctrl-c ctrl-c"]
-
-# [[row]]
-# keys = ["H", "E", "N"]
-""")
+  var testGrid = parseGridConfig("config.json".readFile())
 
   testGrid.printGrid()
 

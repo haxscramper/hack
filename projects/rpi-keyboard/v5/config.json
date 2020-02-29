@@ -1,0 +1,29 @@
+{
+  "rowPins": [
+    1
+  ],
+  "colPins": [
+    3,
+    4,
+    5
+  ],
+  "modifiers": [
+    "math"
+  ],
+  "rows": [
+    [
+      "shift-",
+      ",",
+      [
+        [
+          "math",
+          "ctrl-c ctrl-c"
+        ],
+        [
+          "default",
+          "ctrl-c ctrl-v"
+        ]
+      ]
+    ]
+  ]
+}
