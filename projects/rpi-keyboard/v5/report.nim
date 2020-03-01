@@ -27,6 +27,7 @@ type
     keycodes*: array[6, KeyCode]
 
   KeyConfig* = object
+    isActive*: bool
     isFinal*: bool
     makeDefault*: bool
     modifierMap*: seq[(seq[string], string)]
@@ -85,8 +86,59 @@ proc fromKeybindingStr*(binding: string): seq[HIDReport] =
     result.add res
 
 func decodeKeybindingConf*(conf: JsonNode): (KeyConfig, KeyConfig) =
-  ## Convert keybinding configuration from json node into `KeyConfig`
-  discard
+  ##[ Convert keybinding configuration from json node into `KeyConfig`.
+  First generated key is `onPress` trigger, second one is `onRelease`.
+  Configuration (json node) will be parsed according to the rules:
+
+  - single item (string) - will be converted to press key
+  - Array of elements - will generate final key without default values
+
+  ]##
+  if conf.kind == JString: # Single string with non-final key
+    result[0].isFinal = false
+    result[0].makeDefault = true
+    result[0].modifierMap = @[(@["default"], conf.getStr())]
+    result[0].isActive = true
+  elif conf.kind == JArray:
+    let elems: seq[JsonNode] = conf.getElems()
+    if elems.len() < 1:
+      # TODO error?
+      discard
+    else: # JObject with final key
+      result[0].isFinal = true
+      result[0].makeDefault = false
+      result[1].isFinal = true
+      result[1].makeDefault = false
+      for it in elems:
+        if it["mod"].kind != JArray:
+          raise newException(
+            AssertionError,
+            "list of modifier must be an array" &
+            "Error while attempting to parse configuration " &
+            $conf
+          )
+
+        let conf = (
+          it["mod"].getElems().mapIt(it.getStr()),
+          it["key"].getStr()
+        )
+
+        if it.hasKey("event") and it["event"].getStr() == "onRelease":
+          result[1].modifierMap.add conf
+          result[1].isActive = true
+        else:
+          result[0].modifierMap.add conf
+          result[0].isActive = true
+
+
+      #   let (press, _) = elems[0].decodeKeybindingConf()
+      #   let (release, _) = elems[1].decodeKeybindingConf()
+      #   result = (press, release)
+      # else:
+      #   for it in elems:
+      #     let modifier = it[0]
+      #     let keybind = it[1]
+
 
 
 proc toKeybindingStr*(rep: HIDReport): string =

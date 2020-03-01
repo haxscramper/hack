@@ -17,9 +17,8 @@ else:
 # import os
 import strutils, strformat
 
-proc debug*(msg: string) =
-  discard
-  # echo msg
+func debug*(msgs: varargs[string, `$`]): void =
+  debugEcho msgs.join(" ")
 
 proc setPinModeOut*(pin: int): void =
   piPinModeOutput(cast[cint](pin))

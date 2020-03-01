@@ -160,7 +160,8 @@ func getActivatedChord(
       some(trigger[modifiers])
     else:
       none(KeyResult)
-proc makeModifierMap(conf: KeyConfig): ModifierMap =
+
+func makeModifierMap(conf: KeyConfig): ModifierMap =
   ##[ Generate modifier map for single target keybinding represented
   as either string or sequence of key presses.
 
@@ -182,13 +183,27 @@ proc makeModifierMap(conf: KeyConfig): ModifierMap =
 
   ]##
 
-  let default = # Get default keybinding for the key
+
+  if not conf.isActive:
+    return result
+
+  debug conf
+  defer:
+    if not conf.makeDefault and conf.isActive:
+      debug result
+
+  let default: string = # Get default keybinding for the key
     block:
       let pos: int = conf.modifierMap.findIt(it[0] == @["default"])
       if pos == -1:
-        raise newException(
-          AssertionError,
-          "Argument must contain 'default' keybinding")
+        if conf.makeDefault:
+          raise newException(
+            AssertionError,
+            "Active KeyConfig with `makeDefault` must contain 'default' keybinding" &
+            "Attempt to create keybinding for config: " & $conf
+          )
+        else:
+          ""
       else:
         conf.modifierMap[pos][1]
 
@@ -226,7 +241,7 @@ proc makeModifierMap(conf: KeyConfig): ModifierMap =
   for comb in conf.modifierMap:
     result[toHashSet(comb[0])] = KeyResult(
       isFinal: true,
-      # chord:
+      chord: decodeKeyPress(comb[1])
     )
 
 
@@ -284,7 +299,8 @@ proc printGrid*(grid: KeyGrid) =
 
 
   let matrix: Seq3D[string] = grid.keyGrid.mapIt(it.mapIt(
-    it.onPress.toKeybindingStr(true)
+      "pr: " & it.onPress.toKeybindingStr(true) &
+      "re: " & it.onRelease.toKeybindingStr(true)
   ))
 
   proc maxLen[T](s: Seq3D[T]): int =
