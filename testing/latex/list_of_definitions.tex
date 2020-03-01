@@ -1,0 +1,71 @@
+\documentclass{report}
+\usepackage{tocloft}
+\usepackage[english]{babel}
+
+
+
+\usepackage{hyperref}
+
+\usepackage{xparse}
+
+% Move example prefix to separate macro to avoid cluttering main one.
+\newcommand{\examplePrefix}{\textbf{Example:}}
+
+% Name of the definition list
+\newcommand{\listExamplename}{List of Examples}
+
+% Black magic fo defining list of things. First argument is used to
+% define new counter. Second one is an extension of counter file. Last
+% one is the text for the heading of thenew list. In our case we moved
+% it into separate macro
+\newlistof{ExampleMacro}{exampleCounter}{\listExamplename}
+\newcommand{\ExampleMacro}[1]{%
+  \refstepcounter{ExampleMacro} % Increment counter
+  % Content of the macro
+  \par
+    \noindent\textbf{
+      \hyperlink{listOfExamples}{\examplePrefix} #1
+    }
+    % This part does adds an entry to the specified list or table.
+    % First
+    % argument is an extension of counter to take information from (in
+    % our case this is 'exampleCounter'). Last argument is formatting
+    % for the list item
+    \addcontentsline{exampleCounter}{ExampleMacro}{\protect\numberline{$\circ$}#1}
+  \par
+}
+
+\newcommand{\ExampleList}{
+  \hypertarget{listOfExamples}{}
+  \listofExampleMacro
+}
+
+% Define environment to write write example in
+\NewDocumentEnvironment{example}{o}{
+  \IfNoValueTF{#1}{ % Optional name of the defintion
+    \ExampleMacro{}
+  }{
+    \ExampleMacro{#1}
+  }
+}{ % ====
+}
+
+\begin{document}
+
+\section{Two definitions}
+
+\begin{example}[12312]
+  asdfas dfa sdfa s
+\end{example}
+
+\section{One definition}
+
+
+\begin{example}{sdf 23324}
+  asdfas dfa sdfa s
+\end{example}
+
+\ExampleList
+
+
+\end{document}
