@@ -4,93 +4,50 @@
 \usetikzlibrary{calc,arrows}
 % \usepackage[european]{circuitikz}
 \usetikzlibrary{circuits.logic.IEC}
-
-\newcommand{\tikzinline}[1]{
-  \begin{tikzpicture}
-
-    #1;
-
-  \end{tikzpicture}
-}
-
-
-\def\DFFsync(#1)#2{%
-  \begin{scope}[shift={(#1)}, name prefix = #2.]
-    \node at (0.5,1.2) {$D$};
-    \draw (0,0) rectangle (1,1);
-    \draw (0.5,1) -- (0.5,0);
-    \draw (0.5,0.5) -- (1,0.5);
-    % Output
-    \node at (0.75,0.75) {$Q$};
-    \node at (0.75,0.25) {$\bar{Q}$};
-    \draw (1,0.8) -- +(0.25,0) coordinate ({#2}Q);
-    \draw (1,0.2) -- +(0.25,0) coordinate ({#2}nQ);
-
-    \node (test) at (0,-0.25) {};
-
-    % Input
-    \draw (0,0.8) node[right] {$D$} -- +(-0.25,0) coordinate ({#2}D);
-    \draw (0,0.2) node[right] {$C$} -- +(-0.25,0) coordinate ({#2}C);
-  \end{scope}
-}
-
-\tikzset{
-  seagull/.pic={
-    % Code for a "seagull". Do you see it?...
-    \coordinate (-left wing) at (-3mm,0);
-    \coordinate (-head) at (0,0); \coordinate (-right wing) at (3mm,0);
-    \draw (-left wing) to [bend left] (0,0) (-head) to [bend left] (-right wing);
-  }
-}
+\usetikzlibrary{math}
 
 \tikzset{
   DFF/.pic={
-    % \coordinate (-D) at (1, 0);
-    % \coordinate (-C) at (1, 2);
+    \tikzmath{
+     \cellw = 0.5; % Cell width
+     \cellh = 1.0; % Cell height
+     \halfH = \cellh / 2.0; % Half of the cell height
+     \blockw = 2 * \cellw; % Block width
+     \blockh = 2 * \cellh; % Block height
+     \contl = 0.4; % Contact length
+   }
 
     % \node at (0.5,1.2) {$D$};
-    \draw (0,0) rectangle (1,1);
-    \draw (0.5,1) -- (0.5,0);
-    \draw (0.5,0.5) -- (1,0.5);
+    \draw (0,0) rectangle (\blockw,\blockh);
+
+    \draw (\cellw, \blockh) -- (\cellw, 0);
+    \draw (0, \cellh) -- (\cellw, \cellh);
+
     % Output
-    \node at (0.75,0.75) {$Q$};
-    \node at (0.75,0.25) {$\bar{Q}$};
-    \draw (1,0.8) -- +(0.25,0) coordinate (-Q);
-    \draw (1,0.2) -- +(0.25,0) coordinate (-nQ);
+    \draw (\blockw, \halfH + \cellh) -- +(\contl, 0) coordinate (-Q);
+    \draw (\blockw, \halfH) -- +(\contl, 0) coordinate (-nQ);
+
+    \node at (-Q) [above] {$Q$};
+    \node at (-nQ) [above] {$\bar{Q}$};
 
     % Input
-    \draw (0,0.8) node[right] {$D$} -- +(-0.25,0) coordinate (-D);
-    \draw (0,0.2) node[right] {$C$} -- +(-0.25,0) coordinate (-C);
+    \draw (0,\blockh - \halfH) node[right] {$D$} --
+      +(-0.25,0)
+      coordinate (-D);
 
-    \draw (0,0) rectangle (1,1);
+    \draw (0,\cellh - \halfH) node[right] {$C$} --
+      +(-0.25,0)
+      coordinate (-C);
   }
 }
 
 \begin{document}
 
 \tikz{
-% \DFF(0,0){Dff};
-% \DFF(2,0){Dfff};
-% \draw ({Dff}nQ) -- ({Dfff}D);
-
-% \draw (Dff.test) -- (Dfff.test);
-
 \pic (dff) at (0, 1) {DFF};
 \pic (dfff) at (1, 4) {DFF};
 
 \draw (dff-D) -- (dfff-D);
-
-
-
-% \draw (dff.D) -- (dfff.D);
-
 }
-
-\tikz {
-  \pic (Emma) {seagull};
-  \pic (Alexandra) at (0,1) {seagull};
-  \draw (Emma-left wing) -- (Alexandra-right wing);
-}
-
 
 \end{document}
