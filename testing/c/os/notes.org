@@ -1,0 +1,85 @@
+#+title: Отчет по лабораторной работе 4-6
+#+author: Артемов Максим ИВБО-02-18
+#+setupfile: ~/.config/hax-config/emacs/latex-export-header.org
+#+options: toc:nil
+
+#+latex_header: \usepackage{minted}
+
+
+* Лабораторная 4
+
+Текстовый файл с названием текущей цели для компиляции - при помощи
+этого файла можно указать текущую лабораторную работу и затем,
+воспользовавнись коммандой ~find -type f | entr -rc "make"~
+автоматически перезапускать компиляцию на каждом изменении файла.
+
+#+caption: ~target.txt~
+#+include: target.txt src txt
+
+#+caption: ~Makefile~
+#+include: Makefile src Makefile
+
+#+include: lab_4.c src c
+
+* Лабораторная 5
+
+#+include: lab_5.c src c
+
+#+BEGIN_SRC txt
+LOG: parent process
+LOG: Initial process pid:  122977
+LOG: PID value is non-zero, this is parent process
+LOG: PID value is zero, this is child process
+LOG: Parent process id is 122978
+LOG: Second fork parent pid: 122978
+LOG: Child pid:  122979
+LOG: Child number three
+LOG: Running ls
+LOG: Second fork group: 122977
+LOG: Forked third time, child pid is 122980
+LOG: Child process, do sleep(1000)
+auto		common.c  common.o  lab_4    lab_4.o  lab_5.c	lab_6.c   _minted-notes  notes.pdf  notes.tex~
+breakpoints.tmp  common.h  lab_3.sh  lab_4.c  lab_5    lab_6	Makefile  notes.org	notes.tex  target.txt
+LOG: !!! Child process ignores signal
+LOG: Child process terminated
+LOG: Wrote string
+got string [-------test-----]
+LOG: Intial process terminated 122977
+#+END_SRC
+
+* Лабораторная 6
+
+#+include: lab_6.c src c
+
+#+BEGIN_SRC txt
+LOG: Starting lab  6 
+LOG: =========== shared memory ===============
+LOG: Attached parent process to memory segment: 118945
+LOG: Parent Using memory segnment id: 52
+9999
+LOG: Attached child process to memory segment: 118946
+LOG: Child using memory segnment id: 52
+hell
+LOG: =========== message queue ===============
+LOG: Wrote message to queue
+LOG: =========== semaphores ===============
+LOG: Created semaphores
+Recieved message from queue [123456]
+LOG: Fork suceded
+LOG: Parent memory open ok
+LOG: Fork suceded
+LOG: Waiting for semaphore to indicate finish
+LOG: Filled memory
+LOG: Semaphore value is 0, can read memory
+LOG: Child memory open ok
+#+END_SRC
+
+
+
+
+
+
+
+
+
+

@@ -43,6 +43,7 @@ void test_forks() {
             execl("/bin/ls", "");
             mlog("This code will not be executed");
         }
+        exit(0);
     }
 
     waitpid(pid, 0, 0);
@@ -77,7 +78,7 @@ void test_pipes() {
 int main(int argc, char* argv[]) {
     mlog("parent process");
 
-    // test_forks();
+    test_forks();
     test_pipes();
 
     milog("Intial process terminated", getpid());

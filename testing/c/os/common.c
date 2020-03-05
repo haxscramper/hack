@@ -25,5 +25,6 @@ void milog(char* msg, int value) {
 }
 
 void pprefix() {
-    printf("\033[32mLOG:\033[0m ");
+    /* printf("\033[32mLOG:\033[0m "); */
+    printf("LOG: ");
 }
