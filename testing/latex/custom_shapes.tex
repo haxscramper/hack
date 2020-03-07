@@ -1,0 +1,48 @@
+\documentclass[tikz, border=1mm]{article}
+\usepackage{tikz}
+\usepackage{xparse}
+
+\usetikzlibrary{calc,arrows}
+\usetikzlibrary{circuits.logic.IEC}
+\usetikzlibrary{math}
+
+\tikzset{
+  usingPic/.pic={
+    \draw (0,0) rectangle (2,2);
+    \draw [ultra thick, blue] (0,1) -- (-1,1) node {} coordinate (-input);
+    \draw [ultra thick, red] (2,1) -- (3,1) node {} coordinate (-output);
+  }
+}
+
+\newcommand{\usingNewc}[2]{
+  \begin{scope}[shift={(#1)}] % Shift origin position
+    \draw (0,0) rectangle (2,2);
+    \draw [ultra thick, blue] (0,1) -- (-1,1) node {}
+      coordinate (#2 -input); % Set node name
+    \draw [ultra thick, red] (2,1) -- (3,1) node {}
+      coordinate (#2-output);
+  \end{scope}
+}
+
+
+\begin{document}
+
+Pic created using tikzset
+
+\begin{tikzpicture}
+  \pic (dff) at (6, 0) {usingPic};
+  \pic (dfff) at (1, 0) {usingPic};
+
+  \draw [ultra thick, green] (dff-input) -- (dfff-output);
+\end{tikzpicture}
+
+Pic created using macro
+
+\begin{tikzpicture}
+  \usingNewc{6, 0}{dff};
+  \usingNewc{1, 0}{dfff};
+
+  \draw [ultra thick, green] (dff -input) -- (dfff-output);
+\end{tikzpicture}
+
+\end{document}
