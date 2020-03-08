@@ -1,7 +1,7 @@
 import compiler/[
   modules,
   ast,
-  # astalgo,
+  astalgo,
   passes,
   llstream,
   modulegraphs,
@@ -28,6 +28,10 @@ type
     args: seq[string]
     rett: string
 
+  TypeDefinition = object
+    name: string
+    child: seq[tuple[name, typ: string]]
+
 proc registerProc(n: PNode): void =
   # for idx, s in n.sons:
   #   echo idx
@@ -46,10 +50,33 @@ proc registerProc(n: PNode): void =
 
   echo prc
 
+func renderType(t: PNode): string =
+  if t.kind == nkBracketExpr:
+    "$1[$2]" % [t[0].renderType(), t[1].renderType()]
+  else:
+    t.renderPlainSymbolName()
+
+proc registerType(n: PNode): void =
+  let tdf = TypeDefinition(
+    name: n[0].renderPlainSymbolName(),
+    child: n[2].sons
+      .filterIt(it.kind == nkRecList) # TODO replace with ident definition
+      .mapIt(
+        block:
+          it.mapIt((name: it[0].renderType, typ: it[1].renderType))
+      ).concat()
+  )
+  echo tdf
+
 proc registerToplevel(n: PNode): void =
   case n.kind:
-    of nkProcDef:
-      registerProc(n)
+    of nkProcDef: registerProc(n)
+    of nkStmtList:
+      for s in n.sons: registerTopLevel(s)
+    of nkTypeSection:
+      for s in n.sons: registerTopLevel(s)
+    of nkTypeDef:
+      registerType(n)
     else:
       discard
 
