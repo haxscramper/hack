@@ -2,4 +2,5 @@ _minted-notes/*
 auto/*
 .gdb_history
 notes.tex
-
+!Makefile
+*.zip
