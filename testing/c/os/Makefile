@@ -5,6 +5,20 @@ run:
 
 compile=gcc -g
 
+errf="errnames.hpp"
+
+errreport:
+	echo -e "#include <string>\n std::string get_err_symbol(int sym) {" > $(errf)
+	echo "std::string symidx = std::to_string(sym);" >> $(errf)
+	echo "switch (sym) {" >> $(errf)
+	errno -l | \
+	sort -u -t' ' -k2,2 | \
+	sed -E 's/(\w+) ([0-9]+).*/case \2: return "\1 (" + symidx + ")";/' >>$(errf)
+
+	echo 'default: return "???";' >>$(errf)
+	echo "}" >> $(errf)
+	echo "}" >> $(errf)
+
 #################################  lab 4  #################################
 
 lab_4: lab_4.o common.o
@@ -35,10 +49,5 @@ lab_6: lab_6.c common.h common.c
 
 #################################  lab 7  #################################
 
-lab_7: lab_7.c common.h common.c
-	gcc -o lab_7 lab_7.c common.c
-
-#################################  lab 8  #################################
-
-lab_8: lab_8.c common.h common.c
-	gcc -o lab_8 lab_8.c common.c
+lab_7: lab_7.cpp
+	@g++ -o lab_7 lab_7.cpp
