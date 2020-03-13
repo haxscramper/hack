@@ -50,4 +50,6 @@ lab_6: lab_6.c common.h common.c
 #################################  lab 7  #################################
 
 lab_7: lab_7.cpp
+	@g++ lab_7_inet_client.c -o client
+	@g++ lab_7_inet_server.c -o server
 	@g++ -o lab_7 lab_7.cpp
