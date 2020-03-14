@@ -56,16 +56,23 @@ void test_inet_domain_sockets() {
     let server = cwd + "/server";
     let client = cwd + "/client";
 
-    if (fork() == 0) {
-        errtest(execl(server.c_str(), "") == 0, "Failed to run execl", "");
+    pid_t serv_pid = fork();
+    if (serv_pid == 0) {
+        errtest(
+            execl(server.c_str(), "") == 0, "Failed to run server", "");
     }
 
-    if (fork() == 0) {
+    pid_t clnt_pid = fork();
+    if (clnt_pid == 0) {
         errtest(
             execl(client.c_str(), "") == 0, "Failed to run client", "");
     }
 
-    wait(NULL);
+    int rets;
+    waitpid(serv_pid, &rets, 0);
+    waitpid(clnt_pid, &rets, 0);
+
+    puts("Finished inet socket test");
 }
 
 void test_inet_domain_sockets_2() {
@@ -305,4 +312,6 @@ int main() {
     test_unix_domain_sockets();
     mlog("----");
     test_inet_domain_sockets();
+    mlog("----");
+    test_inet_domain_sockets_2();
 }
