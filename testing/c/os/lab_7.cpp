@@ -26,6 +26,7 @@ void mlog(T msg) {
 }
 
 template <class T>
+
 void merr(T msg) {
     std::cout << "\033[31mERR:\033[0m " << msg << std::endl;
 }
@@ -100,15 +101,15 @@ void test_inet_domain_sockets_2() {
             "Failed to set child socket options",
             "Succesfully set child socket options ok");
 
-        /////////////////////////  bind  /////////////////////////
-        if (errtest(
-                bind(sfd, (sockaddr*)&serv_addr, sizeof(serv_addr)) == 0,
-                "Child client failed to bind inet socket",
-                "Child client inet socket bind ok")) {
-            merr("Child closing socket");
-            close(sfd);
-            exit(1);
-        }
+        // /////////////////////////  bind  /////////////////////////
+        // if (errtest(
+        //         bind(sfd, (sockaddr*)&serv_addr, sizeof(serv_addr)) ==
+        //         0, "Child client failed to bind inet socket", "Child
+        //         client inet socket bind ok")) {
+        //     merr("Child closing socket");
+        //     close(sfd);
+        //     exit(1);
+        // }
 
         ///////////////////////  connect  ////////////////////////
         errtest(
@@ -122,7 +123,7 @@ void test_inet_domain_sockets_2() {
         send(sfd, outbuf, sizeof(outbuf), 0);
         mlog("Client done test");
 
-        std::string out  = "Test string with undefined length";
+        std::string out  = "!!! Test string with undefined length !!!";
         int         size = out.size();
         mlog("Sending message with size " + std::to_string(size));
         send(sfd, &size, sizeof(int), 0);
@@ -172,13 +173,13 @@ void test_inet_domain_sockets_2() {
 
         ////////////////////////  accept  ////////////////////////
         let addrlen = sizeof(serv_addr);
-        let conn    = accept(
+        let conn_fd = accept(
             sfd, (struct sockaddr*)&serv_addr, (socklen_t*)&addrlen);
 
         mlog("Accepted connection");
 
         if (errtest(
-                conn == 0,
+                conn_fd != -1,
                 "Failed to accept connection",
                 "Connection accept ok")) {
             close(sfd);
@@ -187,21 +188,26 @@ void test_inet_domain_sockets_2() {
 
         {
             char testbuf[forward_msg_size];
-            let  valread = read(conn, testbuf, sizeof(testbuf));
+            let  valread = read(conn_fd, testbuf, sizeof(testbuf));
             mlog("Recieved message from client");
             mlog(testbuf);
         }
 
         int len;
-        read(conn, &len, sizeof(int));
+        read(conn_fd, &len, sizeof(int));
 
         mlog("Recived message size: " + std::to_string(len));
 
-        std::string buf;
-        read(conn, &buf, len);
-        mlog("Recieved message: [" + buf + "]");
+        {
+            char* buf = (char*)malloc(len);
+            mlog("Created buffer");
+            read(conn_fd, buf, len);
+            mlog("Recieved message: [" + std::string(buf) + "]");
 
-        close(conn);
+            free(buf);
+        }
+
+        close(conn_fd);
         // close(sfd);
         wait(NULL);
     }
@@ -314,4 +320,6 @@ int main() {
     test_inet_domain_sockets();
     mlog("----");
     test_inet_domain_sockets_2();
+    mlog("----");
+    mlog("Completed all tests");
 }
