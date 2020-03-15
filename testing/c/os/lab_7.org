@@ -1,0 +1,75 @@
+#+setupfile: ~/.config/hax-config/emacs/latex-export-header.org
+
+#+latex_header: \usepackage{fancyvrb}
+#+latex_header: \usepackage[dvipsnames]{xcolor}
+#+latex_header: \usepackage{minted}
+
+** Описание программы
+
+Основная программа состоит из трех частей - две фунции для работы с
+inet сокетами и одна для unix domain сокетов. Все они построены по
+схожему принципу - создается соединение между клиентом и сервером,
+затем происходит обмен сообщениями и закрытие соединения.
+
+Для сборки всех необходимых программ нужно выполнить ~make lab_7~ в
+директории.
+
+** Результат работы программы
+
+[[./lab_7_res.tmp.png]]
+
+** Основная программа
+
+#+latex: \inputminted{cpp}{lab_7.cpp}
+
+** Клиент для сетевых сокетов
+
+#+latex: \inputminted{c}{lab_7_inet_client.c}
+
+** Сервер для сетевых сокетов
+
+#+latex: \inputminted{c}{lab_7_inet_server.c}
+
+** Пример работы программы
+
+#+begin_export latex
+\begin{Verbatim}[commandchars=\\\{\}]
+\textcolor{OliveGreen}{LOG:} [✓] Server socket bind ok
+\textcolor{OliveGreen}{LOG:} [✓] Child bind ok
+\textcolor{OliveGreen}{LOG:} [✓] Child connected to socket
+\textcolor{OliveGreen}{LOG:} Recieved message from client
+\textcolor{OliveGreen}{LOG:} !!! MESSAGE TO PARENT OVER SOCKET !!!
+\textcolor{OliveGreen}{LOG:} Recieved message from parent
+\textcolor{OliveGreen}{LOG:} @@ hello world @@
+\textcolor{OliveGreen}{LOG:} Finished UNIX domain socket test
+\textcolor{OliveGreen}{LOG:} ----
+started server
+Waiting for new connection
+Client put connection request
+Client reading from connection
+Server accepted new connection
+Client recived message: 'eee1212239-9212'
+Client done
+Server finished
+Finished inet socket test
+\textcolor{OliveGreen}{LOG:} ----
+\textcolor{OliveGreen}{LOG:} [✓] Server socket configuration ok
+\textcolor{OliveGreen}{LOG:} [✓] Parent server socket bind ok
+\textcolor{OliveGreen}{LOG:} [✓] Listen ok
+\textcolor{OliveGreen}{LOG:} [✓] Succesfully set child socket options ok
+\textcolor{OliveGreen}{LOG:} [✓] Child connected to socket
+\textcolor{OliveGreen}{LOG:} Client sending test message ...
+\textcolor{OliveGreen}{LOG:} Accepted connection
+\textcolor{OliveGreen}{LOG:} [✓] Connection accept ok
+\textcolor{OliveGreen}{LOG:} Recieved message from client
+\textcolor{OliveGreen}{LOG:} Client done test
+\textcolor{OliveGreen}{LOG:} !!! MESSAGE TO PARENT OVER SOCKET !!!
+\textcolor{OliveGreen}{LOG:} Sending message with size 41
+\textcolor{OliveGreen}{LOG:} Client done sized
+\textcolor{OliveGreen}{LOG:} Recived message size: 41
+\textcolor{OliveGreen}{LOG:} Created buffer
+\textcolor{OliveGreen}{LOG:} Recieved message: [!!! Test string with undefined length !!!/os]
+\textcolor{OliveGreen}{LOG:} ----
+\textcolor{OliveGreen}{LOG:} Completed all tests
+\end{Verbatim}
+#+end_export

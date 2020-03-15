@@ -20,24 +20,34 @@
 #define let const auto
 #define var auto
 
+/// Вывод логов
 template <class T>
 void mlog(T msg) {
     std::cout << "\033[32mLOG:\033[0m " << msg << std::endl;
 }
 
+/// Вывод отформатированных сообщениях об ошибке
 template <class T>
-
 void merr(T msg) {
     std::cout << "\033[31mERR:\033[0m " << msg << std::endl;
 }
 
+/// Размер буфера для первого сообщения
 const int forward_msg_size  = 256;
+/// Размер буфера для второго сообщения
 const int backward_msg_size = 32;
 
 
+/// Файл для UNIX domain сокетов
 #define socket_path "/tmp/lab7sock"
-#define socket_lock "/tmp/lab7sock.lock"
+// #define socket_lock "/tmp/lab7sock.lock"
 
+/// Если `expression` является истинным то вывесто сообщения о
+/// соответствии услови, в противном случае вывести сообщения об
+/// ошибки и п код последней ошибки (получается из `errno`).
+/// Возвращаемое значение обратно аргументу - это позволяет делать
+/// дополнительные действия при ошибках (например `if (errtest(...)) {
+/// /* код для обработки в случае ошибок */ }`)
 template <class T1, class T2>
 bool errtest(bool expression, T1 errmsg, T2 okmsg) {
     if (!expression) {
@@ -50,6 +60,7 @@ bool errtest(bool expression, T1 errmsg, T2 okmsg) {
     }
 }
 
+/// Тест для inet domain сокетов с использованием отдельных программ
 void test_inet_domain_sockets() {
     char _cwd[PATH_MAX];
     getcwd(_cwd, sizeof(_cwd));
@@ -76,6 +87,7 @@ void test_inet_domain_sockets() {
     puts("Finished inet socket test");
 }
 
+/// Тест для сокетов с использованием дочернего процесса
 void test_inet_domain_sockets_2() {
     sockaddr_in serv_addr;
     memset(&serv_addr, '0', sizeof(serv_addr));

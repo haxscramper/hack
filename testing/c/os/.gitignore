@@ -4,3 +4,7 @@ auto/*
 notes.tex
 !Makefile
 *.zip
+*.dvi
+*.pygstyle
+*.pygtex
+*.tex
