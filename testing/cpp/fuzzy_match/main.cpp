@@ -140,6 +140,11 @@ class SearchProxyModel : public QSortFilterProxyModel
             QFont font;
             font.setFamily("JetBrains Mono");
             return font;
+        } else if (role == Qt::DecorationRole) {
+            let sourceIdx = mapToSource(index);
+            let score     = scores->at(sourceIdx.row()).second;
+            return QColor(
+                255, 0, 0, score * 1.5 > 255 ? 255 : score * 1.5);
         } else {
             return QVariant();
         }
