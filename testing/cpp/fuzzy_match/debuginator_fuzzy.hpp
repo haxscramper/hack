@@ -3,27 +3,35 @@
 // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
 #include <cstring>
+#include <iostream>
+#include <vector>
 
-int get_score(char current_full_path[128], char filter[32]) {
+int get_score(const char* input, const char filter[32]) {
+    bool exact_search     = false;
     bool taken_chars[128] = {0};
-    // --- get new full path string --- //
-    DEBUGINATOR_strcpy_s(
-        current_full_path + path_indices[current_path_index],
-        50,
-        item->title);
-    path_indices[current_path_index + 1] = path_indices[current_path_index]
-                                           + (int)DEBUGINATOR_strlen(
-                                               item->title);
-    int current_path_length = path_indices[current_path_index + 1];
+    // // --- get new full path string --- //
+    // DEBUGINATOR_strcpy_s(
+    //     input + path_indices[current_path_index],
+    //     50,
+    //     item->title);
+    // path_indices[current_path_index + 1] =
+    // path_indices[current_path_index]
+    //                                        + (int)strlen(item->title);
+    // int path_indices[8]    = {0};
+    int current_path_index = 0;
 
-    // --- if not exact search do lowercase all --- //
+    int current_path_length = strlen(
+        input); // path_indices[current_path_index
+                // + 1]
+
+    // // --- if not exact search do lowercase all --- //
     // if (!exact_search) {
-    for (size_t i = path_indices[current_path_index];
-         i < current_path_length;
-         i++) {
-        current_full_path[i] = (char)DEBUGINATOR_tolower(
-            current_full_path[i]);
-    }
+    // for (size_t i = // path_indices[current_path_index]
+    //        ;
+    //      i < current_path_length;
+    //      i++) {
+    //     input[i] = (char)tolower(input[i]);
+    // }
     //}
 
 
@@ -42,15 +50,15 @@ int get_score(char current_full_path[128], char filter[32]) {
             continue;
         }
 
-        int path_part   = 0;
+        int path_part   = 0; // --- position in path --- //
         int matches[8]  = {0};
         int match_count = 0;
         // --- iterate over characters in full path --- //
-        while (current_full_path[path_part] != '\0') {
+        while (input[path_part] != '\0') {
             bool filter_part_found = false;
             for (int path_i = path_part; path_i < current_path_length;
                  path_i++) {
-                if (current_full_path[path_i] == filter[filter_part]
+                if (input[path_i] == filter[filter_part]
                     && taken_chars[path_i] == false) {
                     path_part         = path_i;
                     filter_part_found = true;
@@ -65,10 +73,12 @@ int get_score(char current_full_path[128], char filter[32]) {
 
             int         match_length = 0;
             const char* filter_char  = filter + filter_part;
-            const char* path_char    = current_full_path + path_part;
+            const char* path_char    = input + path_part;
+            // --- find section that contains patter literally --- //
             while (*filter_char++ == *path_char++) {
                 match_length++;
-                if (*filter_char == '\0' || *filter_char == ' '
+                if (*filter_char == '\0'   // --- reached patter end ---
+                    || *filter_char == ' ' // --- found space in filter ---
                     || taken_chars[path_part + match_length] == true) {
                     break;
                 }
@@ -97,44 +107,28 @@ int get_score(char current_full_path[128], char filter[32]) {
             int match_index         = matches[i];
             int match_length        = matches[i + 1];
             int is_word_break_start = match_index == 0
-                                      || current_full_path[match_index - 1]
-                                             == ' '
-                                      || (!DEBUGINATOR_isalpha(
-                                              current_full_path
-                                                  [match_index - 1])
-                                          && DEBUGINATOR_isalpha(
-                                              current_full_path
-                                                  [match_index]))
-                                      || (!DEBUGINATOR_isdigit(
-                                              current_full_path
-                                                  [match_index - 1])
-                                          && DEBUGINATOR_isdigit(
-                                              current_full_path
-                                                  [match_index]));
+                                      || input[match_index - 1] == ' '
+                                      || (!isalpha(input[match_index - 1])
+                                          && isalpha(input[match_index]))
+                                      || (!isdigit(input[match_index - 1])
+                                          && isdigit(input[match_index]));
             int is_word_break_end = match_index + match_length
                                         == current_path_length
-                                    || current_full_path
-                                               [match_index + match_length]
+                                    || input[match_index + match_length]
                                            == ' '
-                                    || (!DEBUGINATOR_isalpha(
-                                            current_full_path
-                                                [match_index
-                                                 + match_length])
-                                        && DEBUGINATOR_isalpha(
-                                            current_full_path
-                                                [match_index]))
-                                    || (!DEBUGINATOR_isdigit(
-                                            current_full_path
-                                                [match_index
-                                                 + match_length])
-                                        && DEBUGINATOR_isdigit(
-                                            current_full_path
-                                                [match_index]));
-            int is_match_in_item_title = match_index >= path_indices
-                                             [current_path_index];
+                                    || (!isalpha(input
+                                                     [match_index
+                                                      + match_length])
+                                        && isalpha(input[match_index]))
+                                    || (!isdigit(input
+                                                     [match_index
+                                                      + match_length])
+                                        && isdigit(input[match_index]));
+            // int is_match_in_item_title = match_index >= path_indices
+            //                                  [current_path_index];
             int match_score = (is_word_break_start * 10
                                + is_word_break_end * 5
-                               + is_match_in_item_title * 10
+                               // + is_match_in_item_title * 10
                                + match_length)
                               * match_length;
             if (match_score > best_match_score) {
@@ -157,21 +151,23 @@ int get_score(char current_full_path[128], char filter[32]) {
             }
         }
     }
+    // --- configuration for items in the interfeace --- //
+    // if (is_filtered && !item->is_filtered) {
+    //     debuginator__set_total_height(item, 0);
+    //     debuginator__adjust_num_visible_children(item->parent, -1);
+    //     item->leaf.is_expanded = false;
+    // } else if (!is_filtered && item->is_filtered) {
+    //     debuginator__set_total_height(
+    //         item, debuginator->item_height); // Hacky
+    //     debuginator__adjust_num_visible_children(item->parent, 1);
+    // }
 
-    if (is_filtered && !item->is_filtered) {
-        debuginator__set_total_height(item, 0);
-        debuginator__adjust_num_visible_children(item->parent, -1);
-        item->leaf.is_expanded = false;
-    } else if (!is_filtered && item->is_filtered) {
-        debuginator__set_total_height(
-            item, debuginator->item_height); // Hacky
-        debuginator__adjust_num_visible_children(item->parent, 1);
-    }
-
-    item->is_filtered = is_filtered;
+    // item->is_filtered = is_filtered;
 
     return score;
 }
+
+#if 0
 
 void debuginator_update_filter(
     TheDebuginator* debuginator,
@@ -330,3 +326,10 @@ void debuginator_update_filter(
     DEBUGINATOR_strcpy_s(
         debuginator->filter, sizeof(debuginator->filter), filter);
 }
+
+#endif
+
+using str_t       = std::string;
+using svec_t      = std::vector<std::string>;
+using score_t     = std::pair<int, char*>;
+using score_vec_t = std::vector<score_t>;
