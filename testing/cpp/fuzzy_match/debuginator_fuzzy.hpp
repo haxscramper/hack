@@ -329,7 +329,4 @@ void debuginator_update_filter(
 
 #endif
 
-using str_t       = std::string;
-using svec_t      = std::vector<std::string>;
-using score_t     = std::pair<int, char*>;
-using score_vec_t = std::vector<score_t>;
+

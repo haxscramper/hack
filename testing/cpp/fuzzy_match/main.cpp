@@ -3,6 +3,7 @@
 #include <QAbstractListModel>
 #include <QApplication>
 #include <QDebug>
+#include <QElapsedTimer>
 #include <QLineEdit>
 #include <QListView>
 #include <QMainWindow>
@@ -18,6 +19,7 @@
 #include "fts_fuzzy_match.hpp"
 
 #include <algorithm>
+#include <fstream>
 #include <iostream>
 #include <unordered_map>
 #include <vector>
@@ -29,6 +31,8 @@ using score    = std::pair<int, std::string const*>;
 using matchvec = std::vector<score>;
 using strvec   = std::vector<std::string>;
 using str      = std::string;
+
+using score_vec_t = std::vector<std::pair<const std::string, int>>;
 
 matchvec ftz_sort_scored(strvec& dictionary, const str& pattern) {
     matchvec matches;
@@ -54,29 +58,103 @@ void ftz_print_matches(strvec& dictionary, const str& pattern) {
 }
 
 int cli_main() {
-    strvec dictionary = {"44 TT", "aaa", "tt 44", "aatt 44"};
-    strvec patterns   = {"tt", "tt 44", "44 tt"};
-    for (const auto& patt : patterns) {
-        ftz_print_matches(dictionary, patt);
-    }
-    // ftz_print_matches(dictionary, "tt 44");
-    // ftz_print_matches(dictionary, "44 tt");
+    //#define use_pairs
 
-    for (const auto& patt : patterns) {
-        std::cout << "pattern: " << patt << "\n";
-        for (const auto& dict : dictionary) {
-            std::cout << get_score(dict.data(), patt.data()) << " " << dict
-                      << "\n";
+#ifdef use_pairs
+    std::vector<std::pair<const std::string, int>> items;
+#else
+    std::vector<std::string> items;
+#endif
+
+
+    std::ifstream infile("/tmp/thefile.txt");
+    str           buf;
+    while (std::getline(infile, buf)) {
+#ifdef use_pairs
+        items.push_back({buf, -1});
+#else
+        items.push_back(buf);
+#endif
+    }
+
+
+    qDebug() << "Running on " << items.size() << " items";
+
+    QElapsedTimer timer;
+    timer.start();
+    strvec patterns = {"QtCreator", "Nim", "tt"};
+    for (let patt : patterns) {
+        std::cout << "Pattern is " << patt << std::endl;
+        for (auto& item : items) {
+#ifdef use_pairs
+            fts::fuzzy_match(
+                patt.c_str(), item.first.c_str(), item.second);
+            std::cout << "(" << item.second << ") " << item.first
+                      << std::endl;
+#else
+            int score;
+            fts::fuzzy_match(patt.c_str(), item.c_str(), score);
+            std::cout << "(" << item << ") " << score << std::endl;
+#endif
         }
     }
+
+    qDebug() << "test completed in" << timer.nsecsElapsed() / 1000000
+             << "msec";
+
+    //    // ftz_print_matches(dictionary, "tt 44");
+    //    // ftz_print_matches(dictionary, "44 tt");
+
+    //    for (const auto& patt : patterns) {
+    //        std::cout << "pattern: " << patt << "\n";
+    //        for (const auto& dict : dictionary) {
+    //            std::cout << get_score(dict.data(), patt.data()) << " "
+    //            << dict
+    //                      << "\n";
+    //        }
+    //    }
 
     return 0;
 }
 
+
 class ListItemModel : public QAbstractListModel
 {
+    score_vec_t items;
+
   public:
-    strvec items;
+    void set_items(const strvec& _items) {
+        items.clear();
+        items.reserve(_items.size());
+        for (let it : _items) {
+            items.push_back({it, -1});
+        }
+    }
+
+    score_vec_t* get_scores() {
+        return &items;
+    }
+
+    void print_items() {
+        for (let it : items) {
+            std::cout << "(" << it.second << ") "
+                      << "[" << it.first << "] \n";
+        }
+    }
+
+    void update_scores(const std::string& pattern) {
+        qDebug() << "Updating scores";
+        std::cout << "Using pattern " << pattern << std::endl;
+        const char* patt = pattern.c_str();
+        for (size_t i = 0; i < items.size(); ++i) {
+            int score;
+            if (fts::fuzzy_match(patt, items[i].first.c_str(), score)) {
+                items[i].second = score;
+            } else {
+                items[i].second = -1;
+            }
+        }
+    }
 
     // QAbstractItemModel interface
   public:
@@ -91,39 +169,25 @@ class ListItemModel : public QAbstractListModel
         if (role == Qt::DisplayRole) {
             // It is necessary to return data only for display role for it
             // to be displayed correctly
-            //            qDebug() << "Return base data for row" <<
-            //            index.row();
-            return index.row();
+            return QString::fromStdString(items[index.row()].first);
         } else {
             return QVariant();
         }
-    }
-
-    const std::string& strAt(const int& idx) const {
-        return items.at(idx);
     }
 };
 
 class SearchProxyModel : public QSortFilterProxyModel
 {
     /// Index in source model (row) mapped to score
-    std::vector<int> scores;
-    ListItemModel*   list; /// Pointer to original source model. Stored as
+    score_vec_t*   scores;
+    ListItemModel* list; /// Pointer to original source model. Stored as
                          /// member to avoid expensive dynamic cast on each
                          /// `data()` call. Value of this variable is used
                          /// to determine whether or not `update_scores`
                          /// has been called succesfully earlier.
+    bool initDone = false;
 
   public:
-    inline bool initDone() const {
-        qDebug() << "Init ? " << (list != nullptr);
-        return list != nullptr;
-    }
-
-
-    inline int getscore(int sourceIndex) const {
-        return scores.at(sourceIndex);
-    }
     /// Update item scores for source model using new `pattern`.
     void update_scores(std::string pattern) {
         if (sourceModel() == nullptr) {
@@ -133,8 +197,6 @@ class SearchProxyModel : public QSortFilterProxyModel
                 "error");
         }
 
-        scores.clear();
-        //-- Source model
         list = dynamic_cast<ListItemModel*>(sourceModel());
 
         if (list == nullptr) {
@@ -144,29 +206,9 @@ class SearchProxyModel : public QSortFilterProxyModel
                 "running `setSourceModel()`");
         }
 
-        qDebug() << "Init ok";
-
-
-        //-- Number of items to sort
-        let itemcount = sourceModel()->rowCount();
-        scores.resize(itemcount);
-        //-- iterate over all items and assign new scores to them, store
-        //-- scores in `scores` map for later use
-        for (int i = 0; i < itemcount; ++i) {
-            let idx = qvariant_cast<int>(
-                sourceModel()->data(sourceModel()->index(i, 0)));
-            let data = list->strAt(idx);
-            int score;
-            if (fts::fuzzy_match(pattern.c_str(), data.c_str(), score)) {
-                scores[idx] = score;
-            } else {
-                scores[idx] = -1;
-            }
-        }
-
-        emit dataChanged(
-            sourceModel()->index(0, 0),
-            sourceModel()->index(sourceModel()->rowCount() - 1, 0));
+        scores = list->get_scores();
+        list->update_scores(pattern);
+        initDone = true;
     }
 
 
@@ -179,18 +221,28 @@ class SearchProxyModel : public QSortFilterProxyModel
         int rhs_row = qvariant_cast<int>(
             sourceModel()->data(source_right));
 
-        qDebug() << "zzz";
+        let score_lhs = scores->at(lhs_row).second;
+        let score_rhs = scores->at(rhs_row).second;
 
-        return getscore(lhs_row) > getscore(rhs_row);
+        std::cout << QString("[%1] = %2 > [%3] = %4 : %5")
+                         .arg(lhs_row)
+                         .arg(score_lhs)
+                         .arg(rhs_row)
+                         .arg(score_rhs)
+                         .arg(score_lhs > score_rhs)
+                         .toStdString()
+                  << "\n";
+
+        return score_lhs > score_rhs;
     }
 
     bool filterAcceptsRow(
         int                source_row,
         const QModelIndex& source_parent [[maybe_unused]]) const override {
-        if (initDone()) {
-            return getscore(source_row) > 0;
+        if (initDone) {
+            let sc = scores->at(source_row).second;
+            return sc > 0;
         } else {
-            qDebug() << "Accept all rows before init";
             return true;
         }
     }
@@ -198,21 +250,29 @@ class SearchProxyModel : public QSortFilterProxyModel
     // QAbstractItemModel interface
   public:
     QVariant data(const QModelIndex& index, int role) const override {
-        if (role != Qt::DisplayRole) {
+        if (role == Qt::DisplayRole) {
+            if (list == nullptr) {
+                throw std::logic_error(
+                    "Attempt to call `data()` with `list == nullptr`. "
+                    "Call "
+                    "`update_scores` at least once to fix this error");
+            }
+
+            let sourceIdx = mapToSource(index);
+
+            let item = QString::fromStdString(
+                scores->at(sourceIdx.row()).first);
+            let score = QString("(%1) ").arg(
+                scores->at(sourceIdx.row()).second);
+
+            return score + item;
+        } else if (role == Qt::FontRole) {
+            QFont font;
+            font.setFamily("JetBrains Mono");
+            return font;
+        } else {
             return QVariant();
         }
-
-        if (list == nullptr) {
-            throw std::logic_error(
-                "Attempt to call `data()` with `list == nullptr`. Call "
-                "`update_scores` at least once to fix this error");
-        }
-        //        qDebug() << "Getting proxy data at " << index.row();
-
-        let sourceIdx = mapToSource(index);
-
-        return QString::fromStdString(list->strAt(sourceIdx.row()))
-               + QString("(%1)").arg(getscore(sourceIdx.row()));
     }
 };
 
@@ -234,45 +294,30 @@ int gui_main() {
     auto proxy = new SearchProxyModel();
     auto list  = new ListItemModel();
 
-    strvec dictionary = {"44 TT",       "aaa",          "tt 44",
-                         "aatt 44",     "Due",          "to",
-                         "coronavirus", "outbreak",     "my",
-                         "univesity",   "moved",        "to",
-                         "remote",      "education.",   "Right",
-                         "now",         "there",        "was",
-                         "only",        "announcement", "(couple",
-                         "hours",       "ago)",         "but",
-                         "no",          "additional",   "information.",
-                         "Right",       "now",          "I",
-                         "don't",       "really",       "know",
-                         "what",        "to",           "do",
-                         "either,",     "so",           "I",
-                         "will",        "just",         "wrap",
-                         "up",          "different",    "things",
-                         "from",        "yesterday",    "(fuzzy",
-                         "string",      "matching",     "second",
-                         "algorithm)",  "and",          "then",
-                         "think",       "about",        "different",
-                         "things."};
-    str    patt       = "tt";
-    ftz_print_matches(dictionary, patt);
+    strvec dictionary;
 
-    list->items = dictionary;
+    std::ifstream infile("/tmp/thefile.txt");
+    str           buf;
+    while (std::getline(infile, buf)) {
+        dictionary.push_back(buf);
+    }
 
+    qDebug() << "Filtering on " << dictionary.size() << " items\n";
 
+    str patt = "tt";
+    list->set_items(dictionary);
     proxy->setSourceModel(list);
     view->setModel(proxy);
 
     proxy->update_scores(patt);
     proxy->setDynamicSortFilter(false);
-
     proxy->sort(0);
 
     lyt->addWidget(view);
 
     QObject::connect(
         input, &QLineEdit::textChanged, [proxy](const QString& text) {
-            qDebug() << "Enetered search for " << text;
+            qDebug() << "sorting ...";
             str patt = text.toStdString();
             proxy->update_scores(patt);
             proxy->sort(0);
@@ -283,9 +328,11 @@ int gui_main() {
 
     window.show();
     return app.exec();
+    return 0;
 }
 
 int main() {
 
     return gui_main();
+    //    return cli_main();
 }
