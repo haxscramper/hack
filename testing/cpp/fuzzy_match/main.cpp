@@ -107,12 +107,23 @@ class ListItemModel : public QAbstractListModel
 class SearchProxyModel : public QSortFilterProxyModel
 {
     /// Index in source model (row) mapped to score
-    std::unordered_map<int, int> scores;
-    ListItemModel* list; /// Pointer to original source model. Stored as
+    std::vector<int> scores;
+    ListItemModel*   list; /// Pointer to original source model. Stored as
                          /// member to avoid expensive dynamic cast on each
-                         /// `data()` call
+                         /// `data()` call. Value of this variable is used
+                         /// to determine whether or not `update_scores`
+                         /// has been called succesfully earlier.
 
   public:
+    inline bool initDone() const {
+        qDebug() << "Init ? " << (list != nullptr);
+        return list != nullptr;
+    }
+
+
+    inline int getscore(int sourceIndex) const {
+        return scores.at(sourceIndex);
+    }
     /// Update item scores for source model using new `pattern`.
     void update_scores(std::string pattern) {
         if (sourceModel() == nullptr) {
@@ -133,9 +144,12 @@ class SearchProxyModel : public QSortFilterProxyModel
                 "running `setSourceModel()`");
         }
 
+        qDebug() << "Init ok";
+
 
         //-- Number of items to sort
         let itemcount = sourceModel()->rowCount();
+        scores.resize(itemcount);
         //-- iterate over all items and assign new scores to them, store
         //-- scores in `scores` map for later use
         for (int i = 0; i < itemcount; ++i) {
@@ -143,9 +157,16 @@ class SearchProxyModel : public QSortFilterProxyModel
                 sourceModel()->data(sourceModel()->index(i, 0)));
             let data = list->strAt(idx);
             int score;
-            fts::fuzzy_match(pattern.c_str(), data.c_str(), score);
-            scores[idx] = score;
+            if (fts::fuzzy_match(pattern.c_str(), data.c_str(), score)) {
+                scores[idx] = score;
+            } else {
+                scores[idx] = -1;
+            }
         }
+
+        emit dataChanged(
+            sourceModel()->index(0, 0),
+            sourceModel()->index(sourceModel()->rowCount() - 1, 0));
     }
 
 
@@ -158,7 +179,20 @@ class SearchProxyModel : public QSortFilterProxyModel
         int rhs_row = qvariant_cast<int>(
             sourceModel()->data(source_right));
 
-        return scores.at(lhs_row) < scores.at(rhs_row);
+        qDebug() << "zzz";
+
+        return getscore(lhs_row) > getscore(rhs_row);
+    }
+
+    bool filterAcceptsRow(
+        int                source_row,
+        const QModelIndex& source_parent [[maybe_unused]]) const override {
+        if (initDone()) {
+            return getscore(source_row) > 0;
+        } else {
+            qDebug() << "Accept all rows before init";
+            return true;
+        }
     }
 
     // QAbstractItemModel interface
@@ -178,7 +212,7 @@ class SearchProxyModel : public QSortFilterProxyModel
         let sourceIdx = mapToSource(index);
 
         return QString::fromStdString(list->strAt(sourceIdx.row()))
-               + QString(" score is (%1)").arg(scores.at(sourceIdx.row()));
+               + QString("(%1)").arg(getscore(sourceIdx.row()));
     }
 };
 
@@ -189,34 +223,60 @@ int gui_main() {
     QMainWindow  window;
     auto         lyt = new QVBoxLayout();
 
-    {
 
-        auto input = new QLineEdit();
+    auto input = new QLineEdit();
 
-        input->setMaximumHeight(120);
+    input->setMaximumHeight(120);
 
-        lyt->addWidget(input);
-    }
+    lyt->addWidget(input);
 
-    {
-        auto view  = new QListView();
-        auto proxy = new SearchProxyModel();
-        auto list  = new ListItemModel();
+    auto view  = new QListView();
+    auto proxy = new SearchProxyModel();
+    auto list  = new ListItemModel();
 
-        strvec dictionary = {"44 TT", "aaa", "tt 44", "aatt 44"};
-        str    patt       = "tt";
-        ftz_print_matches(dictionary, patt);
+    strvec dictionary = {"44 TT",       "aaa",          "tt 44",
+                         "aatt 44",     "Due",          "to",
+                         "coronavirus", "outbreak",     "my",
+                         "univesity",   "moved",        "to",
+                         "remote",      "education.",   "Right",
+                         "now",         "there",        "was",
+                         "only",        "announcement", "(couple",
+                         "hours",       "ago)",         "but",
+                         "no",          "additional",   "information.",
+                         "Right",       "now",          "I",
+                         "don't",       "really",       "know",
+                         "what",        "to",           "do",
+                         "either,",     "so",           "I",
+                         "will",        "just",         "wrap",
+                         "up",          "different",    "things",
+                         "from",        "yesterday",    "(fuzzy",
+                         "string",      "matching",     "second",
+                         "algorithm)",  "and",          "then",
+                         "think",       "about",        "different",
+                         "things."};
+    str    patt       = "tt";
+    ftz_print_matches(dictionary, patt);
 
-        list->items = dictionary;
+    list->items = dictionary;
 
 
-        proxy->setSourceModel(list);
-        view->setModel(proxy);
+    proxy->setSourceModel(list);
+    view->setModel(proxy);
 
-        proxy->update_scores(patt);
+    proxy->update_scores(patt);
+    proxy->setDynamicSortFilter(false);
 
-        lyt->addWidget(view);
-    }
+    proxy->sort(0);
+
+    lyt->addWidget(view);
+
+    QObject::connect(
+        input, &QLineEdit::textChanged, [proxy](const QString& text) {
+            qDebug() << "Enetered search for " << text;
+            str patt = text.toStdString();
+            proxy->update_scores(patt);
+            proxy->sort(0);
+        });
 
     window.setCentralWidget(new QWidget());
     window.centralWidget()->setLayout(lyt);
