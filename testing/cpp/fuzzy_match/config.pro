@@ -5,3 +5,6 @@ SOURCES += main.cpp
 
 DISTFILES += \
     thefile.txt
+
+HEADERS += \
+    scratch.hpp

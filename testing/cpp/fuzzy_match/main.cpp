@@ -34,90 +34,6 @@ using str      = std::string;
 
 using score_vec_t = std::vector<std::pair<const std::string, int>>;
 
-matchvec ftz_sort_scored(strvec& dictionary, const str& pattern) {
-    matchvec matches;
-    int      score;
-    for (auto&& entry : dictionary) {
-        if (fts::fuzzy_match(pattern.c_str(), entry.c_str(), score)) {
-            matches.emplace_back(score, &entry);
-        }
-    }
-
-    std::sort(matches.begin(), matches.end(), [](auto&& a, auto&& b) {
-        return a.first > b.first;
-    });
-
-    return matches;
-}
-
-void ftz_print_matches(strvec& dictionary, const str& pattern) {
-    std::cout << "matching against '" << pattern << "'\n";
-    for (const score& res : ftz_sort_scored(dictionary, pattern)) {
-        std::cout << res.first << "  " << *res.second << "\n";
-    }
-}
-
-int cli_main() {
-    //#define use_pairs
-
-#ifdef use_pairs
-    std::vector<std::pair<const std::string, int>> items;
-#else
-    std::vector<std::string> items;
-#endif
-
-
-    std::ifstream infile("/tmp/thefile.txt");
-    str           buf;
-    while (std::getline(infile, buf)) {
-#ifdef use_pairs
-        items.push_back({buf, -1});
-#else
-        items.push_back(buf);
-#endif
-    }
-
-
-    qDebug() << "Running on " << items.size() << " items";
-
-    QElapsedTimer timer;
-    timer.start();
-    strvec patterns = {"QtCreator", "Nim", "tt"};
-    for (let patt : patterns) {
-        std::cout << "Pattern is " << patt << std::endl;
-        for (auto& item : items) {
-#ifdef use_pairs
-            fts::fuzzy_match(
-                patt.c_str(), item.first.c_str(), item.second);
-            std::cout << "(" << item.second << ") " << item.first
-                      << std::endl;
-#else
-            int score;
-            fts::fuzzy_match(patt.c_str(), item.c_str(), score);
-            std::cout << "(" << item << ") " << score << std::endl;
-#endif
-        }
-    }
-
-    qDebug() << "test completed in" << timer.nsecsElapsed() / 1000000
-             << "msec";
-
-    //    // ftz_print_matches(dictionary, "tt 44");
-    //    // ftz_print_matches(dictionary, "44 tt");
-
-    //    for (const auto& patt : patterns) {
-    //        std::cout << "pattern: " << patt << "\n";
-    //        for (const auto& dict : dictionary) {
-    //            std::cout << get_score(dict.data(), patt.data()) << " "
-    //            << dict
-    //                      << "\n";
-    //        }
-    //    }
-
-    return 0;
-}
-
-
 class ListItemModel : public QAbstractListModel
 {
     score_vec_t items;
@@ -135,13 +51,6 @@ class ListItemModel : public QAbstractListModel
         return &items;
     }
 
-    void print_items() {
-        for (let it : items) {
-            std::cout << "(" << it.second << ") "
-                      << "[" << it.first << "] \n";
-        }
-    }
-
     void update_scores(const std::string& pattern) {
         qDebug() << "Updating scores";
         std::cout << "Using pattern " << pattern << std::endl;
@@ -156,7 +65,6 @@ class ListItemModel : public QAbstractListModel
         }
     }
 
-    // QAbstractItemModel interface
   public:
     int rowCount(const QModelIndex& parent
                  [[maybe_unused]]) const override {
@@ -165,10 +73,7 @@ class ListItemModel : public QAbstractListModel
 
     QVariant data(const QModelIndex& index, int role [[maybe_unused]])
         const override {
-        //        return items[index.row()];
         if (role == Qt::DisplayRole) {
-            // It is necessary to return data only for display role for it
-            // to be displayed correctly
             return QString::fromStdString(items[index.row()].first);
         } else {
             return QVariant();
@@ -178,62 +83,28 @@ class ListItemModel : public QAbstractListModel
 
 class SearchProxyModel : public QSortFilterProxyModel
 {
-    /// Index in source model (row) mapped to score
     score_vec_t*   scores;
-    ListItemModel* list; /// Pointer to original source model. Stored as
-                         /// member to avoid expensive dynamic cast on each
-                         /// `data()` call. Value of this variable is used
-                         /// to determine whether or not `update_scores`
-                         /// has been called succesfully earlier.
-    bool initDone = false;
+    ListItemModel* list;
+    bool           initDone = false;
 
   public:
-    /// Update item scores for source model using new `pattern`.
     void update_scores(std::string pattern) {
-        if (sourceModel() == nullptr) {
-            throw std::logic_error(
-                "Attempt to call `update_scores` without source model - "
-                "call `setSourceModel` with approproate value to fix this "
-                "error");
-        }
-
         list = dynamic_cast<ListItemModel*>(sourceModel());
-
-        if (list == nullptr) {
-            throw std::logic_error(
-                "Attempt to use item model that is not `ListItemMode` - "
-                "use only classes derived from `ListItemModel` when "
-                "running `setSourceModel()`");
-        }
 
         scores = list->get_scores();
         list->update_scores(pattern);
+        this->invalidateFilter();
         initDone = true;
     }
 
 
-    // QSortFilterProxyModel interface
   protected:
     bool lessThan(
         const QModelIndex& source_left,
         const QModelIndex& source_right) const override {
-        int lhs_row = qvariant_cast<int>(sourceModel()->data(source_left));
-        int rhs_row = qvariant_cast<int>(
-            sourceModel()->data(source_right));
 
-        let score_lhs = scores->at(lhs_row).second;
-        let score_rhs = scores->at(rhs_row).second;
-
-        std::cout << QString("[%1] = %2 > [%3] = %4 : %5")
-                         .arg(lhs_row)
-                         .arg(score_lhs)
-                         .arg(rhs_row)
-                         .arg(score_rhs)
-                         .arg(score_lhs > score_rhs)
-                         .toStdString()
-                  << "\n";
-
-        return score_lhs > score_rhs;
+        return scores->at(source_left.row()).second
+               > scores->at(source_right.row()).second;
     }
 
     bool filterAcceptsRow(
@@ -247,7 +118,6 @@ class SearchProxyModel : public QSortFilterProxyModel
         }
     }
 
-    // QAbstractItemModel interface
   public:
     QVariant data(const QModelIndex& index, int role) const override {
         if (role == Qt::DisplayRole) {
