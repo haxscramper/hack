@@ -7,4 +7,5 @@ DISTFILES += \
     thefile.txt
 
 HEADERS += \
-    scratch.hpp
+    scratch.hpp \
+    textinputfield.hpp

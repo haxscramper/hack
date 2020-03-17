@@ -4,6 +4,8 @@
 #include <QApplication>
 #include <QDebug>
 #include <QElapsedTimer>
+#include <QKeyEvent>
+#include <QLabel>
 #include <QLineEdit>
 #include <QListView>
 #include <QMainWindow>
@@ -24,6 +26,8 @@
 #include <unordered_map>
 #include <vector>
 
+#include "textinputfield.hpp"
+
 #define let const auto
 #define var auto
 
@@ -33,6 +37,7 @@ using strvec   = std::vector<std::string>;
 using str      = std::string;
 
 using score_vec_t = std::vector<std::pair<const std::string, int>>;
+
 
 class ListItemModel : public QAbstractListModel
 {
@@ -81,6 +86,17 @@ class ListItemModel : public QAbstractListModel
     }
 };
 
+QElapsedTimer make_timer() {
+    QElapsedTimer res;
+    res.start();
+    return res;
+}
+
+void logTimer(QElapsedTimer& timer, QString msg) {
+    qDebug() << msg << timer.nsecsElapsed() / 1000000 << " msecs";
+    timer.restart();
+}
+
 class SearchProxyModel : public QSortFilterProxyModel
 {
     score_vec_t*   scores;
@@ -92,7 +108,10 @@ class SearchProxyModel : public QSortFilterProxyModel
         list = dynamic_cast<ListItemModel*>(sourceModel());
 
         scores = list->get_scores();
+
+
         list->update_scores(pattern);
+
         this->invalidateFilter();
         initDone = true;
     }
@@ -112,9 +131,9 @@ class SearchProxyModel : public QSortFilterProxyModel
         const QModelIndex& source_parent [[maybe_unused]]) const override {
         if (initDone) {
             let sc = scores->at(source_row).second;
-            return sc > 0;
+            return sc > 0 && source_row < 200;
         } else {
-            return true;
+            return source_row < 200;
         }
     }
 
@@ -159,7 +178,7 @@ int gui_main() {
     auto         lyt = new QVBoxLayout();
 
 
-    auto input = new QLineEdit();
+    auto input = new TextInputField();
 
     input->setMaximumHeight(120);
 
@@ -171,32 +190,77 @@ int gui_main() {
 
     strvec dictionary;
 
-    std::ifstream infile("/tmp/thefile.txt");
-    str           buf;
-    while (std::getline(infile, buf)) {
-        dictionary.push_back(buf);
+    { // Load dataset from file
+        std::ifstream infile("/tmp/thefile.txt");
+        str           buf;
+        while (std::getline(infile, buf)) {
+            dictionary.push_back(buf);
+        }
+        qDebug() << "Filtering on " << dictionary.size() << " items\n";
     }
 
-    qDebug() << "Filtering on " << dictionary.size() << " items\n";
 
-    str patt = "tt";
-    list->set_items(dictionary);
-    proxy->setSourceModel(list);
-    view->setModel(proxy);
+    { // Setup model, proxy and update scores
+        str patt = "tt";
+        list->set_items(dictionary);
+        proxy->setSourceModel(list);
+        view->setModel(proxy);
 
-    proxy->update_scores(patt);
-    proxy->setDynamicSortFilter(false);
-    proxy->sort(0);
+        proxy->update_scores(patt);
+        proxy->setDynamicSortFilter(false);
+        proxy->sort(0);
+    }
+
+    auto  warnlbl = new QLabel();
+    QFont font;
+    font.setFamily("JetBrains Mono");
+    warnlbl->setFont(font);
+    warnlbl->setStyleSheet(
+        "QLabel { background-color : rgb(100%, 0%, 0%, 60%); }");
+    warnlbl->setAlignment(Qt::AlignCenter);
+    warnlbl->setMinimumHeight(36);
+
+    lyt->addWidget(warnlbl);
+
 
     lyt->addWidget(view);
 
+    //    warnlbl->addx
+
+    auto runSort = [warnlbl, proxy, &dictionary](const QString& text) {
+        auto timer = make_timer();
+        str  patt  = text.toStdString();
+        proxy->update_scores(patt);
+        let score_time = timer.nsecsElapsed();
+        timer.restart();
+        proxy->sort(0);
+
+        let sort_time = timer.nsecsElapsed();
+
+        warnlbl->setText(QString("Sorted list of %1 items in %2 msec. "
+                                 "Score update in %3 msec")
+                             .arg(dictionary.size())
+                             .arg(sort_time / 1000000.0)
+                             .arg(score_time / 1000000.0));
+    };
+
     QObject::connect(
-        input, &QLineEdit::textChanged, [proxy](const QString& text) {
-            qDebug() << "sorting ...";
-            str patt = text.toStdString();
-            proxy->update_scores(patt);
-            proxy->sort(0);
+        input,
+        &QLineEdit::textChanged,
+        [warnlbl, &dictionary, runSort](const QString& text) {
+            if (dictionary.size() > 100000) {
+                warnlbl->setText(QString("Searching in list of %1 items - "
+                                         "press enter to update")
+                                     .arg(dictionary.size()));
+            } else {
+                runSort(text);
+            }
         });
+
+    QObject::connect(
+        input,
+        &TextInputField::ctrlEnterPressed,
+        [runSort](const QString& text) { runSort(text); });
 
     window.setCentralWidget(new QWidget());
     window.centralWidget()->setLayout(lyt);
