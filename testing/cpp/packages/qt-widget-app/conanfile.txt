@@ -1,0 +1,5 @@
+[requires]
+qt-widget-lib/0.1@demo/testing
+
+[generators]
+qmake
