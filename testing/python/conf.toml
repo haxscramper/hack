@@ -1,0 +1,17 @@
+[pckgconfig]
+name = "testpackage"
+version = "0.1"
+user = "demo"
+channel = "testing"
+
+[buildconfig]
+build_system = "qmake"
+copy_to_build = [ "*.hpp", "*.cpp", "*.pro" ]
+libtype = "static"
+
+[exportconfig]
+library_folder = "lib"
+library_globs = [ "*.a" ]
+
+header_folder = "include/libname"
+header_globs = [ "*.hpp" ]
