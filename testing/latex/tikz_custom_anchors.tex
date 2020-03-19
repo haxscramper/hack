@@ -1,0 +1,23 @@
+\documentclass[tikz, border=1mm]{standalone}
+\usepackage{tikz}
+
+\tikzset{
+  DFF/.pic={
+    \draw (0,0) rectangle (2,2);
+    \draw [ultra thick, blue] (0,1) -- (-1,1) node {} coordinate (-input);
+    \draw [ultra thick, red] (2,1) -- (3,1) node {} coordinate (-output);
+  }
+}
+
+\begin{document}
+
+\tikz{
+\pic (a) at (0, 0) {DFF};
+\pic (b) at (5, 5) {DFF};
+
+\foreach \p in {-output, -input}{
+  \draw [ultra thick, orange] (a\p) -- (b\p);
+}
+}
+
+\end{document}

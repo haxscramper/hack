@@ -2,9 +2,6 @@
 
 from conans import ConanFile
 
-common = None
-
-
 common = __import__("conan_toml")
 
 # if __name__ == '__main__':

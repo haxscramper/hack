@@ -39,6 +39,18 @@ using str      = std::string;
 using score_vec_t = std::vector<std::pair<const std::string, int>>;
 
 
+QElapsedTimer make_timer() {
+    QElapsedTimer res;
+    res.start();
+    return res;
+}
+
+void logTimer(QElapsedTimer& timer, QString msg) {
+    qDebug() << msg << timer.nsecsElapsed() / 1000000 << " msecs";
+    timer.restart();
+}
+
+
 class ListItemModel : public QAbstractListModel
 {
     score_vec_t items;
@@ -58,8 +70,8 @@ class ListItemModel : public QAbstractListModel
 
     void update_scores(const std::string& pattern) {
         qDebug() << "Updating scores";
-        std::cout << "Using pattern " << pattern << std::endl;
-        const char* patt = pattern.c_str();
+        var         timer = make_timer();
+        const char* patt  = pattern.c_str();
         for (size_t i = 0; i < items.size(); ++i) {
             int score;
             if (fts::fuzzy_match(patt, items[i].first.c_str(), score)) {
@@ -68,6 +80,7 @@ class ListItemModel : public QAbstractListModel
                 items[i].second = -1;
             }
         }
+        logTimer(timer, "sort algo ");
     }
 
   public:
@@ -85,17 +98,6 @@ class ListItemModel : public QAbstractListModel
         }
     }
 };
-
-QElapsedTimer make_timer() {
-    QElapsedTimer res;
-    res.start();
-    return res;
-}
-
-void logTimer(QElapsedTimer& timer, QString msg) {
-    qDebug() << msg << timer.nsecsElapsed() / 1000000 << " msecs";
-    timer.restart();
-}
 
 class SearchProxyModel : public QSortFilterProxyModel
 {

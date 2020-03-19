@@ -86,31 +86,3 @@ func allSubsets*[T](elements: seq[T], emptyset: bool = false): seq[seq[T]] =
     result.add buff
 
     inc counter
-
-template anyofIt*(sequence: typed, predicate: untyped): bool =
-  ## Return `true` if for any of the items in sequence `predicate`
-  ## evaluates as `true`. Otherwise return false.
-  var result = false
-  for it {.inject.} in sequence:
-    if predicate:
-      result = true
-
-  result
-
-proc max*[T](x: openArray[T], default: T): T =
-  ## The maximum value of `x`. ``T`` needs to have a ``<`` operator.
-  ## use `default` as starting value for comparison.
-  result = default
-  for i in x:
-    if result < i: result = i
-
-template findIt*(s: typed, op: untyped): int =
-  ##[ Find first element of the sequence for which `op` evaluates as
-  true and return it's index. If no such element is found return -1
-  ]##
-
-  var result = -1
-  for idx, it {.inject.} in s:
-    if op: result = idx; break
-
-  result
