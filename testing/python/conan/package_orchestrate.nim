@@ -14,11 +14,62 @@ import strutils
 # are missing ask user to provide input.
 
 const cppnames = @["c++", "cpp", "cxx"]
-const testing = true
+var testing = true
 
 proc showError(msgs: varargs[string, `$`]) = ceUserError0("PCR: " & msgs.join(" "))
 proc showLog(msgs: varargs[string, `$`]) = ceUserLog0("PCR: " & msgs.join(" "))
 proc showInfo(msgs: varargs[string, `$`]) = ceUserInfo2("PCR: " & msgs.join(" "))
+proc showWarn(msgs: varargs[string, `$`]) = ceUserWarn("PCR: " & msgs.join(" "))
+
+template optOrDefault(optname: untyped, default: string): string =
+  if optname.kp(): optname.k().toStr()
+  else: default
+
+
+
+proc strvalOrDie(conf: TomlValueRef, path: seq[string]): string =
+  var current: seq[string]
+  var nodenow = conf
+  for sub in path:
+    current.add sub
+    if nodenow.hasKey(sub):
+      nodenow = nodenow[sub]
+    else:
+      let jpath = current.mapIt(&"[\"{it}\"]").join("")
+      showError(&"Confguration is missing key at path {jpath}")
+      quit 1
+
+  result = nodenow.getStr()
+
+proc strvalOrDie(conf: TomlValueRef, key: string): string =
+  strvalOrDie(conf, @[key])
+
+
+proc strvalOrDefault(
+  conf: TomlValueRef,
+  path: seq[string],
+  default: string,
+  logVal = true
+     ): string =
+  var current: seq[string]
+  var nodenow = conf
+  for sub in path:
+    current.add sub
+    if nodenow.hasKey(sub):
+      nodenow = nodenow[sub]
+    else:
+      let jpath = current.mapIt(&"[\"{it}\"]").join("")
+      showWarn(&"Confguration is missing key at path {jpath}, using default value {default}")
+      return default
+
+  result = nodenow.getStr()
+  if logVal:
+    let jpath = current.mapIt(&"[\"{it}\"]").join("")
+    showInfo(&"Configuration has value of \"{result}\" on path {jpath}")
+
+const printNone: set[DebugOutputKind] = {}
+const printCommand: set[DebugOutputKind] = {dokCommand}
+
 
 type CmdTable = Table[string, CmdArg]
 
@@ -35,16 +86,31 @@ proc parseCmdline(): (seq[string], CmdTable) =
       takes: concat(cppnames)
     opt:
       name: "name"
-      opt: ["--name", "+take_value"]
+      opt: ["--name", "+takes_value"]
       help: "Name of the package"
-
-  when testing:
-    argParsed = @["create"]
+    opt:
+      name: "version"
+      opt: ["--version", "+takes_value"]
+      help: "Starting version of the package"
+    opt:
+      name: "type"
+      opt: ["--type", "+takes_value"]
+      help: "Type of the package (library/app)"
+      takes: @["staticlib", "app", "library"]
+    opt:
+      name: "buildsystem"
+      opt: ["--buildsystem", "+takes_value"]
+      help: "Build system to use for the package"
+      takes: @["qmake"]
+    opt:
+      name: "testing"
+      opt: ["--testing", "+takes_value"]
+      help: "Run in test mode - ! ONLY FOR DEVELOPMENT PURPOSES !"
+      takes: @["true", "false"]
 
   result = (argParsed, optParsed)
 
-func parseCmdArgImpl(arg: CmdArg, t: string): string =
-  return "test"
+func parseCmdArgImpl(arg: CmdArg, t: string): string = arg.vals.join()
 
 template parseCmdArg(arg, typespec: untyped): untyped =
   var typeSelector: typespec
@@ -163,14 +229,15 @@ proc createQmakeCppExample(ptype, project: string) =
     [meta]
     language = "c++"
 
-    [pckgconfig]
+    [pkgconfig]
     name = "{project}"
     version = "0.1"
-    user = "demo"
+    user = "author"
     channel = "testing"
     package_type = "library"
 
     [buildconfig]
+    package_manager = "conan"
     conan_build_folder = "build"
     conan_reqs_folder = "conan"
     build_system = "qmake"
@@ -202,11 +269,11 @@ proc createCppPackage(optParsed: CmdTable) =
     pkgname = name
     pkgversion = version
     createConanfile()
-    shell:
+    let (res, err, code) = shellVerboseErr {dokCommand}:
       # conan new ($pkgname)/($version)
-      conan install "." --install-folder install
+      conan install ". --install-folder install"
   else:
-    when testing:
+    if testing:
       pkgname = "exampleqt"
       createConanfile()
     else:
@@ -214,10 +281,14 @@ proc createCppPackage(optParsed: CmdTable) =
 
   withopt ("type", "buildsystem") as (ptype[string], buildsystem[string]):
     case buildsystem:
-      of "qmake": createQmakeCppExample(ptype, pkgname)
+      of "qmake":
+        showLog(&"Creating qmake {ptype} package")
+        createQmakeCppExample(ptype, pkgname)
+      else:
+        showError(&"Unknown build system '{buildsystem}'")
 
   else:
-    when testing:
+    if testing:
       createQmakeCppExample("staticlib", "exampleqt")
       shell:
         conan install ". --install-folder install"
@@ -232,28 +303,159 @@ proc createCppPackage(optParsed: CmdTable) =
 
 proc createPackage(optParsed: CmdTable) =
   showLog("Creating package")
-
-
   withopt "lang" as lang:
     if lang.toStr() in cppnames:
       createCppPackage(optParsed)
   else:
-    when testing:
+    if testing:
       createCppPackage(optParsed)
     else:
       showError("Missing 'lang' option from configuration")
 
+proc testPackage(optParsed: CmdTable) =
+  showLog("Testing package")
+
+
+proc publishConanCppPackage(optParsed: CmdTable, tomlconf: TomlValueRef): void =
+  showLog("Publishing conan package")
+
+  let builddir = tomlconf.strvalOrDefault(
+    @["buildconfig", "conan_build_folder"], "build")
+
+  let reqsdir = tomlconf.strvalOrDefault(
+    @["buildconfig", "conan_reqs_folder"], "conan")
+
+  let pkgname = tomlconf.strvalOrDie(@["pkgconfig", "name"])
+  let version = tomlconf.strvalOrDie(@["pkgconfig", "version"])
+  let channel = tomlconf.strvalOrDefault(@["pkgconfig", "channel"], "testing")
+  let author = tomlconf.strvalOrDefault(@["pkgconfig", "author"], "demo")
+  let remote = tomlconf.strvalOrDefault(@["pkgconfig", "remote"], "local")
+  let reference = pkgname & "/" & version
+  showInfo(&"Package refrence is '{reference}'")
+
+
+  showInfo(&"""
+  Publishing conan package. Build dir is '{builddir}', conan configuration
+  will be taken from '{reqsdir}'
+  """)
+
+  block: # Copy to local cache
+    let (res, err, code) = shellVerboseErr printCommand:
+      conan "export ."
+
+    if code != 0:
+      showError("Error while running 'conan export'. Output:")
+      echo res
+      echo err
+      quit 1
+
+    else:
+      showLog(&"""
+      Succesfully copied recipe to local cache.
+      """)
+
+  block: # Build binary package for recipe
+    let (res, err, code) = shellVerboseErr printCommand:
+      conan "create" ("--test-build-folder="$builddir) "." ($reference)
+
+    if code != 0:
+      showError("Error while running 'conan create'. Output:")
+      echo res
+      echo err
+      quit 1
+
+    else:
+      showLog(&"""Succesfully ran 'conan create'.""")
+
+  block: # Upload binary packge to remote
+    let (res, err, code) = shellVerboseErr printCommand:
+      conan "upload" ("-r="$remote) "--confirm" ($reference)
+
+    if code != 0:
+      showError("Error while running 'conan uplload'. Output:")
+      echo res
+      echo err
+
+    else:
+      showLog(&"""Succesfully ran 'conan upload'.""")
+
+
+
+proc publishPackage(optParsed: CmdTable) =
+  showLog("Publishing package")
+
+  showInfo("Current directory is", getCurrentDir())
+  let conffile = optOrDefault("conffile", "conffile.toml")
+  showInfo("Using configuration file", conffile)
+  let tomlconf = conffile.readFile().string().parseString()
+
+  let lang = tomlconf["meta"]["language"].getStr()
+  let pacman = tomlconf["buildconfig"]["package_manager"].getStr()
+
+  if lang in cppnames:
+    case pacman:
+      of "conan": publishConanCppPackage(optParsed, tomlconf)
+
+proc buildConanCppPackage(optParsed: CmdTable, tomlconf: TomlValueRef): void =
+  showLog("Building conan package")
+  let builddir = tomlconf.strvalOrDefault(@["buildconfig", "conan_build_folder"], "build")
+  let reqsdir = tomlconf.strvalOrDefault(@["buildconfig", "conan_reqs_folder"], "conan")
+
+  showInfo(&"""
+  Running 'conan build'. Build dir is '{builddir}', conan configuration
+  will be taken from '{reqsdir}'
+  """)
+
+  let (res, err, code) = shellVerboseErr printNone:
+    conan build "." ("--build-folder="$builddir) ("--install-folder="$reqsdir)
+
+  if code != 0:
+    showError("Error while running 'conan build'. Output:")
+    echo res
+    echo err
+
+  else:
+    showLog(&"""
+    Succesfully ran 'conan build'. Build artifacts are now located in the
+    '{builddir}' directory.
+    """)
+
+proc buildPackage(optParsed: CmdTable) =
+  showLog("Building package")
+  showInfo("Current directory is", getCurrentDir())
+  let conffile = optOrDefault("conffile", "conffile.toml")
+  showInfo("Using configuration file", conffile)
+  let tomlconf = conffile.readFile().string().parseString()
+
+  let lang = tomlconf["meta"]["language"].getStr()
+  let pacman = tomlconf["buildconfig"]["package_manager"].getStr()
+
+  if lang in cppnames:
+    case pacman:
+      of "conan": buildConanCppPackage(optParsed, tomlconf)
+
 proc main() =
   let (argParsed, optParsed) = parseCmdline()
-  when testing:
-    removeDir("/tmp/conan")
-    createDir("/tmp/conan")
-    setCurrentDir("/tmp/conan")
+  for k, v in optParsed:
+    showLog(&"{k}: {v.vals.join()}")
+
+  if "testing".kp():
+    testing = "testing".k().toStr() == "true"
+
+  if testing:
+    # removeDir("/tmp/conan")
+    # createDir("/tmp/conan")
+    setCurrentDir("/tmp/qt-test")
+    publishPackage(optParsed)
+
   if argParsed.len() < 1:
     showError("Missing command")
   else:
     case argParsed[0]:
       of "create": createPackage(optParsed)
+      of "build": buildPackage(optParsed)
+      of "publish": publishPackage(optParsed)
+      of "test": testPackage(optParsed)
 
 when isMainModule:
   main()

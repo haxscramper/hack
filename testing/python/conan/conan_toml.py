@@ -78,7 +78,7 @@ class TomlConfPackage(ConanFile):
     def read_config(self, path):
         self.conf = toml.load(path)
 
-        with WithWrap(self.conf["pckgconfig"]) as pconf:
+        with WithWrap(self.conf["pkgconfig"]) as pconf:
             if "name" in pconf:
                 self.name = pconf["name"]
             else:
