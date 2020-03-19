@@ -6,6 +6,7 @@ from conans.client.output import ConanOutput
 from typing import List
 
 import toml
+import os
 import sys
 
 class WithWrap(object):
@@ -55,10 +56,41 @@ class TomlConfPackage(ConanFile):
     library_folder: str = ""
     "Location of the library files (.a) in exported project"
     libtype: str = ""
-    "Type of the library (static/shared/header-only etc.)"
+    "Type of the library (static/shared/header-only/simple-linked etc.)"
+
+    def __init__(self, output, runner,
+                 display_name = "", user = None, channel = None):
+
+        super().__init__(output, runner, display_name, user, channel)
+        if hasattr(self, "conffile"):
+            configLog(f"Using custom config file {self.conffile}")
+            self.read_config(self.conffile)
+        else:
+            configWarn("Using default configurat file 'conffile.toml'")
+            self.read_config("conffile.toml")
+
+    def debugrun(self, command: str) -> None:
+        print("run:", command)
+        print("cwd:", os.getcwd())
+        self.run(command)
+        print("---")
 
     def read_config(self, path):
         self.conf = toml.load(path)
+
+        with WithWrap(self.conf["pckgconfig"]) as pconf:
+            if "name" in pconf:
+                self.name = pconf["name"]
+            else:
+                configError("Missing 'name' from package configuration")
+
+            if "version" in pconf:
+                self.version = pconf["version"]
+            else:
+                configError("Missing 'version' from package configuration")
+
+            # TODO Add description, settings, options etc.
+
         with WithWrap(self.conf["buildconfig"]) as bconf:
             if "copy_to_build" in bconf:
                 self.exports_sources = bconf["copy_to_build"]
@@ -116,8 +148,10 @@ class TomlConfPackage(ConanFile):
 
     def build(self):
         found_qmake = False
+        print("content of the build directory:")
         for root, dirs, files in os.walk("."):
             for name in files:
+                print(name)
                 if name.endswith(".pro"):
                     found_qmake = True
 
@@ -130,7 +164,8 @@ class TomlConfPackage(ConanFile):
             # Fuck, we need to manually specify path to the conan root because
             # now we are certainly doing `conan build` - isn't it wonderful
             # that I have to use all this weird-ass bullshit to just find out
-            # how to build my package?
+            # how my package is being built aka 'we support many different
+            # build systems'?
             self.debugrun("qmake " + os.path.join(conanfile_dir, self.name + ".pro"))
 
         self.run("make --quiet -j4")
@@ -139,5 +174,3 @@ class TomlConfPackage(ConanFile):
 if __name__ == '__main__':
     output = ConanOutput(sys.stdout)
     test = TomlConfPackage(output = output, runner = None)
-    test.read_config("conf.toml")
-    print("hello")

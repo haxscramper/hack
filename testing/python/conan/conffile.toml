@@ -3,15 +3,21 @@ name = "testpackage"
 version = "0.1"
 user = "demo"
 channel = "testing"
+package_type = "library"
 
 [buildconfig]
+# Use qmake to build package
 build_system = "qmake"
+# Files that will be copied to build directory
 copy_to_build = [ "*.hpp", "*.cpp", "*.pro" ]
+# Type of the library to build
 libtype = "static"
 
 [exportconfig]
-library_folder = "lib"
+# Glob for files that will be copied into exported package
 library_globs = [ "*.a" ]
 
+# Folder to copy header files into
 header_folder = "include/libname"
+# Glob for header files
 header_globs = [ "*.hpp" ]
