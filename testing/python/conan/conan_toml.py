@@ -158,14 +158,8 @@ class TomlConfPackage(ConanFile):
         conanfile_dir = os.path.dirname(os.path.realpath(__file__))
 
         if found_qmake:
-            # Looks like we are doing `conan create`
             self.debugrun("qmake")
         else:
-            # Fuck, we need to manually specify path to the conan root because
-            # now we are certainly doing `conan build` - isn't it wonderful
-            # that I have to use all this weird-ass bullshit to just find out
-            # how my package is being built aka 'we support many different
-            # build systems'?
             self.debugrun("qmake " + os.path.join(conanfile_dir, self.name + ".pro"))
 
         self.run("make --quiet -j4")

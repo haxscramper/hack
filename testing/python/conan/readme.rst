@@ -23,3 +23,9 @@ TODO:
 
 - [ ] Wrap `conan_toml.py` into conan package to use with
   `python_requires`.
+
+WARNING:
+
+- Right now `name` in the package configuration is used in multiple
+  places such as name of the .pro file for qmake-based libraries. It
+  will be changed in the future, but for now it is a bit of a hack.
