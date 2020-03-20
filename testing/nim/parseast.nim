@@ -15,6 +15,7 @@ import db_sqlite
 
 import sequtils
 import strutils
+import strformat
 
 # Create cache of unique identifiers
 let cache: IdentCache = newIdentCache()
@@ -25,21 +26,35 @@ let config: ConfigRef = newConfigRef()
 proc dummyOpen(graph: ModuleGraph; module: PSym): PPassContext = discard
 
 type
+  ProcArg = object
+    name: string
+    vtype: string
+    defval: string
+
   ProcDefintion = object
     name: string
-    args: seq[string]
+    args: seq[ProcArg]
     rett: string
+    id: int
+    docstr: string
 
   TypeDefinition = object
     name: string
     child: seq[tuple[name, typ: string]]
+
+var procs: seq[ProcDefintion]
+var types: seq[TypeDefinition]
 
 func registerProc(n: PNode): ProcDefintion =
   ProcDefintion(
     name: n[0].renderPlainSymbolName(),
     args: n[3].sons
       .filterIt(it.kind == nkIdentDefs)
-      .mapIt(it[1].renderPlainSymbolName()),
+      .mapIt(ProcArg(
+        vtype: it[1].renderPlainSymbolName(),
+        name: it[0].renderPlainSymbolName(),
+        defval: it[2].renderPlainSymbolName()
+      )),
     rett: n[3].sons
       .filterIt(it.kind == nkIdent)
       .mapIt(it.renderPlainSymbolName())
@@ -62,9 +77,6 @@ func registerType(n: PNode): TypeDefinition =
           it.mapIt((name: it[0].renderType, typ: it[1].renderType))
       ).concat()
   )
-
-var procs: seq[ProcDefintion]
-var types: seq[TypeDefinition]
 
 proc registerToplevel(n: PNode): void =
   case n.kind:
@@ -91,42 +103,103 @@ proc registerAST*(program: string) =
   registerPass(g, makePass(open = dummyOpen, process = logASTNode))
   processModule(g, m, llStreamOpen(program))
 
-let thisSource = currentSourcePath().readFile().string()
 
-# displayAST("""
-# proc hi(rr: string = "12"): int =
-#   ## Doc comment
-#   echo "hi"
-# """)
+proc printResults(res: seq[seq[string]], headers: seq[string] = @[]): void =
+  # IDEA write transpose iterator for 2d seqs and generate widths for
+  # all columns in the same way as I did for row-major matrix here.
+  # = res.mapIt(it.mapIt(len(it)).max()).max()
 
-registerAST(thisSource)
+  var colWidths = newSeqWith(res[0].len, 0)
+  for row in res & headers:
+    for idx, cell in row:
+      colWidths[idx] = max(colWidths[idx], cell.len)
 
-let db = open("database.tmp.db", "", "", "")
+  for idx, row in headers & res:
+    let line = "| " & toSeq(pairs(row)).mapIt(
+      it[1].alignLeft(colWidths[it[0]])
+    ).join(" | ") & " |"
 
-const procedure_args = "procedure_args"
+    if idx == 0:
+      if headers.len != 0:
+        let sep = "+" & toSeq(pairs(row)).mapIt(
+          "-".repeat(colWidths[it[0]] + 2)
+        ).join("+") & "+"
+        echo ""
+        echo sep
+        echo line
+        echo sep
+    else:
+      echo line
 
-db.exec(sql("DROP TABLE IF EXISTS $1" % procedure_args))
+proc getHeaders(db: DbConn, tablename: string): seq[string] =
+  db.getAllRows(sql(&"PRAGMA table_info({tablename})")).mapIt(it[1])
 
-db.exec(sql("""
-CREATE TABLE $1 (
-    name VARCHAR(255) NOT NULL,
-    arg VARCHAR(255)
-)""" % procedure_args))
+proc retecho(arg: string): string =
+  echo arg
+  arg
 
-proc printResults(res: seq[seq[string]]): void =
-  let colWidth = res.mapIt(it.mapIt(len(it)).max()).max()
-  for row in res:
-    # let sep = "+" & row.mapIt("-".repeat(colWidth)).join("+") & "+"
-    let line = "| " & row.mapIt(it.alignLeft(colWidth)).join(" | ") & " |"
-    echo line
 
-for pr in procs:
-  for arg in pr.args:
-    let query = "INSERT INTO $1 (name, arg) VALUES (\"$2\", \"$3\")" % [
-      procedure_args, pr.name, arg
-    ]
+proc createProcTable(db: DbConn): void =
+  db.exec(sql("DROP TABLE IF EXISTS arguments"))
+  db.exec(sql("""
+  CREATE TABLE arguments (
+      procid INT NOT NULL,
+      arg TEXT,
+      type TEXt,
+      idx INTEGER,
+      defval TEXT
+  )"""))
+
+  for pr in procs:
+    for idx, arg in pr.args:
+      let defval = if arg.defval.len == 0: "NULL" else: &"\"{arg.defval}\""
+      let query = &"""
+      INSERT INTO arguments
+      (procid, arg, type, idx, defval)
+      VALUES
+      ("{pr.id}", "{arg.name}", "{arg.vtype}", "{idx}", {defval})
+      """
+      db.exec(sql(query))
+
+  db.exec(sql("DROP TABLE IF EXISTS procs"))
+  db.exec(sql("""
+  CREATE TABLE procs (
+      procid INT NOT NULL,
+      procname TEXT,
+      moduleid INT,
+      docstring TEXT
+  )"""))
+
+  for pr in procs:
+    let query = &"""
+    INSERT INTO procs
+    (procid, procname)
+    VALUES
+    ("{pr.id}", "{pr.name}")
+    """
+
     db.exec(sql(query))
 
-printResults db.getAllRows sql("SELECT * FROM $1" % procedure_args)
 
-db.close()
+proc main() =
+  let thisSource = currentSourcePath().readFile().string()
+
+  registerAST(thisSource)
+
+  for idx, pr in mpairs(procs):
+    pr.id = idx
+
+  let db = open("database.tmp.db", "", "", "")
+
+  db.createProcTable()
+  printResults db.getAllRows (sql("SELECT * FROM arguments")),
+       db.getHeaders("arguments")
+
+  printResults db.getAllRows (sql("SELECT * FROM procs")),
+       db.getHeaders("procs")
+
+
+  db.close()
+
+main()
+
