@@ -1,7 +1,8 @@
-QT       += core gui widgets
-CONFIG += c++11
+QT       += core gui widgets sql
+CONFIG += c++11 console
 
-DEFINES += QT_DEPRECATED_WARNINGS
+DEFINES += PROJECT_PATH=\"\\\"$$PWD/\\\"\"
+
 
 SOURCES += \
     main.cpp \
@@ -15,4 +16,7 @@ include(conan/conanbuildinfo.pri)
 
 
 DISTFILES += \
-    conanfile.txt
+    conanfile.txt \
+    nim.cfg \
+    parseast.nim \
+    readme.rst

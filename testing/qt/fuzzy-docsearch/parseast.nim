@@ -138,7 +138,6 @@ proc retecho(arg: string): string =
   echo arg
   arg
 
-
 proc createProcTable(db: DbConn): void =
   db.exec(sql("DROP TABLE IF EXISTS arguments"))
   db.exec(sql("""

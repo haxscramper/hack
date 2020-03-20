@@ -7,8 +7,7 @@ class MainWindow : public QMainWindow
 {
     Q_OBJECT
 
-public:
-    MainWindow(QWidget *parent = nullptr);
-    ~MainWindow();
+  public:
+    MainWindow(QWidget* parent = nullptr);
 };
 #endif // MAINWINDOW_HPP
