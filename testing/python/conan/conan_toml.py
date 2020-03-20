@@ -62,6 +62,7 @@ class TomlConfPackage(ConanFile):
                  display_name = "", user = None, channel = None):
 
         super().__init__(output, runner, display_name, user, channel)
+        # TODO REVIEW - make this a hardcoded file to simplefy code?
         if hasattr(self, "conffile"):
             configLog(f"Using custom config file {self.conffile}")
             self.read_config(self.conffile)
@@ -76,7 +77,13 @@ class TomlConfPackage(ConanFile):
         print("---")
 
     def read_config(self, path):
-        self.conf = toml.load(path)
+        try:
+            print("Reading configuration from path", path)
+            print("Current directory is", os.getcwd())
+            self.conf = toml.load(path)
+        except Exception as e:
+            print("Failed to read configuration")
+            self.conf = toml.loads(self.config_copy)
 
         with WithWrap(self.conf["pkgconfig"]) as pconf:
             if "name" in pconf:
@@ -94,6 +101,9 @@ class TomlConfPackage(ConanFile):
         with WithWrap(self.conf["buildconfig"]) as bconf:
             if "copy_to_build" in bconf:
                 self.exports_sources = bconf["copy_to_build"]
+                self.exports_sources.append(path)
+                self.packaging_rules.append(
+                    FileCopyConfig(glob = path, dest = "."))
                 print("Files copied to build", self.exports_sources)
 
             if "build_system" in bconf:

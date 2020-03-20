@@ -5,10 +5,15 @@ import hargparse
 import shell
 import macros
 import os
+import hmisc/defensive
 
 import sequtils
 import colechopkg/lib
 import strutils
+
+import logging
+
+var filelogger = newFileLogger("package-orchestrate-log.tmp")
 
 # IDEA if `--no-interactive` options is not present and some arguments
 # are missing ask user to provide input.
@@ -17,14 +22,28 @@ const cppnames = @["c++", "cpp", "cxx"]
 # var testing = true
 
 proc showError(msgs: varargs[string, `$`]) =
-  ceUserError0("PCR: " & msgs.join(" "))
+  let text = msgs.join(" ")
+  ceUserError0("PCR: " & text)
+  fileLogger.log(lvlError, text)
 
 proc showLog(msgs: varargs[string, `$`]) =
-  ceUserLog0("PCR: " & msgs.join(" "))
+  let text = msgs.join(" ")
+  ceUserLog0("PCR: " & text)
+  fileLogger.log(lvlDebug, text)
+
 proc showInfo(msgs: varargs[string, `$`]) =
-  ceUserInfo2("PCR: " & msgs.join(" "))
+  let text = msgs.join(" ")
+  ceUserInfo2("PCR: " & text)
+  fileLogger.log(lvlInfo, text)
+
 proc showWarn(msgs: varargs[string, `$`]) =
-  ceUserWarn("PCR: " & msgs.join(" "))
+  let text = msgs.join(" ")
+  ceUserWarn("PCR: " & text)
+  fileLogger.log(lvlWarn, text)
+
+proc saveLog(text: string): void =
+  fileLogger.log(lvlAll, "sdfsfd")
+  fileLogger.log(lvlAll, text)
 
 template optOrDefault(optname: untyped, default: string): string =
   if optname.kp(): optname.k().toStr()
@@ -209,8 +228,8 @@ proc deindent(multiline: string): string =
 
   seplines.mapIt(if it.isEmpty(): it else: it[indent..^1]).join("\n")
 
-proc showwritefile(filename, body: string): void =
-  let content = body.deindent()
+proc showwritefile(filename, body: string, indent = true): void =
+  let content = if indent: body.deindent() else: body
   showInfo("Writing to file '" & filename & "'")
   echo content
   filename.writeFile(content)
@@ -228,7 +247,7 @@ proc createQmakeCppExample(ptype, project: string, makeExample: bool = true) =
       "source.cpp".showwritefile """
       #include <iostream>
 
-      void print(int number) {
+      void printNumber(int number) {
         std::cout << "printing number " << number << "\n";
       }
       """
@@ -276,12 +295,15 @@ proc createQmakeCppExample(ptype, project: string, makeExample: bool = true) =
 
 
 
-proc createConanfile(): void =
-  "conanfile.py".showwritefile """
-  common = __import__("conan_toml")
-  class ConanToml(common.TomlConfPackage):
-      pass
-  """
+proc updateConanfile(): void =
+  let confbody = "\"\"\"" &
+    "conffile.toml".readFile().string() & "\"\"\""
+
+  "conanfile.py".showwritefile &"""
+common = __import__("conan_toml")
+class ConanToml(common.TomlConfPackage):
+    config_copy = {confbody}
+  """, indent = false
 
 proc createCppPackage(optParsed: CmdTable) =
   showLog("Creating cpp package")
@@ -293,10 +315,9 @@ proc createCppPackage(optParsed: CmdTable) =
   withopt ("name", "version") as (name[string], version[string]):
     pkgname = name
     pkgversion = version
-    createConanfile()
   else:
     showError("Missing 'name' and 'version' options")
-    quit 1
+    die()
 
   withopt ("type", "buildsystem") as (ptype[string], buildsystem[string]):
     case buildsystem:
@@ -310,6 +331,11 @@ proc createCppPackage(optParsed: CmdTable) =
         showError(&"Unknown build system '{buildsystem}'")
   else:
     showError("Missing build system or project type")
+
+
+  updateConanfile()
+
+
 
 
 proc createPackage(optParsed: CmdTable) =
@@ -347,6 +373,9 @@ proc publishConanCppPackage(optParsed: CmdTable, tomlconf: TomlValueRef): void =
   will be taken from '{reqsdir}'
   """)
 
+  showInfo("Updating connanfile.py")
+  updateConanfile()
+
   block: # Copy to local cache
     let (res, err, code) = shellVerboseErr printCommand:
       conan "export ."
@@ -355,12 +384,14 @@ proc publishConanCppPackage(optParsed: CmdTable, tomlconf: TomlValueRef): void =
       showError("Error while running 'conan export'. Output:")
       echo res
       echo err
-      quit 1
+      die()
 
     else:
       showLog(&"""
       Succesfully copied recipe to local cache.
       """)
+
+      saveLog(res)
 
   block: # Build binary package for recipe
     let (res, err, code) = shellVerboseErr printCommand:
@@ -370,9 +401,10 @@ proc publishConanCppPackage(optParsed: CmdTable, tomlconf: TomlValueRef): void =
       showError("Error while running 'conan create'. Output:")
       echo res
       echo err
-      quit 1
+      die()
 
     else:
+      saveLog(res)
       showLog(&"""Succesfully ran 'conan create'.""")
 
   var doUpload = false
@@ -402,8 +434,10 @@ proc publishConanCppPackage(optParsed: CmdTable, tomlconf: TomlValueRef): void =
       showError("Error while running 'conan uplload'. Output:")
       echo res
       echo err
+      die()
 
     else:
+      saveLog(res)
       showLog(&"""Succesfully ran 'conan upload'.""")
       showInfo(&"""
       Now your package is available in remote {remote}.
@@ -433,6 +467,22 @@ proc buildConanCppPackage(optParsed: CmdTable, tomlconf: TomlValueRef): void =
   let builddir = tomlconf.strvalOrDefault(@["buildconfig", "conan_build_folder"], "build")
   let reqsdir = tomlconf.strvalOrDefault(@["buildconfig", "conan_reqs_folder"], "conan")
 
+
+  block:
+    let (res, err, code) = shellVerboseErr printNone:
+      conan install "." ("--install-folder="$reqsdir)
+
+    if code != 0:
+      showError("Error while running 'conan install'. Output:")
+      echo res
+      echo err
+      die()
+
+    else:
+      saveLog(res)
+      showLog(&"""Succesfully ran 'conan install'.""")
+
+
   showInfo(&"""
   Running 'conan build'. Build dir is '{builddir}', conan configuration
   will be taken from '{reqsdir}'
@@ -445,8 +495,10 @@ proc buildConanCppPackage(optParsed: CmdTable, tomlconf: TomlValueRef): void =
     showError("Error while running 'conan build'. Output:")
     echo res
     echo err
+    die()
 
   else:
+    saveLog(res)
     showLog(&"""
     Succesfully ran 'conan build'. Build artifacts are now located in the
     '{builddir}' directory.
