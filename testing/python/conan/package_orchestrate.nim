@@ -14,12 +14,17 @@ import strutils
 # are missing ask user to provide input.
 
 const cppnames = @["c++", "cpp", "cxx"]
-var testing = true
+# var testing = true
 
-proc showError(msgs: varargs[string, `$`]) = ceUserError0("PCR: " & msgs.join(" "))
-proc showLog(msgs: varargs[string, `$`]) = ceUserLog0("PCR: " & msgs.join(" "))
-proc showInfo(msgs: varargs[string, `$`]) = ceUserInfo2("PCR: " & msgs.join(" "))
-proc showWarn(msgs: varargs[string, `$`]) = ceUserWarn("PCR: " & msgs.join(" "))
+proc showError(msgs: varargs[string, `$`]) =
+  ceUserError0("PCR: " & msgs.join(" "))
+
+proc showLog(msgs: varargs[string, `$`]) =
+  ceUserLog0("PCR: " & msgs.join(" "))
+proc showInfo(msgs: varargs[string, `$`]) =
+  ceUserInfo2("PCR: " & msgs.join(" "))
+proc showWarn(msgs: varargs[string, `$`]) =
+  ceUserWarn("PCR: " & msgs.join(" "))
 
 template optOrDefault(optname: untyped, default: string): string =
   if optname.kp(): optname.k().toStr()
@@ -59,7 +64,7 @@ proc strvalOrDefault(
       nodenow = nodenow[sub]
     else:
       let jpath = current.mapIt(&"[\"{it}\"]").join("")
-      showWarn(&"Confguration is missing key at path {jpath}, using default value {default}")
+      showWarn(&"Confguration is missing key at path {jpath}, using default value \"{default}\"")
       return default
 
   result = nodenow.getStr()
@@ -107,6 +112,14 @@ proc parseCmdline(): (seq[string], CmdTable) =
       opt: ["--testing", "+takes_value"]
       help: "Run in test mode - ! ONLY FOR DEVELOPMENT PURPOSES !"
       takes: @["true", "false"]
+    opt:
+      name: "password"
+      opt: ["--password", "+takes_value"]
+      help: "Password if one of the options will need it"
+    opt:
+      name: "no-example"
+      opt: ["--no-example"]
+      help: "Do not create example files"
 
   result = (argParsed, optParsed)
 
@@ -198,32 +211,43 @@ proc deindent(multiline: string): string =
 
 proc showwritefile(filename, body: string): void =
   let content = body.deindent()
-  showInfo("Writing to file " & filename)
+  showInfo("Writing to file '" & filename & "'")
   echo content
   filename.writeFile(content)
 
-proc createQmakeCppExample(ptype, project: string) =
-  if ptype == "staticlib":
-    "header.hpp".showwritefile """
-    void printNumber(int number);
-    """
+proc createQmakeCppExample(ptype, project: string, makeExample: bool = true) =
+  if ptype in @["staticlib", "library"]:
+    if ptype == "library":
+      showWarn("Project type is 'library', assuming static library")
 
-    "source.cpp".showwritefile """
-    #include <iostream>
+    if makeExample:
+      "header.hpp".showwritefile """
+      void printNumber(int number);
+      """
 
-    void print(int number) {
-      std::cout << "printing number " << number << "\n";
-    }
-    """
+      "source.cpp".showwritefile """
+      #include <iostream>
 
-    (project & ".pro").showwritefile """
-    TEMPLATE = lib
-    CONFIG += staticlib
-    TARGET = $1
+      void print(int number) {
+        std::cout << "printing number " << number << "\n";
+      }
+      """
 
-    HEADERS *= $$$$PWD/header.hpp
-    SOURCES *= $$$$PWD/source.cpp
-    """ % [project]
+      (project & ".pro").showwritefile """
+      TEMPLATE = lib
+      CONFIG += staticlib
+      TARGET = $1
+
+      HEADERS *= $$$$PWD/header.hpp
+      SOURCES *= $$$$PWD/source.cpp
+      """ % [project]
+    else:
+      showInfo(&"""
+      Example has been disabled - to avoid issues with build/deployment
+      please ensure that following conditions are met: 'TARGET' in project
+      file is '{project}', name of the qmake project file is '{project}.pro'.
+      This is not mandatory but mismatch /might/ result in some issues.
+      """)
 
     "conffile.toml".showwritefile &"""
     [meta]
@@ -265,40 +289,27 @@ proc createCppPackage(optParsed: CmdTable) =
   var pkgversion = ""
   var pkgauthor = ""
   var uploadchannel = ""
+
   withopt ("name", "version") as (name[string], version[string]):
     pkgname = name
     pkgversion = version
     createConanfile()
-    let (res, err, code) = shellVerboseErr {dokCommand}:
-      # conan new ($pkgname)/($version)
-      conan install ". --install-folder install"
   else:
-    if testing:
-      pkgname = "exampleqt"
-      createConanfile()
-    else:
-      showError("Missing 'name' and 'version' options")
+    showError("Missing 'name' and 'version' options")
+    quit 1
 
   withopt ("type", "buildsystem") as (ptype[string], buildsystem[string]):
     case buildsystem:
       of "qmake":
         showLog(&"Creating qmake {ptype} package")
-        createQmakeCppExample(ptype, pkgname)
+        createQmakeCppExample(ptype, pkgname, makeExample = not "no-example".kp())
+        let (res, err, code) = shellVerboseErr {dokCommand}:
+          conan install ". --install-folder conan"
+
       else:
         showError(&"Unknown build system '{buildsystem}'")
-
   else:
-    if testing:
-      createQmakeCppExample("staticlib", "exampleqt")
-      shell:
-        conan install ". --install-folder install"
-        conan build ". --build-folder build --install-folder install"
-        conan package ". --build-folder build --install-folder install"
-        conan create "--test-build-folder=build . demo/testing"
-        conan "export ."
-
-      showInfo(
-        &"Done. Use 'conan upload -r=local --skip-upload {pkgname}/{pkgversion}'")
+    showError("Missing build system or project type")
 
 
 proc createPackage(optParsed: CmdTable) =
@@ -307,10 +318,7 @@ proc createPackage(optParsed: CmdTable) =
     if lang.toStr() in cppnames:
       createCppPackage(optParsed)
   else:
-    if testing:
-      createCppPackage(optParsed)
-    else:
-      showError("Missing 'lang' option from configuration")
+    showError("Missing 'lang' option from configuration")
 
 proc testPackage(optParsed: CmdTable) =
   showLog("Testing package")
@@ -367,9 +375,28 @@ proc publishConanCppPackage(optParsed: CmdTable, tomlconf: TomlValueRef): void =
     else:
       showLog(&"""Succesfully ran 'conan create'.""")
 
-  block: # Upload binary packge to remote
+  var doUpload = false
+  block:
+    if "password".kp():
+      let password = "password".k.toStr()
+      showInfo(&"Loggin in as user '{author}'")
+      let (res, err, code) = shellVerboseErr:
+        conan user ($author) "-r" ($remote) "-p" ($password)
+
+      if code != 0:
+        showError("Failed to login into remote")
+      else:
+        showInfo("Remote login ok")
+        doUpload = true
+    else:
+      showWarn(&"""
+      No password were provided - upload to remote should be done manually.
+      To do this run 'conan upload -r={remote} --confirm {reference} --force'
+      """)
+
+  if doUpload: # Upload binary packge to remote if login is ok
     let (res, err, code) = shellVerboseErr printCommand:
-      conan "upload" ("-r="$remote) "--confirm" ($reference)
+      conan "upload" ("-r="$remote) "--confirm" ($reference) "--force"
 
     if code != 0:
       showError("Error while running 'conan uplload'. Output:")
@@ -378,6 +405,11 @@ proc publishConanCppPackage(optParsed: CmdTable, tomlconf: TomlValueRef): void =
 
     else:
       showLog(&"""Succesfully ran 'conan upload'.""")
+      showInfo(&"""
+      Now your package is available in remote {remote}.
+      To install it add '{reference}@{author}/{channel}' to
+      '[requires]' section in your 'conanfile.txt'
+      """)
 
 
 
@@ -438,15 +470,6 @@ proc main() =
   let (argParsed, optParsed) = parseCmdline()
   for k, v in optParsed:
     showLog(&"{k}: {v.vals.join()}")
-
-  if "testing".kp():
-    testing = "testing".k().toStr() == "true"
-
-  if testing:
-    # removeDir("/tmp/conan")
-    # createDir("/tmp/conan")
-    setCurrentDir("/tmp/qt-test")
-    publishPackage(optParsed)
 
   if argParsed.len() < 1:
     showError("Missing command")

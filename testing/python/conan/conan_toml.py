@@ -157,7 +157,7 @@ class TomlConfPackage(ConanFile):
 
 
         if found_qmake:
-            self.debugrun("qmake")
+            self.debugrun("qmake " + self.name + ".pro")
         else:
             conanfile_dir = os.path.dirname(os.getcwd())
             # os.path.dirname(os.path.realpath(__file__))
