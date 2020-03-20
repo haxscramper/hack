@@ -1,0 +1,6 @@
+[requires]
+fuzzywidget/0.1
+libtest-n12/0.1
+
+[generators]
+qmake
