@@ -9,6 +9,7 @@ SOURCES += \
     mainwindow.cpp
 
 HEADERS += \
+    base_16_colors.hpp \
     mainwindow.hpp
 
 CONFIG += conan_basic_setup

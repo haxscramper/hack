@@ -16,6 +16,8 @@ import db_sqlite
 import sequtils
 import strutils
 import strformat
+import macros
+import os
 
 # Create cache of unique identifiers
 let cache: IdentCache = newIdentCache()
@@ -45,7 +47,17 @@ type
 var procs: seq[ProcDefintion]
 var types: seq[TypeDefinition]
 
-func registerProc(n: PNode): ProcDefintion =
+proc registerProc(n: PNode): ProcDefintion =
+  ## Register procedure or type declaration in the database
+  ## Some procedures have
+  ## MUltiple lines of documentation
+  ## comments
+  var docstr = ""
+  if n.sons.len >= 6 and n[6].len > 0:
+    let docComm = n[6][0]
+    if docComm.kind == nkCommentStmt:
+      docstr = docComm.comment
+
   ProcDefintion(
     name: n[0].renderPlainSymbolName(),
     args: n[3].sons
@@ -58,16 +70,18 @@ func registerProc(n: PNode): ProcDefintion =
     rett: n[3].sons
       .filterIt(it.kind == nkIdent)
       .mapIt(it.renderPlainSymbolName())
-      .join("")
-    )
+      .join(""),
+    docstr: docstr)
 
 func renderType(t: PNode): string =
+  ## documentation for render type
   if t.kind == nkBracketExpr:
     "$1[$2]" % [t[0].renderType(), t[1].renderType()]
   else:
     t.renderPlainSymbolName()
 
 func registerType(n: PNode): TypeDefinition =
+  ## Register type declaration in database
   TypeDefinition(
     name: n[0].renderPlainSymbolName(),
     child: n[2].sons
@@ -79,8 +93,9 @@ func registerType(n: PNode): TypeDefinition =
   )
 
 proc registerToplevel(n: PNode): void =
+  ## register AST node in the database
   case n.kind:
-    of nkProcDef:
+    of nkProcDef, nkFuncDef:
       procs.add registerProc(n)
     of nkStmtList:
       for s in n.sons: registerTopLevel(s)
@@ -97,6 +112,7 @@ proc logASTNode(context: PPassContext, n: PNode): PNode =
   registerToplevel(n)
 
 proc registerAST*(program: string) =
+  ## Register piece of code in the database
   let g: ModuleGraph = newModuleGraph(cache, config)
   var m: PSym = makeStdinModule(g)
   incl(m.flags, sfMainModule)
@@ -109,14 +125,18 @@ proc printResults(res: seq[seq[string]], headers: seq[string] = @[]): void =
   # all columns in the same way as I did for row-major matrix here.
   # = res.mapIt(it.mapIt(len(it)).max()).max()
 
+  func clampStr(str: string, maxLen: int): string =
+    if str.len > maxLen: str[0..maxLen]
+    else: str
+
   var colWidths = newSeqWith(res[0].len, 0)
   for row in res & headers:
     for idx, cell in row:
-      colWidths[idx] = max(colWidths[idx], cell.len)
+      colWidths[idx] = max(colWidths[idx], cell.clampStr(20).len)
 
   for idx, row in headers & res:
     let line = "| " & toSeq(pairs(row)).mapIt(
-      it[1].alignLeft(colWidths[it[0]])
+      it[1].clampStr(20).alignLeft(colWidths[it[0]])
     ).join(" | ") & " |"
 
     if idx == 0:
@@ -137,6 +157,9 @@ proc getHeaders(db: DbConn, tablename: string): seq[string] =
 proc retecho(arg: string): string =
   echo arg
   arg
+
+proc sqlescape(str: string): string =
+  result = str.multiReplace(("'", "''"))
 
 proc createProcTable(db: DbConn): void =
   db.exec(sql("DROP TABLE IF EXISTS arguments"))
@@ -166,24 +189,26 @@ proc createProcTable(db: DbConn): void =
       procid INT NOT NULL,
       procname TEXT,
       moduleid INT,
-      docstring TEXT
+      docstring TEXT,
+      rettype TEXT
   )"""))
 
   for pr in procs:
+    let docstr = pr.docstr
     let query = &"""
     INSERT INTO procs
-    (procid, procname)
+    (procid, procname, docstring, rettype)
     VALUES
-    ("{pr.id}", "{pr.name}")
+    ("{pr.id}", "{pr.name}", '{docstr.sqlescape()}', '{pr.rett}')
     """
 
     db.exec(sql(query))
-
 
 proc main() =
   let thisSource = currentSourcePath().readFile().string()
 
   registerAST(thisSource)
+  "~/.choosenim/toolchains/nim-1.0.6/compiler/astalgo.nim".expandTilde().readFile().registerAST()
 
   for idx, pr in mpairs(procs):
     pr.id = idx
@@ -191,11 +216,6 @@ proc main() =
   let db = open("database.tmp.db", "", "", "")
 
   db.createProcTable()
-  printResults db.getAllRows (sql("SELECT * FROM arguments")),
-       db.getHeaders("arguments")
-
-  printResults db.getAllRows (sql("SELECT * FROM procs")),
-       db.getHeaders("procs")
 
 
   db.close()
