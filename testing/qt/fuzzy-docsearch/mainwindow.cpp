@@ -5,6 +5,7 @@
 #include <fuzzywidget/fuzzysearchwidget.hpp>
 
 #include "base_16_colors.hpp"
+#include <fstream>
 #include <vector>
 
 #define let const auto
@@ -52,8 +53,7 @@ std::string getSearchName(NimProc proc) {
         res += arg.name.toStdString() + ": " + arg.type.toStdString()
                + ", ";
     }
-    res += "):";
-    res += proc.rettype.toStdString();
+    res += "): " + proc.rettype.toStdString();
 
     return res;
 }
@@ -68,8 +68,8 @@ ColoredStrings getDisplayName(NimProc data) {
         proc.push_back({", ", Colors::getRed()});
     }
     proc.pop_back();
-    proc.push_back({"):", Colors::getGreen()});
-    proc.push_back({data.rettype, Colors::getYellow()});
+    proc.push_back({"): ", Colors::getGreen()});
+    proc.push_back({data.rettype, Colors::getWhite()});
 
     return proc;
 }
@@ -135,6 +135,8 @@ class ProcDraw : public QStyledItemDelegate
             }
 
             painter->drawText(docBox, doc);
+        } else {
+            painter->drawText(option.rect, "error converting data");
         }
     }
 
@@ -170,7 +172,8 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     QSqlQuery query;
 
     qDebug() << "Reading procnames from procs";
-    if (!query.exec("SELECT procid, procname, docstring FROM procs")) {
+    if (!query.exec(
+            "SELECT procid, procname, docstring, rettype FROM procs")) {
         qDebug() << "Query failed" << query.lastError().text();
         return;
     }
@@ -180,6 +183,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
         res.id        = query.value(0).toInt();
         res.name      = query.value(1).toString();
         res.docstring = query.value(2).toString();
+        res.rettype   = query.value(3).toString();
 
         QSqlQuery argquery(
             QString("SELECT arg, type FROM arguments WHERE procid == %1")
@@ -197,12 +201,19 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
         procs.push_back({res, getSearchName(res)});
     }
 
+    std::ofstream ofile("/tmp/thefile.txt");
+
     std::vector<std::string> dict;
     dict.reserve(procs.size());
     for (let& proc : procs) {
-        qDebug() << "Adding proc " << QString::fromStdString(proc.second);
+        let qname = QString::fromStdString(proc.second);
+        if (qname.contains("exec")) {
+            qDebug() << qname;
+        }
+        ofile << proc.second << "\n";
         dict.push_back(proc.second);
     }
+
 
     fuzzy->setDictionary(dict);
     fuzzy->setItemDelegate(new ProcDraw());

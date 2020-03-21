@@ -17,12 +17,15 @@ import sequtils
 import strutils
 import strformat
 import macros
+import algorithm
 import os
+import re
+import tables
 
 # Create cache of unique identifiers
 let cache: IdentCache = newIdentCache()
-# Project compilation configuration (name of the project, linked
-# libraries etc.)
+ # Project compilation configuration (name of the project, linked
+ # libraries etc.)
 let config: ConfigRef = newConfigRef()
 
 proc dummyOpen(graph: ModuleGraph; module: PSym): PPassContext = discard
@@ -33,12 +36,20 @@ type
     vtype: string
     defval: string
 
+  ProcKind = enum
+    pkMacro
+    pkFunc
+    pkTemplate
+    pkProc
+    pkInterator
+
   ProcDefintion = object
     name: string
     args: seq[ProcArg]
     rett: string
     id: int
     docstr: string
+    kind: ProcKind
 
   TypeDefinition = object
     name: string
@@ -61,17 +72,29 @@ proc registerProc(n: PNode): ProcDefintion =
   ProcDefintion(
     name: n[0].renderPlainSymbolName(),
     args: n[3].sons
-      .filterIt(it.kind == nkIdentDefs)
-      .mapIt(ProcArg(
-        vtype: it[1].renderPlainSymbolName(),
-        name: it[0].renderPlainSymbolName(),
-        defval: it[2].renderPlainSymbolName()
-      )),
+    .filterIt(it.kind == nkIdentDefs)
+    .mapIt(ProcArg(
+      vtype: it[1].renderPlainSymbolName(),
+      name: it[0].renderPlainSymbolName(),
+      defval: it[2].renderPlainSymbolName()
+    )),
     rett: n[3].sons
-      .filterIt(it.kind == nkIdent)
-      .mapIt(it.renderPlainSymbolName())
-      .join(""),
-    docstr: docstr)
+    .filterIt(it.kind == nkIdent)
+    .mapIt(it.renderPlainSymbolName())
+    .join(""),
+    docstr: docstr,
+    kind:
+    case n.kind:
+      of nkProcDef: pkProc
+      of nkTemplateDef: pkTemplate
+      of nkMacroDef: pkMacro
+      of nkFuncDef: pkMacro
+      of nkIteratorDef: pkInterator
+      else:
+        raise newException(
+          AssertionError,
+          &"Invalid kind to ad as proc {n.kind}")
+    )
 
 func renderType(t: PNode): string =
   ## documentation for render type
@@ -81,21 +104,22 @@ func renderType(t: PNode): string =
     t.renderPlainSymbolName()
 
 func registerType(n: PNode): TypeDefinition =
+  discard
   ## Register type declaration in database
-  TypeDefinition(
-    name: n[0].renderPlainSymbolName(),
-    child: n[2].sons
-      .filterIt(it.kind == nkRecList) # TODO replace with ident definition
-      .mapIt(
-        block:
-          it.mapIt((name: it[0].renderType, typ: it[1].renderType))
-      ).concat()
-  )
+  #  TypeDefinition(
+  #    name: n[0].renderPlainSymbolName(),
+  #    child: n[2].sons
+  #      .filterIt(it.kind == nkRecList) # TODO replace with ident definition
+  #      .mapIt(
+  #        block:
+  #          it.mapIt((name: it[0].renderType, typ: it[1].renderType))
+  #      ).concat()
+  #  )
 
 proc registerToplevel(n: PNode): void =
   ## register AST node in the database
   case n.kind:
-    of nkProcDef, nkFuncDef:
+    of nkProcDef, nkFuncDef, nkIteratorDef, nkTemplateDef, nkMacroDef:
       procs.add registerProc(n)
     of nkStmtList:
       for s in n.sons: registerTopLevel(s)
@@ -107,7 +131,7 @@ proc registerToplevel(n: PNode): void =
       discard
 
 
-proc logASTNode(context: PPassContext, n: PNode): PNode =
+proc logASTNode(context: PPassContext; n: PNode): PNode =
   result = n
   registerToplevel(n)
 
@@ -120,12 +144,12 @@ proc registerAST*(program: string) =
   processModule(g, m, llStreamOpen(program))
 
 
-proc printResults(res: seq[seq[string]], headers: seq[string] = @[]): void =
+proc printResults(res: seq[seq[string]]; headers: seq[string] = @[]): void =
   # IDEA write transpose iterator for 2d seqs and generate widths for
   # all columns in the same way as I did for row-major matrix here.
   # = res.mapIt(it.mapIt(len(it)).max()).max()
 
-  func clampStr(str: string, maxLen: int): string =
+  func clampStr(str: string; maxLen: int): string =
     if str.len > maxLen: str[0..maxLen]
     else: str
 
@@ -151,28 +175,29 @@ proc printResults(res: seq[seq[string]], headers: seq[string] = @[]): void =
     else:
       echo line
 
-proc getHeaders(db: DbConn, tablename: string): seq[string] =
+proc getHeaders(db: DbConn; tablename: string): seq[string] =
   db.getAllRows(sql(&"PRAGMA table_info({tablename})")).mapIt(it[1])
 
 proc retecho(arg: string): string =
   echo arg
   arg
 
-proc sqlescape(str: string): string =
-  result = str.multiReplace(("'", "''"))
-
 proc createProcTable(db: DbConn): void =
+  for idx, pr in mpairs(procs):
+    pr.id = idx
+
   db.exec(sql("DROP TABLE IF EXISTS arguments"))
   db.exec(sql("""
   CREATE TABLE arguments (
       procid INT NOT NULL,
       arg TEXT,
-      type TEXt,
+      type TEXT,
       idx INTEGER,
       defval TEXT
   )"""))
 
   for pr in procs:
+    echo "registering arguments for ", pr.name
     for idx, arg in pr.args:
       let defval = if arg.defval.len == 0: "NULL" else: &"\"{arg.defval}\""
       let query = &"""
@@ -190,35 +215,57 @@ proc createProcTable(db: DbConn): void =
       procname TEXT,
       moduleid INT,
       docstring TEXT,
-      rettype TEXT
+      rettype TEXT,
+      kind TEXT
   )"""))
 
   for pr in procs:
+    echo "registering ", pr.name
     let docstr = pr.docstr
     let query = &"""
     INSERT INTO procs
-    (procid, procname, docstring, rettype)
+    (procid, procname, docstring, rettype, kind)
     VALUES
-    ("{pr.id}", "{pr.name}", '{docstr.sqlescape()}', '{pr.rett}')
+    ("{pr.id}", "{pr.name}", {docstr.dbQuote()}, '{pr.rett}', '{pr.kind}')
     """
 
-    db.exec(sql(query))
+    if not query.contains("?"):
+      db.exec(sql(query))
+    else:
+      echo "query ", query
+      echo "contains ?"
+
+proc registerDirectoryRec(target: string): void =
+  for file in (target & "/lib").walkDirRec():
+    if file =~ re"(.*?)\.nim$":
+      registerAST(file.readFile())
 
 proc main() =
   let thisSource = currentSourcePath().readFile().string()
+  var installed = toSeq("~/.choosenim/toolchains/".expandTilde().walkDir())
+  installed = installed.sortedByIt(it.path)
+  let target = installed[^1].path
 
-  registerAST(thisSource)
-  "~/.choosenim/toolchains/nim-1.0.6/compiler/astalgo.nim".expandTilde().readFile().registerAST()
+  echo "Using toolchain at path", target
 
-  for idx, pr in mpairs(procs):
-    pr.id = idx
+
+  registerDirectoryRec(target)
+  registerDirectoryRec("~/workspace/hax-nim".expandTilde())
 
   let db = open("database.tmp.db", "", "", "")
-
   db.createProcTable()
-
-
   db.close()
+
+  echo "done"
+  echo &"found {procs.len} procs in total"
+  var cnt = @[(pkFunc, 0), (pkInterator, 0), (pkProc, 0), (pkMacro, 0), (
+      pkTemplate, 0)].toTable()
+  for pr in procs:
+    inc cnt[pr.kind]
+
+  for kind, num in cnt:
+    echo kind, ": ", num
+
 
 main()
 

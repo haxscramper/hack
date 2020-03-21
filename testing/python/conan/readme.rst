@@ -98,7 +98,7 @@ NOTE:
       library_globs = [ "*.a" ]
       header_folder = "include/fuzzywidget"
       header_globs = [ "*.hpp" ]
-          """ 
+          """
 
 How to use aka 'creating c++ packages in three commands'
 ========================================================
@@ -163,3 +163,14 @@ Concrete example
    printNumber(12);
 
 DONE
+
+
+Updating package in remote
+
+.. code-block:: bash
+    # Edit 'conffile.toml' to update vesion
+    package-orchestrate publish --password:demo
+
+    # In your project change version in the 'conanfile.txt'
+    cd conan
+    conan install .. -r=local -g=qmake # for different remote/generator select appropriate options
