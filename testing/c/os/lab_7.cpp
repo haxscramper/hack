@@ -33,7 +33,7 @@ void merr(T msg) {
 }
 
 /// Размер буфера для первого сообщения
-const int forward_msg_size  = 256;
+const int forward_msg_size = 256;
 /// Размер буфера для второго сообщения
 const int backward_msg_size = 32;
 
@@ -63,26 +63,29 @@ bool errtest(bool expression, T1 errmsg, T2 okmsg) {
 /// Тест для inet domain сокетов с использованием отдельных программ
 void test_inet_domain_sockets() {
     char _cwd[PATH_MAX];
+    // Получить путь к текущей директории
     getcwd(_cwd, sizeof(_cwd));
     let cwd    = std::string(_cwd);
-    let server = cwd + "/server";
-    let client = cwd + "/client";
+    let server = cwd + "/server"; // Путь в исполняемомо файлу сервера
+    let client = cwd + "/client"; // Путь к исполняемому файлу клиента
 
     pid_t serv_pid = fork();
     if (serv_pid == 0) {
+        // Запускаем сервер
         errtest(
             execl(server.c_str(), "") == 0, "Failed to run server", "");
     }
 
     pid_t clnt_pid = fork();
     if (clnt_pid == 0) {
+        // Запускаем клиент
         errtest(
             execl(client.c_str(), "") == 0, "Failed to run client", "");
     }
 
     int rets;
-    waitpid(serv_pid, &rets, 0);
-    waitpid(clnt_pid, &rets, 0);
+    waitpid(serv_pid, &rets, 0); // Ждем пока сервер не завершит работу
+    waitpid(clnt_pid, &rets, 0); // Ждем клиент
 
     puts("Finished inet socket test");
 }
@@ -161,7 +164,9 @@ void test_inet_domain_sockets_2() {
                 SOL_SOCKET,
                 // Опции которые нужно установить для сокета
                 // (принудительно подключится к сокету и адресу)
-                SO_REUSEADDR | SO_REUSEPORT,
+                SO_REUSEADDR | SO_REUSEPORT, // нужно для того чтобы
+                                             // сокет переиспользовал
+                                             // уже сущетсвующи адрес
                 &opt, // Опции которые нужно включить являются
                       // булевыми, так что для их активации передается
                       // едница
@@ -273,6 +278,15 @@ void test_unix_domain_sockets() {
         unlink(socket_path);
 
         // Подключаем сокет
+
+        // Для того чтобы можно было корректно использовать UNIX сокет
+        // его нажно скастовать в обобщенный тип То есть bind
+        // привязывает сокет описанный структурой типа sockaddr к
+        // файловому дескрипотору. Это первые два аргумента. Ну и так
+        // как размер структур для описания сетевых и юникс сокетов
+        // отличается то требуется также передать туда и размер
+        // структуры.
+
         errtest(
             bind(
                 sfd, // Файловый дескриптор

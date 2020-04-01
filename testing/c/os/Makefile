@@ -53,3 +53,4 @@ lab_7: lab_7.cpp lab_7_inet_client.c lab_7_inet_server.c
 	@g++ lab_7_inet_client.c -o client
 	@g++ lab_7_inet_server.c -o server
 	@g++ -o lab_7 lab_7.cpp
+
