@@ -14,5 +14,9 @@ int main() {
     v.a    = 12;
     testVar(v);
 
+    Exported e;
+    e.val1 = 123.999;
+    acceptsExported(e);
+
     return 0;
 }

@@ -35,8 +35,12 @@ proc acceptsStrSeq*(arg: seq[seq[string]]): void {.exportcpp.} =
 
 type
   Exported* {. header: "clib.hpp", importcpp: "Exported", .} = object
-    val1: cfloat
+    val1: cfloat # Impotted type's fields have to be specified
+                 # explicitly
+
+proc importedMethod(this: Exported): cfloat {.importcpp: "getVal".}
 
 proc acceptsExported(arg: Exported): void {.exportcpp.} =
-  echo arg.val1
+  echo arg.importedMethod()
+
 
