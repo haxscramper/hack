@@ -1,36 +1,40 @@
 {
-    "rows": [
-        [
-            "shift-",
-            ",",
-            [
-                {
-                    "event": "onPress",
-                    "key": "ctrl-c ctrl-c",
-                    "mod": [ "math" ]
-                },
-                {
-                    "event": "onRelease",
-                    "key": "ctrl-c ctrl-c",
-                    "mod": [ "default" ]
-                },
-                {
-                    "event": "onRelease",
-                    "key": "ctrl-c ctrl-8",
-                    "mod": [ "math" ]
-                }
-            ]
-        ]
-    ],
-    "modifiers": [
-        "math"
-    ],
-    "colPins": [
-        3,
-        4,
-        5
-    ],
-    "rowPins": [
-        1
+  "rows": [
+    [
+      ",",
+      [
+        {
+          "event": "onPress",
+          "key": "ctrl-c ctrl-c",
+          "mod": [
+            "math"
+          ]
+        },
+        {
+          "event": "onRelease",
+          "key": "ctrl-c ctrl-c",
+          "mod": [
+            "default"
+          ]
+        },
+        {
+          "event": "onRelease",
+          "key": "ctrl-c ctrl-8",
+          "mod": [
+            "math"
+          ]
+        }
+      ]
     ]
+  ],
+  "modifiers": [
+    "math"
+  ],
+  "colPins": [
+    4,
+    5
+  ],
+  "rowPins": [
+    1
+  ]
 }

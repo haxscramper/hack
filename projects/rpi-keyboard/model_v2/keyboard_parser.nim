@@ -25,6 +25,7 @@ proc getS(t: Toml, key: string): string =
   else: raise newException(ValueError, "Table does not have field " & key)
 
 proc parseLockConf(table: Toml): void =
+  ## Parse configuration for table section interlocks.
   dlog "Parsing lock configuration"
   globalLockConf.depth = table.getF("depth")
   globalLockConf.sectionWidth = table.getF("sectionWidth")

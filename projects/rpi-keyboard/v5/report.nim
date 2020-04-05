@@ -1,7 +1,6 @@
 import common
-import json
 import algorithm
-import hmisc/helpers
+import hmisc/[helpers, hjson]
 import key_codes
 import bitops
 import sequtils
@@ -27,10 +26,11 @@ type
     keycodes*: array[6, KeyCode]
 
   KeyConfig* = object
-    isActive*: bool
-    isFinal*: bool
-    makeDefault*: bool
-    modifierMap*: seq[(seq[string], string)]
+    isActive*: bool ## Key configuration is activated
+    isFinal*: bool ## Key should be send immediately
+    makeDefault*: bool ## Make default configuration for key
+    modifierMap*: seq[(seq[string], string)] ## {modifiers} -> Key
+                                             ## sequence mapping
 
 
 func toHIDModifer*(code: KeyCode): HIDModifiers =
@@ -91,13 +91,22 @@ func decodeKeybindingConf*(conf: JsonNode): (KeyConfig, KeyConfig) =
   Configuration (json node) will be parsed according to the rules:
 
   - single item (string) - will be converted to press key
-  - Array of elements - will generate final key without default values
+  - Array of elements - will generate final key without default
+    values. Each element has following fields:
+    - `event`: run this on release or on press
+    - `mod`: modifiers necessary to activate this. Default
+      is the name for the press without any modifiers
+    - `key`: Key sequence to run when the key is pressed
+
+  :return: On press and on release triggers for a key configuration.
+    First field in tuple is press configuration, second one is
+    release.
 
   ]##
   if conf.kind == JString: # Single string with non-final key
     result[0].isFinal = false
     result[0].makeDefault = true
-    result[0].modifierMap = @[(@["default"], conf.getStr())]
+    result[0].modifierMap = @[(@["default"], conf.asStr())]
     result[0].isActive = true
   elif conf.kind == JArray:
     let elems: seq[JsonNode] = conf.getElems()
@@ -105,10 +114,8 @@ func decodeKeybindingConf*(conf: JsonNode): (KeyConfig, KeyConfig) =
       # TODO error?
       discard
     else: # JObject with final key
-      result[0].isFinal = true
-      result[0].makeDefault = false
-      result[1].isFinal = true
-      result[1].makeDefault = false
+      result[0].isFinal = true; result[0].makeDefault = false
+      result[1].isFinal = true; result[1].makeDefault = false
       for it in elems:
         if it["mod"].kind != JArray:
           raise newException(
@@ -119,8 +126,8 @@ func decodeKeybindingConf*(conf: JsonNode): (KeyConfig, KeyConfig) =
           )
 
         let conf = (
-          it["mod"].getElems().mapIt(it.getStr()),
-          it["key"].getStr()
+          it["mod"].asStrSeq(),
+          it["key"].asStr()
         )
 
         if it.hasKey("event") and it["event"].getStr() == "onRelease":

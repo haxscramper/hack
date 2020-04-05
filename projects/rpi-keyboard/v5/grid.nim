@@ -1,6 +1,5 @@
 import common
 import algorithm
-import json
 import strutils
 import key_codes
 import report
@@ -10,7 +9,7 @@ import colechopkg/types
 import algorithm
 import tables
 import sets
-import hmisc/helpers
+import hmisc/[helpers, hjson]
 
 ## .. include:: notes.rst
 
@@ -25,6 +24,7 @@ const defaultMods: tuple[
     meta: "meta",
     default: "default"
 )
+
 #===========================  type definition  ===========================#
 
 type
@@ -166,20 +166,20 @@ func makeModifierMap(conf: KeyConfig): ModifierMap =
   as either string or sequence of key presses.
 
   :makeFinal: whether or not to make resulting key final. Final keys
-  are exported immediately upon triggering, non-final ones are added
-  to accumulated modifiers. If you want to make button that works
-  performs solely as modifier you need to have `makeFinal = false`. If
-  you are interested in mapping button to more complex key combination
-  and don't want to react to already pressed modifiers use `makeFinal
-  = true`.
+    are exported immediately upon triggering, non-final ones are added
+    to accumulated modifiers. If you want to make button that works
+    performs solely as modifier you need to have `makeFinal = false`.
+    If you are interested in mapping button to more complex key
+    combination and don't want to react to already pressed modifiers
+    use `makeFinal = true`.
 
   :addDefault: whether or not to add all possible combinations of
-  default modifier combinations (16 in total) to resulting keymap. If
-  you are creating one of the default keys (letters, numbers etc.) and
-  want to have them react correctly to other modifiers from the start
-  use `addDefault = true`. Value will be taken from 'default' pair in
-  the configuration. This value *must* be present in configuration
-  `(@["default"], "<your-keybinding>")`
+    default modifier combinations (16 in total) to resulting keymap.
+    If you are creating one of the default keys (letters, numbers
+    etc.) and want to have them react correctly to other modifiers
+    from the start use `addDefault = true`. Value will be taken from
+    'default' pair in the configuration. This value *must* be present
+    in configuration `(@["default"], "<your-keybinding>")`
 
   ]##
 
@@ -219,21 +219,19 @@ func makeModifierMap(conf: KeyConfig): ModifierMap =
         adder: KeyPress(code: chords[0].code)
       )
 
-      #[
-        for modif in comb:
-          case modif:
-            of defaultMods.ctrl:
-              res.adder.modifiers.incl hmLeftCtrl
+      for modif in comb:
+        case modif:
+          of defaultMods.ctrl:
+            res.adder.modifiers.incl hmLeftCtrl
 
-            of defaultMods.alt:
-              res.adder.modifiers.incl hmLeftAlt
+          of defaultMods.alt:
+            res.adder.modifiers.incl hmLeftAlt
 
-            of defaultMods.shift:
-              res.adder.modifiers.incl hmLeftShift
+          of defaultMods.shift:
+            res.adder.modifiers.incl hmLeftShift
 
-            of defaultMods.meta:
-              res.adder.modifiers.incl hmLeftMeta
-      ]#
+          of defaultMods.meta:
+            res.adder.modifiers.incl hmLeftMeta
 
       result[toHashSet(comb)] = res
 
@@ -381,18 +379,19 @@ proc makeKeyGrid*(
     colPins: colPins)
 
 proc parseGridConfig*(str: string): KeyGrid =
+  ## Parse grid configuration from json string.
   let toml = str.parseJson()
   assert toml.hasKey("rowPins")
   assert toml.hasKey("colPins")
 
   let codes: Seq2D[(KeyConfig, KeyConfig)] =
-    toml["rows"].getElems().mapIt(
-      it.getElems().mapIt(
+    toml["rows"].asSeq().mapIt(
+      it.asSeq().mapIt(
         decodeKeybindingConf(it)))
 
   return makeKeyGrid(
-    rowPins = toml["rowPins"].getElems().mapIt(it.getInt()),
-    colPins = toml["colPins"].getElems().mapIt(it.getInt()),
+    rowPins = toml["rowPins"].asSeq().mapIt(it.asInt()),
+    colPins = toml["colPins"].asSeq().mapIt(it.asInt()),
     codes = codes
   )
 
@@ -429,10 +428,11 @@ proc createReports*(grid: KeyGrid): seq[HIDReport] =
       case key.state:
         of kstChangedPressed, kstChangedReleased:
           # echo "key state is ", key.state
-          let kResOpt: Option[KeyResult] = (key.state == kstChangedPressed).tern(
-            key.getActivatedChord(currentModifiers, onPress = true),
-            key.getActivatedChord(currentModifiers, onPress = false)
-          )
+          let kResOpt: Option[KeyResult] =
+            (key.state == kstChangedPressed).tern(
+              key.getActivatedChord(currentModifiers, onPress = true),
+              key.getActivatedChord(currentModifiers, onPress = false)
+            )
 
           iflet (kRes = kResOpt):
             if kRes.isFinal:
