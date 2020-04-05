@@ -1,0 +1,88 @@
+#+setupfile: ~/.config/hax-config/emacs/latex-export-header.org
+#+latex_header: \usepackage[top=25mm,left=20mm,right=10mm,bottom=15mm]{geometry}
+
+#+latex_header: \usepackage{fancyvrb}
+#+latex_header: \usepackage[dvipsnames]{xcolor}
+#+latex_header: \usepackage{minted}
+#+latex: \setcounter{page}{3}
+
+* Назначение программы
+
+Програма ~final.sh~ предназначена для мониторинга состояния SMART
+регистров жесткого диска. Приложение выводит список найденных дисковых
+устройств и выдает краткую информацию об указанном жестком диске как
+устройстве, его идентификационные данные, модель, состояние SMART
+регистров.
+
+* Условия выполнения программы
+
+Для корректной работы программы в системе должны быть установлены
+следующие программы: ~mktemp~, ~mkdir~, ~cat~, ~grep~, ~awk~, ~sed~,
+~sort~, ~uniq~, ~tee~, ~sudo~, ~smartctl~, ~bash~, ~python~.
+
+Для корректного отображения результатов работы программа должна быть
+запушена в терминальном эмуляторе с поддержкой управляющих
+последовательности ANSI.
+
+Пользователь должен либо являться администратором, либо
+находится в группе пользователей которые могут запустить использовать
+комманду ~sudo~.
+
+* Сообщения оператору
+
+В ходе работы программы на терминал снача выводится список найденных в
+системе дисков, затем информация о каждом из дисков.
+
+Пример вывода программы:
+
+
+
+#+begin_src
+System drives:
+/dev/nvme0n1p1
+/dev/sda1
+/dev/sdb1
+/dev/sdc1
+---
+[sudo] password for test:
+model: Samsung SSD 960 EVO 500GB
+type: nvme
+logical block size: 512
+capacity (GB): 465
+---
+model: SAMSUNG HD321KJ
+type: sat
+logical block size: 512
+capacity (GB): 298
+---
+model: ST2000DL003-9VT166
+type: sat
+logical block size: 512
+capacity (GB): 1863
+---
+model: Corsair Force LS SSD
+type: sat
+logical block size: 512
+capacity (GB): 55
+#+end_src
+
+* Выполнение программы
+
+
+
+В ходе работы программы пользователь должен ввести свой пароль -
+программа требует прав администратора для получения информации о SMART
+регистрах.
+
+
+
+* Исходные коды програм
+
+** ~final.sh~
+
+#+latex: \inputminted{bash}{final.sh}
+
+
+** ~final.py~
+
+#+latex: \inputminted{python}{final.py}

@@ -5,6 +5,8 @@
 #include <fuzzywidget/fuzzysearchwidget.hpp>
 
 #include "base_16_colors.hpp"
+#include <QLabel>
+#include <QVBoxLayout>
 #include <fstream>
 #include <vector>
 
@@ -157,7 +159,23 @@ class ProcDraw : public QStyledItemDelegate
 
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     let fuzzy = new FuzzySearchWidget();
-    setCentralWidget(fuzzy);
+    let lyt   = new QVBoxLayout();
+    let warn  = new QLabel();
+
+    QFont font;
+    font.setFamily("JetBrains Mono");
+    warn->setFont(font);
+    warn->setStyleSheet(
+        "QLabel { background-color : rgba(100%, 0%, 0%, 60%); }");
+    warn->setAlignment(Qt::AlignCenter);
+    warn->setMaximumHeight(36);
+
+    lyt->addWidget(warn);
+    lyt->addWidget(fuzzy);
+
+    setCentralWidget(new QWidget);
+    centralWidget()->setLayout(lyt);
+
 
     auto db     = QSqlDatabase::addDatabase("QSQLITE");
     auto dbpath = PROJECT_PATH "database.tmp.db";
@@ -178,12 +196,17 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
         return;
     }
 
+    int nodocCnt = 0;
     while (query.next()) {
         NimProc res;
         res.id        = query.value(0).toInt();
         res.name      = query.value(1).toString();
         res.docstring = query.value(2).toString();
         res.rettype   = query.value(3).toString();
+
+        if (res.docstring.length() < 2) {
+            ++nodocCnt;
+        }
 
         QSqlQuery argquery(
             QString("SELECT arg, type FROM arguments WHERE procid == %1")
@@ -213,6 +236,12 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
         ofile << proc.second << "\n";
         dict.push_back(proc.second);
     }
+
+    warn->setText(
+        QString("Out of %1 procs %2 are missing documentation (%3%)")
+            .arg(procs.size())
+            .arg(nodocCnt)
+            .arg(100.0 * nodocCnt / procs.size()));
 
 
     fuzzy->setDictionary(dict);

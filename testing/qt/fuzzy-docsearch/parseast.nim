@@ -236,7 +236,7 @@ proc createProcTable(db: DbConn): void =
       echo "contains ?"
 
 proc registerDirectoryRec(target: string): void =
-  for file in (target & "/lib").walkDirRec():
+  for file in target.walkDirRec():
     if file =~ re"(.*?)\.nim$":
       registerAST(file.readFile())
 
@@ -249,7 +249,7 @@ proc main() =
   echo "Using toolchain at path", target
 
 
-  registerDirectoryRec(target)
+  registerDirectoryRec(target & "/lib")
   registerDirectoryRec("~/workspace/hax-nim".expandTilde())
 
   let db = open("database.tmp.db", "", "", "")

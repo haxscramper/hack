@@ -1,27 +1,25 @@
 #!/usr/bin/env bash
 
 set -o nounset
-set -x
 set -o errexit
-
-echo "hello"
 
 tmpdir=$(mktemp -d "/tmp/XXXXXXXXXXXXXXXX")
 mkdir -p "${tmpdir}/dev"
 
+echo "System drives: "
 cat /proc/mounts |
-    grep '^/dev/' |
-    awk '{print $1}' |
+    grep '^/dev/' |              # Отфильтровать те файлы которые не
+                                 # начинаются с `/dev/`
+    awk '{print $1}' |           # Использовать только первую колонку
     sed -E 's/(.)p./1p1/' |
     sort |
     uniq |
     tee -a /dev/tty > $tmpdir/devices
 
-echo "found" $(wc -l "$tmpdir/devices") "drives"
-
 cat $tmpdir/devices |
     while read dev; do
         file=${tmpdir}${dev}
+        echo "---"
         if ! sudo smartctl -x --json $dev > "$file"; then
             ./final.py "$file"
         else
