@@ -1,0 +1,28 @@
+Simple example of interactive DC simulation
+
+- Create ~.sch~ file using =gschem=. I just added resistor, dc voltage
+  source and ground node. NOTE: It is necessary to
+  have ground node present.
+- Convert schematic file to netlist using ~gnetlist -g spice-sdb -o
+  <outfile.net> <infile.sch>~
+- Run simulation: ~ngspice <outfile.net>~
+  - ~dc v1 1 1 1~ to run dc simulation for voltage source ~v1~
+    starting at $1$ volt and stopping at $1$ with step of $1$. This
+    basically gives you single simulation run for $v=1$.
+  - ~wrdata <simulation-result.txt> v(1)~ to write result of
+    simulation into ~.txt~ file. ~v(1)~ is a _vector_ (list of
+    values). To get all possible vectors you can use ~display~
+
+
+#+caption: Generate netlist
+#+begin_src bash
+gnetlist -g spice-sdb -o ngspice_cmdline_test.net ngspice_cmdline_test.sch
+ngspice ngspice_cmdline_test.net  
+#+end_src
+
+#+caption: Run simulation (spice commands)
+#+begin_src
+dc v1 1 1 1
+wrdata resistor_simulation.txt v(1)
+quit
+#+end_src
