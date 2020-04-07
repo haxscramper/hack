@@ -3,6 +3,31 @@
    Well, let's not make anything overcomplicated. -- me, couple months
    ago
 
+
+
+SBC software part for keyboard.
+
+`keypad_reader.nim` is the main file. It repeatedly scans keypad grid
+described in `config.json` and generates reports based on changed in
+grid states.
+
+Configuration file
+==================
+
+Configuration file for keyboard consists of four parts:
+
+1. `"rows"` section - 2d array of key configurations. Each cell in the
+   array can be either of two types: single string or array of
+   configurations. For more details look into
+   `report.decodeKeybindingConf` documentation.
+2. `"modifiers"` - list of strings describing additional modifiers
+   available for keyboard
+3. `"colPins"` - list of integers desribing pins on the board that
+   will be used for scanning columns
+4. `"rowPins"` - list of integers describing pins on the board that
+   will be used for scanning rows
+
+
 Devnotes
 ========
 
@@ -68,3 +93,9 @@ If you want to:
   other keybindings as final keys are exported immediately when they
   are triggered. Because this binding does not export any modifiers it
   will not alter functions of other bindings in any way.
+
+
+Electronics
+===========
+
+Particular scanning order for grid is dictated my underlying hardware.
