@@ -1,4 +1,72 @@
-Simple example of interactive DC simulation
+* General overview of ngspice command line tool
+
+spice terminology
+
+- card :: single line describing circuit component
+- instance :: instance is a particular element in the circuit;
+  resistor with values connected to other terminals or voltage source
+  or whatever else is necessary
+
+
+Model is a specification for parameters for a subcircuit(?).
+Subcircuit is a netlist wrapped in a single 'block'. It has several
+terminal nodes and can also have parameter list.
+
+Instance card begins with a name for an element: first line starts
+with specific letter, showing type of component, followed by arbitrary
+alphanumeric string. Together this is called a 'refname'. Then you get
+list of terminal nodes and component-specific parameters
+
+For example resistor would look like ~Rtest 1 2 1K~
+
+This describes resistor with value of 1K ohm, connected to terminals 1
+and 2
+
+Netlist is a collection of subcircuit and model declarations as well
+as instances. There might be other thigns such as logical expressions,
+print statements etc.
+
+First line of the netlist is an legend - be careful not to put any
+actual code as it will be truncated.
+
+It is necessary to have a terminal node 0 in your netlist (at least
+for DC sweep simulation) - it is used as a ground. If you don't have a
+ground node you might get very weird error messages.
+
+Example of circuit netlist:
+
+#+begin_src spice
+  ,* Resistor simulation
+  R1 1 0 1K
+  V1 1 2 5
+#+end_src
+
+
+It describes a 1K resistor connected to 5V dc voltage source.
+
+
+After you created the netlist you can run simulation using ~ngspice
+file.net~ - this will open interactive ngspice shell that works just
+like regular =bash=. To simulate change of voltage from 0 to 10 on
+voltage source in steps of 1 do ~dc v1 0 10 1~. This will generate a
+_vector_ - collection of values. To list existing vectors run
+~display~, and to see actual values run ~print v(1)~ where argument
+can be replaced with any before name. To save simulation data to file
+do ~wrdata file.txt v(1)~.
+
+
+You can write commands inside of the control section: ~.control~ to
+begin and ~.endc~ to finish. Inside you put the same commands as you
+would in regular interactive mode. To simply run =ngspice= file
+without entering interactive mode do ~ngspice -b <file.net>~
+
+You can also use ngspice as a shared or dynamic library. It's api is
+similar to batch script: you write circuit line by line and then start
+simulation.
+
+
+
+* Simple example of interactive DC simulation
 
 - Create ~.sch~ file using =gschem=. I just added resistor, dc voltage
   source and ground node. NOTE: It is necessary to
@@ -17,7 +85,7 @@ Simple example of interactive DC simulation
 #+caption: Generate netlist
 #+begin_src bash
 gnetlist -g spice-sdb -o ngspice_cmdline_test.net ngspice_cmdline_test.sch
-ngspice ngspice_cmdline_test.net  
+ngspice ngspice_cmdline_test.net
 #+end_src
 
 #+caption: Run simulation (spice commands)
