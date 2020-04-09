@@ -1,0 +1,6 @@
+.SUBCKT pushbutton 1 2
+S1 1 2 n001 0 pushbutton_model
+V1 n001 0 5
+*{state <> 0 ? 5 : 0}
+.model pushbutton_model sw vt=1 vh=0.2 ron=1 roff=1000MEG
+.ENDS pushbutton

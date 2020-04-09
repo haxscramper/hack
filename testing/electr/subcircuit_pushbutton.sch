@@ -1,0 +1,48 @@
+v 20191008 2
+C 40000 40000 0 0 0 title-B.sym
+C 49500 47100 1 0 0 switcap-switch-1.sym
+{
+T 49600 47500 5 10 0 0 0 0 1
+device=SWITCAP-switch
+T 49800 47100 5 10 0 1 0 0 1
+clock=clk
+T 50000 47400 5 10 1 1 0 0 1
+refdes=Xbutton
+T 49500 47100 5 10 0 0 0 0 1
+model-name=pushbutton
+}
+C 49500 45500 1 0 0 voltage-3.sym
+{
+T 49700 46200 5 8 0 0 0 0 1
+device=VOLTAGE_SOURCE
+T 49800 46000 5 10 1 1 0 0 1
+refdes=V1
+T 49500 45500 5 10 1 0 0 0 1
+value=5
+}
+C 49600 46100 1 90 0 resistor-2.sym
+{
+T 49250 46500 5 10 0 0 90 0 1
+device=RESISTOR
+T 49300 46300 5 10 1 1 90 0 1
+refdes=R1
+T 49300 46600 5 10 1 1 90 0 1
+value=1K
+}
+C 50400 45400 1 0 0 ground.sym
+N 49500 47300 49500 47000 4
+N 49500 45700 49500 46100 4
+N 50600 45700 50400 45700 4
+N 50300 47300 50600 47300 4
+N 50600 47300 50600 45700 4
+C 51800 46900 1 0 0 spice-subcircuit-LL-1.sym
+{
+T 51900 47200 5 10 0 1 0 0 1
+device=spice-subcircuit-LL
+T 51900 47300 5 10 1 1 0 0 1
+refdes=A1
+T 51900 47000 5 10 1 1 0 0 1
+model-name=pushbutton
+T 51900 46800 5 10 1 0 0 0 1
+file=pusbutton.cir
+}
