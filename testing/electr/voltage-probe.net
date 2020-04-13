@@ -1,0 +1,27 @@
+#!/usr/bin/env -vS ngspice -b
+
+.model switch sw
++ vt=1
++ vh=0.2
++ ron=1
++ roff=1e12
+
+* Load resistor. `2` is a pin for `digitalRead`
+R1 2 0 1e12
+* `digitalWrite` pin
+V1 1 0 5
+
+* Button switch
+S1 1 2 4 0 switch
+Vs 4 0 5
+
+.control
+* digital write LOW/HIGH to 1
+* turn switch on and off
+dc
++ v1 0 5 5
++ vs 0 5 5
+
+display
+print v(1), v(4), v(2)
+.endc

@@ -1,0 +1,10 @@
+* Batch mode simulation test
+R1 0 1 100
+R2 1 2 100
+V1 0 2 5
+
+.control
+dc v1 0 10 1
+print v(1)
+* wrdata resistor-batch.txt v(1)
+.endc
