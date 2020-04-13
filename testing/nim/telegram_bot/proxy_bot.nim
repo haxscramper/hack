@@ -8,24 +8,23 @@ import sequtils
 initDefense()
 
 
-const API_KEY = slurp("secret.key").strip()
+const API_KEY = "sdfsf" #slurp("secret.key").strip()
 
 let
   urlGetfile = &"https://api.telegram.org/bot{API_KEY}/getFile?file_id="
   apiFile = &"https://api.telegram.org/file/bot{API_KEY}/"
 
 var isWaitingForNotebook = false
-
-
 const (proxyaddr, testchat) =
   static:
-    let jsConf = "secret.json".readFile().parseJson()
-    let ip = jsConf["ip"].asStr()
-    let port = jsConf["port"].asStr()
-    (&"http://{ip}:{port}", jsConf["chatid"].asInt())
+    # let jsConf = "secret.json".readFile().parseJson()
+    # let ip = jsConf["ip"].asStr()
+    # let port = jsConf["port"].asStr()
+    # (&"http://{ip}:{port}", jsConf["chatid"].asInt())
+    ("sdf", 12)
 
 
-proc updateHandler(bot: Telebot, e: Update): Future[bool] {.async.} =
+proc updateHandler(bot: Telebot, e: Update): Future[bool] {.async, gcsafe.} =
   echo "Got update"
   if isWaitingForNotebook:
     let
@@ -93,13 +92,17 @@ bot.onCommand(
     discard b.sendMessage(c.message.chat.id, c.message.text.get())
   )
 
+# let prxy {.threadvar.} = "sdf"
+let prxy = "sdf"
+
+proc convertCallback(b: Telebot, c: Command): Future[bool] {.async, gcsafe.} =
+  echo prxy
+  discard b.sendMessage(c.message.chat.id, "Send me `.ipynb` file to convert")
+  isWaitingForNotebook = true
+
+
 block:
-  bot.onCommand(
-    "convert",
-    proc(b: Telebot, c: Command): Future[bool] {.async.} =
-      discard b.sendMessage(c.message.chat.id, "Send me `.ipynb` file to convert")
-      isWaitingForNotebook = true
-  )
+  bot.onCommand("convert", convertCallback)
 
   bot.onUpdate(updateHandler)
 
