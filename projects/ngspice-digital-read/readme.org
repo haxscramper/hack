@@ -1,0 +1,51 @@
+Simulate circuit behaviour using ngspice simulation.
+
+Allow to simulate external circuit behaviour using ngspice - ~io-pin~
+subcircui provides a way to either act as voltage source or as a
+probe.
+
+
+
+* Devnotes
+
+#+begin_src spice
+  #!/usr/bin/env -vS ngspice -b
+
+  ,* Pin
+
+  .subckt pin 1
+  .param state=0
+
+  .if (state == 0)
+  ,* TO measure voltage between ground and any point in circuit
+  Rxxx 1 0 1e12 
+  .elseif (state == 1)
+  ,* Simulate digital read
+  Vxxx 1 0 0
+  ,* Simulate digital write
+  .elseif (state == 2)
+  Vxxx 1 0 5
+  .endif
+
+  .ends
+
+  Xread 2 pin state=2
+  Xwrite 2 pin state=0
+
+  ,* Dummy voltage source to run simulation on
+  Vdummy 0 999 5
+
+  .control
+
+  ,* Run simulation for a single value
+  dc vdummy 5 5 5
+
+  ,* Print all vectors
+  display
+
+  ,* Print vector with values we measured
+  print v(2)
+
+  .endc
+#+end_src
+
