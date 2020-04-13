@@ -1,0 +1,6 @@
+--styleCheck:hint
+--warning[CaseTransition]:off
+--warning[UnusedImport]:off
+-d:nimOldCaseObjects
+#--threads:on
+-d:debug

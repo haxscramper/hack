@@ -18,6 +18,7 @@ import grid
 when defined(profiler):
   import nimprof
 
+## .. include:: notes.rst
 
 proc getChangeFromDefault(state: string, grid: KeyGrid
                          ): tuple[reports: seq[HIDReport], anyChanges: bool] =
@@ -25,9 +26,9 @@ proc getChangeFromDefault(state: string, grid: KeyGrid
   ## state show by `state`. Report all key changes in form of output
   ## HID report.
   let rows = state.split("|")
-  asserteq rows.len, grid.keyGrid.len
+  assert rows.len == grid.keyGrid.len
   for (stateRow, gridRow) in zip(rows, grid.keyGrid):
-    asserteq stateRow.len, gridRow.len
+    assert stateRow.len == gridRow.len
 
   var gridCopy = grid
 
