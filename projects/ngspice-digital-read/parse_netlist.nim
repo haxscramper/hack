@@ -148,24 +148,21 @@ proc parseIntSeq(s: seq[string],
   ## Parse sequence of strings into integers and throw exception if
   ## number of items is less than necessary.
   when inclusive is int:
-    if s.len < inclusive:
-      raise newException(ValueError, joinLiteral &"""Error while parsing integer sequence. Cannot access {inclusive}
-      index as sequence has len {s.len}. {onMissing}""")
-    else:
-      try:
-        result = @[s[inclusive].parseInt()]
-      except:
-         raise newException(
-         ValueError, &"""Failed to parse s[{inclusive}] as integer: {getCurrentExceptionMsg()}.
-         {onMissing}""")
+    longAssertionCheck(s.len < inclusive):
+      """Error while parsing integer sequence. Cannot access {inclusive} index
+      as sequence has len {s.len}. {onMissing}"""
+
+    try:
+      result = @[s[inclusive].parseInt()]
+    except:
+      longAssertionFail:
+        """Failed to parse s[{inclusive}] as integer:
+        {getCurrentExceptionMsg()}. {onMissing}"""
 
   else:
-    if s.len < inclusive[1]:
-      raise newException(
-        ValueError, joinLiteral &"""
-        Error while parsing integer sequence: sequnce length
-        is too small: expected {inclusive[1]}, but found {s.len}
-        """)
+    longAssertionCheck(s.len < inclusive[1]):
+      """Error while parsing integer sequence: sequnce length is too small:
+      expected {inclusive[1]}, but found {s.len} """
 
 
   # if s.len < minNumber:
@@ -195,8 +192,8 @@ proc parseNgnNode(lns: seq[string]): NGNode =
           resistance: config.parseIntSeq(3, "Resistor missing value")[0]
         )
         else:
-          raise newException(
-            ValueError, &"""Invald name: {first[0]}""")
+          longValueFail:
+            "Unknow device type: {first[0]}"
 
 
 
