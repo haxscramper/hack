@@ -12,6 +12,10 @@ func joinLiteral(msg: string): string =
     .mapIt(it[it.find(re"""[^\s]""") .. ^1])
     .join(" ")
 
+# DOC use formatting only on literal nodes, pas non-literal as-is
+template optFmt(arg: string{lit}): untyped = &arg
+proc optFmt(arg: string): string = arg
+
 template longAssertionCheck*(expression: untyped, body: untyped): untyped =
   ## Raise `AssertionError` if `expression` evaluates as false. Body
   ## is a string literal which will be passed as a message. It will be
@@ -30,7 +34,7 @@ template longAssertionCheck*(expression: untyped, body: untyped): untyped =
     assert test
 
   static: assert body is string
-  assert expression, joinLiteral(&body)
+  assert expression, joinLiteral(optFmt body)
 
 
 template longAssertionFail*(body: untyped): untyped =
@@ -95,29 +99,31 @@ type
   OptInt = Option[int]
 
 type
-  NGDeviceKind = enum
+  NGInstanceKind = enum
     ngdResistor
+    ngdDiode
+
     ngdDcVoltage
 
     ngdCustom
 
     ngdVoltageSwitch
 
-  NGDevice* = object
+  NGInstance* = object
     name*: string ## Alphanumeric name of the instance
     terms*: seq[int] ## Connected terminals
     modelName*: OptStr ## Name of the model
     params*: Table[string, string] ## Additional parameters, not
                                    ## specified in the type.
 
-    case kind*: NGDeviceKind:
+    case kind*: NGInstanceKind:
       of ngdResistor:
         resistance*: int
       of ngdVoltageSwitch:
         initStage: bool
       of ngdDcVoltage:
         dcValue: float
-      of ngdCustom:
+      of ngdCustom, ngdDiode:
         nil
 
   NGModel = object
@@ -133,11 +139,11 @@ type
       of ngnControl:
         beginEnd: (string, string)
       of ngnInstance:
-        dev: NGDevice
+        dev: NGInstance
       of ngnModel:
         model: NGModel
 
-func getTerminals(dev: NGDevice): (int, int) =
+func getTerminals(dev: NGInstance): (int, int) =
   ## Returng `N+` and `N-` pins for the node.
   (dev.terms[0], dev.terms[1])
 
@@ -149,7 +155,7 @@ proc parseIntSeq(s: seq[string],
   ## Parse sequence of strings into integers and throw exception if
   ## number of items is less than necessary.
   when inclusive is int:
-    longAssertionCheck(s.len < inclusive):
+    longAssertionCheck(s.len >= inclusive):
       """Error while parsing integer sequence. Cannot access {inclusive} index
       as sequence has len {s.len}. {onMissing}"""
 
@@ -161,7 +167,7 @@ proc parseIntSeq(s: seq[string],
         {getCurrentExceptionMsg()}. {onMissing}"""
 
   else:
-    longAssertionCheck(s.len < inclusive[1]):
+    longAssertionCheck(s.len >= inclusive[1]):
       """Error while parsing integer sequence: sequnce length is too small:
       expected {inclusive[1]}, but found {s.len} """
 
@@ -183,12 +189,10 @@ template takeItUntil(s: untyped, pr: untyped): untyped =
 
   res
 
-proc convertUntilEx[T, R](s: openarray[T], conv: proc(arg: T): R): tuple[res: seq[R], idx: int] =
+proc convertUntilEx[T, R](
+  s: openarray[T], conv: proc(arg: T): R): tuple[res: seq[R], idx: int] =
   ## Run conversion until exeption is thrown. `counter` will be
   ## assigned to an **index of first failed** item in sequence.
-  runnableExamples:
-    import strutils
-
   for idx, it in s:
     try:
       result.res.add conv(it)
@@ -208,7 +212,8 @@ func splitTupleSecond*[T, R](tupl: (T, R), second: var T): R =
   second = tupl[0]
 
 
-template convertItUntilEx(s: untyped, conv: untyped, counter: var int = 0): untyped =
+template convertItUntilEx(
+  s: untyped, conv: untyped, counter: var int = 0): untyped =
   ## Run conversion until exception is thrown `counter` will be
   ## assigned to an **index of first failed** item in sequence.
   runnableExamples:
@@ -235,8 +240,17 @@ template convertItUntilEx(s: untyped, conv: untyped, counter: var int = 0): unty
 
   res
 
-proc parseNgnNode(lns: seq[string]): NGNode =
+
+func getNth[T](s: openarray[T], n: int, onErr: string): T =
+  longAssertionCheck(s.len > n):
+    onErr
+
+  return s[n]
+
+proc parseNgnNode(lns: seq[(int, string)]): NGNode =
+  let lineIdx = lns[0][0]
   let config: seq[string] = lns
+    .mapIt(it[1])
     .mapIt(it.startsWith("+").tern(it[1..^1], it))
     .join(" ")
     .split(" ")
@@ -247,44 +261,79 @@ proc parseNgnNode(lns: seq[string]): NGNode =
       of ".model":
         result = NGNode(kind: ngnModel, model: parseNGModel(config))
   else:
-    let resDev: NGDevice =
+    let resDev: NGInstance =
       case first[0].toLowerAscii():
-        of 'r': NGDevice(
-          kind: ngdResistor,
-          name: first[1..^1],
-          terms: config.parseIntSeq((1, 2), "Resistor missing connection pin"),
-          resistance: config.parseIntSeq(3, "Resistor missing value")[0]
-        )
+        of 'r':
+          NGInstance(
+            kind: ngdResistor,
+            name: first[1..^1],
+            terms: config.parseIntSeq(
+              (1, 2), &"Resistor missing connection pin on line {lineIdx}"),
+            resistance:
+              block:
+                let strval = config.getNth(
+                  3, &"Resistor missing value on line {lineIdx}")
+                90
+          )
 
         of 'x':
           var modelIdx: int = 0
-          NGDevice(
+          NGInstance(
             kind: ngdCustom,
             terms: config[1..^1].convertUntilEx(parseInt).splitTupleFirst(modelIdx),
             name: first[1..^1],
             modelName: some(config[modelIdx + 1])
           )
+        of 'd':
+          NGInstance(
+            kind: ngdDiode,
+            terms: config.parseIntSeq(
+              (1, 2), &"Resistor missing conneciton pin on line {lineIdx}")
+          )
 
         else:
           longValueFail:
             "Unknow device type: {first[0]}"
+    result = NGNode(kind: ngnInstance, dev: resDev)
 
+proc toString(inst: NGInstance): string =
+  let dtype =
+    case inst.kind:
+      of ngdResistor: "R"
+      of ngdDiode: "D"
+      of ngdCustom: "X"
+      of ngdDcVoltage: "V"
+      else: ")))"
 
+  result = dtype & inst.name & " " &
+    inst.terms.mapIt($it).join(" ") & " " & inst.modelName.get("") & " " &
+    (block: collect(newSeq):
+       for k, v in inst.params: &"{k}={v}").joinw()
+
+proc toString(node: NGNode): string =
+  case node.kind:
+    of ngnModel:
+      ".MODEL"
+
+    of ngnInstance:
+      toString(node.dev)
+
+    of ngnControl:
+      "control"
 
 
 proc main(): void =
-  let netlist = collect(newSeq):
-    for line in "key-grid.net".lines():
-      if not (line.startsWith("*")):
-        line
+  let netlist = toSeq("key-grid.net".lines)
+    .enumerate()
+    .filterIt(not it[1].startsWith("*"))
+    .mapIt((it[0], it[1]))
 
-
-  let devices =
+  let instances =
     block:
       var res: seq[NGNode]
-      var buf: seq[string]
-      for idx, line in netlist:
-        if line.startsWith("+"): # Multiline card continuation
+      var buf: seq[(int, string)]
+      for line in netlist:
+        if line[1].startsWith("+"): # Multiline card continuation
           buf.add line
         else:
           if buf.len == 0: # Might be a start of a new mulitline
@@ -294,6 +343,17 @@ proc main(): void =
             buf = @[]
 
       res
+
+  for node in instances:
+    var tmp = node
+
+    if tmp.kind == ngnInstance and
+       tmp.dev.kind == ngdCustom and
+       tmp.dev.modelName == "on-off-switch":
+
+      tmp.dev.params["state"] = "0"
+
+    echo tmp.toString()
 
 template prettyStackTrace(body: untyped): untyped =
   try:
@@ -308,6 +368,9 @@ template prettyStackTrace(body: untyped): untyped =
       if not filename.startsWith(choosenim):
         let (_, name) = filename.splitPath()
         echo name, " ", tr.line, " \e[31m", tr.procname, "\e[0m"
+
+    let idx = e.msg.find('(')
+    echo e.msg[(if idx > 0: idx else: 0)..^1]
 
 prettyStackTrace:
   main()
