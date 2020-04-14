@@ -49,3 +49,23 @@ probe.
   .endc
 #+end_src
 
+* Notes
+
+** gschem
+
+Official [[http://wiki.geda-project.org/geda:gschem_symbol_creation][wiki]] gives pretty good explanation on how to create own
+symbols. Another [[https://ashwith.wordpress.com/2010/09/23/creating-your-own-symbols-in-gschem/][example]] (albeit more complicated). Couple points to
+note:
+
+- to add attribute for a *symbol* press ~a a~
+- To add particular directory to a library files use
+  #+begin_src scheme
+    (component-library 
+     (build-path 
+      (getenv "HOME") 
+      "workspace/hack/projects/ngspice-digital-read"))
+  #+end_src
+
+  In particular I have this repository located in
+  ~$HOME/workspace/hack/~ - to expand home path I used ~getenv~.
+

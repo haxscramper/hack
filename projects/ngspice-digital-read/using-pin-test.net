@@ -6,8 +6,9 @@
 * Documentation at http://www.brorson.com/gEDA/SPICE/   *
 *********************************************************
 *==============  Begin SPICE netlist of main design ============
-X2 2 io-pin
-R2 0 2 10  
-R1 2 1 10  
+Xs 2 1 on-off-switch
+X2 3 io-pin
+R2 0 3 10  
+R1 3 2 10  
 X1 1 io-pin
 .end
