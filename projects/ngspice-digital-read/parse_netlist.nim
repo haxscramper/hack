@@ -5,6 +5,90 @@ import strutils
 import hmisc/helpers
 import sequtils, strformat
 
+func joinLiteral(msg: string): string =
+  msg.split("\n")
+    .filterIt(it.find(re"[^\s]") != -1)
+    .mapIt(it[it.find(re"""[^\s]""") .. ^1])
+    .join(" ")
+
+template longAssertionCheck*(expression: untyped, body: untyped): untyped =
+  ## Raise `AssertionError` if `expression` evaluates as false. Body
+  ## is a string literal which will be passed as a message. It will be
+  ## passed to `&` macro - i.e. variable interpolation is supported.
+  runnableExamples:
+    var test = false
+    try:
+      let variable = 2
+      longAssertionCheck(variable == 3):
+        """
+        Failed to break math while comparing {variable} to `3`
+        """
+    except AssertionError:
+      test = true
+
+    assert test
+
+  static: assert body is string
+  assert expression, joinLiteral(&body)
+
+
+template longAssertionFail*(body: untyped): untyped =
+  ## Raise `AssertionError`. Body is a string literal which will be
+  ## passed as a message. It will be passed to `&` macro - i.e.
+  ## variable interpolation is supported.
+  runnableExamples:
+    var test = false
+    try:
+      longAssertionFail:
+        "Assertion failed"
+    except AssertionError:
+      test = true
+
+    assert test
+
+  static: assert body is string
+  raise newException(AssertionError, joinLiteral(&body))
+
+
+template longValueCheck*(expression: untyped, body: untyped): untyped =
+  ## Raise `ValueError` if `expression` evaluates as false. Body is a
+  ## string literal which will be passed as a message. It will be
+  ## passed to `&` macro - i.e. variable interpolation is supported.
+  runnableExamples:
+    var test = false
+    try:
+      let variable = 2
+      longValueCheck(variable == 3):
+        """
+        Failed to break math while comparing {variable} to `3`
+        """
+    except ValueError:
+      test = true
+
+    assert test
+
+  if not (expression):
+    raise newException(ValueError, joinLiteral(&body))
+
+
+template longValueFail*(body: untyped): untyped =
+  ## Raise `ValueError`. Body is a string literal which will be
+  ## passed as a message. It will be passed to `&` macro - i.e.
+  ## variable interpolation is supported.
+  runnableExamples:
+    var test = false
+    try:
+      longValueFail:
+        "Assertion failed"
+    except ValueError:
+      test = true
+
+    assert test
+
+  static: assert body is string
+  raise newException(ValueError, joinLiteral(&body))
+
+
 type
   OptStr = Option[string]
   OptInt = Option[int]
@@ -57,12 +141,6 @@ func getTerminals(dev: NGDevice): (int, int) =
   (dev.terms[0], dev.terms[1])
 
 # func `$`(n: NGNNode) = ...
-
-func joinLiteral(msg: string): string =
-  msg.split("\n")
-    .filterIt(it.len > 0)
-    .mapIt(it[it.find(re"""[^\s]""") .. ^1])
-    .join(" ")
 
 proc parseIntSeq(s: seq[string],
                  inclusive: (int, int) | int,
