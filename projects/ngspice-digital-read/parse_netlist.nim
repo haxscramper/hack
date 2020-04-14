@@ -1,4 +1,5 @@
 import tables, options, sugar
+import os
 import parseutils
 import re
 import strutils
@@ -103,9 +104,9 @@ type
     ngdVoltageSwitch
 
   NGDevice* = object
-    eName*: string ## Alphanumeric name of the instance
+    name*: string ## Alphanumeric name of the instance
     terms*: seq[int] ## Connected terminals
-    nodelName*: OptStr ## Name of the model
+    modelName*: OptStr ## Name of the model
     params*: Table[string, string] ## Additional parameters, not
                                    ## specified in the type.
 
@@ -172,6 +173,68 @@ proc parseIntSeq(s: seq[string],
 func parseNGModel(config: seq[string]): NGModel =
   discard
 
+template takeItUntil(s: untyped, pr: untyped): untyped =
+  var res: seq[type(s[0])]
+  for it {.inject.} in s:
+    if not pr:
+      res.add it
+    else:
+      break
+
+  res
+
+proc convertUntilEx[T, R](s: openarray[T], conv: proc(arg: T): R): tuple[res: seq[R], idx: int] =
+  ## Run conversion until exeption is thrown. `counter` will be
+  ## assigned to an **index of first failed** item in sequence.
+  runnableExamples:
+    import strutils
+
+  for idx, it in s:
+    try:
+      result.res.add conv(it)
+    except:
+      result.idx = idx
+      break
+
+assert @["12", "99", "%%%", "90"].convertUntilEx(
+  parseInt) == (@[12, 99], 2)
+
+func splitTupleFirst*[T, R](tupl: (T, R), second: var R): T =
+  result = tupl[0]
+  second = tupl[1]
+
+func splitTupleSecond*[T, R](tupl: (T, R), second: var T): R =
+  result = tupl[1]
+  second = tupl[0]
+
+
+template convertItUntilEx(s: untyped, conv: untyped, counter: var int = 0): untyped =
+  ## Run conversion until exception is thrown `counter` will be
+  ## assigned to an **index of first failed** item in sequence.
+  runnableExamples:
+    import strutils
+
+    var idx = 0
+    assert @["12", "99", "%%%", "90"].convertItUntilEx(
+      parseInt(it), idx) == @[12, 99]
+
+    assert idx == 2
+
+  var res: seq[type(
+    block:
+      var it {.inject.}: type(s[0])
+      conv
+  )]
+
+  for idx, it {.inject.} in s:
+    try:
+      res.add conv
+    except:
+      counter = idx
+      break
+
+  res
+
 proc parseNgnNode(lns: seq[string]): NGNode =
   let config: seq[string] = lns
     .mapIt(it.startsWith("+").tern(it[1..^1], it))
@@ -185,12 +248,23 @@ proc parseNgnNode(lns: seq[string]): NGNode =
         result = NGNode(kind: ngnModel, model: parseNGModel(config))
   else:
     let resDev: NGDevice =
-      case first[0]:
-        of 'R': NGDevice(
+      case first[0].toLowerAscii():
+        of 'r': NGDevice(
           kind: ngdResistor,
+          name: first[1..^1],
           terms: config.parseIntSeq((1, 2), "Resistor missing connection pin"),
           resistance: config.parseIntSeq(3, "Resistor missing value")[0]
         )
+
+        of 'x':
+          var modelIdx: int = 0
+          NGDevice(
+            kind: ngdCustom,
+            terms: config[1..^1].convertUntilEx(parseInt).splitTupleFirst(modelIdx),
+            name: first[1..^1],
+            modelName: some(config[modelIdx + 1])
+          )
+
         else:
           longValueFail:
             "Unknow device type: {first[0]}"
@@ -198,8 +272,7 @@ proc parseNgnNode(lns: seq[string]): NGNode =
 
 
 
-
-when isMainModule:
+proc main(): void =
   let netlist = collect(newSeq):
     for line in "key-grid.net".lines():
       if not (line.startsWith("*")):
@@ -221,3 +294,20 @@ when isMainModule:
             buf = @[]
 
       res
+
+template prettyStackTrace(body: untyped): untyped =
+  try:
+    body
+  except:
+    let e = getCurrentException()
+    let choosenim = getHomeDir() & ".choosenim"
+
+    for tr in e.getStackTraceEntries():
+      let filename: string = $tr.filename
+
+      if not filename.startsWith(choosenim):
+        let (_, name) = filename.splitPath()
+        echo name, " ", tr.line, " \e[31m", tr.procname, "\e[0m"
+
+prettyStackTrace:
+  main()
