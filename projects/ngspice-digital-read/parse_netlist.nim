@@ -5,6 +5,42 @@ import re
 import strutils
 import hmisc/helpers
 import sequtils, strformat
+import shell
+import posix_utils
+
+type
+  ExternalSourceError = ref object of CatchableError
+  ShellExecError = ref object of ExternalSourceError
+    retcode: int ## Return code of failed command
+    errmsg: string ## Shell command error message
+    shellcmd: string ## Shell command
+
+
+template tryShellRun(body: untyped): string =
+  let shellConf {.gensym.}: set[DebugOutputKind] = {}
+  let (res, err, code) = shellVerboseErr shellConf:
+    body
+
+  if code != 0:
+    raise ShellExecError(
+      msg: "Shell execution failed",
+      retcode: code,
+      errmsg: err,
+      shellcmd: astToStr(body)
+    )
+
+  res
+
+template withCwd(cwd: string, body: untyped): untyped =
+  ## Store current directory, switch to `cwd`, execute body and switch
+  ## back
+  let nowDir = getCurrentDir()
+  setCurrentDir(cwd)
+
+  body
+
+  setCurrentDir(nowDir)
+
 
 func joinLiteral(msg: string): string =
   msg.split("\n")
@@ -144,6 +180,10 @@ type
         dev: NGInstance
       of ngnModel:
         model: NGModel
+
+  NGDocument = object
+    included: seq[string]
+    nodes: seq[NGNode]
 
 func getTerminals(dev: NGInstance): (int, int) =
   ## Returng `N+` and `N-` pins for the node.
@@ -375,14 +415,13 @@ proc toString(node: NGNode): string =
     of ngnControl:
       result = "control"
 
+proc parseNGDoc(path: string): NGDocument =
+  let netlist = toSeq(path.lines)
+     .enumerate()
+     .filterIt(not it[1].startsWith("*"))
+     .mapIt((it[0], it[1]))
 
-proc main(): void =
-  let netlist = toSeq("key-grid.net".lines)
-    .enumerate()
-    .filterIt(not it[1].startsWith("*"))
-    .mapIt((it[0], it[1]))
-
-  let instances =
+  result.nodes =
     block:
       var res: seq[NGNode]
       var buf: seq[(int, string)]
@@ -398,21 +437,51 @@ proc main(): void =
 
       res
 
-  for node in instances:
+proc simulate(doc: NGDocument): Table[string, seq[float]] =
+  let tmpd = "/tmp/ngpsice-simulation"
+  createDir(tmpd)
+  let (path, file) = mkstemp(tmpd & "/zzz.net")
+
+  file.writeline("Simulating document")
+
+  for incld in doc.included:
+    file.writeline("* included " & incld)
+    file.writeline(incld.readFile().string())
+
+  file.writeline(doc.nodes.map(toString).joinl)
+
+  file.close()
+
+  withCwd(tmpd):
+    discard tryShellRun:
+      ngspice -b "saa.net"
+
+
+
+proc main(): void =
+  var doc = parseNGDoc("key-grid.net")
+  doc.included = @["on-off-switch.net", "io-pin.net"]
+
+  for node in doc.nodes:
     var tmp = node
 
     if tmp.kind == ngnInstance and
-       tmp.dev.kind == ngdCustom and
-       tmp.dev.modelName == "on-off-switch":
+       tmp.dev.kind == ngdCustom:
+      case tmp.dev.modelName.get():
+        of "on-off-switch": tmp.dev.params["state"] = "0"
+        of "io-pin":
+          if node.dev.name.parseInt() <= 3:
+            tmp.dev.params["state"] = "1"
+          else:
+            tmp.dev.params["state"] = "0"
 
-      tmp.dev.params["state"] = "0"
+  let vectors = doc.simulate()
 
-    echo tmp.toString()
+template getCEx(t: untyped): untyped =
+  cast[t](getCurrentException())
 
 template prettyStackTrace(body: untyped): untyped =
-  try:
-    body
-  except:
+  template pprintStackTrace(): untyped =
     let e = getCurrentException()
     let choosenim = getHomeDir() & ".choosenim"
 
@@ -425,6 +494,16 @@ template prettyStackTrace(body: untyped): untyped =
 
     let idx = e.msg.find('(')
     echo e.msg[(if idx > 0: idx else: 0)..^1]
+
+  try:
+    body
+  except ShellExecError:
+    pprintStackTrace()
+
+    let e = getCEx(ShellExecError)
+    echo "---"
+    echo "code: ", e.retcode
+    echo "msg: ", e.errmsg
 
 prettyStackTrace:
   main()
