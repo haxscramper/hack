@@ -103,7 +103,7 @@ type
     ngdResistor
     ngdDiode
 
-    ngdDcVoltage
+    ngdVoltageSource
 
     ngdCustom
 
@@ -121,12 +121,14 @@ type
         resistance*: int
       of ngdVoltageSwitch:
         initStage: bool
-      of ngdDcVoltage:
+      of ngdVoltageSource:
         dcValue: float
       of ngdCustom, ngdDiode:
         nil
 
   NGModel = object
+    kind: NGInstanceKind
+    name: string
     params: Table[string, string]
 
   NGNodeKind = enum
@@ -171,13 +173,57 @@ proc parseIntSeq(s: seq[string],
       """Error while parsing integer sequence: sequnce length is too small:
       expected {inclusive[1]}, but found {s.len} """
 
+  longValueCheck(inclusive[1] < s.len):
+      "Error while parsing intergers: expected {inclusive[1]} elements but found {s.len}. {onMissing}"
 
-  # if s.len < minNumber:
-  #   raise newException(
-  #     &"Error while parsing intergers: expected {minNumber} but found {s.len}. {onMissing}")
+  for i in inclusive[0] .. inclusive[1]:
+    result.add s[i].parseInt()
 
-func parseNGModel(config: seq[string]): NGModel =
-  discard
+func filterEmpty(s: seq[string]): seq[string] =
+  ## Filter out stirng that contains only whitespace characters ([\s])
+  s.filterIt(it =~ re"[^\s]")
+
+func joinkv[K, V](t: Table[K, V], eqTok: string = "="): seq[string] =
+  ## Join table values as key-value pairs
+  collect(newSeq):
+    for k, v in t: &"{k}{eqTok}{v}"
+
+func toString(kind: NGInstanceKind): char =
+  case kind:
+    of ngdDiode: 'D'
+    of ngdResistor: 'R'
+    of ngdCustom: 'X'
+    of ngdVoltageSwitch: 'S'
+    of ngdVoltageSource: 'V'
+
+func toInstanceKind(kind: string): NGInstanceKind =
+  case kind[0].toLowerAscii():
+    of 'd': ngdDiode
+    of 'r': ngdResistor
+    of 'v': ngdVoltageSource
+    of 'x': ngdCustom
+    of 's': ngdVoltageSwitch
+    else:
+      longValueFail: "Unknown instance kind: '{kind[0]}'"
+
+iterator asKVTokens(s: seq[string], eqTok: string = "="): tuple[k, v: string] =
+  ## Iterate sequence of key-value tokens
+  # TODO handle cases like `k=v`, `k= v` and `k =v` (pair passed as
+  # one or two tokens)
+  for kIdx in 0 ..< (s.len div 3):
+    let idx = kIdx * 3
+    longAssertionCheck(s[idx + 1] == eqTok):
+      "Invalid equality token: expected {eqTok}, found {s[idx + 1]} at [{idx + 1}]"
+
+    yield (s[idx], s[idx + 2])
+
+
+proc parseNGModel(config: seq[string]): NGModel =
+  let tokens = config.joinw().split(" ").filterEmpty()
+  result.name = tokens[1]
+  result.kind = tokens[2].toInstanceKind()
+  for k, v in tokens[3..^1].asKVTokens():
+    result.params[k] = v
 
 template takeItUntil(s: untyped, pr: untyped): untyped =
   var res: seq[type(s[0])]
@@ -288,38 +334,46 @@ proc parseNgnNode(lns: seq[(int, string)]): NGNode =
           NGInstance(
             kind: ngdDiode,
             terms: config.parseIntSeq(
-              (1, 2), &"Resistor missing conneciton pin on line {lineIdx}")
+              (1, 2), &"Diode missing conneciton pin on line {lineIdx}"),
+            modelName: some(config[3])
           )
 
+        of 'v':
+          NGInstance(
+            kind: ngdVoltageSource,
+            terms: config.parseIntSeq(
+              (1, 2), &"Voltage source missing connection pin on line {lineIdx}"))
         else:
           longValueFail:
             "Unknow device type: {first[0]}"
+
     result = NGNode(kind: ngnInstance, dev: resDev)
-
-proc toString(inst: NGInstance): string =
-  let dtype =
-    case inst.kind:
-      of ngdResistor: "R"
-      of ngdDiode: "D"
-      of ngdCustom: "X"
-      of ngdDcVoltage: "V"
-      else: ")))"
-
-  result = dtype & inst.name & " " &
-    inst.terms.mapIt($it).join(" ") & " " & inst.modelName.get("") & " " &
-    (block: collect(newSeq):
-       for k, v in inst.params: &"{k}={v}").joinw()
 
 proc toString(node: NGNode): string =
   case node.kind:
     of ngnModel:
-      ".MODEL"
+      let modl = node.model
+      result = &".MODEL {modl.name} {modl.kind.toString()}(" &
+        &"{modl.params.joinkv().joinw()})"
 
     of ngnInstance:
-      toString(node.dev)
+      let inst = node.dev
+      let dtype =
+        case inst.kind:
+          of ngdResistor: "R"
+          of ngdDiode: "D"
+          of ngdCustom: "X"
+          of ngdVoltageSource: "V"
+          else: ")))"
+
+      result = dtype & inst.name & " " &
+        inst.terms.mapIt($it).join(" ") & " " & inst.modelName.get("") & " " &
+        (block: collect(newSeq):
+           for k, v in inst.params: &"{k}={v}").joinw()
+
 
     of ngnControl:
-      "control"
+      result = "control"
 
 
 proc main(): void =
@@ -340,7 +394,7 @@ proc main(): void =
             buf.add line
           else: # New card
             res.add parseNgnNode(buf)
-            buf = @[]
+            buf = @[line]
 
       res
 
