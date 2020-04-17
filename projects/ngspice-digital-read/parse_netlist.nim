@@ -407,9 +407,8 @@ proc toString(node: NGNode): string =
           else: ")))"
 
       result = dtype & inst.name & " " &
-        inst.terms.mapIt($it).join(" ") & " " & inst.modelName.get("") & " " &
-        (block: collect(newSeq):
-           for k, v in inst.params: &"{k}={v}").joinw()
+        inst.terms.mapIt($it).join(" ") & " " & inst.modelName.get("") & 
+        " " & inst.params.joinkv().joinw()
 
 
     of ngnControl:
@@ -450,30 +449,37 @@ proc simulate(doc: NGDocument): Table[string, seq[float]] =
 
   file.writeline(doc.nodes.map(toString).joinl)
 
+  file.writeline("""
+Vdummy 0 9999 5
+.control
+dc vdummy 5 5 5
+display
+.endc
+""")
+
   file.close()
+
+  echo path.readFile()
 
   withCwd(tmpd):
     discard tryShellRun:
-      ngspice -b "saa.net"
-
-
+      ngspice -b ($path)
 
 proc main(): void =
   var doc = parseNGDoc("key-grid.net")
   doc.included = @["on-off-switch.net", "io-pin.net"]
 
-  for node in doc.nodes:
-    var tmp = node
-
-    if tmp.kind == ngnInstance and
-       tmp.dev.kind == ngdCustom:
-      case tmp.dev.modelName.get():
-        of "on-off-switch": tmp.dev.params["state"] = "0"
-        of "io-pin":
+  for node in mitems(doc.nodes):
+    if node.kind == ngnInstance and
+       node.dev.kind == ngdCustom:
+      case node.dev.modelName.get():
+        of "on_off_switch":
+          node.dev.params["state"] = "0"
+        of "pin":
           if node.dev.name.parseInt() <= 3:
-            tmp.dev.params["state"] = "1"
+            node.dev.params["state"] = "1"
           else:
-            tmp.dev.params["state"] = "0"
+            node.dev.params["state"] = "0"
 
   let vectors = doc.simulate()
 

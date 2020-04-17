@@ -20,15 +20,15 @@
 *^^^^^^^^  End of included SPICE model from 1n4148.mod ^^^^^^^^
 *
 *==============  Begin SPICE netlist of main design ============
-Xc3r3 15 1 on-off-switch
-Xc2r3 12 2 on-off-switch
-Xc1r3 9 3 on-off-switch
-Xc1r2 8 3 on-off-switch
-Xc1r1 7 3 on-off-switch
-Xc2r1 10 2 on-off-switch
-Xc3r1 13 1 on-off-switch
-Xc3r2 14 1 on-off-switch
-Xc2r2 11 2 on-off-switch
+Xc3r3 15 1 on_off_switch
+Xc2r3 12 2 on_off_switch
+Xc1r3 9 3 on_off_switch
+Xc1r2 8 3 on_off_switch
+Xc1r1 7 3 on_off_switch
+Xc2r1 10 2 on_off_switch
+Xc3r1 13 1 on_off_switch
+Xc3r2 14 1 on_off_switch
+Xc2r2 11 2 on_off_switch
 Rr3 4 16 1K  
 Rr2 5 16 1K  
 Rr1 6 16 1K  
@@ -42,10 +42,10 @@ Dc2r1 10 6 1N4148
 Dc1r3 9 4 1N4148 
 Dc1r2 8 5 1N4148 
 Dc1r1 7 6 1N4148 
-X6 6 io-pin
-X5 5 io-pin
-X4 4 io-pin
-X1 3 io-pin
-X2 2 io-pin
-X3 1 io-pin
+X6 6 pin
+X5 5 pin
+X4 4 pin
+X1 3 pin
+X2 2 pin
+X3 1 pin
 .end

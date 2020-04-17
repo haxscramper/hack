@@ -32,4 +32,4 @@ V 662 101 14 3 0 0 0 -1 -1 0 -1 -1 -1 -1 -1
 T 400 350 8 10 1 1 0 0 1
 refdes=X?
 T 0 -100 8 10 0 1 0 0 1
-model-name=on-off-switch
+model-name=on_off_switch

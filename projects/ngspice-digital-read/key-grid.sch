@@ -5,42 +5,42 @@ C 49300 48700 1 90 0 io-pin-1.sym
 T 49200 48700 5 10 1 1 90 0 1
 refdes=X3
 T 49300 49400 5 10 0 1 90 0 1
-model-name=io-pin
+model-name=pin
 }
 C 47300 48700 1 90 0 io-pin-1.sym
 {
 T 47200 48700 5 10 1 1 90 0 1
 refdes=X2
 T 47300 49400 5 10 0 1 90 0 1
-model-name=io-pin
+model-name=pin
 }
 C 45300 48700 1 90 0 io-pin-1.sym
 {
 T 45200 48700 5 10 1 1 90 0 1
 refdes=X1
 T 45300 49400 5 10 0 1 90 0 1
-model-name=io-pin
+model-name=pin
 }
 C 41800 42200 1 180 0 io-pin-1.sym
 {
 T 41800 42100 5 10 1 1 180 0 1
 refdes=X4
 T 41100 42200 5 10 0 1 180 0 1
-model-name=io-pin
+model-name=pin
 }
 C 41800 44200 1 180 0 io-pin-1.sym
 {
 T 41800 44100 5 10 1 1 180 0 1
 refdes=X5
 T 41100 44200 5 10 0 1 180 0 1
-model-name=io-pin
+model-name=pin
 }
 C 41800 46200 1 180 0 io-pin-1.sym
 {
 T 41800 46100 5 10 1 1 180 0 1
 refdes=X6
 T 41100 46200 5 10 0 1 180 0 1
-model-name=io-pin
+model-name=pin
 }
 C 44100 47100 1 270 0 diode-1.sym
 {
