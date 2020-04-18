@@ -22,25 +22,35 @@ int ng_initdata(pvecinfoall intdata, int ident, void* userdata) {
     return 0;
 }
 
+int ng_getchar(char* outputreturn, int ident, void* userdata) {
+    printf("@ %s\n", outputreturn);
+    return 0;
+}
+
 
 int main() {
     int ret = ngSpice_Init(
-        NULL, NULL, NULL, NULL, ng_initdata, NULL, NULL);
+        ng_getchar, NULL, NULL, NULL, ng_initdata, NULL, NULL);
+
+    char** ca = (char**)malloc(sizeof(char*) * 8);
 
     // First line is used as title for circuit
-    ngSpice_Command("circbyline fail test");
+    ca[0] = strdup("fail test");
 
     // Describe circuit line by line
-    ngSpice_Command("circbyline V1 0 1 5");
-    ngSpice_Command("circbyline V2 0 2 5");
-    ngSpice_Command("circbyline R1 0 1 10");
-    ngSpice_Command("circbyline R2 0 2 10");
+    ca[1] = strdup("V1 0 1 5");
+    ca[2] = strdup("V2 0 2 5");
+    ca[3] = strdup("R1 0 1 10");
+    ca[4] = strdup("R2 0 2 10");
 
     // Specify simulation parameters
-    ngSpice_Command("circbyline .dc v1 0 5 1");
+    ca[5] = strdup(".dc v1 0 5 1");
 
     // End of netlist
-    ngSpice_Command("circbyline .end");
+    ca[6] = (".end");
+    ca[7] = NULL;
+
+    ngSpice_Circ(ca);
 
     ngSpice_Command("run"); // Run simulation
 

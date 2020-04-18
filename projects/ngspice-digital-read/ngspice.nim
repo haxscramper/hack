@@ -126,9 +126,24 @@ proc ngSpiceCommand_Impl(
   a1: cstring): cint {.importc("ngSpice_Command"), header(hdr).}
 
 proc ngspiceCommand(arg: string): int {.discardable.} =
-  let str = allocCStringArray([arg])
+  ## Run ngspice command
+  var str = allocCStringArray([arg])
   result = ngSpiceCommand_Impl(a1 = str[0])
   deallocCStringArray(str)
+
+proc ngSpice_Circ_Impl(circarray: cstringArray): cint
+  {.importc("ngSpice_Circ"), header(hdr).}
+
+proc ngSpiceCirc(circarray: seq[string],
+  header: string = "Circuit simulation", footer: string = ".end"
+                ): int {.discardable.} =
+
+  # arr[circarray.len + 3] = cast[cstring](0)
+  let input = @[header] & circarray & @[footer] & @[""]
+  let arr = allocCStringArray(input)
+  arr[input.len - 1] = cast[cstring](0)
+  result = ngSpice_Circ_Impl(arr)
+  # deallocCStringArray(arr)
 
 proc ngSpiceCurPlot_Impl(): cstring {.importc("ngSpice_CurPlot"), header(hdr).}
 proc ngSpiceCurPlot(): string =
@@ -146,7 +161,6 @@ proc ngSpiceAllVecs(pltname: string): seq[string] =
   for i in 0 ..< currentVeccount:
     result.add $tmp[i]
 
-  deallocCStringArray(tmp)
   deallocCStringArray(cpltname)
 
 proc ngGet_Vec_Info_Impl(plotvecname: cstring): ptr NGVectorInfo_Impl
@@ -161,16 +175,15 @@ proc ngGetVecInfo(plotvecname: string): NGVectorInfo =
 when isMainModule:
   ngspiceInit_Impl()
 
-  ngSpice_Command("circbyline fail test");
-
-  ngSpice_Command("circbyline V1 0 1 5");
-  ngSpice_Command("circbyline V2 0 2 5");
-  ngSpice_Command("circbyline R1 0 1 10");
-  ngSpice_Command("circbyline R2 0 2 10");
-
-  ngSpice_Command("circbyline .dc v1 0 5 1");
-
-  ngSpice_Command("circbyline .end");
+  ngSpiceCirc(
+    @[
+      "V1 0 1 5",
+      "V2 0 2 5",
+      "R1 0 1 10",
+      "R2 0 2 10",
+      ".dc v1 0 5 1"
+    ]
+  )
 
   ngSpice_Command("run");
 
