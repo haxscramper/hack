@@ -86,9 +86,9 @@ No memory mallocing and freeing across the interface:
 - Memory allocated in ngspice.dll has to be freed in ngspice.dll.
 - Memory allocated in the calling program has to be freed only there.
 
-ngspice.dll should never call exit() directly, but handle either the
+ngspice.dll should never call `exit()` directly, but handle either the
 'quit' request to the caller or an request for exiting upon error,
-done by callback function ngexit().
+done by callback function `ngexit()`.
 */
 
 // clang-format on
@@ -122,8 +122,8 @@ extern "C" {
 #ifndef ngspice_NGSPICE_H
 /*! Complex numbers. */
 struct ngcomplex {
-    double cx_real;
-    double cx_imag;
+    double cx_real; ///< Real part
+    double cx_imag; ///< Complex part
 };
 
 typedef struct ngcomplex ngcomplex_t;
@@ -401,8 +401,8 @@ IMPEXP
 char** ngSpice_AllPlots(void);
 
 
-/*! return to the caller a pointer to an array of vector names in the plot
-named by plotname */
+/*!return to the caller a pointer to an null-terminated array of
+vector names in the plot named by plotname */
 IMPEXP
 char** ngSpice_AllVecs(char* plotname);
 

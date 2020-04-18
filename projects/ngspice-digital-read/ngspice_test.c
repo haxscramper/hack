@@ -9,74 +9,60 @@
 
 #include "sharedspice.h"
 
-
-static bool errorflag    = false; // DOC
-int         vecgetnumber = 0;     // DOC
-bool        no_bg        = true;  // DOC
-
-/// Case-insensentive strings equality comparison
-/// Used when printing stdout
-int ng_getchar(char* outputreturn, int ident, void* userdata) {
-    printf("@ %s\n", outputreturn);
-    return 0;
-}
-
-int ng_getstat(char* outputreturn, int ident, void* userdata) {
-    printf("# %s\n", outputreturn);
-    return 0;
-}
-
-int ng_exit(
-    int   exitstatus,
-    bool  immediate,
-    bool  quitexit,
-    int   ident,
-    void* userdata) {
-    puts("ngspice exit requested");
-    return exitstatus;
-}
+int veccount = 0;
 
 int ng_initdata(pvecinfoall intdata, int ident, void* userdata) {
     printf("Pre-simulation callback for '%s'\n", intdata->type);
+    veccount = intdata->veccount;
+    printf(
+        "In total there are %d in this simulation\n", intdata->veccount);
     for (int i = 0; i < intdata->veccount; i++) {
-        printf("  Vector: %s\n", intdata->vecs[i]->vecname);
+        printf("  [%d] %s\n", i, intdata->vecs[i]->vecname);
     }
     return 0;
 }
 
-
-static bool has_break  = false;
-int         testnumber = 0;
-void        alterp(int sig);
-
 int main() {
-
-    // Init ngspice
     int ret = ngSpice_Init(
-        ng_getchar, ng_getstat, ng_exit, NULL, ng_initdata, NULL, NULL);
+        NULL, NULL, NULL, NULL, ng_initdata, NULL, NULL);
 
-
+    // First line is used as title for circuit
     ngSpice_Command("circbyline fail test");
+
+    // Describe circuit line by line
     ngSpice_Command("circbyline V1 0 1 5");
     ngSpice_Command("circbyline V2 0 2 5");
     ngSpice_Command("circbyline R1 0 1 10");
     ngSpice_Command("circbyline R2 0 2 10");
-    ngSpice_Command("circbyline .dc v1 0 5 1");
-    ngSpice_Command("circbyline .end");
-    ngSpice_Command("run");
 
-    char*  curplot  = ngSpice_CurPlot();
+    // Specify simulation parameters
+    ngSpice_Command("circbyline .dc v1 0 5 1");
+
+    // End of netlist
+    ngSpice_Command("circbyline .end");
+
+    ngSpice_Command("run"); // Run simulation
+
+    // Get name of the current plot
+    char* curplot = ngSpice_CurPlot();
+
+    // Get names of all vectors in plot
     char** vecarray = ngSpice_AllVecs(curplot);
-    /* get length of first vector */
-    if (vecarray) {
+
+    puts("After simulation values are:");
+    // Print length of first vector
+    for (int i = 0; i < veccount; ++i) {
         char  plotvec[256];
-        char* vecname = vecarray[0];
+        char* vecname = vecarray[i];
 
         sprintf(plotvec, "%s.%s", curplot, vecname);
         pvector_info myvec     = ngGet_Vec_Info(plotvec);
         int          veclength = myvec->v_length;
 
-        printf(
-            "\nActual length of vector %s is %d\n\n", plotvec, veclength);
+        printf("%s\n", plotvec);
+        for (int k = 0; k < veclength; ++k) {
+            printf("    %f\n", myvec->v_realdata[k]);
+        }
     }
+    puts("Done");
 }
