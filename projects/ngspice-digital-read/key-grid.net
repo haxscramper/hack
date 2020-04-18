@@ -6,17 +6,17 @@
 * Documentation at http://www.brorson.com/gEDA/SPICE/   *
 *********************************************************
 *vvvvvvvv  Included SPICE model from 1n4148.mod vvvvvvvv
-.MODEL 1n4148 D 
-+ IS = 4.352E-9 
-+ N = 1.906 
-+ BV = 110 
-+ IBV = 0.0001 
-+ RS = 0.6458 
-+ CJO = 7.048E-13 
-+ VJ = 0.869 
-+ M = 0.03 
-+ FC = 0.5 
-+ TT = 3.48E-9 
+.MODEL 1N4148 D
++ IS = 4.352E-9
++ N = 1.906
++ BV = 110
++ IBV = 0.0001
++ RS = 0.6458
++ CJO = 7.048E-13
++ VJ = 0.869
++ M = 0.03
++ FC = 0.5
++ TT = 3.48E-9
 *^^^^^^^^  End of included SPICE model from 1n4148.mod ^^^^^^^^
 *
 *==============  Begin SPICE netlist of main design ============
@@ -29,19 +29,19 @@ Xc2r1 10 2 on_off_switch
 Xc3r1 13 1 on_off_switch
 Xc3r2 14 1 on_off_switch
 Xc2r2 11 2 on_off_switch
-Rr3 4 16 1K  
-Rr2 5 16 1K  
-Rr1 6 16 1K  
+Rr3 4 16 10K
+Rr2 5 16 10K
+Rr1 6 16 10K
 Vpup 16 0 5
-Dc3r3 15 4 1N4148 
-Dc3r2 14 5 1N4148 
-Dc3r1 13 6 1N4148 
-Dc2r3 12 4 1N4148 
-Dc2r2 11 5 1N4148 
-Dc2r1 10 6 1N4148 
-Dc1r3 9 4 1N4148 
-Dc1r2 8 5 1N4148 
-Dc1r1 7 6 1N4148 
+Dc3r3 15 4 1N4148
+Dc3r2 14 5 1N4148
+Dc3r1 13 6 1N4148
+Dc2r3 12 4 1N4148
+Dc2r2 11 5 1N4148
+Dc2r1 10 6 1N4148
+Dc1r3 9 4 1N4148
+Dc1r2 8 5 1N4148
+Dc1r1 7 6 1N4148
 X6 6 pin
 X5 5 pin
 X4 4 pin

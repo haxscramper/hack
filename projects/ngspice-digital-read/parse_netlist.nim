@@ -1,4 +1,8 @@
+{.define(shellThrowException).}
+
 import tables, options, sugar
+import math
+import strscans
 import os
 import parseutils
 import re
@@ -8,26 +12,18 @@ import sequtils, strformat
 import shell
 import posix_utils
 
-type
-  ExternalSourceError = ref object of CatchableError
-  ShellExecError = ref object of ExternalSourceError
-    retcode: int ## Return code of failed command
-    errmsg: string ## Shell command error message
-    shellcmd: string ## Shell command
+
+# type
+#   ExternalSourceError = ref object of CatchableError
+#   ShellExecError = ref object of ExternalSourceError
+#     retcode: int ## Return code of failed command
+#     errmsg: string ## Shell command error message
+#     shellcmd: string ## Shell command
 
 
 template tryShellRun(body: untyped): string =
-  let shellConf {.gensym.}: set[DebugOutputKind] = {}
-  let (res, err, code) = shellVerboseErr shellConf:
+  let (res, err, code) = shellVerboseErr:
     body
-
-  if code != 0:
-    raise ShellExecError(
-      msg: "Shell execution failed",
-      retcode: code,
-      errmsg: err,
-      shellcmd: astToStr(body)
-    )
 
   res
 
@@ -158,7 +154,7 @@ type
       of ngdVoltageSwitch:
         initStage: bool
       of ngdVoltageSource:
-        dcValue: float
+        voltage*: float
       of ngdCustom, ngdDiode:
         nil
 
@@ -226,7 +222,7 @@ func filterEmpty(s: seq[string]): seq[string] =
 func joinkv[K, V](t: Table[K, V], eqTok: string = "="): seq[string] =
   ## Join table values as key-value pairs
   collect(newSeq):
-    for k, v in t: &"{k}{eqTok}{v}"
+    for k, v in t: &"{k} {eqTok} {v}"
 
 func toString(kind: NGInstanceKind): char =
   case kind:
@@ -333,6 +329,44 @@ func getNth[T](s: openarray[T], n: int, onErr: string): T =
 
   return s[n]
 
+proc parseEng(val: string): float =
+  var numBuf: seq[char]
+  var prefix: char
+  var unit: seq[char]
+  var idx: int = 0
+
+  discard scanp(val, idx,
+             +({'0' .. '9'} -> numBuf.add($_)),
+             {
+               'Y', 'Z', 'E', 'P', 'T', 'G', 'M', 'k', 'K', # > 1
+               'm', 'u', 'n', 'p', 'f', 'a', 'z', 'y'  # < 1
+             } -> (prefix = $_),
+             *({'a' .. 'z'} -> unit.add($_))
+  )
+
+  let base: float = 1000
+  let multiple =
+    case prefix:
+      of 'Y':      base.pow 8
+      of 'Z':      base.pow 7
+      of 'E':      base.pow 6
+      of 'P':      base.pow 5
+      of 'T':      base.pow 4
+      of 'G':      base.pow 3
+      of 'M':      base.pow 2
+      of 'k', 'K': base.pow 1
+      of 'm':      base.pow -1
+      of 'u':      base.pow -2
+      of 'n':      base.pow -3
+      of 'p':      base.pow -4
+      of 'f':      base.pow -5
+      of 'a':      base.pow -6
+      of 'z':      base.pow -7
+      of 'y':      base.pow -8
+      else: 1
+
+  result = numBuf.join().parseInt().toFloat() * multiple
+
 proc parseNgnNode(lns: seq[(int, string)]): NGNode =
   let lineIdx = lns[0][0]
   let config: seq[string] = lns
@@ -355,11 +389,9 @@ proc parseNgnNode(lns: seq[(int, string)]): NGNode =
             name: first[1..^1],
             terms: config.parseIntSeq(
               (1, 2), &"Resistor missing connection pin on line {lineIdx}"),
-            resistance:
-              block:
-                let strval = config.getNth(
+            resistance: config.getNth(
                   3, &"Resistor missing value on line {lineIdx}")
-                90
+                  .parseEng().toInt()
           )
 
         of 'x':
@@ -375,14 +407,20 @@ proc parseNgnNode(lns: seq[(int, string)]): NGNode =
             kind: ngdDiode,
             terms: config.parseIntSeq(
               (1, 2), &"Diode missing conneciton pin on line {lineIdx}"),
+            name: first[1..^1],
             modelName: some(config[3])
           )
 
         of 'v':
           NGInstance(
             kind: ngdVoltageSource,
+            name: first[1..^1],
             terms: config.parseIntSeq(
-              (1, 2), &"Voltage source missing connection pin on line {lineIdx}"))
+              (1, 2), &"Voltage source missing connection pin on line {lineIdx}"),
+            voltage: config.getNth(
+              3, &"Voltage source missing value on line {lineIdx}")
+              .parseEng()
+          )
         else:
           longValueFail:
             "Unknow device type: {first[0]}"
@@ -393,8 +431,8 @@ proc toString(node: NGNode): string =
   case node.kind:
     of ngnModel:
       let modl = node.model
-      result = &".MODEL {modl.name} {modl.kind.toString()}(" &
-        &"{modl.params.joinkv().joinw()})"
+      result = &".MODEL {modl.name} {modl.kind.toString()}\n" &
+        &"{modl.params.joinkv().mapIt(\"+ \" & it).joinl()}"
 
     of ngnInstance:
       let inst = node.dev
@@ -406,9 +444,19 @@ proc toString(node: NGNode): string =
           of ngdVoltageSource: "V"
           else: ")))"
 
-      result = dtype & inst.name & " " &
-        inst.terms.mapIt($it).join(" ") & " " & inst.modelName.get("") & 
-        " " & inst.params.joinkv().joinw()
+      let deviceSpecific =
+        case inst.kind:
+          of ngdResistor: $inst.resistance
+          of ngdVoltageSource: $inst.voltage
+          else: ""
+
+      result = @[
+          dtype & inst.name,
+          inst.terms.mapIt($it).join(" "),
+          deviceSpecific,
+          inst.modelName.get(""),
+          inst.params.joinkv().joinw()
+        ].joinw
 
 
     of ngnControl:
@@ -450,7 +498,7 @@ proc simulate(doc: NGDocument): Table[string, seq[float]] =
   file.writeline(doc.nodes.map(toString).joinl)
 
   file.writeline("""
-Vdummy 0 9999 5
+Vdummy 0 999 5
 .control
 dc vdummy 5 5 5
 display
@@ -508,8 +556,9 @@ template prettyStackTrace(body: untyped): untyped =
 
     let e = getCEx(ShellExecError)
     echo "---"
-    echo "code: ", e.retcode
-    echo "msg: ", e.errmsg
+    echo "code: \n", e.retcode
+    echo "outp: \n", e.outstr
+    echo "msg: \n", e.errstr
 
 prettyStackTrace:
   main()

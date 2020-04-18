@@ -22,6 +22,7 @@ int ng_initdata(pvecinfoall intdata, int ident, void* userdata) {
     return 0;
 }
 
+
 int main() {
     int ret = ngSpice_Init(
         NULL, NULL, NULL, NULL, ng_initdata, NULL, NULL);
