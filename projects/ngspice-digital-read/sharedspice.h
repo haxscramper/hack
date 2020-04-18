@@ -2,6 +2,8 @@
 /*! Copyright 2013 Holger Vogt */
 /*! Modified BSD license */
 
+#include <stdbool.h>
+
 // clang-format off
 
 /*!
@@ -94,32 +96,32 @@ done by callback function `ngexit()`.
 // clang-format on
 
 #ifndef NGSPICE_DLL_H
-#define NGSPICE_DLL_H
+#    define NGSPICE_DLL_H
 
-#ifdef __cplusplus
+#    ifdef __cplusplus
 extern "C" {
-#endif
+#    endif
 
-#if defined(__MINGW32__) || defined(_MSC_VER) || defined(__CYGWIN__)
-#    ifdef SHARED_MODULE
-#        define IMPEXP __declspec(dllexport)
+#    if defined(__MINGW32__) || defined(_MSC_VER) || defined(__CYGWIN__)
+#        ifdef SHARED_MODULE
+#            define IMPEXP __declspec(dllexport)
+#        else
+#            define IMPEXP __declspec(dllimport)
+#        endif
 #    else
-#        define IMPEXP __declspec(dllimport)
-#    endif
-#else
 /*! use with gcc flag -fvisibility=hidden */
-#    if __GNUC__ >= 4
-#        define IMPEXP __attribute__((visibility("default")))
-#        define IMPEXPLOCAL __attribute__((visibility("hidden")))
-#    else
-#        define IMPEXP
-#        define IMPEXP_LOCAL
+#        if __GNUC__ >= 4
+#            define IMPEXP __attribute__((visibility("default")))
+#            define IMPEXPLOCAL __attribute__((visibility("hidden")))
+#        else
+#            define IMPEXP
+#            define IMPEXP_LOCAL
+#        endif
 #    endif
-#endif
 
 /*! required only if header is used by the caller,
    is already defined in ngspice.dll */
-#ifndef ngspice_NGSPICE_H
+#    ifndef ngspice_NGSPICE_H
 /*! Complex numbers. */
 struct ngcomplex {
     double cx_real; ///< Real part
@@ -127,7 +129,7 @@ struct ngcomplex {
 };
 
 typedef struct ngcomplex ngcomplex_t;
-#endif
+#    endif
 
 /*! vector info obtained from any vector in ngspice.dll. Allows direct
    access to the ngspice internal vector structure, as defined in
@@ -415,8 +417,8 @@ IMPEXP
 bool ngSpice_SetBkpt(double time);
 
 
-#ifdef __cplusplus
+#    ifdef __cplusplus
 }
-#endif
+#    endif
 
 #endif
