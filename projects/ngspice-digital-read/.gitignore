@@ -1,0 +1,6 @@
+doxygen
+latex
+html
+*.css
+*.bak
+secret*
