@@ -91,7 +91,7 @@ ngspice.dll should never call exit() directly, but handle either the
 done by callback function ngexit().
 */
 
-// clang-format off
+// clang-format on
 
 #ifndef NGSPICE_DLL_H
 #define NGSPICE_DLL_H
@@ -150,32 +150,37 @@ typedef struct vecvalues {
 } vecvalues, *pvecvalues;
 
 typedef struct vecvaluesall {
-    int veccount; ///< number of vectors in plot */
-    int vecindex; ///< index of actual set of vectors. i.e. the number
-                  ///of accepted data points */
+    int veccount;      ///< number of vectors in plot */
+    int vecindex;      ///< index of actual set of vectors. i.e. the number
+                       /// of accepted data points */
     pvecvalues* vecsa; ///< values of actual set of vectors, indexed
-                       ///from 0 to veccount - 1 */
+                       /// from 0 to veccount - 1 */
 } vecvaluesall, *pvecvaluesall;
 
 /*! info for a specific vector */
 typedef struct vecinfo {
     int number;    ///< number of vector, as postion in the linked
-                   ///list of vectors, starts with 0 */
+                   /// list of vectors, starts with 0 */
     char* vecname; ///< name of the actual vector */
     bool  is_real; ///< TRUE if the actual vector has real data */
-    void* pdvec; ///< a void pointer to struct dvec *d, the actual vector */
+    void* pdvec;   ///< a void pointer to struct dvec *d, the actual vector
+                   ///< */
     void* pdvecscale; ///< a void pointer to struct dvec *ds, the
-                      ///scale vector */
+                      /// scale vector */
 } vecinfo, *pvecinfo;
 
 /*! info for the current plot */
 typedef struct vecinfoall {
-    /*! the plot */
+    /// Name of the simulation (?)
     char* name;
+    /// Title of the circuit being simulated (first line in the netlist)
     char* title;
+    /// Datetime of simulation start
     char* date;
+    /// DOC ??
     char* type;
-    int   veccount;
+    /// Number of vectors in simulation
+    int veccount;
 
     /*! the data as an array of vecinfo with length equal to the number of
      * vectors in the plot */
@@ -184,23 +189,48 @@ typedef struct vecinfoall {
 } vecinfoall, *pvecinfoall;
 
 
-/*! callback functions
-addresses received from caller with ngSpice_Init() function
-*/
-/*! sending output from stdout, stderr to caller */
+/*! callback functions addresses received from caller with ngSpice_Init()
+   function
+
 /*!
-   char* string to be sent to caller output
-   int   identification number of calling ngspice shared lib
-   void* return pointer received from caller, e.g. pointer to object having
-   sent the request
+  sending output from stdout, stderr to caller
+
+  - `char*` string to be sent to caller output
+  - `int`   identification number of calling ngspice shared lib
+  - `void*` return pointer received from caller, e.g. pointer to
+    object having sent the request
+
+  Possible implemenetation
+
+  \code{.cpp}
+  int ng_getchar(char* outputreturn, int ident, void* userdata) {
+    printf("@ %s\n", outputreturn);
+    return 0;
+  }
+  \endcode
 */
 typedef int(SendChar)(char*, int, void*);
 
-/*! sending simulation status to caller */
 /*!
+
+  \brief sending simulation status to caller
+
+  When processing netlist or running simulation this function is used
+  to report progress.
+
   - `char*` simulation status and value (in percent) to be sent to caller
   - `int` identification number of calling ngspice shared lib
   - `void*` return pointer received from caller
+
+  Possible implemenetation:
+
+  \code{.cpp}
+  int ng_getstat(char* outputreturn, int ident, void* userdata) {
+      printf("# %s\n", outputreturn);
+      return 0;
+  }
+  \endcode
+
 */
 
 typedef int(SendStat)(char*, int, void*);
@@ -217,10 +247,10 @@ typedef int(SendStat)(char*, int, void*);
 typedef int(ControlledExit)(int, bool, bool, int, void*);
 
 
-
 /*! send back actual vector data */
 /*!
-   - `vecvaluesall*` pointer to array of structs containing actual values from all vectors
+   - `vecvaluesall*` pointer to array of structs containing actual values
+   from all vectors
    - `int`           number of structs (one per vector)
    - `int` identification number of calling ngspice shared lib
    - `void*`         return pointer received from caller
@@ -228,12 +258,28 @@ typedef int(ControlledExit)(int, bool, bool, int, void*);
 typedef int(SendData)(pvecvaluesall, int, int, void*);
 
 
-/*! send back initailization vector data */
-/*!                                                                     \
+/*!
+  \brief send back initailization vector data
+
+  Called before simulation start
+
    - `vecinfoall*` pointer to array of structs containing data from all
      vectors right after initialization
    - `int`         identification number of calling ngspice shared lib
    - `void*`       return pointer received from caller
+
+   Possible implementation
+
+   \code{.cpp}
+   int ng_initdata(pvecinfoall intdata, int ident, void* userdata) {
+     puts("Pre-simulation callback");
+     for (int i = 0; i < intdata->veccount; i++) {
+       printf("  Vector: %s\n", intdata->vecs[i]->vecname);
+     }
+     return 0;
+   }
+   \endcode
+
 */
 typedef int(SendInitData)(pvecinfoall, int, void*);
 
@@ -283,44 +329,47 @@ typedef int(GetISRCData)(double*, double, char*, int, void*);
 typedef int(GetSyncData)(double, double*, double, int, int, int, void*);
 
 
-/*! ngspice initialization,
-
-- `printfcn`: pointer to callback function for reading printf, fprintf
-- `statfcn`: pointer to callback function for the status string and percent value
-- `ControlledExit`: pointer to callback function for setting a 'quit' signal in caller
-- `SendData`: pointer to callback function for returning data values of all current output vectors
-- `SendInitData`: pointer to callback function for returning information of all output vectors just initialized
-- `BGThreadRunning`: pointer to callback function indicating if workrt thread is running
-- `userData`: pointer to user-defined data, will not be modified, but handed over back to caller during Callback, e.g. address of calling object
-
-*/
+/// ngspice initialization
 IMPEXP
 int ngSpice_Init(
-    SendChar*        printfcn, ///< pointer to callback function for reading printf, fprintf
-    SendStat*        statfcn,
-    ControlledExit*  ngexit,
-    SendData*        sdata,
-    SendInitData*    sinitdata,
+    /// pointer to callback function for reading printf, fprintf
+    SendChar* printfcn,
+    /// pointer to callback function for the status string and percent
+    SendStat* statfcn,
+    /// pointer to callback function for setting a 'quit' signal in caller
+    /// value
+    ControlledExit* ngexit,
+    /// pointer to callback function for returning data values of all
+    SendData* sdata,
+    /// pointer to callback function for returning information of all
+    /// output vectors just initialized current output vectors
+    SendInitData* sinitdata,
+    /// pointer to callback function indicating if workrt thread is running
     BGThreadRunning* bgtrun,
-    void*            userData);
+    /// pointer to user-defined data, will not be modified, but handed
+    /// over back to caller during Callback, e.g. address of calling
+    /// object
+    void* userData);
 
-/*! initialization of synchronizing functions
-vsrcdat: pointer to callback function for retrieving a voltage source value
-from caller isrcdat: pointer to callback function for retrieving a current
-source value from caller syncdat: pointer to callback function for
-synchronization ident: pointer to integer unique to this shared library
-(defaults to 0) userData: pointer to user-defined data, will not be
-modified, but handed over back to caller during Callback, e.g. address of
-calling object. If NULL is sent here, userdata info from ngSpice_Init()
-will be kept, otherwise userdata will be overridden by new value from here.
-*/
+/// initialization of synchronizing functions
 IMPEXP
 int ngSpice_Init_Sync(
+    /// pointer to callback function for retrieving a voltage source value
+    /// from caller
     GetVSRCData* vsrcdat,
+    /// pointer to callback function for retrieving a current source value
+    /// from caller
     GetISRCData* isrcdat,
+    /// pointer to callback function for synchronization
     GetSyncData* syncdat,
-    int*         ident,
-    void*        userData);
+    /// pointer to integer unique to this shared library (defaults to 0)
+    int* ident,
+    /// pointer to user-defined data, will not be modified, but handed
+    /// over back to caller during Callback, e.g. address of calling
+    /// object. If NULL is sent here, userdata info from ngSpice_Init()
+    /// will be kept, otherwise userdata will be overridden by new value
+    /// from here.
+    void* userData);
 
 /*! Caller may send ngspice commands to ngspice.dll.
 Commands are executed immediately */
