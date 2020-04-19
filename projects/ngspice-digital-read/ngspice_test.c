@@ -15,7 +15,8 @@ int ng_initdata(pvecinfoall intdata, int ident, void* userdata) {
     printf("Pre-simulation callback for '%s'\n", intdata->type);
     veccount = intdata->veccount;
     printf(
-        "In total there are %d in this simulation\n", intdata->veccount);
+        "In total there are %d vectors in this simulation\n",
+        intdata->veccount);
     for (int i = 0; i < intdata->veccount; i++) {
         printf("  [%d] %s\n", i, intdata->vecs[i]->vecname);
     }
@@ -27,10 +28,25 @@ int ng_getchar(char* outputreturn, int ident, void* userdata) {
     return 0;
 }
 
+int ng_getstat(char* outputreturn, int ident, void* userdata) {
+    /* printf("# %s\n", outputreturn); */
+    return 0;
+}
+
+int ng_data(pvecvaluesall vdata, int numvecs, int ident, void* userdata) {
+    printf(
+        "Completed [%d/%d] (%s)\n",
+        vdata->vecindex,                        // New vec index
+        vdata->veccount,                        // Total count
+        vdata->vecsa[vdata->vecindex - 1]->name // Name of the new vector
+    );
+    return 0;
+}
+
 
 int main() {
     int ret = ngSpice_Init(
-        ng_getchar, NULL, NULL, NULL, ng_initdata, NULL, NULL);
+        ng_getchar, ng_getstat, NULL, ng_data, ng_initdata, NULL, NULL);
 
     char** ca = (char**)malloc(sizeof(char*) * 8);
 
@@ -71,9 +87,9 @@ int main() {
         int          veclength = myvec->v_length;
 
         printf("%s\n", plotvec);
-        for (int k = 0; k < veclength; ++k) {
-            printf("    %f\n", myvec->v_realdata[k]);
-        }
+        /* for (int k = 0; k < veclength; ++k) { */
+        /*     printf("    %f\n", myvec->v_realdata[k]); */
+        /* } */
     }
     puts("Done");
 }

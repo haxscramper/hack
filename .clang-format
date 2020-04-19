@@ -15,10 +15,11 @@ IndentCaseLabels: true
 UseTab: Never
 
 # Comments
+CommentPragmas:  '^\/\*!'
 AlignTrailingComments: true
 FixNamespaceComments: true
 PenaltyBreakComment: 10
-ReflowComments: true
+ReflowComments: false
 SpacesBeforeTrailingComments: 1
 
 # Braces

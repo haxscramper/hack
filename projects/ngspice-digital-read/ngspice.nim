@@ -2,7 +2,7 @@
 
 import sequtils
 import math, complex
-import sugar
+import sugar, strutils, strformat
 
 {.passl: "-lngspice" .}
 
@@ -10,6 +10,51 @@ const hdr = "sharedspice.h"
 
 type
   CArray[T] = UncheckedArray[T]
+
+#==============================  vecvalues  ==============================#
+
+type
+  VecValues_Impl {.header(hdr), importc: "vecvalues".} = object
+    name: cstring
+    creal: cdouble
+    cimag: cdouble
+    is_scale: bool
+    is_complex: bool
+
+  VecValue = object
+    creal: float
+    cimag: float
+    isScale: bool
+    isComplex: bool
+
+converter toVecValue(impl: VecValues_Impl): VecValue =
+  VecValue(
+    creal: impl.creal,
+    cimag: impl.cimag,
+    isScale: impl.is_scale,
+    isComplex: impl.is_complex
+  )
+
+#============================  vecvaluesall  =============================#
+
+type
+  VecValuesAll_Impl {.header(hdr), importc: "vecvaluesall".} = object
+    veccount: cint
+    vecindex: cint
+    vecsa: CArray[VecValues_Impl]
+
+  VecValuesAll = object
+    vecindex: int
+    veccount: int
+    values: seq[VecValue]
+
+converter toVecValuesAll(impl: VecValuesAll_Impl): VecValuesAll =
+  VecValuesAll(
+    vecindex: impl.vecindex,
+    veccount: impl.veccount
+  )
+
+#===============================  vecinfo  ===============================#
 
 type
   NGVecInfo_Impl {.header(hdr), importc: "vecinfoall".} = object
@@ -19,12 +64,12 @@ type
     `type`: cstring
     veccount: cint
 
-  NGVecInfo = object
-    name: string
-    title: string
-    date: string
-    veccount: int
-    vtype: string
+  NGVecInfo* = object
+    name*: string
+    title*: string
+    date*: string
+    veccount*: int
+    vtype*: string
 
 converter toNGVecInfo(impl: NGVecInfo_Impl): NGVecInfo =
   NGVecInfo(
@@ -34,6 +79,8 @@ converter toNGVecInfo(impl: NGVecInfo_Impl): NGVecInfo =
     vtype: $impl.`type`,
     date: $impl.date
   )
+
+#=============================  vector info  =============================#
 
 type
   NGComplex {.header(hdr), importc: "ngcomplex".} = object
@@ -48,13 +95,13 @@ type
     v_compdata: CArray[NGComplex] ## Complex data.
     v_length: cint ## Length of the vector.
 
-  NGVectorInfo = object
-    name: string
-    vtype: int
-    flags: int
-    realdata: seq[float]
-    compdata: seq[Complex[float]]
-    length: int
+  NGVectorInfo* = object
+    name*: string
+    vtype*: int
+    flags*: int
+    realdata*: seq[float]
+    compdata*: seq[Complex[float]]
+    length*: int
 
 converter toComplex(val: NGComplex): Complex[float] =
   Complex[float](
@@ -73,46 +120,96 @@ converter toNGVectorInfo(impl: NGVectorInfo_Impl): NGVectorInfo =
           for i in 0 ..< impl.v_length: impl.v_realdata[i])
   )
 
+#==============================  callbacks  ==============================#
 
 type
+  NGSendDataCb_Impl = proc(
+    a1: ptr VecValuesAll_Impl, a2: cint, a3: cint, a4: pointer): cint {.cdecl.}
+
   NGSendDataCb = proc(
-    a1: ptr NGVecInfo_Impl, a2: cint, a3: cint, a4: pointer): cint {.cdecl.}
+    a1: VecValuesAll, a2: int, a3: int, a4: pointer): int
 
-  NGSendCharCb = proc(a1: cstring, a2: cint, a3: pointer): cint {.cdecl.}
+  NGSendCharCb_Impl = proc(a1: cstring, a2: cint, a3: pointer): cint {.cdecl.}
+  NGSendCharCb = proc(a1: string, a2: int, a3: pointer): int
 
-  NGSendStatCb = proc(a1: cstring, a2: cint, a3: pointer): cint {.cdecl.}
+  NGSendStatCb_Impl = proc(a1: cstring, a2: cint, a3: pointer): cint {.cdecl.}
+  NGSendStatCb = proc(a1: string, a2: int, a3: pointer): int
+
+  NGControlledExitCb_Impl = proc(
+    a1: cint, a2: bool, a3: bool, a4: cint, a5: pointer): cint {.cdecl.}
 
   NGControlledExitCb = proc(
-    a1: cint, a2: bool, a3: bool, a4: int, a5: pointer): cint {.cdecl.}
+    a1: int, a2: bool, a3: bool, a4: int, a5: pointer): int
 
-  NGSendInitDataCb = proc(
+  NGSendInitDataCb_Impl = proc(
     a1: ptr NGVecInfo_Impl, a2: cint, a3: pointer): cint {.cdecl.}
 
-  NGBGThreadRunningCb = proc(a1: bool, a2: cint, a3: pointer): cint {.cdecl.}
+  NGSendInitDataCb = proc(
+    a1: NGVecInfo, a2: int, a3: pointer): int
 
-proc ngPrintPassthrough(a1: cstring, a2: cint, a3: pointer): cint {.cdecl.} =
+  NGBGThreadRunningCb_Impl = proc(
+    a1: bool, a2: cint, a3: pointer): cint {.cdecl.}
+
+  NGBGThreadRunningCb = proc(a1: bool, a2: int, a3: pointer): int
+
+proc ngPrintPassthrough_Impl(a1: cstring, a2: cint, a3: pointer): cint {.cdecl.} =
   echo a1
   return 0
 
-proc ngDefaultExit(
-  a1: cint, a2: bool, a3: bool, a4: int, a5: pointer): cint {.cdecl.} =
+proc ngPrintPassthrough(a1: string, a2: int, a3: pointer): int =
+  echo a1
+
+proc ngDefaultExit_Impl(
+  a1: cint, a2: bool, a3: bool, a4: cint, a5: pointer): cint {.cdecl.} =
     discard
 
-proc ngNoMultithreading(a1: bool, a2: cint, a3: pointer): cint {.cdecl.} =
+proc ngDefaultExit(
+  a1: int, a2: bool, a3: bool, a4: int, a5: pointer): int =
+    discard
+
+proc ngNoMultithreading_Impl(a1: bool, a2: cint, a3: pointer): cint {.cdecl.} =
+  return 0
+proc ngNoMultithreading(a1: bool, a2: int, a3: pointer): int =
   return 0
 
-var currentVeccount: cint = 0
 
-proc ngDefaultSendInitData(
+var currentVeccount: int = 0
+
+proc ngDefaultSendInitData_Impl(
   a1: ptr NGVecInfo_Impl, a2: cint, a3: pointer): cint {.cdecl.} =
   currentVeccount = a1.veccount
 
+proc ngDefaultSendInitData(
+  a1: NGVecInfo, a2: int, a3: pointer): int =
+  currentVeccount = a1.veccount
 
-proc ngDefaultSendData(
-  a1: ptr NGVecInfo_Impl, a2: cint, a3: cint, a4: pointer): cint {.cdecl.} =
+proc ngDefaultSendData_Impl(
+  a1: ptr VecValuesAll_Impl, a2: cint, a3: cint, a4: pointer): cint {.cdecl.} =
     discard
 
-proc ngspiceInit_Impl(
+proc ngDefaultSendData(
+  a1: VecValuesAll, a2: int, a3: int, a4: pointer): int =
+    discard
+
+proc ngSpiceInit_Impl(
+  printfcn: NGSendCharCb_Impl = ngPrintPassthrough_Impl,
+  statfcn: NGSendStatCb_Impl = ngPrintPassthrough_Impl,
+  ngexit: NGControlledExitCb_Impl = ngDefaultExit_Impl,
+  sdata: NGSendDataCb_Impl = ngDefaultSendData_Impl,
+  sinitdata: NGSendInitDataCb_Impl = ngDefaultSendInitData_Impl,
+  bgtrun: NGBGThreadRunningCb_Impl = ngNoMultithreading_Impl,
+  userData: pointer = nil
+                     ) {.importc("ngSpice_Init"), header(hdr).}
+
+func addPtr[T1, T2, T3](
+  arg: proc(a1: T1, a2: T2): T3): proc(a1: T1, a2: T2, a3: pointer): T3 =
+  proc tmp(a1: T1, a2: T2, a3: pointer): T3 =
+    arg(a1, a2)
+
+  tmp
+
+
+proc ngSpiceInit(
   printfcn: NGSendCharCb = ngPrintPassthrough,
   statfcn: NGSendStatCb = ngPrintPassthrough,
   ngexit: NGControlledExitCb = ngDefaultExit,
@@ -120,7 +217,76 @@ proc ngspiceInit_Impl(
   sinitdata: NGSendInitDataCb = ngDefaultSendInitData,
   bgtrun: NGBGThreadRunningCb = ngNoMultithreading,
   userData: pointer = nil
-                     ) {.importc("ngSpice_Init"), header(hdr).}
+                     ) =
+
+  ngSpiceInit_Impl(
+    printfcn = (
+      block:
+        var printfcn_cb {.global.}: NGSendCharCb
+        printfcn_cb = printfcn
+
+        proc ng_printfcn(
+          a1: cstring, a2: cint, a3: pointer): cint {.cdecl.} =
+            discard printfcn_cb($a1, a2, a3)
+
+        ng_printfcn
+    ),
+    statfcn = (
+      block:
+        var statfcn_cb {.global.}: NGSendStatCb
+        statfcn_cb = statfcn
+
+        proc ng_statfcn(
+          a1: cstring, a2: cint, a3: pointer): cint {.cdecl.} =
+            discard statfcn_cb($a1, a2, a3)
+
+        ng_statfcn
+    ),
+    ngexit = (
+      block:
+        var cb {.global.}: NGControlledExitCb
+        cb = ngexit
+
+        proc impl(
+          a1: cint, a2: bool, a3: bool, a4: cint, a5: pointer): cint {.cdecl.} =
+            discard cb(a1, a2, a3, a4, a5)
+
+        impl
+    ),
+    sinitdata = (
+      block:
+        var cb {.global.}: NGSendInitDataCb
+        cb = sinitdata
+
+        proc impl(
+          a1: ptr NGVecInfo_Impl, a2: cint, a3: pointer): cint {.cdecl.} =
+            discard cb(a1[], a2, a3)
+
+        impl
+    ),
+    sdata = (
+      block:
+        var sdata_cb {.global.}: NGSendDataCb
+        sdata_cb = sdata
+
+        proc ng_data(
+          a1: ptr VecValuesAll_Impl, a2: cint, a3: cint, a4: pointer): cint {.cdecl.} =
+            discard sdata_cb(a1 = a1[], a2 = a2, a3 = a3, a4 = a4)
+
+        ng_data),
+    bgtrun = (
+      block:
+        var cb {.global.}: NGBGThreadRunningCb
+        cb = bgtrun
+
+        proc impl(
+          a1: bool, a2: cint, a3: pointer): cint {.cdecl.} =
+            discard cb(a1, a2, a3)
+
+        impl
+    )
+  )
+
 
 proc ngSpiceCommand_Impl(
   a1: cstring): cint {.importc("ngSpice_Command"), header(hdr).}
@@ -173,7 +339,13 @@ proc ngGetVecInfo(plotvecname: string): NGVectorInfo =
   deallocCStringArray(cplotvecname)
 
 when isMainModule:
-  ngspiceInit_Impl()
+  ngspiceInit(
+    printfcn = (proc(msg: string, a2: int): int = echo "@ ", msg).addPtr(),
+    statfcn = (proc(msg: string, a2: int): int = echo "# ", msg).addPtr(),
+    sdata =
+      proc(vdata: VecValuesAll, a2: int, a3: int, a4: pointer): int =
+        echo &"Porcessed {vdata.vecindex}/{vdata.veccount} vectors"
+  )
 
   ngSpiceCirc(
     @[

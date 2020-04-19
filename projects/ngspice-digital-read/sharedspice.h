@@ -152,11 +152,13 @@ typedef struct vecvalues {
 } vecvalues, *pvecvalues;
 
 typedef struct vecvaluesall {
-    int veccount;      ///< number of vectors in plot */
-    int vecindex;      ///< index of actual set of vectors. i.e. the number
-                       /// of accepted data points */
+    int veccount; ///< number of vectors in plot
+    /// Number of actual set of vectors. i.e. the number of accepted
+    /// data points. \note: not a 0-based index. To get access to
+    /// vector in `vecsa` use `v->vecindex - 1`
+    int         vecindex;
     pvecvalues* vecsa; ///< values of actual set of vectors, indexed
-                       /// from 0 to veccount - 1 */
+                       /// from 0 to veccount - 1
 } vecvaluesall, *pvecvaluesall;
 
 /*! info for a specific vector */
@@ -266,12 +268,44 @@ typedef int(ControlledExit)(int, bool, bool, int, void*);
   \note This is a typedef for callback function that should be passed as
   argument to `ngSpice_Init()`
 
+  After simulation completes new vector this function is invoked.
 
-   - `vecvaluesall*` pointer to array of structs containing actual values
-   from all vectors
-   - `int`           number of structs (one per vector)
-   - `int` identification number of calling ngspice shared lib
-   - `void*`         return pointer received from caller
+   \param vecvaluesall* pointer to array of structs containing actual
+  values from all vectors. Information about current state of the
+  simulation (which vectors are completed) can be accessed from it.
+
+   \param int number of structs (one per vector)
+
+   \param int identification number of calling ngspice shared lib
+
+   \param void* return pointer received from caller
+
+   aaa  bbb
+
+   Possible implementation
+
+   \code{.cpp}
+   int ng_data(
+       pvecvaluesall vdata, int numvecs, int ident, void* userdata) {
+       printf(
+           "Completed [%d/%d] (%s)\n",
+           vdata->vecindex,                        // New vec number
+           vdata->veccount,                        // Total count
+           vdata->vecsa[vdata->vecindex - 1]->name // Name of the new vector
+       );
+       return 0;
+   }
+   \endcode
+
+   Output generated during simulation
+
+   \code{.txt}
+     Completed [1/5] (v1#branch)
+     Completed [2/5] (v2#branch)
+     Completed [3/5] (V(2))
+     Completed [4/5] (V(1))
+     Completed [5/5] (v-sweep)
+   \endcode
 */
 typedef int(SendData)(pvecvaluesall, int, int, void*);
 
