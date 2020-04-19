@@ -38,15 +38,15 @@ converter toVecValue(impl: VecValues_Impl): VecValue =
 #============================  vecvaluesall  =============================#
 
 type
-  VecValuesAll_Impl {.header(hdr), importc: "vecvaluesall".} = object
-    veccount: cint
-    vecindex: cint
-    vecsa: CArray[VecValues_Impl]
+  VecValuesAll_Impl* {.header(hdr), importc: "vecvaluesall".} = object
+    veccount*: cint
+    vecindex*: cint
+    vecsa*: CArray[VecValues_Impl]
 
-  VecValuesAll = object
-    vecindex: int
-    veccount: int
-    values: seq[VecValue]
+  VecValuesAll* = object
+    vecindex*: int
+    veccount*: int
+    values*: seq[VecValue]
 
 converter toVecValuesAll(impl: VecValuesAll_Impl): VecValuesAll =
   VecValuesAll(
@@ -201,7 +201,7 @@ proc ngSpiceInit_Impl(
   userData: pointer = nil
                      ) {.importc("ngSpice_Init"), header(hdr).}
 
-func addPtr[T1, T2, T3](
+func addPtr*[T1, T2, T3](
   arg: proc(a1: T1, a2: T2): T3): proc(a1: T1, a2: T2, a3: pointer): T3 =
   proc tmp(a1: T1, a2: T2, a3: pointer): T3 =
     arg(a1, a2)
@@ -209,7 +209,7 @@ func addPtr[T1, T2, T3](
   tmp
 
 
-proc ngSpiceInit(
+proc ngSpiceInit*(
   printfcn: NGSendCharCb = ngPrintPassthrough,
   statfcn: NGSendStatCb = ngPrintPassthrough,
   ngexit: NGControlledExitCb = ngDefaultExit,
@@ -291,7 +291,7 @@ proc ngSpiceInit(
 proc ngSpiceCommand_Impl(
   a1: cstring): cint {.importc("ngSpice_Command"), header(hdr).}
 
-proc ngspiceCommand(arg: string): int {.discardable.} =
+proc ngspiceCommand*(arg: string): int {.discardable.} =
   ## Run ngspice command
   var str = allocCStringArray([arg])
   result = ngSpiceCommand_Impl(a1 = str[0])
@@ -300,7 +300,7 @@ proc ngspiceCommand(arg: string): int {.discardable.} =
 proc ngSpice_Circ_Impl(circarray: cstringArray): cint
   {.importc("ngSpice_Circ"), header(hdr).}
 
-proc ngSpiceCirc(circarray: seq[string],
+proc ngSpiceCirc*(circarray: seq[string],
   header: string = "Circuit simulation", footer: string = ".end"
                 ): int {.discardable.} =
 
@@ -310,11 +310,6 @@ proc ngSpiceCirc(circarray: seq[string],
   arr[input.len - 1] = cast[cstring](0)
   result = ngSpice_Circ_Impl(arr)
   # deallocCStringArray(arr)
-
-proc ngSpiceCurPlot_Impl(): cstring {.importc("ngSpice_CurPlot"), header(hdr).}
-proc ngSpiceCurPlot(): string =
-  ## Get name of the last simulated plot
-  $ngSpiceCurPlot_Impl()
 
 proc ngSpiceAllVecs_Impl(pltname: cstring): cstringArray
   {.importc("ngSpice_AllVecs"), header(hdr).}
@@ -329,6 +324,12 @@ proc ngSpiceAllVecs(pltname: string): seq[string] =
 
   deallocCStringArray(cpltname)
 
+
+proc ngSpiceCurPlot_Impl(): cstring {.importc("ngSpice_CurPlot"), header(hdr).}
+proc ngSpiceCurPlot*(): string =
+  ## Get name of the last simulated plot
+  $ngSpiceCurPlot_Impl()
+
 proc ngGet_Vec_Info_Impl(plotvecname: cstring): ptr NGVectorInfo_Impl
   {.importc("ngGet_Vec_Info"), header(hdr).}
 
@@ -337,6 +338,14 @@ proc ngGetVecInfo(plotvecname: string): NGVectorInfo =
   let impl = ngGet_Vec_Info_Impl(cplotvecname[0])
   result = impl[]
   deallocCStringArray(cplotvecname)
+
+proc ngSpiceCurVectorsR*(): seq[(string, seq[float])] =
+  ## Get real vector values from last command
+  let plt = ngSpiceCurPlot()
+  for vec in ngSpiceAllVecs(plt):
+    result.add((vec, ngGetVecInfo(plt & "." & vec).realdata))
+  discard
+
 
 when isMainModule:
   ngspiceInit(

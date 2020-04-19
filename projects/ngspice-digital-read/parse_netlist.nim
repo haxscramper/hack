@@ -1,6 +1,6 @@
 {.define(shellThrowException).}
 
-import tables, options, sugar
+import tables, options, sugar, sorta
 import math
 import strscans
 import os
@@ -11,7 +11,10 @@ import hmisc/helpers
 import sequtils, strformat
 import shell
 import posix_utils
+import ngspice
+import hmisc/defensive
 
+initDefense()
 
 # type
 #   ExternalSourceError = ref object of CatchableError
@@ -149,7 +152,7 @@ type
     terms*: seq[int] ## Connected terminals
     modelName*: OptStr ## Name of the model
     params*: Table[string, string] ## Additional parameters, not
-                                   ## specified in the type.
+                                  ## specified in the type.
 
     case kind*: NGInstanceKind:
       of ngdResistor:
@@ -191,8 +194,8 @@ func getTerminals(dev: NGInstance): (int, int) =
 # func `$`(n: NGNNode) = ...
 
 proc parseIntSeq(s: seq[string],
-                 inclusive: (int, int) | int,
-                 onMissing: string): seq[int] =
+                inclusive: (int, int) | int,
+                onMissing: string): seq[int] =
   ## Parse sequence of strings into integers and throw exception if
   ## number of items is less than necessary.
   when inclusive is int:
@@ -339,12 +342,12 @@ proc parseEng(val: string): float =
   var idx: int = 0
 
   discard scanp(val, idx,
-             +({'0' .. '9'} -> numBuf.add($_)),
-             {
-               'Y', 'Z', 'E', 'P', 'T', 'G', 'M', 'k', 'K', # > 1
-               'm', 'u', 'n', 'p', 'f', 'a', 'z', 'y'  # < 1
-             } -> (prefix = $_),
-             *({'a' .. 'z'} -> unit.add($_))
+            +({'0' .. '9'} -> numBuf.add($_)),
+            {
+              'Y', 'Z', 'E', 'P', 'T', 'G', 'M', 'k', 'K', # > 1
+              'm', 'u', 'n', 'p', 'f', 'a', 'z', 'y'  # < 1
+            } -> (prefix = $_),
+            *({'a' .. 'z'} -> unit.add($_))
   )
 
   let base: float = 1000
@@ -467,9 +470,9 @@ proc toString(node: NGNode): string =
 
 proc parseNGDoc(path: string): NGDocument =
   let netlist = toSeq(path.lines)
-     .enumerate()
-     .filterIt(not it[1].startsWith("*"))
-     .mapIt((it[0], it[1]))
+    .enumerate()
+    .filterIt(not it[1].startsWith("*"))
+    .mapIt((it[0], it[1]))
 
   result.nodes =
     block:
@@ -488,42 +491,38 @@ proc parseNGDoc(path: string): NGDocument =
       res
 
 proc simulate(doc: NGDocument): Table[string, seq[float]] =
-  let tmpd = "/tmp/ngpsice-simulation"
-  createDir(tmpd)
-  let (path, file) = mkstemp(tmpd & "/zzz.net")
-
-  file.writeline("Simulating document")
+  var circ: seq[string]
 
   for incld in doc.included:
-    file.writeline("* included " & incld)
-    file.writeline(incld.readFile().string())
+    circ.add "* included " & incld
+    circ.add incld.readFile().string()
 
-  file.writeline(doc.nodes.map(toString).joinl)
+  circ.add doc.nodes.map(toString).joinl
 
-  file.writeline("""
-Vdummy 0 999 5
-.control
-dc vdummy 5 5 5
-.endc
-""")
+  circ.add "Vdummy 0 999 5"
+  circ.add ".dc vdummy 0 0 5"
 
-  file.close()
+  "/tmp/circ.net".writeFile(circ.joinl)
 
-  echo path.readFile()
+  ngSpiceCirc(circarray = circ.joinl().split("\n"))
 
-  withCwd(tmpd):
-    try:
-      shell:
-        ngspice -b ($path)
-    except ShellExecError:
-      let e = getCEx(ShellExecError)
-      if not (e.errstr ==
-         "Note: No \".plot\", \".print\", or \".fourier\" lines; no simulations run"):
-         raise e
+  ngSpiceCommand("run")
+
+  ngSpiceCurVectorsR().toTable()
 
 proc main(): void =
   var doc = parseNGDoc("key-grid.net")
   doc.included = @["on-off-switch.net", "io-pin.net"]
+
+  ngSpiceInit(
+    printfcn = (proc(m: string, a2: int): int =
+                    if not m.startsWith("stdout *"): echo "@ ", m
+               ).addPtr(),
+    statfcn = (proc(m: string, a2: int): int = discard).addPtr(),
+    sdata = proc(vdata: VecValuesAll, a2: int, a3: int, a4: pointer): int =
+      echo &"Done [{vdata.vecindex}/{vdata.veccount}]"
+
+  )
 
   for node in mitems(doc.nodes):
     if node.kind == ngnInstance and
@@ -538,6 +537,28 @@ proc main(): void =
             node.dev.params["state"] = "0"
 
   let vectors = doc.simulate()
+
+  var pinVals: SortedTable[int, seq[float]]
+
+  block:
+    let pinNodes =
+      collect(newSeq):
+        for node in doc.nodes:
+          if node.kind == ngnInstance and node.dev.modelName == "pin":
+            node.dev.terms[0]
+
+    showInfo("Found pin nodes:", pinNodes)
+    showLog "total vector count: ", vectors.len
+    for name, vals in vectors:
+      if name =~ re"V\((\d+)\)":
+        let idx = matches[0].parseInt()
+        if idx in pinNodes:
+          pinVals[idx] = vals
+
+  for k, v in pinVals:
+    echo k, ": ", v
+
+
 
 template prettyStackTrace(body: untyped): untyped =
   template pprintStackTrace(): untyped =
