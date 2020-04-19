@@ -21,6 +21,9 @@ import posix_utils
 #     shellcmd: string ## Shell command
 
 
+template getCEx(t: untyped): untyped =
+  cast[t](getCurrentException())
+
 template tryShellRun(body: untyped): string =
   let (res, err, code) = shellVerboseErr:
     body
@@ -501,7 +504,6 @@ proc simulate(doc: NGDocument): Table[string, seq[float]] =
 Vdummy 0 999 5
 .control
 dc vdummy 5 5 5
-display
 .endc
 """)
 
@@ -510,8 +512,14 @@ display
   echo path.readFile()
 
   withCwd(tmpd):
-    discard tryShellRun:
-      ngspice -b ($path)
+    try:
+      shell:
+        ngspice -b ($path)
+    except ShellExecError:
+      let e = getCEx(ShellExecError)
+      if not (e.errstr ==
+         "Note: No \".plot\", \".print\", or \".fourier\" lines; no simulations run"):
+         raise e
 
 proc main(): void =
   var doc = parseNGDoc("key-grid.net")
@@ -530,9 +538,6 @@ proc main(): void =
             node.dev.params["state"] = "0"
 
   let vectors = doc.simulate()
-
-template getCEx(t: untyped): untyped =
-  cast[t](getCurrentException())
 
 template prettyStackTrace(body: untyped): untyped =
   template pprintStackTrace(): untyped =
@@ -556,9 +561,9 @@ template prettyStackTrace(body: untyped): untyped =
 
     let e = getCEx(ShellExecError)
     echo "---"
-    echo "code: \n", e.retcode
-    echo "outp: \n", e.outstr
-    echo "msg: \n", e.errstr
+    echo "retcod: \n", e.retcode
+    echo "stdout: \n", e.outstr
+    echo "stderr: \n", e.errstr
 
 prettyStackTrace:
   main()
