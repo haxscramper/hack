@@ -9,7 +9,11 @@ import colechopkg/types
 import algorithm
 import tables
 import sets
-import hmisc/[helpers, hjson]
+import hmisc/[helpers, hjson, defensive]
+
+initDefense(
+  logPath = true
+)
 
 ## .. include:: notes.rst
 
@@ -187,10 +191,10 @@ func makeModifierMap(conf: KeyConfig): ModifierMap =
   if not conf.isActive:
     return result
 
-  debug conf
-  defer:
-    if not conf.makeDefault and conf.isActive:
-      debug result
+  # debug conf
+  # defer:
+  #   if not conf.makeDefault and conf.isActive:
+  #     debug result
 
   let default: string = # Get default keybinding for the key
     block:
@@ -378,6 +382,30 @@ proc makeKeyGrid*(
     rowPins: rowPins,
     colPins: colPins)
 
+template mapIt2D*(s: typed, expr: untyped): untyped =
+  var it {.inject.}: type(s[0][0])
+  var res1: seq[seq[type(expr)]]
+  for val in s:
+    var buf: seq[type(expr)]
+    for tmp in val:
+      it = tmp
+      buf.add expr
+
+    res1.add buf
+  res1
+
+proc makeKeyGrid*(codes: Seq2D[KeyCode], rowPins, colPins: seq[int]): KeyGrid =
+  makeKeyGrid(
+    codes = codes.mapIt2D(
+      (
+        onPress: keyConfFromCode(it),
+        onRelease: KeyConfig(isActive: false)
+      )
+    ),
+    rowPins = rowPins,
+    colPins = colPins
+  )
+
 proc parseGridConfig*(str: string): KeyGrid =
   ## Parse grid configuration from json string.
   let toml = str.parseJson()
@@ -445,7 +473,7 @@ proc createReports*(grid: KeyGrid): seq[HIDReport] =
               # generate output event
               accumulatedReport.keycodes[0] = kRes.adder.code
           else:
-            echo "No matching keybindings for ", currentModifiers
+            showWarn "No matching keybindings for ", currentModifiers
         else:
           discard
 

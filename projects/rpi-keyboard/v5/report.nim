@@ -85,6 +85,14 @@ proc fromKeybindingStr*(binding: string): seq[HIDReport] =
 
     result.add res
 
+func keyConfFromCode*(code: KeyCode): KeyConfig =
+  KeyConfig(
+    isActive: true,
+    isFinal: false,
+    makeDefault: true,
+    modifierMap: @[(@["default"], code.getKeyName())]
+  )
+
 func decodeKeybindingConf*(conf: JsonNode): (KeyConfig, KeyConfig) =
   ##[ Convert keybinding configuration from json node into `KeyConfig`.
   First generated key is `onPress` trigger, second one is `onRelease`.

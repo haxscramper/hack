@@ -112,3 +112,18 @@ macro tscanf*(input, pattNode: string): untyped =
     `call`
 
   # echo result.toStrLit()
+
+
+template mapIt2D*(s: typed, expr: untyped): untyped =
+  var it {.inject.}: type(s[0][0])
+  var res1: seq[seq[type(expr)]]
+  for val in s:
+    var buf: seq[type(expr)]
+    for tmp in val:
+      it = tmp
+      buf.add expr
+
+    res1.add buf
+  res1
+
+echo (@[@[12, 12], @[124, 12]]).mapIt2D(it * 7)

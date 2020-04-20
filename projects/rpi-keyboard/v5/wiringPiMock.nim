@@ -1,4 +1,35 @@
-proc piSetup*(): cint = 0
+## Simulate connected pins using ngspice simulation
+
+import ../../ngspice_digital_read/[ngspice, parse_netlist]
+
+import hmisc/defensive
+import strutils
+
+initDefense(prefix = "NGS")
+
+var document: NGDocument
+var silent: bool = false
+
+proc ngReadCircuit(path: string): void =
+  document = parseNGDoc(path)
+
+proc ngAddIncluded(files: seq[string]): void =
+  document.included.add files
+
+proc ngSilentSimulation(arg: bool = true): void =
+  silent = arg
+
+proc piSetup*(): cint =
+  result = 0
+
+  ngSpiceInit(
+    printfcn = (
+      proc(msg: string, a2: int): int =
+        if (not msg.startsWith("stdout *")) and (not silent):
+          showLog(msg)
+    ).addPtr(),
+  )
+
 proc piSetupGPIO*(): cint = 0
 proc piSetupPhys*(): cint = 0
 proc piSetupSys*(): cint = 0

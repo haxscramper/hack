@@ -3,10 +3,12 @@
 import sequtils
 import math, complex
 import sugar, strutils, strformat
+import os
 
 {.passl: "-lngspice" .}
 
-const hdr = "sharedspice.h"
+const srcd = currentSourcePath().parentDir()
+const hdr = joinpath(srcd, "sharedspice.h")
 
 type
   CArray[T] = UncheckedArray[T]

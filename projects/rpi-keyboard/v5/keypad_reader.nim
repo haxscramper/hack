@@ -10,10 +10,14 @@ import os
 import common
 import key_codes
 import bitops
-import hmisc/helpers
+import hmisc/[helpers, defensive]
 import report
 
 import grid
+
+initDefense(
+  logPath = true
+)
 
 when defined(profiler):
   import nimprof
@@ -129,7 +133,7 @@ proc readMatrix(grid: KeyGrid): seq[seq[bool]] =
 block:
   var testGrid = parseGridConfig("config.json".readFile())
 
-  testGrid.printGrid()
+  # testGrid.printGrid()
 
   # transitionAssert testGrid:
   #   "010|000|001" -> "C-n"
@@ -138,8 +142,10 @@ block:
   #   "000|001|000" -> "C-c C-c"
 
 
-#[
 proc main() =
+  when useMock:
+    showWarn("Using keyboard simulation")
+
   var grid = makeKeyGrid(
     codes = @[
       @[ccKeyA, ccKeyB, ccKey0],
@@ -151,10 +157,10 @@ proc main() =
   )
 
   if piSetup() >= 0:
-    echo "Pi setup ok"
+    showInfo "Pi setup ok"
   else:
-    echo "Pi setup failed"
-    quit 1
+    showError "Pi setup failed"
+    die()
 
   for col in grid.colPins:
     setPinModeOut(col)
@@ -165,19 +171,20 @@ proc main() =
     #setPinPullDown(row)
 
   var cnt = 0
-  while true:
-    let matrixState = grid.readMatrix()
-    let anyChanges = updateKeyGrid(grid, matrixState)
+  runIndentedLog:
+    while true:
+      let matrixState = grid.readMatrix()
+      let anyChanges = updateKeyGrid(grid, matrixState)
 
-    if anyChanges:
       inc cnt
-      let reports = grid.createReports()
-      for rep in reports:
-        writeHIDReport(rep)
 
-    if cnt > 100:
-      break
+      if anyChanges:
+        let reports = grid.createReports()
+        for rep in reports:
+          writeHIDReport(rep)
 
-# main()
+      if cnt > 1:
+        break
+
+main()
 echo "done"
-]#

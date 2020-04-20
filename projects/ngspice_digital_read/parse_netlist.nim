@@ -15,6 +15,8 @@ import posix_utils
 import ngspice
 import hmisc/defensive
 
+
+const srcd = currentSourcePath().parentDir()
 initDefense()
 
 # type
@@ -137,6 +139,12 @@ type
   OptInt = Option[int]
 
 type
+  PinState = enum
+    psWriteLow = 0
+    psWriteHigh = 1
+
+    psRead = 2
+
   NGInstanceKind = enum
     ngdResistor
     ngdDiode
@@ -146,6 +154,9 @@ type
     ngdCustom
 
     ngdVoltageSwitch
+
+    ngdPin
+    ngdOnOffSwitch
 
   NGInstance* = object
     name*: string ## Alphanumeric name of the instance
@@ -158,9 +169,13 @@ type
       of ngdResistor:
         resistance*: int
       of ngdVoltageSwitch:
-        initStage: bool
+        initStage*: bool
       of ngdVoltageSource:
         voltage*: float
+      of ngdPin:
+        iomode*: PinState
+      of ngdOnOffSwitch:
+        isOn*: bool
       of ngdCustom, ngdDiode:
         nil
 
@@ -183,16 +198,16 @@ type
       of ngnModel:
         model: NGModel
 
-  NGDocument = object
-    included: seq[string]
-    nodes: seq[NGNode]
+  NGDocument* = object
+    included*: seq[string]
+    nodes*: seq[NGNode]
 
 type
-  PinVal = object
-    voltage: float
-    state: int
-    index: int
 
+  PinVal* = object
+    voltage*: float
+    state*: PinState
+    index*: int
 
 func getTerminals(dev: NGInstance): (int, int) =
   ## Returng `N+` and `N-` pins for the node.
@@ -241,7 +256,7 @@ func toString(kind: NGInstanceKind): char =
   case kind:
     of ngdDiode: 'D'
     of ngdResistor: 'R'
-    of ngdCustom: 'X'
+    of ngdCustom, ngdPin, ngdOnOffSwitch: 'X'
     of ngdVoltageSwitch: 'S'
     of ngdVoltageSource: 'V'
 
@@ -422,6 +437,7 @@ proc parseNgnNode(lns: seq[(int, string)]): NGNode =
       of ".model":
         result = NGNode(kind: ngnModel, model: parseNGModel(config))
   else:
+    let name = first[1..^1]
     let resDev: NGInstance =
       case first[0].toLowerAscii():
         of 'r':
@@ -437,12 +453,30 @@ proc parseNgnNode(lns: seq[(int, string)]): NGNode =
 
         of 'x':
           var modelIdx: int = 0
-          NGInstance(
-            kind: ngdCustom,
-            terms: config[1..^1].convertUntilEx(parseInt).splitTupleFirst(modelIdx),
-            name: first[1..^1],
-            modelName: some(config[modelIdx + 1])
-          )
+          let terms = config[1..^1].convertUntilEx(parseInt).splitTupleFirst(modelIdx)
+          let model = config[modelIdx + 1]
+          case model:
+            of "pin":
+              NGInstance(
+                kind: ngdPin,
+                terms: terms,
+                name: name,
+                modelName: some(model)
+              )
+            of "on_off_switch":
+              NGInstance(
+                kind: ngdOnOffSwitch,
+                terms: terms,
+                name: name,
+                modelName: some(model)
+              )
+            else:
+              NGInstance(
+                kind: ngdCustom,
+                terms: terms,
+                name: first[1..^1],
+                modelName: some(model)
+              )
         of 'd':
           NGInstance(
             kind: ngdDiode,
@@ -481,21 +515,23 @@ proc toString(node: NGNode): string =
         case inst.kind:
           of ngdResistor: "R"
           of ngdDiode: "D"
-          of ngdCustom: "X"
+          of ngdCustom, ngdPin, ngdOnOffSwitch: "X"
           of ngdVoltageSource: "V"
-          else: ")))"
+          of ngdVoltageSwitch: "S"
 
       let deviceSpecific =
         case inst.kind:
           of ngdResistor: $inst.resistance
           of ngdVoltageSource: $inst.voltage
+          of ngdOnOffSwitch: &"state={inst.isOn.tern(1, 0)}"
+          of ngdPin: &"state={cast[int](inst.iomode)}"
           else: ""
 
       result = @[
           dtype & inst.name,
           inst.terms.mapIt($it).join(" "),
-          deviceSpecific,
           inst.modelName.get(""),
+          deviceSpecific,
           inst.params.joinkv().joinw()
         ].joinw
 
@@ -503,7 +539,7 @@ proc toString(node: NGNode): string =
     of ngnControl:
       result = "control"
 
-proc parseNGDoc(path: string): NGDocument =
+proc parseNGDoc*(path: string): NGDocument =
   let netlist = toSeq(path.lines)
     .enumerate()
     .filterIt(not it[1].startsWith("*"))
@@ -558,22 +594,24 @@ iterator iterateMDevices(doc: var NGDocument): var NGInstance =
     if node.kind == ngnInstance:
       yield node.dev
 
-proc setPinStates(doc: var NGDocument, values: varargs[(string, int)]): void =
+proc setPinStates(doc: var NGDocument, values: varargs[(string, PinState)]): void =
+  # TODO throw exception on missing pin name
   let newvals = values.toTable()
   for dev in iterateMDevices(doc):
-    if dev.kind == ngdCustom and dev.modelName.get() == "pin":
+    if dev.kind == ngdPin:
       if newvals.hasKey(dev.name):
-        dev.params["state"] = $newvals[dev.name]
+        dev.iomode = newvals[dev.name]
 
-proc setPinStates(doc: var NGDocument, values: varargs[(int, int)]): void =
+proc setPinStates(doc: var NGDocument, values: varargs[(int, PinState)]): void =
+  # TODO throw exception on missing pin name
   doc.setPinStates(values.mapIt(($it[0], it[1])))
 
-proc setSwitchStates(doc: var NGDocument, values: varargs[(string, int)]): void =
+proc setSwitchStates(doc: var NGDocument, values: varargs[(string, bool)]): void =
   let newvals = values.toTable()
   for dev in iterateMDevices(doc):
-    if dev.kind == ngdCustom and dev.modelName.get() == "on_off_switch":
+    if dev.kind == ngdOnOffSwitch:
       if newvals.hasKey(dev.name):
-        dev.params["state"] = $newvals[dev.name]
+        dev.isOn = newvals[dev.name]
 
 proc getPinValues(doc: NGDocument): seq[PinVal] =
   let vectors = doc.simulate()
@@ -583,7 +621,7 @@ proc getPinValues(doc: NGDocument): seq[PinVal] =
   # Mapping betwen pin index and it's corresponding terminal node.
   # `terminal -> pin index`
   var pinIdxMap: Table[int, int]
-  var pinStates: Table[int, int]
+  var pinStates: Table[int, PinState]
 
   block:
     let pinTerms =
@@ -592,7 +630,7 @@ proc getPinValues(doc: NGDocument): seq[PinVal] =
           if node.kind == ngnInstance and node.dev.modelName == "pin":
             let term = node.dev.terms[0]
             pinIdxMap[term] = node.dev.name.parseInt()
-            pinStates[term] = node.dev.params["state"].parseInt()
+            pinStates[term] = node.dev.iomode
             term
 
     showInfo("Found pin nodes:", pinTerms)
@@ -612,8 +650,11 @@ proc getPinValues(doc: NGDocument): seq[PinVal] =
     )
 
 proc main(): void =
-  var doc = parseNGDoc("key-grid.net")
-  doc.included = @["on-off-switch.net", "io-pin.net"]
+  var doc = parseNGDoc(srcd.joinpath "key-grid.net")
+  doc.included = @[
+    srcd.joinpath "on-off-switch.net",
+    srcd.joinpath "io-pin.net"
+  ]
 
   ngSpiceInit(
     printfcn = (proc(m: string, a2: int): int =
@@ -627,13 +668,13 @@ proc main(): void =
 
   doc.setPinStates(
     {
-      1: 1,
-      2: 1,
-      3: 1,
+      1: psWriteHigh,
+      2: psWriteHigh,
+      3: psWriteHigh,
 
-      4: 2,
-      5: 2,
-      6: 2,
+      4: psRead,
+      5: psRead,
+      6: psRead,
     }
   )
 
@@ -643,13 +684,13 @@ proc main(): void =
 
   doc.setPinStates(
     {
-      1: 0,
+      1: psWriteLow,
     }
   )
 
   doc.setSwitchStates(
     {
-      "c1r1": 1
+      "c1r1": true
     }
   )
 
@@ -682,5 +723,6 @@ template prettyStackTrace(body: untyped): untyped =
     echo "stdout: \n", e.outstr
     echo "stderr: \n", e.errstr
 
-prettyStackTrace:
-  main()
+when isMainModule:
+  prettyStackTrace:
+    main()
