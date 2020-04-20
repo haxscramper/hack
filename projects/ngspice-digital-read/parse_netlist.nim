@@ -1,6 +1,7 @@
 {.define(shellThrowException).}
 
 import tables, options, sugar, sorta
+import times
 import math
 import strscans
 import os
@@ -22,7 +23,6 @@ initDefense()
 #     retcode: int ## Return code of failed command
 #     errmsg: string ## Shell command error message
 #     shellcmd: string ## Shell command
-
 
 template getCEx(t: untyped): untyped =
   cast[t](getCurrentException())
@@ -186,6 +186,13 @@ type
   NGDocument = object
     included: seq[string]
     nodes: seq[NGNode]
+
+type
+  PinVal = object
+    voltage: float
+    state: int
+    index: int
+
 
 func getTerminals(dev: NGInstance): (int, int) =
   ## Returng `N+` and `N-` pins for the node.
@@ -373,6 +380,34 @@ proc parseEng(val: string): float =
 
   result = numBuf.join().parseInt().toFloat() * multiple
 
+proc toEngNotation(val: float): string =
+  let power = floor log(val, 1000)
+
+  let pref = case power:
+    of 8: 'Y'
+    of 7: 'Z'
+    of 6: 'E'
+    of 5: 'P'
+    of 4: 'T'
+    of 3: 'G'
+    of 2: 'M'
+    of 1: 'K'
+    of -1: 'm'
+    of -2: 'u'
+    of -3: 'n'
+    of -4: 'p'
+    of -5: 'f'
+    of -6: 'a'
+    of -7: 'z'
+    of -8: 'y'
+    else: ' '
+
+  if power == 0:
+    return $round(val)
+  else:
+    return $round(val / power) & pref
+
+
 proc parseNgnNode(lns: seq[(int, string)]): NGNode =
   let lineIdx = lns[0][0]
   let config: seq[string] = lns
@@ -491,6 +526,8 @@ proc parseNGDoc(path: string): NGDocument =
       res
 
 proc simulate(doc: NGDocument): Table[string, seq[float]] =
+  let t0 = cpuTime()
+
   var circ: seq[string]
 
   for incld in doc.included:
@@ -508,7 +545,71 @@ proc simulate(doc: NGDocument): Table[string, seq[float]] =
 
   ngSpiceCommand("run")
 
-  ngSpiceCurVectorsR().toTable()
+  result = ngSpiceCurVectorsR().toTable()
+
+  showInfo(
+    "Simulation completed in ",
+    round((cpuTime() - t0) * 1000 * 10) / 10,
+    "ms"
+  )
+
+iterator iterateMDevices(doc: var NGDocument): var NGInstance =
+  for node in mitems(doc.nodes):
+    if node.kind == ngnInstance:
+      yield node.dev
+
+proc setPinStates(doc: var NGDocument, values: varargs[(string, int)]): void =
+  let newvals = values.toTable()
+  for dev in iterateMDevices(doc):
+    if dev.kind == ngdCustom and dev.modelName.get() == "pin":
+      if newvals.hasKey(dev.name):
+        dev.params["state"] = $newvals[dev.name]
+
+proc setPinStates(doc: var NGDocument, values: varargs[(int, int)]): void =
+  doc.setPinStates(values.mapIt(($it[0], it[1])))
+
+proc setSwitchStates(doc: var NGDocument, values: varargs[(string, int)]): void =
+  let newvals = values.toTable()
+  for dev in iterateMDevices(doc):
+    if dev.kind == ngdCustom and dev.modelName.get() == "on_off_switch":
+      if newvals.hasKey(dev.name):
+        dev.params["state"] = $newvals[dev.name]
+
+proc getPinValues(doc: NGDocument): seq[PinVal] =
+  let vectors = doc.simulate()
+
+  var termVals: SortedTable[int, seq[float]]
+
+  # Mapping betwen pin index and it's corresponding terminal node.
+  # `terminal -> pin index`
+  var pinIdxMap: Table[int, int]
+  var pinStates: Table[int, int]
+
+  block:
+    let pinTerms =
+      collect(newSeq):
+        for node in doc.nodes:
+          if node.kind == ngnInstance and node.dev.modelName == "pin":
+            let term = node.dev.terms[0]
+            pinIdxMap[term] = node.dev.name.parseInt()
+            pinStates[term] = node.dev.params["state"].parseInt()
+            term
+
+    showInfo("Found pin nodes:", pinTerms)
+    showLog "total vector count: ", vectors.len
+    for name, vals in vectors:
+      if name =~ re"V\((\d+)\)":
+        let idx = matches[0].parseInt()
+        if idx in pinTerms:
+          termVals[idx] = vals
+
+
+  for term, val in termVals:
+    result.add PinVal(
+      index: pinIdxMap[term],
+      state: pinStates[term],
+      voltage: val[0]
+    )
 
 proc main(): void =
   var doc = parseNGDoc("key-grid.net")
@@ -524,41 +625,36 @@ proc main(): void =
 
   )
 
-  for node in mitems(doc.nodes):
-    if node.kind == ngnInstance and
-       node.dev.kind == ngdCustom:
-      case node.dev.modelName.get():
-        of "on_off_switch":
-          node.dev.params["state"] = "0"
-        of "pin":
-          if node.dev.name.parseInt() <= 3:
-            node.dev.params["state"] = "1"
-          else:
-            node.dev.params["state"] = "0"
+  doc.setPinStates(
+    {
+      1: 1,
+      2: 1,
+      3: 1,
 
-  let vectors = doc.simulate()
-
-  var pinVals: SortedTable[int, seq[float]]
-
-  block:
-    let pinNodes =
-      collect(newSeq):
-        for node in doc.nodes:
-          if node.kind == ngnInstance and node.dev.modelName == "pin":
-            node.dev.terms[0]
-
-    showInfo("Found pin nodes:", pinNodes)
-    showLog "total vector count: ", vectors.len
-    for name, vals in vectors:
-      if name =~ re"V\((\d+)\)":
-        let idx = matches[0].parseInt()
-        if idx in pinNodes:
-          pinVals[idx] = vals
-
-  for k, v in pinVals:
-    echo k, ": ", v
+      4: 2,
+      5: 2,
+      6: 2,
+    }
+  )
 
 
+  for p in doc.getPinValues():
+    echo &"{p.index}[{p.state}]: {p.voltage.toEngNotation()}"
+
+  doc.setPinStates(
+    {
+      1: 0,
+    }
+  )
+
+  doc.setSwitchStates(
+    {
+      "c1r1": 1
+    }
+  )
+
+  for p in doc.getPinValues():
+    echo &"{p.index}[{p.state}]: {p.voltage.toEngNotation()}"
 
 template prettyStackTrace(body: untyped): untyped =
   template pprintStackTrace(): untyped =

@@ -4,7 +4,7 @@
 .subckt on_off_switch 1 2
 .param state=0
 
-.model switch_model sw vt=1 vh=0.2 ron=1 roff=1000MEG
+.model switch_model sw vt=1 vh=0.2 ron=1 roff=1e12
 
 
 S1 1 2 n001 0 switch_model

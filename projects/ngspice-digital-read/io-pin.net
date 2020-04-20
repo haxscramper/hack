@@ -4,11 +4,14 @@
 .param state=0
 
 .if (state == 0)
-Rxxx 1 0 1e12
-.elseif (state == 1)
+* write LOW
 Vxxx 1 0 0
-.elseif (state == 2)
+.elseif (state == 1)
+* write HIGH
 Vxxx 1 0 5
+.elseif (state == 2)
+* read
+Rxxx 1 0 1e18
 .endif
 
 .ends pin

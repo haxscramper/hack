@@ -3,15 +3,29 @@ import parseutils, strutils, macros, strscans, sequtils, macroutils, sugar
 import strscans
 export strscans
 
-func matcherType*[T](
-  arg: proc(s: string, arg: var T, start: int): int
-                   ): T =
+func matcherTypeGetter_Impl*[T](
+  arg: proc(s: string, arg: var T, start: int): int): T =
+    discard
+
+func matcherTypeGetter_Impl*[T, T1](
+  arg: proc(s: string, arg: var T, start: int, a1: T1): int): T =
+    discard
+
+func matcherTypeGetter_Impl*[T, T1, T2](
+  arg: proc(s: string, arg: var T, start: int, a1: T1, a2: T2): int): T =
+    discard
+
+func matcherTypeGetter_Impl*[T, T1, T2, T3](
+  arg: proc(s: string, arg: var T, start: int, a1: T1, a2: T2, a3: T3): int
+                               ): T =
     discard
 
 macro tscanf*(input, pattNode: string): untyped =
   ## Statically typed `scanf` wrapper. Similar to `=~` template from
   ## `re` module the `matches` variable is implicitly declared.
-
+  ##
+  ## `matches` is a tuple. Types are inferred from pattern. User
+  ## defined matchers are supported too.
   runnableExamples:
     proc matcher1(s: string, arg: var seq[string], start: int): int =
       arg = @["##", "$$"]
@@ -65,7 +79,7 @@ macro tscanf*(input, pattNode: string): untyped =
       var tupleType: seq[NimNode]
       for idx, str in matchers:
         if str[0] == ikVar:
-          echo str
+          # echo str
           tupleType.add Ident(
             case str[1][0]:
               of 'i', 'o', 'b', 'h': "int"
@@ -75,10 +89,10 @@ macro tscanf*(input, pattNode: string): untyped =
           )
         else:
           tupleType.add Call(
-            "type", Call("matcherType", ident str[1]))
+            "type", Call("matcherTypeGetter_Impl", ident str[1]))
 
       tupleType.add ident("int")
-          # echo getType(Call("matcherType", ident str[1]))
+          # echo getType(Call("matcherTypeGetter_Impl", ident str[1]))
 
 
       superQuote do:
@@ -97,4 +111,4 @@ macro tscanf*(input, pattNode: string): untyped =
     `matches`
     `call`
 
-  echo result.toStrLit()
+  # echo result.toStrLit()
