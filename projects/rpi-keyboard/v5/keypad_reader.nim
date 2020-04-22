@@ -113,6 +113,14 @@ proc readMatrix(grid: KeyGrid): seq[seq[bool]] =
       grid.rowPins.len,
       newSeqWith(grid.colPins.len, false))
 
+  # NOTE this implementation is designed to work with both simulated
+  # key grid and real hardware. Right now I'm unable to correctly
+  # replicate behaviour of the pullup/pulldown resistors using only
+  # `20K`, I had to take something like `1e12` to avoid getting `HIGH`
+  # from all rows. I'm also not really sure about why `setPinModeIn`
+  # is necessary - `digitalWrite` seems more logical (I use it in
+  # simulation).
+
   for colIdx, colPin in grid.colPins:
     setPinModeOut(colPin)
     digitalWrite(colPin, false)
@@ -120,7 +128,8 @@ proc readMatrix(grid: KeyGrid): seq[seq[bool]] =
     runTempConfigLock((lcUseFileName, false)): runIndentedLog:
       for rowIdx, rowPin in grid.rowPins:
         setPinModeIn(rowPin)
-        # setPinPullUp(rowPin)
+        setPinPullUp(rowPin) # XXX Had to use `1e12 Ohm` resistor in
+                             # simulation to make it work
 
         let state = digitalRead(rowPin)
         if not state:
@@ -128,10 +137,12 @@ proc readMatrix(grid: KeyGrid): seq[seq[bool]] =
 
         result[rowIdx][colIdx] = not state
 
-        # setPinPullDown(rowPin)
+        setPinPullDown(rowPin)
 
-    digitalWrite(colPin, true)
-    # setPinModeIn(colPin)
+    when useMock:
+      digitalWrite(colPin, true)
+    else:
+      setPinModeIn(colPin)
 
   showInfo "Matrix read completed"
 

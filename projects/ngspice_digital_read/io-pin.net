@@ -19,7 +19,7 @@ Rxxx 1 0 1e18
 * INPUT_PULLUP
 Rxxx 1 0 1e18
 
-Rpullup 2 0 20K
+Rpullup 2 0 1e12
 Vpullup 2 1 5
 .elseif (state == 4)
 * INPUT_PULLDOWN
