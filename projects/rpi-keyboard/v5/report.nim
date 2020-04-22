@@ -1,11 +1,13 @@
 import common
 import algorithm
-import hmisc/[helpers, hjson]
+import hmisc/[helpers, hjson, defensive]
 import key_codes
 import bitops
 import sequtils
 import strformat
 import strutils
+
+initDefense()
 
 type
   HIDModifiers* = enum
@@ -182,8 +184,11 @@ proc printHIDReport*(report: HIDReport) =
   let modifiers = modifierBits.reversed().mapIt(it.tern("1", "0")).join("")
   let bitNumbers = @["₇", "₆", "₅", "₄", "₃", "₂", "₁", "₀"].join("")
 
-  echo bitNumbers, " |", (1..<final.len).mapIt(&"{it:^3}").join("|")
-  echo modifiers, "   #  ", final[2..^1].mapIt((&"{it:^3}")).join(" ")
+  runTempConfigLock((lcUseFileName, false)):
+    showLog "---"
+    showLog bitNumbers, " |", (1..<final.len).mapIt(&"{it:^3}").join("|")
+    showLog modifiers, "   #  ", final[2..^1].mapIt((&"{it:^3}")).join(" ")
+    showLog "---"
 
 proc printHIDReport*(report: seq[HIDReport]) =
   for idx, rep in report:

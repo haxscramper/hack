@@ -26,8 +26,6 @@ initDefense()
 #     errmsg: string ## Shell command error message
 #     shellcmd: string ## Shell command
 
-template getCEx(t: untyped): untyped =
-  cast[t](getCurrentException())
 
 template tryShellRun(body: untyped): string =
   let (res, err, code) = shellVerboseErr:
@@ -46,92 +44,8 @@ template withCwd(cwd: string, body: untyped): untyped =
   setCurrentDir(nowDir)
 
 
-func joinLiteral(msg: string): string =
-  msg.split("\n")
-    .filterIt(it.find(re"[^\s]") != -1)
-    .mapIt(it[it.find(re"""[^\s]""") .. ^1])
-    .join(" ")
-
-# DOC use formatting only on literal nodes, pas non-literal as-is
-template optFmt(arg: string{lit}): untyped = &arg
-proc optFmt(arg: string): string = arg
-
-template longAssertionCheck*(expression: untyped, body: untyped): untyped =
-  ## Raise `AssertionError` if `expression` evaluates as false. Body
-  ## is a string literal which will be passed as a message. It will be
-  ## passed to `&` macro - i.e. variable interpolation is supported.
-  runnableExamples:
-    var test = false
-    try:
-      let variable = 2
-      longAssertionCheck(variable == 3):
-        """
-        Failed to break math while comparing {variable} to `3`
-        """
-    except AssertionError:
-      test = true
-
-    assert test
-
-  static: assert body is string
-  assert expression, joinLiteral(optFmt body)
 
 
-template longAssertionFail*(body: untyped): untyped =
-  ## Raise `AssertionError`. Body is a string literal which will be
-  ## passed as a message. It will be passed to `&` macro - i.e.
-  ## variable interpolation is supported.
-  runnableExamples:
-    var test = false
-    try:
-      longAssertionFail:
-        "Assertion failed"
-    except AssertionError:
-      test = true
-
-    assert test
-
-  static: assert body is string
-  raise newException(AssertionError, joinLiteral(&body))
-
-
-template longValueCheck*(expression: untyped, body: untyped): untyped =
-  ## Raise `ValueError` if `expression` evaluates as false. Body is a
-  ## string literal which will be passed as a message. It will be
-  ## passed to `&` macro - i.e. variable interpolation is supported.
-  runnableExamples:
-    var test = false
-    try:
-      let variable = 2
-      longValueCheck(variable == 3):
-        """
-        Failed to break math while comparing {variable} to `3`
-        """
-    except ValueError:
-      test = true
-
-    assert test
-
-  if not (expression):
-    raise newException(ValueError, joinLiteral(&body))
-
-
-template longValueFail*(body: untyped): untyped =
-  ## Raise `ValueError`. Body is a string literal which will be
-  ## passed as a message. It will be passed to `&` macro - i.e.
-  ## variable interpolation is supported.
-  runnableExamples:
-    var test = false
-    try:
-      longValueFail:
-        "Assertion failed"
-    except ValueError:
-      test = true
-
-    assert test
-
-  static: assert body is string
-  raise newException(ValueError, joinLiteral(&body))
 
 
 type
@@ -139,11 +53,13 @@ type
   OptInt = Option[int]
 
 type
-  PinState = enum
+  PinState* = enum
     psWriteLow = 0
     psWriteHigh = 1
 
     psRead = 2
+    psReadPullup = 3
+    psReadPulldown = 4
 
   NGInstanceKind = enum
     ngdResistor
@@ -357,7 +273,7 @@ func getNth[T](s: openarray[T], n: int, onErr: string): T =
 
   return s[n]
 
-proc parseEng(val: string): float =
+proc parseEng*(val: string): float =
   var numBuf: seq[char]
   var prefix: char
   var unit: seq[char]
@@ -395,7 +311,7 @@ proc parseEng(val: string): float =
 
   result = numBuf.join().parseInt().toFloat() * multiple
 
-proc toEngNotation(val: float): string =
+proc toEngNotation*(val: float): string =
   let power = floor log(val, 1000)
 
   let pref = case power:
@@ -561,9 +477,8 @@ proc parseNGDoc*(path: string): NGDocument =
 
       res
 
-proc simulate(doc: NGDocument): Table[string, seq[float]] =
-  let t0 = cpuTime()
-
+var simIdx = 0
+proc simulate*(doc: NGDocument): Table[string, seq[float]] =
   var circ: seq[string]
 
   for incld in doc.included:
@@ -575,7 +490,9 @@ proc simulate(doc: NGDocument): Table[string, seq[float]] =
   circ.add "Vdummy 0 999 5"
   circ.add ".dc vdummy 0 0 5"
 
-  "/tmp/circ.net".writeFile(circ.joinl)
+  (&"/tmp/circ-{simIdx}.net").writeFile(circ.joinl)
+  # showLog &"Simulation #{simIdx}"
+  inc simIdx
 
   ngSpiceCirc(circarray = circ.joinl().split("\n"))
 
@@ -583,18 +500,18 @@ proc simulate(doc: NGDocument): Table[string, seq[float]] =
 
   result = ngSpiceCurVectorsR().toTable()
 
-  showInfo(
-    "Simulation completed in ",
-    round((cpuTime() - t0) * 1000 * 10) / 10,
-    "ms"
-  )
 
 iterator iterateMDevices(doc: var NGDocument): var NGInstance =
   for node in mitems(doc.nodes):
     if node.kind == ngnInstance:
       yield node.dev
 
-proc setPinStates(doc: var NGDocument, values: varargs[(string, PinState)]): void =
+iterator iterateDevices(doc: NGDocument): NGInstance =
+  for node in doc.nodes:
+    if node.kind == ngnInstance:
+      yield node.dev
+
+proc setPinStates*(doc: var NGDocument, values: varargs[(string, PinState)]): void =
   # TODO throw exception on missing pin name
   let newvals = values.toTable()
   for dev in iterateMDevices(doc):
@@ -602,20 +519,25 @@ proc setPinStates(doc: var NGDocument, values: varargs[(string, PinState)]): voi
       if newvals.hasKey(dev.name):
         dev.iomode = newvals[dev.name]
 
-proc setPinStates(doc: var NGDocument, values: varargs[(int, PinState)]): void =
+proc setPinStates*(doc: var NGDocument, values: varargs[(int, PinState)]): void =
   # TODO throw exception on missing pin name
   doc.setPinStates(values.mapIt(($it[0], it[1])))
 
-proc setSwitchStates(doc: var NGDocument, values: varargs[(string, bool)]): void =
+proc getPinStates*(doc: NGDocument): Table[int, PinState] =
+  ## Get current pin configurations
+  for dev in iterateDevices(doc):
+    if dev.kind == ngdPin:
+      result[dev.name.parseInt()] = dev.iomode
+
+proc setSwitchStates*(doc: var NGDocument, values: varargs[(string, bool)]): void =
   let newvals = values.toTable()
   for dev in iterateMDevices(doc):
     if dev.kind == ngdOnOffSwitch:
       if newvals.hasKey(dev.name):
         dev.isOn = newvals[dev.name]
 
-proc getPinValues(doc: NGDocument): seq[PinVal] =
+proc getPinValues*(doc: NGDocument): seq[PinVal] =
   let vectors = doc.simulate()
-
   var termVals: SortedTable[int, seq[float]]
 
   # Mapping betwen pin index and it's corresponding terminal node.
@@ -633,8 +555,6 @@ proc getPinValues(doc: NGDocument): seq[PinVal] =
             pinStates[term] = node.dev.iomode
             term
 
-    showInfo("Found pin nodes:", pinTerms)
-    showLog "total vector count: ", vectors.len
     for name, vals in vectors:
       if name =~ re"V\((\d+)\)":
         let idx = matches[0].parseInt()
@@ -697,31 +617,6 @@ proc main(): void =
   for p in doc.getPinValues():
     echo &"{p.index}[{p.state}]: {p.voltage.toEngNotation()}"
 
-template prettyStackTrace(body: untyped): untyped =
-  template pprintStackTrace(): untyped =
-    let e = getCurrentException()
-    let choosenim = getHomeDir() & ".choosenim"
-
-    for tr in e.getStackTraceEntries():
-      let filename: string = $tr.filename
-
-      if not filename.startsWith(choosenim):
-        let (_, name) = filename.splitPath()
-        echo name, " ", tr.line, " \e[31m", tr.procname, "\e[0m"
-
-    let idx = e.msg.find('(')
-    echo e.msg[(if idx > 0: idx else: 0)..^1]
-
-  try:
-    body
-  except ShellExecError:
-    pprintStackTrace()
-
-    let e = getCEx(ShellExecError)
-    echo "---"
-    echo "retcod: \n", e.retcode
-    echo "stdout: \n", e.outstr
-    echo "stderr: \n", e.errstr
 
 when isMainModule:
   prettyStackTrace:

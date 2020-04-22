@@ -117,17 +117,23 @@ proc readMatrix(grid: KeyGrid): seq[seq[bool]] =
     setPinModeOut(colPin)
     digitalWrite(colPin, false)
 
-    for rowIdx, rowPin in grid.rowPins:
-      setPinModeIn(rowPin)
-      setPinPullUp(rowPin)
+    runTempConfigLock((lcUseFileName, false)): runIndentedLog:
+      for rowIdx, rowPin in grid.rowPins:
+        setPinModeIn(rowPin)
+        # setPinPullUp(rowPin)
 
-      let state = digitalRead(rowPin)
-      #echo &"read {state} from {rowIdx}({rowPin}) {colIdx}({colPin})"
-      result[rowIdx][colIdx] = not state
+        let state = digitalRead(rowPin)
+        if not state:
+          showInfo &"Reading LOW from [{rowIdx}][{colIdx}]"
 
-      setPinPullOff(rowPin)
+        result[rowIdx][colIdx] = not state
 
-    setPinModeIn(colPin)
+        # setPinPullDown(rowPin)
+
+    digitalWrite(colPin, true)
+    # setPinModeIn(colPin)
+
+  showInfo "Matrix read completed"
 
 
 block:
@@ -141,19 +147,30 @@ block:
   #   "111|100|010" -> "C-S-s-M-e"
   #   "000|001|000" -> "C-c C-c"
 
+proc `/`(up, down: string): string = joinpath(up, down)
 
 proc main() =
   when useMock:
     showWarn("Using keyboard simulation")
 
+    let dir = "../../ngspice_digital_read"
+
+    ngReadCircuit(dir / "key-grid.net")
+    ngAddIncluded(@[
+      dir / "io-pin.net",
+      dir / "on-off-switch.net"
+    ])
+
+    ngSilentSimulation()
+
   var grid = makeKeyGrid(
     codes = @[
-      @[ccKeyA, ccKeyB, ccKey0],
-      @[ccKeyJ, ccKeyU, ccKey8],
-      @[ccKeyH, ccKeyE, ccKeyN]
+      @[ccKeyA, ccKeyB, ccKey0, ccKeyZ],
+      @[ccKeyJ, ccKeyU, ccKey8, ccKeyQ],
+      @[ccKeyH, ccKeyE, ccKeyN, ccKey9]
     ],
-    rowPins = @[0, 1, 2],
-    colPins = @[3, 4, 5]
+    colPins = @[1, 2, 3, 4],
+    rowPins = @[5, 6, 7],
   )
 
   if piSetup() >= 0:
@@ -170,21 +187,25 @@ proc main() =
     setPinModeIn(row)
     #setPinPullDown(row)
 
-  var cnt = 0
+
+  when useMock:
+    setSwitch(row = 1, col = 1, state = true)
+
   runIndentedLog:
     while true:
       let matrixState = grid.readMatrix()
       let anyChanges = updateKeyGrid(grid, matrixState)
 
-      inc cnt
-
       if anyChanges:
+        showInfo "Keyboard change detected"
         let reports = grid.createReports()
         for rep in reports:
           writeHIDReport(rep)
 
-      if cnt > 1:
-        break
+      break
 
-main()
-echo "done"
+when isMainModule:
+  pprintErr():
+    main()
+
+  showInfo "done"
