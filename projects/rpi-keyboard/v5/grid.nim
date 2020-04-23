@@ -286,6 +286,19 @@ func toKeybindingStr*(key: ModifierMap, printAll: bool = false): seq[string] =
 
   result = result.sortedByIt(it.len)
 
+proc printConfiguration*(key: Key): void =
+  runTempConfigLock([(lcUseFileName, false)]):
+    showLog "On press:"
+    runIndentedLog:
+      for item in key.onPress.toKeybindingStr(true):
+        showLog item
+
+    showLog "On release:"
+    runIndentedLog:
+      for item in key.onRelease.toKeybindingStr(true):
+        showLog item
+
+
 proc printGrid*(grid: KeyGrid) =
   ## Print matrix keys as 2d array. Keys are mapped to emacs notation
   ## and. Multi-chord keys are mapped as multiple keypresses. NOTE:
@@ -445,36 +458,44 @@ proc createReports*(grid: KeyGrid): seq[HIDReport] =
   ## buttons might generate multiple keypresses (chord bindings)
   ## multiple hid reports are returned.
   # TODO comment case-of for key state switching
+  showInfo "Generate reports from grid"
   var keys: seq[KeyCode]
   var accumulatedReport: HIDReport
   var currentModifiers: HashSet[string]
-  for keyRow in grid.keyGrid:
-    for key in keyRow:
-      if key.state in @[kstChangedPressed, kstIdlePressed]:
-        let newMods = key.getActivatedChord(currentModifiers, onPress = true)
 
-      case key.state:
-        of kstChangedPressed, kstChangedReleased:
-          # echo "key state is ", key.state
-          let kResOpt: Option[KeyResult] =
-            (key.state == kstChangedPressed).tern(
-              key.getActivatedChord(currentModifiers, onPress = true),
-              key.getActivatedChord(currentModifiers, onPress = false)
-            )
+  currentModifiers.incl "default"
+  runIndentedLog:
+    for keyRow in grid.keyGrid:
+      for key in keyRow:
+        if key.state in @[kstChangedPressed, kstIdlePressed]:
+          let newMods = key.getActivatedChord(currentModifiers, onPress = true)
 
-          iflet (kRes = kResOpt):
-            if kRes.isFinal:
-              # TODO accept buffered modifiers
-              # NOTE returning immediately on multi-chort button
-              return kRes.chord.map(toHIDReport)
+        case key.state:
+          of kstChangedPressed, kstChangedReleased:
+            showLog "Key state is", key.state
+            let kResOpt: Option[KeyResult] =
+              (key.state == kstChangedPressed).tern(
+                key.getActivatedChord(currentModifiers, onPress = true),
+                key.getActivatedChord(currentModifiers, onPress = false)
+              )
+
+            iflet (kRes = kResOpt):
+              if kRes.isFinal:
+                # TODO accept buffered modifiers
+                # NOTE returning immediately on multi-chort button
+                return kRes.chord.map(toHIDReport)
+              else:
+                accumulatedReport.modifiers.incl kRes.adder.modifiers
+                # TODO account for multiple keys, use all six slots to
+                # generate output event
+                accumulatedReport.keycodes[0] = kRes.adder.code
             else:
-              accumulatedReport.modifiers.incl kRes.adder.modifiers
-              # TODO account for multiple keys, use all six slots to
-              # generate output event
-              accumulatedReport.keycodes[0] = kRes.adder.code
+              showWarn "No matching keybindings for ", currentModifiers
+              showLog "Trigger option contains 'none'"
+              block: # Verbose logging
+                showInfo "Key press configuration:"
+                key.printConfiguration()
           else:
-            showWarn "No matching keybindings for ", currentModifiers
-        else:
-          discard
+            discard
 
   return @[accumulatedReport]

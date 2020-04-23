@@ -122,27 +122,28 @@ proc readMatrix(grid: KeyGrid): seq[seq[bool]] =
   # simulation).
 
   for colIdx, colPin in grid.colPins:
-    setPinModeOut(colPin)
-    digitalWrite(colPin, false)
+    runTempConfigLock([(lcUseFileName, false), (lcUseLogging, false)]):
+      setPinModeOut(colPin)
+      digitalWrite(colPin, false)
 
-    runTempConfigLock((lcUseFileName, false)): runIndentedLog:
-      for rowIdx, rowPin in grid.rowPins:
-        setPinModeIn(rowPin)
-        setPinPullUp(rowPin) # XXX Had to use `1e12 Ohm` resistor in
-                             # simulation to make it work
+      runIndentedLog:
+        for rowIdx, rowPin in grid.rowPins:
+          setPinModeIn(rowPin)
+          setPinPullUp(rowPin) # XXX Had to use `1e12 Ohm` resistor in
+                               # simulation to make it work
 
-        let state = digitalRead(rowPin)
-        if not state:
-          showInfo &"Reading LOW from [{rowIdx}][{colIdx}]"
+          let state = digitalRead(rowPin)
+          if not state:
+            showInfo &"Reading LOW from [{rowIdx}][{colIdx}]"
 
-        result[rowIdx][colIdx] = not state
+          result[rowIdx][colIdx] = not state
 
-        setPinPullDown(rowPin)
+          setPinPullDown(rowPin)
 
-    when useMock:
-      digitalWrite(colPin, true)
-    else:
-      setPinModeIn(colPin)
+      when useMock:
+        digitalWrite(colPin, true)
+      else:
+        setPinModeIn(colPin)
 
   showInfo "Matrix read completed"
 
@@ -176,7 +177,7 @@ proc main() =
 
   var grid = makeKeyGrid(
     codes = @[
-      @[ccKeyA, ccKeyB, ccKey0, ccKeyZ],
+      @[ccKeyLEFTALT, ccKeyB, ccKey0, ccKeyZ],
       @[ccKeyJ, ccKeyU, ccKey8, ccKeyQ],
       @[ccKeyH, ccKeyE, ccKeyN, ccKey9]
     ],

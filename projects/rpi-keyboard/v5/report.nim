@@ -175,6 +175,25 @@ proc toKeybindingStr*(rep: HIDReport): string =
     cc.getKeyName(), ""
   )
 
+proc modifiersStr(mb: array[8, bool]): seq[string] =
+  template r(s: string) = result.add s
+
+  if mb[0] and mb[4]: r "ctrl"
+  if mb[0] and not mb[4]: r "lctrl"
+  if not mb[0] and mb[4]: r "rctrl"
+
+  if mb[1] and mb[5]: r "shift"
+  if mb[1] and not mb[5]: r "lshift"
+  if not mb[1] and mb[5]: r "rshift"
+
+  if mb[2] and mb[6]: r "alt"
+  if mb[2] and not mb[6]: r "lalt"
+  if not mb[2] and mb[6]: r "ralt"
+
+  if mb[3] and mb[7]: r "meta"
+  if mb[3] and not mb[7]: r "lmeta"
+  if not mb[3] and mb[7]: r "rmeta"
+
 proc printHIDReport*(report: HIDReport) =
   let final = report.toArray()
   var modifierBits: array[8, bool]
@@ -184,10 +203,13 @@ proc printHIDReport*(report: HIDReport) =
   let modifiers = modifierBits.reversed().mapIt(it.tern("1", "0")).join("")
   let bitNumbers = @["₇", "₆", "₅", "₄", "₃", "₂", "₁", "₀"].join("")
 
-  runTempConfigLock((lcUseFileName, false)):
+  runTempConfigLock([(lcUseFileName, false), (lcUseReflow, false)]):
     showLog "---"
-    showLog bitNumbers, " |", (1..<final.len).mapIt(&"{it:^3}").join("|")
-    showLog modifiers, "   #  ", final[2..^1].mapIt((&"{it:^3}")).join(" ")
+    showLog "Keys:",
+      report.keycodes[0..5].filterIt(it != ccKeyNone).join(" "),
+      modifierBits.modifiersStr().join("+")
+    showLog bitNumbers & " :" & (1..<final.len).mapIt(&"{it:^3}").join("|")
+    showLog modifiers & " : #  " & final[2..^1].mapIt((&"{it:^3}")).join(" ")
     showLog "---"
 
 proc printHIDReport*(report: seq[HIDReport]) =
