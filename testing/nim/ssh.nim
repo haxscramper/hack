@@ -1,9 +1,7 @@
-import os
 import shell
 import strutils
 import net
 import posix
-import base64
 
 import libssh2
 
@@ -110,10 +108,9 @@ proc sshKnownHosts(ssc: var SSHConnection, hostname: string): void =
     addr host
   )
 
-  echo "Host check: ",
-      check, " key: ",
-      if check <= LIBSSH2_KNOWNHOST_CHECK_MISMATCH: host.key else: "<none>"
-
+  # echo "Host check: ",
+  #     check, " key: ",
+  #     if check <= LIBSSH2_KNOWNHOST_CHECK_MISMATCH: host.key else: "<none>"
 
   rc = knownHosts.knownHostAddC(
     hostname,
@@ -125,9 +122,7 @@ proc sshKnownHosts(ssc: var SSHConnection, hostname: string): void =
     LIBSSH2_KNOWNHOST_TYPE_PLAIN or LIBSSH2_KNOWNHOST_KEYENC_RAW or LIBSSH2_KNOWNHOST_KEY_SSHRSA,
     nil)
 
-  if rc == 0:
-    echo "Add knownhost succeeded!"
-  else:
+  if rc != 0:
     raise SSHError(
       msg: "Failed to add knownhost: " & $rc,
       rc: rc
