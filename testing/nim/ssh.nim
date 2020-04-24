@@ -48,13 +48,23 @@ proc waitsocket(socket_fd: SocketHandle, s: Session): int =
 
   result = select(sfd, addr readfd, addr writefd, nil, addr timeout);
 
-proc sshInit(): void =
+proc sshInit(hostname: string, port: int = 22): SSHConnection =
+  ## Init ssh library, create new socket, init new ssh session
   var rc = init(0)
   if rc != 0:
     raise SSHError(
       msg: "libssh2 initialization failed",
       rc: rc
     )
+
+  result = SSHConnection(
+    socket: newSocket(),
+    session: sessionInit()
+  )
+
+  result.socket.connect(hostname, Port(port))
+  result.session.sessionSetBlocking(0)
+
 
 proc sshHandshake(c: var SSHConnection): void =
   var rc = 0
@@ -253,18 +263,9 @@ echo 'Script stderr' 1>&2
   shell:
     chmod +x "/tmp/test.sh"
 
-  sshInit()
-
-  var ssc = SSHConnection(
-    socket: newSocket(),
-    session: sessionInit()
-  )
-
-  ssc.socket.connect(hostname, Port(22))
-  ssc.session.sessionSetBlocking(0)
+  var ssc = sshInit(hostname = hostname)
 
   ssc.sshHandshake()
-
 
   ssc.sshKnownHosts(hostname = hostname)
   ssc.sshAuth(
