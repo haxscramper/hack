@@ -51,7 +51,10 @@ proc waitsocket(socket_fd: SocketHandle, s: Session): int =
 proc sshInit(): void =
   var rc = init(0)
   if rc != 0:
-    quit "libssh2 initialization failed", rc
+    raise SSHError(
+      msg: "libssh2 initialization failed",
+      rc: rc
+    )
 
 proc sshHandshake(c: var SSHConnection): void =
   var rc = 0
@@ -61,28 +64,31 @@ proc sshHandshake(c: var SSHConnection): void =
       break
 
   if rc != 0:
-    quit "failure establing ssh connection"
-
+    raise SSHError(
+      msg: "failure establing ssh connection",
+      rc: rc
+    )
 
 proc sshKnownHosts(ssc: var SSHConnection, hostname: string): void =
-  var rc = 0
   var knownHosts = ssc.session.knownHostInit()
   if knownHosts.isNil:
     ssc.shutdown()
 
-  rc = knownHosts.knownHostReadfile("dummy_known_hosts", LIBSSH2_KNOWNHOST_FILE_OPENSSH)
+  var rc = knownHosts.knownHostReadfile("dummy_known_hosts", LIBSSH2_KNOWNHOST_FILE_OPENSSH)
+
   if rc < 0:
-    echo "Read knownhost error: ", rc
-  else:
-    echo "Parsed ", rc, " knownhosts"
+    raise SSHError(
+      msg: "Read knownhost error: " & $rc,
+      rc: rc
+    )
 
   var length: int
   var typ: int
 
   var fingerprint = ssc.session.sessionHostkey(length, typ)
   if fingerprint.isNil:
-    echo "Unable to fetch hostkey"
     ssc.shutdown()
+    raise SSHError(msg: "Unable to fetch hostkey")
 
   var host: knownhost_st
   let check = knownHosts.knownHostCheckP(
@@ -112,11 +118,16 @@ proc sshKnownHosts(ssc: var SSHConnection, hostname: string): void =
   if rc == 0:
     echo "Add knownhost succeeded!"
   else:
-    echo "Failed to add knownhost: ", rc
+    raise SSHError(
+      msg: "Failed to add knownhost: " & $rc,
+      rc: rc
+    )
 
   knownHosts.knownHostWritefile("dummy_known_hosts", LIBSSH2_KNOWNHOST_FILE_OPENSSH)
   knownHosts.knownHostFree()
 
+# TODO separate into two functions: public key OR password. Do not
+# implicitly mix two different authentification methods.
 proc sshAuth(
   ssc: var SSHConnection,
   username: string,
@@ -132,8 +143,12 @@ proc sshAuth(
         break
 
     if rc != 0:
-      echo "Authentication by password failed!"
       ssc.shutdown()
+
+      raise SSHError(
+        msg: "Authentication by password failed!",
+        rc: rc
+      )
 
   else:
     while true:
@@ -142,8 +157,11 @@ proc sshAuth(
         break
 
     if rc != 0:
-      echo  "Authentication by public key failed!"
       ssc.shutdown()
+      raise SSHError(
+        msg: "Authentication by public key failed!",
+        rc: rc
+      )
 
 proc sshOpenChannel(ssc: var SSHConnection): void =
   var rc = 0
@@ -167,8 +185,14 @@ proc sshExecCommand(ssc: var SSHConnection, command: string): void =
       break
 
   if rc != 0:
-    echo "Error"
+    # TODO Report error command and other necessary things to process
+    # them on higher levels.
     ssc.shutdown()
+    raise SSHError(
+      msg: "SSH Failed to execute command",
+      rc: rc
+    )
+
 
 iterator sshResultStdout(ssc: var SSHConnection): string =
   var rc = 0
