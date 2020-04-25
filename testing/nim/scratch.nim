@@ -65,3 +65,41 @@ template callIt*[T](it: Option[T], op: untyped): untyped =
   if opt.isSome:
     result = op(it.get)
 ]#
+
+
+#[ IMPLEMENT wrap any kind of iterator into string stream
+type
+  StringIterStreamObj* = object of Stream
+    iter: iterator(): string {.closure.}
+    buff: string
+
+  StringIterStream* = ref StringIterStreamObj
+
+
+proc iterCurry[A, string](
+  iter: iterator(arg: var A): string {.closure.}, arg: var A): iterator(): string {.closure.} =
+  iterator tmp(): string {.closure.} =
+    for val in iter(arg):
+      yield val
+
+  tmp
+
+# proc
+
+proc newStringIterStream*(
+  iter: iterator(): string {.closure.}): StringIterStream =
+  new(result)
+
+  result.atEndImpl =
+      proc(s: Stream): bool = true
+        # StringIterStream(s).iter.finished
+
+  result.setPositionImpl =
+          proc(s: Stream, pos: int) =
+            raise newException(AssertionError, "Cannot set position in iterator stream")
+
+  result.getPositionImpl =
+              proc(s: Stream): int =
+                raise newException(AssertionError, "Cannot get position in iterator stream")
+
+]#

@@ -2,6 +2,7 @@ import shell
 import strutils
 import net
 import posix
+import streams
 
 import libssh2
 
@@ -9,17 +10,18 @@ type
   SSHError = ref object of CatchableError
     rc: int
 
-  SSHConnection = object
+  SSHConnection = ref object
     session: Session
     socket: Socket
     channel: Channel
 
-proc shutdown(c: SSHConnection) =
-  discard c.session.sessionDisconnect("Normal shutdown, thank you for playing")
-  discard c.session.sessionFree()
-  c.socket.close()
-  libssh2.exit()
-  quit()
+  RemoteProcess = object
+    connection: SSHConnection
+    exitStatus: cint
+    inStream, outStream, errStream: Stream
+
+  RemoteStream = ref object of Stream
+    conn: SSHConnection
 
 proc waitsocket(socket_fd: SocketHandle, s: Session): int =
   var timeout: Timeval
@@ -45,6 +47,49 @@ proc waitsocket(socket_fd: SocketHandle, s: Session): int =
   var sfd  = cast[cint](socket_fd) + 1
 
   result = select(sfd, addr readfd, addr writefd, nil, addr timeout);
+
+proc outputStream(rproc: var RemoteProcess): RemoteStream =
+  new(result)
+  result.conn = rproc.connection
+
+  result.atEndImpl =
+    proc(s: Stream): bool =
+      true
+      # ssc.
+
+  result.readDataImpl =
+    proc(s: Stream, buffer: pointer, buflen: int): int =
+      var rc = 0
+      var conn = (cast[RemoteStream](s)).conn
+
+      rc = conn.channel.channelRead(buffer, buflen)
+
+      if rc == LIBSSH2_ERROR_EAGAIN:
+        discard waitsocket(conn.socket.getFd(), conn.session)
+
+      if rc >= 0:
+        return rc
+
+  result.readLineImpl =
+    proc (s: Stream, line: var TaintedString): bool =
+      var buf: array[128, char]
+
+      # while true:
+      #   let readSize = readBuffer()
+
+      #   if readSize == 0:
+      #     break
+
+
+
+
+proc shutdown(c: SSHConnection) =
+  discard c.session.sessionDisconnect("Normal shutdown, thank you for playing")
+  discard c.session.sessionFree()
+  c.socket.close()
+  libssh2.exit()
+  quit()
+
 
 proc sshInit(hostname: string, port: int = 22): SSHConnection =
   ## Init ssh library, create new socket, init new ssh session
@@ -199,19 +244,9 @@ proc sshExecCommand(ssc: var SSHConnection, command: string): void =
     )
 
 
-iterator sshResultStdout(ssc: var SSHConnection): string =
-  var rc = 0
-  while true:
-    var buffer: array[0..1024, char]
-    rc = ssc.channel.channelRead(addr buffer, buffer.len)
-    if rc > 0:
-      yield buffer[0 ..< rc].join()
-    if rc == LIBSSH2_ERROR_EAGAIN:
-      discard waitsocket(ssc.socket.getFd(), ssc.session)
-    else:
-      break
+# iterator sshResultStdout(ssc: var SSHConnection): string {.closure.} =
 
-iterator sshResultStderr(ssc: var SSHConnection): string =
+iterator sshResultStderr(ssc: var SSHConnection): string {.closure.} =
   var rc = 0
   while true:
     var buffer: array[0..1024, char]
@@ -222,6 +257,9 @@ iterator sshResultStderr(ssc: var SSHConnection): string =
       discard waitsocket(ssc.socket.getFd(), ssc.session)
     else:
       break
+
+
+
 
 proc sshCommandGetExit(
   ssc: var SSHConnection): tuple[code: int, signal: cstring] =
@@ -242,6 +280,14 @@ proc sshCommandGetExit(
 
 
   discard ssc.channel.channelFree()
+
+
+proc startProcess*(ssc: var SSHConnection, command: string): RemoteProcess =
+  ssc.sshExecCommand(command)
+
+  return RemoteProcess(
+    connection: ssc
+  )
 
 
 proc main() =
@@ -269,22 +315,23 @@ echo 'Script stderr' 1>&2
   )
 
   ssc.sshOpenChannel()
-  ssc.sshExecCommand("/tmp/test.sh")
+  var rproc = ssc.startProcess("/tmp/test.sh")
 
-  echo "--- stdout ---"
-  for buf in ssc.sshResultStdout():
-    echo buf
+  echo rproc.outputStream().readLine()
+  # echo "--- stdout ---"
+  # for buf in ssc.sshResultStdout:
+  #   echo buf
 
-  echo "--- stderr ---"
-  for buf in ssc.sshResultStderr():
-    echo buf
+  # echo "--- stderr ---"
+  # for buf in ssc.sshResultStderr():
+  #   echo buf
 
-  let (exitcode, exitsignal) = ssc.sshCommandGetExit()
+  # let (exitcode, exitsignal) = ssc.sshCommandGetExit()
 
-  if not exitSignal.isNil:
-    echo "Got sinal: ", exitSignal
-  else:
-    echo "EXIT: ", exitcode
+  # if not exitSignal.isNil:
+  #   echo "Got sinal: ", exitSignal
+  # else:
+  #   echo "EXIT: ", exitcode
 
 
 main()
