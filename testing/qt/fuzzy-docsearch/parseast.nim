@@ -21,6 +21,11 @@ import algorithm
 import os
 import re
 import tables
+import sugar
+
+import hmisc/defensive
+
+initDefense()
 
 # Create cache of unique identifiers
 let cache: IdentCache = newIdentCache()
@@ -240,32 +245,171 @@ proc registerDirectoryRec(target: string): void =
     if file =~ re"(.*?)\.nim$":
       registerAST(file.readFile())
 
+proc loadDir(db: DBConn, path: string): void =
+  ## Add all files in directory to database
+  discard
+
+proc loadFile(db: DBConn, path: string): void =
+  ## Add file to the database
+  discard
+
+proc getUses(db: DBConn, ntype: string): void =
+  ## Get list of all functions hat accept type `ntype`
+  discard
+
+proc getSources(db: DBConn, ntype: string): void =
+  ## Get list of all functionst that return type `ntype`
+  discard
+
+proc matchSignature(db: DBConn, name: string, args: seq[string], ret: string): void =
+  ## Get list of all functions that accept arguments of type `args`
+  ## and return value of type `ret`. Name is a glob-like pattern. Sql
+  ## glob can be used.
+  let argsCounts =
+    block:
+      let tmp = args.sorted().deduplicate()
+      collect(newSeq):
+        for arg in tmp:
+          (arg, args.count(arg))
+
+  let queries =
+    collect(newSeq):
+      for (arg, cnt) in argsCounts:
+        &"""
+    SELECT procid FROM arguments WHERE type = '{arg}'
+    GROUP BY procid, type HAVING COUNT(type) = {cnt}"""
+
+  showInfo "Generated query:"
+
+  let query = &"""
+SELECT procname, procid, rettype FROM procs
+WHERE procid IN (
+{queries.join("\n  UNION\n")}
+)
+""" & (if name.len > 0: &"AND procname GLOB '{name}'\n" else: "") &
+  (if ret.len > 0: &"AND rettype = '{ret}'\n" else: "") &
+  ";"
+
+  showPlain query
+
+  echo "Found:"
+  for row in db.getAllRows(sql query):
+    let id = row[1]
+    let procargs = db.getAllRows(sql &"""
+SELECT arg, type FROM arguments
+WHERE procid = {id};
+""")
+
+    let args = procargs.mapIt(&"{it[0]}: {it[1]}").join(", ")
+    echo &"{row[0]}({args}): {row[2]}"
+
+
+
+proc parseSignature(args: string): tuple[name, ret: string, args: seq[string]] =
+  let (name, types) =
+    block:
+      let tmp = args.split("::")
+      if tmp.len == 1:
+        ("", args)
+      else:
+        (strip tmp[0], tmp[1])
+
+  let (argsSpec, ret) =
+    block:
+      let tmp = types.split("->")
+      if tmp.len == 1:
+        (types, "")
+      else:
+        (tmp[0], tmp[1])
+
+  let args = argsSpec.split(" X ").mapIt(it.strip)
+
+  return (
+    name: strip name,
+    ret: strip ret,
+    args: args
+  )
+
+proc getDefinitions(db: DBConn, id: string): void =
+  ## Print definition of the procedure with id `id`
+  discard
+
 proc main() =
-  let thisSource = currentSourcePath().readFile().string()
-  var installed = toSeq("~/.choosenim/toolchains/".expandTilde().walkDir())
-  installed = installed.sortedByIt(it.path)
-  let target = installed[^1].path
+  var db: DBConn
+  for line in stdin.lines():
+    let split = line.split(" ")
+    case split[0]:
+      of "quit":
+        break
 
-  echo "Using toolchain at path", target
+      of "loadf":
+        if split.len != 2:
+          showError("`loadf` takes 1 argument")
+        else:
+          showInfo("Loading file into database")
+          db.loadFile(split[0])
+
+      of "open":
+        if split.len != 2:
+          showError("`open` takes 1 argument: path to the db")
+        else:
+          showInfo "Opeing db file", split[1]
+          try:
+            db = open(split[1], "", "", "")
+            showLog("Done")
+          except:
+            showError(getCurrentExceptionMsg())
+
+      of "signature":
+        let argIdx = line.find(" ")
+        if argIdx == -1:
+          showError("`signature` requires arguments")
+        else:
+          let argSpec = line[argIdx + 1 .. ^1]
+          let args = parseSignature(argSpec)
+          showInfo("Searching for signature in the database")
+
+          showLog "Name glob: ", args.name
+          showLog "Arguments: ", args.args.join(" X ")
+          showLog "Ret  type: ", args.ret
+
+          db.matchSignature(
+            name = args.name,
+            ret = args.ret,
+            args = args.args
+          )
 
 
-  registerDirectoryRec(target & "/lib")
-  registerDirectoryRec("~/workspace/hax-nim".expandTilde())
-
-  let db = open("database.tmp.db", "", "", "")
-  db.createProcTable()
-  db.close()
-
-  echo "done"
-  echo &"found {procs.len} procs in total"
-  var cnt = @[(pkFunc, 0), (pkInterator, 0), (pkProc, 0), (pkMacro, 0), (
-      pkTemplate, 0)].toTable()
-  for pr in procs:
-    inc cnt[pr.kind]
-
-  for kind, num in cnt:
-    echo kind, ": ", num
 
 
-main()
+
+
+
+  # let thisSource = currentSourcePath().readFile().string()
+  # var installed = toSeq("~/.choosenim/toolchains/".expandTilde().walkDir())
+  # installed = installed.sortedByIt(it.path)
+  # let target = installed[^1].path
+
+  # echo "Using toolchain at path", target
+
+
+  # registerDirectoryRec(target & "/lib")
+  # registerDirectoryRec("~/workspace/hax-nim".expandTilde())
+
+  # db.createProcTable()
+  # db.close()
+
+  # echo "done"
+  # echo &"found {procs.len} procs in total"
+  # var cnt = @[(pkFunc, 0), (pkInterator, 0), (pkProc, 0), (pkMacro, 0), (
+  #     pkTemplate, 0)].toTable()
+  # for pr in procs:
+  #   inc cnt[pr.kind]
+
+  # for kind, num in cnt:
+  #   echo kind, ": ", num
+
+
+pprintErr():
+  main()
 
