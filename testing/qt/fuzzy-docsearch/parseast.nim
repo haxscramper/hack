@@ -22,6 +22,7 @@ import os
 import re
 import tables
 import sugar
+# import colechopkg/types
 
 import hmisc/defensive
 
@@ -187,22 +188,8 @@ proc retecho(arg: string): string =
   echo arg
   arg
 
-proc createProcTable(db: DbConn): void =
-  for idx, pr in mpairs(procs):
-    pr.id = idx
-
-  db.exec(sql("DROP TABLE IF EXISTS arguments"))
-  db.exec(sql("""
-  CREATE TABLE arguments (
-      procid INT NOT NULL,
-      arg TEXT,
-      type TEXT,
-      idx INTEGER,
-      defval TEXT
-  )"""))
-
-  for pr in procs:
-    echo "registering arguments for ", pr.name
+proc addProcs(db: DBConn, procDefs: seq[ProcDefintion]): void =
+  for pr in procDefs:
     for idx, arg in pr.args:
       let defval = if arg.defval.len == 0: "NULL" else: &"\"{arg.defval}\""
       let query = &"""
@@ -213,19 +200,7 @@ proc createProcTable(db: DbConn): void =
       """
       db.exec(sql(query))
 
-  db.exec(sql("DROP TABLE IF EXISTS procs"))
-  db.exec(sql("""
-  CREATE TABLE procs (
-      procid INT NOT NULL,
-      procname TEXT,
-      moduleid INT,
-      docstring TEXT,
-      rettype TEXT,
-      kind TEXT
-  )"""))
-
-  for pr in procs:
-    echo "registering ", pr.name
+  for pr in procDefs:
     let docstr = pr.docstr
     let query = &"""
     INSERT INTO procs
@@ -240,6 +215,35 @@ proc createProcTable(db: DbConn): void =
       echo "query ", query
       echo "contains ?"
 
+
+
+proc createProcTable(db: DbConn): void =
+  for idx, pr in mpairs(procs):
+    pr.id = idx
+
+  db.exec(sql("DROP TABLE IF EXISTS arguments"))
+  db.exec(sql("""
+  CREATE TABLE arguments (
+      procid INT NOT NULL,
+      arg TEXT,
+      type TEXT,
+      idx INTEGER,
+      defval TEXT
+  )"""))
+
+  db.exec(sql("DROP TABLE IF EXISTS procs"))
+  db.exec(sql("""
+  CREATE TABLE procs (
+      procid INT NOT NULL,
+      procname TEXT,
+      moduleid INT,
+      docstring TEXT,
+      rettype TEXT,
+      kind TEXT
+  )"""))
+
+  db.addProcs(procs)
+
 proc registerDirectoryRec(target: string): void =
   for file in target.walkDirRec():
     if file =~ re"(.*?)\.nim$":
@@ -251,15 +255,64 @@ proc loadDir(db: DBConn, path: string): void =
 
 proc loadFile(db: DBConn, path: string): void =
   ## Add file to the database
-  discard
+  procs = @[]
+  registerAst(path.readFile())
+  showInfo &"found {procs.len()} proc definitions in '{path}'"
+  for pr in procs:
+    showLog pr.name
+
+  db.addProcs(procs)
+
+proc printProcs(db: DBConn, query: string): void =
+  ## Print all proc signatures that match `query` in the `db`
+  ##
+  ## :procidx: index of the procid in `query` row
+
+  echo ""
+  printSeparator("found")
+  echo ""
+
+  for row in db.getAllRows(sql query):
+    assert row.len == 3,
+     "`procname`, `procid` and `rettype` must be selected from database"
+
+    let id = row[1]
+    let procargs = db.getAllRows(sql &"""
+    SELECT arg, type FROM arguments
+    WHERE procid = {id};
+    """)
+
+
+
+    let args = procargs.mapIt(&"{it[0].toYellow()}: {it[1].toGreen()}").join(", ")
+    echo &"    {row[0].toRed()}({args}): {row[2].toMagenta()}"
+
+  echo ""
+  printSeparator("end")
+  echo ""
+
 
 proc getUses(db: DBConn, ntype: string): void =
   ## Get list of all functions hat accept type `ntype`
-  discard
+  let query = &"""
+  SELECT procname, procid, rettype FROM procs
+  WHERE procid IN (
+    select DISTINCT procid FROM arguments
+    WHERE type = '{ntype}'
+  );
+  """
+
+  db.printProcs(query)
+
 
 proc getSources(db: DBConn, ntype: string): void =
   ## Get list of all functionst that return type `ntype`
-  discard
+  let query = &"""
+  SELECT procname, procid, rettype FROM procs
+  WHERE rettype = '{ntype}';
+  """
+
+  db.printProcs(query)
 
 proc matchSignature(db: DBConn, name: string, args: seq[string], ret: string): void =
   ## Get list of all functions that accept arguments of type `args`
@@ -279,29 +332,16 @@ proc matchSignature(db: DBConn, name: string, args: seq[string], ret: string): v
     SELECT procid FROM arguments WHERE type = '{arg}'
     GROUP BY procid, type HAVING COUNT(type) = {cnt}"""
 
-  showInfo "Generated query:"
-
   let query = &"""
-SELECT procname, procid, rettype FROM procs
-WHERE procid IN (
-{queries.join("\n  UNION\n")}
-)
-""" & (if name.len > 0: &"AND procname GLOB '{name}'\n" else: "") &
-  (if ret.len > 0: &"AND rettype = '{ret}'\n" else: "") &
+    SELECT procname, procid, rettype FROM procs
+    WHERE procid IN (
+    {queries.join("\n  UNION\n")}
+    )
+    """ & (if name.len > 0: &"AND procname GLOB '{name}'\n" else: "") &
+  (if ret.len > 0: &"AND rettype = '{ret}'" else: "") &
   ";"
 
-  showPlain query
-
-  echo "Found:"
-  for row in db.getAllRows(sql query):
-    let id = row[1]
-    let procargs = db.getAllRows(sql &"""
-SELECT arg, type FROM arguments
-WHERE procid = {id};
-""")
-
-    let args = procargs.mapIt(&"{it[0]}: {it[1]}").join(", ")
-    echo &"{row[0]}({args}): {row[2]}"
+  db.printProcs(query)
 
 
 
@@ -335,7 +375,8 @@ proc getDefinitions(db: DBConn, id: string): void =
   discard
 
 proc main() =
-  var db: DBConn
+  var db: DBConn = open(":memory:", "", "", "")
+  db.createProcTable()
   for line in stdin.lines():
     let split = line.split(" ")
     case split[0]:
@@ -347,7 +388,23 @@ proc main() =
           showError("`loadf` takes 1 argument")
         else:
           showInfo("Loading file into database")
-          db.loadFile(split[0])
+          db.loadFile(split[1])
+
+      of "uses":
+        if split.len != 2:
+          showError("`uses` takes 1 argument: name of the type to find usages for")
+        else:
+          let tname = split[1]
+          showInfo "Searching for uses of type", tname
+          db.getUses(tname)
+
+      of "get":
+        if split.len != 2:
+          showError("`get` takes 1 argument: name of the type to find usages for")
+        else:
+          let tname = split[1]
+          showInfo "Searching for sources of type", tname
+          db.getSources(tname)
 
       of "open":
         if split.len != 2:
@@ -378,12 +435,6 @@ proc main() =
             ret = args.ret,
             args = args.args
           )
-
-
-
-
-
-
 
   # let thisSource = currentSourcePath().readFile().string()
   # var installed = toSeq("~/.choosenim/toolchains/".expandTilde().walkDir())
