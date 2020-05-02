@@ -3,25 +3,57 @@ import strutils
 import net
 import posix
 import streams
+import osproc
 
 import libssh2
 
 type
-  SSHError = ref object of CatchableError
-    rc: int
+  SSHError* = ref object of CatchableError
+    rc*: int
 
-  SSHConnection = ref object
-    session: Session
-    socket: Socket
-    channel: Channel
+  SSHConnection* = ref object
+    session*: Session
+    socket*: Socket
+    channel*: Channel
 
   RemoteProcess = object
-    connection: SSHConnection
-    exitStatus: cint
-    inStream, outStream, errStream: Stream
+    connection*: SSHConnection
+    exitStatus*: cint
+    inStream*, outStream*, errStream*: Stream
 
-  RemoteStream = ref object of Stream
-    conn: SSHConnection
+  RemoteStream* = ref object of Stream
+    conn*: SSHConnection
+
+  ShellProcKind* = enum
+    spkRemote
+    spkLocal
+
+  ShellProcess* = object
+    case kind*: ShellProcKind
+    of spkRemote:
+      rproc*: RemoteProcess
+    of spkLocal:
+      lproc*: Process
+
+  ShellCommand* = object
+    cmdString*: string
+    case kind*: ShellProcKind
+    of spkLocal:
+      nil
+    of spkRemote:
+      user*: string
+      passwd*: string
+      # TODO add support for different types of credentials
+
+# proc startPorcess(cmd: ShellCommand): ShellProces =
+#   case cmd.kind:
+#     of spkLocal:
+#       ShellPorcess(
+#         kind: spkLocal,
+#         lproc: startProcess(cmd.cmdString)
+#       )
+#     of spkRemote:
+
 
 proc waitsocket(socket_fd: SocketHandle, s: Session): int =
   var timeout: Timeval
@@ -48,21 +80,38 @@ proc waitsocket(socket_fd: SocketHandle, s: Session): int =
 
   result = select(sfd, addr readfd, addr writefd, nil, addr timeout);
 
-proc outputStream(rproc: var RemoteProcess): RemoteStream =
+proc processOutput(rproc: var RemoteProcess, err: static[bool] = false): RemoteStream =
   new(result)
   result.conn = rproc.connection
 
   result.atEndImpl =
     proc(s: Stream): bool =
-      true
-      # ssc.
+      var conn = (cast[RemoteStream](s)).conn
+      while true:
+        let rc =
+          when err:
+            conn.channel.channelReadStderr(nil, 0)
+          else:
+            conn.channel.channelRead(nil, 0)
+
+        # NOTE I'm not sure if this is a correct way to get process
+        # output.
+        if rc == 0:
+          return false
+        elif rc == LIBSSH2_ERROR_EAGAIN:
+          discard waitsocket(conn.socket.getFd(), conn.session)
+        else:
+          return true
 
   result.readDataImpl =
     proc(s: Stream, buffer: pointer, buflen: int): int =
-      var rc = 0
       var conn = (cast[RemoteStream](s)).conn
 
-      rc = conn.channel.channelRead(buffer, buflen)
+      let rc =
+        when err:
+          conn.channel.channelReadStderr(buffer, buflen)
+        else:
+          conn.channel.channelRead(buffer, buflen)
 
       if rc == LIBSSH2_ERROR_EAGAIN:
         discard waitsocket(conn.socket.getFd(), conn.session)
@@ -70,17 +119,11 @@ proc outputStream(rproc: var RemoteProcess): RemoteStream =
       if rc >= 0:
         return rc
 
-  result.readLineImpl =
-    proc (s: Stream, line: var TaintedString): bool =
-      var buf: array[128, char]
+proc outputStream(rproc: var RemoteProcess): RemoteStream =
+  rproc.processOutput(false)
 
-      # while true:
-      #   let readSize = readBuffer()
-
-      #   if readSize == 0:
-      #     break
-
-
+proc errorStream(rproc: var RemoteProcess): RemoteStream =
+  rproc.processOutput(true)
 
 
 proc shutdown(c: SSHConnection) =
@@ -292,8 +335,8 @@ proc startProcess*(ssc: var SSHConnection, command: string): RemoteProcess =
 
 proc main() =
   let
-    username = "test"
-    password = "test"
+    username = "ssh-test-user"
+    password = "ssh-password"
     hostname = "127.0.0.1"
 
   "/tmp/test.sh".writeFile """#!/usr/bin/env bash
@@ -305,7 +348,6 @@ echo 'Script stderr' 1>&2
     chmod +x "/tmp/test.sh"
 
   var ssc = sshInit(hostname = hostname)
-
   ssc.sshHandshake()
 
   ssc.sshKnownHosts(hostname = hostname)
@@ -318,20 +360,7 @@ echo 'Script stderr' 1>&2
   var rproc = ssc.startProcess("/tmp/test.sh")
 
   echo rproc.outputStream().readLine()
-  # echo "--- stdout ---"
-  # for buf in ssc.sshResultStdout:
-  #   echo buf
-
-  # echo "--- stderr ---"
-  # for buf in ssc.sshResultStderr():
-  #   echo buf
-
-  # let (exitcode, exitsignal) = ssc.sshCommandGetExit()
-
-  # if not exitSignal.isNil:
-  #   echo "Got sinal: ", exitSignal
-  # else:
-  #   echo "EXIT: ", exitcode
+  echo rproc.errorStream().readLine()
 
 
 main()
