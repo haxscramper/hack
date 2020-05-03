@@ -1,9 +1,11 @@
 import shell
 import strutils
+import sequtils
 import net
 import posix
 import streams
 import osproc
+import os
 
 import libssh2
 
@@ -15,6 +17,9 @@ type
     session*: Session
     socket*: Socket
     channel*: Channel
+
+    outbuf: string
+    errbuf: string
 
   RemoteProcess = object
     connection*: SSHConnection
@@ -80,6 +85,47 @@ proc waitsocket(socket_fd: SocketHandle, s: Session): int =
 
   result = select(sfd, addr readfd, addr writefd, nil, addr timeout);
 
+
+proc noMoreData(
+  conn: var SSHConnection,
+  isErr: static[bool] = false): bool =
+  ## Return true if no more data can be read from a connection
+  ## channel. This might be due to several reasons: ssh error or
+  ## process has terminated. Testing is done separately on `stderr`
+  ## and `stdout` for a channel.
+  when isErr:
+    if conn.errbuf.len > 0: return false
+  else:
+    if conn.outbuf.len > 0: return false
+
+  while true:
+    var buf: array[1024, char]
+    let rc =
+      when isErr:
+        conn.channel.channelReadStderr(addr buf, sizeof buf)
+      else:
+        conn.channel.channelRead(addr buf, sizeof buf)
+
+    if rc == 0:
+      # echo "\tssh no more data to read from ", (if isErr: "err" else: "out")
+      return true
+    elif rc == LIBSSH2_ERROR_EAGAIN:
+      # echo "\tssh reading again, rc: " & $rc
+      discard waitsocket(conn.socket.getFd(), conn.session)
+    elif rc > 0:
+      # echo "\tssh has data to read, appending test buffer, rc: ",
+      #    rc, " recieved size: "
+
+      when isErr:
+        conn.errbuf &= buf[0 ..< rc].join()
+      else:
+        conn.outbuf &= buf[0 ..< rc].join()
+
+      return false
+    else:
+      # echo "\tssh read returned error " & $rc
+      return true
+
 proc processOutput(rproc: var RemoteProcess, err: static[bool] = false): RemoteStream =
   new(result)
   result.conn = rproc.connection
@@ -87,37 +133,47 @@ proc processOutput(rproc: var RemoteProcess, err: static[bool] = false): RemoteS
   result.atEndImpl =
     proc(s: Stream): bool =
       var conn = (cast[RemoteStream](s)).conn
-      while true:
-        let rc =
-          when err:
-            conn.channel.channelReadStderr(nil, 0)
-          else:
-            conn.channel.channelRead(nil, 0)
-
-        # NOTE I'm not sure if this is a correct way to get process
-        # output.
-        if rc == 0:
-          return false
-        elif rc == LIBSSH2_ERROR_EAGAIN:
-          discard waitsocket(conn.socket.getFd(), conn.session)
-        else:
-          return true
+      conn.noMoreData()
 
   result.readDataImpl =
     proc(s: Stream, buffer: pointer, buflen: int): int =
       var conn = (cast[RemoteStream](s)).conn
 
-      let rc =
-        when err:
-          conn.channel.channelReadStderr(buffer, buflen)
-        else:
-          conn.channel.channelRead(buffer, buflen)
+      when err:
+        if conn.errbuf.len > 0:
+          echo "\tcan read stderr from buffer"
+      else:
+        # echo "\treading from stdout"
+        if conn.outbuf.len == 0 and conn.noMoreData():
+          echo "buffer is empty and no data can be read"
+          return 0
 
-      if rc == LIBSSH2_ERROR_EAGAIN:
-        discard waitsocket(conn.socket.getFd(), conn.session)
+        let toRead = min(conn.outbuf.len, buflen)
+        copymem(buffer, conn.outbuf.cstring, toRead)
+        conn.outbuf = conn.outbuf[toRead..^1]
+        return toRead
 
-      if rc >= 0:
-        return rc
+  result.readLineImpl =
+    proc(s: Stream, line: var TaintedString): bool =
+      var conn = (cast[RemoteStream](s)).conn
+      when err:
+        discard
+
+      else:
+        while not conn.noMoreData():
+          let eol = conn.outbuf.find({'\0', '\L', '\c', '\n'})
+          # echo conn.outbuf.mapIt(it)
+          # echo "eol is: ", eol
+          if eol != -1:
+            line = conn.outbuf[0 ..< eol]
+            conn.outbuf = conn.outbuf[eol + 1 .. ^1]
+            return true
+
+        line = conn.outbuf
+        conn.outbuf = ""
+
+proc readLine(s: RemoteStream): string =
+  discard s.readLine(result)
 
 proc outputStream(rproc: var RemoteProcess): RemoteStream =
   rproc.processOutput(false)
@@ -170,7 +226,9 @@ proc sshKnownHosts(ssc: var SSHConnection, hostname: string): void =
   if knownHosts.isNil:
     ssc.shutdown()
 
-  var rc = knownHosts.knownHostReadfile("dummy_known_hosts", LIBSSH2_KNOWNHOST_FILE_OPENSSH)
+  var rc = knownHosts.knownHostReadfile(
+    joinpath(getHomeDir(), ".ssh/known_hosts"),
+    LIBSSH2_KNOWNHOST_FILE_OPENSSH)
 
   if rc < 0:
     raise SSHError(
@@ -339,14 +397,6 @@ proc main() =
     password = "ssh-password"
     hostname = "127.0.0.1"
 
-  "/tmp/test.sh".writeFile """#!/usr/bin/env bash
-echo 'Script stdout'
-echo 'Script stderr' 1>&2
-"""
-
-  shell:
-    chmod +x "/tmp/test.sh"
-
   var ssc = sshInit(hostname = hostname)
   ssc.sshHandshake()
 
@@ -357,10 +407,10 @@ echo 'Script stderr' 1>&2
   )
 
   ssc.sshOpenChannel()
-  var rproc = ssc.startProcess("/tmp/test.sh")
+  var rproc = ssc.startProcess("/bin/ls /")
 
-  echo rproc.outputStream().readLine()
-  echo rproc.errorStream().readLine()
+  while not rproc.outputStream().atEnd():
+    echo "-> ", rproc.outputStream().readLine()
 
 
 main()
