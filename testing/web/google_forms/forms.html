@@ -5,17 +5,43 @@
     <script src="https://code.jquery.com/jquery.min.js"></script>
 
     <script>
-    var file, reader = new FileReader();
+     function loadCB() {
+       console.log("Loaded");
+       let assignList = document.getElementById("assign").options;
+       [1,2,3,4,5,6,7,8].forEach(opt =>
+           assignList.add(
+               new Option("Assing #" + opt, opt, false)
+           )
+       );
+     }
+
+      var file, reader = new FileReader();
+
 
       // Upload the file to Google Drive
       reader.onloadend = function(e) {
-        google.script.run
-          .withSuccessHandler(showMessage)
-          .uploadFileToGoogleDrive(
-             e.target.result, file.name,
-             $('input#name').val(),
-             $('input#email').val()
-          );
+          var name = $('input#name').val();
+          var secondname = $('input#secondname').val();
+          var group = $('select#group-select').val();
+          var assign = $('select#assign').val();
+
+          var uploadconfig = {
+              "name" : name,
+              "secondname" : secondname,
+              "group" : group,
+              "assign" : assign
+          };
+
+          console.log("Uploading file");
+          console.log("Upload configuration: ", uploadconfig);
+
+          google.script.run
+            .withSuccessHandler(showMessage)
+            .uploadFileToGoogleDrive(
+                e.target.result,
+                file.name,
+                uploadconfig
+            );
       };
 
       // Read the file on form submit
@@ -32,14 +58,31 @@
 
     </script>
   </head>
-  <body>
+  <body onload="loadCB()">
     <!-- Text input fields -->
-    <input id="name" type="text" placeholder="Your Name 12">
-    <input id="email" type="email" placeholder="Your Email">
+    <input id="name" type="text" placeholder="Name">
+    <input id="secondname" type="text" placeholder="Second name">
+
+    <p>
+        <select name="group" id="group-select">
+            <option value="ivbo-02-18">IVBO-02-18</option>
+            <option value="ivbo-04-18">IVBO-04-18</option>
+            <option value="ivbo-06-18">IVBO-06-18</option>
+            <option value="ivbo-08-18">IVBO-08-18</option>
+        </select>
+    </p>
+
+    <p>
+        <select name="assign" id="assign">
+        </select>
+    </p>
+
     <!-- File upload button -->
     <input id="file" type="file">
     <!-- Form submit button -->
-    <button onclick="submitForm()">Submit</button>
+    <p>
+        <button onclick="submitForm()">Submit</button>
+    </p>
     <!-- Show Progress -->
   </body>
 </html>
