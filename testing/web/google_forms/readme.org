@@ -1,0 +1,7 @@
+npm is degenerative piece of shit, js is vomit-inducing garbage.
+gentoo package manager is approximately $\infty$ times better than all
+this garbage. ~clasp push~ never worked *ever* - not a single time.
+Current verison of the file uploading script does not even work - no
+errors in stackdriver, not error in log.
+
+# ~npm run~ does not print anything from console.log even though ~verbose

@@ -1,0 +1,11 @@
+{
+  "scripts": {
+    "start": "node app.js"
+  },
+  "name": "google_forms",
+  "version": "1.0.0",
+  "description": "Test upload file to google drive via web form",
+  "main": "app.js",
+  "author": "haxscramper",
+  "license": "BSD-3-Clause"
+}

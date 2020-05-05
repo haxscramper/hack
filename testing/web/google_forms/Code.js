@@ -3,6 +3,10 @@ function doGet(e) {
         .setTitle("Google file upload");
 }
 
+function hello() {
+    console.log("Hello");
+}
+
 function uploadFileToGoogleDrive(data, file, conf) {
     try {
         var folder,
