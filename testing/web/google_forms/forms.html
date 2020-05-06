@@ -5,7 +5,8 @@
     <script src="https://code.jquery.com/jquery.min.js"></script>
 
     <script>
-     function loadCB() {
+    
+         function loadCB() {
        console.log("Loaded");
        let assignList = document.getElementById("assign").options;
        [1,2,3,4,5,6,7,8].forEach(opt =>
@@ -15,8 +16,8 @@
        );
      }
 
-      var file, reader = new FileReader();
-
+    
+    var file, reader = new FileReader();
 
       // Upload the file to Google Drive
       reader.onloadend = function(e) {
@@ -42,7 +43,10 @@
                 file.name,
                 uploadconfig
             );
+            
+         alert("Upload done");
       };
+
 
       // Read the file on form submit
       function submitForm() {
@@ -85,4 +89,5 @@
     </p>
     <!-- Show Progress -->
   </body>
+
 </html>
