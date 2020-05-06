@@ -1,0 +1,4 @@
+loadf example.nim
+uses cfloat
+get cfloat
+signature get* :: string X string X int -> int
