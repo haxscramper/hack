@@ -64,6 +64,8 @@ type
 var procs: seq[ProcDefintion]
 var types: seq[TypeDefinition]
 
+var currId = 0
+
 proc registerProc(n: PNode): ProcDefintion =
   ## Register procedure or type declaration in the database
   ## Some procedures have
@@ -77,6 +79,7 @@ proc registerProc(n: PNode): ProcDefintion =
 
   ProcDefintion(
     name: n[0].renderPlainSymbolName(),
+    id: (inc currId; currId),
     args: n[3].sons
     .filterIt(it.kind == nkIdentDefs)
     .mapIt(ProcArg(
@@ -283,7 +286,6 @@ proc printProcs(db: DBConn, query: string): void =
     """)
 
 
-
     let args = procargs.mapIt(&"{it[0].toYellow()}: {it[1].toGreen()}").join(", ")
     echo &"    {row[0].toRed()}({args}): {row[2].toMagenta()}"
 
@@ -297,7 +299,7 @@ proc getUses(db: DBConn, ntype: string): void =
   let query = &"""
   SELECT procname, procid, rettype FROM procs
   WHERE procid IN (
-    select DISTINCT procid FROM arguments
+    SELECT DISTINCT procid FROM arguments
     WHERE type = '{ntype}'
   );
   """
@@ -329,17 +331,21 @@ proc matchSignature(db: DBConn, name: string, args: seq[string], ret: string): v
     collect(newSeq):
       for (arg, cnt) in argsCounts:
         &"""
-    SELECT procid FROM arguments WHERE type = '{arg}'
-    GROUP BY procid, type HAVING COUNT(type) = {cnt}"""
+        SELECT procid FROM arguments WHERE type = '{arg}'
+        GROUP BY procid, type HAVING COUNT(type) = {cnt}"""
+
+  let unionQuery = queries.join("\n      UNION\n") 
 
   let query = &"""
     SELECT procname, procid, rettype FROM procs
     WHERE procid IN (
-    {queries.join("\n  UNION\n")}
+{unionQuery}
     )
     """ & (if name.len > 0: &"AND procname GLOB '{name}'\n" else: "") &
-  (if ret.len > 0: &"AND rettype = '{ret}'" else: "") &
+  (if ret.len > 0: &"    AND rettype = '{ret}'" else: "") &
   ";"
+
+  echo query
 
   db.printProcs(query)
 
@@ -435,6 +441,8 @@ proc main() =
             ret = args.ret,
             args = args.args
           )
+
+  db.close()
 
   # let thisSource = currentSourcePath().readFile().string()
   # var installed = toSeq("~/.choosenim/toolchains/".expandTilde().walkDir())
