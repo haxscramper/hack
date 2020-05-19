@@ -4,6 +4,8 @@
 ;;; Changelog
 ;;; Last updated by author: Mon Aug 29 19:01:39 1994
 
+(declaim (sb-ext:muffle-conditions cl:style-warning))
+
 (defun mini-PrologII ()
   "Run main interpreter loop"
   (banner)
@@ -11,9 +13,9 @@
   (myloop (read_prompt)))
 
 (defun read_prompt ()
-  "Read input string from prompt"
+  "Read input string from prompt, display new prompt"
   (terpri)
-  (format t "| ?- ")
+  (format t "?- ")
   (read_code_tail))
 
 (defun banner ()
@@ -24,9 +26,9 @@
 (defun l ()
   (format t "Back to Mini-PrologII top-level~%")
   (myloop (read_prompt)))
-; mini-Cprolog & mini-PrologII
-; cparser.lsp
-;
+                                        ; mini-Cprolog & mini-PrologII
+                                        ; cparser.lsp
+                                        ;
 
 (defvar *lvarloc nil)                   ; list of local vars
 (defvar *lvarglob nil)                  ; list of global vars
@@ -40,8 +42,11 @@
       ((char/= ch #\space) ch)))
 
 (defun special-ch (ch) (char= ch '#\_))
-(defun alphanum (ch)                    ; symbol normal constituant
+
+(defun alphanum (ch)
+  "Check if `ch' is alphanumeric or special character"
   (or (alphanumericp ch) (special-ch ch)))
+
 (defun valdigit (ch) (digit-char-p ch))
 
 (defun read_number (ch)                 ; next integer
@@ -142,7 +147,7 @@
 
 (defun read_code_tail ()		; idem for a query
   (setq *lvarloc () *lvarglob ())
-  (let ((x (read_tail (rchnsep))))
+  (let* ((x (read_tail (rchnsep))))
     (cons
      (cons (length *lvarloc) (length *lvarglob))
      (append (c x) (list '(|true|))))))
@@ -361,7 +366,7 @@
 (defun printvar ()
   (if (and (null *lvarloc)              ; ground query ?
            (null *lvarglob))
-      (format t "Yes ~%")               ; success
+      (format t "~&-> Yes ~%")               ; success
     (let ((nl -1) (ng -1))
       (mapc                             ; first, local variables
        #' (lambda (x)
@@ -383,12 +388,12 @@
 	  (rplaca (svref Mem ,x) ,sq)
 	  (rplacd (svref Mem ,x) ,e)))
 
-(defun bindte (x sq e)			; binds x to (sq,e)
-  (if (frozen? x)
-      (let ((y (fgblock x)))
-	(push y FRCP)			; awakes the delayed goals
-	(bind x sq e (cons x y)))	; to trail the old value
-    (bind x sq e x)))
+(defun bindte (x sq e)
+  "Bind variable `x' to `(sq, )'"
+  (if (frozen? x) (let ((y (fgblock x)))
+                    (push y FRCP)			; awakes the delayed goals
+                    (bind x sq e (cons x y)))	; to trail the old value
+      (bind x sq e x)))
 
 (defun bindfg (x b eb r)		; binds x to the frozen goal b
   (bind x 'LIBRE FR (if (frozen? x) (cons x r) x))
@@ -420,10 +425,10 @@
 (defun ultimate (x el eg)               ; idem but selects env
   (if (var? x)
       (if (eq (car x) 'L) (ult x el) (ult x eg))
-    (cons x eg)))
+      (cons x eg)))
 
 (defmacro bindv (x ex y ey)
-  "L2 Binding"
+  "Bind two unbound variables"
   `(let ((ax (adr ,x ,ex)) (ay (adr ,y ,ey)))
      (if (< ax ay)                      ; the younger one is always
          (bindte ay ,x ,ex)             ; bound to the senior one
@@ -431,7 +436,8 @@
 
 (defun unif (t1 t2)
   "Unify two terms t1 and t2"
-  (let ((x (car t1)) (ex (cdr t1)) (y (car t2)) (ey (cdr t2)))
+  (let ((x (car t1)) (ex (cdr t1))
+        (y (car t2)) (ey (cdr t2)))
     (cond
       ((var? y)
        (if (var? x)                      ; two variables
@@ -439,33 +445,37 @@
            (bindte (adr y ey) x ex)))      ; binds y
       ((var? x) (bindte (adr x ex) y ey))
       ((and (atom x) (atom y))           ; two constants
-       (if (eql x y) t (throw 'impossible 'fail)))
+       (if (eql x y)
+           t ; Two equal constants, unification is complete
+           (throw 'impossible 'fail) ; Cannot unify two constants with different values
+           ))
       ((or (atom x) (atom y)) (throw 'impossible 'fail))
-      ( (let ((dx (pop x)) (dy (pop y))) ; two structured terms
-          (if (and (eq (functor dx) (functor dy))
-                   (= (arity dx) (arity dy)))
-              (do () ((null x))          ; same functor and arity
-                (unif (val (pop x) ex) (val (pop y) ey)))
-              (throw 'impossible 'fail)))))))
+      ((let ((dx (pop x)) (dy (pop y))) ; two structured terms
+         (if (and (eq (functor dx) (functor dy)) (= (arity dx) (arity dy)))
+             ;; Check if both parameters are functors of equal arity
+             (do () ((null x))
+               (unif (val (pop x) ex)
+                     (val (pop y) ey)))
+             (throw 'impossible 'fail)))))))
 ; mini-PrologII
 ; resol.lsp
 ;
 
 (defun forward ()
-  (do () ((null Duboulot) (format t "no More~%"))
-      (cond ((and (null CP)		; empty continuation
-		  (null FRCP))		; no awaken goals
-	     (answer))
-	    ((load_PC)			; selects first goal
-	     (cond
-	      ((user? PC)		; user defined
-	       (let ((d (def_of PC)))	; associated set of clauses
-		 (if d (pr2 d) (backtrack))))
-	      ((builtin? PC)		; builtin
-	       (if (eq (apply (car PC) (cdr PC)) 'fail)
-		   (backtrack)		; evaluation fails
-		 (cont_eval)))
-	      ((backtrack)))))))	; undefined predicate
+  (do () ((null Duboulot) (format t "no More"))
+    (cond ((and (null CP)		; empty continuation
+                (null FRCP))		; no awaken goals
+           (answer))
+          ((load_PC)			; selects first goal
+           (cond
+             ((user? PC)		; user defined
+              (let ((d (def_of PC)))	; associated set of clauses
+                (if d (pr2 d) (backtrack))))
+             ((builtin? PC)		; builtin
+              (if (eq (apply (car PC) (cdr PC)) 'fail)
+                  (backtrack)		; evaluation fails
+                  (cont_eval)))
+             ((backtrack)))))))	; undefined predicate
 
 (defun load_A (largs el eg)		; loads Ai registers with
   (dotimes (i (length largs) (vset Mem A i)) ; goal's args
@@ -474,12 +484,12 @@
 (defun load_PC ()
   (if FRCP
       (let ((x ()))
-	(do ()				; sorts the goals depending on
-	    ((null FRCP))		; their freezing times
-	    (setq x (add_fg (pop FRCP) x)))
-	(do ()				; allocates blocks in the
-	    ((null x))			; corresponding order
-	    (create_block (abs (pop x))))))
+        (do ()				; sorts the goals depending on
+            ((null FRCP))		; their freezing times
+          (setq x (add_fg (pop FRCP) x)))
+        (do ()				; allocates blocks in the
+            ((null x))			; corresponding order
+          (create_block (abs (pop x))))))
   (setq PC (pop CP) PCE (E CL) PCG (G CL) Cut_pt BL))
 
 (defun other_fg (b r)
@@ -583,8 +593,20 @@
 	     (vset Mem (+ A i 1) (svref Mem (+ deb i))))))
 
 (defun myloop (c)
-  (setq FR BottomFR G BottomG L BottomL TR BottomTR Cut_pt 0
-        CP nil CL 0  BL 0 BG BottomG FRCP nil Duboulot t)
+  "Main evaluation loop"
+  (setq
+   FR BottomFR
+   G BottomG
+   L BottomL
+   TR BottomTR
+   Cut_pt 0
+   CP nil
+   CL 0
+   BL 0
+   BG BottomG
+   FRCP nil
+   Duboulot t)
+
   (push_cont)				; initial continuation
   (push_E (nloc c))			; local env. for the query
   (push_G (nglob c))			; global env. for the query
@@ -598,12 +620,38 @@
 ; pred.lsp
 ;
 (defvar Ob_Micro_Log
-      '(|write| |nl| |tab| |read| |get| |get0|
-	|var| |nonvar| |atomic| |atom| |number|
-	! |fail| |true|
-	|divi| |mod| |plus| |minus| |mult| |le| |lt|
-	|name| |consult| |abolish| |cputime| |statistics|
-	|call| |freeze| |dif| |frozen_goals|))
+  '(
+    |write|
+    |nl|
+    |tab|
+    |read|
+    |get|
+    |get0|
+    |var|
+    |nonvar|
+    |atomic|
+    |atom|
+    |number|
+    !
+    |fail|
+    |true|
+    |divi|
+    |mod|
+    |plus|
+    |minus|
+    |mult|
+    |le| ; Lower or equal
+    |lt| ; Lower than
+    |name|
+    |consult|
+    |abolish|
+    |cputime|
+    |statistics|
+    |call|
+    |freeze|
+    |dif|
+    |frozen_goals|
+    ))
 (mapc #'(lambda (x) (setf (get x 'evaluable) t)) Ob_Micro_Log)
 
 ; !/0
@@ -648,14 +696,10 @@
 
 ; statistics/0
 (defun |statistics| ()
-  (format t " local stack : ~A (~A used)~%"
-	  (- BottomTR BottomL) (- L BottomL))
-  (format t " global stack : ~A (~A used)~%"
-	  (- BottomL BottomG) (- G BottomG))
-  (format t " trail : ~A (~A used)~%"
-	  (- A BottomTR) (- TR BottomTR))
-  (format t " frozen-goals stack : ~A (~A used)~%"
-	  BottomG (- FR BottomFR)))
+  (format t " local stack : ~A (~A used)~%" (- BottomTR BottomL) (- L BottomL))
+  (format t " global stack : ~A (~A used)~%" (- BottomL BottomG) (- G BottomG))
+  (format t " trail : ~A (~A used)~%" (- A BottomTR) (- TR BottomTR))
+  (format t " frozen-goals stack : ~A (~A used)~%" BottomG (- FR BottomFR)))
 
 ; frozen_goals/0
 (defun |frozen_goals| ()
@@ -679,28 +723,60 @@
 (defun write1 (te)			; depending on te
   (let ((x (car te)) (e (cdr te)))
     (cond
-     ((null x) (format t "[]"))
-     ((atom x) (format t "~A" x))
-     ((var? x) (format t "X~A" (adr x e)))
-     ((list? x) (format t "[")
-      (writesl (val (cadr x) e) (val (caddr x) e))
-      (format t "]"))
-     ((writesf (functor (des x)) (largs x) e)))))
+      ((null x) (format t "[]"))
+      ((atom x) (format t "~A" x))
+      ((var? x) (format t "X~A" (adr x e)))
+      ((list? x) (format t "[")
+       (writesl (val (cadr x) e) (val (caddr x) e))
+       (format t "]"))
+      ((writesf (functor (des x)) (largs x) e)))))
+
 (defun writesl (te r)			; for a list
   (write1 te)
   (let ((q (car r)) (e (cdr r)))
     (cond
-     ((null q))
-     ((var? q) (format t "|X~A" (adr q e)))
-     (t (format t ",")
-        (writesl (val (cadr q) e) (val (caddr q) e))))))
+      ((null q))
+      ((var? q) (format t "|X~A" (adr q e)))
+      (t (format t ",")
+         (writesl (val (cadr q) e) (val (caddr q) e))))))
+
 (defun writesf (fct largs e)		; for a functional term
   (format t "~A(" fct)
   (write1 (val (car largs) e))
   (mapc #' (lambda (x) (format t ",") (write1 (val x e)))
            (cdr largs))
   (format t ")"))
-					;nl/0
+
+(defun read_terme ()
+  (let ((*lvarloc nil) (*lvarglob nil))
+    (let ((te (read_term (rchnsep) 2)))
+      (rchnsep) (cons (length *lvarglob) (c te)))))
+
+(defun push1_g (n)
+  (if (>= (+ G n) BottomL)		; allocates a global env
+      (throw 'debord (print "Global Stack Overflow")))
+  (dotimes (i n (- G n))
+    (vset Mem G (cons 'LIBRE BottomG))
+    (incf G)))
+
+(defun undo_l (te)
+  (let ((x (car te)) (e (cdr te)))
+    (if (atom x)
+        x
+        (cons (undo_l (val (cadr x) e)) (undo_l (val (caddr x) e))))))
+
+(defun do_l (x)
+  (if (atom x) x (list '(\. 2) (car x) (do_l (cdr x)))))
+
+(defun impl (l)
+  (intern (map 'string #'code-char l)))
+
+(defun expl (at)
+  (map 'list #'char-int (string at)))
+
+
+
+                                        ;nl/0
 (defun |nl| () (terpri))
 					;tab/1 (+int)
 (defun |tab| (x)
@@ -711,17 +787,11 @@
     (catch 'impossible
       (unif (ultimate x PCE PCG)
             (cons (cdr te) (push1_g (car te)))))))
-(defun read_terme ()
-  (let ((*lvarloc nil) (*lvarglob nil))
-    (let ((te (read_term (rchnsep) 2)))
-      (rchnsep) (cons (length *lvarglob) (c te)))))
-(defun push1_g (n)
-  (if (>= (+ G n) BottomL)		; allocates a global env
-      (throw 'debord (print "Global Stack Overflow")))
-  (dotimes (i n (- G n))
-    (vset Mem G (cons 'LIBRE BottomG))
-    (incf G)))
-					;get/1 (?car)
+                                        ;consult/1 (+atom)
+
+
+
+                                        ;get/1 (?car)
 (defun |get| (x)
   (uni x (char-int (rchnsep))))
 					;get0/1 (?car)
@@ -776,21 +846,6 @@
         (uni x (impl (undo_l (ultimate y PCE PCG))))
         (uni y (do_l (expl b))))))
 
-(defun undo_l (te)
-  (let ((x (car te)) (e (cdr te)))
-    (if (atom x)
-        x
-        (cons (undo_l (val (cadr x) e)) (undo_l (val (caddr x) e))))))
-
-(defun do_l (x)
-  (if (atom x) x (list '(\. 2) (car x) (do_l (cdr x)))))
-
-(defun impl (l)
-  (intern (map 'string #'code-char l)))
-
-(defun expl (at)
-  (map 'list #'char-int (string at)))
-                                        ;consult/1 (+atom)
 
 (defun |consult| (f)
   (format t "~A~%" (load (value1 f))))
