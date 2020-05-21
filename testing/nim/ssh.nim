@@ -1,4 +1,5 @@
 import shell
+import bitops
 import strutils
 import sequtils
 import net
@@ -391,6 +392,9 @@ proc startProcess*(ssc: var SSHConnection, command: string): RemoteProcess =
   )
 
 
+
+
+
 proc main() =
   let
     username = "ssh-test-user"
@@ -407,6 +411,9 @@ proc main() =
   )
 
   ssc.sshOpenChannel()
+
+
+
   var rproc = ssc.startProcess("/bin/ls /")
 
   while not rproc.outputStream().atEnd():

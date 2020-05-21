@@ -1,0 +1,6 @@
+* Keyboard project
+
+** Bugs
+
+Grid made from key codes does not register modifiers correctly: they
+are converted to scancodes too.

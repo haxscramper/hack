@@ -4,3 +4,4 @@ test.dot
 *.toml.tex
 .*
 nimcache
+!Makefile

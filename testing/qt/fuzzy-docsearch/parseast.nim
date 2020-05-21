@@ -112,19 +112,6 @@ func renderType(t: PNode): string =
   else:
     t.renderPlainSymbolName()
 
-func registerType(n: PNode): TypeDefinition =
-  discard
-  ## Register type declaration in database
-  #  TypeDefinition(
-  #    name: n[0].renderPlainSymbolName(),
-  #    child: n[2].sons
-  #      .filterIt(it.kind == nkRecList) # TODO replace with ident definition
-  #      .mapIt(
-  #        block:
-  #          it.mapIt((name: it[0].renderType, typ: it[1].renderType))
-  #      ).concat()
-  #  )
-
 proc registerToplevel(n: PNode): void =
   ## register AST node in the database
   case n.kind:
@@ -134,8 +121,6 @@ proc registerToplevel(n: PNode): void =
       for s in n.sons: registerTopLevel(s)
     of nkTypeSection:
       for s in n.sons: registerTopLevel(s)
-    of nkTypeDef:
-      types.add registerType(n)
     else:
       discard
 
@@ -224,26 +209,28 @@ proc createProcTable(db: DbConn): void =
   for idx, pr in mpairs(procs):
     pr.id = idx
 
-  db.exec(sql("DROP TABLE IF EXISTS arguments"))
-  db.exec(sql("""
-  CREATE TABLE arguments (
-      procid INT NOT NULL,
-      arg TEXT,
-      type TEXT,
-      idx INTEGER,
-      defval TEXT
-  )"""))
-
   db.exec(sql("DROP TABLE IF EXISTS procs"))
   db.exec(sql("""
   CREATE TABLE procs (
-      procid INT NOT NULL,
+      procid INT PRIMARY KEY,
       procname TEXT,
       moduleid INT,
       docstring TEXT,
       rettype TEXT,
       kind TEXT
   )"""))
+
+
+  db.exec(sql("DROP TABLE IF EXISTS arguments"))
+  db.exec(sql("""
+  CREATE TABLE arguments (
+      procid INT REFERENCES procs(procid),
+      arg TEXT,
+      type TEXT,
+      idx INTEGER,
+      defval TEXT
+  )"""))
+
 
   db.addProcs(procs)
 
@@ -334,7 +321,7 @@ proc matchSignature(db: DBConn, name: string, args: seq[string], ret: string): v
         SELECT procid FROM arguments WHERE type = '{arg}'
         GROUP BY procid, type HAVING COUNT(type) = {cnt}"""
 
-  let unionQuery = queries.join("\n      UNION\n") 
+  let unionQuery = queries.join("\n      UNION\n")
 
   let query = &"""
     SELECT procname, procid, rettype FROM procs
@@ -345,7 +332,7 @@ proc matchSignature(db: DBConn, name: string, args: seq[string], ret: string): v
   (if ret.len > 0: &"    AND rettype = '{ret}'" else: "") &
   ";"
 
-  echo query
+  # echo query
 
   db.printProcs(query)
 
@@ -381,7 +368,7 @@ proc getDefinitions(db: DBConn, id: string): void =
   discard
 
 proc main() =
-  var db: DBConn = open(":memory:", "", "", "")
+  var db: DBConn = open("/tmp/db.sqlite", "", "", "")
   db.createProcTable()
   for line in stdin.lines():
     let split = line.split(" ")
@@ -444,31 +431,6 @@ proc main() =
 
   db.close()
 
-  # let thisSource = currentSourcePath().readFile().string()
-  # var installed = toSeq("~/.choosenim/toolchains/".expandTilde().walkDir())
-  # installed = installed.sortedByIt(it.path)
-  # let target = installed[^1].path
-
-  # echo "Using toolchain at path", target
-
-
-  # registerDirectoryRec(target & "/lib")
-  # registerDirectoryRec("~/workspace/hax-nim".expandTilde())
-
-  # db.createProcTable()
-  # db.close()
-
-  # echo "done"
-  # echo &"found {procs.len} procs in total"
-  # var cnt = @[(pkFunc, 0), (pkInterator, 0), (pkProc, 0), (pkMacro, 0), (
-  #     pkTemplate, 0)].toTable()
-  # for pr in procs:
-  #   inc cnt[pr.kind]
-
-  # for kind, num in cnt:
-  #   echo kind, ": ", num
-
 
 pprintErr():
   main()
-
