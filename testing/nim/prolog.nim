@@ -2,6 +2,7 @@ import sequtils
 import macros
 import options
 import strutils, strformat
+import tables
 
 type
   Failure = ref object of CatchableError
@@ -13,6 +14,7 @@ type
   ValueType = string
   Timestamp = int
   Symbol = string
+
 
   TermKind = enum
     tkConstant
@@ -42,7 +44,7 @@ type
 
   ActivationBlock = object
     id: BlockId
-    env: Environment
+    env: EnvId
     creation: Timestamp
     case isChoice: bool
       of true:
@@ -53,6 +55,7 @@ type
 
 
   ControlStack = object
+    top: BlockId
     blocks: seq[ActivationBlock]
 
   CopyStack = object
@@ -61,11 +64,52 @@ type
   PostboundStack = object
     vars: seq[Variable]
 
+type
+  Clause = object
+    id: ClauseId
+    head: Term
+    body: seq[Term]
+
+  Program = object
+    clauses: seq[ClauseId]
+
+func `==`(c1, c2: ClauseId): bool =
+  int(c1) == int(c2)
+
+type
+  ClauseStore = object
+    data: Table[ClauseId, Clause]
+
+  BlockStore = object
+    data: Table[BlockId, ActivationBlock]
+
+  EnvStore = object
+    data: Table[EnvId, Environment]
+
+type
+  Workspace = var object
+    clauseStore: ClauseStore
+    blockStore: BlockStore
+    envStore: EnvStore
+
+
+proc registerClause(cl: Clause, w: Workspace): void =
+  w.clauseStore.data[cl.id] = cl
+
+proc getClause(id: ClauseId, w: Workspace): Clause =
+  w.clauseStore.data[id]
+
 proc getTime(): Timestamp =
   var counter {.global.}: int
   inc counter
   return counter
 
+func isFact(cl: Clause): bool = cl.body.len == 0
+func isVar(term: Term): bool = term.kind == tkVariable
+func isConstant(term: Term): bool = term.kind == tkConstant
+func isFunctor(term: Term): bool = term.kind == tkFunctor
+func isGenvar(term: Term): bool = term.isVar and (term.genIdx > 0)
+func isCopied(term: Term): bool = term.isFunctor and term.copied
 
 proc makeEnvironment(values: seq[(Term, Term)] = @[]): Environment =
   var envIdx {.global.}: int
@@ -81,12 +125,31 @@ proc makeFunctor(functorName: string, args: seq[Term]): Term =
     arguments: args
   )
 
+proc makeClause(head: Term, body: seq[Term]): Clause =
+  assert head.isFunctor()
+  for goal in body:
+    assert goal.isFunctor()
+
+  var idx {.global.}: int
+  return Clause(
+    id: ClauseId((inc idx; idx)),
+    head: head,
+    body: body
+  )
+
+proc makeStoreClause(head: Term, body: seq[Term]): ClauseId =
+  let cl = makeClause(head, body)
+
+
 proc makeVariable(varName: string): Term =
   Term(
     kind: tkVariable,
     name: varName,
     creation: getTime()
   )
+
+proc makeFreeVar(): Term =
+  makeVariable("#free#")
 
 proc makeConstant(constValue: ValueType): Term =
   Term(
@@ -96,16 +159,14 @@ proc makeConstant(constValue: ValueType): Term =
 
 
 
-func isVar(term: Term): bool = term.kind == tkVariable
-func isConstant(term: Term): bool = term.kind == tkConstant
-func isFunctor(term: Term): bool = term.kind == tkFunctor
-
 func arity(term: Term): int =
   assert term.isFunctor()
   return term.arguments.len
 
-func isGenvar(term: Term): bool = term.isVar and (term.genIdx > 0)
-func isCopied(term: Term): bool = term.isFunctor and term.copied
+
+iterator pairs(env: Environment): (Term, Term) =
+  for pair in env.values:
+    yield pair
 
 func sameTerm(t1, t2: Term): bool =
   if t1.kind != t2.kind:
@@ -126,6 +187,32 @@ func sameTerm(t1, t2: Term): bool =
       else:
         return false
 
+func contains(env: Environment, variable: Variable): bool =
+  for v, val in env:
+    if sameTerm(v, variable):
+      result = true
+
+proc getVarList(term: Term): seq[Variable] =
+  case term.kind:
+    of tkConstant:
+      return @[]
+    of tkVariable:
+      return @[term]
+    of tkFunctor:
+      concat(term.arguments.map(getVarList))
+
+
+iterator iterateVars(term: Term): Variable =
+  for v in term.getVarList():
+    yield v
+
+iterator iterateVars(cl: Clause): Variable =
+  for arg in cl.head.iterateVars():
+    yield arg
+
+  for goal in cl.body:
+    for v in goal.iterateVars():
+      yield v
 
 func getValue(env: Environment, term: Variable): Option[Term] =
   for pair in env.values:
@@ -184,6 +271,13 @@ proc copy(term: Term, env: Environment): (Term, Environment) =
       assert resFunctor.arity() == term.arity()
       return (resFunctor, resEnv)
 
+proc copy(cl: Clause): (ClauseId, Environment) =
+  var resEnv: Environment
+  for v in cl.iterateVars():
+    if v notin resEnv:
+      resEnv.push(v, makeFreeVar())
+
+  return (cl.id, resEnv)
 
 
 proc bindTerm(variable, value: Term, env: Environment): Environment =
@@ -234,6 +328,8 @@ proc unif(t1, t2: Term, env: Environment): Environment =
       result = unif(arg1, arg2, result)
 
 
+
+
 proc `$`(term: Term): string =
   case term.kind:
     of tkConstant:
@@ -250,19 +346,30 @@ proc mf(s: string, a: varargs[Term]): Term = makeFunctor(s, toSeq(a))
 proc mv(n: string): Term = makeVariable(n)
 proc mc(s: string): Term = makeConstant(s)
 
-echo unif(
-  t1 = "t".mf(mv("X"), "f".mf(mv("U"), mv("Z"))),
-  t2 = "t".mf(mc("12"), "f".mf(mc("--"), mv("I"))),
-  env = makeEnvironment()
-)
+when false:
+  echo unif(
+    t1 = "t".mf(mv("X"), "f".mf(mv("U"), mv("Z"))),
+    t2 = "t".mf(mc("12"), "f".mf(mc("--"), mv("I"))),
+    env = makeEnvironment()
+  )
 
-echo dereference(mv("X"), makeEnvironment(
-  values = @[(mv("X"), mc("*&&*"))]
-))
+  echo dereference(mv("X"), makeEnvironment(
+    values = @[(mv("X"), mc("*&&*"))]
+  ))
 
 
-echo dereference(mv("X"), makeEnvironment(
-  values = @[
-    (mv("X"), mv("Y")),
-    (mv("Y"), mc("*&&*"))]
-))
+  echo dereference(mv("X"), makeEnvironment(
+    values = @[
+      (mv("X"), mv("Y")),
+      (mv("Y"), mc("*&&*"))]
+  ))
+
+when true:
+  let prog = Program(
+    clauses: @[
+      makeStoreClause("p".mf(mv "X"), @["q".mf(mv "X", mv "Y"), "r".mf(mv "Y")]),
+      makeStoreClause("q".mf(mc "a", mc "b"), @[]),
+      makeStoreClause("q".mf(mv "Z", mc "c"), @[]),
+      makeStoreClause("r".mf(mc "c"), @[])
+    ]
+  )
