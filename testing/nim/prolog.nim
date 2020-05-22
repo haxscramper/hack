@@ -78,25 +78,27 @@ func `==`(c1, c2: ClauseId): bool =
 
 type
   ClauseStore = object
-    data: Table[ClauseId, Clause]
+    data: OrderedTable[ClauseId, Clause]
 
   BlockStore = object
-    data: Table[BlockId, ActivationBlock]
+    data: OrderedTable[BlockId, ActivationBlock]
 
   EnvStore = object
-    data: Table[EnvId, Environment]
+    data: OrderedTable[EnvId, Environment]
 
 type
-  Workspace = var object
+  WorkspaceT = object
     clauseStore: ClauseStore
     blockStore: BlockStore
     envStore: EnvStore
 
+  Workspace = var WorkspaceT
 
-proc registerClause(cl: Clause, w: Workspace): void =
+
+proc registerClause(w: Workspace, cl: Clause): void =
   w.clauseStore.data[cl.id] = cl
 
-proc getClause(id: ClauseId, w: Workspace): Clause =
+proc getClause(w: Workspace, id: ClauseId): Clause =
   w.clauseStore.data[id]
 
 proc getTime(): Timestamp =
@@ -110,6 +112,7 @@ func isConstant(term: Term): bool = term.kind == tkConstant
 func isFunctor(term: Term): bool = term.kind == tkFunctor
 func isGenvar(term: Term): bool = term.isVar and (term.genIdx > 0)
 func isCopied(term: Term): bool = term.isFunctor and term.copied
+func sameName(cl: Clause, term: Term): bool = cl.head.symbol == term.symbol
 
 proc makeEnvironment(values: seq[(Term, Term)] = @[]): Environment =
   var envIdx {.global.}: int
@@ -137,9 +140,14 @@ proc makeClause(head: Term, body: seq[Term]): Clause =
     body: body
   )
 
-proc makeStoreClause(head: Term, body: seq[Term]): ClauseId =
+proc makeStoreClause(head: Term, body: seq[Term], w: Workspace): ClauseId =
   let cl = makeClause(head, body)
+  w.registerClause(cl)
+  return cl.id
 
+iterator iterateClauses(w: Workspace): Clause =
+  for id, cl in w.clauseStore.data:
+    yield cl
 
 proc makeVariable(varName: string): Term =
   Term(
@@ -314,7 +322,7 @@ proc unif(t1, t2: Term, env: Environment): Environment =
     if equalConstants(val1, val2):
       return env
     else:
-      raise Failure(msg: "Unification failed")
+      raise Failure(msg: "Unification failed: different constants")
   elif val1.isVar():
     return bindTerm(val1, val2, env)
   elif val2.isVar():
@@ -327,8 +335,18 @@ proc unif(t1, t2: Term, env: Environment): Environment =
     for (arg1, arg2) in zip(val1.arguments, val2.arguments):
       result = unif(arg1, arg2, result)
 
+iterator getUnified(term: Term, env: Environment, w: Workspace): (ClauseId, Environment) =
+  ## Iterate over all clauses in workspace `w` that can be unified
+  ## with term `t` under existing environment `env`.
+  for cl in w.iterateClauses():
+    if cl.sameName(term):
+      try:
+        let resEnv = unif(cl.head, term, env)
+      except Failure:
+        discard
 
-
+proc solve(query: Term, prog: Program, w: Workspace) =
+  discard
 
 proc `$`(term: Term): string =
   case term.kind:
@@ -341,6 +359,12 @@ proc `$`(term: Term): string =
 
 proc `$`(env: Environment): string =
   "{" & env.values.mapIt(&"({it[0]} -> {it[1]})").join(" ") & "}"
+
+proc `$`(cl: Clause): string =
+  if cl.isFact():
+    $cl.head & "."
+  else:
+    $cl.head & " :- " & cl.body.mapIt($it).join(", ") & "."
 
 proc mf(s: string, a: varargs[Term]): Term = makeFunctor(s, toSeq(a))
 proc mv(n: string): Term = makeVariable(n)
@@ -364,12 +388,17 @@ when false:
       (mv("Y"), mc("*&&*"))]
   ))
 
+
 when true:
+  var w: WorkspaceT
   let prog = Program(
     clauses: @[
-      makeStoreClause("p".mf(mv "X"), @["q".mf(mv "X", mv "Y"), "r".mf(mv "Y")]),
-      makeStoreClause("q".mf(mc "a", mc "b"), @[]),
-      makeStoreClause("q".mf(mv "Z", mc "c"), @[]),
-      makeStoreClause("r".mf(mc "c"), @[])
+      makeStoreClause("p".mf(mv "X"), @["q".mf(mv "X", mv "Y"), "r".mf(mv "Y")], w),
+      makeStoreClause("q".mf(mc "a", mc "b"), @[], w),
+      makeStoreClause("q".mf(mv "Z", mc "c"), @[], w),
+      makeStoreClause("r".mf(mc "c"), @[], w)
     ]
   )
+
+  for cl in w.iterateClauses():
+    echo cl
