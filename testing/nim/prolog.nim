@@ -46,13 +46,9 @@ type
     values: seq[(Term, Term)]
 
   Block = object
-    case isChoice: bool
-      of true:
-        idx: int
-        current: int
-        alts: seq[(ClauseId, Environment)]
-      of false:
-        env: Environment
+    idx: int
+    current: int
+    alts: seq[(ClauseId, Environment)]
 
 type
   Clause = object
@@ -111,7 +107,7 @@ proc getTime(): Timestamp =
   return counter
 
 func hasAlts(bl: Block): bool =
-  bl.isChoice and (bl.current < bl.alts.len)
+  bl.current < bl.alts.len
 
 template anyOfIt(s: typed, pr: untyped): bool =
   var res = false
@@ -137,6 +133,9 @@ func getAlt(bl: ControlStack): (ClauseId, Environment) =
 
 func getAlt(bl: Block): (ClauseId, Environment) =
   return bl.alts[bl.current]
+
+func nextAlt(bl: var Block): void = inc bl.current
+func getEnv(bl: Block): Environment = bl.getAlt()[1]
 
 func isFact(cl: Clause): bool = cl.body.len == 0
 func isVar(term: Term): bool = term.kind == tkVariable
@@ -166,8 +165,9 @@ proc makeClause(head: Term, body: seq[Term]): Clause =
     assert goal.isFunctor()
 
   var idx {.global.}: int
+  inc idx
   return Clause(
-    id: ClauseId((inc idx; idx)),
+    id: ClauseId(idx),
     head: head,
     body: body
   )
@@ -194,15 +194,11 @@ proc makeFreeVar(): Term =
   freeVarInst = makeVariable("#free#")
   freeVarInst
 
-proc makeDeterm(env: Environment): Block =
-  Block(env: env, isChoice: false)
-
 proc makeChoice(
   idx: int,
   alts: seq[(ClauseId, Environment)]): Block =
   Block(
     idx: idx,
-    isChoice: true,
     alts: alts,
     current: 0
   )
@@ -365,7 +361,7 @@ proc `$`(term: Term): string =
     of tkConstant:
       return term.value
     of tkVariable:
-      return term.name & "'".repeat(term.genIdx)
+      return "_" & term.name & "'".repeat(term.genIdx)
     of tkFunctor:
       return term.symbol & "(" & term.arguments.mapIt($it).join(", ") & ")"
 
@@ -409,65 +405,72 @@ proc unif(t1, t2: Term, env: Environment): Environment =
 iterator getUnified(w: Workspace, term: Term, env: Environment): (ClauseId, Environment) =
   ## Iterate over all clauses in workspace `w` that can be unified
   ## with term `t` under existing environment `env`.
-  showLog "Getting unified matces for: ", term
+  showLog "Getting unified matches for: ", term
   for cl in w.iterateClauses():
     if w[cl].sameName(term):
-      showLog "Found clause with the same name: ", w[cl]
       try:
         let resEnv = unif(w[cl].head, term, env)
         yield (cl, resEnv)
       except Failure:
+        showWarn "Clause", w[cl], ": ", getCurrentExceptionMsg()
         discard
 
-proc last[T](s: seq[T]): T = s[^1]
+template last[T](s: seq[T]): T = s[^1]
+
+var tmp: int = 0
+
+proc `$`(id: ClauseId): string = $int(id)
+
+proc logBlock(bl: Block): void =
+  for alt in bl.alts:
+    showLog &"id: {alt[0]}, env: {alt[1]}"
 
 proc solve(w: Workspace, query: Term, topEnv: Environment): Option[Environment] =
-  var control = @[makeChoice(idx = -1, alts = toSeq(w.getUnified(query, topEnv)))]
-
+  var control: ControlStack = @[makeChoice(idx = -1, alts = toSeq(w.getUnified(query, topEnv)))]
   while control.hasAlts():
+    inc tmp
+    if tmp > 8:
+      quit 1
+
     let (cl, env) = control.getAlt()
     showLog "Matching clause:", w[cl], "with env:", env
     let subMax = w[cl].body.len - 1
-    var nowEnv = env
-
     if w[cl].isFact():
       showLog "Found fact with env", env
       return some(env)
     else:
       for idx, subgoal in w[cl].body:
-        if idx == subMax:
-          showLog "Last goal in clause - pushing deterministic block"
-          control.add makeDeterm(nowEnv)
-        else:
-          showLog &"[{idx + 1}/{subMax + 1}] goal - pushing choice block"
-          # XXXX at this point we need to add list of other clauses that
-          # match unification under this environment. When backtracking
-          # they will be tried in sequence. When none of them match
-          # choice block will be discaded completely.
-          control.add @[makeChoice(
-            idx = idx,
-            alts = toSeq(w.getUnified(w[cl].head, nowEnv))
-          )]
+        let nowEnv = control.last.getEnv()
 
+        showLog &"[{idx + 1}/{subMax + 1}] goal - pushing choice block"
+        control.add @[makeChoice(
+          idx = idx,
+          alts = toSeq(w.getUnified(subgoal, nowEnv))
+        )]
+
+        # runIndentedLog:
+        #   for bl in control:
+        #     showLog "---", w[cl]
+        #     runIndentedLog:
+        #       bl.logBlock()
 
         runIndentedLog:
-          let resEnv = w.solve(subgoal, env)
+          let resEnv = w.solve(subgoal, nowEnv)
 
         if resEnv.isSome():
           showInfo "Subgoal solution succeded"
-          nowEnv = resEnv.get()
-          if not control.last.isChoice:
-            return some(nowEnv)
         else:
           showInfo "Subgoal solution failed"
           runIndentedLog:
-            if control.len == 0 or (not control.last.isChoice):
-              showLog "Last block was deterministic - no more options to try"
-              return none(Environment)
-            else:
-              showLog "Last block was choice - can backtrack"
+            if not control.last.hasAlts():
+              showLog "Last block has no more alternative solutions"
               discard control.pop
-              nowEnv = control.last.env
+              control.last.nextAlt()
+            else:
+              showLog "Last block has alternative solutions"
+              control.last.nextAlt()
+              # discard control.pop
+              # nowEnv = control.last.env
 
 
 proc mf(s: string, a: varargs[Term]): Term = makeFunctor(s, toSeq(a))
@@ -504,14 +507,23 @@ proc main() =
     var w: WorkspaceT
     let prog = Program(
       clauses: @[
-        makeStoreClause("p".mf(mv "X"), @["q".mf(mv "X", mv "Y"), "r".mf(mv "Y")], w),
-        makeStoreClause("q".mf(mc "a", mc "b"), @[], w),
-        makeStoreClause("q".mf(mv "Z", mc "c"), @[], w),
-        makeStoreClause("r".mf(mc "c"), @[], w)
+        # makeStoreClause("p".mf(mv "X"), @["q".mf(mv "X", mv "Y"), "r".mf(mv "Y")], w),
+        # makeStoreClause("q".mf(mc "a", mc "b"), @[], w),
+        # makeStoreClause("q".mf(mv "Z", mc "c"), @[], w),
+        # makeStoreClause("r".mf(mc "c"), @[], w)
+        makeStoreClause(
+          "c".mf(mv "X", mv "Y"),
+          @["c1".mf(mv "X"), "c2".mf(mv "Y")], w
+        ),
+        makeStoreClause("c1".mf(mv "Z"), @["e".mf(mv "X", mc "2")], w),
+        makeStoreClause("c1".mf(mv "Z"), @["e".mf(mv "X", mc "3")], w),
+        makeStoreClause("c2".mf(mv "Z"), @["e".mf(mv "X", mc "5")], w),
+        makeStoreClause("c2".mf(mv "Z"), @["e".mf(mv "X", mc "6")], w),
+        makeStoreClause("e".mf(mv "X", mv "X"), @[], w)
       ]
     )
 
-    let query = mf("p", @[mc "a"])
+    let query = mf("c", @[mc "2", mc "6"])
     let res = w.solve(query, makeEnvironment())
     echo res
 
