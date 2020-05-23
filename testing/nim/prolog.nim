@@ -1,5 +1,5 @@
 import sequtils
-import hmisc/defensive
+import hmisc/[defensive, helpers]
 import macros
 import options
 import strutils, strformat
@@ -278,12 +278,54 @@ proc isBound(term: Variable, env: Environment): bool =
   return (val.isSome() and # Present in environment
     not (
       sameTerm(val.get(), makeFreeVar()) or # Not explicitly bound to free var
-      sameTerm(val.get(), term) # Not bound to itself
+      sameTerm(val.get(), term) or # Not bound to itself
+      val.get().isVar() # NOTE ???
     ))
 
 
-proc push(self: var Environment, variable: Variable, value: Term): void =
+proc `$`(term: Term): string =
+  case term.kind:
+    of tkConstant:
+      return term.value
+    of tkVariable:
+      return "_" & term.name & "'".repeat(term.genIdx)
+    of tkFunctor:
+      return term.symbol & "(" & term.arguments.mapIt($it).join(", ") & ")"
+
+proc `$`(env: Environment): string =
+  "{" & env.values.mapIt(
+    &"({it[0]} " & (
+      (it[0].isVar() and it[1].isVar()).tern("<->", "->")
+    ) & &" {it[1]})"
+  ).join(" ") & "}"
+
+proc `$`(cl: Clause): string =
+  if cl.isFact():
+    $cl.head & "."
+  else:
+    $cl.head & " :- " & cl.body.mapIt($it).join(", ") & "."
+
+
+
+proc push(
+  self: var Environment, variable: Variable,
+  value: Term, noOverride: bool = true): void =
+  if noOverride:
+    assert not isBound(variable, self),
+       &"""Attempt to rebind already existing var '{variable}' to '{value}'
+  (current binding is '{self.getValue(variable).get()}')"""
+  else:
+    discard
+    # TODO drop values
+    # if variable.isBound(self):
+    #   self.values.delete(
+    #     findIt(sameTerm(it[0], variable))
+    #   )
+
   self.values.add((variable, value))
+
+proc pushEnv(bl: var Block, v: Variable, val: Term, noOverride = true): void =
+  bl.alts[bl.current][1].push(v, val, noOverride)
 
 proc genVar(term: Variable): Variable =
   result = term
@@ -305,9 +347,10 @@ proc dereference(term: Term, env: Environment): Term =
 proc bindTerm(variable, value: Term, env: Environment): Environment
 
 proc copy(term: Term, env: Environment): (Term, Environment) =
+  let inputEnv = env
   case term.kind:
     of tkConstant:
-      return (term, env)
+      return (term, inputEnv)
     of tkVariable:
       let deref = term.dereference(env)
       if deref.isVar():
@@ -315,7 +358,7 @@ proc copy(term: Term, env: Environment): (Term, Environment) =
         var resEnv = bindTerm(deref, newVar, env)
         return (newVar, resEnv)
       else:
-        return (deref, env)
+        return (deref, inputEnv)
 
     of tkFunctor:
       var resEnv = env
@@ -356,30 +399,12 @@ converter toVariable(term: Term): Variable =
   assert term.kind == tkVariable
   return term
 
-proc `$`(term: Term): string =
-  case term.kind:
-    of tkConstant:
-      return term.value
-    of tkVariable:
-      return "_" & term.name & "'".repeat(term.genIdx)
-    of tkFunctor:
-      return term.symbol & "(" & term.arguments.mapIt($it).join(", ") & ")"
-
-proc `$`(env: Environment): string =
-  "{" & env.values.mapIt(&"({it[0]} -> {it[1]})").join(" ") & "}"
-
-proc `$`(cl: Clause): string =
-  if cl.isFact():
-    $cl.head & "."
-  else:
-    $cl.head & " :- " & cl.body.mapIt($it).join(", ") & "."
-
 
 
 proc equalConstants(t1, t2: Term): bool =
   (t1.kind == tkConstant) and (t2.kind == tkConstant) and (t1.value == t2.value)
 
-proc unif(t1, t2: Term, env: Environment): Environment =
+proc unif(t1, t2: Term, env: Environment = makeEnvironment()): Environment =
   ## If possible, return new environment where two terms `t1`, `t2` are equal
   let
     val1 = dereference(t1, env)
@@ -397,7 +422,8 @@ proc unif(t1, t2: Term, env: Environment): Environment =
   else:
     result = env
     if val1.symbol != val2.symbol:
-      raise Failure(msg: "Cannot unify functors with different names")
+      raise Failure(
+        msg: &"Cannot unify functors with different names '{t1}' and '{t2}'")
 
     for (arg1, arg2) in zip(val1.arguments, val2.arguments):
       result = unif(arg1, arg2, result)
@@ -405,11 +431,10 @@ proc unif(t1, t2: Term, env: Environment): Environment =
 iterator getUnified(w: Workspace, term: Term, env: Environment): (ClauseId, Environment) =
   ## Iterate over all clauses in workspace `w` that can be unified
   ## with term `t` under existing environment `env`.
-  showLog "Getting unified matches for: ", term
   for cl in w.iterateClauses():
     if w[cl].sameName(term):
       try:
-        let resEnv = unif(w[cl].head, term, env)
+        let resEnv = unif(term, w[cl].head, env)
         yield (cl, resEnv)
       except Failure:
         showWarn "Clause", w[cl], ": ", getCurrentExceptionMsg()
@@ -425,47 +450,61 @@ proc logBlock(bl: Block): void =
   for alt in bl.alts:
     showLog &"id: {alt[0]}, env: {alt[1]}"
 
+proc revert(call, head: Term, env: Environment): Environment =
+  let (cpTerm, cpEnv) = head.copy(env)
+  unif(call, cpTerm, cpEnv)
+
 proc solve(w: Workspace, query: Term, topEnv: Environment): Option[Environment] =
   var control: ControlStack = @[makeChoice(idx = -1, alts = toSeq(w.getUnified(query, topEnv)))]
+  showInfo "Solving ", query, "in env", topEnv
   while control.hasAlts():
+    let topId = control[0].getAlt()[0]
     inc tmp
     if tmp > 8:
       quit 1
 
+    # Iterate over all clauses that match toplevel query
     let (cl, env) = control.getAlt()
-    showLog "Matching clause:", w[cl], "with env:", env
-    let subMax = w[cl].body.len - 1
+    let subMax = w[topId].body.len - 1
     if w[cl].isFact():
       showLog "Found fact with env", env
       return some(env)
     else:
-      for idx, subgoal in w[cl].body:
+      let subgoals = w[cl].body
+      var idx = control.len - 1
+      while idx < subgoals.len:
+        let subgoal = subgoals[idx]
         let nowEnv = control.last.getEnv()
 
-        showLog &"[{idx + 1}/{subMax + 1}] goal - pushing choice block"
-        control.add @[makeChoice(
-          idx = idx,
-          alts = toSeq(w.getUnified(subgoal, nowEnv))
-        )]
-
-        # runIndentedLog:
-        #   for bl in control:
-        #     showLog "---", w[cl]
-        #     runIndentedLog:
-        #       bl.logBlock()
-
+        showLog &"cl: {w[cl]}, env: {nowEnv}"
+        control.add @[makeChoice(idx = idx, alts = toSeq(w.getUnified(subgoal, nowEnv)))]
         runIndentedLog:
           let resEnv = w.solve(subgoal, nowEnv)
 
         if resEnv.isSome():
-          showInfo "Subgoal solution succeded"
+          let revEnv = revert(subgoal, w[control.last.getAlt()[0]].head, resEnv.get())
+          showLog "We can retrieve value", revEnv
+          for v, val in revEnv:
+            control.last.pushEnv(v, val, false)
+
+          if idx == subMax:
+            showInfo "Final goal in clause, returning result"
+            return some(control.last.getEnv())
+          else:
+            inc idx
         else:
           showInfo "Subgoal solution failed"
           runIndentedLog:
             if not control.last.hasAlts():
               showLog "Last block has no more alternative solutions"
+              # Remove choice point from the top of the stack: we tried everything
               discard control.pop
+              # Advance choice point under current one
               control.last.nextAlt()
+              # Break the loop - it is not possible to solve current
+              # subgoal under this condition, we need to try earlier
+              decreaseLogIndent()
+              break
             else:
               showLog "Last block has alternative solutions"
               control.last.nextAlt()
@@ -504,6 +543,14 @@ proc main() =
 
 
   if true:
+    echo copy("e".mf(mv "X", mv "Y"), makeEnvironment(@[(mv "X", mc "2")]))
+
+    echo unif("e".mf(mc "2", mc "2"), "e".mf(mc "2", mv "U"))
+    echo unif("e".mf(mv "X", mv "Y"), "e".mf(mc "2", mv "U"))
+    echo unif("e".mf(mc "2", mv "U"), "e".mf(mv "X", mv "Y"))
+    echo revert("e".mf(mc "2", mv "Z"), "e".mf(mv "I", mv "I"),
+                makeEnvironment(@[(mv "I", mc"2")]))
+
     var w: WorkspaceT
     let prog = Program(
       clauses: @[
@@ -513,17 +560,19 @@ proc main() =
         # makeStoreClause("r".mf(mc "c"), @[], w)
         makeStoreClause(
           "c".mf(mv "X", mv "Y"),
-          @["c1".mf(mv "X"), "c2".mf(mv "Y")], w
+          @["c1".mf(mv "Y")# , "c2".mf(mv "Y")
+          ], w
         ),
-        makeStoreClause("c1".mf(mv "Z"), @["e".mf(mv "X", mc "2")], w),
-        makeStoreClause("c1".mf(mv "Z"), @["e".mf(mv "X", mc "3")], w),
-        makeStoreClause("c2".mf(mv "Z"), @["e".mf(mv "X", mc "5")], w),
-        makeStoreClause("c2".mf(mv "Z"), @["e".mf(mv "X", mc "6")], w),
-        makeStoreClause("e".mf(mv "X", mv "X"), @[], w)
+        makeStoreClause("c1".mf(mv "Z"), @["e".mf(mv "Z", mc "2")], w),
+        makeStoreClause("c1".mf(mv "Z"), @["e".mf(mv "Z", mc "3")], w),
+        makeStoreClause("c2".mf(mv "Z"), @["e".mf(mv "Z", mc "5")], w),
+        makeStoreClause("c2".mf(mv "Z"), @["e".mf(mv "Z", mc "6")], w),
+        makeStoreClause("e".mf(mv "I", mv "I"), @[], w)
       ]
     )
 
-    let query = mf("c", @[mc "2", mc "6"])
+    # let query = mf("e", @[mc "2", mv "U"])
+    let query = mf("c", @[mc "2", mv "U"])
     let res = w.solve(query, makeEnvironment())
     echo res
 
