@@ -225,4 +225,5 @@ main :-
     ensure_loaded("../common.splog"),
     writeln_inf("78 [8] булев квадрат матрицы"),
     startup_notice,
+    gtrace,
     ( non_interactive_test ; interactive ).
