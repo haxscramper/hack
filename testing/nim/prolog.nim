@@ -469,12 +469,10 @@ iterator getUnified(w: Workspace, term: Term, env: Environment): (ClauseId, Envi
         let resEnv = unif(term, w[cl].head, env)
         yield (cl, resEnv)
       except Failure:
-        showWarn "Clause", w[cl], ": ", getCurrentExceptionMsg()
+        # showWarn "Clause", w[cl], ": ", getCurrentExceptionMsg()
         discard
 
 template last[T](s: seq[T]): T = s[^1]
-
-var tmp: int = 0
 
 proc `$`(id: ClauseId): string = $int(id)
 
@@ -501,24 +499,21 @@ proc solve(w: Workspace, query: Term, topEnv: Environment): Option[(ClauseId, En
   showInfo "Solving ", query, "in env", topEnv
   while control.hasAlts():
     let topId = control[0].getAlt()[0]
-    inc tmp
-    if tmp > 8:
-      quit 1
-
     # Iterate over all clauses that match toplevel query
     let (cl, env) = control.getAlt()
     let subMax = w[topId].body.len - 1
     if w[cl].isFact():
-      showLog "Found fact with env", env
+      showLog &"Found fact {w[cl]} with env {env}"
       return some((cl, env))
     else:
       let subgoals = w[cl].body
-      var idx = control.len - 1
+      var idx = (control.len - 2).clamp(0, control.len)
+      showLog &"Control contains {control.len} block"
       while idx < subgoals.len:
         let subgoal = subgoals[idx]
         let nowEnv = control.last.getEnv()
 
-        showLog &"cl: {w[cl]}, env: {nowEnv}"
+        showInfo &"Solving subgoal #{idx}, {subgoal}. Adding block to control"
         control.add @[makeChoice(idx = idx, alts = toSeq(w.getUnified(subgoal, nowEnv)))]
         runIndentedLog:
           let solution = w.solve(subgoal, nowEnv)
@@ -526,7 +521,7 @@ proc solve(w: Workspace, query: Term, topEnv: Environment): Option[(ClauseId, En
         if solution.isSome():
           let (solId, resEnv) = solution.get()
           let revEnv = revert(subgoal, w[control.last.getAlt()[0]].head, resEnv)
-          showLog "We can retrieve value", revEnv
+          showLog "Can retrieve value", revEnv
           for v, val in revEnv:
             control.last.pushEnv(v, val, false)
 
@@ -534,25 +529,27 @@ proc solve(w: Workspace, query: Term, topEnv: Environment): Option[(ClauseId, En
             showInfo "Final goal in clause, returning result"
             return some((cl, control.last.getEnv()))
           else:
+            showLog &"Goal #{idx} solved, moving to #{idx + 1}"
             inc idx
         else:
-          showInfo "Subgoal solution failed"
-          runIndentedLog:
-            if not control.last.hasAlts():
-              showLog "Last block has no more alternative solutions"
-              # Remove choice point from the top of the stack: we tried everything
-              discard control.pop
-              # Advance choice point under current one
-              control.last.nextAlt()
-              # Break the loop - it is not possible to solve current
-              # subgoal under this condition, we need to try earlier
-              decreaseLogIndent()
-              break
-            else:
-              showLog "Last block has alternative solutions"
-              control.last.nextAlt()
-              # discard control.pop
-              # nowEnv = control.last.env
+          showWarn "Subgoal solution failed"
+          if not control.last.hasAlts():
+            showLog "Last block has no more alternative solutions, backtracking ..."
+            # Remove choice point from the top of the stack: we tried everything
+            showLog &"Control contains {control.len} blocks, discarding top one"
+            discard control.pop
+            dec idx
+            # Advance choice point under current one
+            control.last.nextAlt()
+            # Break the loop - it is not possible to solve current
+            # subgoal under this condition, we need to try earlier
+            # decreaseLogIndent()
+            break
+          else:
+            showLog "Last block has alternative solutions"
+            control.last.nextAlt()
+            # discard control.pop
+            # nowEnv = control.last.env
 
 proc solveValues(w: Workspace, query: Term, env: Environment = makeEnvironment()): Option[Environment] =
   let solution = w.solve(query, env)
@@ -653,7 +650,9 @@ proc main() =
       ]
     )
 
-    showLog w.solveValues("p".mf(mc "a"))
+    showInfo "Solving 'p(a)'"
+    runIndentedLog:
+      showLog w.solveValues("p".mf(mc "a"))
 
     # showInfo "Query solutions"
     # runIndentedLog:
