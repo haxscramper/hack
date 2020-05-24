@@ -1,4 +1,5 @@
 import sequtils
+import sugar
 import hashes
 import hmisc/[defensive, helpers]
 import macros
@@ -192,11 +193,8 @@ proc makeEnvironment(values: seq[(Term, Term)] = @[]): Environment =
   var envIdx {.global.}: int
   result = Environment(
     # # id: EnvId((inc envIdx; envIdx)),
-    # values: values.toTable()
+    values: values.toTable()
   )
-
-  for (key, val) in values:
-    result.values[key] = val
 
 proc makeFunctor(functorName: string, args: seq[Term]): Term =
   Term(
@@ -295,11 +293,13 @@ iterator iterateVars(cl: Clause): Variable =
       yield v
 
 func getValue(env: Environment, term: Variable): Option[Term] =
-  for key, val in env.values:
-    if sameTerm(key, term):
-      return some(val)
+  if env.values.hasKey(term):
+    return some(env.values[term])
 
   return none(Term)
+
+func `[]`(env: Environment, key: Variable): Term =
+  env.values[key]
 
 proc isBound(term: Variable, env: Environment): bool =
   let val = env.getValue(term)
@@ -480,7 +480,16 @@ proc logBlock(bl: Block): void =
 
 proc revert(call, head: Term, env: Environment): Environment =
   let (cpTerm, cpEnv) = head.copy(env)
-  unif(call, cpTerm, cpEnv)
+
+  unif(
+    t1 = call,
+    t2 = cpTerm,
+    env = makeEnvironment(block:
+      collect(newSeq):
+        for v in call.iterateVars():
+          (v, cpEnv[v])
+    )
+  )
 
 proc solve(w: Workspace, query: Term, topEnv: Environment): Option[Environment] =
   var control: ControlStack = @[makeChoice(idx = -1, alts = toSeq(w.getUnified(query, topEnv)))]
@@ -576,7 +585,8 @@ proc main() =
     echo unif("e".mf(mc "2", mc "2"), "e".mf(mc "2", mv "U"))
     echo unif("e".mf(mv "X", mv "Y"), "e".mf(mc "2", mv "U"))
     echo unif("e".mf(mc "2", mv "U"), "e".mf(mv "X", mv "Y"))
-    echo revert("e".mf(mc "2", mv "Z"), "e".mf(mv "I", mv "I"),
+    echo "Revert"
+    echo revert("e".mf(mv "X", mv "Y"), "e".mf(mv "I", mv "I"),
                 makeEnvironment(@[(mv "I", mc"2")]))
 
     var w: WorkspaceT
@@ -601,8 +611,8 @@ proc main() =
 
     # let query = mf("e", @[mc "2", mv "U"])
     let query = mf("c", @[mc "2", mv "U"])
-    let res = w.solve(query, makeEnvironment())
-    echo res
+    # let res = w.solve(query, makeEnvironment())
+    # echo res
 
 pprintErr:
   main()
