@@ -17,7 +17,7 @@ type
   ClauseId = distinct int
   # EnvId = distinct int
   ValueType = string
-  Timestamp = int
+  # Timestamp = int
   Symbol = string
 
 
@@ -33,7 +33,7 @@ type
 
       of tkVariable:
         name: Symbol
-        creation: Timestamp
+        # creation: Timestamp
         genIdx: int
 
       of tkFunctor:
@@ -102,7 +102,7 @@ proc hash(t: Term): Hash =
   h = h !& int(t.kind)
   case t.kind:
     of tkVariable:
-      h = h !& hash(t.name) !& hash(t.genIdx) !& hash(t.creation)
+      h = h !& hash(t.name) !& hash(t.genIdx) # !& hash(t.creation)
     of tkConstant:
       h = h !& hash(t.value)
     of tkFunctor:
@@ -118,10 +118,10 @@ proc registerClause(w: Workspace, cl: Clause): void =
 proc getClause(w: Workspace, id: ClauseId): Clause =
   w.clauseStore.data[id]
 
-proc getTime(): Timestamp =
-  var counter {.global.}: int
-  inc counter
-  return counter
+# proc getTime(): Timestamp =
+#   var counter {.global.}: int
+#   inc counter
+#   return counter
 
 func hasAlts(bl: Block): bool =
   bl.current < bl.alts.len
@@ -232,7 +232,7 @@ proc makeVariable(varName: string): Term =
   Term(
     kind: tkVariable,
     name: varName,
-    creation: getTime()
+    # creation: getTime()
   )
 
 
@@ -318,7 +318,7 @@ proc isBound(term: Variable, env: Environment): bool =
 proc `$`(term: Term): string =
   case term.kind:
     of tkConstant:
-      return term.value
+      return "'" & term.value & "'"
     of tkVariable:
       return "_" & term.name & "'".repeat(term.genIdx)
     of tkFunctor:
@@ -464,7 +464,7 @@ iterator getUnified(w: Workspace, term: Term, env: Environment): (ClauseId, Envi
   ## Iterate over all clauses in workspace `w` that can be unified
   ## with term `t` under existing environment `env`.
   for cl in w.iterateClauses():
-    if w[cl].sameName(term):
+    if w[cl].sameName(term) and (w[cl].head.arity() == term.arity()):
       try:
         let resEnv = unif(term, w[cl].head, env)
         yield (cl, resEnv)
@@ -633,10 +633,12 @@ proc main() =
     var w: WorkspaceT
     let prog = Program(
       clauses: @[
-        # makeStoreClause("p".mf(mv "X"), @["q".mf(mv "X", mv "Y"), "r".mf(mv "Y")], w),
-        # makeStoreClause("q".mf(mc "a", mc "b"), @[], w),
-        # makeStoreClause("q".mf(mv "Z", mc "c"), @[], w),
-        # makeStoreClause("r".mf(mc "c"), @[], w)
+        makeStoreClause("p".mf(mv "X1"),
+                        @["q".mf(mv "X1", mv "Y1"),
+                          "r".mf(mv "Y1")], w),
+        makeStoreClause("q".mf(mc "a", mc "b"), @[], w),
+        makeStoreClause("q".mf(mv "Z", mc "c"), @[], w),
+        makeStoreClause("r".mf(mc "c"), @[], w),
         makeStoreClause(
           "c".mf(mv "X", mv "Y"),
           @["c1".mf(mv "Y")# , "c2".mf(mv "Y")
@@ -651,20 +653,22 @@ proc main() =
       ]
     )
 
-    showInfo "Query solutions"
-    runIndentedLog:
-      let query = mf("c", @[mc "2", mv "U"])
-      let (solId, solEnv) = w.solve(query, makeEnvironment()).get()
-      showLog "Result clause__:", w[solId]
-      showLog "Result env_____:", solEnv
-      showLog "Query vars_____:", revert(
-        call = query,
-        head = w[solId].head,
-        env = solEnv
-      )
+    showLog w.solveValues("p".mf(mc "a"))
 
-    showInfo "Simple solver"
-    showLog w.solveValues("f".mf(mv "Y"))
+    # showInfo "Query solutions"
+    # runIndentedLog:
+    #   let query = mf("c", @[mc "2", mv "U"])
+    #   let (solId, solEnv) = w.solve(query, makeEnvironment()).get()
+    #   showLog "Result clause__:", w[solId]
+    #   showLog "Result env_____:", solEnv
+    #   showLog "Query vars_____:", revert(
+    #     call = query,
+    #     head = w[solId].head,
+    #     env = solEnv
+    #   )
+
+    # showInfo "Simple solver"
+    # showLog w.solveValues("f".mf(mv "Y"))
 
 
 pprintErr:
