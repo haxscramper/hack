@@ -1,4 +1,5 @@
 import sequtils
+import hashes
 import hmisc/[defensive, helpers]
 import macros
 import options
@@ -43,7 +44,7 @@ type
 
   Environment = object
     # id: EnvId
-    values: seq[(Term, Term)]
+    values: Table[Term, Term]
 
   Block = object
     idx: int
@@ -95,6 +96,21 @@ proc `[]`(w: Workspace, cl: ClauseId): var Clause =
   w.clauseStore.data[cl]
 
 
+proc hash(t: Term): Hash =
+  var h: Hash = 0
+  h = h !& int(t.kind)
+  case t.kind:
+    of tkVariable:
+      h = h !& hash(t.name) !& hash(t.genIdx) !& hash(t.creation)
+    of tkConstant:
+      h = h !& hash(t.value)
+    of tkFunctor:
+      h = h !& hash(t.copied)
+      for arg in t.arguments:
+        h = h !& hash(arg)
+
+  result = !$h
+
 proc registerClause(w: Workspace, cl: Clause): void =
   w.clauseStore.data[cl.id] = cl
 
@@ -145,12 +161,42 @@ func isGenvar(term: Term): bool = term.isVar and (term.genIdx > 0)
 func isCopied(term: Term): bool = term.isFunctor and term.copied
 func sameName(cl: Clause, term: Term): bool = cl.head.symbol == term.symbol
 
+func arity(term: Term): int =
+  assert term.isFunctor()
+  return term.arguments.len
+
+func sameTerm(t1, t2: Term): bool =
+  if t1.kind != t2.kind:
+    return false
+
+  case t1.kind:
+    of tkConstant:
+      return t1.value == t2.value
+    of tkVariable:
+      return t1.name == t2.name
+    of tkFunctor:
+      if t1.symbol == t2.symbol and t1.arity() == t2.arity():
+        for (arg1, arg2) in zip(t1.arguments, t2.arguments):
+          if not sameTerm(arg1, arg2):
+            return false
+
+        return true
+      else:
+        return false
+
+
+func `==`(t1, t2: Term): bool = sameTerm(t1, t2)
+
+
 proc makeEnvironment(values: seq[(Term, Term)] = @[]): Environment =
   var envIdx {.global.}: int
-  Environment(
-    # id: EnvId((inc envIdx; envIdx)),
-    values: values
+  result = Environment(
+    # # id: EnvId((inc envIdx; envIdx)),
+    # values: values.toTable()
   )
+
+  for (key, val) in values:
+    result.values[key] = val
 
 proc makeFunctor(functorName: string, args: seq[Term]): Term =
   Term(
@@ -211,33 +257,15 @@ proc makeConstant(constValue: ValueType): Term =
 
 
 
-func arity(term: Term): int =
-  assert term.isFunctor()
-  return term.arguments.len
 
 
 iterator pairs(env: Environment): (Term, Term) =
-  for pair in env.values:
-    yield pair
+  for key, val in env.values:
+    yield (key, val)
 
-func sameTerm(t1, t2: Term): bool =
-  if t1.kind != t2.kind:
-    return false
-
-  case t1.kind:
-    of tkConstant:
-      return t1.value == t2.value
-    of tkVariable:
-      return t1.name == t2.name
-    of tkFunctor:
-      if t1.symbol == t2.symbol and t1.arity() == t2.arity():
-        for (arg1, arg2) in zip(t1.arguments, t2.arguments):
-          if not sameTerm(arg1, arg2):
-            return false
-
-        return true
-      else:
-        return false
+iterator items(env: Environment): (Term, Term) =
+  for key, val in env.values:
+    yield (key, val)
 
 func contains(env: Environment, variable: Variable): bool =
   for v, val in env:
@@ -267,9 +295,9 @@ iterator iterateVars(cl: Clause): Variable =
       yield v
 
 func getValue(env: Environment, term: Variable): Option[Term] =
-  for pair in env.values:
-    if sameTerm(pair[0], term):
-      return some(pair[1])
+  for key, val in env.values:
+    if sameTerm(key, term):
+      return some(val)
 
   return none(Term)
 
@@ -293,7 +321,7 @@ proc `$`(term: Term): string =
       return term.symbol & "(" & term.arguments.mapIt($it).join(", ") & ")"
 
 proc `$`(env: Environment): string =
-  "{" & env.values.mapIt(
+  "{" & env.mapIt(
     &"({it[0]} " & (
       (it[0].isVar() and it[1].isVar()).tern("<->", "->")
     ) & &" {it[1]})"
@@ -322,7 +350,7 @@ proc push(
     #     findIt(sameTerm(it[0], variable))
     #   )
 
-  self.values.add((variable, value))
+  self.values[variable] = value
 
 proc pushEnv(bl: var Block, v: Variable, val: Term, noOverride = true): void =
   bl.alts[bl.current][1].push(v, val, noOverride)
