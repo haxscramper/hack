@@ -495,7 +495,7 @@ proc revert(call, head: Term, env: Environment): Environment =
   return makeEnvironment(exported)
 
 
-proc solve(w: Workspace, query: Term, topEnv: Environment): Option[(Term, Environment)] =
+proc solve(w: Workspace, query: Term, topEnv: Environment): Option[(ClauseId, Environment)] =
   ## If solution is possible, return clause head and it's environment
   var control: ControlStack = @[makeChoice(idx = -1, alts = toSeq(w.getUnified(query, topEnv)))]
   showInfo "Solving ", query, "in env", topEnv
@@ -510,7 +510,7 @@ proc solve(w: Workspace, query: Term, topEnv: Environment): Option[(Term, Enviro
     let subMax = w[topId].body.len - 1
     if w[cl].isFact():
       showLog "Found fact with env", env
-      return some((w[cl].head, env))
+      return some((cl, env))
     else:
       let subgoals = w[cl].body
       var idx = control.len - 1
@@ -524,7 +524,7 @@ proc solve(w: Workspace, query: Term, topEnv: Environment): Option[(Term, Enviro
           let solution = w.solve(subgoal, nowEnv)
 
         if solution.isSome():
-          let (solHead, resEnv) = solution.get()
+          let (solId, resEnv) = solution.get()
           let revEnv = revert(subgoal, w[control.last.getAlt()[0]].head, resEnv)
           showLog "We can retrieve value", revEnv
           for v, val in revEnv:
@@ -532,7 +532,7 @@ proc solve(w: Workspace, query: Term, topEnv: Environment): Option[(Term, Enviro
 
           if idx == subMax:
             showInfo "Final goal in clause, returning result"
-            return some((w[cl].head, control.last.getEnv()))
+            return some((cl, control.last.getEnv()))
           else:
             inc idx
         else:
@@ -553,6 +553,17 @@ proc solve(w: Workspace, query: Term, topEnv: Environment): Option[(Term, Enviro
               control.last.nextAlt()
               # discard control.pop
               # nowEnv = control.last.env
+
+proc solveValues(w: Workspace, query: Term, env: Environment = makeEnvironment()): Option[Environment] =
+  let solution = w.solve(query, env)
+  if solution.isSome():
+    let (solId, solEnv) = solution.get()
+    return some(revert(
+      call = query,
+      head = w[solId].head,
+      env = solEnv
+    ))
+
 
 
 proc mf(s: string, a: varargs[Term]): Term = makeFunctor(s, toSeq(a))
@@ -635,21 +646,26 @@ proc main() =
         makeStoreClause("c1".mf(mv "Z"), @["e".mf(mv "Z", mc "3")], w),
         makeStoreClause("c2".mf(mv "Z"), @["e".mf(mv "Z", mc "5")], w),
         makeStoreClause("c2".mf(mv "Z"), @["e".mf(mv "Z", mc "6")], w),
-        makeStoreClause("e".mf(mv "I", mv "I"), @[], w)
+        makeStoreClause("e".mf(mv "I", mv "I"), @[], w),
+        makeStoreClause("f".mf(mc "2"), @[], w),
       ]
     )
 
     showInfo "Query solutions"
     runIndentedLog:
       let query = mf("c", @[mc "2", mv "U"])
-      let (solHead, solEnv) = w.solve(query, makeEnvironment()).get()
-      showLog "Result head__:", solHead
-      showLog "Result env___:", solEnv
-      showLog "Query vars___:", revert(
+      let (solId, solEnv) = w.solve(query, makeEnvironment()).get()
+      showLog "Result clause__:", w[solId]
+      showLog "Result env_____:", solEnv
+      showLog "Query vars_____:", revert(
         call = query,
-        head = solHead,
+        head = w[solId].head,
         env = solEnv
       )
+
+    showInfo "Simple solver"
+    showLog w.solveValues("f".mf(mv "Y"))
+
 
 pprintErr:
   main()
