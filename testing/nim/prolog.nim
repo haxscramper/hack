@@ -13,11 +13,8 @@ type
   Failure = ref object of CatchableError
 
 type
-  # BlockId = distinct int
   ClauseId = distinct int
-  # EnvId = distinct int
   ValueType = string
-  # Timestamp = int
   Symbol = string
 
 
@@ -33,7 +30,6 @@ type
 
       of tkVariable:
         name: Symbol
-        # creation: Timestamp
         genIdx: int
 
       of tkFunctor:
@@ -44,7 +40,6 @@ type
   Variable = Term
 
   Environment = object
-    # id: EnvId
     values: Table[Term, Term]
 
   Block = object
@@ -71,25 +66,9 @@ type
   ClauseStore = object
     data: OrderedTable[ClauseId, Clause]
 
-  # EnvStore = object
-  #   data: OrderedTable[EnvId, Environment]
-
 type
   WorkspaceT = object
     clauseStore: ClauseStore
-    # blockStore: BlockStore
-    # envStore: EnvStore
-
-    # controlStack: seq[BlockId] ## Contains choice and deterministic blocks.
-    copyStack: seq[Term] ## Stores compound terms
-    # postboundStack: seq[Variable] ## List of variables that need to be
-    #                               ## additionally reset on
-    #                               ## backtracking.
-
-    # contBlock: BlockId ## Continuation point local block
-    # contPoint: ClauseId ## Next clause to be proved. Negative
-    #                             ## if all necessary proofs has been
-    #                             ## completed
 
   Workspace = var WorkspaceT
 
@@ -102,7 +81,7 @@ proc hash(t: Term): Hash =
   h = h !& int(t.kind)
   case t.kind:
     of tkVariable:
-      h = h !& hash(t.name) !& hash(t.genIdx) # !& hash(t.creation)
+      h = h !& hash(t.name) !& hash(t.genIdx)
     of tkConstant:
       h = h !& hash(t.value)
     of tkFunctor:
@@ -117,11 +96,6 @@ proc registerClause(w: Workspace, cl: Clause): void =
 
 proc getClause(w: Workspace, id: ClauseId): Clause =
   w.clauseStore.data[id]
-
-# proc getTime(): Timestamp =
-#   var counter {.global.}: int
-#   inc counter
-#   return counter
 
 func hasAlts(bl: Block): bool =
   bl.current < bl.alts.len
@@ -187,24 +161,11 @@ func sameTerm(t1, t2: Term): bool =
 
 
 func `==`(t1, t2: Term): bool = sameTerm(t1, t2)
-
-
 proc makeEnvironment(values: seq[(Term, Term)] = @[]): Environment =
-  var envIdx {.global.}: int
-  result = Environment(
-    # # id: EnvId((inc envIdx; envIdx)),
-    # values: values.toTable()
-  )
-
-  for (key, val) in values:
-    result.values[key] = val
+  result = Environment(values: values.toTable())
 
 proc makeFunctor(functorName: string, args: seq[Term]): Term =
-  Term(
-    kind: tkFunctor,
-    symbol: functorName,
-    arguments: args
-  )
+  Term(kind: tkFunctor, symbol: functorName, arguments: args)
 
 proc makeClause(head: Term, body: seq[Term]): Clause =
   assert head.isFunctor()
@@ -241,20 +202,11 @@ proc makeFreeVar(): Term =
   freeVarInst = makeVariable("#free#")
   freeVarInst
 
-proc makeChoice(
-  idx: int,
-  alts: seq[(ClauseId, Environment)]): Block =
-  Block(
-    idx: idx,
-    alts: alts,
-    current: 0
-  )
+proc makeChoice(idx: int, alts: seq[(ClauseId, Environment)]): Block =
+  Block(idx: idx, alts: alts, current: 0)
 
 proc makeConstant(constValue: ValueType): Term =
-  Term(
-    kind: tkConstant,
-    value: constValue
-  )
+  Term(kind: tkConstant, value: constValue)
 
 
 
@@ -543,13 +495,10 @@ proc solve(w: Workspace, query: Term, topEnv: Environment): Option[(ClauseId, En
             control.last.nextAlt()
             # Break the loop - it is not possible to solve current
             # subgoal under this condition, we need to try earlier
-            # decreaseLogIndent()
             break
           else:
             showLog "Last block has alternative solutions"
             control.last.nextAlt()
-            # discard control.pop
-            # nowEnv = control.last.env
 
 proc solveValues(w: Workspace, query: Term, env: Environment = makeEnvironment()): Option[Environment] =
   let solution = w.solve(query, env)
@@ -654,20 +603,20 @@ proc main() =
     runIndentedLog:
       showLog w.solveValues("p".mf(mc "a"))
 
-    # showInfo "Query solutions"
-    # runIndentedLog:
-    #   let query = mf("c", @[mc "2", mv "U"])
-    #   let (solId, solEnv) = w.solve(query, makeEnvironment()).get()
-    #   showLog "Result clause__:", w[solId]
-    #   showLog "Result env_____:", solEnv
-    #   showLog "Query vars_____:", revert(
-    #     call = query,
-    #     head = w[solId].head,
-    #     env = solEnv
-    #   )
+    showInfo "Query solutions"
+    runIndentedLog:
+      let query = mf("c", @[mc "2", mv "U"])
+      let (solId, solEnv) = w.solve(query, makeEnvironment()).get()
+      showLog "Result clause__:", w[solId]
+      showLog "Result env_____:", solEnv
+      showLog "Query vars_____:", revert(
+        call = query,
+        head = w[solId].head,
+        env = solEnv
+      )
 
-    # showInfo "Simple solver"
-    # showLog w.solveValues("f".mf(mv "Y"))
+    showInfo "Simple solver"
+    showLog w.solveValues("f".mf(mv "Y"))
 
 
 pprintErr:
