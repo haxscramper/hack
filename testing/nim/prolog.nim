@@ -193,8 +193,11 @@ proc makeEnvironment(values: seq[(Term, Term)] = @[]): Environment =
   var envIdx {.global.}: int
   result = Environment(
     # # id: EnvId((inc envIdx; envIdx)),
-    values: values.toTable()
+    # values: values.toTable()
   )
+
+  for (key, val) in values:
+    result.values[key] = val
 
 proc makeFunctor(functorName: string, args: seq[Term]): Term =
   Term(
@@ -293,13 +296,14 @@ iterator iterateVars(cl: Clause): Variable =
       yield v
 
 func getValue(env: Environment, term: Variable): Option[Term] =
-  if env.values.hasKey(term):
-    return some(env.values[term])
+  for key, val in env.values:
+    if sameTerm(key, term):
+      return some(val)
 
   return none(Term)
 
-func `[]`(env: Environment, key: Variable): Term =
-  env.values[key]
+func `[]`(env: Environment, term: Variable): Term =
+  env.values[term]
 
 proc isBound(term: Variable, env: Environment): bool =
   let val = env.getValue(term)
@@ -480,16 +484,14 @@ proc logBlock(bl: Block): void =
 
 proc revert(call, head: Term, env: Environment): Environment =
   let (cpTerm, cpEnv) = head.copy(env)
+  let resEnv = unif(call, cpTerm, cpEnv)
 
-  unif(
-    t1 = call,
-    t2 = cpTerm,
-    env = makeEnvironment(block:
-      collect(newSeq):
-        for v in call.iterateVars():
-          (v, cpEnv[v])
-    )
-  )
+  let exported = collect(newSeq):
+    for v in call.iterateVars():
+      (v, resEnv[v])
+
+  return makeEnvironment(exported)
+
 
 proc solve(w: Workspace, query: Term, topEnv: Environment): Option[Environment] =
   var control: ControlStack = @[makeChoice(idx = -1, alts = toSeq(w.getUnified(query, topEnv)))]
@@ -585,9 +587,33 @@ proc main() =
     echo unif("e".mf(mc "2", mc "2"), "e".mf(mc "2", mv "U"))
     echo unif("e".mf(mv "X", mv "Y"), "e".mf(mc "2", mv "U"))
     echo unif("e".mf(mc "2", mv "U"), "e".mf(mv "X", mv "Y"))
-    echo "Revert"
-    echo revert("e".mf(mv "X", mv "Y"), "e".mf(mv "I", mv "I"),
-                makeEnvironment(@[(mv "I", mc"2")]))
+    proc revertTest(t1, t2: Term, env: Environment): void =
+      showInfo "Revert"
+      runIndentedLog:
+        showLog "Called as_________:", t1
+        showLog "Unification head__: ", t2
+        showLog "Clause res env____: ", env
+        let rev = revert(t1, t2, env)
+        showLog "Retrieved values__: ", rev
+
+    revertTest(
+      "e".mf(mv "X", mv "Y"),
+      "e".mf(mv "I", mv "I"),
+      makeEnvironment(@[(mv "I", mc"2")])
+    )
+
+    revertTest(
+      "e".mf(mv "X", mv "Y"),
+      "e".mf(mv "I", "g".mf(mv "I")),
+      makeEnvironment(@[(mv "I", mc"2")])
+    )
+
+    revertTest(
+      "e".mf(mv "X", "f".mf(mv "Y")),
+      "e".mf(mv "I", mv "Z"),
+      makeEnvironment(@[(mv "I", mc "2"), (mv "Z", mc "*")])
+    )
+
 
     var w: WorkspaceT
     let prog = Program(
@@ -610,7 +636,7 @@ proc main() =
     )
 
     # let query = mf("e", @[mc "2", mv "U"])
-    let query = mf("c", @[mc "2", mv "U"])
+    # let query = mf("c", @[mc "2", mv "U"])
     # let res = w.solve(query, makeEnvironment())
     # echo res
 
