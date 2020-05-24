@@ -495,7 +495,8 @@ proc revert(call, head: Term, env: Environment): Environment =
   return makeEnvironment(exported)
 
 
-proc solve(w: Workspace, query: Term, topEnv: Environment): Option[Environment] =
+proc solve(w: Workspace, query: Term, topEnv: Environment): Option[(Term, Environment)] =
+  ## If solution is possible, return clause head and it's environment
   var control: ControlStack = @[makeChoice(idx = -1, alts = toSeq(w.getUnified(query, topEnv)))]
   showInfo "Solving ", query, "in env", topEnv
   while control.hasAlts():
@@ -509,7 +510,7 @@ proc solve(w: Workspace, query: Term, topEnv: Environment): Option[Environment] 
     let subMax = w[topId].body.len - 1
     if w[cl].isFact():
       showLog "Found fact with env", env
-      return some(env)
+      return some((w[cl].head, env))
     else:
       let subgoals = w[cl].body
       var idx = control.len - 1
@@ -520,17 +521,18 @@ proc solve(w: Workspace, query: Term, topEnv: Environment): Option[Environment] 
         showLog &"cl: {w[cl]}, env: {nowEnv}"
         control.add @[makeChoice(idx = idx, alts = toSeq(w.getUnified(subgoal, nowEnv)))]
         runIndentedLog:
-          let resEnv = w.solve(subgoal, nowEnv)
+          let solution = w.solve(subgoal, nowEnv)
 
-        if resEnv.isSome():
-          let revEnv = revert(subgoal, w[control.last.getAlt()[0]].head, resEnv.get())
+        if solution.isSome():
+          let (solHead, resEnv) = solution.get()
+          let revEnv = revert(subgoal, w[control.last.getAlt()[0]].head, resEnv)
           showLog "We can retrieve value", revEnv
           for v, val in revEnv:
             control.last.pushEnv(v, val, false)
 
           if idx == subMax:
             showInfo "Final goal in clause, returning result"
-            return some(control.last.getEnv())
+            return some((w[cl].head, control.last.getEnv()))
           else:
             inc idx
         else:
@@ -637,10 +639,17 @@ proc main() =
       ]
     )
 
-    # let query = mf("e", @[mc "2", mv "U"])
-    # let query = mf("c", @[mc "2", mv "U"])
-    # let res = w.solve(query, makeEnvironment())
-    # echo res
+    showInfo "Query solutions"
+    runIndentedLog:
+      let query = mf("c", @[mc "2", mv "U"])
+      let (solHead, solEnv) = w.solve(query, makeEnvironment()).get()
+      showLog "Result head__:", solHead
+      showLog "Result env___:", solEnv
+      showLog "Query vars___:", revert(
+        call = query,
+        head = solHead,
+        env = solEnv
+      )
 
 pprintErr:
   main()
