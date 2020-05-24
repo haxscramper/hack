@@ -483,6 +483,8 @@ proc logBlock(bl: Block): void =
     showLog &"id: {alt[0]}, env: {alt[1]}"
 
 proc revert(call, head: Term, env: Environment): Environment =
+  discard unif(call, head)
+
   let (cpTerm, cpEnv) = head.copy(env)
   let resEnv = unif(call, cpTerm, cpEnv)
 
@@ -610,7 +612,7 @@ proc main() =
 
     revertTest(
       "e".mf(mv "X", "f".mf(mv "Y")),
-      "e".mf(mv "I", mv "Z"),
+      "e".mf(mv "I", "f".mf(mv "Z")),
       makeEnvironment(@[(mv "I", mc "2"), (mv "Z", mc "*")])
     )
 
