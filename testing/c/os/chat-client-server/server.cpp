@@ -5,10 +5,27 @@ struct User {
     UName name;
     Str   password;
     int   connection_fd;
+    UName target;
 };
 
 using UsrList  = Vec<User>&;
 using MsgQueue = Map<UName, Vec<Str>>;
+
+template <typename Out>
+void split(const std::string& s, char delim, Out result) {
+    std::stringstream ss(s);
+    std::string       item;
+    while (std::getline(ss, item, delim)) {
+        *(result++) = item;
+    }
+}
+
+std::vector<std::string> split(const std::string& s, char delim) {
+    std::vector<std::string> elems;
+    split(s, delim, std::back_inserter(elems));
+    return elems;
+}
+
 
 User getUser(int connection, Vec<User>& userList) {
     for (const auto& usr : userList) {
@@ -20,18 +37,123 @@ User getUser(int connection, Vec<User>& userList) {
     throw std::logic_error("Cannot find user with given connection");
 }
 
-void processInput(UsrList userList, MsgQueue& queue, Str input) {
+
+User getUser(Str name, Vec<User>& userList) {
+    for (const auto& usr : userList) {
+        if (usr.name == name) {
+            return usr;
+        }
+    }
+
+    throw std::logic_error("Cannot find user with given name");
+}
+
+void sendErr(int connection_fd, Str message) {
+    message = "\e[41mERR:\e[0m " + message;
+    send(connection_fd, message.c_str(), message.size(), 0);
+}
+
+
+void sendMessage(int connection_fd, Str message) {
+    message = "\e[45mMSG:\e[0m " + message;
+    send(connection_fd, message.c_str(), message.size(), 0);
+}
+
+User& getCredentials(Str login, Str password, UsrList list) {
+    for (auto& usr : list) {
+        if (usr.name == login && usr.password == usr.password) {
+            return usr;
+        }
+    }
+
+    throw std::logic_error("Login or password invalid ");
+}
+
+void sendMessage(const User& user, Str message) {
+    sendMessage(user.connection_fd, message);
+}
+
+
+#define ALLUSERS for (User & usr : userList)
+
+void processInput(
+    UsrList   userList,
+    MsgQueue& queue,
+    Str       input,
+    int       connection) {
     SStream lines(input);
     Str     line;
     while (std::getline(lines, line, '\n')) {
-        pind();
-        printf(" -> %s\n", line.c_str());
+        Vec<Str> tokens = split(line, ' ');
+        Str      cmd    = tokens[0];
+        if (cmd == "/register") {
+            Str name = tokens[1];
+            Str pwd  = tokens[2];
+            // pind();
+            printf("Reg new user '%s' '%s'\n", name.c_str(), pwd.c_str());
+
+            User usr;
+            usr.name     = name;
+            usr.password = pwd;
+
+            userList.push_back(usr);
+        } else if (cmd == "/login") {
+            try {
+                User& usr = getCredentials(tokens[1], tokens[2], userList);
+                usr.connection_fd = connection;
+
+                printf(
+                    "Logged user %s #%d\n", tokens[1].c_str(), connection);
+                if (queue.find(usr.name) != queue.end()
+                    && queue[usr.name].size() > 0) {
+                    sendMessage(
+                        usr,
+                        "There are "
+                            + std::to_string(queue[usr.name].size())
+                            + " new messages for you");
+
+                    for (auto& msg : queue[usr.name]) {
+                        sendMessage(usr, msg);
+                    }
+                }
+            } catch (std::logic_error e) { sendErr(connection, e.what()); }
+        } else if (cmd == "/server-shutdown") {
+            ALLUSERS {
+                sendMessage(usr, "Server is about to shut down");
+            }
+            msg("Server shutdown");
+            exit(0);
+        } else if (cmd == "/connect") {
+            try {
+                getUser(connection, userList).target = tokens[1];
+            } catch (std::logic_error err) { msg(err.what()); }
+        } else {
+            try {
+                const User& current = getUser(connection, userList);
+                line                = current.name + ": " + line;
+                try {
+                    send(
+                        getUser(current.target, userList).connection_fd,
+                        line.c_str(),
+                        line.size(),
+                        0);
+                } catch (std::logic_error target_err) {
+                    msg("Stored message in queue");
+                    queue[current.target].push_back(line);
+                }
+            } catch (std::logic_error current_err) {
+                sendErr(
+                    connection,
+                    "Cannot send your message from #"
+                        + std::to_string(connection) + " - need to login");
+            }
+        }
     }
 }
 
 
 void readConfig(Vec<User>& userList) {
-    msg("Reading configuration file");
+    // msg("Reading configuration file");
     IFile config;
     config.open("user-list.tmp");
     Str buf;
@@ -43,15 +165,13 @@ void readConfig(Vec<User>& userList) {
 }
 
 
-#define MAX_EVENTS 10
-
 void loopConnection(
     int                server_fd,
     const sockaddr_in& serv_addr,
     Vec<User>&         userList) {
     MsgQueue messageQueue;
-    msgInc();
-    msg("Starting connection loop");
+    // msgInc();
+    // msg("Starting connection loop");
 
     epoll_event ev;
     epoll_event events[MAX_EVENTS];
@@ -80,7 +200,9 @@ void loopConnection(
             exit(EXIT_FAILURE);
         }
 
+
         for (int n = 0; n < nfds; ++n) {
+            int fd = events[n].data.fd;
             if (events[n].data.fd == server_fd) {
                 msg("Accepted connection");
                 int client_fd = accept(
@@ -102,22 +224,25 @@ void loopConnection(
                     msg("Added new client to epoll");
                 }
             } else {
-                // msg("Accepted other event");
-                // for(const auto& usr : )
                 auto evt = events[n].events;
                 if (evt & EPOLLIN) {
-                    msg("Can read data from");
-                    Str inBuf;
-                    get_all_buf(events[n].data.fd, inBuf);
-                    processInput(userList, messageQueue, inBuf);
+                    // msg("Can read data from");
+                    char buf[2048];
+                    int  rc = read(fd, buf, 2048);
+                    // get_all_buf(events[n].data.fd, inBuf);
+                    Str inBuf(buf);
+                    pind();
+                    // printf("read %d bytes from remote\n", rc);
+                    processInput(
+                        userList, messageQueue, inBuf, events[n].data.fd);
                 }
             }
         }
     }
-    msgDec();
+    // msgDec();
 
-    msg("Stopped connection loop");
-    msgDec();
+    // msg("Stopped connection loop");
+    // msgDec();
 }
 
 void loopUsers(Vec<User>& userList) {
@@ -130,7 +255,7 @@ void loopUsers(Vec<User>& userList) {
     serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
 
     int opt = 1;
-    msgInc();
+    // msgInc();
     if (setsockopt(
             server_fd,
             SOL_SOCKET,
@@ -140,28 +265,28 @@ void loopUsers(Vec<User>& userList) {
         != 0) {
         die("Cannot set sockopt");
     } else {
-        msg("Set sockopt option");
+        // msg("Set sockopt option");
     }
 
     if (bind(server_fd, (sockaddr*)&serv_addr, sizeof(serv_addr)) < 0) {
         die("Server bind failed");
     } else {
-        msg("Server bind ok");
+        // msg("Server bind ok");
     }
 
     if (listen(server_fd, 5) != 0) {
         die("Server listen failed");
     } else {
-        msg("Server listen start");
+        // msg("Server listen start");
     }
-    msgDec();
+    // msgDec();
 
     loopConnection(server_fd, serv_addr, userList);
 }
 
 
 void writeConfig(Vec<User>& userList) {
-    msg("Writing configuration file");
+    // msg("Writing configuration file");
     OFile config;
     config.open("user-list.tmp");
     for (const auto& usr : userList) {
@@ -170,11 +295,11 @@ void writeConfig(Vec<User>& userList) {
 }
 
 int main() {
-    msg("Starting server application");
+    // msg("Starting server application");
 
     Vec<User> userList;
 
-    msgInc();
+    // msgInc();
 
     readConfig(userList);
     loopUsers(userList);

@@ -1,4 +1,4 @@
-#define APP_TYPE "cln: "
+#define APP_TYPE "\e[43mcln:\e[0m "
 #include "common.hpp"
 
 int main() {
@@ -14,7 +14,7 @@ int main() {
 
 
     int opt = 1;
-    msgInc();
+    // msgInc();
     if (setsockopt(
             server_fd,
             SOL_SOCKET,
@@ -24,7 +24,7 @@ int main() {
         != 0) {
         die("Cannot set sockopt");
     } else {
-        msg("Set sockopt option");
+        // msg("Set sockopt option");
     }
 
 
@@ -32,14 +32,67 @@ int main() {
         != 0) {
         die("Child failed to connect to socket ok");
     } else {
-        msg("Child connected to socket");
+        // msg("Child connected to socket");
     }
 
-    Str buf;
-    while (std::getline(std::cin, buf)) {
-        buf      = buf + "\n";
-        int size = buf.size();
-        // send(server_fd, &size, sizeof(int), 0);
-        send(server_fd, buf.c_str(), buf.size(), 0);
+
+    {
+        epoll_event ev;
+        epoll_event events[MAX_EVENTS];
+
+        int epollfd = epoll_create1(0);
+        if (epollfd == -1) {
+            perror("epoll_create1");
+            exit(EXIT_FAILURE);
+        }
+
+
+        ev.events  = EPOLLIN;
+        ev.data.fd = server_fd;
+        if (epoll_ctl(epollfd, EPOLL_CTL_ADD, server_fd, &ev) == -1) {
+            perror("epoll_ctl: server_fd");
+            exit(EXIT_FAILURE);
+        }
+
+
+        ev.events  = EPOLLIN;
+        ev.data.fd = STDIN_FILENO;
+        if (epoll_ctl(epollfd, EPOLL_CTL_ADD, STDIN_FILENO, &ev) == -1) {
+            perror("epoll_ctl: stdin");
+            exit(EXIT_FAILURE);
+        }
+
+        while (1) {
+            int nfds = epoll_wait(epollfd, events, MAX_EVENTS, -1);
+            if (nfds == -1) {
+                perror("epoll_wait");
+                exit(EXIT_FAILURE);
+            }
+
+            for (int n = 0; n < nfds; ++n) {
+                auto evt = events[n].events;
+                auto fd  = events[n].data.fd;
+                if (fd == STDIN_FILENO) {
+                    if (evt & EPOLLIN) {
+                        Str buf;
+                        while (std::getline(std::cin, buf)) {
+                            buf      = buf + "\n";
+                            int size = buf.size();
+                            send(server_fd, buf.c_str(), buf.size(), 0);
+                        }
+                    }
+                } else if (fd == server_fd) {
+                    char buf[2048];
+                    if (evt & EPOLLIN) {
+                        int rc = read(fd, buf, 2048);
+                        if (rc > 0) {
+                            printf("%s\n", buf);
+                        }
+                    }
+                } else {
+                    printf("Can read from FD: %d", fd);
+                }
+            }
+        }
     }
 }

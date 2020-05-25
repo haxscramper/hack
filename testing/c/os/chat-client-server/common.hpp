@@ -36,7 +36,7 @@ using UName = Str;
 #define SERVER_PORT 7800
 
 #ifndef APP_TYPE
-#    define APP_TYPE "srv: "
+#    define APP_TYPE "\e[42msrv:\e[0m "
 #endif
 
 int msgDepth = 0;
@@ -67,12 +67,14 @@ void msgDec() {
 }
 
 
-void get_all_buf(int sock, std::string& inStr) {
+void get_all_buf(int sock, std::string& inStr, int maxSize = 2048) {
     int  n = 1, total = 0, found = 0;
     char c;
     char temp[1024 * 1024];
     // Keep reading up to a '\n'
-    while (!found) {
+    int idx = 0;
+    while (!found && (idx < maxSize)) {
+        ++idx;
         n = recv(sock, &temp[total], sizeof(temp) - total - 1, 0);
         if (n == -1) {
             /* Error, check 'errno' for more details */
@@ -82,6 +84,10 @@ void get_all_buf(int sock, std::string& inStr) {
         temp[total] = '\0';
         found       = (strchr(temp, '\n') != 0);
     }
+
+    if (!(idx < maxSize)) {
+        msg("Max message size reached");
+    }
     inStr = temp;
 }
 
@@ -90,3 +96,4 @@ int setnonblocking(int sockfd) {
     fcntl(sockfd, F_SETFL, fcntl(sockfd, F_GETFD, 0) | O_NONBLOCK);
     return 0;
 }
+#define MAX_EVENTS 10

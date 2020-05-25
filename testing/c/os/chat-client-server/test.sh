@@ -20,7 +20,7 @@ EOF
 sleep 1
 
 cat << EOF | ./client &
-/register user-1 password-1
+/register user-2 password-2
 /login user-2 password-2
 /connect user-1
 Send reply
