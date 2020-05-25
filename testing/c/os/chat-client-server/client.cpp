@@ -2,15 +2,18 @@
 #include "common.hpp"
 
 int main() {
-    auto        server_fd = socket(AF_INET, SOCK_STREAM, 0);
-    sockaddr_in serv_addr;
-    memset(&serv_addr, '0', sizeof(serv_addr));
+    // auto        server_fd = socket(AF_INET, SOCK_STREAM, 0);
+    // sockaddr_in serv_addr;
+    // memset(&serv_addr, '0', sizeof(serv_addr));
 
-    serv_addr.sin_family      = AF_INET;
-    serv_addr.sin_port        = htons(SERVER_PORT);
-    serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    // serv_addr.sin_family      = AF_INET;
+    // serv_addr.sin_port        = htons(SERVER_PORT);
+    // serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
 
     msg("Starting client application");
+
+    sockaddr_un serv_addr = {AF_UNIX, socket_path};
+    auto        server_fd = socket(AF_UNIX, SOCK_STREAM, 0);
 
 
     int opt = 1;

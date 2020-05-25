@@ -33,7 +33,10 @@ using Vec = std::vector<T>;
 using UName = Str;
 
 
+#define DB printf("%s %d\n", __FILE__, __LINE__);
+
 #define SERVER_PORT 7800
+#define socket_path "/tmp/final.socket"
 
 #ifndef APP_TYPE
 #    define APP_TYPE "\e[42msrv:\e[0m "
