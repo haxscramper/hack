@@ -7,6 +7,8 @@ clang++ client.cpp -o client
 
 ./server &
 
+sleep 1
+
 cat << EOF | ./client &
 /register user-1 password-1
 /login user-1 password-1
@@ -14,6 +16,8 @@ cat << EOF | ./client &
 First message
 Second message
 EOF
+
+sleep 1
 
 cat << EOF | ./client &
 /register user-1 password-1

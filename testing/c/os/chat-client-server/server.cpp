@@ -1,64 +1,34 @@
-#include <fstream>
-#include <iostream>
-#include <map>
-#include <sstream>
-#include <string>
-#include <vector>
-
-#include <fcntl.h>
-#include <stdlib.h>
-#include <unistd.h>
-
-#include <netinet/in.h>
-#include <sys/epoll.h>
-#include <sys/signal.h>
-#include <sys/socket.h>
-#include <sys/types.h>
-#include <sys/un.h>
-#include <sys/wait.h>
-
-
-#define socket_path "/tmp/coursework.socket"
-
-using OFile   = std::ofstream;
-using IFile   = std::ifstream;
-using SStream = std::stringstream;
-
-using Str = std::string;
-
-template <class K, class V>
-using Map = std::map<K, V>;
-
-template <class T>
-using Vec = std::vector<T>;
-
-using UName = Str;
+#include "common.hpp"
+#include <optional>
 
 struct User {
     UName name;
     Str   password;
+    int   connection_fd;
 };
 
-int  msgDepth = 0;
-void msg(const char* text) {
-    printf("%*s%s\n", msgDepth * 2, "", text);
+using UsrList  = Vec<User>&;
+using MsgQueue = Map<UName, Vec<Str>>;
+
+User getUser(int connection, Vec<User>& userList) {
+    for (const auto& usr : userList) {
+        if (usr.connection_fd == connection) {
+            return usr;
+        }
+    }
+
+    throw std::logic_error("Cannot find user with given connection");
 }
 
-void die(const char* text) {
-    printf("!!! %*s%s\n", msgDepth * 2, "", text);
-    printf("!!! %*sAborting program\n", msgDepth * 2, "");
-    abort();
+void processInput(UsrList userList, MsgQueue& queue, Str input) {
+    SStream lines(input);
+    Str     line;
+    while (std::getline(lines, line, '\n')) {
+        pind();
+        printf(" -> %s\n", line.c_str());
+    }
 }
 
-void msgInc() {
-    msg("---");
-    ++msgDepth;
-};
-
-void msgDec() {
-    --msgDepth;
-    msg("---");
-}
 
 void readConfig(Vec<User>& userList) {
     msg("Reading configuration file");
@@ -75,8 +45,11 @@ void readConfig(Vec<User>& userList) {
 
 #define MAX_EVENTS 10
 
-void loopConnection(int server_fd, const sockaddr_in& serv_addr) {
-    Map<UName, Vec<Str>> messageQueue;
+void loopConnection(
+    int                server_fd,
+    const sockaddr_in& serv_addr,
+    Vec<User>&         userList) {
+    MsgQueue messageQueue;
     msgInc();
     msg("Starting connection loop");
 
@@ -99,6 +72,7 @@ void loopConnection(int server_fd, const sockaddr_in& serv_addr) {
 
     auto addrlen = sizeof(serv_addr);
 
+    msgInc();
     for (;;) {
         int nfds = epoll_wait(epollfd, events, MAX_EVENTS, -1);
         if (nfds == -1) {
@@ -108,42 +82,51 @@ void loopConnection(int server_fd, const sockaddr_in& serv_addr) {
 
         for (int n = 0; n < nfds; ++n) {
             if (events[n].data.fd == server_fd) {
-                int conn_fd = accept(
+                msg("Accepted connection");
+                int client_fd = accept(
                     server_fd,
                     (struct sockaddr*)&serv_addr,
                     (socklen_t*)&addrlen);
-                if (conn_fd == -1) {
+                if (client_fd == -1) {
                     perror("accept");
                     exit(EXIT_FAILURE);
                 }
-                // setnonblocking(conn_fd);
+                setnonblocking(client_fd);
                 ev.events  = EPOLLIN | EPOLLET;
-                ev.data.fd = conn_fd;
-                if (epoll_ctl(epollfd, EPOLL_CTL_ADD, conn_fd, &ev)
+                ev.data.fd = client_fd;
+                if (epoll_ctl(epollfd, EPOLL_CTL_ADD, client_fd, &ev)
                     == -1) {
-                    perror("epoll_ctl: conn_fd");
+                    perror("epoll_ctl: client_fd");
                     exit(EXIT_FAILURE);
+                } else {
+                    msg("Added new client to epoll");
                 }
             } else {
-                // do_use_fd(events[n].data.fd);
+                // msg("Accepted other event");
+                // for(const auto& usr : )
+                auto evt = events[n].events;
+                if (evt & EPOLLIN) {
+                    msg("Can read data from");
+                    Str inBuf;
+                    get_all_buf(events[n].data.fd, inBuf);
+                    processInput(userList, messageQueue, inBuf);
+                }
             }
         }
     }
+    msgDec();
 
     msg("Stopped connection loop");
     msgDec();
 }
 
 void loopUsers(Vec<User>& userList) {
-    sockaddr_un sock_addr = {AF_UNIX, socket_path};
-
-    auto server_fd = socket(AF_INET, SOCK_STREAM, 0);
-
+    auto        server_fd = socket(AF_INET, SOCK_STREAM, 0);
     sockaddr_in serv_addr;
     memset(&serv_addr, '0', sizeof(serv_addr));
 
     serv_addr.sin_family      = AF_INET;
-    serv_addr.sin_port        = htons(51927);
+    serv_addr.sin_port        = htons(SERVER_PORT);
     serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
 
     int opt = 1;
@@ -173,7 +156,7 @@ void loopUsers(Vec<User>& userList) {
     }
     msgDec();
 
-    loopConnection(server_fd, serv_addr);
+    loopConnection(server_fd, serv_addr, userList);
 }
 
 
