@@ -1,3 +1,9 @@
 conan/*
 conan-build/*
 build/*
+*.tex
+*.drawio
+*.rsf
+*.lof
+_minted*
+auto/*

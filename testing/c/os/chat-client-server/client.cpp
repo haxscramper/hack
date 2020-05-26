@@ -89,7 +89,7 @@ int main() {
                     if (evt & EPOLLIN) {
                         int rc = recv(fd, buf, 2048, 0);
                         if (rc > 0) {
-                            std::cout << std::string(buf, rc) << std::endl;
+                            std::cout << std::string(buf, rc);
                         } // else {
                         //     std::cout << "recieved " << rc
                         //               << " from server" << std::endl;

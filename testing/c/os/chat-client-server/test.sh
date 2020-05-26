@@ -5,7 +5,7 @@ set -o errexit
 clang++ -g server.cpp -o server
 clang++ -g client.cpp -o client
 
-if [ "$1" == "compile" ]; then
+if [ "${1:-'qqq'}" == "compile" ]; then
     echo "only running compilation"
     exit 0
 fi
@@ -71,6 +71,7 @@ else
   sleep 1
 
   cat << EOF | while read -r line; do echo $line; sleep 0.1; done | ./client &
+/login u1 p121
 /login u1 p1
 /connect u2
 First message

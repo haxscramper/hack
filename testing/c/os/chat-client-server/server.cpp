@@ -63,8 +63,7 @@ void sendMessage(int connection_fd, Str message) {
 
 User& getCredentials(Str login, Str password, UsrList list) {
     for (auto& usr : list) {
-        // cout << usr.name << " " << usr.password << "\n";
-        if (usr.name == login && usr.password == usr.password) {
+        if (usr.name == login && usr.password == password) {
             return usr;
         }
     }
@@ -91,9 +90,9 @@ void processInput(
         if (tokens.size() == 0 || line.size() == 0) {
             continue;
         } else {
-            pind();
-            std::cout << "recieved '" << line << "' from #" << connection
-                      << "\n";
+            // pind();
+            // std::cout << "recieved '" << line << "' from #" << connection
+            //           << "\n";
         }
 
         Str cmd = tokens.at(0);
@@ -110,10 +109,13 @@ void processInput(
             userList.push_back(usr);
         } else if (cmd == "/login") {
             try {
+                pind();
+                // cout << "Logging in user " << tokens.at(1)
+                //      << " pwd: " << tokens.at(2) << "\n";
                 User& usr = getCredentials(
                     tokens.at(1), tokens.at(2), userList);
 
-                auto text = "Logged as user " + usr.name + " #"
+                auto text = "Logged as user '" + usr.name + "' #"
                             + std::to_string(connection);
 
                 usr.connection_fd = connection;
@@ -133,12 +135,12 @@ void processInput(
                         sendMessage(usr, msg);
                     }
                 } else {
-                    sendMessage(usr, "Your inboox is clear!\n");
+                    sendMessage(usr, "Your inbox is clear!\n");
                 }
             } catch (std::logic_error e) {
                 pind();
                 std::cout << "Login failed " << e.what() << "\n";
-                sendErr(connection, e.what());
+                sendErr(connection, Str(e.what()) + "\n");
             }
         } else if (cmd == "/server-shutdown") {
             msg("\e[41m !!! SHUTDOWN !!!\e[0m");
@@ -155,11 +157,20 @@ void processInput(
         } else {
             try {
                 const User& current = getUser(connection, userList);
-                line                = current.name + ": " + line + "\n";
+                pind();
+                cout << current.name << " ##> " << current.target << ": '"
+                     << line << "'\n";
+
+                line = current.name + ": " + line + "\n";
+
                 try {
-                    sendMessage(
-                        getUser(current.target, userList).connection_fd,
-                        line);
+                    int target_fd = getUser(current.target, userList)
+                                        .connection_fd;
+                    if (target_fd != 0) {
+                        sendMessage(target_fd, line);
+                    } else {
+                        queue[current.target].push_back(line);
+                    }
                 } catch (std::logic_error target_err) {
                     queue[current.target].push_back(line);
                 }
