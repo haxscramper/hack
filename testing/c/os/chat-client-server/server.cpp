@@ -56,6 +56,7 @@ void sendErr(int connection_fd, Str message) {
 
 
 void sendMessage(int connection_fd, Str message) {
+    // std::cout << "Sent to #" << connection_fd << ": " << message;
     message = "\e[45mMSG:\e[0m " + message;
     send(connection_fd, message.c_str(), message.size(), 0);
 }
@@ -91,7 +92,8 @@ void processInput(
             continue;
         } else {
             pind();
-            std::cout << "recieved '" << line << "'\n";
+            std::cout << "recieved '" << line << "' from #" << connection
+                      << "\n";
         }
 
         Str cmd = tokens.at(0);
@@ -111,12 +113,12 @@ void processInput(
                 User& usr = getCredentials(
                     tokens.at(1), tokens.at(2), userList);
 
-                usr.connection_fd = connection;
+                auto text = "Logged as user " + usr.name + " #"
+                            + std::to_string(connection);
 
-                sendMessage(
-                    usr,
-                    "Logged as user " + usr.name + " #"
-                        + std::to_string(connection));
+                usr.connection_fd = connection;
+                sendMessage(connection, text + "\n");
+                msg(text.c_str());
 
 
                 if (queue.find(usr.name) != queue.end()
@@ -128,9 +130,7 @@ void processInput(
                             + " new messages for you\n");
 
                     for (auto& msg : queue[usr.name]) {
-                        sendMessage(
-                            usr, msg // + "\n"
-                        );
+                        sendMessage(usr, msg);
                     }
                 } else {
                     sendMessage(usr, "Your inboox is clear!\n");
@@ -255,9 +255,7 @@ void loopConnection(
                     // msg("Can read data from");
 #define BS 2048
                     char buf[BS];
-                    int  pos = 0;
-
-                    int rc = read(fd, buf, BS);
+                    int  rc = recv(fd, buf, BS, 0);
 
                     // while (pos < BS) {
                     //     if (rc <= 0) {
@@ -269,7 +267,7 @@ void loopConnection(
 
                     // if (rc > 0) {
                     //     // get_all_buf(events[n].data.fd, inBuf);
-                    Str inBuf(buf);
+                    Str inBuf(buf, rc);
                     // pind();
                     // printf("read %d bytes from remote\n", rc);
                     processInput(

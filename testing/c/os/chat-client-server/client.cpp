@@ -78,7 +78,7 @@ int main() {
                 if (fd == STDIN_FILENO) {
                     if (evt & EPOLLIN) {
                         Str buf;
-                        while (std::getline(std::cin, buf)) {
+                        if (std::getline(std::cin, buf)) {
                             buf      = buf + "\n";
                             int size = buf.size();
                             send(server_fd, buf.c_str(), buf.size(), 0);
@@ -87,10 +87,13 @@ int main() {
                 } else if (fd == server_fd) {
                     char buf[2048];
                     if (evt & EPOLLIN) {
-                        int rc = read(fd, buf, 2048);
+                        int rc = recv(fd, buf, 2048, 0);
                         if (rc > 0) {
-                            printf("%s\n", buf);
-                        }
+                            std::cout << std::string(buf, rc) << std::endl;
+                        } // else {
+                        //     std::cout << "recieved " << rc
+                        //               << " from server" << std::endl;
+                        // }
                     }
                 } else {
                     printf("Can read from FD: %d", fd);
