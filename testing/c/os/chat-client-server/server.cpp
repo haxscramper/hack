@@ -134,6 +134,7 @@ void processInput(
                     for (auto& msg : queue[usr.name]) {
                         sendMessage(usr, msg);
                     }
+                    queue[usr.name].clear();
                 } else {
                     sendMessage(usr, "Your inbox is clear!\n");
                 }

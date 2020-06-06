@@ -30,8 +30,8 @@ initDefense()
 
 # Create cache of unique identifiers
 let cache: IdentCache = newIdentCache()
- # Project compilation configuration (name of the project, linked
- # libraries etc.)
+# Project compilation configuration (name of the project, linked
+# libraries etc.)
 let config: ConfigRef = newConfigRef()
 
 proc dummyOpen(graph: ModuleGraph; module: PSym): PPassContext = discard

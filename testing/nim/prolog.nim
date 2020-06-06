@@ -442,14 +442,6 @@ proc bindTerm(variable, value: Term, env: Environment): Environment
 
 proc copy(term: Term, env: Environment): (Term, Environment) =
   ## Create copy of a term. All variables are replaced with new ones.
-  runnableExamples:
-    let (t, e) = (makeFunctor("q", @[makeVariable("U"), makeVariable("I"), makeConstant("8")])).copy(
-      makeEnvironment(@[(makeVariable "U", makeConstant "__")])
-    )
-
-    assert $t == "q('__', _I', '8')"
-    assert $e == "{(_I <-> _I') (_U -> '__')}"
-
   let inputEnv = env
   case term.kind:
     of tkConstant:
