@@ -10,7 +10,7 @@ let config: ConfigRef = newConfigRef()
 var parseTime: RunningStat
 var totalTime: RunningStat
 
-for i in 0 .. 100:
+for i in 0 .. 1:
   let startTime = cpuTime()
 
   openParser(
@@ -55,10 +55,10 @@ proc llStreamOpenStdIn*(r: TLLRepl = llReadFromStdin): PLLStream =
   closeParser(pars)
   let endTime = cpuTime()
 
+
   parseTime.push(parseEnd - parseStart)
   totalTime.push(endTime - startTime)
 
 echo "total [ns]: ", int(totalTime.mean() * 1000 * 1000)
 echo "parse [ns]: ", int(parseTime.mean() * 1000 * 1000)
 echo "parse/total: ", int(parseTime.mean() / totalTime.mean() * 100), "%"
-
