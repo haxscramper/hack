@@ -1,0 +1,14 @@
+:- initialization(main).
+
+p(X) :- q(X, Y), r(Y).
+q(a, b).
+q(Z, c).
+r(c).
+
+main :-
+    gtrace,
+    p(a),
+    nl, halt.
+
+
+
