@@ -1,0 +1,36 @@
+/*
+
+Find all images in current directory and select one of them using rofi
+
+fd -x realpath -- | perl -pe 's/^(.*)$/$1\0icon\x1f$1\n/' | rofi -dmenu -no-config -show-icons -theme style_simple.rasi
+*/
+
+mainbox {
+  children: [ inputbar, listview ];
+}
+
+listview {
+  columns: 5;
+  padding: 8;
+  spacing: 10;
+}
+
+element-icon {
+    size:                           128px;
+    border:                         0px;
+}
+
+prompt {
+  enabled: false;
+}
+
+window {
+  height: 60%;
+  width: 70%;
+  anchor: center;
+}
+
+element {
+  border: 0;
+  orientation: vertical;
+}
