@@ -20,6 +20,7 @@ element-icon {
     border:                         0px;
 }
 
+
 prompt {
   enabled: false;
 }
@@ -33,4 +34,18 @@ window {
 element {
   border: 0;
   orientation: vertical;
+}
+
+// Styling
+* {
+ac: #5294E2;
+bg: #ffffff;
+bg-alt: #EAEAEA;
+fg: #ffffff;
+}
+
+element selected {
+  background-color: @ac;
+  border-color: @bg;
+  text-color: @fg;
 }
