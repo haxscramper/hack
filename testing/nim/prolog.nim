@@ -11,7 +11,7 @@ initDefense()
 
 ##[
 
-Test implementaiton of prolog's backtracking and unification
+Test implementaiton of prologs backtracking and unification
 algorithms. This is only a test implementation.
 
 High-level overview of logic:
