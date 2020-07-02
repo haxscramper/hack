@@ -1,10 +1,10 @@
-  // LICENSE
+// LICENSE
 //
 //   This software is dual-licensed to the public domain and under the following
 //   license: you are granted a perpetual, irrevocable license to copy, modify,
 //   publish, and distribute this file as you see fit.
 //
-// VERSION 
+// VERSION
 //   0.2.0  (2017-02-18)  Scored matches perform exhaustive search for best score
 //   0.1.0  (2016-03-28)  Initial release
 //
@@ -32,188 +32,282 @@
 
 
 #include <cstdint> // uint8_t
-#include <ctype.h> // ::tolower, ::toupper
 #include <cstring> // memcpy
+#include <ctype.h> // ::tolower, ::toupper
 
 #include <cstdio>
 
 // Public interface
 namespace fts {
-    static bool fuzzy_match_simple(char const * pattern, char const * str);
-    static bool fuzzy_match(char const * pattern, char const * str, int & outScore);
-    static bool fuzzy_match(char const * pattern, char const * str, int & outScore, uint8_t * matches, int maxMatches);
-}
+static bool fuzzy_match_simple(char const* pattern, char const* str);
+static bool fuzzy_match(
+    char const* pattern,
+    char const* str,
+    int&        outScore);
+static bool fuzzy_match(
+    char const* pattern,
+    char const* str,
+    int&        outScore,
+    uint8_t*    matches,
+    int         maxMatches);
+} // namespace fts
 
 
 #ifdef FTS_FUZZY_MATCH_IMPLEMENTATION
 namespace fts {
 
-    // Forward declarations for "private" implementation
-    namespace fuzzy_internal {
-        static bool fuzzy_match_recursive(const char * pattern, const char * str, int & outScore, const char * strBegin,          
-            uint8_t const * srcMatches,  uint8_t * newMatches,  int maxMatches, int nextMatch, 
-            int & recursionCount, int recursionLimit);
+// Forward declarations for "private" implementation
+namespace fuzzy_internal {
+    static bool fuzzy_match_recursive(
+        const char*    pattern,
+        const char*    str,
+        int&           outScore,
+        const char*    strBegin,
+        uint8_t const* srcMatches,
+        uint8_t*       newMatches,
+        int            maxMatches,
+        int            nextMatch,
+        int&           recursionCount,
+        int            recursionLimit);
+}
+
+// Public interface. Compare in case-insensetive manner.
+static bool fuzzy_match_simple(char const* pattern, char const* str) {
+    while (*pattern != '\0' && *str != '\0') {
+        if (tolower(*pattern) == tolower(*str))
+            ++pattern;
+        ++str;
     }
 
-    // Public interface
-    static bool fuzzy_match_simple(char const * pattern, char const * str) {
-        while (*pattern != '\0' && *str != '\0')  {
-            if (tolower(*pattern) == tolower(*str))
-                ++pattern;
-            ++str;
-        }
+    return *pattern == '\0' ? true : false;
+}
 
-        return *pattern == '\0' ? true : false;
-    }
+static bool fuzzy_match(
+    char const* pattern,
+    char const* str,
+    int&        outScore) {
 
-    static bool fuzzy_match(char const * pattern, char const * str, int & outScore) {
-        
-        uint8_t matches[256];
-        return fuzzy_match(pattern, str, outScore, matches, sizeof(matches));
-    }
+    uint8_t matches[256];
+    return fuzzy_match(pattern, str, outScore, matches, sizeof(matches));
+}
 
-    static bool fuzzy_match(char const * pattern, char const * str, int & outScore, uint8_t * matches, int maxMatches) {
-        int recursionCount = 0;
-        int recursionLimit = 10;
+static bool fuzzy_match(
+    char const* pattern,
+    char const* str,
+    int&        outScore,
+    uint8_t*    matches,
+    int         maxMatches) {
+    int recursionCount = 0;
+    int recursionLimit = 10;
 
-        return fuzzy_internal::fuzzy_match_recursive(pattern, str, outScore, str, nullptr, matches, maxMatches, 0, recursionCount, recursionLimit);
-    }
+    return fuzzy_internal::fuzzy_match_recursive(
+        pattern,
+        str,
+        outScore,
+        str,
+        nullptr,
+        matches,
+        maxMatches,
+        0,
+        recursionCount,
+        recursionLimit);
+}
 
-    // Private implementation
-    static bool fuzzy_internal::fuzzy_match_recursive(const char * pattern, const char * str, int & outScore, 
-        const char * strBegin, uint8_t const * srcMatches, uint8_t * matches, int maxMatches, 
-        int nextMatch, int & recursionCount, int recursionLimit)
+// Private implementation
+static bool fuzzy_internal::fuzzy_match_recursive(
+    const char*    pattern,  // Pattern string
+    const char*    str,      // Input string
+    int&           outScore, // out - result score
+    const char*    strBegin,
+    uint8_t const* srcMatches,
+    uint8_t*       matches,    // Buffer of match positions
+    int            maxMatches, // Size of match buffer (?)
+    int            nextMatch,  // Index of next match in match buffer
+    int&           recursionCount,
+    int            recursionLimit) {
+
+    // When function is called recursively two buffers exist:
+    // `matches` - passed down from caller and `bestRecursiveMatches`
+    // - created inside of a procedure. When some character in input
+    // string matches with pattern it is added to `matches`,
+    // regardless of the score.
+
+    // We are only working with input `matches` starting from index
+    // `nextMatch` - everything else is copied from `srcMatches`. NOTE
+    // IDEA might be optimized? Just pass down slice.
+
+
+    // [srcMatches, <matches generated by recursive call>] ->
+    // [bestRecursiveMatches]. Recursive call 'returns' only leftover
+    // matches - first part is copied. _if_ recursive test results in
+    // better score _then_ best recursive match is overwritten with
+    // subcall results. We concatenate results we already have and
+    // recursive call results.
+
+    // Count recursions
+    ++recursionCount;
+    if (recursionCount >= recursionLimit)
+        return false;
+
+    // Detect end of strings
+    if (*pattern == '\0' || *str == '\0')
+        return false;
+
+    // Recursion params
+    bool recursiveMatch = false;
+    // Keep track of recursive matches
+    uint8_t bestRecursiveMatches[256];
+    // Keep track of current best recursive scopre.
+    int bestRecursiveScore = 0;
+
+    // Loop through pattern and str looking for a match
+    bool first_match = true;
+    while (*pattern != '\0' && *str != '\0')
+    // Iterate elements in the input strings. Input string index is
+    // incremented on each iteration.
     {
-        // Count recursions
-        ++recursionCount;
-        if (recursionCount >= recursionLimit)
-            return false;
 
-        // Detect end of strings
-        if (*pattern == '\0' || *str == '\0')
-            return false;
+        // Found match
+        if (tolower(*pattern) == tolower(*str))
+        // If match found increment pattern index.
+        {
+            // Supplied matches buffer was too short
+            if (nextMatch >= maxMatches)
+                return false;
 
-        // Recursion params
-        bool recursiveMatch = false;
-        uint8_t bestRecursiveMatches[256];
-        int bestRecursiveScore = 0;
-
-        // Loop through pattern and str looking for a match
-        bool first_match = true;
-        while (*pattern != '\0' && *str != '\0') {
-            
-            // Found match
-            if (tolower(*pattern) == tolower(*str)) {
-
-                // Supplied matches buffer was too short
-                if (nextMatch >= maxMatches)
-                    return false;
-                
-                // "Copy-on-Write" srcMatches into matches
-                if (first_match && srcMatches) {
-                    memcpy(matches, srcMatches, nextMatch);
-                    first_match = false;
-                }
-
-                // Recursive call that "skips" this match
-                uint8_t recursiveMatches[256];
-                int recursiveScore;
-                if (fuzzy_match_recursive(pattern, str + 1, recursiveScore, strBegin, matches, recursiveMatches, sizeof(recursiveMatches), nextMatch, recursionCount, recursionLimit)) {
-                    
-                    // Pick best recursive score
-                    if (!recursiveMatch || recursiveScore > bestRecursiveScore) {
-                        memcpy(bestRecursiveMatches, recursiveMatches, 256);
-                        bestRecursiveScore = recursiveScore;
-                    }
-                    recursiveMatch = true;
-                }
-
-                // Advance
-                matches[nextMatch++] = (uint8_t)(str - strBegin);
-                ++pattern;
+            // "Copy-on-Write" srcMatches into matches
+            if (first_match && srcMatches) {
+                // If this is a first match copy first
+                // `[0..nextMatch]` matches into current buffer.
+                // Subsequent matches will be added to the `matches`.
+                memcpy(matches, srcMatches, nextMatch);
+                first_match = false;
             }
+
+            // Recursive call that "skips" this match
+            uint8_t recursiveMatches[256];
+            int     recursiveScore;
+            if (fuzzy_match_recursive(
+                    pattern,
+                    str + 1,        // Advance to next position in string
+                    recursiveScore, // Return recursive score value
+                    strBegin,
+                    matches,
+                    recursiveMatches,
+                    sizeof(recursiveMatches),
+                    nextMatch,
+                    recursionCount,
+                    recursionLimit))
+            // If can match leftower pattern from next position
+            // *and* it will give better score
+            {
+
+                // Pick best recursive score
+                if (!recursiveMatch || recursiveScore > bestRecursiveScore)
+                // There was no recursive match before or Score
+                // returned from recursive call is better than current
+                // best score.
+                {
+                    // Copy result matches from recursion call to
+                    // current 'best matches'
+                    memcpy(bestRecursiveMatches, recursiveMatches, 256);
+                    // Update best recursive score
+                    bestRecursiveScore = recursiveScore;
+                }
+
+                // It is possible to match pattern starting from
+                // current position
+                recursiveMatch = true;
+            }
+
+            // Copy match position to match buffer
+            matches[nextMatch++] = (uint8_t)(str - strBegin);
+            // Move forward in pattern
+            ++pattern;
+        }
+
+        ++str;
+    }
+
+    // Determine if full pattern was matched
+    bool matched = *pattern == '\0' ? true : false;
+
+    // Calculate score
+    if (matched) {
+        const int sequential_bonus = 15; // bonus for adjacent matches
+        const int separator_bonus = 30; // bonus if match occurs after a separator
+        const int camel_bonus = 30; // bonus if match is uppercase and prev is lower
+        const int first_letter_bonus = 15; // bonus if the first letter is matched
+
+        const int leading_letter_penalty = -5; // penalty applied for every letter in str before the first match
+        const int max_leading_letter_penalty = -15; // maximum penalty for leading letters
+        const int unmatched_letter_penalty = -1; // penalty for every letter that doesn't matter
+
+        // Iterate str to end
+        while (*str != '\0')
             ++str;
+
+        // Initialize score
+        outScore = 100;
+
+        // Apply leading letter penalty
+        int penalty = leading_letter_penalty * matches[0];
+        if (penalty < max_leading_letter_penalty) {
+            penalty = max_leading_letter_penalty;
         }
 
-        // Determine if full pattern was matched
-        bool matched = *pattern == '\0' ? true : false;
+        outScore += penalty;
 
-        // Calculate score
-        if (matched) {
-            const int sequential_bonus = 15;            // bonus for adjacent matches
-            const int separator_bonus = 30;             // bonus if match occurs after a separator
-            const int camel_bonus = 30;                 // bonus if match is uppercase and prev is lower
-            const int first_letter_bonus = 15;          // bonus if the first letter is matched
+        // Apply unmatched penalty
+        int unmatched = (int)(str - strBegin) - nextMatch;
+        outScore += unmatched_letter_penalty * unmatched;
 
-            const int leading_letter_penalty = -5;      // penalty applied for every letter in str before the first match
-            const int max_leading_letter_penalty = -15; // maximum penalty for leading letters
-            const int unmatched_letter_penalty = -1;    // penalty for every letter that doesn't matter
+        // Apply ordering bonuses
+        for (int i = 0; i < nextMatch; ++i) {
+            uint8_t currIdx = matches[i];
 
-            // Iterate str to end
-            while (*str != '\0')
-                ++str;
+            if (i > 0) {
+                uint8_t prevIdx = matches[i - 1];
 
-            // Initialize score
-            outScore = 100;
-
-            // Apply leading letter penalty
-            int penalty = leading_letter_penalty * matches[0];
-            if (penalty < max_leading_letter_penalty)
-                penalty = max_leading_letter_penalty;
-            outScore += penalty;
-
-            // Apply unmatched penalty
-            int unmatched = (int)(str - strBegin) - nextMatch;
-            outScore += unmatched_letter_penalty * unmatched;
-
-            // Apply ordering bonuses
-            for (int i = 0; i < nextMatch; ++i) {
-                uint8_t currIdx = matches[i];
-
-                if (i > 0) {
-                    uint8_t prevIdx = matches[i - 1];
-
-                    // Sequential
-                    if (currIdx == (prevIdx + 1))
-                        outScore += sequential_bonus;
-                }
-
-                // Check for bonuses based on neighbor character value
-                if (currIdx > 0) {
-                    // Camel case
-                    char neighbor = strBegin[currIdx - 1];
-                    char curr = strBegin[currIdx];
-                    if (::islower(neighbor) && ::isupper(curr))
-                        outScore += camel_bonus;
-
-                    // Separator
-                    bool neighborSeparator = neighbor == '_' || neighbor == ' ';
-                    if (neighborSeparator)
-                        outScore += separator_bonus;
-                }
-                else {
-                    // First letter
-                    outScore += first_letter_bonus;
-                }
+                // Sequential
+                if (currIdx == (prevIdx + 1))
+                    outScore += sequential_bonus;
             }
-        }
 
-        // Return best result
-        if (recursiveMatch && (!matched || bestRecursiveScore > outScore)) {
-            // Recursive score is better than "this"
-            memcpy(matches, bestRecursiveMatches, maxMatches);
-            outScore = bestRecursiveScore;
-            return true;
-        }
-        else if (matched) {
-            // "this" score is better than recursive
-            return true;
-        }
-        else {
-            // no match
-            return false;
+            // Check for bonuses based on neighbor character value
+            if (currIdx > 0) {
+                // Camel case
+                char neighbor = strBegin[currIdx - 1];
+                char curr     = strBegin[currIdx];
+                if (::islower(neighbor) && ::isupper(curr))
+                    outScore += camel_bonus;
+
+                // Separator
+                bool neighborSeparator = neighbor == '_'
+                                         || neighbor == ' ';
+                if (neighborSeparator)
+                    outScore += separator_bonus;
+            } else {
+                // First letter
+                outScore += first_letter_bonus;
+            }
         }
     }
+
+    // Return best result
+    if (recursiveMatch && (!matched || bestRecursiveScore > outScore)) {
+        // Recursive score is better than "this". Use recursive matches.
+        memcpy(matches, bestRecursiveMatches, maxMatches);
+        outScore = bestRecursiveScore;
+        return true;
+    } else if (matched) {
+        // "this" score is better than recursive
+        return true;
+    } else {
+        // no match
+        return false;
+    }
+}
 } // namespace fts
 
 #endif // FTS_FUZZY_MATCH_IMPLEMENTATION

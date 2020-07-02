@@ -18,7 +18,7 @@ type
     values: Types
     idx: int
 
-proc getN[Types](invar: Variant[Types], idx: static[int]): auto =
+proc getN*[Types](invar: Variant[Types], idx: static[int]): auto =
   static:
     assert idx < arity(Types),
      "Cannot get value at index " & $idx &
@@ -31,7 +31,7 @@ proc getN[Types](invar: Variant[Types], idx: static[int]): auto =
       &"Cannot get value at index {idx} - current index is " &
         &"{invar.idx}")
 
-template get[Types](invar: Variant[Types], val: typed): untyped =
+template get*[Types](invar: Variant[Types], val: typed): untyped =
   var idx: int = 0
   var res: val
   for _, fld in invar.values.fieldPairs():
@@ -46,7 +46,7 @@ template get[Types](invar: Variant[Types], val: typed): untyped =
 
   res
 
-template set[Types](invar: var Variant[Types], other: typed) =
+template set*[Types](invar: var Variant[Types], other: typed) =
   var idx: int = 0
 
   for _, fld in invar.values.fieldPairs():
@@ -57,13 +57,13 @@ template set[Types](invar: var Variant[Types], other: typed) =
     inc idx
 
 
-template variant[Types](val: typed): Variant[Types] =
+template variant*[Types](val: typed): Variant[Types] =
   block:
     var res: Variant[Types]
     res.set val
     res
 
-template hasType[Types](invar: Variant[Types], t: typed): bool =
+template hasType*[Types](invar: Variant[Types], t: typed): bool =
   var res: bool = false
   var idx: int = 0
   for _, fld in invar.values.fieldPairs():
@@ -74,7 +74,7 @@ template hasType[Types](invar: Variant[Types], t: typed): bool =
 
   res
 
-proc hasIdx[Types](invar: Variant[Types], idx: int): bool =
+proc hasIdx*[Types](invar: Variant[Types], idx: int): bool =
   invar.idx == idx
 
 block:
@@ -94,11 +94,3 @@ block:
     echo getCurrentExceptionMsg()
   finally:
     echo test.getN(1)
-
-
-#=====================  template with return value  ======================#
-template test(t: typed): untyped =
-  var res: t
-  res
-
-echo test(int)
