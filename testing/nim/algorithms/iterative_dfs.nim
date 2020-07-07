@@ -1,4 +1,5 @@
 import sequtils, strformat
+import hmisc/hpprint
 
 type
   TreeIn = object
@@ -8,6 +9,7 @@ type
   TreeOut = object
     val: string
     subt: seq[TreeOut]
+    path: seq[int]
 
 
 type
@@ -28,6 +30,9 @@ func getSubt(tree: TreeIn): seq[TreeIn] = tree.subt
 func getCurrSubt[T, R](stack: DfsStack[T, R]): seq[T] =
   stack.last.inSubt[stack.last.idx].getSubt()
 
+func getCurrPath[T, R](stack: DfsStack[T, R]): seq[int] =
+  stack.last.path
+
 func getCurr[T, R](stack: DfsStack[T, R]): T =
   stack.last.inSubt[stack.last.idx]
 
@@ -39,52 +44,35 @@ template dfsIterative[T, R](intree: T, expr: untyped): R =
   type Frame = DfsFrame[T, R]
   var stack: seq[Frame]
   var res: R
-  stack.add makeDfsFrame[T, R](@[intree], @[0])
+  stack.add makeDfsFrame[T, R](@[intree], @[])
 
   var cnt: int = 0
   block dfsLoop:
     while cnt < 20:
-      inc cnt
-      if stack.last.idx < stack.last.inSubt.len:
-        echo "Stack has ", stack.len, " frames, last index is ",
-         stack.last.idx, " number of subterms for last: ",
-         stack.last.inSubt.len
-
-        let subt = stack.getCurrSubt()
-
-        if subt.len == 0:
-          echo "Reached leaf"
-        else:
-          # Push new stack frame
-          stack.add makeDfsFrame[T, R](
-            subt, @[1] #[ IMPLEMENT ]#
-          )
-
-        inc stack.last.idx
-
-      else:
-        echo "Folding stack"
-        # Fold stack frame
-        echo "Stack len now is: ", stack.len
+      if stack.last.idx == stack.last.inSubt.len:
+        # Current toplevel frame reached the end
         let top = stack.pop
         let foldRes = (
           block:
             let
               it {.inject.} = stack.getCurr()
-              path {.inject.} = stack.last.path
+              path {.inject.} = top.path
               subt {.inject.} = top.subt
 
             expr
         )
 
-        echo "removed element from stack top"
-        echo "New stack length: ", stack.len
-
-        if stack.len == 0:
+        if stack.len == 1: # Popped last element in stack
           res = foldRes
           break dfsLoop
-        else:
+        else: # Folded frame, adding it to previous one's result
+          inc stack.last.idx
           stack.last.subt.add foldRes
+
+      else:
+        stack.add makeDfsFrame[T, R](
+          stack.getCurrSubt(), stack.getCurrPath() & @[stack.last.idx]
+        )
 
   res
 
@@ -97,7 +85,8 @@ let intree = mtr(
 
 let res = dfsIterative[TreeIn, TreeOut](
   intree,
-  TreeOut(val: $it, subt: subt)
+  TreeOut(val: $it.val, subt: subt, path: path)
 )
 
-echo res
+pprint intree
+pprint res

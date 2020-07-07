@@ -6,7 +6,10 @@ dumpTree:
       Eq, # Automatically derive `==` pattern
       Hash, # Implement `hash` function
       Validation, # Recognize `check` in pragmas - generate validators
-      Constructor # Provide constructor proc
+      Constructor, # Provide constructor proc,
+      Qt(Widget, Metatype),
+      ExportCpp(Override), # Export as CPP class
+      Methods
     ).} = object
       f1* {.[ # Annotated as exported, but due to `getset` annotation
               # and validator it will not be exported directly.
@@ -22,3 +25,6 @@ dumpTree:
       internal {.[
         passthrough((`[]=`, var U, float, int), check(a1 < 1.0))
       ].}: Table[float, int]
+
+  method inc*(this: U) {.base.}
+  method paintEvent(this: U, event: QPaintEvent) {.cppOverride.}
