@@ -36,6 +36,10 @@ proc llStreamOpen*(): PLLStream =
   new(result)
   result.kind = llsNone
 
+sfasdf asdfa
+s dfas df
+as fasdf(((((()))))))
+
 proc llReadFromStdin(s: PLLStream, buf: pointer, bufLen: int): int
 proc llStreamOpenStdIn*(r: TLLRepl = llReadFromStdin): PLLStream =
   new(result)
