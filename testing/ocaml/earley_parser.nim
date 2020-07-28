@@ -75,7 +75,7 @@ type
       of true:
         token: C
       of false:
-        idx: int
+        ruleId: int
         subnodes: seq[ParseTree[C]]
 
 func contains(ns: NullSet, s: string): bool = s in ns.nulls
@@ -147,6 +147,16 @@ func chartOfItems[C](gr: Grammar[C],
       else:
         e1.ruleId - e2.ruleId # FIXME
 
+func ruleName[C](gr: Grammar[C], e: Edge): string =
+  gr.ruleName(e.ruleId)
+
+func topList[C](gr: Grammar[C],
+                input: int -> Option[C],
+                chart: Chart,
+                start: int,
+                edge: Edge): seq[tuple[start: int, edge: Edge]] =
+  discard
+
 func parseTree[C](gr: Grammar[C],
                   input: int -> Option[C],
                   chart: Chart): Option[ParseTree[C]] =
@@ -154,6 +164,18 @@ func parseTree[C](gr: Grammar[C],
   let start = 0
   let finish = chart.len - 1
   let name = gr.start
+  # func aux(start: int, )
+  func aux(arg: tuple[start: int, edge: Edge]): ParseTree[C] =
+    {.noSideEffect.}:
+      if arg.edge.ruleId == -1:
+        ParseTree[C](isToken: true, token: input(arg.start).get())
+      else:
+        ParseTree[C](
+          isToken: false,
+          ruleId: arg.edge.ruleId,
+          subnodes: gr.topList(input, chart, arg.start, arg.edge).map(aux)
+        )
+
 
 
 func predict[C](s: var State, # DOC
