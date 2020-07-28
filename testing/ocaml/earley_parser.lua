@@ -119,6 +119,7 @@ end
 ---------------
 -- next element in the rule of this item
 local function next_symbol(grammar, item)
+   print(item.rule, item.next)
    return grammar[item.rule][item.next]
 end
 

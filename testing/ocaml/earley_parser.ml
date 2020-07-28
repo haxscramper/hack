@@ -141,9 +141,10 @@ module DA = Dyn_array
 let ( >: ) a i = DA.(>:)   a i
 let ( /! ) f a = DA.iter   a f
 let ( /!-) f a = DA.iteri  a f
-let ( /@ ) f a = DA.map    a f
+let ( /@ ) f a = DA.map    a f (* map *)
+
 let ( /@-) f a = DA.mapi   a f
-let ( // ) f a = DA.filter a f
+let ( // ) f a = DA.filter a f (* filter *)
 
 
 (** ************************************* **)
@@ -172,6 +173,7 @@ let is_nullable null_set rule =
             rule.rhs
 
 let nullable_symbols : 'a grammar -> String_set.t =
+  (** Get set of all nullable symbols **)
   fun grammar ->
   let update_nullable_set null_set =
     DA.foldl (fun set rule ->  String_set.add rule.lhs set)
@@ -189,16 +191,24 @@ let nullable_symbols : 'a grammar -> String_set.t =
 (** Finding infinite loops **)
 (** ********************** **)
 let infinite_loop : 'a grammar -> bool = fun grammar ->
-  let null_set        = nullable_symbols grammar                            in
+  let null_set : String_set.t = nullable_symbols grammar
+    in
+
   let rules symbol    = grammar.rules // (fun {lhs} -> lhs = symbol)
                                       // is_nullable null_set
-                                      /@ (fun {rhs} -> rhs)                 in
+                                      /@ (fun {rhs} -> rhs)
+    in
+
   let add_rule        = DA.foldl (fun set -> function
                                   | Terminal _   -> failwith "impossible"
-                                  | Non_term sym -> String_set.add sym set) in
+                                  | Non_term sym -> String_set.add sym set)
+    in
+
   let children symbol = DA.foldl add_rule
                                  String_set.empty
-                                 (rules symbol)                             in
+                                 (rules symbol)
+    in
+
   let rec aux path symbol =
     if List.mem symbol path
     then true
@@ -519,9 +529,9 @@ let grammar1 =
 
 let input1 = input_of_string "1+(2*3+4)"
 let s1     = build_items    grammar1 input1
-let _      = print_items    grammar1 s1
+(* let _      = print_items    grammar1 s1 *)
 let c1     = chart_of_items grammar1 s1
-let _      = print_chart    grammar1 c1
+(* let _      = print_chart    grammar1 c1 *)
 let pt     = parse_tree     grammar1 input1 c1
 
 let input_handler c = Char c
@@ -598,9 +608,9 @@ let grammar2 =
 
 let input2 = input_of_string "ii;e;"
 let s2     = build_items    grammar2 input2
-let _      = print_items    grammar2 s2
+(* let _      = print_items    grammar2 s2 *)
 let c2     = chart_of_items grammar2 s2
-let _      = print_chart    grammar2 c2
+(* let _      = print_chart    grammar2 c2 *)
 let pt2    = parse_tree     grammar2 input2 c2
 
 
@@ -619,9 +629,9 @@ let grammar3 =
 
 let input3 = input_of_string ""
 let s3     = build_items    grammar3 input3
-let _      = print_items    grammar3 s3
+(* let _      = print_items    grammar3 s3 *)
 let c3     = chart_of_items grammar3 s3
-let _      = print_chart    grammar3 c3
+(* let _      = print_chart    grammar3 c3 *)
 let _      = if infinite_loop grammar3
              then print_endline "Infinite loop detected! Beware!"
 let pt3    = parse_tree     grammar3 input3 c3 (* Stack overflow! *)
