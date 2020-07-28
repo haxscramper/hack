@@ -1,7 +1,8 @@
-import macros
+import macros, typetraits
 
 macro dumpType(a: typed) =
   echo "=========== ", a.toStrLit()
+  echo "=========== ", a.getType().toStrLit()
   let kind = a.getTypeImpl().kind
   case kind:
     of nnkBracketExpr:
@@ -130,3 +131,15 @@ block:
 
   generic(12)
   generic(U())
+
+block:
+  type
+    G[T] = object
+      f1: T
+
+  G.dumpType()
+  (G[int]).dumpType
+  var p: G[int]
+  p.dumpType()
+
+  echo genericParams(G[int])
