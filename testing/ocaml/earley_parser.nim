@@ -1,4 +1,4 @@
-import sugar, strutils, sequtils, strformat, options, sets, algorithm
+import sugar, strutils, sequtils, strformat, options, sets, algorithm, hashes
 
 func `|>`[A, B](a: A, b: A -> B): B = b(a)
 
@@ -60,6 +60,7 @@ type
     ruleId: int
     startPos: int
     nextPos: int
+    ranges: seq[tuple[start, finish: int]]
 
   SSetId = int # 'The nodes are the state sets. One of them is the
                # root (the search starts there), and one of them is
@@ -84,6 +85,7 @@ type
     start: string
 
   ParseTree[C] = object
+    start, finish: int
     case isToken: bool
       of true:
         token: C
@@ -246,20 +248,120 @@ func topList[C](gr: Grammar[C],
                   isLeafp, startSet)
 
 
-func parseTree[C](gr: Grammar[C],
+func hash(id: SItemId): Hash =
+  var h: Hash = 0
+  h = h !& id.ruleId !& id.finish
+  result = !$h
+
+proc parseTree[C](gr: Grammar[C],
                   input: Input[C],
                   chart: Chart): Option[ParseTree[C]] =
 
-  let start = 0
-  # let finish = chart.len - 1
-  # let name = gr.start
-  # func aux(start: int, )
-  func aux(start, finish: int, name: string): Option[ParseTree[C]] =
+  var triedSet: HashSet[tuple[start: int, altId: int, name: string]]
+  proc aux(start, finish: int, name: string, level: int): Option[ParseTree[C]] =
     ## Search for parse tree of nonterminal `name`, starting at
     ## `start` and ending at `finish` position.
-    for rule in chart[start]:
-      if rule.finish == finish and ruleName(gr, rule) == name:
-        discard
+    let pref = &"{level:<2}|   " & "  ".repeat(level)
+    template pp(body: untyped): untyped = echo pref, fmt(body)
+    template pl(body: untyped): untyped =
+      if false: echo pref, fmt(body)
+
+
+    pl "Parsing rule {name} starting from {start}, search for alts"
+    let alts: seq[int] = collect(newSeq):
+      for rule in chart[start]:
+        let params = (start: start, altId: rule.ruleId, name: name)
+        if (ruleName(gr, rule) == name) and (params notin triedSet):
+          rule.ruleId
+
+    pl "There are {alts.len} rules never tried in this configuration"
+    for alt in alts:
+      let params = (start: start, altId: alt, name: name)
+      triedSet.incl params
+      var currpos: int = start
+      pp "Trying \e[33m{name}.{alt}\e[39m [alts: {alts}] from \e[35m{currpos}\e[39m"
+      block ruleTry:
+        let symbols = gr.ruleBody(alt)
+        let singletok = (symbols.len == 1) and (symbols[0].isTerm)
+        if not singletok:
+          result = some(ParseTree[C](
+            isToken: false,
+            ruleId: alt,
+            subnodes: @[],
+            start: currpos))
+
+        for idx, sym in gr.ruleBody(alt):
+          if sym.isTerm:
+            pp "Expecting token #{idx} \e[93m{sym.terminal.lex}\e[39m at {currpos}"
+            let inp = input currpos
+            if sym.terminal.ok(inp):
+              echo pref, "Matched", (if singletok: " single" else: ""),
+               &" token \e[32m{sym.terminal.lex}\e[39m ",
+                         &"as '\e[32m{inp.get()}\e[39m'"
+              let tree = ParseTree[C](
+                isToken: true,
+                start: currpos,
+                finish: currpos + 1,
+                token: inp.get()
+              )
+
+              if singletok:
+                return some(tree)
+              else:
+                result.get().subnodes.add tree
+                inc result.get().finish
+
+              inc currpos
+              pp "@ \e[35m{currpos}\e[39m"
+            else:
+              pp "Failed token match \e[31m{sym.terminal.lex}\e[39m @ {currpos}"
+              break ruleTry
+          else:
+            pp "Expecting \e[93m{sym.nterm}.{alt}\e[39m starting at {currpos}, #{idx} "
+            let res = aux(currpos, finish, sym.nterm, level + 1)
+            if res.isSome():
+              pp "Recognized rule \e[32m{name}\e[39m in range [{currpos}, {res.get().finish}]"
+              currpos = res.get().finish
+              result.get().subnodes.add res.get()
+              result.get().finish = currpos
+              pp "@ \e[35m{currpos}\e[39m"
+            else:
+              pp "Failed rule \e[31m{name}\e[39m"
+              break ruleTry
+
+
+
+
+
+    # for rule in chart[start]:
+    #   if ruleName(gr, rule) == name:
+    #     let params = (start: start, altId: rule.ruleId, name: name)
+    #     if params in triedSet:
+    #       pp "Already seen ({start}:{finish}), {name}, id: {rule.ruleId}"
+    #       return none(ParseTree[C])
+    #     else:
+    #       triedSet.incl params
+
+
+    #     var currpos: int = start
+    #     pp "Parsing ({currpos}:{finish}), {name}, id: {rule.ruleId}"
+
+    #     for symIdx, symbol in gr.ruleBody(rule.ruleId):
+    #       pp "Extracting sym {symIdx}"
+    #       if symbol.isTerm:
+    #         let inp = input currpos
+    #         pp "Expecting token {symbol.terminal.lex} at pos {currpos}"
+    #         if symbol.terminal.ok(inp):
+    #           pp "Matched {inp}"
+    #           result = some(ParseTree[C](
+    #             isToken: true,
+    #             token: inp.get(),
+    #             start: currpos,
+    #             finish: currpos + 1
+    #           ))
+
+    #           inc currpos
+    #       else:
         # for
 
     # if path.ssetItem.ruleId == -1:
@@ -281,7 +383,7 @@ func parseTree[C](gr: Grammar[C],
     if ssetItem.finish == (chart.len - 1) and # If item is finished
        ruleName(gr, ssetItem) == gr.start: # And it's name is equal to
                                            # grammar start name
-      let tree = aux(0, chart.len - 1, gr.start) # Recognize first
+      let tree = aux(0, chart.len - 1, gr.start, 0) # Recognize first
                                                  # possible parse tree
       if tree.isSome():
         return tree
@@ -425,19 +527,21 @@ proc printItems[C](gr: Grammar[C], state: State, onlyFull: bool = false): void =
 
 
 proc printChart[C](gr: Grammar[C], state: Chart): void =
+  echo "\e[31mCHART :\e[39m"
   for idx, stateset in state:
-    echo fmt("   === {idx:^3} ===   ")
+    echo fmt("\e[36mSTARTS:\e[39m {idx}")
     for item in stateset:
       var buf = fmt("{gr.ruleName(item.ruleId):<12}") & " ->"
       for idx, sym in gr.ruleBody(item.ruleId):
         if sym.isTerm:
-          buf &= " " & sym.terminal.lex
+          buf &= fmt(" {sym.terminal.lex:>8}")
         else:
-          buf &= " " & sym.nterm
+          buf &= fmt(" {sym.nterm:>8}")
 
-      buf = fmt("{buf:<60}   ({item.finish})")
+      buf = fmt("\e[32mEND   :\e[39m {item.finish} {buf:<60}")
 
       echo buf
+    echo ""
 
 func rule(lhs: string, elems: seq[Symbol[char]]): Rule[char] =
   Rule[char](lhs: lhs, rhs: elems)
@@ -495,7 +599,6 @@ block:
   # printItems(grammar1, s1)
   let c1     = chartOfItems(grammar1, s1)
   # printItems(grammar1, s1, onlyFull = true)
-  echo "\e[41m ========== chart ========== \e[49m"
   printChart(grammar1, c1)
   let pt1    = parseTree(grammar1, input1, c1)
   echo pt1.get().lispRepr(grammar1)
