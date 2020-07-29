@@ -40,6 +40,7 @@ block: # THE cursed code
 type
   # `C` is a terminal category. Lexeme is represented as string
   Tok[C] = Option[C] -> bool
+  Input[C] = proc(pos: int): Option[C] {.noSideEffect.}
   Symbol[C] = object
     case isTerm: bool
       of true:
@@ -59,9 +60,12 @@ type
     startPos: int
     nextPos: int
 
+  Node = int
   Edge = object
     ruleId: int
     finish: int
+
+  Path = (Node, Edge)
 
   State = seq[seq[EItem]]
   Chart = seq[seq[Edge]]
@@ -115,7 +119,7 @@ func ruleName[C](gr: Grammar[C], idx: int): string =
 
 func ruleBody[C](gr: Grammar[C], idx: int): seq[Symbol[C]] =
   ## Get rhs from rule at `idx`
-  gr[idx].rhs
+  gr.rules[idx].rhs
 
 func nextSymbol[C](gr: Grammar[C], item: EItem): Option[Symbol[C]] =
   #[ IMPLEMENT ]#
@@ -150,15 +154,75 @@ func chartOfItems[C](gr: Grammar[C],
 func ruleName[C](gr: Grammar[C], e: Edge): string =
   gr.ruleName(e.ruleId)
 
+func optFind(f: proc(a: Edge): Option[Path],
+             s: seq[Edge]): Path =
+  for item in s:
+    let res = f(item)
+    if res.isSome():
+      return res.get()
+
+func optFindMem(f: proc(a: Edge): Option[seq[Path]],
+                s: seq[Edge]): Edge =
+  for item in s:
+    let res = f(item)
+    if res.isSome():
+      return item
+
+func dfSearch(edges: proc(depth, start: int): seq[Edge] {.noSideEffect.},
+              child: proc(depth: int, edge: Edge): int {.noSideEffect.},
+              pred: proc(depth, start: int): bool {.noSideEffect.},
+              root: int
+             ): Option[seq[Path]] =
+  func aux0(depth, root: Node): Option[seq[Path]] =
+    func aux1(e: Edge): Option[seq[Path]] =
+      discard
+
+    func aux2(edge: Edge, path: Path): Option[seq[Path]] =
+      some(@[(root, edge)])
+
+    if pred(depth, root):
+      # some(@[])
+      let empty: seq[Path] = @[]
+      return some(empty)
+    else:
+      let firstEdge: Edge = optFindMem(aux1, edges(depth, root))
+      # return aux2(firstEdge)
+
+  return aux0(0, root)
+
 func topList[C](gr: Grammar[C],
-                input: int -> Option[C],
+                input: Input[C],
                 chart: Chart,
                 start: int,
                 edge: Edge): seq[tuple[start: int, edge: Edge]] =
-  discard
+  let symbols = gr.ruleBody(edge.ruleId)
+  let bottom = symbols.len
+  func pred(depth, start: int): bool =
+    depth == bottom and start == edge.finish
+
+  func child(depth: int, e: Edge): int = edge.finish
+  func edges(depth, start: int): seq[Edge] =
+    if depth >= symbols.len:
+      @[]
+    else:
+      let sym: Symbol[C] = symbols[depth]
+      if sym.isTerm:
+        if sym.terminal.ok(input start):
+          @[Edge(finish: start + 1, ruleId: -1)]
+        else:
+          @[]
+      else:
+        chart[start].filterIt(gr.ruleName(it.ruleId) == sym.nterm)
+
+  let searchRes = dfSearch(edges, child, pred, start)
+  if searchRes.isSome():
+    return searchRes.get()
+  else:
+    raiseAssert("EEEEE")
+
 
 func parseTree[C](gr: Grammar[C],
-                  input: int -> Option[C],
+                  input: Input[C],
                   chart: Chart): Option[ParseTree[C]] =
 
   let start = 0
@@ -309,8 +373,8 @@ let grammar1 = Grammar[char](
   ]
 )
 
-func makeInput(s: string): (int -> Option[char]) =
-  result = proc(pos: int): Option[char] =
+func makeInput(s: string): Input[char] =
+  result = proc(pos: int): Option[char] {.noSideEffect.} =
     if pos < s.len:
       some(s[pos])
     else:

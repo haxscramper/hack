@@ -316,18 +316,21 @@ let chart_of_items grammar s =
 let opt_find     f = DA.foldl (function None -> f | e -> const e) None
 let opt_find_mem f = opt_find (fun a -> f a >>= (fun out -> Some (a, out)))
 
-let df_search (edges : int -> 'a -> 'b DA.t)
-              (child : int -> 'b -> 'a     )
-              (pred  : int -> 'a -> bool   )
-              (root  : 'a                  )
-    : ('a * 'b) list option =
-  let rec aux depth root =
-    if pred depth root
-    then Some []
-    else opt_find_mem (child depth |- aux (depth + 1))
-                      (edges depth root)
-         >>= (fun (edge, path) -> Some ((root, edge) :: path))
-  in aux 0 root
+let df_search (edges : int -> 'node -> 'edge DA.t)
+              (child : int -> 'edge -> 'node     )
+              (pred  : int -> 'node -> bool   )
+              (root  : 'node                  )
+    : ('node * 'edge) list option =
+  let rec aux0 depth root =
+    (* 'edge -> ('node * 'edge) list option *)
+    let aux1 = child depth |- aux0 (depth + 1) in
+    let aux2 = fun (edge, path) -> Some ((root, edge) :: path) in
+    if pred depth root then
+      Some []
+    else
+      opt_find_mem aux1 (edges depth root) >>= aux2
+
+  in aux0 0 root
 
 let top_list (grammar        : 'a grammar     )
              (input          : 'a input       )
@@ -529,9 +532,9 @@ let grammar1 =
 
 let input1 = input_of_string "1+(2*3+4)"
 let s1     = build_items    grammar1 input1
-(* let _      = print_items    grammar1 s1 *)
+let _      = print_items    grammar1 s1
 let c1     = chart_of_items grammar1 s1
-(* let _      = print_chart    grammar1 c1 *)
+let _      = print_chart    grammar1 c1
 let pt     = parse_tree     grammar1 input1 c1
 
 let input_handler c = Char c
@@ -608,9 +611,9 @@ let grammar2 =
 
 let input2 = input_of_string "ii;e;"
 let s2     = build_items    grammar2 input2
-(* let _      = print_items    grammar2 s2 *)
+let _      = print_items    grammar2 s2
 let c2     = chart_of_items grammar2 s2
-(* let _      = print_chart    grammar2 c2 *)
+let _      = print_chart    grammar2 c2
 let pt2    = parse_tree     grammar2 input2 c2
 
 
@@ -629,9 +632,9 @@ let grammar3 =
 
 let input3 = input_of_string ""
 let s3     = build_items    grammar3 input3
-(* let _      = print_items    grammar3 s3 *)
+let _      = print_items    grammar3 s3
 let c3     = chart_of_items grammar3 s3
-(* let _      = print_chart    grammar3 c3 *)
+let _      = print_chart    grammar3 c3
 let _      = if infinite_loop grammar3
              then print_endline "Infinite loop detected! Beware!"
 let pt3    = parse_tree     grammar3 input3 c3 (* Stack overflow! *)
