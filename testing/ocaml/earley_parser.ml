@@ -321,16 +321,20 @@ let df_search (edges : int -> 'node -> 'edge DA.t)
               (pred  : int -> 'node -> bool   )
               (root  : 'node                  )
     : ('node * 'edge) list option =
-  let rec aux0 depth root =
+  let rec df_search_aux0 depth root =
+    (* 'node -> ('node * 'edge) list option *)
+    let aux1_0 = df_search_aux0 (depth + 1) in
+    (* 'edge -> 'node *)
+    let aux1_1 = child depth in
     (* 'edge -> ('node * 'edge) list option *)
-    let aux1 = child depth |- aux0 (depth + 1) in
+    let aux1 = aux1_1 |- aux1_0 in
     let aux2 = fun (edge, path) -> Some ((root, edge) :: path) in
     if pred depth root then
       Some []
     else
       opt_find_mem aux1 (edges depth root) >>= aux2
 
-  in aux0 0 root
+  in df_search_aux0 0 root
 
 let top_list (grammar        : 'a grammar     )
              (input          : 'a input       )

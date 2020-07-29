@@ -170,37 +170,46 @@ func optFind(f: proc(a: Edge): Option[Path],
       return res.get()
 
 func optFindMem(f: proc(a: Edge): Option[seq[Path]],
-                s: seq[Edge]): Edge =
+                s: seq[Edge]): Option[(Edge, seq[Path])] =
   for item in s:
     let res = f(item)
     if res.isSome():
-      return item
+      return some((item, res.get()))
 
 func dfSearch(edges: proc(startPos, start: int): seq[Edge] {.noSideEffect.},
               child: proc(startPos: int, edge: Edge): Node {.noSideEffect.},
-              fullFinish: proc(startPos: int, node: Node): bool {.noSideEffect.},
+              isLeafp: proc(startPos: int, node: Node): bool {.noSideEffect.},
               root: Node
              ): seq[Path] =
 
   func aux(startPos: int, node: Node): seq[Path] =
-    if fullFinish(startPos, node):
+    func aux2(edge: Edge): Option[seq[Path]] =
+      some(aux(startPos + 1, child(startPos, edge)))
+
+    if isLeafp(startPos, node):
       return @[]
     else:
-      for edge in edges(startPos, node):
-        let childPaths = aux(startPos + 1, child(startPos, edge))
-        for path in childPaths:
-          result.add (root, path.edge)
+      let res: Option[(Edge, seq[Path])] = optFindMem(
+        aux2, edges(startPos, node))
+
+      if res.isSome():
+        let (edge, path) = res.get()
+        return @[(root, edge)]
+
 
   return aux(0, root)
 
 func topList[C](gr: Grammar[C],
                 input: Input[C],
                 chart: Chart,
-                start: int,
-                edge: Edge): seq[Path] =
-  let symbols = gr.ruleBody(edge.ruleId)
-  let ruleLen = symbols.len
-  func fullFinish(startPos: int, node: Node): bool =
+                path: Path): seq[Path] =
+  let
+    edge = path.edge
+    start = path.node
+    symbols = gr.ruleBody(edge.ruleId)
+    ruleLen = symbols.len
+
+  func isLeafp(startPos: int, node: Node): bool =
     (startPos == ruleLen) and (startPos == edge.finish)
 
   func child(startPos: int, e: Edge): int = edge.finish
@@ -217,7 +226,7 @@ func topList[C](gr: Grammar[C],
       else:
         chart[start].filterIt(gr.ruleName(it.ruleId) == sym.nterm)
 
-  return dfSearch(edges, child, fullFinish, start)
+  return dfSearch(edges, child, isLeafp, start)
 
 
 func parseTree[C](gr: Grammar[C],
@@ -229,21 +238,20 @@ func parseTree[C](gr: Grammar[C],
   let name = gr.start
   # func aux(start: int, )
   func aux(path: Path): Option[ParseTree[C]] =
-    {.noSideEffect.}:
-      if path.edge.ruleId == -1:
-        some(ParseTree[C](
-          isToken: true, token: input(path.node).get()))
-      else:
-        let subn = gr.topList(input, chart, path.node, path.edge).
-          map(aux).
-          filterIt(it.isSome()).
-          mapIt(it.get())
+    if path.edge.ruleId == -1:
+      some(ParseTree[C](
+        isToken: true, token: input(path.node).get()))
+    else:
+      let subn: seq[ParseTree[C]] = gr.topList(input, chart, path).
+        mapIt(aux it).
+        filterIt(it.isSome()).
+        mapIt(it.get())
 
-        some(ParseTree[C](
-          isToken: false,
-          ruleId: path.edge.ruleId,
-          subnodes: subn
-        ))
+      some(ParseTree[C](
+        isToken: false,
+        ruleId: path.edge.ruleId,
+        subnodes: subn
+      ))
 
   for edge in chart[start]:
     if edge.finish == finish and ruleName(gr, edge) == name:
@@ -348,9 +356,22 @@ func lispRepr[C](pt: ParseTree[C], gr: Grammar[C]): string =
     fmt("({gr.ruleName(pt.ruleId)}") & (
       block:
         if pt.subnodes.len > 0:
-          " " & pt.subnodes.mapIt(lispRepr(pt, gr)).join(" ") & ")"
+          " " & pt.subnodes.mapIt(lispRepr(it, gr)).join(" ") & ")"
         else:
           ")"
+    )
+
+func treeRepr[C](pt: ParseTree[C], gr: Grammar[C], level: int = 0): string =
+  let pref = "  ".repeat(level)
+  if pt.isToken:
+    pref & $pt.token
+  else:
+    fmt("{pref}{gr.ruleName(pt.ruleId)}") & (
+      block:
+        if pt.subnodes.len > 0:
+          "\n" & pt.subnodes.mapIt(treeRepr(it, gr, level + 1)).join("\n")
+        else:
+          ""
     )
 
 proc printItems[C](gr: Grammar[C], state: State, onlyFull: bool = false): void =
@@ -428,9 +449,10 @@ block:
 
   let input1 = makeInput "1+(2*3+4)"
   let s1     = buildItems(grammar1, input1)
-  printItems(grammar1, s1)
+  # printItems(grammar1, s1)
   let c1     = chartOfItems(grammar1, s1)
   echo "\e[41m ========== chart ========== \e[49m"
-  # printItems(grammar1, s1, onlyFull = true)
+  printItems(grammar1, s1, onlyFull = true)
   let pt1    = parseTree(grammar1, input1, c1)
   echo pt1.get().lispRepr(grammar1)
+  echo pt1.get().treeRepr(grammar1)
