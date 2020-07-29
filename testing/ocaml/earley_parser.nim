@@ -26,12 +26,13 @@ template withIt*(val, body: untyped): untyped =
 #*************************************************************************#
 
 block: # THE cursed code
-  echo @[1, 2, 3
-  ] // ( # Filter
-    (a) => (a > 2)
-  ) /@ ( # Map
-    (a) => $a & "--"
-  )
+  discard
+  # echo @[1, 2, 3
+  # ] // ( # Filter
+  #   (a) => (a > 2)
+  # ) /@ ( # Map
+  #   (a) => $a & "--"
+  # )
 
 #*************************************************************************#
 #**************************  Type definitions  ***************************#
@@ -65,7 +66,9 @@ type
     ruleId: int
     finish: int
 
-  Path = (Node, Edge)
+  Path = tuple
+    node: Node
+    edge: Edge
 
   State = seq[seq[EItem]]
   Chart = seq[seq[Edge]]
@@ -122,12 +125,17 @@ func ruleBody[C](gr: Grammar[C], idx: int): seq[Symbol[C]] =
   gr.rules[idx].rhs
 
 func nextSymbol[C](gr: Grammar[C], item: EItem): Option[Symbol[C]] =
-  #[ IMPLEMENT ]#
-  discard
+  if gr.ruleBody(item.ruleId).len > item.nextPos:
+    some(gr.ruleBody(item.ruleId)[item.nextPos])
+  else:
+    none(Symbol[C])
 
-func append[A](a: var seq[A], b: A): int =
+func append[A](a: var seq[A], b: A): void =
+  for it in a:
+    if it == b:
+      return
+
   a.add b
-  return a.len
 
 func chartOfItems[C](gr: Grammar[C],
                      s: State): Chart =
@@ -149,7 +157,7 @@ func chartOfItems[C](gr: Grammar[C],
       if e1.ruleId == e2.ruleId:
         e1.finish - e2.finish # FIXME
       else:
-        e1.ruleId - e2.ruleId # FIXME
+        -(e1.ruleId - e2.ruleId) # FIXME
 
 func ruleName[C](gr: Grammar[C], e: Edge): string =
   gr.ruleName(e.ruleId)
@@ -168,44 +176,39 @@ func optFindMem(f: proc(a: Edge): Option[seq[Path]],
     if res.isSome():
       return item
 
-func dfSearch(edges: proc(depth, start: int): seq[Edge] {.noSideEffect.},
-              child: proc(depth: int, edge: Edge): int {.noSideEffect.},
-              pred: proc(depth, start: int): bool {.noSideEffect.},
-              root: int
-             ): Option[seq[Path]] =
-  func aux0(depth, root: Node): Option[seq[Path]] =
-    func aux1(e: Edge): Option[seq[Path]] =
-      discard
+func dfSearch(edges: proc(startPos, start: int): seq[Edge] {.noSideEffect.},
+              child: proc(startPos: int, edge: Edge): Node {.noSideEffect.},
+              fullFinish: proc(startPos: int, node: Node): bool {.noSideEffect.},
+              root: Node
+             ): seq[Path] =
 
-    func aux2(edge: Edge, path: Path): Option[seq[Path]] =
-      some(@[(root, edge)])
-
-    if pred(depth, root):
-      # some(@[])
-      let empty: seq[Path] = @[]
-      return some(empty)
+  func aux(startPos: int, node: Node): seq[Path] =
+    if fullFinish(startPos, node):
+      return @[]
     else:
-      let firstEdge: Edge = optFindMem(aux1, edges(depth, root))
-      # return aux2(firstEdge)
+      for edge in edges(startPos, node):
+        let childPaths = aux(startPos + 1, child(startPos, edge))
+        for path in childPaths:
+          result.add (root, path.edge)
 
-  return aux0(0, root)
+  return aux(0, root)
 
 func topList[C](gr: Grammar[C],
                 input: Input[C],
                 chart: Chart,
                 start: int,
-                edge: Edge): seq[tuple[start: int, edge: Edge]] =
+                edge: Edge): seq[Path] =
   let symbols = gr.ruleBody(edge.ruleId)
-  let bottom = symbols.len
-  func pred(depth, start: int): bool =
-    depth == bottom and start == edge.finish
+  let ruleLen = symbols.len
+  func fullFinish(startPos: int, node: Node): bool =
+    (startPos == ruleLen) and (startPos == edge.finish)
 
-  func child(depth: int, e: Edge): int = edge.finish
-  func edges(depth, start: int): seq[Edge] =
-    if depth >= symbols.len:
+  func child(startPos: int, e: Edge): int = edge.finish
+  func edges(startPos, start: int): seq[Edge] =
+    if startPos >= symbols.len:
       @[]
     else:
-      let sym: Symbol[C] = symbols[depth]
+      let sym: Symbol[C] = symbols[startPos]
       if sym.isTerm:
         if sym.terminal.ok(input start):
           @[Edge(finish: start + 1, ruleId: -1)]
@@ -214,11 +217,7 @@ func topList[C](gr: Grammar[C],
       else:
         chart[start].filterIt(gr.ruleName(it.ruleId) == sym.nterm)
 
-  let searchRes = dfSearch(edges, child, pred, start)
-  if searchRes.isSome():
-    return searchRes.get()
-  else:
-    raiseAssert("EEEEE")
+  return dfSearch(edges, child, fullFinish, start)
 
 
 func parseTree[C](gr: Grammar[C],
@@ -229,17 +228,28 @@ func parseTree[C](gr: Grammar[C],
   let finish = chart.len - 1
   let name = gr.start
   # func aux(start: int, )
-  func aux(arg: tuple[start: int, edge: Edge]): ParseTree[C] =
+  func aux(path: Path): Option[ParseTree[C]] =
     {.noSideEffect.}:
-      if arg.edge.ruleId == -1:
-        ParseTree[C](isToken: true, token: input(arg.start).get())
+      if path.edge.ruleId == -1:
+        some(ParseTree[C](
+          isToken: true, token: input(path.node).get()))
       else:
-        ParseTree[C](
-          isToken: false,
-          ruleId: arg.edge.ruleId,
-          subnodes: gr.topList(input, chart, arg.start, arg.edge).map(aux)
-        )
+        let subn = gr.topList(input, chart, path.node, path.edge).
+          map(aux).
+          filterIt(it.isSome()).
+          mapIt(it.get())
 
+        some(ParseTree[C](
+          isToken: false,
+          ruleId: path.edge.ruleId,
+          subnodes: subn
+        ))
+
+  for edge in chart[start]:
+    if edge.finish == finish and ruleName(gr, edge) == name:
+      let tree = aux((start, edge))
+      if tree.isSome():
+        return tree
 
 
 func predict[C](s: var State, # DOC
@@ -252,14 +262,13 @@ func predict[C](s: var State, # DOC
   # Prediction. The symbol at the right of the fat dot is
   # non-terminal. We add the the corresponding rules to the current
   # state set.
-  for k, rule in gr.rules:
+  for ruleId, rule in gr.rules:
     if rule.lhs == symbol:
-      s[i].add(EItem(ruleId: k, startPos: i, nextPos: 0))
+      s[i].append(EItem(ruleId: ruleId, startPos: i, nextPos: 0))
 
-  if symbol in nullable:
-    var curr: EItem = s[i][j]
-    inc curr.nextPos
-    s[i].add(curr)
+    if symbol in nullable:
+      s[i].append s[i][j].withIt do:
+        inc it.nextPos
 
 func scan[C](s: var State,
              i, j: int,
@@ -284,9 +293,9 @@ func complete[C](s: var State,
   # Completion. There is nothing at the right of the fat dot. This
   # means we have a successful partial parse. We look for the parent
   # items, and add them (advanced one step) to this state set.
-  let completeItem = s[i][j]
-  for item in s[completeItem.startPos]:
-    let next = gr.nextSymbol(item)
+  let item = s[i][j]
+  for oldItem in s[item.startPos]:
+    let next = gr.nextSymbol(oldItem)
     if next.isNone():
       discard
     else:
@@ -294,8 +303,8 @@ func complete[C](s: var State,
       if sym.isTerm:
         discard
       else:
-        if sym.nterm == gr.ruleName(completeItem.ruleId):
-          s[i].add item.withIt do:
+        if sym.nterm == gr.ruleName(item.ruleId):
+          s[i].append oldItem.withIt do:
             inc it.nextPos
 
 
@@ -309,28 +318,62 @@ func buildItems[C](gr: Grammar[C],
     if rule.lhs == gr.start:
       s.add @[EItem(ruleId: idx, startPos: 0, nextPos: 0)]
 
-  var i = 0 # DOC
-  while i < s.len: # Loop over main array of state sets
+  var itemset = 0 # DOC
+  while itemset < s.len: # Loop over main array of state sets
     var j = 0 # DOC
-    while j < s[i].len: # Loop over elements in particular state set
-      let next: Option[Symbol[C]] = gr.nextSymbol(s[i][j])
+    while j < s[itemset].len: # Loop over elements in particular state set
+      let next: Option[Symbol[C]] = gr.nextSymbol(s[itemset][j])
       if next.isNone():
-        discard complete(s, i, j, gr, input)
+        discard complete(s, itemset, j, gr, input)
       else:
         let sym: Symbol[C] = next.get()
         if sym.isTerm:
-          discard predict(s, i, j, nullable, sym.nterm, gr)
+          discard scan(s, itemset, j, sym.terminal.ok, gr, input)
         else:
-          discard scan(s, i, j, sym.terminal.ok, gr, input)
+          discard predict(s, itemset, j, nullable, sym.nterm, gr)
 
       inc j
-    inc i
+    inc itemset
 
   return s
 
 #*************************************************************************#
 #****************************  Test grammar  *****************************#
 #*************************************************************************#
+
+func lispRepr[C](pt: ParseTree[C], gr: Grammar[C]): string =
+  if pt.isToken:
+    $pt.token
+  else:
+    fmt("({gr.ruleName(pt.ruleId)}") & (
+      block:
+        if pt.subnodes.len > 0:
+          " " & pt.subnodes.mapIt(lispRepr(pt, gr)).join(" ") & ")"
+        else:
+          ")"
+    )
+
+proc printItems[C](gr: Grammar[C], state: State, onlyFull: bool = false): void =
+  for idx, stateset in state:
+    echo fmt("   === {idx:^3} ===   ")
+    for item in stateset:
+      if (item.nextPos == gr.ruleBody(item.ruleId).len) or (not onlyFull):
+        var buf = fmt("{gr.ruleName(item.ruleId):<12}") & " ->"
+        for idx, sym in gr.ruleBody(item.ruleId):
+          if idx == item.nextPos:
+            buf &= " •"
+
+          if sym.isTerm:
+            buf &= " " & sym.terminal.lex
+          else:
+            buf &= " " & sym.nterm
+
+        if item.nextPos == gr.ruleBody(item.ruleId).len:
+          buf = fmt("{buf:<60} \e[4m#\e[24m ({item.startPos})")
+        else:
+          buf = fmt("{buf:<60}   ({item.startPos})")
+
+        echo buf
 
 func rule(lhs: string, elems: seq[Symbol[char]]): Rule[char] =
   Rule[char](lhs: lhs, rhs: elems)
@@ -341,37 +384,23 @@ func n(nterm: string): Symbol[char] =
 func alt(alts: string): Symbol[char] =
   # Match any char from the string
 
-  let alts = alts.toHashSet()
+  let altsset = alts.toHashSet()
   Symbol[char](isTerm: true, terminal: (
-    ok: proc(c: Option[char]): bool = (c.get() in alts),
-    lex: ""
+    ok: proc(c: Option[char]): bool = c.isSome() and (c.get() in altsset),
+    lex: &"[{alts}]"
   ))
 
 func ch(ic: char): Symbol[char] =
   Symbol[char](isTerm: true, terminal: (
     ok: proc(c: Option[char]): bool = (c.get() == ic),
-    lex: ""
+    lex: &"'{ic}'"
   ))
 
 func rng(a, b: char): Symbol[char] =
   Symbol[char](isTerm: true, terminal: (
     ok: proc(c: Option[char]): bool = (c.get in {a .. b}),
-    lex: ""
+    lex: &"[{a}-{b}]"
   ))
-
-let grammar1 = Grammar[char](
-  start: "Sum",
-  rules: @[
-    rule("Sum",     @[n "Sum",       alt "+-", n "Product" ]),
-    rule("Sum",     @[n "Product"                          ]),
-    rule("Product", @[n "Product",   alt "*/", n "Factor"  ]),
-    rule("Product", @[n "Factor"                           ]),
-    rule("Factor",  @[ch '(',        n "Sum",  ch ')'      ]),
-    rule("Factor",  @[n "Number"                           ]),
-    rule("Number",  @[n "Number",    rng('0',  '9')        ]),
-    rule("Number",  @[rng('0',       '9')                  ])
-  ]
-)
 
 func makeInput(s: string): Input[char] =
   result = proc(pos: int): Option[char] {.noSideEffect.} =
@@ -380,7 +409,28 @@ func makeInput(s: string): Input[char] =
     else:
       none(char)
 
-let input1 = makeInput "1+(2*3+4)"
-let s1  = buildItems(grammar1, input1)
-let c1  = chartOfItems(grammar1, s1)
-let pt1 = parseTree(grammar1, input1, c1)
+
+block:
+  let grammar1 = Grammar[char](
+    start: "Sum",
+    rules: @[
+      rule("Sum",     @[n "Sum",       alt "+-", n "Product" ]),
+      rule("Sum",     @[n "Product"                          ]),
+      rule("Product", @[n "Product",   alt "*/", n "Factor"  ]),
+      rule("Product", @[n "Factor"                           ]),
+      rule("Factor",  @[ch '(',        n "Sum",  ch ')'      ]),
+      rule("Factor",  @[n "Number"                           ]),
+      rule("Number",  @[n "Number",    rng('0',  '9')        ]),
+      rule("Number",  @[rng('0',       '9')                  ])
+    ]
+  )
+
+
+  let input1 = makeInput "1+(2*3+4)"
+  let s1     = buildItems(grammar1, input1)
+  printItems(grammar1, s1)
+  let c1     = chartOfItems(grammar1, s1)
+  echo "\e[41m ========== chart ========== \e[49m"
+  # printItems(grammar1, s1, onlyFull = true)
+  let pt1    = parseTree(grammar1, input1, c1)
+  echo pt1.get().lispRepr(grammar1)

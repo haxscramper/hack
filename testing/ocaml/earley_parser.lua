@@ -119,7 +119,7 @@ end
 ---------------
 -- next element in the rule of this item
 local function next_symbol(grammar, item)
-   print(item.rule, item.next)
+   -- print(item.rule, item.next)
    return grammar[item.rule][item.next]
 end
 
@@ -419,11 +419,12 @@ end
 -- Hello, world! --
 -------------------
 local Grammar = {
-   start_rule_name = 'A',
+   start_rule_name = 'Sum',
    { name = 'A',    },
    { name = 'A', 'B'},
    { name = 'B', 'A'},
 }
+
 local input = ""
 local S = build_items(Grammar, input)
 io.write("Input: ", input, '\n') -- print the input

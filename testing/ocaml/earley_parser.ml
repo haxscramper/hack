@@ -368,15 +368,16 @@ let parse_tree (grammar : 'a grammar    )
   let finish = DA.length chart - 1                      in
   let name   = grammar.start_symbol                     in
   let rule_name {finish; rule} = rule_name grammar rule in
-  let rec aux (start, edge)    =
+  let rec aux_parse_tree (start, edge)    =
     if edge.rule = -1
     then Token (input start)
     else Node (edge.rule,
-               List.map aux (top_list grammar input chart start edge))
+               List.map aux_parse_tree (
+                 top_list grammar input chart start edge))
   in
   match DA.find (fun edge -> edge.finish = finish && rule_name edge = name)
                 (chart >: start)
-        >>= fun edge -> Some (aux (start, edge))
+        >>= fun edge -> Some (aux_parse_tree (start, edge))
   with
   | None      -> failwith "Are you sure this parse succeeded?"
   | Some node -> node
