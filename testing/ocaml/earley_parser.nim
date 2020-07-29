@@ -61,17 +61,17 @@ type
     startPos: int
     nextPos: int
 
-  Node = int
-  Edge = object
+  SSetId = int
+  SItemId = object
     ruleId: int
     finish: int
 
   Path = tuple
-    node: Node
-    edge: Edge
+    sset: SSetId
+    ssetItem: SItemId
 
   State = seq[seq[EItem]]
-  Chart = seq[seq[Edge]]
+  Chart = seq[seq[SItemId]]
 
   Grammar[C] = object
     rules: seq[Rule[C]]
@@ -139,66 +139,65 @@ func append[A](a: var seq[A], b: A): void =
 
 func chartOfItems[C](gr: Grammar[C],
                      s: State): Chart =
-  result = s.mapIt(newSeqWith(0, Edge()))
+  result = s.mapIt(newSeqWith(0, SItemId()))
   for idx, itemSet in s:
     for item in itemSet:
       let sym: Option[Symbol[C]] = gr.nextSymbol(item)
       if sym.isSome():
         discard # Item not fully completed
       else:
-        result[item.startPos].add Edge(
+        result[item.startPos].add SItemId(
           ruleId: item.ruleId,
           finish: idx # REVIEW NOTE this is an index of itemset, not
                       # position in item itself
         )
 
   for edgeset in mitems(result):
-    edgeset.sort do (e1, e2: Edge) -> int:
+    edgeset.sort do (e1, e2: SItemId) -> int:
       if e1.ruleId == e2.ruleId:
         e1.finish - e2.finish # FIXME
       else:
         -(e1.ruleId - e2.ruleId) # FIXME
 
-func ruleName[C](gr: Grammar[C], e: Edge): string =
+func ruleName[C](gr: Grammar[C], e: SItemId): string =
   gr.ruleName(e.ruleId)
 
-func optFind(f: proc(a: Edge): Option[Path],
-             s: seq[Edge]): Path =
+func optFind(f: proc(a: SItemId): Option[Path],
+             s: seq[SItemId]): Path =
   for item in s:
     let res = f(item)
     if res.isSome():
       return res.get()
 
-func optFindMem(f: proc(a: Edge): Option[seq[Path]],
-                s: seq[Edge]): seq[(Edge, seq[Path])] =
+func optFindMem(f: proc(a: SItemId): Option[seq[Path]],
+                s: seq[SItemId]): seq[(SItemId, seq[Path])] =
   for item in s:
     let res = f(item)
     if res.isSome():
       result.add (item, res.get())
 
-func dfSearch(edges: proc(startPos, start: int): seq[Edge] {.noSideEffect.},
-              # child: proc(edge: Edge): Node {.noSideEffect.},
-              isLeafp: proc(startPos: int, node: Node): bool {.noSideEffect.},
-              root: Node
+func dfSearch(ssetItems: proc(startPos, start: int): seq[SItemId] {.noSideEffect.},
+              child: proc(startPos: int, ssetItem: SItemId): SSetId {.noSideEffect.},
+              isLeafp: proc(startPos: int, sset: SSetId): bool {.noSideEffect.},
+              root: SSetId
              ): seq[Path] =
 
-  func aux(startPos: int, node: Node): seq[Path] =
-    if isLeafp(startPos, node):
+  func aux(startPos: int, sset: SSetId): seq[Path] =
+    # func aux2(ssetItem: SItemId): Option[seq[Path]] =
+    #   some(aux(startPos + 1, child(startPos, ssetItem)))
+
+    if isLeafp(startPos, sset):
       return @[]
     else:
-      for edge in edges(startPos, node):
-        result.add aux(startPos + 1, edge.finish) # child(edge)
+      debugecho ssetItems(startPos, sset)
+      for ssetItem in ssetItems(startPos, sset):
+        result.add aux(startPos + 1, child(startPos + 1, ssetItem))
 
-    # func aux2(edge: Edge): Option[seq[Path]] =
-    #   some(aux(startPos + 1, child(startPos, edge)))
+      # let res: seq[(SItemId, seq[Path])] = optFindMem(
+      #   aux2, ssetItems(startPos, sset))
 
-      #   result.add aux(edge)
-
-      # let res: seq[(Edge, seq[Path])] = optFindMem(
-      #   aux2, edges(startPos, node))
-
-      # for (edge, path) in res:
-      #   return @[(root, edge)]
+      # for (ssetItem, path) in res:
+      #   result.add (root, ssetItem)
 
 
   return aux(0, root)
@@ -208,30 +207,29 @@ func topList[C](gr: Grammar[C],
                 chart: Chart,
                 path: Path): seq[Path] =
   let
-    edge = path.edge
-    start = path.node
-    symbols = gr.ruleBody(edge.ruleId)
+    ssetItem = path.ssetItem
+    start = path.sset
+    symbols = gr.ruleBody(ssetItem.ruleId)
     ruleLen = symbols.len
 
-  func isLeafp(startPos: int, node: Node): bool =
-    (startPos == ruleLen) and (node == edge.finish)
+  func isLeafp(startPos: int, sset: SSetId): bool =
+    (startPos == ruleLen) and (startPos == ssetItem.finish)
 
-  # func child(e: Edge): int = edge.finish
-  func edges(startPos, start: int): seq[Edge] =
+  func child(startPos: int, e: SItemId): int = ssetItem.finish
+  func ssetItems(startPos, start: int): seq[SItemId] =
     if startPos >= symbols.len:
       @[]
     else:
       let sym: Symbol[C] = symbols[startPos]
       if sym.isTerm:
         if sym.terminal.ok(input start):
-          @[Edge(finish: start + 1, ruleId: -1)]
+          @[SItemId(finish: start + 1, ruleId: -1)]
         else:
           @[]
       else:
         chart[start].filterIt(gr.ruleName(it.ruleId) == sym.nterm)
 
-  return dfSearch(edges, # child,
-                  isLeafp, start)
+  return dfSearch(ssetItems, child, isLeafp, start)
 
 
 func parseTree[C](gr: Grammar[C],
@@ -243,9 +241,9 @@ func parseTree[C](gr: Grammar[C],
   let name = gr.start
   # func aux(start: int, )
   func aux(path: Path): Option[ParseTree[C]] =
-    if path.edge.ruleId == -1:
+    if path.ssetItem.ruleId == -1:
       some(ParseTree[C](
-        isToken: true, token: input(path.node).get()))
+        isToken: true, token: input(path.sset).get()))
     else:
       let subn: seq[ParseTree[C]] = gr.topList(input, chart, path).
         mapIt(aux it).
@@ -254,13 +252,13 @@ func parseTree[C](gr: Grammar[C],
 
       some(ParseTree[C](
         isToken: false,
-        ruleId: path.edge.ruleId,
+        ruleId: path.ssetItem.ruleId,
         subnodes: subn
       ))
 
-  for edge in chart[start]:
-    if edge.finish == finish and ruleName(gr, edge) == name:
-      let tree = aux((start, edge))
+  for ssetItem in chart[start]:
+    if ssetItem.finish == finish and ruleName(gr, ssetItem) == name:
+      let tree = aux((start, ssetItem))
       if tree.isSome():
         return tree
 
@@ -461,3 +459,4 @@ block:
   let pt1    = parseTree(grammar1, input1, c1)
   echo pt1.get().lispRepr(grammar1)
   echo pt1.get().treeRepr(grammar1)
+  echo "22"
