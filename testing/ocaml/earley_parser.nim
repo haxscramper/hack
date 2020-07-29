@@ -61,8 +61,14 @@ type
     startPos: int
     nextPos: int
 
-  SSetId = int
-  SItemId = object
+  SSetId = int # 'The nodes are the state sets. One of them is the
+               # root (the search starts there), and one of them is
+               # the leaf (the search stops there).'
+
+  SItemId = object # 'The edges are the items themselves. They start
+                   # from a node (indeed, they are stored in a node,
+                   # and they point to another node (wherever they
+                   # finish).'
     ruleId: int
     finish: int
 
@@ -153,11 +159,11 @@ func chartOfItems[C](gr: Grammar[C],
         )
 
   for edgeset in mitems(result):
-    edgeset.sort do (e1, e2: SItemId) -> int:
+    edgeset.sort do (e2, e1: SItemId) -> int:
       if e1.ruleId == e2.ruleId:
-        e1.finish - e2.finish # FIXME
+        e2.finish - e1.finish # FIXME
       else:
-        -(e1.ruleId - e2.ruleId) # FIXME
+        e2.ruleId - e1.ruleId # FIXME
 
 func ruleName[C](gr: Grammar[C], e: SItemId): string =
   gr.ruleName(e.ruleId)
@@ -179,7 +185,7 @@ func optFindMem(f: proc(a: SItemId): Option[seq[Path]],
 func dfSearch(ssetItems: proc(startPos, start: int): seq[SItemId] {.noSideEffect.},
               child: proc(startPos: int, ssetItem: SItemId): SSetId {.noSideEffect.},
               isLeafp: proc(startPos: int, sset: SSetId): bool {.noSideEffect.},
-              root: SSetId
+              startSet: SSetId
              ): seq[Path] =
 
   func aux(startPos: int, sset: SSetId): seq[Path] =
@@ -189,18 +195,22 @@ func dfSearch(ssetItems: proc(startPos, start: int): seq[SItemId] {.noSideEffect
     if isLeafp(startPos, sset):
       return @[]
     else:
-      debugecho ssetItems(startPos, sset)
+      # debugecho ssetItems(startPos, sset)
       for ssetItem in ssetItems(startPos, sset):
         result.add aux(startPos + 1, child(startPos + 1, ssetItem))
 
       # let res: seq[(SItemId, seq[Path])] = optFindMem(
       #   aux2, ssetItems(startPos, sset))
 
+      # # debugecho res.len
+      # # for (ssetItem, path) in res:
+      # #   debugecho ssetItem, path
+
       # for (ssetItem, path) in res:
-      #   result.add (root, ssetItem)
+      #   result.add (startSet, ssetItem)
 
 
-  return aux(0, root)
+  return aux(0, startSet)
 
 func topList[C](gr: Grammar[C],
                 input: Input[C],
@@ -208,7 +218,7 @@ func topList[C](gr: Grammar[C],
                 path: Path): seq[Path] =
   let
     ssetItem = path.ssetItem
-    start = path.sset
+    startSet = path.sset
     symbols = gr.ruleBody(ssetItem.ruleId)
     ruleLen = symbols.len
 
@@ -229,7 +239,7 @@ func topList[C](gr: Grammar[C],
       else:
         chart[start].filterIt(gr.ruleName(it.ruleId) == sym.nterm)
 
-  return dfSearch(ssetItems, child, isLeafp, start)
+  return dfSearch(ssetItems, child, isLeafp, startSet)
 
 
 func parseTree[C](gr: Grammar[C],
@@ -399,6 +409,22 @@ proc printItems[C](gr: Grammar[C], state: State, onlyFull: bool = false): void =
 
         echo buf
 
+
+proc printChart[C](gr: Grammar[C], state: Chart): void =
+  for idx, stateset in state:
+    echo fmt("   === {idx:^3} ===   ")
+    for item in stateset:
+      var buf = fmt("{gr.ruleName(item.ruleId):<12}") & " ->"
+      for idx, sym in gr.ruleBody(item.ruleId):
+        if sym.isTerm:
+          buf &= " " & sym.terminal.lex
+        else:
+          buf &= " " & sym.nterm
+
+      buf = fmt("{buf:<60}   ({item.finish})")
+
+      echo buf
+
 func rule(lhs: string, elems: seq[Symbol[char]]): Rule[char] =
   Rule[char](lhs: lhs, rhs: elems)
 
@@ -454,8 +480,9 @@ block:
   let s1     = buildItems(grammar1, input1)
   # printItems(grammar1, s1)
   let c1     = chartOfItems(grammar1, s1)
+  # printItems(grammar1, s1, onlyFull = true)
   echo "\e[41m ========== chart ========== \e[49m"
-  printItems(grammar1, s1, onlyFull = true)
+  printChart(grammar1, c1)
   let pt1    = parseTree(grammar1, input1, c1)
   echo pt1.get().lispRepr(grammar1)
   echo pt1.get().treeRepr(grammar1)
