@@ -170,31 +170,35 @@ func optFind(f: proc(a: Edge): Option[Path],
       return res.get()
 
 func optFindMem(f: proc(a: Edge): Option[seq[Path]],
-                s: seq[Edge]): Option[(Edge, seq[Path])] =
+                s: seq[Edge]): seq[(Edge, seq[Path])] =
   for item in s:
     let res = f(item)
     if res.isSome():
-      return some((item, res.get()))
+      result.add (item, res.get())
 
 func dfSearch(edges: proc(startPos, start: int): seq[Edge] {.noSideEffect.},
-              child: proc(startPos: int, edge: Edge): Node {.noSideEffect.},
+              # child: proc(edge: Edge): Node {.noSideEffect.},
               isLeafp: proc(startPos: int, node: Node): bool {.noSideEffect.},
               root: Node
              ): seq[Path] =
 
   func aux(startPos: int, node: Node): seq[Path] =
-    func aux2(edge: Edge): Option[seq[Path]] =
-      some(aux(startPos + 1, child(startPos, edge)))
-
     if isLeafp(startPos, node):
       return @[]
     else:
-      let res: Option[(Edge, seq[Path])] = optFindMem(
-        aux2, edges(startPos, node))
+      for edge in edges(startPos, node):
+        result.add aux(startPos + 1, edge.finish) # child(edge)
 
-      if res.isSome():
-        let (edge, path) = res.get()
-        return @[(root, edge)]
+    # func aux2(edge: Edge): Option[seq[Path]] =
+    #   some(aux(startPos + 1, child(startPos, edge)))
+
+      #   result.add aux(edge)
+
+      # let res: seq[(Edge, seq[Path])] = optFindMem(
+      #   aux2, edges(startPos, node))
+
+      # for (edge, path) in res:
+      #   return @[(root, edge)]
 
 
   return aux(0, root)
@@ -210,9 +214,9 @@ func topList[C](gr: Grammar[C],
     ruleLen = symbols.len
 
   func isLeafp(startPos: int, node: Node): bool =
-    (startPos == ruleLen) and (startPos == edge.finish)
+    (startPos == ruleLen) and (node == edge.finish)
 
-  func child(startPos: int, e: Edge): int = edge.finish
+  # func child(e: Edge): int = edge.finish
   func edges(startPos, start: int): seq[Edge] =
     if startPos >= symbols.len:
       @[]
@@ -226,7 +230,8 @@ func topList[C](gr: Grammar[C],
       else:
         chart[start].filterIt(gr.ruleName(it.ruleId) == sym.nterm)
 
-  return dfSearch(edges, child, isLeafp, start)
+  return dfSearch(edges, # child,
+                  isLeafp, start)
 
 
 func parseTree[C](gr: Grammar[C],
