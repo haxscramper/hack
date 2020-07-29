@@ -183,7 +183,7 @@ func optFindMem(f: proc(a: SItemId): Option[seq[Path]],
       result.add (item, res.get())
 
 func dfSearch(ssetItems: proc(startPos, start: int): seq[SItemId] {.noSideEffect.},
-              child: proc(startPos: int, ssetItem: SItemId): SSetId {.noSideEffect.},
+              # child: proc(startPos: int, ssetItem: SItemId): SSetId {.noSideEffect.},
               isLeafp: proc(startPos: int, sset: SSetId): bool {.noSideEffect.},
               startSet: SSetId
              ): seq[Path] =
@@ -195,9 +195,10 @@ func dfSearch(ssetItems: proc(startPos, start: int): seq[SItemId] {.noSideEffect
     if isLeafp(startPos, sset):
       return @[]
     else:
-      # debugecho ssetItems(startPos, sset)
-      for ssetItem in ssetItems(startPos, sset):
-        result.add aux(startPos + 1, child(startPos + 1, ssetItem))
+      # debugecho startPos, " ", sset
+      for item in ssetItems(startPos, sset):
+        # debugecho item
+        result.add aux(startPos + 1, item.finish)
 
       # let res: seq[(SItemId, seq[Path])] = optFindMem(
       #   aux2, ssetItems(startPos, sset))
@@ -225,7 +226,7 @@ func topList[C](gr: Grammar[C],
   func isLeafp(startPos: int, sset: SSetId): bool =
     (startPos == ruleLen) and (startPos == ssetItem.finish)
 
-  func child(startPos: int, e: SItemId): int = ssetItem.finish
+  # func child(startPos: int, e: SItemId): int = ssetItem.finish
   func ssetItems(startPos, start: int): seq[SItemId] =
     if startPos >= symbols.len:
       @[]
@@ -237,9 +238,12 @@ func topList[C](gr: Grammar[C],
         else:
           @[]
       else:
-        chart[start].filterIt(gr.ruleName(it.ruleId) == sym.nterm)
+        let tmp = chart[start].filterIt(gr.ruleName(it.ruleId) == sym.nterm)
+        debugecho start, " -- ", tmp, " ", sym.nterm
+        tmp
 
-  return dfSearch(ssetItems, child, isLeafp, startSet)
+  return dfSearch(ssetItems, # child,
+                  isLeafp, startSet)
 
 
 func parseTree[C](gr: Grammar[C],
@@ -247,28 +251,38 @@ func parseTree[C](gr: Grammar[C],
                   chart: Chart): Option[ParseTree[C]] =
 
   let start = 0
-  let finish = chart.len - 1
-  let name = gr.start
+  # let finish = chart.len - 1
+  # let name = gr.start
   # func aux(start: int, )
-  func aux(path: Path): Option[ParseTree[C]] =
-    if path.ssetItem.ruleId == -1:
-      some(ParseTree[C](
-        isToken: true, token: input(path.sset).get()))
-    else:
-      let subn: seq[ParseTree[C]] = gr.topList(input, chart, path).
-        mapIt(aux it).
-        filterIt(it.isSome()).
-        mapIt(it.get())
+  func aux(start, finish: int, name: string): Option[ParseTree[C]] =
+    ## Search for parse tree of nonterminal `name`, starting at
+    ## `start` and ending at `finish` position.
+    for rule in chart[start]:
+      if rule.finish == finish and ruleName(gr, rule) == name:
+        discard
+        # for
 
-      some(ParseTree[C](
-        isToken: false,
-        ruleId: path.ssetItem.ruleId,
-        subnodes: subn
-      ))
+    # if path.ssetItem.ruleId == -1:
+    #   some(ParseTree[C](
+    #     isToken: true, token: input(path.sset).get()))
+    # else:
+    #   let subn: seq[ParseTree[C]] = gr.topList(input, chart, path).
+    #     mapIt(aux it).
+    #     filterIt(it.isSome()).
+    #     mapIt(it.get())
 
-  for ssetItem in chart[start]:
-    if ssetItem.finish == finish and ruleName(gr, ssetItem) == name:
-      let tree = aux((start, ssetItem))
+    #   some(ParseTree[C](
+    #     isToken: false,
+    #     ruleId: path.ssetItem.ruleId,
+    #     subnodes: subn
+    #   ))
+
+  for ssetItem in chart[0]: # For all items in stateset[0]
+    if ssetItem.finish == (chart.len - 1) and # If item is finished
+       ruleName(gr, ssetItem) == gr.start: # And it's name is equal to
+                                           # grammar start name
+      let tree = aux(0, chart.len - 1, gr.start) # Recognize first
+                                                 # possible parse tree
       if tree.isSome():
         return tree
 
