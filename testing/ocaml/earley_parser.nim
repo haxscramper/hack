@@ -215,26 +215,40 @@ proc parseTree[C](gr: Grammar[C],
     for alt in alts:
       let params = TryParams(start: start, altId: alt, name: name)
       triedTable[params] = @[]
-      var currpos: int = start
-      var matchOk: bool = true
       let str = &"\e[4m{name}.{alt} ::= {ruleBody(gr, alt).exprRepr()}\e[24m"
-      pp "Trying {str} [alts: {alts}] from \e[35m{currpos}\e[39m"
+      pp "Trying {str} [alts: {alts}] from \e[35m{start}\e[39m"
 
-      block ruleTry:
-        let symbols = gr.ruleBody(alt)
-        let singletok = (symbols.len == 1) and (symbols[0].isTerm)
-        if not singletok:
+      let symbols = gr.ruleBody(alt)
+      let singletok = (symbols.len == 1) and (symbols[0].isTerm)
+      if not singletok:
+        result.add ParseTree[C](
+          isToken: false,
+          ruleId: alt,
+          subnodes: @[],
+          start: start
+        )
+      else:
+        if symbols[0].terminal.ok input(start):
           result.add ParseTree[C](
-            isToken: false,
-            ruleId: alt,
-            subnodes: @[],
-            start: currpos
+            isToken: true,
+            start: start,
+            finish: start + 1,
+            token: input(start).get()
           )
+        else:
+          return @[]
 
-        for idx, sym in gr.ruleBody(alt):
+      for idx, sym in gr.ruleBody(alt):
+        for treeIdx, tree in result:
+          let begin =
+            if tree.finish == 0:
+              start
+            else:
+              tree.finish
+
           if sym.isTerm:
-            pp "Expecting token #{idx} \e[93m{sym.terminal.lex}\e[39m at {currpos}"
-            let inp = input currpos
+            pp "Expecting token \e[93m{sym.terminal.lex}\e[39m @ \e[35m{begin}\e[39m"
+            let inp = input begin
             if sym.terminal.ok(inp):
               let str =  "  Matched" & (if singletok: " single" else: "") &
                 &" token \e[32m{sym.terminal.lex}\e[39m " &
@@ -244,57 +258,42 @@ proc parseTree[C](gr: Grammar[C],
 
               let tree = ParseTree[C](
                 isToken: true,
-                start: currpos,
-                finish: currpos + 1,
+                start: begin,
+                finish: begin + 1,
                 token: inp.get()
               )
 
               if singletok:
                 result.add tree
               else:
-                result[^1].subnodes.add tree
-                pl "  Add token element to tree #{result[^1].subnodes.len}"
-                inc result[^1].finish
-
-              inc currpos
-              p0 "@ \e[35m{currpos}\e[39m - \e[32m{inp.get()}\e[39m"
+                result[treeIdx].subnodes.add tree
+                result[treeIdx].finish = begin + 1
+                pp "  Advancing tree {treeIdx} to {result[treeIdx].finish}"
             else:
-              pp "  Failed token match \e[31m{sym.terminal.lex}\e[39m @ {currpos}"
-              matchOk = false
-              break ruleTry
+              pp "  Failed token match \e[31m{sym.terminal.lex}\e[39m"
           else:
-            pp "Expecting \e[93m{sym.nterm}\e[39m starting at {currpos}, #{idx} "
+            pp "Expecting \e[93m{sym.nterm}\e[39m starting at {begin}, #{idx} "
             pp "Working with {result.len} trees"
-            for idx, tree in result:
-              # let currpos = tree.finish
-              let begin =
-                if tree.finish == 0:
-                  start
-                else:
-                  tree.finish
+            # let currpos = tree.finish
+            let res: seq[ParseTree[C]] = aux(begin, finish, sym.nterm, level + 1)
+            if res.len != 0:
+              pp "  Recognized rule \e[32m{name}\e[39m - {res.len} trees"
+              let lastr = result[treeIdx]
+              result.del treeIdx
+              for tree in res:
+                pp "    Tree ({tree.start}:{tree.finish})"
+                result.add lastr.withIt do:
+                  it.subnodes.add tree
+                  it.finish = tree.finish
 
-              let res: seq[ParseTree[C]] = aux(tree.finish, finish, sym.nterm, level + 1)
-              if res.len != 0:
-                pp "  Recognized rule \e[32m{name}\e[39m - {res.len} trees"
-                currpos = res.mapIt(it.finish).max()
-                let lastr = result.pop
-                for tree in res:
-                  pp "    Tree ({tree.start}:{tree.finish})"
-                  result.add lastr.withIt do:
-                    it.subnodes.add tree
-                    it.finish = tree.finish
+              # result[^1].subnodes.add res[0] # XXXX
+              # result[^1].finish = currpos
+              # p0 "@ \e[35m{currpos}\e[39m"
+            else:
+              pp "No parse trees for rule \e[31m{name}\e[39m"
+              result.del treeIdx
 
-                # result[^1].subnodes.add res[0] # XXXX
-                # result[^1].finish = currpos
-                p0 "@ \e[35m{currpos}\e[39m"
-              else:
-                pp "No parse trees for rule \e[31m{name}\e[39m"
-                result.del idx
-                matchOk = false
-                break ruleTry
-
-      if matchOk:
-        triedTable[params].add result
+      triedTable[params].add result
         # return # Immediately returning first matched parse tree
 
   for ssetItem in chart[0]: # For all items in stateset[0]
