@@ -1,38 +1,11 @@
 import sugar, strutils, sequtils, strformat, options, sets, algorithm, hashes, tables
 
-func `|>`[A, B](a: A, b: A -> B): B = b(a)
-
-func `|-`[A, B, C](f: A -> B, g: B -> C, x: A): C = g (f x)
-
-func id[A](x: A): A = x
-
-func swap[A, B, C](f: (A, B) -> C, b: B, a: A): C = f(a, b)
-
-func `>>=`[A, B](a: Option[A], f: A -> B): Option[B] =
-  if a.isSome(): some f(a.get()) else: none(B)
-
-func `//`[A](ins: seq[A], pr: A -> bool): seq[A] = ins.filter(pr)
-func `/@`[A, B](ins: seq[A], f: A -> B): seq[B] = ins.map(f)
-
 template withIt*(val, body: untyped): untyped =
   block:
     var it {.inject.} = val
     block:
       body
     it
-
-#*************************************************************************#
-#*************************  Operator playground  *************************#
-#*************************************************************************#
-
-block: # THE cursed code
-  discard
-  # echo @[1, 2, 3
-  # ] // ( # Filter
-  #   (a) => (a > 2)
-  # ) /@ ( # Map
-  #   (a) => $a & "--"
-  # )
 
 #*************************************************************************#
 #**************************  Type definitions  ***************************#
@@ -113,16 +86,8 @@ func isNullable[C](ns: NullSet, rule: Rule[C]): bool =
 func nullableSymbols[C](grammar: Grammar[C]): NullSet =
   discard
 
-
 func hasLoops[C](grammar: Grammar[C]): bool =
   let nullable: NullSet = nullableSymbols grammar
-
-  # func get
-  # let rules = grammar.rules // (
-  #   (rule: Rule[C]) => (rule.rhs /@ )
-  # ) // (
-  #   (rhs) => isNullable(nullable, rhs)
-  # )
 
 func ruleName[C](gr: Grammar[C], idx: int): string =
   ## Get rule name at `idx`
