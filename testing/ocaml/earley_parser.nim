@@ -229,23 +229,27 @@ proc parseTree[C](gr: Grammar[C],
         )
       else:
         if symbols[0].terminal.ok input(start):
-          result.add ParseTree[C](
+          return @[ ParseTree[C](
             isToken: true,
             start: start,
             finish: start + 1,
             token: input(start).get()
-          )
+          ) ]
         else:
           return @[]
 
       for idx, sym in gr.ruleBody(alt):
-        for treeIdx, tree in result:
+        var treeIdx: int = 0
+        while treeIdx < result.len:
+          let tree = result[treeIdx]
+        # for treeIdx, tree in result:
           let begin =
             if tree.finish == 0:
               start
             else:
               tree.finish
 
+          pp "-"
           if sym.isTerm:
             pp "Expecting token \e[93m{sym.terminal.lex}\e[39m @ \e[35m{begin}\e[39m"
             let inp = input begin
@@ -268,9 +272,10 @@ proc parseTree[C](gr: Grammar[C],
               else:
                 result[treeIdx].subnodes.add tree
                 result[treeIdx].finish = begin + 1
-                pp "  Advancing tree {treeIdx} to {result[treeIdx].finish}"
+                pp "Advancing tree {treeIdx} to {result[treeIdx].finish}"
             else:
-              pp "  Failed token match \e[31m{sym.terminal.lex}\e[39m"
+              pp "Failed token match \e[31m{sym.terminal.lex} @ {begin}\e[39m"
+              result.del treeIdx
           else:
             pp "Expecting \e[93m{sym.nterm}\e[39m starting at {begin}, #{idx} "
             pp "Working with {result.len} trees"
@@ -292,6 +297,8 @@ proc parseTree[C](gr: Grammar[C],
             else:
               pp "No parse trees for rule \e[31m{name}\e[39m"
               result.del treeIdx
+
+          inc treeIdx
 
       triedTable[params].add result
         # return # Immediately returning first matched parse tree
@@ -485,7 +492,7 @@ func makeInput(s: string): Input[char] =
       none(char)
 
 
-if true:
+if false:
   let grammar1 = Grammar[char](
     start: "Sum",
     rules: @[
