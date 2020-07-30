@@ -180,35 +180,7 @@ proc parseTree[C](gr: Grammar[C],
                   input: Input[C],
                   chart: Chart): seq[ParseTree[C]] =
 
-  proc aux(start, finish: int, name: string, level: int): seq[ParseTree[C]] =
-    ## Search for parse tree of nonterminal `name`, starting at
-    ## `start` and ending at `finish` position.
-    let pref = &"{level:<2}|   " & "  ".repeat(level)
-    template pp(body: untyped): untyped = echo pref, fmt(body)
-    template pl(body: untyped): untyped =
-      if false: echo pref, fmt(body)
-    template p0(body: untyped): untyped =
-      echo &"{level:<2}| ", fmt(body)
-
-
-    pp "Parsing rule {name} in range [{start}:{finish}]"
-    let alts: seq[int] = deduplicate do: collect(newSeq):
-      var altsTmp: seq[int]
-      for rule in chart[start]:
-        if (ruleName(gr, rule) == name) and (rule.finish == finish):
-          rule.ruleId
-
-    for alt in alts:
-      discard
-
-  for ssetItem in chart[0]: # For all items in stateset[0]
-    if ssetItem.finish == (chart.len - 1) and # If item is finished
-       ruleName(gr, ssetItem) == gr.start: # And it's name is equal to
-                                           # grammar start name
-      let tree = aux(0, chart.len - 1, gr.start, 0) # Recognize first
-                                                 # possible parse tree
-      # return tree.filterIt(it.finish == chart.len - 1)
-      return tree
+  discard
 
 
 func predict[C](s: var State, # DOC
