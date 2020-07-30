@@ -170,84 +170,6 @@ func chartOfItems[C](gr: Grammar[C],
 func ruleName[C](gr: Grammar[C], e: SItemId): string =
   gr.ruleName(e.ruleId)
 
-func optFind(f: proc(a: SItemId): Option[Path],
-             s: seq[SItemId]): Path =
-  for item in s:
-    let res = f(item)
-    if res.isSome():
-      return res.get()
-
-func optFindMem(f: proc(a: SItemId): Option[seq[Path]],
-                s: seq[SItemId]): seq[(SItemId, seq[Path])] =
-  for item in s:
-    let res = f(item)
-    if res.isSome():
-      result.add (item, res.get())
-
-func dfSearch(ssetItems: proc(startPos, start: int): seq[SItemId] {.noSideEffect.},
-              # child: proc(startPos: int, ssetItem: SItemId): SSetId {.noSideEffect.},
-              isLeafp: proc(startPos: int, sset: SSetId): bool {.noSideEffect.},
-              startSet: SSetId
-             ): seq[Path] =
-
-  func aux(startPos: int, sset: SSetId): seq[Path] =
-    # func aux2(ssetItem: SItemId): Option[seq[Path]] =
-    #   some(aux(startPos + 1, child(startPos, ssetItem)))
-
-    if isLeafp(startPos, sset):
-      return @[]
-    else:
-      # debugecho startPos, " ", sset
-      for item in ssetItems(startPos, sset):
-        # debugecho item
-        result.add aux(startPos + 1, item.finish)
-
-      # let res: seq[(SItemId, seq[Path])] = optFindMem(
-      #   aux2, ssetItems(startPos, sset))
-
-      # # debugecho res.len
-      # # for (ssetItem, path) in res:
-      # #   debugecho ssetItem, path
-
-      # for (ssetItem, path) in res:
-      #   result.add (startSet, ssetItem)
-
-
-  return aux(0, startSet)
-
-func topList[C](gr: Grammar[C],
-                input: Input[C],
-                chart: Chart,
-                path: Path): seq[Path] =
-  let
-    ssetItem = path.ssetItem
-    startSet = path.sset
-    symbols = gr.ruleBody(ssetItem.ruleId)
-    ruleLen = symbols.len
-
-  func isLeafp(startPos: int, sset: SSetId): bool =
-    (startPos == ruleLen) and (startPos == ssetItem.finish)
-
-  # func child(startPos: int, e: SItemId): int = ssetItem.finish
-  func ssetItems(startPos, start: int): seq[SItemId] =
-    if startPos >= symbols.len:
-      @[]
-    else:
-      let sym: Symbol[C] = symbols[startPos]
-      if sym.isTerm:
-        if sym.terminal.ok(input start):
-          @[SItemId(finish: start + 1, ruleId: -1)]
-        else:
-          @[]
-      else:
-        let tmp = chart[start].filterIt(gr.ruleName(it.ruleId) == sym.nterm)
-        debugecho start, " -- ", tmp, " ", sym.nterm
-        tmp
-
-  return dfSearch(ssetItems, # child,
-                  isLeafp, startSet)
-
-
 func hash(id: SItemId): Hash =
   var h: Hash = 0
   h = h !& id.ruleId !& id.finish
@@ -360,54 +282,6 @@ proc parseTree[C](gr: Grammar[C],
       if matchOk:
         triedTable[params] = result
         return # Immediately returning first matched parse tree
-
-
-
-    # for rule in chart[start]:
-    #   if ruleName(gr, rule) == name:
-    #     let params = (start: start, altId: rule.ruleId, name: name)
-    #     if params in triedSet:
-    #       pp "Already seen ({start}:{finish}), {name}, id: {rule.ruleId}"
-    #       return none(ParseTree[C])
-    #     else:
-    #       triedSet.incl params
-
-
-    #     var currpos: int = start
-    #     pp "Parsing ({currpos}:{finish}), {name}, id: {rule.ruleId}"
-
-    #     for symIdx, symbol in gr.ruleBody(rule.ruleId):
-    #       pp "Extracting sym {symIdx}"
-    #       if symbol.isTerm:
-    #         let inp = input currpos
-    #         pp "Expecting token {symbol.terminal.lex} at pos {currpos}"
-    #         if symbol.terminal.ok(inp):
-    #           pp "Matched {inp}"
-    #           result = some(ParseTree[C](
-    #             isToken: true,
-    #             token: inp.get(),
-    #             start: currpos,
-    #             finish: currpos + 1
-    #           ))
-
-    #           inc currpos
-    #       else:
-        # for
-
-    # if path.ssetItem.ruleId == -1:
-    #   some(ParseTree[C](
-    #     isToken: true, token: input(path.sset).get()))
-    # else:
-    #   let subn: seq[ParseTree[C]] = gr.topList(input, chart, path).
-    #     mapIt(aux it).
-    #     filterIt(it.isSome()).
-    #     mapIt(it.get())
-
-    #   some(ParseTree[C](
-    #     isToken: false,
-    #     ruleId: path.ssetItem.ruleId,
-    #     subnodes: subn
-    #   ))
 
   for ssetItem in chart[0]: # For all items in stateset[0]
     if ssetItem.finish == (chart.len - 1) and # If item is finished
