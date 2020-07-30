@@ -317,12 +317,14 @@ func complete[C](s: var State,
 func buildItems[C](gr: Grammar[C],
                    input: int -> Option[C]): State =
   let nullable = nullableSymbols gr
-  var s: State
+  var s: State = @[]
+  s.add @[]
 
   # Seed s with the start symbol
   for idx, rule in gr.rules:
     if rule.lhs == gr.start:
-      s.add @[EItem(ruleId: idx, startPos: 0, nextPos: 0)]
+      debugecho rule
+      s[0].add EItem(ruleId: idx, startPos: 0, nextPos: 0)
 
   var itemset = 0 # DOC
   while itemset < s.len: # Loop over main array of state sets
@@ -429,7 +431,7 @@ func alt(alts: string): Symbol[char] =
 
 func ch(ic: char): Symbol[char] =
   Symbol[char](isTerm: true, terminal: (
-    ok: proc(c: Option[char]): bool = (c.get() == ic),
+    ok: proc(c: Option[char]): bool = c.isSome() and (c.get() == ic),
     lex: &"'{ic}'"
   ))
 
@@ -447,7 +449,7 @@ func makeInput(s: string): Input[char] =
       none(char)
 
 
-block:
+if false:
   let grammar1 = Grammar[char](
     start: "Sum",
     rules: @[
@@ -465,11 +467,28 @@ block:
 
   let input1 = makeInput "1+(2*3-4)"
   let s1     = buildItems(grammar1, input1)
-  # printItems(grammar1, s1)
   let c1     = chartOfItems(grammar1, s1)
-  # printItems(grammar1, s1, onlyFull = true)
   printChart(grammar1, c1)
   let pt1    = parseTree(grammar1, input1, c1)
-  # echo pt1.get().lispRepr(grammar1)
   echo pt1.get().treeRepr(grammar1)
-  # echo "22"
+
+
+if true:
+  let grammar1 = Grammar[char](
+    start: "Block",
+    rules: @[
+      rule("Block", @[ch ';']),
+      rule("Block", @[n "If"]),
+      rule("If",    @[ch 'i',   n "Block"]),
+      rule("If",    @[ch 'i',   n "Block",   ch 'e', n "Block"])
+    ]
+  )
+
+
+  let input1 = makeInput "ii;e;"
+  let s1     = buildItems(grammar1, input1)
+  printItems(grammar1, s1)
+  let c1     = chartOfItems(grammar1, s1)
+  printChart(grammar1, c1)
+  let pt1    = parseTree(grammar1, input1, c1)
+  echo pt1.get().treeRepr(grammar1)
