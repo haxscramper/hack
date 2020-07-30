@@ -1,4 +1,4 @@
-import sugar, strutils, sequtils, strformat, options, sets, algorithm, hashes
+import sugar, strutils, sequtils, strformat, options, sets, algorithm, hashes, tables
 
 func `|>`[A, B](a: A, b: A -> B): B = b(a)
 
@@ -253,11 +253,20 @@ func hash(id: SItemId): Hash =
   h = h !& id.ruleId !& id.finish
   result = !$h
 
+type
+  TryParams = object
+    start: int
+    altId: int
+    name: string
+
+func hash(pr: TryParams): Hash = !$(pr.start !& pr.altId !& hash(pr.name))
+
 proc parseTree[C](gr: Grammar[C],
                   input: Input[C],
                   chart: Chart): Option[ParseTree[C]] =
 
-  var triedSet: HashSet[tuple[start: int, altId: int, name: string]]
+
+  var triedTable: Table[TryParams, Option[ParseTree[C]]]
   proc aux(start, finish: int, name: string, level: int): Option[ParseTree[C]] =
     ## Search for parse tree of nonterminal `name`, starting at
     ## `start` and ending at `finish` position.
@@ -270,16 +279,30 @@ proc parseTree[C](gr: Grammar[C],
     pl "Parsing rule {name} starting from {start}, search for alts"
     let alts: seq[int] = collect(newSeq):
       for rule in chart[start]:
-        let params = (start: start, altId: rule.ruleId, name: name)
-        if (ruleName(gr, rule) == name) and (params notin triedSet):
+        let params = TryParams(start: start, altId: rule.ruleId, name: name)
+        if (params in triedTable):
+          let res = triedTable[params]
+          if res.isNone():
+            pp "Already tried {params} and failed"
+          else:
+            pp "Already tried {params} and succeded"
+            return res
+
+        if (ruleName(gr, rule) == name) and (params notin triedTable):
           rule.ruleId
 
-    pl "There are {alts.len} rules never tried in this configuration"
+    if alts.len == 0:
+      pp "No untried alternatives for {name} ({start}:{finish})"
+    else:
+      pl "There are {alts.len} rules never tried in this configuration"
+
     for alt in alts:
-      let params = (start: start, altId: alt, name: name)
-      triedSet.incl params
+      let params = TryParams(start: start, altId: alt, name: name)
+      triedTable[params] = none(ParseTree[C])
       var currpos: int = start
+      var matchOk: bool = true
       pp "Trying \e[33m{name}.{alt}\e[39m [alts: {alts}] from \e[35m{currpos}\e[39m"
+
       block ruleTry:
         let symbols = gr.ruleBody(alt)
         let singletok = (symbols.len == 1) and (symbols[0].isTerm)
@@ -315,6 +338,7 @@ proc parseTree[C](gr: Grammar[C],
               pp "@ \e[35m{currpos}\e[39m"
             else:
               pp "Failed token match \e[31m{sym.terminal.lex}\e[39m @ {currpos}"
+              matchOk = false
               break ruleTry
           else:
             pp "Expecting \e[93m{sym.nterm}.{alt}\e[39m starting at {currpos}, #{idx} "
@@ -327,9 +351,11 @@ proc parseTree[C](gr: Grammar[C],
               pp "@ \e[35m{currpos}\e[39m"
             else:
               pp "Failed rule \e[31m{name}\e[39m"
+              matchOk = false
               break ruleTry
 
-
+      if matchOk:
+        triedTable[params] = result
 
 
 
