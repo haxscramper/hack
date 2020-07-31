@@ -243,11 +243,14 @@ proc parseTree[C](gr: Grammar[C],
             pp "Expecting \e[93m{sym.nterm}.{alt}\e[39m starting at {currpos}, #{idx} "
             let res = aux(currpos, finish, sym.nterm, level + 1)
             if res.isSome():
-              pp "Recognized rule \e[32m{name}\e[39m in range [{currpos}, {res.get().finish - 1}]"
-              currpos = res.get().finish
-              result.get().subnodes.add res.get()
-              result.get().finish = currpos
-              p0 "@ \e[35m{currpos}\e[39m"
+              if (not res.get().isToken) and res.get().subnodes.len == 0:
+                pp "Empty rule"
+              else:
+                pp "Recognized rule \e[32m{name}\e[39m in range [{currpos}, {res.get().finish}]"
+                currpos = res.get().finish
+                result.get().subnodes.add res.get()
+                result.get().finish = currpos
+                p0 "@ \e[35m{currpos}\e[39m"
             else:
               pp "Failed rule \e[31m{name}\e[39m"
               matchOk = false
