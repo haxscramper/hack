@@ -67,6 +67,7 @@ type
         subnodes: seq[ParseTree[C]]
 
 func contains(ns: NullSet, s: string): bool = s in ns.nulls
+func len(ns: NullSet): int = ns.nulls.len
 
 #*************************************************************************#
 #*******************  Lising of all nullable symbols  ********************#
@@ -82,9 +83,17 @@ func isNullable[C](ns: NullSet, rule: Rule[C]): bool =
 
   return true
 
+func updateNss[C](ns: var NullSet, gr: Grammar[C]): void =
+  for rule in gr.rules:
+    if ns.isNullable(rule):
+      ns.nulls.incl rule.lhs
 
 func nullableSymbols[C](grammar: Grammar[C]): NullSet =
-  discard
+  while true:
+    let size = result.len
+    updateNss(result, grammar)
+    if result.len == size:
+      break
 
 func hasLoops[C](grammar: Grammar[C]): bool =
   let nullable: NullSet = nullableSymbols grammar
@@ -305,7 +314,7 @@ func complete[C](s: var State,
     if next.isNone():
       discard
     else:
-      let sym: Symbol[C] = next.get()
+      let sym = next.get()
       if sym.isTerm:
         discard
       else:
@@ -447,7 +456,7 @@ func makeInput(s: string): Input[char] =
       none(char)
 
 
-block:
+if false:
   let grammar1 = Grammar[char](
     start: "Sum",
     rules: @[
@@ -470,6 +479,28 @@ block:
   # printItems(grammar1, s1, onlyFull = true)
   printChart(grammar1, c1)
   let pt1    = parseTree(grammar1, input1, c1)
-  # echo pt1.get().lispRepr(grammar1)
   echo pt1.get().treeRepr(grammar1)
-  # echo "22"
+
+
+block:
+  let grammar1 = Grammar[char](
+    start: "List",
+    rules: @[
+      rule("List", @[ch '[', n "Elements", ch ']']),
+      rule("Elements", @[n "Element", n"Elements1"]),
+      rule("Elements1", @[]),
+      rule("Elements1", @[ch ',', n "Element", n "Elements1"]),
+      rule("Element", @[rng('a', 'z')]),
+      rule("Element", @[n "List"])
+    ]
+  )
+
+
+  let input1 = makeInput "[a]"
+  let s1     = buildItems(grammar1, input1)
+  # printItems(grammar1, s1)
+  let c1     = chartOfItems(grammar1, s1)
+  # printItems(grammar1, s1, onlyFull = true)
+  printChart(grammar1, c1)
+  let pt1    = parseTree(grammar1, input1, c1)
+  echo pt1.get().treeRepr(grammar1)
