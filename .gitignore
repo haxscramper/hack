@@ -389,3 +389,11 @@ parse.cpp
 **/*.tmp.*
 **/*.cmi
 **/*.cmo
+
+**/.qmake.stash
+**/*.annot
+**/*_annot.ml
+**/nimdoc.out.css
+**/secret.json
+**/*.lua.1
+**/qt_build

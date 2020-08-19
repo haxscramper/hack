@@ -4,10 +4,21 @@ macro dumpType(a: typed) =
   echo "=========== ", a.toStrLit()
   echo "=========== ", a.getType().toStrLit()
   let kind = a.getTypeImpl().kind
+  echo "=========== kind: ", kind
+  # echo "== Type impl:", a.getTypeImpl().lispRepr()
   case kind:
     of nnkBracketExpr:
       let typeSym = a.getTypeImpl()[1]
+      # if typeSym.kind == nnkSym:
+      #   echo "Sym type"
+      #   let unref = typeSym.getTypeImpl().getTypeImpl()
+      #   echo "Unref ", typeSym.getTypeImpl().lispRepr()
+
+      if typeSym.kind == nnkSym:
+        echo "3", typeSym.getTypeImpl().lispRepr()
+
       echo "\t\tType implementation code"
+      echo typeSym.lispRepr()
       echo typeSym.getTypeImpl().toStrLit()
       echo "Type kind: ", typeSym.kind()
       echo "Impl kind: ", typeSym.getTypeImpl().kind()
@@ -143,3 +154,95 @@ block:
   p.dumpType()
 
   echo genericParams(G[int])
+
+block:
+  (float, char).dumpType()
+  ((float, char)).dumpType()
+  (tuple[a: float, b: char]).dumpType()
+
+for name, val in fieldPairs((12, 3)):
+  echo name
+
+static: echo "\e[41m*======\e[49m  Ref object  \e[41m======*\e[49m"
+
+
+block:
+  macro te(a: typed): untyped =
+    let ts = a.getTypeImpl()
+    echo a.kind
+    echo ts.kind
+    if ts.kind == nnkBracketExpr:
+      echo a.getTypeImpl()[1].getImpl().treeRepr()
+    else:
+      echo a.getTypeImpl()[0].getImpl().treeRepr()
+
+  type
+    A = ref object
+      f: int
+    B = object
+      f2: int
+
+    G[T] = ref object
+      f: T
+
+  static: echo "\e[41m*==========\e[49m  A  \e[41m===========*\e[49m"
+  A.te()
+  static: echo "\e[41m*==========\e[49m  B  \e[41m===========*\e[49m"
+  B.te()
+  static: echo "\e[41m*==========\e[49m  G  \e[41m===========*\e[49m"
+  var f: G[int]
+  f.te()
+
+static: echo "\e[41m*\e[49m  Generic case object with void field  \e[41m*\e[49m"
+
+block:
+  macro te(a: typed): untyped =
+    let ts = a.getTypeImpl()
+    echo a.kind
+    echo ts.kind
+    echo ts.treeRepr()
+
+  type
+    G[T, F] = object
+      case ok: bool
+        of false:
+          t: T
+        of true:
+          f: F
+
+
+    G2[T, F] = object
+      case ok: bool
+        of false:
+          t: T
+        of true:
+          f: F
+          e: int
+
+
+  var z: G[int, void]; te(z)
+  # `void` for type parameter results in Nested `RecList`
+  # OfBranch
+  #   IntLit 1
+  #   RecList
+  #     RecList
+
+  var e: G[int, float]; te(e)
+  # OfBranch
+  #   IntLit 1
+  #   RecList
+  #     IdentDefs
+  #       Sym "f"
+  #       Sym "float"
+  #       Empty
+
+  var e1: G2[int, void]; te(e1)
+  # Adding another field changes nothing
+  # OfBranch
+  #   IntLit 1
+  #   RecList
+  #     RecList
+  #     IdentDefs
+  #       Sym "e"
+  #       Sym "int"
+  #       Empty

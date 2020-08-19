@@ -518,74 +518,74 @@ let input_of_string s i = if i >= String.length s
 (** ************************* **)
 (** Actual grammars and tests **)
 (** ************************* **)
-let grammar1 =
-  let a = DA.of_array                             in
-  let n = fun symbol -> Non_term symbol           in
-  let r = fun lhs rhs -> {lhs = lhs; rhs = a rhs} in
-  { start_symbol = "Sum"
-  ; rules =
-      a[| r "Sum"     [| n"Sum"    ; alt "+-"; n"Product" |]
-        ; r "Sum"     [| n"Product"                       |]
-        ; r "Product" [| n"Product"; alt "*/"; n"Factor"  |]
-        ; r "Product" [| n"Factor"                        |]
-        ; r "Factor"  [| char '(' ; n"Sum"; char ')'      |]
-        ; r "Factor"  [| n"Number"                        |]
-        ; r "Number"  [| n"Number" ; range "09"           |]
-        ; r "Number"  [| range "09";                      |]
-       |]
-  }
-
-let input1 = input_of_string "1+(2*3+4)"
-let s1     = build_items    grammar1 input1
-let _      = print_items    grammar1 s1
-let c1     = chart_of_items grammar1 s1
-let _      = print_chart    grammar1 c1
-let pt     = parse_tree     grammar1 input1 c1
-
-let input_handler c = Char c
-let actions =
-  DA.of_array
-    [| (fun [Int left; Char op; Int right] ->
-        Int ((if op == '+' then (+) else (-)) left right))
-     ; (fun [Int i] -> Int i)
-     ; (fun [Int left; Char op; Int right] ->
-        Int ((if op == '*' then ( * ) else (/)) left right))
-     ; (fun [Int i] -> Int i)
-     ; (fun [_; Int i ;_] -> Int i)
-     ; (fun [Int i] -> Int i)
-     ; (fun [Int i; Char c] ->
-        Int ((i * 10) + int_of_char c - int_of_char '0'))
-     ; (fun [Char c] -> Int (int_of_char c - int_of_char '0'))
-      |]
-
-let result = act input_handler actions pt
-
-let actions_bis =
-  DA.of_array
-    [| (fun [left; op; right] -> List [left; op; right])
-     ; (fun [i] -> i)
-     ; (fun [left; op; right] -> List [left; op; right])
-     ; (fun [i] -> i)
-     ; (fun [_; i ;_] -> i)
-     ; (fun [i] -> i)
-     ; (fun [Int i; Char c] ->
-        Int ((i * 10) + int_of_char c - int_of_char '0'))
-     ; (fun [Char c] -> Int (int_of_char c - int_of_char '0'))
-      |]
-let result_bis = act input_handler actions_bis pt
-
-let actions_ter =
-  DA.of_array
-    [| (fun [_; Char op; _] -> print_char op; print_char ' '; Nil)
-     ; (fun [_]             ->                                Nil)
-     ; (fun [_; Char op; _] -> print_char op; print_char ' '; Nil)
-     ; (fun [_]             ->                                Nil)
-     ; (fun [_; _ ;_]       ->                                Nil)
-     ; (fun [_]             ->                                Nil)
-     ; (fun [_; Char c]     -> print_char c;                  Nil)
-     ; (fun [Char c]        -> print_char c;  print_char ' '; Nil)
-  |]
-let result_ter = act input_handler actions_ter pt
+(* let grammar1 =
+ *   let a = DA.of_array                             in
+ *   let n = fun symbol -> Non_term symbol           in
+ *   let r = fun lhs rhs -> {lhs = lhs; rhs = a rhs} in
+ *   { start_symbol = "Sum"
+ *   ; rules =
+ *       a[| r "Sum"     [| n"Sum"    ; alt "+-"; n"Product" |]
+ *         ; r "Sum"     [| n"Product"                       |]
+ *         ; r "Product" [| n"Product"; alt "*/"; n"Factor"  |]
+ *         ; r "Product" [| n"Factor"                        |]
+ *         ; r "Factor"  [| char '(' ; n"Sum"; char ')'      |]
+ *         ; r "Factor"  [| n"Number"                        |]
+ *         ; r "Number"  [| n"Number" ; range "09"           |]
+ *         ; r "Number"  [| range "09";                      |]
+ *        |]
+ *   }
+ *
+ * let input1 = input_of_string "1+(2*3+4)"
+ * let s1     = build_items    grammar1 input1
+ * let _      = print_items    grammar1 s1
+ * let c1     = chart_of_items grammar1 s1
+ * let _      = print_chart    grammar1 c1
+ * let pt     = parse_tree     grammar1 input1 c1
+ *
+ * let input_handler c = Char c
+ * let actions =
+ *   DA.of_array
+ *     [| (fun [Int left; Char op; Int right] ->
+ *         Int ((if op == '+' then (+) else (-)) left right))
+ *      ; (fun [Int i] -> Int i)
+ *      ; (fun [Int left; Char op; Int right] ->
+ *         Int ((if op == '*' then ( * ) else (/)) left right))
+ *      ; (fun [Int i] -> Int i)
+ *      ; (fun [_; Int i ;_] -> Int i)
+ *      ; (fun [Int i] -> Int i)
+ *      ; (fun [Int i; Char c] ->
+ *         Int ((i * 10) + int_of_char c - int_of_char '0'))
+ *      ; (fun [Char c] -> Int (int_of_char c - int_of_char '0'))
+ *       |]
+ *
+ * let result = act input_handler actions pt
+ *
+ * let actions_bis =
+ *   DA.of_array
+ *     [| (fun [left; op; right] -> List [left; op; right])
+ *      ; (fun [i] -> i)
+ *      ; (fun [left; op; right] -> List [left; op; right])
+ *      ; (fun [i] -> i)
+ *      ; (fun [_; i ;_] -> i)
+ *      ; (fun [i] -> i)
+ *      ; (fun [Int i; Char c] ->
+ *         Int ((i * 10) + int_of_char c - int_of_char '0'))
+ *      ; (fun [Char c] -> Int (int_of_char c - int_of_char '0'))
+ *       |]
+ * let result_bis = act input_handler actions_bis pt
+ *
+ * let actions_ter =
+ *   DA.of_array
+ *     [| (fun [_; Char op; _] -> print_char op; print_char ' '; Nil)
+ *      ; (fun [_]             ->                                Nil)
+ *      ; (fun [_; Char op; _] -> print_char op; print_char ' '; Nil)
+ *      ; (fun [_]             ->                                Nil)
+ *      ; (fun [_; _ ;_]       ->                                Nil)
+ *      ; (fun [_]             ->                                Nil)
+ *      ; (fun [_; Char c]     -> print_char c;                  Nil)
+ *      ; (fun [Char c]        -> print_char c;  print_char ' '; Nil)
+ *   |]
+ * let result_ter = act input_handler actions_ter pt *)
 
 (*
 let _ = List
@@ -618,28 +618,28 @@ let input2 = input_of_string "ii;e;"
 let s2     = build_items    grammar2 input2
 let _      = print_items    grammar2 s2
 let c2     = chart_of_items grammar2 s2
-let _      = print_chart    grammar2 c2
+(* let _      = print_chart    grammar2 c2 *)
 let pt2    = parse_tree     grammar2 input2 c2
 
 
 
-(* this gramar will blow up in your face *)
-let grammar3 =
-  let a = DA.of_array                             in
-  let n = fun symbol -> Non_term symbol           in
-  let r = fun lhs rhs -> {lhs = lhs; rhs = a rhs} in
-  { start_symbol = "A"
-  ; rules =
-      a[| r "A" [| n"A" |]
-        ; r "A" [|      |]
-       |]
-  }
-
-let input3 = input_of_string ""
-let s3     = build_items    grammar3 input3
-let _      = print_items    grammar3 s3
-let c3     = chart_of_items grammar3 s3
-let _      = print_chart    grammar3 c3
-let _      = if infinite_loop grammar3
-             then print_endline "Infinite loop detected! Beware!"
-let pt3    = parse_tree     grammar3 input3 c3 (* Stack overflow! *)
+(* (\* this gramar will blow up in your face *\)
+ * let grammar3 =
+ *   let a = DA.of_array                             in
+ *   let n = fun symbol -> Non_term symbol           in
+ *   let r = fun lhs rhs -> {lhs = lhs; rhs = a rhs} in
+ *   { start_symbol = "A"
+ *   ; rules =
+ *       a[| r "A" [| n"A" |]
+ *         ; r "A" [|      |]
+ *        |]
+ *   }
+ *
+ * let input3 = input_of_string ""
+ * let s3     = build_items    grammar3 input3
+ * let _      = print_items    grammar3 s3
+ * let c3     = chart_of_items grammar3 s3
+ * let _      = print_chart    grammar3 c3
+ * let _      = if infinite_loop grammar3
+ *              then print_endline "Infinite loop detected! Beware!"
+ * let pt3    = parse_tree     grammar3 input3 c3 (\* Stack overflow! *\) *)
