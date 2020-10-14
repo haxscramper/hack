@@ -24,9 +24,11 @@ import tables
 import sugar
 # import colechopkg/types
 
-import hmisc/defensive
+import hmisc/other/colorlogger
+import hmisc/types/colorstring
+import hmisc/hexceptions
 
-initDefense()
+startColorLogger()
 
 # Create cache of unique identifiers
 let cache: IdentCache = newIdentCache()
@@ -247,9 +249,9 @@ proc loadFile(db: DBConn, path: string): void =
   ## Add file to the database
   procs = @[]
   registerAst(path.readFile())
-  showInfo &"found {procs.len()} proc definitions in '{path}'"
+  info &"found {procs.len()} proc definitions in '{path}'"
   for pr in procs:
-    showLog pr.name
+    debug pr.name
 
   db.addProcs(procs)
 
@@ -378,50 +380,50 @@ proc main() =
 
       of "loadf":
         if split.len != 2:
-          showError("`loadf` takes 1 argument")
+          err "`loadf` takes 1 argument"
         else:
-          showInfo("Loading file into database")
+          info "Loading file into database"
           db.loadFile(split[1])
 
       of "uses":
         if split.len != 2:
-          showError("`uses` takes 1 argument: name of the type to find usages for")
+          err "`uses` takes 1 argument: name of the type to find usages for"
         else:
           let tname = split[1]
-          showInfo "Searching for uses of type", tname
+          info "Searching for uses of type", tname
           db.getUses(tname)
 
       of "get":
         if split.len != 2:
-          showError("`get` takes 1 argument: name of the type to find usages for")
+          err "`get` takes 1 argument: name of the type to find usages for"
         else:
           let tname = split[1]
-          showInfo "Searching for sources of type", tname
+          info "Searching for sources of type", tname
           db.getSources(tname)
 
       of "open":
         if split.len != 2:
-          showError("`open` takes 1 argument: path to the db")
+          err "`open` takes 1 argument: path to the db"
         else:
-          showInfo "Opeing db file", split[1]
+          info  "Opeing db file", split[1]
           try:
             db = open(split[1], "", "", "")
-            showLog("Done")
+            debug "Done"
           except:
-            showError(getCurrentExceptionMsg())
+            err getCurrentExceptionMsg()
 
       of "signature":
         let argIdx = line.find(" ")
         if argIdx == -1:
-          showError("`signature` requires arguments")
+          err "`signature` requires arguments"
         else:
           let argSpec = line[argIdx + 1 .. ^1]
           let args = parseSignature(argSpec)
-          showInfo("Searching for signature in the database")
+          info "Searching for signature in the database"
 
-          showLog "Name glob: ", args.name
-          showLog "Arguments: ", args.args.join(" X ")
-          showLog "Ret  type: ", args.ret
+          debug "Name glob: ", args.name
+          debug "Arguments: ", args.args.join(" X ")
+          debug "Ret  type: ", args.ret
 
           db.matchSignature(
             name = args.name,
@@ -431,6 +433,7 @@ proc main() =
 
   db.close()
 
-
-pprintErr():
+try:
   main()
+except:
+  pprintErr()
