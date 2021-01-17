@@ -1,3 +1,5 @@
+// Tree-sitter grammar to parse list of simple arithmetic expressions
+
 module.exports = grammar({
     name: "simple_1",
     rules: {
