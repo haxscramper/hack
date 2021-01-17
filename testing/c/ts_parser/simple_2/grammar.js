@@ -7,9 +7,9 @@ module.exports = grammar(simple_1, {
     name: "simple_2",
     rules: {
         main: $ => repeat($.stmt),
-        stmt: $ => $.simpleStmt,
-        simpleStmt: $ => choice($.discardStmt, $.exprStmt),
-        exprStmt: $ => $.expr,
-        discardStmt: $ => prec.left(seq('discard', $.expr)),
+        stmt: $ => choice($.discardStmt, $.raiseStmt, $.expr),
+
+        discardStmt: $ => prec.right(seq('discard', optional($.expr))),
+        raiseStmt: $ => prec.right(seq('raise', optional($.expr))),
     }
 });

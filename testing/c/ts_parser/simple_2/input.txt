@@ -1,2 +1,4 @@
 discard 12 + 2
 discard varname
+discard
+raise 12 + 2 * 3 + 1
