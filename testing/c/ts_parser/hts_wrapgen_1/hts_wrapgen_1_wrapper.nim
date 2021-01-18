@@ -5,13 +5,13 @@ import
 type
   Hts_wrapgen_1NodeKind* = enum
     hts_wrapgen_1Main,      ## main
-    hts_wrapgen_1Comment,   ## comment
     hts_wrapgen_1Stmt,      ## stmt
-    hts_wrapgen_1Comment2,  ## comment
+    hts_wrapgen_1Str,       ## str
+    hts_wrapgen_1Str2,      ## str
     hts_wrapgen_1SyntaxError ## Tree-sitter parser syntax error
 type
   Hts_wrapgen_1ExternalTok* = enum
-    hts_wrapgen_1ExternComment ## comment
+    hts_wrapgen_1ExternStr   ## str
 type
   Hts_wrapgen_1Node* = distinct TSNode
 type
@@ -22,10 +22,10 @@ proc kind*(node: Hts_wrapgen_1Node): Hts_wrapgen_1NodeKind {.noSideEffect.} =
     case node.tsNodeType
     of "main":
       hts_wrapgen_1Main
-    of "comment":
-      hts_wrapgen_1Comment2
     of "stmt":
       hts_wrapgen_1Stmt
+    of "str":
+      hts_wrapgen_1Str2
     of "ERROR":
       hts_wrapgen_1SyntaxError
     else:

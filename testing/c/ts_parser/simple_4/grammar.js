@@ -1,7 +1,8 @@
+
 module.exports = grammar({
-    name: "hts_wrapgen_1",
-    externals: $ => [$.str],
-    extras: $ => [$.str, /\s/],
+    name: "simple_4",
+    externals: $ => [$.comment],
+    extras: $ => [$.comment, /\s\n/],
     rules: {
         main: $ => repeat($.stmt),
         stmt: $ => /[0-9]/
