@@ -7,7 +7,7 @@ import std/[strformat, strutils]
 
 var parser = newHaxLinkParser()
 
-var str = "std/sugar/a::c::method(int, seq[string, float]).arg1"
+var str = "std/sugar/a::c::method(cxx<float>, seq[string]).arg1"
 
 
 
