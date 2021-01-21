@@ -1,0 +1,4 @@
+!.gitignore
+!typespec.g4
+!main.cpp
+!Makefile
