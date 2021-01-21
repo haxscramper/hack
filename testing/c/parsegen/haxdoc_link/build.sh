@@ -4,7 +4,7 @@
 set -o nounset
 set -o errexit
 
-rm src/parser.c index.js
+rm -rf parser.c index.js
 
 hts-wrapgen grammarFromFile \
             --grammar:grammar.js \

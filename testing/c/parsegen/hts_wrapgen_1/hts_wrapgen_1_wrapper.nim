@@ -4,14 +4,30 @@ import
 
 type
   Hts_wrapgen_1NodeKind* = enum
-    hts_wrapgen_1Main,      ## main
-    hts_wrapgen_1Stmt,      ## stmt
-    hts_wrapgen_1Str,       ## str
-    hts_wrapgen_1Str2,      ## str
+    hts_wrapgen_1Block,     ## block
+    hts_wrapgen_1FunctionDefinition, ## function_definition
+    hts_wrapgen_1ParameterList, ## parameter_list
+    hts_wrapgen_1ReturnStatement, ## return_statement
+    hts_wrapgen_1SourceFile, ## source_file
+    hts_wrapgen_1LParTok,   ## (
+    hts_wrapgen_1RParTok,   ## )
+    hts_wrapgen_1SemicolonTok, ## ;
+    hts_wrapgen_1BoolTok,   ## bool
+    hts_wrapgen_1Comment,   ## comment
+    hts_wrapgen_1FuncTok,   ## func
+    hts_wrapgen_1Identifier, ## identifier
+    hts_wrapgen_1Number,    ## number
+    hts_wrapgen_1ReturnTok, ## return
+    hts_wrapgen_1Space,     ## space
+    hts_wrapgen_1LCurlyTok, ## {
+    hts_wrapgen_1RCurlyTok, ## }
+    hts_wrapgen_1Comment2,  ## comment
+    hts_wrapgen_1Space2,    ## space
     hts_wrapgen_1SyntaxError ## Tree-sitter parser syntax error
 type
   Hts_wrapgen_1ExternalTok* = enum
-    hts_wrapgen_1ExternStr   ## str
+    hts_wrapgen_1ExternComment, ## comment
+    hts_wrapgen_1ExternSpace ## space
 type
   Hts_wrapgen_1Node* = distinct TSNode
 type
@@ -20,12 +36,40 @@ proc tsNodeType*(node: Hts_wrapgen_1Node): string
 proc kind*(node: Hts_wrapgen_1Node): Hts_wrapgen_1NodeKind {.noSideEffect.} =
   {.cast(noSideEffect).}:
     case node.tsNodeType
-    of "main":
-      hts_wrapgen_1Main
-    of "stmt":
-      hts_wrapgen_1Stmt
-    of "str":
-      hts_wrapgen_1Str2
+    of "block":
+      hts_wrapgen_1Block
+    of "function_definition":
+      hts_wrapgen_1FunctionDefinition
+    of "parameter_list":
+      hts_wrapgen_1ParameterList
+    of "return_statement":
+      hts_wrapgen_1ReturnStatement
+    of "source_file":
+      hts_wrapgen_1SourceFile
+    of "(":
+      hts_wrapgen_1LParTok
+    of ")":
+      hts_wrapgen_1RParTok
+    of ";":
+      hts_wrapgen_1SemicolonTok
+    of "bool":
+      hts_wrapgen_1BoolTok
+    of "comment":
+      hts_wrapgen_1Comment2
+    of "func":
+      hts_wrapgen_1FuncTok
+    of "identifier":
+      hts_wrapgen_1Identifier
+    of "number":
+      hts_wrapgen_1Number
+    of "return":
+      hts_wrapgen_1ReturnTok
+    of "space":
+      hts_wrapgen_1Space2
+    of "{":
+      hts_wrapgen_1LCurlyTok
+    of "}":
+      hts_wrapgen_1RCurlyTok
     of "ERROR":
       hts_wrapgen_1SyntaxError
     else:
