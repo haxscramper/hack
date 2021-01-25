@@ -98,4 +98,4 @@ If you want to:
 Electronics
 ===========
 
-Particular scanning order for grid is dictated my underlying hardware.
+Particular scanning order for grid is dictated by underlying hardware.
