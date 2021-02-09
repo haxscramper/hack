@@ -4,8 +4,7 @@
 
 enum Tok
 {
-    COMMENT,
-    SPACE
+    COMMENT
 };
 
 void* tree_sitter_simple_4_external_scanner_create() {
@@ -16,6 +15,10 @@ bool tree_sitter_simple_4_external_scanner_scan(
     void*       payload,
     TSLexer*    lexer,
     const bool* valid_symbols) {
+    while (lexer->lookahead == ' ') {
+        lexer->advance(lexer, true);
+    }
+
     if (valid_symbols[COMMENT] && lexer->lookahead == '{') {
         while (lexer->lookahead != '}' && lexer->lookahead != '\0') {
             lexer->advance(lexer, false);
@@ -25,14 +28,8 @@ bool tree_sitter_simple_4_external_scanner_scan(
         lexer->mark_end(lexer);
         lexer->result_symbol = COMMENT;
         return true;
-    } else if (valid_symbols[SPACE] && lexer->lookahead == ' ') {
-        lexer->advance(lexer, true);
-        lexer->mark_end(lexer);
-        lexer->result_symbol = SPACE;
-        return true;
-    } else {
-        return false;
     }
+    return false;
 }
 
 unsigned tree_sitter_simple_4_external_scanner_serialize(
