@@ -1,0 +1,6 @@
+echo 12
+echo 12, 1
+echo(12, 12, 2, 3)
+echo(1, echo(000))
+echo (12, 12)
+return 20
