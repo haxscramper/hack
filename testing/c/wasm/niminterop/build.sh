@@ -22,6 +22,7 @@ rm -rf nimcache
 nim c                      \
     -d:asm                 \
     -d:emscripten          \
+    -d:danger              \
     --verbosity:1          \
     -d:release             \
     --stacktrace:off       \
@@ -42,6 +43,7 @@ nimdir=$HOME/.choosenim/toolchains/nim-$(
 
 emcc main.c                                          \
      nimcache/*.c                                    \
+     -O2 \
      -I$nimdir/lib                                   \
 		 -s EXPORTED_FUNCTIONS="['_printTest', '_main']" \
 		 -s EXTRA_EXPORTED_RUNTIME_METHODS="['cwrap']"   \
