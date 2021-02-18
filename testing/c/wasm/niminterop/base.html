@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en-us">
+<head>
+  <meta charset="utf-8">
+  <link rel="icon" href="data:;base64,iVBORw0KGgo=">
+</head>
+<body>
+    <textarea rows="20" cols="80" class="emscripten" id="output" rows="8"></textarea>
+    <br>
+    <button onclick="testCall()">testCall</button>
+    <script type='text/javascript'>
+           var testCall;
+           function InitWrappers() {
+               testCall = Module.cwrap('printTest', 'undefined');
+               console.log("Init wrappers done");
+           }
+
+           var Module = {
+               print: (function() {
+                   var element = document.getElementById('output');
+                   return function(text) {
+                       var nl = String.fromCharCode(13, 10);
+                       element.innerHTML += text.replace('\n', nl, 'g') + nl;
+                   };
+               })()
+           };
+    </script>  {{{ SCRIPT }}}
+</body>
+</html>

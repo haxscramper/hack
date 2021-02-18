@@ -1,0 +1,7 @@
+*/**.*
+!**/base.html
+!**/shell_minimal.html
+!**/*.c
+!**/Makefile
+!**/*.nim
+!**/*.sh
