@@ -5,25 +5,46 @@
   <link rel="icon" href="data:;base64,iVBORw0KGgo=">
 </head>
 <body>
-    <textarea rows="20" cols="80" class="emscripten" id="output" rows="8"></textarea>
-    <br>
-    <button onclick="testCall()">testCall</button>
-    <script type='text/javascript'>
-           var testCall;
-           function InitWrappers() {
-               testCall = Module.cwrap('printTest', 'undefined');
-               console.log("Init wrappers done");
-           }
+    <center>
+        <textarea rows="10" cols="80" class="emscripten" id="input"></textarea>
+        <div style="line-height:150%;"> <br> </div>
+        <button onclick="parseInput()">testCall</button>
 
-           var Module = {
-               print: (function() {
-                   var element = document.getElementById('output');
-                   return function(text) {
-                       var nl = String.fromCharCode(13, 10);
-                       element.innerHTML += text.replace('\n', nl, 'g') + nl;
-                   };
-               })()
-           };
+        <div style="line-height:150%;"> <br> </div>
+        <textarea rows="20" cols="80" class="emscripten" id="output"></textarea>
+
+        <div style="line-height:200%;"> <hr> </div>
+        <textarea rows="10" cols="80" class="emscripten" id="stdout"></textarea>
+    </center>
+
+    <script type='text/javascript'>
+     var testCall;
+
+     function toHtmlString(text) {
+         var nl = String.fromCharCode(13, 10);
+         return text.replace('\n', nl, 'g') + nl;
+     }
+
+     function parseInput() {
+         var input = document.getElementById("input");
+         var output = document.getElementById("output");
+
+         var result = toHtmlString(testCall(input.value));
+         output.innerHTML = result;
+     }
+
+     function InitWrappers() {
+         testCall = Module.cwrap('printTest', 'string', ['string']);
+     }
+
+     var Module = {
+         print: (function() {
+             var element = document.getElementById('stdout');
+             return function(text) {
+                 element.innerHTML += toHtmlString(text);
+             };
+         })()
+     };
     </script>  {{{ SCRIPT }}}
 </body>
 </html>
