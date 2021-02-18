@@ -43,7 +43,7 @@ nimdir=$HOME/.choosenim/toolchains/nim-$(
 
 emcc main.c                                          \
      nimcache/*.c                                    \
-     -O2 \
+     -O2 -Oz \
      -I$nimdir/lib                                   \
 		 -s EXPORTED_FUNCTIONS="['_printTest', '_main']" \
 		 -s EXTRA_EXPORTED_RUNTIME_METHODS="['cwrap']"   \
@@ -51,4 +51,5 @@ emcc main.c                                          \
 		 -s WASM=1                                       \
 	 	 -s NO_EXIT_RUNTIME=1                            \
 		 --shell-file base.html                          \
+     -flto                                           \
 		 -o main.html
