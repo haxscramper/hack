@@ -71,11 +71,6 @@ proc re2post(inRe: string): string =
       result.add '|'
       dec nalt
 
-echo re2post("a")
-echo re2post("a|b")
-echo re2post("(a|bc)")
-
-
 type
   StateKind = enum
     skValue
@@ -84,16 +79,10 @@ type
 
   State = ref object
     lastlist: int
-    case kind*: StateKind
-      of skValue:
-        value: char
-
-      of skSplit:
-        out0: State
-        out1: State
-
-      of skMatch:
-        discard
+    value: char
+    out0: State
+    out1: State
+    kind: StateKind
 
   Frag = ref object
     start: State
@@ -106,8 +95,8 @@ type
   List = ref seq[State]
   DState = ref object
     l: List
-    next: array[8 * sizeof(char), DState]
-    left, right: DState
+    next: array[char, DState]
+    left, right: int
 
 
 
@@ -132,9 +121,9 @@ proc patch(l: Ptrlist, s: State) =
   var next: PtrList
   var l = l
   while not isNil(l):
-    l = next
     next = l.next
     l.state = s
+    l = next
 
 proc append(l1, l2: Ptrlist): Ptrlist =
   var oldl1 = l1
@@ -226,17 +215,17 @@ proc addstate(l: var List, s: State) =
     l.add s
 
 proc startlist(start: var State, l: var List): List =
-    inc listid
-    addstate(l, start)
-    return l
+  inc listid
+  addstate(l, start)
+  return l
 
 
 
 proc step(clist: var List, c: char, nlist: var List) =
-    inc listid
-    for s in clist:
-      if s.kind == skValue and s.value == c:
-        addstate(nlist, s.out0)
+  inc listid
+  for s in clist:
+    if s.kind == skValue and s.value == c:
+      addstate(nlist, s.out0)
 
 
 proc listcmp(l1, l2: List): int =
@@ -255,7 +244,7 @@ proc listcmp(l1, l2: List): int =
 
   return 0
 
-proc ptrcmp(a, b: ref): bool =
+proc ptrcmp(a, b: ref): int =
   if (a < b):
     return -1
 
@@ -265,12 +254,35 @@ proc ptrcmp(a, b: ref): bool =
   else:
     return 0
 
-# DState* alldstates;
+var alldstates: seq[DState]
 proc dstate(l: List): DState =
-  discard
-#   DState **dp, *d;
+  sort(l[]) do (s1, s2: State) -> int:
+    ptrcmp(s1, s2)
 
-#   sort(l, ptrcmp)
+  var dp = 0
+  var d: DState = alldstates[dp]
+  while not isNil(d):
+    echo "---"
+    echo "d"
+    let i = listcmp(l, d.l)
+    if i < 0:
+      dp = d.left
+
+    elif i > 0:
+      dp = d.right
+
+    else:
+      return d
+
+    d = alldstates[dp]
+
+  d = DState()
+
+  alldstates[dp] = d
+  return d
+
+
+
 #   dp = &alldstates;
 #   while ((d = *dp) != NULL):
 #     let i = listcmp(l, &d->l);
@@ -298,10 +310,11 @@ proc startnfa(start: State, l: var List) =
 proc startdstate(start: var State): DState =
   return dstate(startlist(start, l1))
 
+
 proc nextstate(d: DState, c: char): DState =
   step(d.l, c, l1)
-  d.next[ord(c)] = dstate(l1)
-  return d.next[ord(c)]
+  d.next[c] = dstate(l1)
+  return d.next[c]
 
 proc match(start: DState, s: string): bool =
   var
@@ -309,7 +322,7 @@ proc match(start: DState, s: string): bool =
     next: DState
 
   for c in s:
-    next = d.next[ord(c)]
+    next = d.next[c]
     if isNIl(next):
       next = nextstate(d, c)
 
@@ -319,12 +332,17 @@ proc match(start: DState, s: string): bool =
 
 proc main() =
   var post  = re2post("a*b");
+  echo post
   var start = post2nfa(post);
+  echo isNil(start)
+  new(l1); l1[] = newSeq[State](nstate)
+  new(l2); l2[] = newSeq[State](nstate)
+  alldstates = newSeq[DState](nstate)
   # l1.s         = malloc(nstate * sizeof l1.s[0]);
   # l2.s         = malloc(nstate * sizeof l2.s[0]);
 
-  let str = "aaaab";
+  let str = "aaaab"
   if (match(startdstate(start), str)):
-      echo str
+    echo str
 
 main()

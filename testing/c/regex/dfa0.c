@@ -3,13 +3,13 @@
  * Supports only ( | ) * + ?.  No escapes.
  * Compiles to NFA and then simulates NFA
  * using Thompson's algorithm.
- * Caches steps of Thompson's algorithm to 
+ * Caches steps of Thompson's algorithm to
  * build DFA on the fly, as in Aho's egrep.
  *
  * See also http://swtch.com/~rsc/regexp/ and
  * Thompson, Ken.  Regular Expression Search Algorithm,
  * Communications of the ACM 11(6) (June 1968), pp. 419-422.
- * 
+ *
  * Copyright (c) 2007 Russ Cox.
  * Can be distributed under the MIT license, see bottom of file.
  */
@@ -170,7 +170,7 @@ Frag frag(State* start, Ptrlist* out) {
 }
 
 /*
- * Since the out pointers in the list are always 
+ * Since the out pointers in the list are always
  * uninitialized, we use the pointers themselves
  * as storage for the Ptrlists.
  */
@@ -401,7 +401,9 @@ DState* dstate(List* l) {
 
     qsort(l->s, l->n, sizeof l->s[0], ptrcmp);
     dp = &alldstates;
+    puts("----");
     while ((d = *dp) != NULL) {
+        puts("d");
         i = listcmp(l, &d->l);
         if (i < 0) {
             dp = &d->left;
@@ -475,11 +477,11 @@ int main(int argc, char** argv) {
  * sublicense, and/or sell copies of the Software, and to
  * permit persons to whom the Software is furnished to do so,
  * subject to the following conditions:
- * 
+ *
  * The above copyright notice and this permission notice shall
  * be included in all copies or substantial portions of the
  * Software.
- * 
+ *
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY
  * KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
  * WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR
