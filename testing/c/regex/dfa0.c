@@ -383,10 +383,12 @@ static int listcmp(List* l1, List* l2) {
 
 /* Compare pointers by address. */
 static int ptrcmp(const void* a, const void* b) {
-    if (a < b)
+    if (a < b) {
         return -1;
-    if (a > b)
+    }
+    if (a > b) {
         return 1;
+    }
     return 0;
 }
 
@@ -399,27 +401,39 @@ DState* dstate(List* l) {
     int      i;
     DState **dp, *d;
 
+    printf("alldstates %zu\n", alldstates);
+
     qsort(l->s, l->n, sizeof l->s[0], ptrcmp);
     dp = &alldstates;
-    puts("----");
+    printf("%zu -> ", dp);
     while ((d = *dp) != NULL) {
-        puts("d");
+        puts("  iteration");
         i = listcmp(l, &d->l);
         if (i < 0) {
+            puts("Listcmp left");
             dp = &d->left;
         } else if (i > 0) {
+            puts("Listcmp right");
             dp = &d->right;
         } else {
+            puts("Found value");
             return d;
         }
     }
+    puts("");
 
     d = malloc(sizeof *d + l->n * sizeof l->s[0]);
+    printf("Create new state @%zu\n", d);
     memset(d, 0, sizeof *d);
     d->l.s = (State**)(d + 1);
     memmove(d->l.s, l->s, l->n * sizeof l->s[0]);
     d->l.n = l->n;
-    *dp    = d;
+    puts("Assign to *dp");
+
+    // Add value to list of all states. If original array pointer is zero
+    // it will be set to some normal value
+    *dp = d;
+    printf("  alldstates %zu\n", alldstates);
     return d;
 }
 

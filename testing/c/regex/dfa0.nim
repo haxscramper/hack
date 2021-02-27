@@ -1,4 +1,5 @@
 import std/[algorithm]
+import hmisc/hdebug_misc
 
 proc re2post(inRe: string): string =
   var
@@ -261,9 +262,14 @@ proc dstate(l: List): DState =
 
   var dp = 0
   var d: DState = alldstates[dp]
+  echo dp, " -> "
   while not isNil(d):
-    echo "---"
-    echo "d"
+    # FIXME I don't understand original C code good enough to rewrite it
+    # into something same. Specifically, article says we are iterating over
+    # binary tree here - that part is easy, but I literally can not find
+    # any other place where `.left` and `.right` is referenced, which means
+    # they are either not set at all (highly unlikely), or this is done via
+    # some badshit-crazy C memory hacks, that I can'd decode.
     let i = listcmp(l, d.l)
     if i < 0:
       dp = d.left
@@ -272,11 +278,13 @@ proc dstate(l: List): DState =
       dp = d.right
 
     else:
+      echo "Found value"
       return d
 
     d = alldstates[dp]
 
   d = DState()
+  new(d.l)
 
   alldstates[dp] = d
   return d
@@ -341,8 +349,8 @@ proc main() =
   # l1.s         = malloc(nstate * sizeof l1.s[0]);
   # l2.s         = malloc(nstate * sizeof l2.s[0]);
 
+  startHax()
   let str = "aaaab"
-  if (match(startdstate(start), str)):
-    echo str
+  echov match(startdstate(start), str)
 
 main()
