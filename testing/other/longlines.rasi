@@ -1,0 +1,40 @@
+mainbox {
+  children: [ inputbar, listview ];
+}
+
+listview {
+  columns: 5;
+  padding: 8;
+  spacing: 10;
+  lines: 10;
+}
+
+prompt {
+  enabled: false;
+}
+
+window {
+  height: 60%;
+  width: 70%;
+  anchor: center;
+}
+
+element {
+  border: 0;
+  orientation: vertical;
+}
+
+// Styling
+* {
+  ac: #5294E2;
+  bg: #ffffff;
+  bg-alt: #EAEAEA;
+  fg: #ffffff;
+  font: "Source Code Pro 12";
+}
+
+element selected {
+  background-color: @ac;
+  border-color: @bg;
+  text-color: @fg;
+}
