@@ -1,0 +1,1 @@
+echo "Nim executable build"
