@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en-us">
+<head>
+  <meta charset="utf-8">
+</head>
+<body>
+  <textarea class="emscripten" id="output" rows="8"></textarea>
+  <script type='text/javascript'>
+       var Module = {
+           print: (function() {
+               var element = document.getElementById('output');
+               return function(text) {
+                   element.innerHTML += text.replace('\n', '<br>', 'g') + '<br>';
+               };
+           })(),
+           canvas: document.getElementById('canvas')
+       };
+  </script> {{{ SCRIPT }}}
+</body>
+</html>
