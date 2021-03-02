@@ -1,0 +1,76 @@
+#+setupfile: ~/.config/hax-config/emacs/latex-export-header.org
+
+Base C++ class ~cppbase.cpp~
+#+include: cppbase.hpp src cpp
+
+Automatically derived generated file - generated for every class definition
+during wrapping process.
+
+*Generated derived class definition* ~cppderived.hpp~
+#+include: cppderived.hpp src cpp
+
+Generated implementation for method *implementations* ~cppderived.cpp~
+#+include: cppderived.cpp src cpp
+
+Wrappers ~callbacks.nim~
+
+#+include: callbacks.nim src nim
+
+To override *behavior* of the class you can set implementation callback to
+a new functions:
+
+~main.nim~
+#+include: main.nim src nim
+
+
+
+But I still can provide override for behavior of the object without
+actually overriding anything, which might be quite useful for various
+'DelegatePainter' OOP patterns, where you actually only want to overide
+implementation of a single method and nothing else. With support for
+passing user data, and setting closures as implementation (and not just
+~{.cdecl.}~ callbacks) it won't be necessary to derive from C++ classes in
+most cases anyway.
+
+----
+
+In rarer cases where you'd actually need to provide full-fledged derived
+class, it is possible to implement some codegen facilities.
+
+I couldn't find a way to generate *standalone* files that can be injected
+in nim object hierarchy (at least without some ugly hacks). In
+order to derive from C++ class I would generate actual C++ class via nim
+macros, similarly to nim by example [[https://nim-by-example.github.io/macros/][macros]].
+
+#+begin_src nim
+  cxxClass NewCxx of CppDerived:
+    field: int
+    proc newMethod(): NI
+#+end_src
+
+Will generate following C++ code:
+
+#+begin_src cpp
+  class NewCxx : public CppDerived {
+    NI field;
+    NI newMethod(){
+      return newMethod_nimImpl(); // Actual implementation of nim method is
+                                  // declared in nim code.
+    }
+  }
+#+end_src
+
+Actually generating C++ code also helps with Qt - I no longer need to
+reimplement MOC, and instead can just use it as-is.
+
+
+-------------
+
+After some testing with codegen I think it is the best solution overall,
+but there are some issues, like making nim-declared types available in
+generated C++ code. If ~NewCxx~ uses non-trivial nim type - how to make it
+available in generated header?
+
+Also 'derived' clases still won't behave as proper OOP on the nim side -
+e.g. I'd need to provide additional overloads for all procs.
+
