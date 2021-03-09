@@ -1,0 +1,24 @@
+digraph G {
+  node[fontname="Consolas", shape = box];
+  loopMain[label="for i in 0 .. 3:\l  echo i + i"];
+
+  loopMain -> {loopMain0, loopMain1, loopMain2, loopMain3};
+
+  loopMain1 -> start1; start1[label="..."];
+  loopMain2 -> start2; start2[label="..."];
+  loopMain3 -> start3; start3[label="..."];
+
+  loopMain0 -> start0 -> asgn0 -> expr0;
+  start0[label = "Начало итерации"];
+  asgn0[label = "i := 0"];
+  expr0[label = "tmp := i * i = 0"];
+  expr0 -> call0;
+  call0[label = "echo tmp"];
+  call0 -> echoCall0[style = dashed];
+    echoCall0[label = "<вызов функции>\necho(message = '0')"];
+  echoCall0 -> echoCallImpl0;
+  echoCallImpl0[label="Запись внутренней\lработы функции"];
+  echoCallImpl0 -> end0;
+  echoCall0 -> end0[style = dashed];
+  end0[label="Окончание итерации"];
+}
