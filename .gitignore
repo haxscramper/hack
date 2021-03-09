@@ -397,3 +397,6 @@ parse.cpp
 **/secret.json
 **/*.lua.1
 **/qt_build
+
+**/.gdb_history
+**/*.nimproject*
