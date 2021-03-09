@@ -1,0 +1,29 @@
+- In order for @see{selectUniqueSymbol} to return anything script must be
+  evaluated, and symbol must be exported.
+- @see{implementRoutine().module} must match with
+  @see{createInterpreter().scriptname} for =file basename=
+
+https://irclogs.nim-lang.org/21-01-2021.html#16:06:41
+
+** Log 1
+   :PROPERTIES:
+   :CREATED:  <2021-01-21 Thu 19:31>
+   :END:
+
+
+After examining treeRepr for PNode that interpreter passes to callback proc
+it seems like I instead need to search for how nim type definition
+corresponds to AST interpretation, and most likely writing lazy conversion
+between PNode in compiled callback implementation and actual type.
+
+I can probably do something <type-name>PNode = distinct PNode where
+<type-name> is a name of type that I want to work on. I pass definition of
+the type to nim interpreter directly, but do some compile-time
+preprocessing on compiled side.
+
+This is similar to PMunch's idea for using marshalling
+
+Though this would only work if I create overloads for all procs that work
+with given type so they would accept both distinct PNode and actual type.
+Or use pointer-to-implementation in compiled code, and pass opaque
+handle+all procs to nim side.

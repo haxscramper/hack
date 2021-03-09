@@ -1,0 +1,83 @@
+[[file]] # Для каждгого файла который нужно добавить в отчет написать
+         # одну секцию ~[[file]]~
+
+# Заголовок в секции с задачей
+name = "~39 [4]~ Дописать заданную константу в конец списка N раз"
+# Относительный путь в файлу с кодом
+path = "completed/append-n-times.splog"
+# Путь в "примерам работы программы", если не указано то секция не
+# будет сгенерирована
+images = "prolog_images/append-n-times.png"
+# Постановка задачи
+description = """
+Дописать заданную константу в конец списка N раз
+"""
+
+[[file]]
+name = "~78 [8]~ Квадрат 0-1 матрицы"
+path = "completed/binary-matrix-square.splog"
+images = "prolog_images/binary-matrix-square.png"
+description = "Квадрат 0-1 матрицы"
+
+
+[[file]]
+path = "completed/cycle-shift.splog"
+name = "~75.2 [6]~ циклический сдвиг списка вправо"
+images = "prolog_images/cycle-shift.png"
+description = "75.2 [6] циклический сдвиг списка вправо"
+
+[[file]]
+path = "completed/get-last-elem.splog"
+name = "~23 [2]~ Получить последнее значение в списке"
+images = "prolog_images/get-last-elem.png"
+description = "Получить последнее значение в списке"
+
+[[file]]
+path = "completed/list-monotonic-check.splog"
+name = "~61 [6]~ Указать характер упорядоченности списка"
+images = "prolog_images/list-monotonic-check.png"
+description = "Указать характер упорядоченности списка"
+
+[[file]]
+path = "completed/remove-k-from-n.splog"
+name = "~54 [6]~ Удалить K элементов начиная с индекса N"
+images = "prolog_images/remove-k-from-n.png"
+description = "Удалить K элементов начиная с индекса N"
+
+[[file]]
+path = "completed/remove-list-elem.splog"
+name = "~28 [2]~ Удалить элемент по индексу из списка"
+images = "prolog_images/remove-list-elem.png"
+description = "28 [2] Удалить элемент по индексу из списка"
+
+[[file]]
+path = "completed/sum-elements-after.splog"
+name = "~33 [4]~ Вычислить число число элементов
+списка после элемента с заданным значанием"
+images = "prolog_images/sum-elements-after.png"
+description = """Вычислить число число элементов
+списка после элемента с заданным значанием"""
+
+[[file]]
+path = "completed/sublist-start.splog"
+name = "~49 [6]~ Определить номер позиции с которой
+начинается заданный подсписок"
+images = "prolog_images/sublist-start.png"
+description = """
+Определить номер позиции с которой начинается заданный подсписок
+"""
+
+[[file]]
+path = "completed/bindict-min-max.splog"
+name = "~85 [4]~ Найти максимальный и минимальные элемент в бинарном справочнике"
+images = "prolog_images/bindict-min-max.png"
+description = """
+85 [4] Найти максимальный и минимальные элемент в бинарном справочнике
+"""
+
+[[file]]
+name = "Вспомогательный функции"
+path = "prolog/common.splog"
+description  = """
+Вспомогательные предикаты использоваанные в программах
+"""

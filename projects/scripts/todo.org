@@ -1,0 +1,25 @@
+* General
+
+Instead of hardcoding all configuration for all conversions it would
+much easier to allow using external shell scripts for converting
+things between each other. And those scripts might be reused for
+different purposes too. *Or*, another possible solution would be to
+integrate it with =hcheat= and use the same format for converting
+things between each other. Using this approach we will achieve three
+goals at once:
+
+1. Provide non-hardcoded document conversion script
+2. Have more uses for =hcheat=
+3. Be able to convert everything into more presentable form in case
+   someone wants to just /read/ this (for example in published form)
+
+* Hconverter
+
+- [ ] Rename from ~circuit~ to ~hconverter~
+- [ ] Add support for generating images from latex code: full-page pdf
+  or single equation (default one)
+
+* Harchive 
+
+Unified tool for achiving files using different command line tools and
+supporting various formats.

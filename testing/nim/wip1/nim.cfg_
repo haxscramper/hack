@@ -1,0 +1,6 @@
+-d:nimOldCaseObjects
+--nimcache:cache
+--warning[CaseTransition]:off
+--warning[Deprecated]:off
+--warning[UnusedImport]:off
+--warning[ProveInit]:off

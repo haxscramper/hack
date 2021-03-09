@@ -1,0 +1,282 @@
+* In general
+
+#+HEADERS: :noeval
+#+BEGIN_SRC nim
+  parseArgsTyped:
+    opts: # CLI options for command itself
+      opt:
+        name: "option" # name of the option used internally
+        opt: ["--opt"] # option used when calling program
+    args:
+      arg:
+        name: "ARG" # name of the positional argument used internally
+        parsecheck: fileTest( # Function to call when validating
+                              # argument
+          placeholder, # `placeholder` variable (value of argument) is
+                       # defined and injected into scope
+          flags = {Opt.FileExits, Opt.FileUsrRead} # other arguments to
+                                                   # function, can be
+                                                   # absolutely anything
+        )
+    subs:
+      sub_from_file: "subcommand1.nim" # read subcommand definition from
+                                       # different file
+      sub_from_file: "subcommand2.yaml" # can read yaml too
+      sub:
+        name: "watch"
+        args:
+          arg:
+            name "FILE"
+            parsecheck: fileTest(
+              {placeholder},
+              flags = {Opt.FileUsrRead})
+            on_set: # when argument is set (for positional arguments
+                    # this basically means it will always run) call this
+                    # function. Calling is done *after* all command-line
+                    # parsing is done and no errors is reported.
+              debugFile(placeholder)
+          opt:
+            name "some-opt"
+            parseto: float
+#+END_SRC
+
+Some of the argument checking options are shipped with package (file
+test, integer range value etc.). In some cases (~fileTest~) arguments
+of the funciton are parsed too and used to add notes to ~--help~
+
+subcommand1.nim:
+
+#+HEADERS: :noeval
+#+BEGIN_SRC nim
+sub:
+  name: "listen"
+  args:
+    name: "HELL"
+    default: "level 9"
+#+END_SRC
+
+* Implementation ideas
+
+#+BEGIN_SRC dot :file hargparse2.tmp.png :cmdline -Kdot -Tpng :cache yes
+  digraph G {
+    node[shape=box];
+    rankdir=LR;
+    dataFormat[label="Universal \ndata format"];
+    {yaml, json, toml, nimin} -> dataFormat;
+  dataFormat -> validation;
+  codegen[label="Code\ngeneration"];
+  validation -> codegen;
+  nimtarget[label="Default target\nnim code"];
+  cpp[label="Maybe C++\nor other\nlanguage"];
+  codegen -> {nimtarget, cpp};
+
+  }
+#+END_SRC
+
+#+RESULTS[4c4729ff7a0d4f6add4d171fef56737e4a658401]:
+[[file:hargparse2.tmp.png]]
+
+- *Parsing*:
+  - Global options (exclusion rules and required options)
+  - Tree of values. Each command (subcommand and top-level program
+    call) can be defined using struct:
+    - command
+      - name :: name of command. For toplevel command it might be
+                empty. All lower-level have to have non-zero name
+                length
+      - on_match :: proc/code to run if subcommand is called.
+      - options :: list of options for the command.
+        - takes_value :: =bool=. optional, defaults to false
+        - name :: =string=. required
+        - rules :: =NimNode= or boolean expression (it might be
+                   possible to parse simple expressions involving only
+                   =and/or/not/xor...= and write manual evaluation
+                   tool (parsing nim code at runtime using nim might
+                   be easily possible))
+        - parsecheck :: piece of code to check argument correctness
+                        (if more comprehensive checks are required).
+                        This piece of code is analysed to determine
+                        use of default functions (~fileTest~) and
+                        generate better help messages.
+        - parseto :: =type= - check if argument can be parsed into it
+                     (things like ~int, float, double~ etc). NOTE:
+                     this requires to somehow generate list of all
+                     parsing functions (overloads for parsing
+                     funcsions). Is it possible to get list of all
+                     defined functions at compile-time using nim
+                     macro?
+      - args :: positional arguments for the command
+      - commands :: list of subcommands
+- *Validation*
+  - Check for duplicated values
+  - Command either has positional arguments or subcommands (it is not
+    really intuitive to have argument be command or argument value
+    depending on the _value_ of the argument)
+  - Help message generation (?)
+- *Code generation steps*
+  -
+- *Generated code will do following*
+  - Argument parsing and valiation
+    - Check for possible values of the input string (can be parsed and
+      parse results is in allowed range)
+    - Run validation functions if any
+    - Evaluate exclusion rules
+    - Add value to result table
+  - Pos-processing
+    - /Maybe/ evaluate exclusion rules again (when all arguments are
+      present)
+    - Evaluate reaction procs in the order of their definition (during
+      code generation they have been stored in input data as nim nodes)
+    - Return result table to toplevel
+  - User interactions
+    - two uses for subcommands: define proc that will be called when
+      command is used, org work with parsed options tree.
+    - *issues:*
+      - How user can get value of the command? There is two options
+        (everything else is mix of either of two):
+        - Generate lots of enums for all commands, subcommands,
+          arguments etc. and use them to get values from tommand
+          table. This does not solve issue of getting *typed* value
+          from argumen.
+        - Write macro that takes name of the argument/option etc,
+          performs all checks at compile-time and substitutes
+          corresponding function call with correct signature. To get
+          value of the toplevel command option I will need to write
+          ~%%$"option"~. To check whether or not value is present i
+          can either use ~%%?"option"~ or declare return result of the
+          ~%%$~ as =Option= *type*. This allows me to use ~if_let~.
+          Arguments in subcommands can be accessed via
+          ~"comm::comm2::opt"~ *or* inside macro/proc pragma
+          ~asSubcommand~ (in this case all options will default to
+          searching in the said subcommand. To access top-level
+          command you need to use ~::~ prefix)
+
+* TODO todo [0/27]
+
++ [ ] Write macro to export procs to shell almost directly
++ [ ] Generate cli interface from parsing docopt string (I parse
+  everything to internale representaiton so it does not matter which
+  input format I use, I can support all of them without any problems)
++ [ ] Take version for the ~--version~ command from nimble package if
+  possible
++ [ ] Add support for debugging parsing of command-line arguments
+  (informing user about overriden multally exclusive options for
+  example)
++ [ ] Add support for generating man pages that are more grep-friendly
+  or integrate support for grepping for strings in help.
++ [ ] Help/man for passing more complex data structures as command
+  line arguments
++ [ ] Add support for passing custom strings to parser (use this for
+  testing)
++ [ ] Instead of creating variable named ~optParsed~ wrap everything in
+  ~block:~ that returns generated value (or macro should define proc
+  that does all of the parsing and returns result. This also allows to
+  implement #1 more easily)
++ [ ] Support for more debugging options for the ~parseArgs~ macro itself.
+  Write to file, more colorful debug messages etc. Is it possible to
+  use colecho at compile time?
++ [ ] Add errors on non-existant argument values. Add checking for
+  misspelled flag names (use string edit disance to generate list of
+  all possible flags)
++ [ ] Mutally exclusive argument checking - necessary
++ [ ] Requirement Rules: Arguments can define the following types
+  of requirement rules - interesting to implement
+  + [ ] Can be required by default
+  + [ ] Can be required only if certain arguments are present
+  + [ ] Can require other arguments to be present
+  + [ ] Can be required only if certain values of other arguments are used
++ [ ] Instead of supplying explicit range of values add support for using
+  proc for checking whether or not value is in range. Or do something
+  like ~mapIt~ - inject parsed value into scope and perform logical
+  operations on it.
++ [ ] Subcommands
++ [ ] Implement help generation using colecho. Show command argument
+  synopsis based on the vtype of accepted variable. I.e int should
+  generate <n>
++ [ ] Parse more complex structures (tuples of values). Help message
+  should show rule that is used for parsing. Ex: ~(int,int)~ should be
+  passed as ~"(1,2)"~ (for example (alternative parsing syntax such as
+  ~"(18 * 9)"~)) might also be used and
++ [ ] Short and long help
++ [ ] Show help for particular option
++ [ ] Check for file/folder existence. This requires support for
+  custom checking procs but this is relatively easy to implement.
++ [ ] Error on unknown option
++ [ ] ~writeErrors~ should accept either single errorEnum or
+  set/sequence of enums to allow for less verbose error messages -
+  instead of printing ch error on the separate message it mnighe be
+  more useful to combine them into one.
++ [ ] Generate parser code from toml/yaml if it is possible to do at
+  compile time (although it is possible to generate code at runtime
+  and then include it into any other program) - this can also be used
+  to generate code for other languages
++ [ ] Helper function for bash/perl to use ~argcheck~ to simplify
+  access to array.
++ [ ] Instead of compiling code in file each time main programm is
+  compiled it would be more useful to generate macro code, save it
+  into file and include the file instead of spending time on each
+  compilation (this might not be useful for multi-file projects
+  (compiler caching will probably help), but single file projects will
+  certainly win something (especially considering the fact that I plan
+  to implement a lot more interesting things that will generate even
+  more code)
++ [ ] Parse array of strings separated by comma and escaped with
+  single quote. I.e. parsing ="'hello',',,,,,','sdfs'"= should give
+  ~@["hello", ",,,,,", "sdfs"]~. (original string can be generated
+  using ~input.mapIt(&"'it'")).join(",")~
+  + [ ] Add support for nested/escaped quotes (quote decreases balance
+    if it is followed by comma and not preceded by escape (in case of
+    ~echo "'test','\''"~ this can be somewhat useful). Standalone
+    quote is not counted) ("',,,\'',"). Another possible solition:
+    make sequence of quotes increase balance if they are not followed
+    by comma or decrease otherwise. For example: ='''= will have
+    balance 3, and after encountering ='= we get to 4. To close the
+    sequence we need to either encounter ='''',= or ='#,=
+    (unconditional sequence ending?)
++ [ ] Separate arguments into arguments and subcommands during parsing
++ [ ] syntactic sugar macro for defining commands and statically
+  checking their name validity. When I define new CLI options using
+  ~opt: name "soemstring"~ it is added to compile-time table of all
+  possible values. When I use ~%%"somecommand"~ I get compile-time
+  error if I used incorrect string.
+
+* TODO Mutally exclusive command-line options
+
+Mutally exclusive command-line options with support for optionally
+enabling override support. I.e. if options are mutally exclusive but
+set to override each other only last option will be set by the end of
+parsing (if multiple options in the same group were supplied)
+
+#+HEADERS: :noeval
+#+BEGIN_SRC nim
+opt:
+
+#+END_SRC
+
+
+Rules for exclusion/inclusion:
+
+#+HEADERS: :noeval
+#+BEGIN_SRC nim
+  global: # global configuration for command-line options
+    required:
+      at_least_one_of: ["t-ext", "f-ext"]
+    rules:
+      %%?"t-ext" and not %%?"f-ext"
+      %%?"f-ext" and not %%?"t-ext"
+#+END_SRC
+
+* Notes
+
+** macro orgnization
+
+#idea #code##nim #project##hargparse2 proc bound to flag might run
+/before/ or /after/ execution of main program. For this I will need to
+declare |main| function and pass it to parsing macro. To avoid
+convoluted shenanigans with function order definition I can separate
+CLI parsing macro into two parts: first one defines all types and
+structures, parses configuration into some inner data format. After,
+second one could be invoked anywhere in the code, and it will generate
+code that does actual parsing. This gives additional opportunities for
+user customization since data structure for commands is not used
+immediately and can be changed further if necessary.
