@@ -1,5 +1,2 @@
 if 1:
   echo
-else:
-  if 1:
-    echo

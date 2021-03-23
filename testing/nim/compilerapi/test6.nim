@@ -1,3 +1,5 @@
+{.push warning[UnusedImport]:off.}
+
 import hmisc/other/oswrap
 import std/deques
 import compiler/[
