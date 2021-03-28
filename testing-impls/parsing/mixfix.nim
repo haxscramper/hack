@@ -3,15 +3,15 @@ import fusion/matching
 
 type
   Associativity = enum
-    Left
-    Right
-    Non
+    aLeft
+    aRight
+    aNon
 
   FixityKind = enum
-    Prefix
-    Infix
-    Postfix
-    Closed
+    fPrefix
+    fInfix
+    fPostfix
+    fClosed
 
   Fixity = object
     kind*: FixityKind
@@ -29,7 +29,7 @@ type
     operator*: Operator
     args*: seq[Expr]
 
-  Graph = object
+  Graph = ref object
     table: Table[int, seq[Operator]]
 
 
@@ -202,11 +202,10 @@ type
   Opts[T] = object
     opts: seq[T]
 
-  
 proc parse[T](self: Opts[T], toks: ParseInput): ParseResult[T] =
   var oks, errs: seq[ParseResult[T]]
   for opt in self.opts:
-    let match = parse(opt)
+    let match = parse(opt, toks)
     if match.ok:
       oks.add match
 
@@ -265,190 +264,170 @@ proc parse[A, B](self: Between[A, B], toks: ParseInput): ParseResult[seq[A]] =
   else:
     return ParseResult[seq[A]](ok: true)
 
-struct Expr_<'g, G: PrecedenceGraph>(&'g G);
+type
+  Expr1 = object
+    g: Graph
 
-impl<'g, G: PrecedenceGraph> Parser for Expr_<'g, G> {
-    type O = Expr;
-    fn p<'i>(&self, toks: ParseInput<'i>) -> ParseResult<'i, Self::O> {
-        Precs(self.0, self.0.all()).p(toks)
-    }
-}
+  Precs = object
+    g: Graph
+    values: seq[int]
 
-struct Precs<'g, G: PrecedenceGraph>(&'g G, Vec<G::P>);
+  Prec = object
+    g: Graph
+    value: int
 
-impl<'g, G: PrecedenceGraph> Parser for Precs<'g, G> {
-    type O = Expr;
-    fn p<'i>(&self, toks: ParseInput<'i>) -> ParseResult<'i, Self::O> {
-        Opts(self.1.iter().map(|&p| Prec(self.0, p)).collect()).p(toks)
-    }
-}
+  Closed = object
+    g: Graph
+    value: int
 
-struct Prec<'g, G: PrecedenceGraph>(&'g G, G::P);
+  NonAssoc = object
 
-impl<'g, G: PrecedenceGraph> Parser for Prec<'g, G> {
-    type O = Expr;
-    fn p<'i>(&self, toks: ParseInput<'i>) -> ParseResult<'i, Self::O> {
-        Opts::<&Parser<O = Expr>>(vec![
-            &Closed(self.0, self.1),
-            &NonAssoc(self.0, self.1),
-            &PreRight(self.0, self.1),
-            &PostLeft(self.0, self.1),
-        ])
-        .p(toks)
-    }
-}
+  PreRight = object
+    g: Graph
+    value: int
 
-struct Closed<'g, G: PrecedenceGraph>(&'g G, G::P);
+  PostLeft = object
+    g: Graph
+    value: int
 
-impl<'g, G: PrecedenceGraph> Parser for Closed<'g, G> {
-    type O = Expr;
-    fn p<'i>(&self, toks: ParseInput<'i>) -> ParseResult<'i, Self::O> {
-        Inner(self.0, self.1, Fixity::Closed).p(toks)
-    }
-}
+  Inner = object
+    g: Graph
+    value: int
+    fixity: Fixity
 
-struct NonAssoc<'g, G: PrecedenceGraph>(&'g G, G::P);
+  Backbone = object
+    g: Graph,
+    op: Operator
 
-impl<'g, G: PrecedenceGraph> Parser for NonAssoc<'g, G> {
-    type O = Expr;
-    fn p<'i>(&self, toks: ParseInput<'i>) -> ParseResult<'i, Self::O> {
-        let succ = Precs(self.0, self.0.succ(self.1));
-        let (toks, left) = succ.p(toks)?;
-        let (toks, mut expr) = Inner(self.0, self.1, Fixity::Infix(Associativity::Non)).p(toks)?;
-        let (toks, right) = succ.p(toks)?;
-        expr.args.insert(0, left);
-        expr.args.push(right);
-        Ok((toks, expr))
-    }
-}
 
-struct PreRight<'g, G: PrecedenceGraph>(&'g G, G::P);
+proc parse(self: Prec, toks: ParseInput): ParseResult[Expr] =
+  let opts = Opts[Fixity](opts: @[
+    Fixity(kind: fClosed, )
+    # vec![
+    #     &Closed(self.0, self.1),
+    #     &NonAssoc(self.0, self.1),
+    #     &PreRight(self.0, self.1),
+    #     &PostLeft(self.0, self.1),
+    # ]
+  ])
 
-impl<'g, G: PrecedenceGraph> Parser for PreRight<'g, G> {
-    type O = Expr;
-    fn p<'i>(&self, toks: ParseInput<'i>) -> ParseResult<'i, Self::O> {
-        let succ = Precs(self.0, self.0.succ(self.1));
-        let (toks, (inners, last)) = (
-            Plus(Opt(
-                Inner(self.0, self.1, Fixity::Prefix),
-                (
-                    &succ,
-                    Inner(self.0, self.1, Fixity::Infix(Associativity::Right)),
-                ),
-            )),
-            &succ,
-        )
-            .p(toks)?;
+  parse(opts, toks)
 
-        let mut expr = inners
+proc parse(self: Precs, toks: ParseInput): ParseResult[Expr] =
+  let opts = Opts[Prec](opts: self.values.mapIt(Prec(g: self.g, value: it)))
+  parse(opts, toks)
+
+proc parse(self: Expr1, toks: ParseInput): ParseResult[Expr] =
+  parse(Precs(g: self.g, values: self.g.all()), toks)
+
+proc parse(self: Closed, toks: ParseInput): ParseResult[Expr] =
+  Inner(self.0, self.1, Fixity::Closed).p(toks)
+
+proc parse(self: NonAssoc, toks: ParseInput): ParseResult[Expr] =
+  let succ = Precs(g: self.g, values: self.g.succ(self.value));
+  let (toks, left) = succ.p(toks)?;
+  let (toks, mut expr) = Inner(self.0, self.1, Fixity::Infix(Associativity::Non)).p(toks)?;
+  let (toks, right) = succ.p(toks)?;
+  expr.args.insert(0, left);
+  expr.args.push(right);
+  Ok((toks, expr))
+
+proc parse(self: PreRight, toks: ParseInput): ParseResult[Expr] = 
+  let succ = Precs(self.0, self.0.succ(self.1));
+  let (toks, (inners, last)) = (
+      Plus(Opt(
+          Inner(self.0, self.1, Fixity::Prefix),
+          (
+              &succ,
+              Inner(self.0, self.1, Fixity::Infix(Associativity::Right)),
+          ),
+      )),
+      &succ,
+  )
+      .p(toks)?;
+
+  let mut expr = inners
+      .into_iter()
+      .map(|e| {
+          e.map_right(|(first, mut rest)| {
+              rest.args.insert(0, first);
+              rest
+          })
+          .into_inner()
+      })
+      .rev()
+      .fold1(|right, mut left| {
+          left.args.push(right);
+          left
+      })
+      .unwrap();
+
+  expr.args.push(last);
+
+  Ok((toks, expr))
+
+proc parse(self: PostLeft, g: ParseInput): ParseResult[Expr] = 
+  let succ = Precs(self.0, self.0.succ(self.1));
+
+  let (toks, (first, inners)) = (
+      &succ,
+      Plus(Opt(
+          Inner(self.0, self.1, Fixity::Postfix),
+          (
+              Inner(self.0, self.1, Fixity::Infix(Associativity::Left)),
+              &succ,
+          ),
+      )),
+  )
+      .p(toks)?;
+
+  let mut expr = inners
+      .into_iter()
+      .map(|e| {
+          e.map_right(|(mut rest, last)| {
+              rest.args.push(last);
+              rest
+          })
+          .into_inner()
+      })
+      .fold1(|left, mut right| {
+          right.args.insert(0, left);
+          right
+      })
+      .unwrap();
+
+  expr.args.insert(0, first);
+
+  Ok((toks, expr))
+
+proc parse(self: Inner, toks: ParseInput): ParseResult[Expr] =
+    Opts(
+        self.0
+            .ops(self.1, self.2)
             .into_iter()
-            .map(|e| {
-                e.map_right(|(first, mut rest)| {
-                    rest.args.insert(0, first);
-                    rest
-                })
-                .into_inner()
-            })
-            .rev()
-            .fold1(|right, mut left| {
-                left.args.push(right);
-                left
-            })
-            .unwrap();
+            .map(|o| Backbone(self.0, o))
+            .collect(),
+    )
+    .p(toks)
 
-        expr.args.push(last);
+proc parse(self: Backbone, toks: ParseInput): ParseResult[Expr] = 
+  let (toks, exprs) = Between(
+      Expr_(self.0),
+      self.1
+          .pattern
+          .backbone()
+          .iter()
+          .map(|b| Seq(b.iter().map(|t| Tok(t)).collect()))
+          .collect(),
+  )
+  .p(toks)?;
 
-        Ok((toks, expr))
-    }
-}
+  Ok((toks, Expr::new(self.1.clone(), exprs)))
 
-struct PostLeft<'g, G: PrecedenceGraph>(&'g G, G::P);
+proc parseExpr(graph: Graph, tokens: ParseInput): Expr =
+  let (unparsed, expr) = Expr_(graph).p(tokens)?;
 
-impl<'g, G: PrecedenceGraph> Parser for PostLeft<'g, G> {
-    type O = Expr;
-    fn p<'i>(&self, toks: ParseInput<'i>) -> ParseResult<'i, Self::O> {
-        let succ = Precs(self.0, self.0.succ(self.1));
 
-        let (toks, (first, inners)) = (
-            &succ,
-            Plus(Opt(
-                Inner(self.0, self.1, Fixity::Postfix),
-                (
-                    Inner(self.0, self.1, Fixity::Infix(Associativity::Left)),
-                    &succ,
-                ),
-            )),
-        )
-            .p(toks)?;
-
-        let mut expr = inners
-            .into_iter()
-            .map(|e| {
-                e.map_right(|(mut rest, last)| {
-                    rest.args.push(last);
-                    rest
-                })
-                .into_inner()
-            })
-            .fold1(|left, mut right| {
-                right.args.insert(0, left);
-                right
-            })
-            .unwrap();
-
-        expr.args.insert(0, first);
-
-        Ok((toks, expr))
-    }
-}
-
-struct Inner<'g, G: PrecedenceGraph>(&'g G, G::P, Fixity);
-
-impl<'g, G: PrecedenceGraph> Parser for Inner<'g, G> {
-    type O = Expr;
-    fn p<'i>(&self, toks: ParseInput<'i>) -> ParseResult<'i, Self::O> {
-        Opts(
-            self.0
-                .ops(self.1, self.2)
-                .into_iter()
-                .map(|o| Backbone(self.0, o))
-                .collect(),
-        )
-        .p(toks)
-    }
-}
-
-struct Backbone<'g, G: PrecedenceGraph>(&'g G, &'g Operator);
-
-impl<'g, G: PrecedenceGraph> Parser for Backbone<'g, G> {
-    type O = Expr;
-    fn p<'i>(&self, toks: ParseInput<'i>) -> ParseResult<'i, Self::O> {
-        let (toks, exprs) = Between(
-            Expr_(self.0),
-            self.1
-                .pattern
-                .backbone()
-                .iter()
-                .map(|b| Seq(b.iter().map(|t| Tok(t)).collect()))
-                .collect(),
-        )
-        .p(toks)?;
-
-        Ok((toks, Expr::new(self.1.clone(), exprs)))
-    }
-}
-
-pub fn parse_expr<'i, G: PrecedenceGraph>(
-    graph: &G,
-    tokens: ParseInput<'i>,
-) -> Result<Expr, ParseError<'i>> {
-    let (unparsed, expr) = Expr_(graph).p(tokens)?;
-    if unparsed.len() == 0 {
-        Ok(expr)
-    } else {
-        Err(ParseError::UnparsedInput(unparsed))
-    }
-}
 
 #[cfg(test)]
 mod tests {
