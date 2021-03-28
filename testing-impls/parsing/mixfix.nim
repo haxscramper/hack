@@ -1,4 +1,4 @@
-import std/[sequtils, tables, strutils]
+import std/[sequtils, tables, strutils, algorithm]
 import fusion/matching
 
 type
@@ -198,53 +198,72 @@ proc parse[T](self: Seq[T], toks: var ParseInput): ParseResult[seq[T]] =
     toks = match.rest
     result.value.add match.value
 
-struct Opts<T>(Vec<T>);
+type
+  Opts[T] = object
+    opts: seq[T]
 
-impl<P: Parser> Parser for Opts<P> {
-    type O = P::O;
-    fn p<'i>(&self, toks: ParseInput<'i>) -> ParseResult<'i, Self::O> {
-        let (mut oks, mut errs) = (vec![], vec![]);
-        for p in &self.0 {
-            match p.p(toks) {
-                Ok(ok) => oks.push(ok),
-                Err(err) => errs.push(err),
-            }
-        }
-        oks.into_iter()
-            .min_by_key(|(toks, _)| toks.len())
-            .ok_or_else(|| errs.into_iter().min().unwrap_or(ParseError::EmptyOpts))
-    }
-}
+  
+proc parse[T](self: Opts[T], toks: ParseInput): ParseResult[T] =
+  var oks, errs: seq[ParseResult[T]]
+  for opt in self.opts:
+    let match = parse(opt)
+    if match.ok:
+      oks.add match
 
-struct Plus<T>(T);
+    else:
+      errs.add match
 
-impl<P: Parser> Parser for Plus<P> {
-    type O = Vec<P::O>;
-    fn p<'i>(&self, toks: ParseInput<'i>) -> ParseResult<'i, Self::O> {
-        let (mut toks, o) = self.0.p(toks)?;
-        let mut res = vec![o];
-        while let Ok((next, o)) = self.0.p(toks) {
-            toks = next;
-            res.push(o);
-        }
-        Ok((toks, res))
-    }
-}
 
-struct Between<A, B>(A, Vec<B>);
+  if oks.len > 0:
+    oks = sortedByIt(oks, it.rest.len())
+    return oks[0]
 
-impl<A: Parser, B: Parser> Parser for Between<A, B> {
-    type O = Vec<A::O>;
-    fn p<'i>(&self, toks: ParseInput<'i>) -> ParseResult<'i, Self::O> {
-        if let Some((first, rest)) = self.1.split_first() {
-            (first, Seq(rest.iter().map(|p| (&self.0, p)).collect()))
-                .p(toks)
-                .map(|(toks, (_, xs))| (toks, xs.into_iter().map(|(x, _)| x).collect()))
-        } else {
-            Ok((toks, vec![]))
-        }
-    }
-}
+  else:
+    if errs.len > 0:
+      return errs[0]
+
+    else:
+      return ParseResult[T](ok: false, fail: ParseError(kind: EmptyOpts))
+
+type
+  Plus[T] = object
+    plus: T
+
+proc parse[T](self: Plus[T], toks: ParseInput): ParseResult[seq[T]] =
+  var match = parse(self.plus, toks)
+  if not match.ok:
+    return ParseResult[seq[T]](ok: false, fail: match.fail)
+
+  else:
+    var res: seq[T] = @[match.value]
+    while match.ok:
+      match = parse(self.plus, toks)
+      if match.ok:
+        toks = match.rest
+        res.add match.value
+
+    return ParseResult[seq[T]](ok: true, value: res)
+
+
+type
+  Between[A, B] = object
+    head: A
+    rest: seq[B]
+
+proc parse[A, B](self: Between[A, B], toks: ParseInput): ParseResult[seq[A]] =
+  var match = parse(self.head, toks)
+  if match.ok:
+    discard
+        # if let Some((first, rest)) = self.1.split_first() {
+        #     (first, Seq(rest.iter().map(|p| (&self.0, p)).collect()))
+        #         .p(toks)
+        #         .map(|(toks, (_, xs))| (toks, xs.into_iter().map(|(x, _)| x).collect()))
+        # } else {
+        #     Ok((toks, vec![]))
+        # }
+
+  else:
+    return ParseResult[seq[A]](ok: true)
 
 struct Expr_<'g, G: PrecedenceGraph>(&'g G);
 
