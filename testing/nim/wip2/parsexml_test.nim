@@ -134,7 +134,7 @@ proc parseMenu(parser: var XmlParser): Menu =
 
 proc main() =
   block:
-    var parser = newXmlParser("""<menuitem value="New" onclick="CreateNewDoc()" />""")
+    var parser = newXmlParser("<a b=\"1\"><b/></a>")
     while parser.kind() != xmlEof:
       parser.next()
       echo displayAt(parser)
