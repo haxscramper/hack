@@ -2,30 +2,7 @@ import std/[parsexml, streams]
 import hmisc/other/oswrap
 import hmisc/hdebug_misc
 import hpprint
-
-proc newXmlParser*(file: AbsFile): XmlParser =
-  var fileStream = newFileStream(file.string, fmRead)
-  if isNIl fileStream:
-    discard
-
-  else:
-    open(result, fileStream, file.string)
-
-proc newXmlParser*(text: string): XmlParser =
-  var stringStream = newStringStream(text)
-  open(result, stringStream, "<text>")
-
-proc displayAt*(parser: XmlParser): string =
-  result = "(" & $parser.getLine & ":" & $parser.getColumn & ") "
-  result.add case parser.kind:
-    of {xmlElementStart, xmlElementEnd, xmlElementOpen}:
-      $parser.kind & " " & parser.elementName()
-
-    of xmlAttribute:
-      $parser.kind & " " & parser.attrKey() & " = \"" & parser.attrValue() & "\""
-
-    else:
-      $parser.kind
+import hmisc/hasts/xml_ast
 
 
 #=============================  ^^^ --- ^^^  =============================#
