@@ -76,6 +76,13 @@ type
         flag: Flag
 
       of hkWhereGroup:
+        case guarded: bool
+          of true:
+            guardFlag: Flag
+
+          else:
+            discard
+
         startActions: seq[Handler] ## Actions executed immediately when
                                    ## group starts
         finishActions: seq[Handler] ## Actions executed after groups
@@ -136,16 +143,15 @@ type
   ExecContext = object
     stack: seq[Ast]
     waiters: seq[Handler]
-    flags: array[Flag, uint8]
-    flagCount: int
+    flags: seq[Flag]
 
 proc lift(context: var ExecContext, flag: Flag) =
-  inc context.flags[flag]
-  inc context.flagCount
+  echov "Lifted", flag
+  context.flags.add flag
 
 proc drop(context: var ExecContext, flag: Flag) =
-  dec context.flags[flag]
-  dec context.flagCount
+  let val = context.flags.pop
+  assert val == flag, &"{val} == {flag}"
 
 proc execOn(handler: Handler, event: Event, context: var ExecContext)
 
@@ -163,15 +169,14 @@ proc putAst(context: var ExecContext, ast: Ast) =
       context.stack.add ast
 
 
+proc execTrim(handler: var Handler) =
+  discard
 
 proc execOn(handler: Handler, event: Event, context: var ExecContext) =
 
   echov event.kind, handler.kind
   case handler.kind:
     of hkWhereGroup:
-      if event.kind == evFinish:
-        raiseImplementError("")
-
       # There are two cases - `where` group must first be assigned to
       # corresponding waiters and then collected (group uses
       # `await`/`next`), *or* it has no forward waiters and can be executed
@@ -216,6 +221,23 @@ proc execOn(handler: Handler, event: Event, context: var ExecContext) =
       if event.kind == evFinish:
         handler.onComplete.execOn(event, context)
 
+    of hkTrim:
+      echov "Executing trim action"
+      var target = -1
+      for idx, waiter in context.waiters:
+        if waiter.kind == handler.trimKind and
+           waiter.waitKind == handler.trimTargetKind:
+          target = idx
+          break
+
+      if target == -1:
+        raiseLogicError(
+          &"Cannot trim {handler.trimKind}/{handler.trimTargetKind} - no ongoing action")
+
+      context.waiters[target].execTrim()
+      context.waiters.delete(target)
+
+
 
     else:
       raiseImplementKindError(handler)
@@ -223,9 +245,7 @@ proc execOn(handler: Handler, event: Event, context: var ExecContext) =
 
 
 proc eventParse(events: seq[Event]): Ast =
-  var handlers: array[EventKind, Handler]
-
-
+  var handlers: array[EventKind, seq[Handler]]
   var context: ExecContext
 
   block:
@@ -235,7 +255,7 @@ proc eventParse(events: seq[Event]): Ast =
       argList: newSeq[Ast]()
     )
 
-    handlers[evList] = Handler(
+    handlers[evList] = @[Handler(
       kind: hkWhereGroup,
       startActions: @[
         Handler(kind: hkLift, flag: fInList),
@@ -249,12 +269,14 @@ proc eventParse(events: seq[Event]): Ast =
           waitTarget: addr pushAction.argList
         )
       ]
-    )
+    )]
 
-  handlers[evLBrace] = Handler(
-    kind: hkLift,
-    flag: fInList
-  )
+  handlers[evLBrace] = @[Handler(
+    kind: hkWhereGroup,
+    startActions: @[Handler(
+      kind: hkLift,
+      flag: fInList
+    )])]
 
   block:
     var pushAction = Handler(
@@ -263,7 +285,9 @@ proc eventParse(events: seq[Event]): Ast =
       argList: newSeq[Ast]()
     )
 
-    handlers[evRBrace] = Handler(
+    handlers[evRBrace] = @[Handler(
+      guarded: true,
+      guardFlag: fInBrace,
       kind: hkWhereGroup,
       startActions: @[
         Handler(kind: hkDrop, flag: fInBrace),
@@ -277,16 +301,30 @@ proc eventParse(events: seq[Event]): Ast =
           popTarget: addr pushAction.argList
         )
       ]
-    )
+    )]
 
-  handlers[evFinish] = Handler(kind: hkCloseAll)
+  block:
+    handlers[evRBrace] = @[Handler(
+      guarded: true,
+      guardFlag: fInList,
+      kind: hkWhereGroup,
+      startActions: @[
+        Handler(kind: hkDrop, flag: fInList),
+        Handler(kind: hkTrim, trimTargetKind: akBrace, trimKind: hkAwaitMany)
+      ]
+    )]
+
+  handlers[evFinish] = @[Handler(
+    kind: hkWhereGroup,
+    startActions: @[Handler(kind: hkCloseAll)]
+  )]
 
   for ev in events:
-    if not isNil(handlers[ev.kind]):
-      handlers[ev.kind].execOn(ev, context)
-
-    else:
-      echov "Nil handler for", ev
+    for handler in handlers[ev.kind]:
+      if not handler.guarded or (
+        context.flags.len > 0 and context.flags[^1] == handler.guardFlag
+      ):
+        handler.execOn(ev, context)
 
 
 
@@ -305,7 +343,7 @@ proc lex(str: string): seq[Event] =
       else:
         discard
 
-  result.add Event(kind: evFinish)
+  # result.add Event(kind: evFinish)
 
 
 import hpprint
