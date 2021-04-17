@@ -1,4 +1,8 @@
 import std/[strformat, strutils, sequtils]
+import hmisc/[hdebug_misc, base_errors]
+import hpprint
+
+startHax()
 
 type
   EventKind = enum
@@ -7,6 +11,9 @@ type
     evRBrace
     evComma,
     evIdent
+
+    evFinish ## Finish of the input stream. Special event kind
+    evAwaitFinish ## `await*` or `next*` handler has finished execution
 
   Event = object
     case kind*: EventKind
@@ -27,7 +34,7 @@ type
 
   Flag = enum
     fInList
-    fInBracket
+    fInBrace
 
 
 type
@@ -47,31 +54,42 @@ type
     hkDrop
 
     hkWhereGroup
+    hkCloseAll
 
   Handler = ref object
-    case kind*: HandlerKind
+    case kind: HandlerKind
       of hkAwait, hkAwaitMany, hkNext, hkNextMany:
-        waitKind*: AstKind
-        waitTarget*: ptr seq[Ast]
-        found*: bool
+        waitKind: AstKind
+        waitTarget: ptr seq[Ast]
+        found: bool
+        onComplete: Handler ## Parent handler to execute if all elements
+                            ## have finished completion
 
       of hkPopParallel:
-        popParallelTargets*: seq[(AstKind, ptr seq[Ast])]
+        popParallelTargets: seq[(AstKind, ptr seq[Ast])]
 
       of hkPopMany, hkPop:
-        popKind*: AstKind
-        popTargets*: ptr seq[Ast]
+        popKind: set[AstKind]
+        popTarget: ptr seq[Ast]
 
       of hkLift, hkDrop:
-        flag*: Flag
+        flag: Flag
 
       of hkWhereGroup:
-        headActions*: seq[Handler]
-        whereBody*: seq[Handler]
+        startActions: seq[Handler] ## Actions executed immediately when
+                                   ## group starts
+        finishActions: seq[Handler] ## Actions executed after groups
+                                    ## `where` completes
+        whereBody: seq[Handler]
 
       of hkPush:
-        newAstKind*: AstKind
-        argLists*: seq[seq[Ast]]
+        newAstKind: AstKind
+        argList: seq[Ast]
+
+      of hkTrim:
+        ## `trim` is the action to stop any other ongoing actions.
+        trimKind: HandlerKind ## Action kind to trim
+        trimTargetKind: AstKind ## Kind of the *action target*
 
       else:
         discard
@@ -79,16 +97,6 @@ type
 
 
 type Err = object of CatchableError
-
-template die(msg: string): untyped = raise newException(Err, fmt(msg))
-template echov(msg: string): untyped =
-  block:
-    let iinfo {.inject.} = instantiationInfo()
-    echo &"{iinfo.line:<3} | ", fmt(msg)
-
-
-
-
 
 proc isFinished(handler: Handler): bool =
   ## Check whether handler has found required element
@@ -100,7 +108,7 @@ proc isFinished(handler: Handler): bool =
       return allIt(handler.whereBody, isFinished(it))
 
     else:
-      die("Cannot check for finish in {handler.kind}")
+      raiseImplementError(&"Cannot check for finish in {handler.kind}")
 
 
 proc isImmediate*(handler: Handler): bool =
@@ -112,67 +120,173 @@ proc isImmediate*(handler: Handler): bool =
     of hkAwaitMany, hkAwait:
       false
 
+    of hkPop, hkPopMany, hkPopParallel:
+      true
+
     else:
-      die("{handler.kind}")
+      raiseImplementKindError(handler)
+
+proc isWaiter*(handler: Handler): bool =
+  handler.kind in {hkAwait, hkAwaitMany, hkNext, hkNextMany}
 
 proc canExecute*(handler: Handler): bool =
   isImmediate(handler) or isFinished(handler)
 
-proc execOn(
-    handler: Handler, event: Event,
-    stack: var seq[Ast], waiters: var seq[Handler]
-  ) =
+type
+  ExecContext = object
+    stack: seq[Ast]
+    waiters: seq[Handler]
+    flags: array[Flag, uint8]
+    flagCount: int
 
-  echov "Processing {event.kind} using {handler.kind}"
+proc lift(context: var ExecContext, flag: Flag) =
+  inc context.flags[flag]
+  inc context.flagCount
+
+proc drop(context: var ExecContext, flag: Flag) =
+  dec context.flags[flag]
+  dec context.flagCount
+
+proc execOn(handler: Handler, event: Event, context: var ExecContext)
+
+proc putAst(context: var ExecContext, ast: Ast) =
+  for waiter in mitems(context.waiters):
+    if waiter.kind in {hkAwaitMany, hkAwait} and
+       waiter.waitKind == ast.kind:
+
+      echov "Has waiter for ast kind", ast.kind, "pushing to wait list"
+
+      waiter.waitTarget[].add ast
+      waiter.found = true
+
+    else:
+      context.stack.add ast
+
+
+
+proc execOn(handler: Handler, event: Event, context: var ExecContext) =
+
+  echov event.kind, handler.kind
   case handler.kind:
     of hkWhereGroup:
+      if event.kind == evFinish:
+        raiseImplementError("")
+
       # There are two cases - `where` group must first be assigned to
       # corresponding waiters and then collected (group uses
       # `await`/`next`), *or* it has no forward waiters and can be executed
       # immediately
+      for action in handler.startActions:
+        action.execOn(event, context)
+
       if canExecute(handler):
+        # Finish all trailing actions
+        for action in handler.whereBody:
+          action.execOn(event, context)
+
         echov "Can immediate execute"
-        for action in handler.headActions:
-          action.execOn(event, stack, waiters)
+        for action in handler.finishActions:
+          action.execOn(event, context)
+
+      else:
+        for action in handler.whereBody:
+          if action.isWaiter():
+            context.waiters.add action
+
+    of hkLift:
+      context.lift handler.flag
+
+    of hkDrop:
+      context.drop handler.flag
+
+    of hkPopMany:
+      while len(context.stack) > 0 and
+            context.stack[^1].kind in handler.popKind:
+        handler.popTarget[].add context.stack.pop()
+
+    of hkPush:
+      context.putAst Ast(
+        kind: handler.newAstKind, subnodes: handler.argList)
+
+    of hkCloseAll:
+      for waiter in mitems(context.waiters):
+        waiter.execOn(event, context)
+
+    of hkAwaitMany:
+      if event.kind == evFinish:
+        handler.onComplete.execOn(event, context)
+
 
     else:
-      discard
+      raiseImplementKindError(handler)
 
 
 
 proc eventParse(events: seq[Event]): Ast =
-  var flags: array[Flag, uint8]
-
-  var stack: seq[Ast]
-
   var handlers: array[EventKind, Handler]
 
-  var waiters: seq[Handler]
+
+  var context: ExecContext
 
   block:
     var pushAction = Handler(
       kind: hkPush,
       newAstKind: akList,
-      argLists: @[newSeq[Ast]()]
+      argList: newSeq[Ast]()
     )
 
     handlers[evList] = Handler(
       kind: hkWhereGroup,
-      headActions: @[
+      startActions: @[
         Handler(kind: hkLift, flag: fInList),
+      ],
+      finishActions: @[
         pushAction
       ],
       whereBody: @[
         Handler(
           kind: hkAwaitMany, waitKind: akBrace,
-          waitTarget: addr pushAction.argLists[0]
+          waitTarget: addr pushAction.argList
         )
       ]
     )
 
+  handlers[evLBrace] = Handler(
+    kind: hkLift,
+    flag: fInList
+  )
+
+  block:
+    var pushAction = Handler(
+      kind: hkPush,
+      newAstKind: akBrace,
+      argList: newSeq[Ast]()
+    )
+
+    handlers[evRBrace] = Handler(
+      kind: hkWhereGroup,
+      startActions: @[
+        Handler(kind: hkDrop, flag: fInBrace),
+      ],
+      finishActions: @[
+        pushAction
+      ],
+      whereBody: @[
+        Handler(
+          kind: hkPopMany, popKind: {akList, akBrace},
+          popTarget: addr pushAction.argList
+        )
+      ]
+    )
+
+  handlers[evFinish] = Handler(kind: hkCloseAll)
+
   for ev in events:
     if not isNil(handlers[ev.kind]):
-      handlers[ev.kind].execOn(ev, stack, waiters)
+      handlers[ev.kind].execOn(ev, context)
+
+    else:
+      echov "Nil handler for", ev
 
 
 
@@ -190,6 +304,8 @@ proc lex(str: string): seq[Event] =
 
       else:
         discard
+
+  result.add Event(kind: evFinish)
 
 
 import hpprint
