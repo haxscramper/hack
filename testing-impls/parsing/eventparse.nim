@@ -1,5 +1,6 @@
 import std/[strformat, strutils, sequtils]
 import hmisc/[hdebug_misc, base_errors]
+import hmisc/algo/halgorithm
 import hpprint
 
 startHax()
@@ -146,7 +147,6 @@ type
     flags: seq[Flag]
 
 proc lift(context: var ExecContext, flag: Flag) =
-  echov "Lifted", flag
   context.flags.add flag
 
 proc drop(context: var ExecContext, flag: Flag) =
@@ -169,34 +169,91 @@ proc putAst(context: var ExecContext, ast: Ast) =
       context.stack.add ast
 
 
-proc execTrim(handler: var Handler) =
-  discard
+proc getName(kind: HandlerKind): string =
+  const map = toMapArray({
+    hkPush: "push",
+    hkPop: "pop",
+    hkPopMany: "pop*",
+    hkAwait: "await",
+    hkAwaitMany: "await*",
+    hkNext: "next",
+    hkNextMany: "next*",
+    hkLift: "lift",
+    hkDrop: "drop"
+  })
+
+  return map[kind]
+
+proc `$`(handler: Handler): string =
+
+  proc aux(h: Handler, level: int): seq[string] =
+    let pref = "    ".repeat(level)
+    case h.kind:
+      of hkWhereGroup:
+        for act in h.startActions: result.add aux(act, level)
+        for act in h.finishActions: result.add aux(act, level)
+
+        if h.whereBody.len > 0:
+          result.add pref & "where"
+          for act in h.whereBody:
+            result.add aux(act, level + 1)
+
+      of hkPush:
+        result.add &"{pref}push {h.newAstKind}(.. {h.argList.len})"
+
+      of hkTrim:
+        result.add &"{pref}trim {h.trimKind}/{h.trimTargetKind}"
+
+      of hkAwait, hkAwaitMany, hkNext, hkNextMany:
+        result.add &"{pref}{getName(h.kind)} {h.waitKind}"
+
+      of hkLift, hkDrop:
+        result.add &"{pref}{getName(h.kind)} {h.flag}"
+
+      of hkPop, hkPopMany:
+        result.add &"{pref}{getName(h.kind)} {h.popKind}"
+
+      of hkPopParallel:
+        for (kind, target) in h.popParallelTargets:
+          result.add &"{pref}pop# {kind}"
+
+      else:
+        raiseImplementError("")
+
+  return aux(handler, 0).join("\n")
+
+
 
 proc execOn(handler: Handler, event: Event, context: var ExecContext) =
-
-  echov event.kind, handler.kind
+  echov context.flags
+  echo handler
   case handler.kind:
     of hkWhereGroup:
       # There are two cases - `where` group must first be assigned to
       # corresponding waiters and then collected (group uses
       # `await`/`next`), *or* it has no forward waiters and can be executed
       # immediately
-      for action in handler.startActions:
-        action.execOn(event, context)
-
-      if canExecute(handler):
-        # Finish all trailing actions
-        for action in handler.whereBody:
-          action.execOn(event, context)
-
-        echov "Can immediate execute"
+      if event.kind == evAwaitFinish:
         for action in handler.finishActions:
           action.execOn(event, context)
 
       else:
-        for action in handler.whereBody:
-          if action.isWaiter():
-            context.waiters.add action
+        for action in handler.startActions:
+          action.execOn(event, context)
+
+        if canExecute(handler):
+          # Finish all trailing actions
+          for action in handler.whereBody:
+            action.execOn(event, context)
+
+          for action in handler.finishActions:
+            action.execOn(event, context)
+
+        else:
+          for action in mitems(handler.whereBody):
+            if action.isWaiter():
+              action.onComplete = handler
+              context.waiters.add action
 
     of hkLift:
       context.lift handler.flag
@@ -210,6 +267,7 @@ proc execOn(handler: Handler, event: Event, context: var ExecContext) =
         handler.popTarget[].add context.stack.pop()
 
     of hkPush:
+      echov "Pushed to stack"
       context.putAst Ast(
         kind: handler.newAstKind, subnodes: handler.argList)
 
@@ -234,7 +292,8 @@ proc execOn(handler: Handler, event: Event, context: var ExecContext) =
         raiseLogicError(
           &"Cannot trim {handler.trimKind}/{handler.trimTargetKind} - no ongoing action")
 
-      context.waiters[target].execTrim()
+      context.waiters[target].onComplete.execOn(
+        Event(kind: evAwaitFinish), context)
       context.waiters.delete(target)
 
 
@@ -244,7 +303,7 @@ proc execOn(handler: Handler, event: Event, context: var ExecContext) =
 
 
 
-proc eventParse(events: seq[Event]): Ast =
+proc eventParse(events: seq[Event]): seq[Ast] =
   var handlers: array[EventKind, seq[Handler]]
   var context: ExecContext
 
@@ -275,7 +334,7 @@ proc eventParse(events: seq[Event]): Ast =
     kind: hkWhereGroup,
     startActions: @[Handler(
       kind: hkLift,
-      flag: fInList
+      flag: fInBrace
     )])]
 
   block:
@@ -285,7 +344,7 @@ proc eventParse(events: seq[Event]): Ast =
       argList: newSeq[Ast]()
     )
 
-    handlers[evRBrace] = @[Handler(
+    handlers[evRBrace].add Handler(
       guarded: true,
       guardFlag: fInBrace,
       kind: hkWhereGroup,
@@ -301,10 +360,10 @@ proc eventParse(events: seq[Event]): Ast =
           popTarget: addr pushAction.argList
         )
       ]
-    )]
+    )
 
   block:
-    handlers[evRBrace] = @[Handler(
+    handlers[evRBrace].add Handler(
       guarded: true,
       guardFlag: fInList,
       kind: hkWhereGroup,
@@ -312,12 +371,13 @@ proc eventParse(events: seq[Event]): Ast =
         Handler(kind: hkDrop, flag: fInList),
         Handler(kind: hkTrim, trimTargetKind: akBrace, trimKind: hkAwaitMany)
       ]
-    )]
+    )
 
   handlers[evFinish] = @[Handler(
     kind: hkWhereGroup,
     startActions: @[Handler(kind: hkCloseAll)]
   )]
+
 
   for ev in events:
     for handler in handlers[ev.kind]:
@@ -325,6 +385,8 @@ proc eventParse(events: seq[Event]): Ast =
         context.flags.len > 0 and context.flags[^1] == handler.guardFlag
       ):
         handler.execOn(ev, context)
+
+  return context.stack
 
 
 
@@ -349,7 +411,7 @@ proc lex(str: string): seq[Event] =
 import hpprint
 
 when isMainModule:
-  let text = lex("![]")
+  let text = lex("![[]]")
   pprint text
 
   let ast = eventParse(text)
