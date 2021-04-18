@@ -60,9 +60,11 @@ type
   Handler = ref object
     case kind: HandlerKind
       of hkAwait, hkAwaitMany, hkNext, hkNextMany:
-        waitKind: AstKind
-        waitTarget: ptr seq[Ast]
-        found: bool
+        waitKind: AstKind ## Filter element kinds
+        pauseOn: set[Flag] ## Pause waiter when particular set of flags is
+                           ## at the top
+        waitTarget: ptr seq[Ast] ## Sequence to add elements to
+        found: bool ## Waiter finished execution
         onComplete: Handler ## Parent handler to execute if all elements
                             ## have finished completion
 
@@ -142,8 +144,8 @@ proc canExecute*(handler: Handler): bool =
 
 type
   ExecContext = object
-    stack: seq[Ast]
-    waiters: seq[Handler]
+    stack: seq[tuple[ast: Ast, level: uint8]]
+    waiters: array[AstKind, seq[Handler]]
     flags: seq[Flag]
 
 proc lift(context: var ExecContext, flag: Flag) =
@@ -156,17 +158,20 @@ proc drop(context: var ExecContext, flag: Flag) =
 proc execOn(handler: Handler, event: Event, context: var ExecContext)
 
 proc putAst(context: var ExecContext, ast: Ast) =
-  for waiter in mitems(context.waiters):
+  var found = false
+  for waiter in mitems(context.waiters[ast.kind]):
     if waiter.kind in {hkAwaitMany, hkAwait} and
-       waiter.waitKind == ast.kind:
+       waiter.waitKind == ast.kind and
+       (context.flags.len > 0 and context.flags[^1] notin waiter.pauseOn):
 
       echov "Has waiter for ast kind", ast.kind, "pushing to wait list"
 
       waiter.waitTarget[].add ast
       waiter.found = true
+      found = true
 
-    else:
-      context.stack.add ast
+  if not found:
+    context.stack.add (ast, context.flags.len.uint8)
 
 
 proc getName(kind: HandlerKind): string =
@@ -225,8 +230,8 @@ proc `$`(handler: Handler): string =
 
 
 proc execOn(handler: Handler, event: Event, context: var ExecContext) =
-  echov context.flags
-  echo handler
+  # echov context.flags
+  # echo handler
   case handler.kind:
     of hkWhereGroup:
       # There are two cases - `where` group must first be assigned to
@@ -253,7 +258,7 @@ proc execOn(handler: Handler, event: Event, context: var ExecContext) =
           for action in mitems(handler.whereBody):
             if action.isWaiter():
               action.onComplete = handler
-              context.waiters.add action
+              context.waiters[action.waitKind].add action
 
     of hkLift:
       context.lift handler.flag
@@ -262,9 +267,12 @@ proc execOn(handler: Handler, event: Event, context: var ExecContext) =
       context.drop handler.flag
 
     of hkPopMany:
+      echov "Pop many"
+      pprint context.stack
       while len(context.stack) > 0 and
-            context.stack[^1].kind in handler.popKind:
-        handler.popTarget[].add context.stack.pop()
+            context.stack[^1].level > context.flags.len.uint8 and
+            context.stack[^1].ast.kind in handler.popKind:
+        handler.popTarget[].add context.stack.pop().ast
 
     of hkPush:
       echov "Pushed to stack"
@@ -272,8 +280,9 @@ proc execOn(handler: Handler, event: Event, context: var ExecContext) =
         kind: handler.newAstKind, subnodes: handler.argList)
 
     of hkCloseAll:
-      for waiter in mitems(context.waiters):
-        waiter.execOn(event, context)
+      for group in mitems(context.waiters):
+        for waiter in mitems(group):
+          waiter.execOn(event, context)
 
     of hkAwaitMany:
       if event.kind == evFinish:
@@ -282,9 +291,9 @@ proc execOn(handler: Handler, event: Event, context: var ExecContext) =
     of hkTrim:
       echov "Executing trim action"
       var target = -1
-      for idx, waiter in context.waiters:
-        if waiter.kind == handler.trimKind and
-           waiter.waitKind == handler.trimTargetKind:
+      let kind = handler.trimTargetKind
+      for idx, waiter in context.waiters[kind]:
+        if waiter.kind == handler.trimKind:
           target = idx
           break
 
@@ -292,11 +301,10 @@ proc execOn(handler: Handler, event: Event, context: var ExecContext) =
         raiseLogicError(
           &"Cannot trim {handler.trimKind}/{handler.trimTargetKind} - no ongoing action")
 
-      context.waiters[target].onComplete.execOn(
+      context.waiters[kind][target].onComplete.execOn(
         Event(kind: evAwaitFinish), context)
-      context.waiters.delete(target)
 
-
+      context.waiters[kind].delete(target)
 
     else:
       raiseImplementKindError(handler)
@@ -325,7 +333,8 @@ proc eventParse(events: seq[Event]): seq[Ast] =
       whereBody: @[
         Handler(
           kind: hkAwaitMany, waitKind: akBrace,
-          waitTarget: addr pushAction.argList
+          waitTarget: addr pushAction.argList,
+          pauseOn: {fInBrace}
         )
       ]
     )]
@@ -386,7 +395,7 @@ proc eventParse(events: seq[Event]): seq[Ast] =
       ):
         handler.execOn(ev, context)
 
-  return context.stack
+  return context.stack.mapIt(it.ast)
 
 
 
@@ -411,8 +420,7 @@ proc lex(str: string): seq[Event] =
 import hpprint
 
 when isMainModule:
-  let text = lex("![[]]")
-  pprint text
+  let text = lex("![[[]]]")
 
   let ast = eventParse(text)
   pprint ast
