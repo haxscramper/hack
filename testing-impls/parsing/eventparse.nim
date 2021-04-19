@@ -1,5 +1,6 @@
-import std/[strformat, strutils, sequtils]
+import std/[strformat, strutils, sequtils, tables]
 import hmisc/[hdebug_misc, base_errors]
+import hmisc/types/colorstring
 import hmisc/algo/halgorithm
 import hpprint
 
@@ -30,7 +31,6 @@ type
 
   Ast = ref object
     kind*: AstKind
-    strVal*: string
     subnodes*: seq[Ast]
 
   Flag = enum
@@ -69,17 +69,22 @@ type
                             ## have finished completion
 
       of hkPopParallel:
+        ## Remove multiple elements from AST stack assigning to different
+        ## targets
         popParallelTargets: seq[(AstKind, ptr seq[Ast])]
 
       of hkPopMany, hkPop:
+        ## Remove elements from AST stack
         popKind: set[AstKind]
         popTarget: ptr seq[Ast]
 
       of hkLift, hkDrop:
+        ## Add or remove flag from the flag stack
         flag: Flag
 
       of hkWhereGroup:
-        case guarded: bool
+        ## Toplevel element grouping
+        case guarded: bool ## Only trigger when particular flag is active
           of true:
             guardFlag: Flag
 
@@ -93,6 +98,8 @@ type
         whereBody: seq[Handler]
 
       of hkPush:
+        ## Construct new AST and add it to stack using `argList` as
+        ## subnodes
         newAstKind: AstKind
         argList: seq[Ast]
 
@@ -155,23 +162,43 @@ proc drop(context: var ExecContext, flag: Flag) =
   let val = context.flags.pop
   assert val == flag, &"{val} == {flag}"
 
+
+
+proc nextColor[E](used: var set[E]): E =
+  const all = { low(E) .. high(E) }
+  for item in (all - used):
+    result = item
+    break
+
+  used.incl result
+
+
+var table: Table[int, ForegroundColor]
+var used: set[ForegroundColor] = {fgDefault, fgBlack}
+
+proc treeRepr(ast: Ast): string =
+  proc aux(ast: Ast, level: int): string =
+    let pref = "  ".repeat(level)
+    let addrInt = cast[int](ast)
+    if addrInt notin table:
+      table[addrInt] = nextColor(used)
+
+    result &= alignLeft(pref & $ast.kind, 20) & " @" &
+      $toColored($addrInt, initStyle(table[addrInt])) & "\n"
+
+    for node in ast.subnodes:
+      result &= aux(node, level + 1)
+
+  return aux(ast, 0)
+
+proc treeRepr[T](s: seq[T]): string =
+  for item in s:
+    result = "-\n"
+    for line in split(treeRepr(item), '\n'):
+      result &= "  " & line & "\n"
+
 proc execOn(handler: Handler, event: Event, context: var ExecContext)
 
-proc putAst(context: var ExecContext, ast: Ast) =
-  var found = false
-  for waiter in mitems(context.waiters[ast.kind]):
-    if waiter.kind in {hkAwaitMany, hkAwait} and
-       waiter.waitKind == ast.kind and
-       (context.flags.len > 0 and context.flags[^1] notin waiter.pauseOn):
-
-      echov "Has waiter for ast kind", ast.kind, "pushing to wait list"
-
-      waiter.waitTarget[].add ast
-      waiter.found = true
-      found = true
-
-  if not found:
-    context.stack.add (ast, context.flags.len.uint8)
 
 
 proc getName(kind: HandlerKind): string =
@@ -184,7 +211,8 @@ proc getName(kind: HandlerKind): string =
     hkNext: "next",
     hkNextMany: "next*",
     hkLift: "lift",
-    hkDrop: "drop"
+    hkDrop: "drop",
+    hkWhereGroup: "group"
   })
 
   return map[kind]
@@ -195,13 +223,14 @@ proc `$`(handler: Handler): string =
     let pref = "    ".repeat(level)
     case h.kind:
       of hkWhereGroup:
-        for act in h.startActions: result.add aux(act, level)
-        for act in h.finishActions: result.add aux(act, level)
+        result.add &"{pref}group"
+        for act in h.startActions: result.add aux(act, level + 1)
+        for act in h.finishActions: result.add aux(act, level + 1)
 
         if h.whereBody.len > 0:
-          result.add pref & "where"
+          result.add pref & "    " & "where"
           for act in h.whereBody:
-            result.add aux(act, level + 1)
+            result.add aux(act, level + 2)
 
       of hkPush:
         result.add &"{pref}push {h.newAstKind}(.. {h.argList.len})"
@@ -228,10 +257,35 @@ proc `$`(handler: Handler): string =
   return aux(handler, 0).join("\n")
 
 
+proc putAst(target: var seq[Ast], ast: Ast) =
+  echov "Adding AST to subnodes"
+  echov target.treeRepr()
+  echov ast.treeRepr()
+  target.add ast
+
+proc putAst(context: var ExecContext, ast: Ast) =
+  echov "Putting ast to stack"
+  echov context.stack.mapIt(it.ast).treeRepr()
+  echov ast.treeRepr()
+
+  var found = false
+  for waiter in mitems(context.waiters[ast.kind]):
+    if waiter.kind in {hkAwaitMany, hkAwait} and
+       waiter.waitKind == ast.kind and
+       (context.flags.len > 0 and context.flags[^1] notin waiter.pauseOn):
+
+      waiter.waitTarget[].putAst ast
+      waiter.found = true
+      found = true
+      break
+
+  if not found:
+    context.stack.add (ast, context.flags.len.uint8)
+
+
+
 
 proc execOn(handler: Handler, event: Event, context: var ExecContext) =
-  # echov context.flags
-  # echo handler
   case handler.kind:
     of hkWhereGroup:
       # There are two cases - `where` group must first be assigned to
@@ -268,16 +322,26 @@ proc execOn(handler: Handler, event: Event, context: var ExecContext) =
 
     of hkPopMany:
       echov "Pop many"
-      pprint context.stack
-      while len(context.stack) > 0 and
-            context.stack[^1].level > context.flags.len.uint8 and
-            context.stack[^1].ast.kind in handler.popKind:
-        handler.popTarget[].add context.stack.pop().ast
+      echov "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv"
+      if context.stack.len > 0:
+        echov context.stack.mapIt(it.ast).treeRepr()
+        let level = context.stack[^1].level
+
+        while len(context.stack) > 0 and
+              level > context.flags.len.uint8 and
+              context.stack[^1].ast.kind in handler.popKind:
+          echov "popping element from stack"
+          handler.popTarget[].putAst context.stack.pop().ast
+
+      echov "Stack after popping"
+      echov context.stack.mapIt(it.ast).treeRepr()
+      echov "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^"
 
     of hkPush:
-      echov "Pushed to stack"
       context.putAst Ast(
         kind: handler.newAstKind, subnodes: handler.argList)
+
+      handler.argList = @[]
 
     of hkCloseAll:
       for group in mitems(context.waiters):
@@ -289,7 +353,6 @@ proc execOn(handler: Handler, event: Event, context: var ExecContext) =
         handler.onComplete.execOn(event, context)
 
     of hkTrim:
-      echov "Executing trim action"
       var target = -1
       let kind = handler.trimTargetKind
       for idx, waiter in context.waiters[kind]:
@@ -420,7 +483,10 @@ proc lex(str: string): seq[Event] =
 import hpprint
 
 when isMainModule:
-  let text = lex("![[[]]]")
+  let text = lex("![[[][]]]")
 
   let ast = eventParse(text)
-  pprint ast
+  # pprint ast, showPath = true
+  # pprint ast #, ignore = @["**/strVal"]
+  for ast in ast:
+    echo ast.treeRepr()
