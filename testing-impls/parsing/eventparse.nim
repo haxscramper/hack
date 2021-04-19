@@ -2,41 +2,8 @@ import std/[strformat, strutils, sequtils, tables]
 import hmisc/[hdebug_misc, base_errors]
 import hmisc/types/colorstring
 import hmisc/algo/halgorithm
-import hpprint
 
 startHax()
-
-type
-  EventKind = enum
-    evList
-    evLBrace
-    evRBrace
-    evComma,
-    evIdent
-
-    evFinish ## Finish of the input stream. Special event kind
-    evAwaitFinish ## `await*` or `next*` handler has finished execution
-
-  Event = object
-    case kind*: EventKind
-      of evIdent:
-        strVal*: string
-
-      else:
-        discard
-
-  AstKind = enum
-    akList
-    akBrace
-
-  Ast = ref object
-    kind*: AstKind
-    subnodes*: seq[Ast]
-
-  Flag = enum
-    fInList
-    fInBrace
-
 
 type
   HandlerKind = enum
@@ -57,7 +24,12 @@ type
     hkWhereGroup
     hkCloseAll
 
-  Handler = ref object
+  Handler[Ast, AstKind, Event, EventKind, Flag] = ref object
+    ## - @param{Ast} :: Ast type for stack
+    ## - @param{AstKind} :: Stack content entry kind
+    ## - @param{Event} :: Trigger input event type
+    ## - @param{EventKind} :: Input event kind
+    ## - @param{Flag} :: Flag stack content
     case kind: HandlerKind
       of hkAwait, hkAwaitMany, hkNext, hkNextMany:
         waitKind: AstKind ## Filter element kinds
@@ -65,8 +37,8 @@ type
                            ## at the top
         waitTarget: ptr seq[Ast] ## Sequence to add elements to
         found: bool ## Waiter finished execution
-        onComplete: Handler ## Parent handler to execute if all elements
-                            ## have finished completion
+        onComplete: Handler[Ast, AstKind, Event, EventKind, Flag] ## |
+        ## Parent handler to execute if all elements have finished completion
 
       of hkPopParallel:
         ## Remove multiple elements from AST stack assigning to different
@@ -91,11 +63,11 @@ type
           else:
             discard
 
-        startActions: seq[Handler] ## Actions executed immediately when
-                                   ## group starts
-        finishActions: seq[Handler] ## Actions executed after groups
-                                    ## `where` completes
-        whereBody: seq[Handler]
+        startActions: seq[Handler[Ast, AstKind, Event, EventKind, Flag]] ## Actions
+        ## executed immediately when group starts
+        finishActions: seq[Handler[Ast, AstKind, Event, EventKind, Flag]] ## Actions
+        ## executed after groups `where` completes
+        whereBody: seq[Handler[Ast, AstKind, Event, EventKind, Flag]]
 
       of hkPush:
         ## Construct new AST and add it to stack using `argList` as
@@ -111,27 +83,45 @@ type
       else:
         discard
 
+  ExecContext[Ast, AstKind, Event, EventKind, Flag] = object
+    ## Mutable context of parser execution
+    stack: seq[tuple[ast: Ast, level: uint8]]
+    waiters: array[
+      AstKind,
+      seq[Handler[Ast, AstKind, Event, EventKind, Flag]]]
 
+    flags: seq[Flag]
+    newAst: proc(kind: AstKind, subnodes: seq[Ast]): Ast ## |
+    ## Callback to create new ast instance.
+    finishEvent: Event ## Support event kind sent to `where` handler group by
+    ## terminated action and to `await` event on termination.
 
-type Err = object of CatchableError
-
-proc isFinished(handler: Handler): bool =
+proc isFinished[A, Ak, E, Ek, F](
+    handler: Handler[A, Ak, E, Ek, F]): bool =
   ## Check whether handler has found required element
   case handler.kind:
     of hkAwait, hkAwaitMany, hkNext, hkNextMany:
+      # Pending action must marked as `found`
       return handler.found
 
     of hkWhereGroup:
+      # For where group all elements must be completed
       return allIt(handler.whereBody, isFinished(it))
 
     else:
-      raiseImplementError(&"Cannot check for finish in {handler.kind}")
+      # Other elements do not have explicit notion of 'finished'
+      # state and must be checked with 'isImmediate'
+      raiseLogicError(
+        &"Cannot check for finish in {handler.kind}")
 
 
-proc isImmediate*(handler: Handler): bool =
+proc isImmediate*[A, Ak, E, Ek, F](
+    handler: Handler[A, Ak, E, Ek, F]): bool =
   ## Whether handler can be immediately executed
   case handler.kind:
     of hkWhereGroup:
+      # All parts of the where group must be immediately
+      # executable
       return allIt(handler.whereBody, isImmediate(it))
 
     of hkAwaitMany, hkAwait:
@@ -141,24 +131,38 @@ proc isImmediate*(handler: Handler): bool =
       true
 
     else:
+      # TODO
       raiseImplementKindError(handler)
 
-proc isWaiter*(handler: Handler): bool =
+proc isWaiter*[A, Ak, E, Ek, F](
+    handler: Handler[A, Ak, E, Ek, F]): bool =
   handler.kind in {hkAwait, hkAwaitMany, hkNext, hkNextMany}
 
-proc canExecute*(handler: Handler): bool =
+proc canExecute*[A, Ak, E, Ek, F](
+    handler: Handler[A, Ak, E, Ek, F]): bool =
+  ## Whether action is immediately executable or it's waiting
+  ## target has been finished.
   isImmediate(handler) or isFinished(handler)
 
-type
-  ExecContext = object
-    stack: seq[tuple[ast: Ast, level: uint8]]
-    waiters: array[AstKind, seq[Handler]]
-    flags: seq[Flag]
 
-proc lift(context: var ExecContext, flag: Flag) =
+proc lift[A, Ak, E, Ek, F](
+    context: var ExecContext[A, Ak, E, Ek, F], flag: F) =
+  ## Add context flag
+  # This function implementation directly influences how parser works. Current
+  # implementation maintains explicit stack of tags that makes it work like LR
+  # automaton - switching is done based on the current stack head and input
+  # token.
+  #
+  # There are other possible implementations for a flag handling, such as
+  # unordered multiset that keeps track of *number of times* each flag has been
+  # raised.
   context.flags.add flag
 
-proc drop(context: var ExecContext, flag: Flag) =
+proc drop[A, Ak, E, Ek, F](
+    context: var ExecContext[A, Ak, E, Ek, F], flag: F) =
+  ## Drop flag
+  # Stack-based implementation does not allow to remove any arbitrary flag from
+  # lifted, and instead can only pop topmost entry.
   let val = context.flags.pop
   assert val == flag, &"{val} == {flag}"
 
@@ -173,39 +177,16 @@ proc nextColor[E](used: var set[E]): E =
   used.incl result
 
 
-var table: Table[int, ForegroundColor]
-var used: set[ForegroundColor] = {fgDefault, fgBlack}
-
-proc treeRepr(ast: Ast): string =
-  proc aux(ast: Ast, level: int): string =
-    let pref = "  ".repeat(level)
-    let addrInt = cast[int](ast)
-    if addrInt notin table:
-      table[addrInt] = nextColor(used)
-
-    result &= alignLeft(pref & $ast.kind, 20) & " @" &
-      $toColored($addrInt, initStyle(table[addrInt])) & "\n"
-
-    for node in ast.subnodes:
-      result &= aux(node, level + 1)
-
-  return aux(ast, 0)
-
-proc treeRepr[T](s: seq[T]): string =
-  for item in s:
-    result = "-\n"
-    for line in split(treeRepr(item), '\n'):
-      result &= "  " & line & "\n"
-
-proc execOn(handler: Handler, event: Event, context: var ExecContext)
-
-
+proc execOn[A, Ak, E, Ek, F](
+  handler: Handler[A, Ak, E, Ek, F], event: E,
+  context: var ExecContext[A, Ak, E, Ek, F])
 
 proc getName(kind: HandlerKind): string =
   const map = toMapArray({
     hkPush: "push",
     hkPop: "pop",
     hkPopMany: "pop*",
+    hkPopParallel: "pop#",
     hkAwait: "await",
     hkAwaitMany: "await*",
     hkNext: "next",
@@ -217,9 +198,14 @@ proc getName(kind: HandlerKind): string =
 
   return map[kind]
 
-proc `$`(handler: Handler): string =
+proc `$`*[A, Ak, E, Ek, F](
+    handler: Handler[A, Ak, E, Ek, F]): string =
+  ## String representation for `$`.
+  ##
+  ## - NOTE :: All generic parameters must also be string-convertible using `$` operator
+  proc aux(h: Handler[A, Ak, E, Ek, F], level: int):
+    seq[string] =
 
-  proc aux(h: Handler, level: int): seq[string] =
     let pref = "    ".repeat(level)
     case h.kind:
       of hkWhereGroup:
@@ -257,26 +243,28 @@ proc `$`(handler: Handler): string =
   return aux(handler, 0).join("\n")
 
 
-proc putAst(target: var seq[Ast], ast: Ast) =
-  echov "Adding AST to subnodes"
-  echov target.treeRepr()
-  echov ast.treeRepr()
+proc putAst[A](target: var seq[A], ast: A) =
   target.add ast
 
-proc putAst(context: var ExecContext, ast: Ast) =
-  echov "Putting ast to stack"
-  echov context.stack.mapIt(it.ast).treeRepr()
-  echov ast.treeRepr()
-
+proc putAst[A, Ak, E, Ek, F](
+    context: var ExecContext[A, Ak, E, Ek, F], ast: A) =
+  ## Execute stack addition. If no pending actions match for this event `ast` is
+  ## added to context stack, otherwise it is appended to waiter target list.
   var found = false
   for waiter in mitems(context.waiters[ast.kind]):
+    # TODO - only await(*) actions are currently implemented - next(*) is not
+    # done yet
     if waiter.kind in {hkAwaitMany, hkAwait} and
+       # If waiter matches expected AST
        waiter.waitKind == ast.kind and
+       # And it is not set to pause on curren't context top flag
        (context.flags.len > 0 and context.flags[^1] notin waiter.pauseOn):
 
-      waiter.waitTarget[].putAst ast
-      waiter.found = true
+      waiter.waitTarget[].putAst ast # Add ast to target list
+      waiter.found = true # Mark waiter as `found` (for single-item await)
       found = true
+      # TODO execute trimming action for single-target await immediately when
+      # found
       break
 
   if not found:
@@ -285,23 +273,31 @@ proc putAst(context: var ExecContext, ast: Ast) =
 
 
 
-proc execOn(handler: Handler, event: Event, context: var ExecContext) =
+proc execOn[A, Ak, E, Ek, F](
+    handler: Handler[A, Ak, E, Ek, F], event: E,
+    context: var ExecContext[A, Ak, E, Ek, F]) =
   case handler.kind:
     of hkWhereGroup:
       # There are two cases - `where` group must first be assigned to
       # corresponding waiters and then collected (group uses
       # `await`/`next`), *or* it has no forward waiters and can be executed
       # immediately
-      if event.kind == evAwaitFinish:
-        for action in handler.finishActions:
-          action.execOn(event, context)
+      if event.kind == context.finishEvent.kind:
+        if handler.whereBody.allIt(isImmediate(it) or isFinished(it)):
+          # Finishing single waiter from `where` clause does not necessarily
+          # mean whole group can be executed.
+          for action in handler.finishActions:
+            action.execOn(event, context)
 
       else:
         for action in handler.startActions:
+          # Start actions are always executed when encountered (mostly used to
+          # raise flags)
           action.execOn(event, context)
 
         if canExecute(handler):
-          # Finish all trailing actions
+          # If handler can be immediately executed do it without adding trailing
+          # actions to the waiter list.
           for action in handler.whereBody:
             action.execOn(event, context)
 
@@ -310,6 +306,10 @@ proc execOn(handler: Handler, event: Event, context: var ExecContext) =
 
         else:
           for action in mitems(handler.whereBody):
+            # Add all waiter actions to the list.
+            #
+            # - TODO :: if `where` clause contains both `await*` and `pop#`
+            #   actions - how should they be handled.
             if action.isWaiter():
               action.onComplete = handler
               context.waiters[action.waitKind].add action
@@ -321,25 +321,16 @@ proc execOn(handler: Handler, event: Event, context: var ExecContext) =
       context.drop handler.flag
 
     of hkPopMany:
-      echov "Pop many"
-      echov "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv"
       if context.stack.len > 0:
-        echov context.stack.mapIt(it.ast).treeRepr()
         let level = context.stack[^1].level
-
         while len(context.stack) > 0 and
               level > context.flags.len.uint8 and
               context.stack[^1].ast.kind in handler.popKind:
-          echov "popping element from stack"
           handler.popTarget[].putAst context.stack.pop().ast
 
-      echov "Stack after popping"
-      echov context.stack.mapIt(it.ast).treeRepr()
-      echov "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^"
-
     of hkPush:
-      context.putAst Ast(
-        kind: handler.newAstKind, subnodes: handler.argList)
+      context.putAst context.newAst(
+        handler.newAstKind, handler.argList)
 
       handler.argList = @[]
 
@@ -349,10 +340,12 @@ proc execOn(handler: Handler, event: Event, context: var ExecContext) =
           waiter.execOn(event, context)
 
     of hkAwaitMany:
-      if event.kind == evFinish:
+      if event.kind == context.finishEvent.kind:
         handler.onComplete.execOn(event, context)
 
     of hkTrim:
+      # Trim any ongoing waiter action. Used to explicitly closing pending
+      # `await*` handlers
       var target = -1
       let kind = handler.trimTargetKind
       for idx, waiter in context.waiters[kind]:
@@ -364,8 +357,9 @@ proc execOn(handler: Handler, event: Event, context: var ExecContext) =
         raiseLogicError(
           &"Cannot trim {handler.trimKind}/{handler.trimTargetKind} - no ongoing action")
 
+      # Trigger parent `where` group using provided finish event from context
       context.waiters[kind][target].onComplete.execOn(
-        Event(kind: evAwaitFinish), context)
+        context.finishEvent, context)
 
       context.waiters[kind].delete(target)
 
@@ -373,81 +367,102 @@ proc execOn(handler: Handler, event: Event, context: var ExecContext) =
       raiseImplementKindError(handler)
 
 
+type
+  EventKind = enum
+    evList
+    evLBrace
+    evRBrace
+    evComma,
+    evIdent
+
+    evFinish ## Finish of the input stream. Special event kind
+    evAwaitFinish ## `await*` or `next*` handler has finished execution
+
+  Event = object
+    case kind*: EventKind
+      of evIdent:
+        strVal*: string
+
+      else:
+        discard
+
+  AstKind = enum
+    akList
+    akBrace
+
+  Ast = ref object
+    kind*: AstKind
+    subnodes*: seq[Ast]
+
+  Flag = enum
+    fInList
+    fInBrace
+
+
+
 
 proc eventParse(events: seq[Event]): seq[Ast] =
-  var handlers: array[EventKind, seq[Handler]]
-  var context: ExecContext
+  type HandlerT = Handler[Ast, AstKind, Event, EventKind, Flag]
+
+  var handlers: array[EventKind, seq[HandlerT]]
+  var context: ExecContext[Ast, AstKind, Event, EventKind, Flag]
+
+  context.newAst =
+    proc(kind: AstKind, subnodes: seq[Ast]): Ast =
+      Ast(kind: kind, subnodes: subnodes)
+
 
   block:
-    var pushAction = Handler(
+    var pushAction = HandlerT(
       kind: hkPush,
       newAstKind: akList,
-      argList: newSeq[Ast]()
-    )
+      argList: newSeq[Ast]())
 
-    handlers[evList] = @[Handler(
+    handlers[evList] = @[HandlerT(
       kind: hkWhereGroup,
-      startActions: @[
-        Handler(kind: hkLift, flag: fInList),
-      ],
-      finishActions: @[
-        pushAction
-      ],
+      startActions: @[HandlerT(kind: hkLift, flag: fInList)],
+      finishActions: @[pushAction],
       whereBody: @[
-        Handler(
+        HandlerT(
           kind: hkAwaitMany, waitKind: akBrace,
           waitTarget: addr pushAction.argList,
-          pauseOn: {fInBrace}
-        )
-      ]
-    )]
+          pauseOn: {fInBrace})])]
 
-  handlers[evLBrace] = @[Handler(
+  handlers[evLBrace] = @[HandlerT(
     kind: hkWhereGroup,
-    startActions: @[Handler(
-      kind: hkLift,
-      flag: fInBrace
-    )])]
+    startActions: @[HandlerT(kind: hkLift, flag: fInBrace)])]
 
   block:
-    var pushAction = Handler(
+    var pushAction = HandlerT(
       kind: hkPush,
       newAstKind: akBrace,
-      argList: newSeq[Ast]()
-    )
+      argList: newSeq[Ast]())
 
-    handlers[evRBrace].add Handler(
+    handlers[evRBrace].add HandlerT(
       guarded: true,
       guardFlag: fInBrace,
       kind: hkWhereGroup,
-      startActions: @[
-        Handler(kind: hkDrop, flag: fInBrace),
-      ],
-      finishActions: @[
-        pushAction
-      ],
+      startActions: @[HandlerT(kind: hkDrop, flag: fInBrace)],
+      finishActions: @[pushAction],
       whereBody: @[
-        Handler(
+        HandlerT(
           kind: hkPopMany, popKind: {akList, akBrace},
-          popTarget: addr pushAction.argList
-        )
-      ]
-    )
+          popTarget: addr pushAction.argList)])
 
   block:
-    handlers[evRBrace].add Handler(
+    handlers[evRBrace].add HandlerT(
       guarded: true,
       guardFlag: fInList,
       kind: hkWhereGroup,
       startActions: @[
-        Handler(kind: hkDrop, flag: fInList),
-        Handler(kind: hkTrim, trimTargetKind: akBrace, trimKind: hkAwaitMany)
+        HandlerT(kind: hkDrop, flag: fInList),
+        HandlerT(kind: hkTrim, trimTargetKind: akBrace, trimKind: hkAwaitMany)
       ]
     )
 
-  handlers[evFinish] = @[Handler(
+  handlers[evFinish] = @[HandlerT(
     kind: hkWhereGroup,
-    startActions: @[Handler(kind: hkCloseAll)]
+    startActions: @[HandlerT(kind: hkCloseAll)]
   )]
 
 
@@ -456,11 +471,36 @@ proc eventParse(events: seq[Event]): seq[Ast] =
       if not handler.guarded or (
         context.flags.len > 0 and context.flags[^1] == handler.guardFlag
       ):
+        # echo "Exec handler"
         handler.execOn(ev, context)
 
   return context.stack.mapIt(it.ast)
 
 
+
+var table: Table[int, ForegroundColor]
+var used: set[ForegroundColor] = {fgDefault, fgBlack}
+
+proc treeRepr(ast: Ast): string =
+  proc aux(ast: Ast, level: int): string =
+    let pref = "  ".repeat(level)
+    let addrInt = cast[int](ast)
+    if addrInt notin table:
+      table[addrInt] = nextColor(used)
+
+    result &= alignLeft(pref & $ast.kind, 20) & " @" &
+      $toColored($addrInt, initStyle(table[addrInt])) & "\n"
+
+    for node in ast.subnodes:
+      result &= aux(node, level + 1)
+
+  return aux(ast, 0)
+
+proc treeRepr[T](s: seq[T]): string =
+  for item in s:
+    result = "-\n"
+    for line in split(treeRepr(item), '\n'):
+      result &= "  " & line & "\n"
 
 
 proc lex(str: string): seq[Event] =
@@ -477,16 +517,9 @@ proc lex(str: string): seq[Event] =
       else:
         discard
 
-  # result.add Event(kind: evFinish)
-
-
-import hpprint
-
 when isMainModule:
   let text = lex("![[[][]]]")
 
   let ast = eventParse(text)
-  # pprint ast, showPath = true
-  # pprint ast #, ignore = @["**/strVal"]
   for ast in ast:
     echo ast.treeRepr()
