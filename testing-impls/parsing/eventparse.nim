@@ -367,6 +367,75 @@ proc execOn[A, Ak, E, Ek, F](
       raiseImplementKindError(handler)
 
 
+func group[A, Ak, E, Ek, F](
+    startActions: openarray[Handler[A, Ak, E, Ek, F]],
+    finishActions: openarray[Handler[A, Ak, E, Ek, F]] = @[],
+    whereBody: openarray[Handler[A, Ak, E, Ek, F]] = @[]
+  ): Handler[A, Ak, E, Ek, F] =
+
+  Handler[A, Ak, E, Ek, F](
+    kind:          hkWhereGroup,
+    startActions:  toSeq(startActions),
+    finishActions: toSeq(finishActions),
+    whereBody:     toSeq(whereBody)
+  )
+
+
+func group[A, Ak, E, Ek, F](
+    flag: F,
+    startActions:  openarray[Handler[A, Ak, E, Ek, F]],
+    finishActions: openarray[Handler[A, Ak, E, Ek, F]] = @[],
+    whereBody:     openarray[Handler[A, Ak, E, Ek, F]] = @[]
+  ): Handler[A, Ak, E, Ek, F] =
+
+  Handler[A, Ak, E, Ek, F](
+    guarded:       true,
+    guardFlag:     flag,
+    kind:          hkWhereGroup,
+    startActions:  toSeq(startActions),
+    finishActions: toSeq(finishActions),
+    whereBody:     toSeq(whereBody)
+  )
+
+func drop[A, Ak, E, Ek, F](H: typedesc[Handler[A, Ak, E, Ek, F]], flag: F): H =
+  H(kind: hkDrop, flag: flag)
+
+
+func lift[A, Ak, E, Ek, F](H: typedesc[Handler[A, Ak, E, Ek, F]], flag: F): H =
+  H(kind: hkLift, flag: flag)
+
+func trim[A, Ak, E, Ek, F](
+  H: typedesc[Handler[A, Ak, E, Ek, F]], target: H): H =
+  H(kind: hkTrim, trimTargetKind: target.waitTarget, trimKind: target.kind)
+
+func push[A, Ak, E, Ek, F](
+  H: typedesc[Handler[A, Ak, E, Ek, F]], target: Ak): H =
+  H(kind: hkPush, newAstKind: target)
+
+
+func trim[A, Ak, E, Ek, F](
+  H: typedesc[Handler[A, Ak, E, Ek, F]], target: Ak, targetKind: HandlerKind): H =
+  H(kind: hkTrim, trimTargetKind: target, trimKind: targetKind)
+
+func popMany[A, Ak, E, Ek, F](
+    H: typedesc[Handler[A, Ak, E, Ek, F]],
+    popKinds: set[Ak], popTarget: var H
+  ): H =
+
+  H(kind: hkPopMany, popKind: popKinds, popTarget: addr popTarget.argList)
+
+
+func waitMany[A, Ak, E, Ek, F](
+    H: typedesc[Handler[A, Ak, E, Ek, F]],
+    waitKind: Ak, waitTarget: var H, pauseOn: set[F] = {}
+  ): H =
+
+  H(kind: hkAwaitMany, waitKind: waitKind,
+    waitTarget: addr waitTarget.argList, pauseOn: pauseOn
+    # popTarget: addr popTarget.argList
+  )
+
+
 type
   EventKind = enum
     evList
@@ -411,67 +480,41 @@ proc eventParse(events: seq[Event]): seq[Ast] =
     proc(kind: AstKind, subnodes: seq[Ast]): Ast =
       Ast(kind: kind, subnodes: subnodes)
 
+  block:
+    var pushAction = HandlerT.push akList
+
+    handlers[evList] =  @[group(
+      [HandlerT.lift(fInList)],
+      [pushAction],
+      [HandlerT.waitMany(akBrace, pushAction, {fInBrace})]
+    )]
+
+  handlers[evLBrace] = @[group([HandlerT.lift fInBrace])]
 
   block:
-    var pushAction = HandlerT(
-      kind: hkPush,
-      newAstKind: akList,
-      argList: newSeq[Ast]())
+    var pushAction = HandlerT.push akBrace
 
-    handlers[evList] = @[HandlerT(
-      kind: hkWhereGroup,
-      startActions: @[HandlerT(kind: hkLift, flag: fInList)],
-      finishActions: @[pushAction],
-      whereBody: @[
-        HandlerT(
-          kind: hkAwaitMany, waitKind: akBrace,
-          waitTarget: addr pushAction.argList,
-          pauseOn: {fInBrace})])]
-
-  handlers[evLBrace] = @[HandlerT(
-    kind: hkWhereGroup,
-    startActions: @[HandlerT(kind: hkLift, flag: fInBrace)])]
-
-  block:
-    var pushAction = HandlerT(
-      kind: hkPush,
-      newAstKind: akBrace,
-      argList: newSeq[Ast]())
-
-    handlers[evRBrace].add HandlerT(
-      guarded: true,
-      guardFlag: fInBrace,
-      kind: hkWhereGroup,
-      startActions: @[HandlerT(kind: hkDrop, flag: fInBrace)],
-      finishActions: @[pushAction],
-      whereBody: @[
-        HandlerT(
-          kind: hkPopMany, popKind: {akList, akBrace},
-          popTarget: addr pushAction.argList)])
-
-  block:
-    handlers[evRBrace].add HandlerT(
-      guarded: true,
-      guardFlag: fInList,
-      kind: hkWhereGroup,
-      startActions: @[
-        HandlerT(kind: hkDrop, flag: fInList),
-        HandlerT(kind: hkTrim, trimTargetKind: akBrace, trimKind: hkAwaitMany)
-      ]
+    handlers[evRBrace].add group(
+      fInBrace,
+      [ HandlerT.drop(fInBrace)                         ],
+      [ pushAction                                      ],
+      [ HandlerT.popMany({akList, akBrace}, pushAction) ]
     )
 
-  handlers[evFinish] = @[HandlerT(
-    kind: hkWhereGroup,
-    startActions: @[HandlerT(kind: hkCloseAll)]
-  )]
-
+  block:
+    handlers[evRBrace].add group(
+      fInList,
+      [
+        HandlerT.drop(fInList),
+        HandlerT.trim(akBrace, hkAwaitMany)
+      ]
+    )
 
   for ev in events:
     for handler in handlers[ev.kind]:
       if not handler.guarded or (
         context.flags.len > 0 and context.flags[^1] == handler.guardFlag
       ):
-        # echo "Exec handler"
         handler.execOn(ev, context)
 
   return context.stack.mapIt(it.ast)
