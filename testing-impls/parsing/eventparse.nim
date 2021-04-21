@@ -98,6 +98,9 @@ type
     finishEvent: Event ## Support event kind sent to `where` handler group by
     ## terminated action and to `await` event on termination.
 
+    handlers: array[EventKind,
+                    seq[Handler[Ast, AstKind, Event, EventKind, Flag]]]
+
 proc isFinished[A, Ak, E, Ek, F](
     handler: Handler[A, Ak, E, Ek, F]): bool =
   ## Check whether handler has found required element
@@ -531,32 +534,48 @@ type
 
 
 
+proc execOn[A, Ak, E, Ek, F](
+  ctx: var ExecContext[A, Ak, E, Ek, F], event: E) =
+
+  for handler in ctx.handlers[event.kind]:
+    if not handler.guarded or (
+      ctx.flags.len > 0 and ctx.flags[^1] == handler.guardFlag
+    ):
+      handler.execOn(event, ctx)
+
+
+proc newContext[A, Ak, E, Ek, F](
+    H: typedesc[Handler[A, Ak, E, Ek, F]],
+    newAst: proc(kind: Ak, subnodes: seq[A]): A
+  ): ExecContext[A, Ak, E, Ek, F] =
+
+  result.newAst = newAst
+
+
 proc eventParse(events: seq[Event]): seq[Ast[AstKind]] =
   type HandlerT = Handler[Ast[AstKind], AstKind, Event, EventKind, Flag]
 
-  var handlers: array[EventKind, seq[HandlerT]]
-  var context: ExecContext[Ast[AstKind], AstKind, Event, EventKind, Flag]
-
-  context.newAst =
-    proc(kind: AstKind, subnodes: seq[Ast[AstKind]]): Ast =
+  var ctx = HandlerT.newContext(
+    proc(kind: AstKind, subnodes: seq[Ast[AstKind]]): Ast[AstKind] =
       Ast[AstKind](kind: kind, subnodes: subnodes)
-
-  handlers[evList].add group(
-    [HandlerT.lift(fInList)],
-    [HandlerT.push akList],
-    [HandlerT.waitMany(akBrace, {fInBrace})]
   )
 
-  handlers[evRBrace].add group(
+  ctx.handlers[evList].add group(
+    [ HandlerT.lift(fInList)                  ],
+    [ HandlerT.push akList                    ],
+    [ HandlerT.waitMany(akBrace, {fInBrace})  ]
+  )
+
+  ctx.handlers[evRBrace].add group(
     fInBrace,
     [ HandlerT.drop(fInBrace)             ],
     [ HandlerT.push akBrace               ],
     [ HandlerT.popMany({akList, akBrace}) ]
   )
 
-  handlers[evLBrace] = @[group([ HandlerT.lift fInBrace ])]
-  handlers[evFinish].add group([ HandlerT.closeAll() ])
-  handlers[evRBrace].add group(
+  ctx.handlers[evLBrace] = @[group([ HandlerT.lift fInBrace ])]
+  ctx.handlers[evFinish].add group([ HandlerT.closeAll() ])
+  ctx.handlers[evRBrace].add group(
     fInList,
     [
       HandlerT.drop(fInList),
@@ -564,15 +583,10 @@ proc eventParse(events: seq[Event]): seq[Ast[AstKind]] =
     ]
   )
 
+  for event in events:
+    ctx.execOn(event)
 
-  for ev in events:
-    for handler in handlers[ev.kind]:
-      if not handler.guarded or (
-        context.flags.len > 0 and context.flags[^1] == handler.guardFlag
-      ):
-        handler.execOn(ev, context)
-
-  return context.stack.mapIt(it.ast)
+  return ctx.stack.mapIt(it.ast)
 
 
 
