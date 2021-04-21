@@ -30,6 +30,8 @@ type
     ## - @param{Event} :: Trigger input event type
     ## - @param{EventKind} :: Input event kind
     ## - @param{Flag} :: Flag stack content
+
+    pendingTargetSet: bool ## Missing pop/await target
     case kind: HandlerKind
       of hkAwait, hkAwaitMany, hkNext, hkNextMany:
         waitKind: AstKind ## Filter element kinds
@@ -367,18 +369,42 @@ proc execOn[A, Ak, E, Ek, F](
       raiseImplementKindError(handler)
 
 
+
+
+func updateTargets[A, Ak, E, Ek, F](handler: var Handler[A, Ak, E, Ek, F]) =
+  var target: ptr seq[A]
+  for action in handler.finishActions:
+    if action.kind in {hkPush}:
+      target = addr action.argList
+
+  for handler in items(handler.whereBody):
+    if handler.pendingTargetSet:
+      case handler.kind:
+        of hkPop, hkPopMany:
+          handler.popTarget = target
+
+        of hkAwait, hkAwaitMany, hkNext, hkNextMany:
+          handler.waitTarget = target
+
+        else:
+          discard
+
+
+
 func group[A, Ak, E, Ek, F](
     startActions: openarray[Handler[A, Ak, E, Ek, F]],
     finishActions: openarray[Handler[A, Ak, E, Ek, F]] = @[],
     whereBody: openarray[Handler[A, Ak, E, Ek, F]] = @[]
   ): Handler[A, Ak, E, Ek, F] =
 
-  Handler[A, Ak, E, Ek, F](
+  result = Handler[A, Ak, E, Ek, F](
     kind:          hkWhereGroup,
     startActions:  toSeq(startActions),
     finishActions: toSeq(finishActions),
     whereBody:     toSeq(whereBody)
   )
+
+  updateTargets(result)
 
 
 func group[A, Ak, E, Ek, F](
@@ -388,7 +414,7 @@ func group[A, Ak, E, Ek, F](
     whereBody:     openarray[Handler[A, Ak, E, Ek, F]] = @[]
   ): Handler[A, Ak, E, Ek, F] =
 
-  Handler[A, Ak, E, Ek, F](
+  result = Handler[A, Ak, E, Ek, F](
     guarded:       true,
     guardFlag:     flag,
     kind:          hkWhereGroup,
@@ -396,6 +422,8 @@ func group[A, Ak, E, Ek, F](
     finishActions: toSeq(finishActions),
     whereBody:     toSeq(whereBody)
   )
+
+  updateTargets(result)
 
 func drop[A, Ak, E, Ek, F](H: typedesc[Handler[A, Ak, E, Ek, F]], flag: F): H =
   H(kind: hkDrop, flag: flag)
@@ -417,6 +445,10 @@ func trim[A, Ak, E, Ek, F](
   H: typedesc[Handler[A, Ak, E, Ek, F]], target: Ak, targetKind: HandlerKind): H =
   H(kind: hkTrim, trimTargetKind: target, trimKind: targetKind)
 
+
+func closeALl[A, Ak, E, Ek, F](H: typedesc[Handler[A, Ak, E, Ek, F]]): H =
+  H(kind: hkCloseALl)
+
 func popMany[A, Ak, E, Ek, F](
     H: typedesc[Handler[A, Ak, E, Ek, F]],
     popKinds: set[Ak], popTarget: var H
@@ -425,15 +457,48 @@ func popMany[A, Ak, E, Ek, F](
   H(kind: hkPopMany, popKind: popKinds, popTarget: addr popTarget.argList)
 
 
+func popMany[A, Ak, E, Ek, F](
+    H: typedesc[Handler[A, Ak, E, Ek, F]], popKinds: set[Ak]): H =
+  H(kind: hkPopMany, popKind: popKinds, pendingTargetSet: true)
+
+
 func waitMany[A, Ak, E, Ek, F](
     H: typedesc[Handler[A, Ak, E, Ek, F]],
     waitKind: Ak, waitTarget: var H, pauseOn: set[F] = {}
   ): H =
 
   H(kind: hkAwaitMany, waitKind: waitKind,
-    waitTarget: addr waitTarget.argList, pauseOn: pauseOn
-    # popTarget: addr popTarget.argList
-  )
+    waitTarget: addr waitTarget.argList, pauseOn: pauseOn)
+
+
+func waitMany[A, Ak, E, Ek, F](
+    H: typedesc[Handler[A, Ak, E, Ek, F]],
+    waitKind: Ak, pauseOn: set[F] = {}
+  ): H =
+
+  H(kind: hkAwaitMany, waitKind: waitKind,
+    pendingTargetSet: true, pauseOn: pauseOn)
+
+type
+  Ast[Ak] = ref object
+    kind*: Ak
+    subnodes*: seq[Ast[Ak]]
+
+
+proc treeRepr[Ak](ast: Ast[Ak]): string =
+  proc aux(ast: Ast[Ak], level: int): string =
+    let pref = "  ".repeat(level)
+    result &= alignLeft(pref & $ast.kind, 20) & "\n"
+    for node in ast.subnodes:
+      result &= aux(node, level + 1)
+
+  return aux(ast, 0)
+
+proc treeRepr[T](s: seq[T]): string =
+  for item in s:
+    result = "-\n"
+    for line in split(treeRepr(item), '\n'):
+      result &= "  " & line & "\n"
 
 
 type
@@ -459,10 +524,6 @@ type
     akList
     akBrace
 
-  Ast = ref object
-    kind*: AstKind
-    subnodes*: seq[Ast]
-
   Flag = enum
     fInList
     fInBrace
@@ -470,45 +531,39 @@ type
 
 
 
-proc eventParse(events: seq[Event]): seq[Ast] =
-  type HandlerT = Handler[Ast, AstKind, Event, EventKind, Flag]
+proc eventParse(events: seq[Event]): seq[Ast[AstKind]] =
+  type HandlerT = Handler[Ast[AstKind], AstKind, Event, EventKind, Flag]
 
   var handlers: array[EventKind, seq[HandlerT]]
-  var context: ExecContext[Ast, AstKind, Event, EventKind, Flag]
+  var context: ExecContext[Ast[AstKind], AstKind, Event, EventKind, Flag]
 
   context.newAst =
-    proc(kind: AstKind, subnodes: seq[Ast]): Ast =
-      Ast(kind: kind, subnodes: subnodes)
+    proc(kind: AstKind, subnodes: seq[Ast[AstKind]]): Ast =
+      Ast[AstKind](kind: kind, subnodes: subnodes)
 
-  block:
-    var pushAction = HandlerT.push akList
+  handlers[evList].add group(
+    [HandlerT.lift(fInList)],
+    [HandlerT.push akList],
+    [HandlerT.waitMany(akBrace, {fInBrace})]
+  )
 
-    handlers[evList] =  @[group(
-      [HandlerT.lift(fInList)],
-      [pushAction],
-      [HandlerT.waitMany(akBrace, pushAction, {fInBrace})]
-    )]
+  handlers[evRBrace].add group(
+    fInBrace,
+    [ HandlerT.drop(fInBrace)             ],
+    [ HandlerT.push akBrace               ],
+    [ HandlerT.popMany({akList, akBrace}) ]
+  )
 
-  handlers[evLBrace] = @[group([HandlerT.lift fInBrace])]
+  handlers[evLBrace] = @[group([ HandlerT.lift fInBrace ])]
+  handlers[evFinish].add group([ HandlerT.closeAll() ])
+  handlers[evRBrace].add group(
+    fInList,
+    [
+      HandlerT.drop(fInList),
+      HandlerT.trim(akBrace, hkAwaitMany)
+    ]
+  )
 
-  block:
-    var pushAction = HandlerT.push akBrace
-
-    handlers[evRBrace].add group(
-      fInBrace,
-      [ HandlerT.drop(fInBrace)                         ],
-      [ pushAction                                      ],
-      [ HandlerT.popMany({akList, akBrace}, pushAction) ]
-    )
-
-  block:
-    handlers[evRBrace].add group(
-      fInList,
-      [
-        HandlerT.drop(fInList),
-        HandlerT.trim(akBrace, hkAwaitMany)
-      ]
-    )
 
   for ev in events:
     for handler in handlers[ev.kind]:
@@ -519,31 +574,6 @@ proc eventParse(events: seq[Event]): seq[Ast] =
 
   return context.stack.mapIt(it.ast)
 
-
-
-var table: Table[int, ForegroundColor]
-var used: set[ForegroundColor] = {fgDefault, fgBlack}
-
-proc treeRepr(ast: Ast): string =
-  proc aux(ast: Ast, level: int): string =
-    let pref = "  ".repeat(level)
-    let addrInt = cast[int](ast)
-    if addrInt notin table:
-      table[addrInt] = nextColor(used)
-
-    result &= alignLeft(pref & $ast.kind, 20) & " @" &
-      $toColored($addrInt, initStyle(table[addrInt])) & "\n"
-
-    for node in ast.subnodes:
-      result &= aux(node, level + 1)
-
-  return aux(ast, 0)
-
-proc treeRepr[T](s: seq[T]): string =
-  for item in s:
-    result = "-\n"
-    for line in split(treeRepr(item), '\n'):
-      result &= "  " & line & "\n"
 
 
 proc lex(str: string): seq[Event] =
@@ -559,6 +589,8 @@ proc lex(str: string): seq[Event] =
 
       else:
         discard
+
+  result.add Event(kind: evFinish)
 
 when isMainModule:
   let text = lex("![[[][]]]")
