@@ -482,6 +482,28 @@ func waitMany[A, Ak, E, Ek, F](
   H(kind: hkAwaitMany, waitKind: waitKind,
     pendingTargetSet: true, pauseOn: pauseOn)
 
+proc execOn[A, Ak, E, Ek, F](
+  ctx: var ExecContext[A, Ak, E, Ek, F], event: E) =
+
+  for handler in ctx.handlers[event.kind]:
+    if not handler.guarded or (
+      ctx.flags.len > 0 and ctx.flags[^1] == handler.guardFlag
+    ):
+      handler.execOn(event, ctx)
+
+
+proc newContext[A, Ak, E, Ek, F](
+    H: typedesc[Handler[A, Ak, E, Ek, F]],
+    newAst: proc(kind: Ak, subnodes: seq[A]): A
+  ): ExecContext[A, Ak, E, Ek, F] =
+
+  result.newAst = newAst
+
+
+#*************************************************************************#
+#***********  Simple AST implementation for testing purposes  ************#
+#*************************************************************************#
+
 type
   Ast[Ak] = ref object
     kind*: Ak
@@ -502,6 +524,11 @@ proc treeRepr[T](s: seq[T]): string =
     result = "-\n"
     for line in split(treeRepr(item), '\n'):
       result &= "  " & line & "\n"
+
+
+#*************************************************************************#
+#**********************  Concrete input event set  ***********************#
+#*************************************************************************#
 
 
 type
@@ -534,30 +561,16 @@ type
 
 
 
-proc execOn[A, Ak, E, Ek, F](
-  ctx: var ExecContext[A, Ak, E, Ek, F], event: E) =
-
-  for handler in ctx.handlers[event.kind]:
-    if not handler.guarded or (
-      ctx.flags.len > 0 and ctx.flags[^1] == handler.guardFlag
-    ):
-      handler.execOn(event, ctx)
-
-
-proc newContext[A, Ak, E, Ek, F](
-    H: typedesc[Handler[A, Ak, E, Ek, F]],
-    newAst: proc(kind: Ak, subnodes: seq[A]): A
-  ): ExecContext[A, Ak, E, Ek, F] =
-
-  result.newAst = newAst
-
 
 proc eventParse(events: seq[Event]): seq[Ast[AstKind]] =
-  type HandlerT = Handler[Ast[AstKind], AstKind, Event, EventKind, Flag]
+  type
+    # Typedef handler and AST for less verbose parser construction
+    AstT = Ast[AstKind]
+    HandlerT = Handler[AstT, AstKind, Event, EventKind, Flag]
 
   var ctx = HandlerT.newContext(
-    proc(kind: AstKind, subnodes: seq[Ast[AstKind]]): Ast[AstKind] =
-      Ast[AstKind](kind: kind, subnodes: subnodes)
+    proc(kind: AstKind, subnodes: seq[AstT]): Ast[AstKind] =
+      AstT(kind: kind, subnodes: subnodes)
   )
 
   ctx.handlers[evList].add group(
