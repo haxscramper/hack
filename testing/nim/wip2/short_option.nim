@@ -3,12 +3,7 @@ import std/options
 template `?`(t: typedesc): untyped = Option[t]
 template `or`[T](opt: Option[T], default: T): untyped =
   let val = opt
-  if val.isSome():
-    val.get()
-
-  else:
-    default
-
+  if val.isSome(): val.get() else: default
 
 var tmp: ?int
 
