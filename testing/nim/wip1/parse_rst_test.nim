@@ -8,16 +8,13 @@ proc parseRstString(s: string): PRstNode =
 
 let testStr = """
 
-*eee 12*
-
-e df sfa ee
-
+**Note**: to ``high(int)`` if T = int
 
 """
 
 
 let node = parseRstString(testStr)
-pprint node
+pprint node, ignore = @["**/level*"]
 
 # echo rstToHtml(testStr, {}, defaultConfig())
 

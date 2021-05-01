@@ -26,11 +26,11 @@ proc `not`[N](lex: Lex, charset: set[char]): bool = lex[] in charset
 proc `not`[N](lex: Lex, ch: char): bool = lex[] == ch
 
 macro optNot*{not a}(a: bool{nkCall}): untyped =
-  if a.matches(Call[
+  if a.matches Call[
     Sym(strVal: "[]"),
     Sym(getTypeInst: Sym(strVal: "Lex")),
     .._
-  ]):
+  ]:
     warning("Deprecated use of `not lex[]`, convert to `lex.not []`", a)
 
   result = nnkPragmaBlock.newTree(
