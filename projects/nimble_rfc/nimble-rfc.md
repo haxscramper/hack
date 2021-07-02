@@ -1,6 +1,6 @@
-# Existing problems
+The RFC is extremely conservative on breakages and new features - it only strives to formalize existing behavior and improve general experience of using nimble. Not going to propose any drastic measures as dropping versions and using git hash commits instead. 
 
-## Centralized package registry
+# Centralized package registry
 
 I don't think it is necessary to invent something new. Just look at what others do and copy implementation, since I'm not sure that we have enough resourses to have some unique approach. And it is not really necessary. I'm not saying we should aim for fully copying implementation of other package manager, since nim has it's own set of unique features, but it is important to consider.
 
@@ -10,7 +10,7 @@ Having centralized package registry which records all `package+version -> depend
 
 **IDEA**: make `nimble publish` put current package metadata in the `nim-lang/packages` index
 
-## Current nimble dependency resolution
+# Current nimble dependency resolution
 
 Current implementation of dependency resolution does not construct explicit dependency graph, and instead just [loops](https://github.com/nim-lang/nimble/blob/95e6870f60655e81ff488779c7f589fe649061ec/src/nimble.nim#L64) though requirements, almost immediately [installing](https://github.com/nim-lang/nimble/blob/95e6870f60655e81ff488779c7f589fe649061ec/src/nimble.nim#L84-L86) them which I believe to be the source of such bugs as ["nimble loops infinitely trying to install codependent requirements"](https://github.com/nim-lang/nimble/issues/887) and ["Dependency resolution depends on the order in requires"](https://github.com/nim-lang/nimble/issues/505) (could be prevented with explicit dependency graph construction).
 
@@ -24,15 +24,23 @@ Related links:
 
 **IDEA**: Reimplement dependency resolution algorithm. Use full knowledge about requirements about each version of each package from previous section.
 
-## Do not require full manifest evaluation
+# Do not require full manifest evaluation
 
-Right now it is necessary to fully evaluate nimscript configuration in order to determine list of dependencies, as it might contain code with complicated logic. While this might seem like an acceptable solution to 'optional' dependencies, it cannot be statically reasoned about and introduces a lot of complexity in tooling (right now nimble has to generate a `.nims` file, evaluate it separately and only then get list of dependencies. To be honest it looks and feels like a hack to me).
+Right now it is necessary to fully evaluate nimscript configuration in order to determine list of dependencies, as it might contain code with complicated logic. It cannot be statically reasoned about and introduces a lot of complexity in tooling (right now nimble has to generate a `.nims` file, evaluate it separately and only then get list of dependencies).
 
-Right now `.nimble` configuration file contains arbitrary nimscript code that requires compiler to evaluate. This might be considered a good solution for custom `task` targets, but ultimately this leads to issues where even `author = <author name here>` might require full compiler to evaluate. Instead I propose that some important metadata like package `name` and `requires` were written in much stricter declarative manner. Specifically this means:
+Arbitrary nimscript might be considered a good solution for custom `task` targets, but ultimately this leads to issues where even `author = <author name here>` might require full compiler to evaluate.
+
+
+
+**IDEA**: Small subset of important metadata like package `name` and `requires` were written in much stricter declarative manner.
 
 - `packageName = "name"` must have string literal and be located at the toplevel.
 - Non-optinoal dependencies are written as `requires "dependency1", "depenendency2"` and are located at the toplevel file as well.
 - Optional dependencies are written in `when defined(windows)` section. `when` section must contain static list of defines, identical to the toplevel ones. This part is particularly important as it allows to determine feature-based dependencies. Pubgrub resolution algorithms allows each package to provide a list of features that can be either enabled or disabled. This can be reused for os-specific optional dependency resolution by treating os as feature. It is automatically set or unset by `nimble` installation.
+
+Existing nimble packages **almost universally comply** with these requirements, and overwhelming number of ones that don't have simple repeating pattern violating the rule [import in nimble](#import-in-nimble). Optional dependencies are already handled this way for most of the packages - [treeform/hottie](https://github.com/treeform/hottie/blob/master/hottie.nimble#L11), [minefuto/qwertycd](https://github.com/minefuto/qwertycd/blob/master/qwertycd.nimble#L18) and several others.
+
+Additional restrictions might be placed of other metadata fields like `foreignDep`, `author`, `description` etc. Foreign dependencies might also be checked upon installation, but that can be implemented later.
 
 <!-- ```nim
 let test = defined(windows) or defined(macos)
@@ -46,20 +54,112 @@ else:
 
 Instead I propose extension to the `requires`, `task` and other keywords that would actually match *intended semantics* of optional dependenices. Even with current implementation it is possible to statically parse approximately **97%** of the packages, but right now it is not possible to rely on this as `.nimble` is *not guaranteed* to support static parsing. -->
 
-## Strict declarative subset for package manifests
+
+# Remove compiler's knowledge of nimble
+
+[Removing Nim's knowledge of Nimble](https://github.com/nim-lang/nimble/issues/654)
+
+Remove nim compiler internal knowledge about directories like `nimblePaths` and instead streamline the workflow by having single source of thuth about package location: confguration file.
+
+I want to specifically mention several things - I don't think there should be any additional compiler changes. Package manager should be a separate tool that does not create two-way information flow. Instead we should adopt simple model `[pm] -> [compiler]` or `[pm] -> [build tool] -> [compiler]`. Package manager either runs compiler, or configures environment where compiler can run. Intermediate build tools might include something like `testament` or other tooling. We already have a pretty nice configuration format in form of `package.nim.cfg` that would allow `nimble` to inform compiler of all the necessary configuration values.
+
+Having volatile configuration file would make it easier to inspect how nimble called the compiler, and even though n linked issue suggest that "If the experience becomes seamless then the user really won't need to care about what Nimble does.", in practice it is quite hard to run `nim` compiler the same way nimble does it - the only option is to wait for compilation to fail and then copy error message that contains the command itself, and I don't believe we would be able to make this seamless enough so nobody would *ever* need to run compiler manually or check how nimble communicates with compiler.
+
+Another *very* important advantage that `package.nim.cfg` has is support for external tooling that nimble can't interface with right now. For example `testament` - if someone wishes to use it for testing their projects simple `exec("testament all")` *usually* does the right thing in CI, but under the hood it knows nothing about actual project requirements and simply relies on `--nimblePaths`. I can't make `nimble test` use my own compiler build, nor is it possible to fully integrate external tooling in the project. For `haxdoc` I basically had to copy-paste dependency resolution part of nimble, remove package installation parts and then work based on that. 
 
 
 
+<!-- This would allow to easily integrate `testament` with nimble? TODO could not test testament at all. 
 
-Existing nimble packages **almost universally comply** with these requirements, and overwhelming number of ones that don't have simple repeating pattern violating the rule. Optional dependencies are already handled this way for most of the packages - [treeform/hottie](https://github.com/treeform/hottie/blob/master/hottie.nimble#L11), [minefuto/qwertycd](https://github.com/minefuto/qwertycd/blob/master/qwertycd.nimble#L18) and several others.
+----
 
-Additional restrictions might be placed of other metadata fields like `foreignDep`, `author`, `description` etc. Foreign dependencies might also be checked upon installation, but that can be implemented later.
+If nimble implementation is fully separated from the compiler it can easily use any external dependencies. Not integrating package management in compiler opens room for futher experiments and customized solutions.
+
+---
 
 
-### Current edge cases
+Nim configuration files support conditional checks for features in form of `@if cudnn:`, and these easily map in `defines()` in nim code. If nimble thinks that `defined(windows)` is true so does `nim` compiler itself. Feature flags can be passed using `--define:<package><feature>` flags as well.
 
-Because `.nimble` configuration file has access to full features of the nim language users have taken advantage of this to work around certain limitations of the nimble.
+------
 
+This can also be used to adress issues like these, because with simple configuration file I can create "nim distribution" using simple configuration files with things like `--path:distributedStdlib`. The need for hardcoding special directories and path would be reduced as well.
+
+https://github.com/nim-lang/RFCs/issues/310
+https://github.com/nim-lang/RFCs/issues/371
+
+------
+ -->
+
+
+----
+
+
+Can I use my own compiler build with nimble? Or maybe some other tool? Like `testament`, ro `nim doc`, or any other core tool. What about external tooling? 
+
+# Dependency resolution
+
+Dependency resolution for nimble have been discussed multiple times in different contexts, specifically in ["modern techniques for dependency resolution"](https://github.com/nim-lang/nimble/issues/890). Possible options for solving this problem that were mentioned:
+
+- Include use existing dependency solver like [libsolv](https://github.com/openSUSE/libsolv) -- provides low-level features to implement dependency resolution on top. Would require additional effort to design integration of the nimble
+- Implement custom solution using SAT solver like z3 -- requires a lot of additional work and research to implement.
+- Allow [multiple versions](https://research.swtch.com/version-sat) of the same package -- would require custom complier support, and this must be a last resort approach, not a go-to fix that is enabled each time dependency resolution halts for some unknown reason.
+
+All of these options are used in certain package managers, and with some effort they might be reimplemented for nim as well. But, while looking for existing solutions that could be easily adopted I've found one that seems to be suited especially well for the problem at hand -- [PubGrub: Next-Generation Version Solving](https://nex3.medium.com/pubgrub-2fb6470504f) by Natalie Weizenbaum. The article introduces new dependency resolution *algorithm* called pubgrub. It has already been adopted by `dart` and `swift` package managers, and have several reimplementations in other languages. The [article](https://research.swtch.com/version-sat) suggested in `#890` was written in 2016 and mentions both of these package managers - "[Dart's](https://pub.dartlang.org/) pub includes a [backtracking solver](https://github.com/dart-lang/pub/blob/b48babe56e9800a53ecce888482cb758f6815bd5/lib/src/solver/backtracking_solver.dart) that [often takes a long time](https://github.com/dart-lang/pub/issues/912).", "[Swift's package manager](https://github.com/apple/swift-package-manager) uses a [basic backtracking solver](https://github.com/apple/swift-package-manager/blob/master/Sources/PackageGraph/DependencyResolver.swift#L518)."
+
+Basics of the algorithm are explained in the [introduction article to the algorithm](https://nex3.medium.com/pubgrub-2fb6470504f) and much more detailed [specification](https://github.com/dart-lang/pub/blob/master/doc/solver.md). [Overview talk](https://www.youtube.com/watch?v=Fifni75xYeQ) from Dart Conf by the algorithm author and introductory [talk](https://www.youtube.com/watch?v=bBqErIegbiA) for Swift package manager. Implementations in different programming languages:
+
+- [Original dart implementation used by `pub` package manager](https://github.com/dart-lang/pub/tree/master/lib/src/source)
+- [Implementation for swift package manager](https://github.com/apple/swift-package-manager/tree/main/Sources/PackageGraph/Pubgrub)
+- [C++ implementation of the algorithm](https://github.com/vector-of-bool/pubgrub)
+- [Rust library implementing the algorithm](https://github.com/pubgrub-rs/pubgrub) and [book](https://pubgrub-rs-guide.netlify.app/internals/intro.html) about internal implementation.
+- [Ruby implementation](https://github.com/jhawthorn/pub_grub)
+- Elm [implementation](https://github.com/mpizenberg/elm-pubgrub) and introduction [thread](https://discourse.elm-lang.org/t/elm-pubgrub-a-state-of-the-art-dependency-solver-in-elm/6077)
+- [Python](https://github.com/ddelange/pipgrip) pip dependency resolver
+
+I've examined dart implementation in close detail and it seems there is no need for any specialized knowledge (compared to `libsolv` and especially `z3` approach) to adopt the implementation for nim needs. The source code is [*extremely*](https://github.com/dart-lang/pub/blob/master/lib/src/solver/version_solver.dart#L119) [well](https://github.com/dart-lang/pub/blob/master/lib/src/solver/version_solver.dart#L225) documented, and paired with comprehensive [documentation](https://github.com/dart-lang/pub/blob/master/doc/solver.md). The algorithm is designed to provide extremely concise and clear error messages about failure reasons - feature that is *completely* absent from nimble right now. <!-- While it is clear that good error reportin is not of particular value here, we are getting it basically for free. -->
+
+## Comparison with existing solutions
+
+Compared to alternative approaches discussed in [#890](https://github.com/nim-lang/nimble/issues/890), and specifically libsolv pubgrub has several important differences that make it especially well-suite for the task at hand:
+
+- Algorithm has several implementations, including two real-world uses [swift (PR link)](https://github.com/apple/swift-package-manager/pull/1918) and [dart (solver doc link)](https://github.com/dart-lang/pub/blob/master/doc/solver.md) that show integration with features like lockfiles, semantic versioning, package features and more.
+- Has extensive documentation on usage and implementation, whereas libsolv has to be treated like a black box for the most part. There was [no direct comparison](https://twitter.com/search?q=pubgrub%20libsolv&src=typed_query) between libsolv and pubgrub, so it is hard to provide a definitive answer which one is better.
+
+## Features
+
+Dart implementation of the pubgrub algorithm provides following features:
+
+- Development dependencies
+- Feature-based dependencies (right now is done using `when defined(windows)` hack)
+- Lockfiles
+- Semantic versioning
+- Improved error message reporting
+
+**IDEA**: adopt pubgrub algorithm for solving nimble dependency graph.
+
+# Quality-of-life features
+
+- [Update all installed nimble packages](https://forum.nim-lang.org/t/4648)
+- [make noninteractive init possible](https://github.com/nim-lang/nimble/issues/806) 
+- Current directory does not contain `.nimble` file - look up in the directory tree?
+- Disable warnings (by default) from external packages when installing dependencies - I usually can't fix the source of the warnings anyway, so they are almost useless (in context of installing dependency).
+- Not possible to perform `build`/`test` without dependency resolution and installation interfering. This becomes a non-issue if `nimble` is used to manage volatile configuration file - `nim c` simply does the right thing.
+- Several CLI flags are undocumented in `--help` (especiall `--json`)
+- Insanely noisy output
+- Allow disabling binary build - I don't always want to build binary for hybrid packages.
+    <!-- - Shows warnigns about structure of dependencies by default. Did I ask for this? No. Can I fix broken structure? Most likely no, and certainly not now.
+    - Due to dependencies being resolved and *installed* in one recursive step it is not possible to first resolve all dependencies (possibly with cached elements) and then download everything. Package can appear multiple times in the output if it is required by more than one package, but each additional encounter will have useless 'requirement already satisfied' message.
+- Support all package dependencies at once -->
+
+
+# Adopting changes
+
+Overwhelming number of existing packages won't have any breakages. For few ones that used certain patters listed below much easier (and cleaner) solution is provided.
+
+NOTE: volatile `.cfg` file generated by nimble that contains all the necessary information like author, version and so on.
+NOTE: Also write documentation on intended workflows with nimble or something
+
+## import-in-nimble
 
 In order to retrieve [`version`](https://github.com/h3rald/fae/blob/master/fae.nimble#L17) data following `import` must be resolved 
 ```nim
@@ -90,39 +190,35 @@ bin = listFiles(thisDir()).
 Currently there is no way to use **package manifest** as a single source of truth about versions, package names, author and more. `version` hacks looks like a workaround proposed in [this forum thread](https://forum.nim-lang.org/t/7231) or [reddit post](https://www.reddit.com/r/nim/comments/chcr4m/best_practice_for_embedding_nimble_package/) where in latter it is described as "messy to accomplish". It works, but I would argue that API like [std/compilesettings](https://nim-lang.org/docs/compilesettings.html) would be much better suited. It already has support for [`nimblePaths`](https://nim-lang.org/docs/compilesettings.html#MultipleValueSetting) setting. In other languages this information is exposed either via [Environment Variables](https://doc.rust-lang.org/cargo/reference/environment-variables.html), [runtime manfiest parse](https://pub.dev/documentation/pubspec_parse/latest/pubspec_parse/Pubspec/Pubspec.parse.html)
 
 
-# Missing features
+# Adding new features
 
 ## Task-level and development dependencies
 
 - https://github.com/nim-lang/nimble/issues/482
 - https://forum.nim-lang.org/t/8147
 
-## Package features
+## Third-party libraries and foreign dependencies
+
+ - standard tasks & workflows for building 3rd part libs (== repro builds, but outside of nim)
+    - related: due to lack of standard way of building external libraries (compile C++ code for example) and `exec()`, `doCmd()`-based workarounds things like [Nim - [...] nimble shell command injection](https://consensys.net/diligence/vulnerabilities/nim-insecure-ssl-tls-defaults-remote-code-execution/) (specifically [Remove usage of command string-based exec interfaces](https://github.com/nim-lang/nimble/issues/895)) are more likely to happen.
+    - Provide a way to interface with external package managers, we already have partial support for this in the form of [external dependencies](https://github.com/nim-lang/nimble#external-dependencies) and [distros module](https://nim-lang.org/docs/distros.html) from the stdlib.
+    - Due to limited nimscript features in `.nimble` (like inability to use helper procs form other dependencies) it might be necessary to resort to `exec("nim r src/actual_build_script.nim"`)
+
+
+# ---------------------------------------
+# ---------------------------------------
+
+<!-- ## Package features
 
 ### Special defines
 
-Package cannot advertise possible `define` that affect it's behavior. [Improving compiler's knowledge of "hidden" identifiers](https://github.com/nim-lang/RFCs/issues/337)
+Package cannot advertise possible `define` that affect it's behavior. [Improving compiler's knowledge of "hidden" identifiers](https://github.com/nim-lang/RFCs/issues/337) -->
 
 ### Binary packages
 
-I don't always want to build binary
+
 
 # Command-line interface ergonomics
-
-# Quality-of-life features
-
-- https://forum.nim-lang.org/t/4648
-- https://github.com/nim-lang/nimble/issues/806 make noninteractive init possible
-- Current directory does not contain `.nimble` file - look up in the directory tree?
-- Disable warnings (by default) from external packages when installing dependencies - I usually can't fix the source of the warnings anyway, so they are almost useless (in context of installing dependency).
-- Not possible to perform `build`/`test` without dependency resolution and installation interfering (i.e. "resolve packages only using local installations")
-- Several CLI flags are undocumented in `--help` (especiall `--json`)
-  - Insanely noisy output
-    - Shows warnigns about structure of dependencies by default. Did I ask for this? No. Can I fix broken structure? Most likely no, and certainly not now.
-    - Due to dependencies being resolved and *installed* in one recursive       step it is not possible to first resolve all dependencies (possibly with cached elements) and then download everything. Package can appear multiple times in the output if it is required by more than one package, but each additional encounter will have useless 'requirement already satisfied' message.
-- Support all package dependencies at once
-
-
 
 # Existing discussions
 
@@ -141,51 +237,15 @@ the short-list we discussed was:
  - better monorepo support - host multiple projects in single repo and    version and reference accordingly (a bit like nimble develop, but  within repo) - so we can publish smaller and more reusable libs for the community without paying the multi-repo tax
  - side-by-side checkouts - different versions / branches / etc (== repro builds)
  - avoid spurios rebuilds - build times are getting significant as we grow - arguably this is nim, but the line between nim and nimble is more blurred than other langs (which tend to have a more pure compiler and a more pure build&pm tool) - same as nim, we have a growing test suite, so it should smartly run only the necessary tests - an extension of dependency tracking really
- - standard tasks & workflows for building 3rd part libs (== repro builds, but outside of nim)
-    - related: due to lack of standard way of building external libraries (compile C++ code for example) and `exec()`, `doCmd()`-based workarounds things like [Nim - [...] nimble shell command injection](https://consensys.net/diligence/vulnerabilities/nim-insecure-ssl-tls-defaults-remote-code-execution/) (specifically [Remove usage of command string-based exec interfaces](https://github.com/nim-lang/nimble/issues/895)) are more likely to happen.
-    - Provide a way to interface with external package managers, we already have partial support for this in the form of [external dependencies](https://github.com/nim-lang/nimble#external-dependencies) and [distros module](https://nim-lang.org/docs/distros.html) from the stdlib.
-    - Due to limited nimscript features in `.nimble` (like inability to use helper procs form other dependencies) it might be necessary to resort to `exec("nim r src/actual_build_script.nim"`)
  - more declarative information, so we can build tools that analyze deps, tasks etc, for security for example
  - better dependency resolver that can deal with social information (like semver) to help work out what the deterministic part should look like (this would require community standards in the pkg repo as well)
 
-## [Removing Nim's knowledge of Nimble](https://github.com/nim-lang/nimble/issues/654)
+## 
 
 
 # Proposed solution
 
 As I have already mentioned nim has it's unique set of features that might require a customized solutions in some places, but generally speaking it does not have any extraordinary requirements. The same can be said for various discussion that I've listed above - in most cases there are requests for 
-
-## Pubgrub algorithm for dependency resolution
-
-[Introduction article to the algorithm](https://nex3.medium.com/pubgrub-2fb6470504f) and much more detailed [specification](https://github.com/dart-lang/pub/blob/master/doc/solver.md). [Overview talk](https://www.youtube.com/watch?v=Fifni75xYeQ) from Dart Conf. Introductory [talk](https://www.youtube.com/watch?v=bBqErIegbiA) for Swift package manager 
-
-Pubgrub algorithm itself has been reimplemented in several different languages and is used by multiple package managers.
-
-- [Original dart implementation used by `pub` package manager](https://github.com/dart-lang/pub/tree/master/lib/src/source)
-- [Implementation for swift package manager](https://github.com/apple/swift-package-manager/tree/main/Sources/PackageGraph/Pubgrub)
-- [C++ implementation of the algorithm](https://github.com/vector-of-bool/pubgrub)
-- [Rust library implementing the algorithm](https://github.com/pubgrub-rs/pubgrub) and [book](https://pubgrub-rs-guide.netlify.app/internals/intro.html) about internal implementation.
-- [Ruby implementation](https://github.com/jhawthorn/pub_grub)
-- Elm [implementation](https://github.com/mpizenberg/elm-pubgrub) and introduction [thread](https://discourse.elm-lang.org/t/elm-pubgrub-a-state-of-the-art-dependency-solver-in-elm/6077)
-- [Python](https://github.com/ddelange/pipgrip) pip dependency resolver
-
-I've examined dart implementation in close detail and it seems there is no need for any specialized knowledge to adopt the implementation for nim needs. The source code is [*extremely*](https://github.com/dart-lang/pub/blob/master/lib/src/solver/version_solver.dart#L119) [well](https://github.com/dart-lang/pub/blob/master/lib/src/solver/version_solver.dart#L225) documented, and paired with comprehensive [documentation](https://github.com/dart-lang/pub/blob/master/doc/solver.md). The algorithm is designed to provide extremely concise and clear error messages about failure reasons - feature that is *completely* absent from nimble right now. <!-- While it is clear that good error reportin is not of particular value here, we are getting it basically for free. -->
-
-### Comparison with existing solutions
-
-Compared to alternative approaches discussed in #890, and specifically libsolv pubgrub has several important differences that make it especially well-suite for the task at hand:
-
-- Algorithm has several implementations, including two real-world uses [swift (PR link)](https://github.com/apple/swift-package-manager/pull/1918) and [dart (solver doc link)](https://github.com/dart-lang/pub/blob/master/doc/solver.md)
-- Has extensive documentation on usage and implementation, whereas libsolv has to be treated like a black box for the most part. There was [no direct comparison](https://twitter.com/search?q=pubgrub%20libsolv&src=typed_query) between libsolv and pubgrub, so it is hard to provide a definitive answer which one is better.
-
-### Features
-
-Dart implementation of the pubgrub algorithm provides following features:
-
-- Development dependencies
-- Feature-based dependencies (right now is done using `when defined(windows)` hack)
-- Lockfiles
-- Semantic versioning
 
 
 
@@ -223,25 +283,7 @@ https://github.com/disruptek/nimph
 
 > Basically merge `[pm] -> [build tool] -> [compiler]` into `[pm + compiler + build tool]`?
 
-Remove nim compiler internal knowledge about directories like `nimblePaths` and instead streamline the workflow by having single source of thuth about package location: confguration file.
 
-I want to specifically mention several things - I don't think there should be any additional compiler changes. Package manager should be a separate tool that does not create two-way information flow. Instead we should adopt simple model `[pm] -> [compiler]` or `[pm] -> [build tool] -> [compiler]`. Package manager either runs compiler, or configures environment (for example via `nim.cfg` with appropriate `--path`) where compiler can run. Intermediate build tools might include something like `testament` or other tooling. 
-
-Nim configuration files support conditional checks for features in form of `@if cudnn:`, and these easily map in `defines()` in nim code. If nimble thinks that `defined(windows)` is true so does `nim` compiler itself. Feature flags can be passed using `--define:<package><feature>` flags as well.
-
-
-This would allow to easily integrate `testament` with nimble? TODO could not test testament at all. 
-
-----
-
-If nimble implementation is fully separated from the compiler it can easily use any external dependencies. Not integrating package management in compiler opens room for futher experiments and customized solutions.
-
-------
-
-This can also be used to adress issues like these, because with simple configuration file I can create "nim distribution" using simple configuration files with things like `--path:distributedStdlib`. The need for hardcoding special directories and path would be reduced as well.
-
-https://github.com/nim-lang/RFCs/issues/310
-https://github.com/nim-lang/RFCs/issues/371
 
 
 
