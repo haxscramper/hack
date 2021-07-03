@@ -60,10 +60,6 @@ Instead I propose extension to the `requires`, `task` and other keywords that wo
 
 # Remove compiler's knowledge of nimble
 
-[Removing Nim's knowledge of Nimble](https://github.com/nim-lang/nimble/issues/654)
-
-Remove nim compiler internal knowledge about directories like `nimblePaths` and instead streamline the workflow by having single source of thuth about package location: confguration file.
-
 I want to specifically mention several things - I don't think there should be any additional compiler changes. Package manager should be a separate tool that does not create two-way information flow. Instead we should adopt simple model `[pm] -> [compiler]` or `[pm] -> [build tool] -> [compiler]`. Package manager either runs compiler, or configures environment where compiler can run. Intermediate build tools might include something like `testament` or other tooling. We already have a pretty nice configuration format in form of `package.nim.cfg` that would allow `nimble` to inform compiler of all the necessary configuration values. Note that it can be either `.cfg`, or `nimble.paths` that is included in the `config.nims` file - exact details of the configuration file are not particularly important.
 
 Having volatile configuration file would make it easier to inspect how nimble called the compiler, and even though n linked issue suggest that "If the experience becomes seamless then the user really won't need to care about what Nimble does.", in practice it is quite hard to run `nim` compiler the same way nimble does it - the only option is to wait for compilation to fail and then copy error message that contains the command itself, and I don't believe we would be able to make this seamless enough so nobody would *ever* need to run compiler manually or check how nimble communicates with compiler.
