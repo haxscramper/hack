@@ -1,16 +1,30 @@
-The RFC is extremely conservative on breakages and new features - it only strives to formalize existing behavior and improve general experience of using nimble. I'm not going to propose any drastic measures as dropping versions and using git hash commits instead. As a result majority of existing packages won't be affected in any way.
+The RFC is extremely conservative on breakages and new features - it only strives to formalize existing behavior and improve general experience of using nimble. I'm not going to propose any drastic measures as dropping versions and using git hash commits instead, or integrating package management with module system. As a result, majority of existing packages won't be affected in any way and common workflow of using nimble would stay largely the same.
 
 # Package registry with dependency metadata
 
 <!-- I don't think it is necessary to invent something new. Just look at what others do and copy implementation, since I'm not sure that we have enough resourses to have some unique approach. And it is not really necessary. I'm not saying we should aim for fully copying implementation of other package manager, since nim has it's own set of unique features, but it is important to consider. -->
 
-Most package management solutions include cenrtalized package index that keeps track of all package version, thus solving issue of finding requirements for a particular version of the package. For example `cargo` is centralized, full information, including each package version is stored in [git repo](https://github.com/rust-lang/crates.io-index) in the form of simple json files. When new version of the package is published simple [edit](https://github.com/rust-lang/crates.io-index/commit/b5ec043c7dea843767340ec3e588fe3a009008ef) to package file is made. Right now nim employs similar solution via [nim-lang/packages](https://github.com/nim-lang/packages), but it requires someone to manually merge PR with a new package. Not really scalable solution - sometimes you might need to wait several days before package is added to the registry, but I believe this can be automated. 
+Most package management solutions include centralized package index that keeps track of all package version, thus solving problem of finding requirements for a particular version of the package. For example, `cargo` is centralized and full information, including each package version is stored in [git repo](https://github.com/rust-lang/crates.io-index) in the form of simple json files. When new version of the package is published simple [edit](https://github.com/rust-lang/crates.io-index/commit/b5ec043c7dea843767340ec3e588fe3a009008ef) to package file is made. Right now nim employs similar solution via [nim-lang/packages](https://github.com/nim-lang/packages), but it requires someone to manually merge PR with a new package. Not really scalable solution - sometimes you might need to wait several days before package is added to the registry, but I believe this can be automated. New version is recorded as simple one-line diff that adds information about new package version, it's requirements etc.
 
-Having package registry which records all `package+version -> dependencies` mapping is important for full dependency resolutionm. It also allows for projects like [nim package directory](https://nimble.directory/) to exist, analyse whole ecosystem at once (which was very important when writing this RFC - without access to comprehensive list of packages I would not be able to provide any concrete numbers).
+```diff
+  {"name":"package","vers":"0.4.2","deps":[{"name":"depname","req":"^1.4"}]}
++ {"name":"package","vers":"0.4.3","deps":[{"name":"depname","req":"^1.4"}]}
+```
+
+Having package registry which records all `package+version -> dependencies` mapping is important for full dependency resolutionm. It also allows for projects like [nim package directory](https://nimble.directory/) to exist, which help increase discoverability of different nimble projects, and analyse whole ecosystem at once (which was crucial when writing this RFC - without access to comprehensive list of packages I would not be able to provide any concrete numbers).
 
 **IDEA**: make `nimble publish` put current package metadata in the `nim-lang/packages` index
 
-**NOTE**: Convenience command like `nimble newversion` could be introduced to tag, commit and push package.
+Changes to package publishing workflow
+
+```diff
+  git commit -m "[VERSION] v1.2.3"          # Commit your changes
+  git tag v1.2.3                            # tag changes
++ nimble publish                            # push new package version to registry
+  git push origin master                    # upload code to github
+```
+
+**NOTE**: Convenience command like `nimble newversion` could be introduced to tag, commit and push package all at once.
 
 # Use explicit dependency graph in Nimble
 
@@ -31,11 +45,11 @@ Related links:
 
 # Do not require full manifest evaluation
 
-Right now it is necessary to fully evaluate nimscript configuration in order to determine list of dependencies, as it might contain code with complicated logic. It cannot be statically reasoned about and introduces a lot of complexity in tooling (right now nimble has to generate a `.nims` file, evaluate it separately and only then get list of dependencies).
+Right now it is necessary to fully evaluate nimscript configuration in order to determine list of dependencies, as it might contain code with complicated logic. It cannot be statically reasoned about and introduces a lot of complexity in tooling (right now nimble has to generate a `.nims` file, evaluate it separately. It processes nim code and modifies global variables like `vesion`, then prints result in the end. Output of script execution is parsed by nimble and only then get list of dependencies).
 
 Arbitrary nimscript might be considered a good solution for custom `task` targets, but ultimately this leads to issues where even `author = <author name here>` might require full compiler to evaluate.
 
-
+Instead, small subset of the package manifest must be written in a declarative manner (still using nimscript syntax, but with more strict rules). Specifically this concerns `requires` and couple more metadata fields.
 
 - `version = "version"` and `packageName = "name"` must have string literal and be located at the toplevel.
 - Non-optinoal dependencies are written as `requires "dependency1", "depenendency2"` and are located at the toplevel file as well.
@@ -89,7 +103,6 @@ We can leave `nimblePaths` as they are now, and you would be able to use nim com
 - `[nim c]` -- nim compiler is launched as a standalone tool - it can read already existing environment configuration and work the same way as if it was launched directly by nimble.
 - `<custom tool>` -- custom tools have full access to `project.nim.cfg` and could easily work the same way as if they were launched by nimble **without having to provide explicit support** for that feature.
 - `[other PM] -> [nim c]` -- if someone wants to manage their environment using different tools, or even manually (for example using git submodules), it should be possible to write `project.nim.cfg` by hand (or using some helper tool). Submodule-based workflow is not really different from package-based one.
-
 
 <!-- This would allow to easily integrate `testament` with nimble? TODO could not test testament at all. 
 
@@ -159,7 +172,7 @@ Dart implementation of the pubgrub algorithm provides following features:
 
 **IDEA**: adopt pubgrub algorithm for solving nimble dependency graph.
 
-**NOTE**: With support for full package dependency graph it might be possible to improve current implementation a little more, and introducing such major change in the implementation should be carefully considered.
+**NOTE**: With support for full package dependency graph it might be possible to improve current implementation a little more, and introducing such major change in the implementation should be carefully considered. If full dependency graph is introduced as proposed in the previous sections it might become less of an issue. 
 
 # Quality-of-life features
 
@@ -182,11 +195,15 @@ In addition to changes directly related to package management, some quality-of-l
 
 ## Developers
 
-Nimble already provides some api in form of `nimblepkg` package, but it does not provide full features of the nimble itself. For example I had to copy dependency resolution code and remove download/install parts for it in order to be able to correctly compile documentation for the whole project in haxdoc. Ideally most of the internal API for package handling should be available in form of tooling. Also, this might help with testing internal implementation details such as package resolution. 
+Nimble already provides some api in form of `nimblepkg` package, but it does not provide full features of the nimble itself. For example I had to copy dependency resolution code and remove download/install parts for it in order to be able to correctly compile documentation for the whole project in haxdoc. Ideally most of the internal API for package handling should be available as a library. Also, this might help with testing internal implementation details such as package resolution. 
+
+This would also allow to freely experiment with alternative package managers that are fully interoperable with nimble - largely because they share the same core implementation and only differ in small details, like dependency resolution algorithm (we can postpone any changes in the nimble dependency resolution core, and if someone wants they can try out pubgrub in proof-of-concept package manager to see if this is really worth it). 
+<!-- This also adresses concerns of community split over package manager by ensuring basics stay the same for everyone (man) -->
+
 
 # Adopting changes
 
-Most existing packages won't have any breakages. For few ones that used certain patters listed below much easier (and cleaner) solution is provided.
+Most existing packages won't have any breakages. For few ones that used certain patterns listed below much easier (and cleaner) solution is provided.
 
 Note: before we get comments like [this](https://github.com/nim-lang/nimble/issues/612#issuecomment-661299817) that start mentioning all possible ways of writing `requires` I want to say that, as it turns out, people right now *do indeed* write `requires "<string literal>"` almost all the time, so it is not an issue that we are facing right now. Out of `2763` requires processed I've found that `2738` can already be consireded 'canonical', and ones that don't are written as `requires: "str lit"`
 
