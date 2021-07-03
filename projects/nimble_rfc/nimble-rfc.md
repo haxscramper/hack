@@ -1,16 +1,16 @@
 The RFC is extremely conservative on breakages and new features - it only strives to formalize existing behavior and improve general experience of using nimble. I'm not going to propose any drastic measures as dropping versions and using git hash commits instead. As a result majority of existing packages won't be affected in any way.
 
-# Centralized package registry
+# Package registry with dependency metadata
 
 I don't think it is necessary to invent something new. Just look at what others do and copy implementation, since I'm not sure that we have enough resourses to have some unique approach. And it is not really necessary. I'm not saying we should aim for fully copying implementation of other package manager, since nim has it's own set of unique features, but it is important to consider.
 
-Most package management solutions include cenrtalized package index that keeps track of all package version, thus solving issue of findinf requirements for a particular version of the package. For example `cargo` is centralized, full information, including each package version is stored in [git repo](https://github.com/rust-lang/crates.io-index) in the form of simple json files. Right now nim employs similar solution via [nim-lang/packages](https://github.com/nim-lang/packages), but it requires someone to manually merge PR with a new package. Not really scalable solution - sometimes you might need to wait several days before package is added to the registry, but I believe this can be automated.
+Most package management solutions include cenrtalized package index that keeps track of all package version, thus solving issue of findinf requirements for a particular version of the package. For example `cargo` is centralized, full information, including each package version is stored in [git repo](https://github.com/rust-lang/crates.io-index) in the form of simple json files. When new version of the package is published simple [edit](https://github.com/rust-lang/crates.io-index/commit/b5ec043c7dea843767340ec3e588fe3a009008ef) to package file is made. Right now nim employs similar solution via [nim-lang/packages](https://github.com/nim-lang/packages), but it requires someone to manually merge PR with a new package. Not really scalable solution - sometimes you might need to wait several days before package is added to the registry, but I believe this can be automated. 
 
-Having centralized package registry which records all `package+version -> dependencies` mapping is important for full dependency resolutionm. It also allows for projects like [nim package directory](https://nimble.directory/) to exist.
+Having package registry which records all `package+version -> dependencies` mapping is important for full dependency resolutionm. It also allows for projects like [nim package directory](https://nimble.directory/) to exist.
 
 **IDEA**: make `nimble publish` put current package metadata in the `nim-lang/packages` index
 
-# Current nimble dependency resolution
+# Use explicit dependency graph in Nimble
 
 Current implementation of dependency resolution does not construct explicit dependency graph, and instead just [loops](https://github.com/nim-lang/nimble/blob/95e6870f60655e81ff488779c7f589fe649061ec/src/nimble.nim#L64) though requirements, almost immediately [installing](https://github.com/nim-lang/nimble/blob/95e6870f60655e81ff488779c7f589fe649061ec/src/nimble.nim#L84-L86) them which I believe to be the source of such bugs as ["nimble loops infinitely trying to install codependent requirements"](https://github.com/nim-lang/nimble/issues/887) and ["Dependency resolution depends on the order in requires"](https://github.com/nim-lang/nimble/issues/505) (could be prevented with explicit dependency graph construction).
 
@@ -82,7 +82,7 @@ We can leave `nimblePaths` as they are now, and you would be able to use nim com
 - `[nimble build] -> [nim c]` -- nimble updates environment in which nim compiler would operate and then executes it. Simply shorthand for `nimble sync` followed by `nim c src/main.nim`
 - `[nim c]` -- nim compiler is launched as a standalone tool - it can read already existing environment configuration and work the same way as if it was launched directly by nimble.
 - `<custom tool>` -- custom tools have full access to `project.nim.cfg` and could easily work the same way as if they were launched by nimble **without having to provide explicit support** for that feature.
-- `[other PM] -> [nim c]` -- if someone wants to manage their environment using different tools, or even manually (for example using git submodules), it should be possible to write `project.nim.cfg` manually (or using some helper tool). Submodule-based workflow is not really different from package-based one.
+- `[other PM] -> [nim c]` -- if someone wants to manage their environment using different tools, or even manually (for example using git submodules), it should be possible to write `project.nim.cfg` by hand (or using some helper tool). Submodule-based workflow is not really different from package-based one.
 
 
 <!-- This would allow to easily integrate `testament` with nimble? TODO could not test testament at all. 
