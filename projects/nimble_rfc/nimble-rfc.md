@@ -2,13 +2,15 @@ The RFC is extremely conservative on breakages and new features - it only strive
 
 # Package registry with dependency metadata
 
-I don't think it is necessary to invent something new. Just look at what others do and copy implementation, since I'm not sure that we have enough resourses to have some unique approach. And it is not really necessary. I'm not saying we should aim for fully copying implementation of other package manager, since nim has it's own set of unique features, but it is important to consider.
+<!-- I don't think it is necessary to invent something new. Just look at what others do and copy implementation, since I'm not sure that we have enough resourses to have some unique approach. And it is not really necessary. I'm not saying we should aim for fully copying implementation of other package manager, since nim has it's own set of unique features, but it is important to consider. -->
 
-Most package management solutions include cenrtalized package index that keeps track of all package version, thus solving issue of findinf requirements for a particular version of the package. For example `cargo` is centralized, full information, including each package version is stored in [git repo](https://github.com/rust-lang/crates.io-index) in the form of simple json files. When new version of the package is published simple [edit](https://github.com/rust-lang/crates.io-index/commit/b5ec043c7dea843767340ec3e588fe3a009008ef) to package file is made. Right now nim employs similar solution via [nim-lang/packages](https://github.com/nim-lang/packages), but it requires someone to manually merge PR with a new package. Not really scalable solution - sometimes you might need to wait several days before package is added to the registry, but I believe this can be automated. 
+Most package management solutions include cenrtalized package index that keeps track of all package version, thus solving issue of finding requirements for a particular version of the package. For example `cargo` is centralized, full information, including each package version is stored in [git repo](https://github.com/rust-lang/crates.io-index) in the form of simple json files. When new version of the package is published simple [edit](https://github.com/rust-lang/crates.io-index/commit/b5ec043c7dea843767340ec3e588fe3a009008ef) to package file is made. Right now nim employs similar solution via [nim-lang/packages](https://github.com/nim-lang/packages), but it requires someone to manually merge PR with a new package. Not really scalable solution - sometimes you might need to wait several days before package is added to the registry, but I believe this can be automated. 
 
-Having package registry which records all `package+version -> dependencies` mapping is important for full dependency resolutionm. It also allows for projects like [nim package directory](https://nimble.directory/) to exist.
+Having package registry which records all `package+version -> dependencies` mapping is important for full dependency resolutionm. It also allows for projects like [nim package directory](https://nimble.directory/) to exist, analyse whole ecosystem at once (which was very important when writing this RFC - without access to comprehensive list of packages I would not be able to provide any concrete numbers).
 
 **IDEA**: make `nimble publish` put current package metadata in the `nim-lang/packages` index
+
+**NOTE**: Convenience command like `nimble newversion` could be introduced to tag, commit and push package.
 
 # Use explicit dependency graph in Nimble
 
@@ -23,7 +25,9 @@ Related links:
 - [Nimble download/install sequence improvement](https://forum.nim-lang.org/t/7671) - 
 
 
-**IDEA**: Reimplement dependency resolution algorithm. Use full knowledge about requirements about each version of each package from previous section.
+**IDEA**: Improve dependency resolution algorithm. Use full knowledge about requirements about each version of each package from previous section.
+
+**NOTE**: Right now `nimble test` and similar tasks are always interleaved with dependency resolution and potentially package downloads. With full access to existing package metadata these steps can be simplified as only unregistered packages would have to be downloaded.
 
 # Do not require full manifest evaluation
 
@@ -32,8 +36,6 @@ Right now it is necessary to fully evaluate nimscript configuration in order to 
 Arbitrary nimscript might be considered a good solution for custom `task` targets, but ultimately this leads to issues where even `author = <author name here>` might require full compiler to evaluate.
 
 
-
-**IDEA**: Small subset of important metadata like package `name` and `requires` were written in much stricter declarative manner.
 
 - `version = "version"` and `packageName = "name"` must have string literal and be located at the toplevel.
 - Non-optinoal dependencies are written as `requires "dependency1", "depenendency2"` and are located at the toplevel file as well.
@@ -44,6 +46,9 @@ It should be noted that `version` and `packageName` information is redundant - f
 Existing nimble packages **almost universally comply** with these requirements, and most of ones that don't have simple repeating pattern violating the rule [import in nimble](#import-in-nimble). Optional dependencies are already handled this way for most of the packages - [treeform/hottie](https://github.com/treeform/hottie/blob/master/hottie.nimble#L11), [minefuto/qwertycd](https://github.com/minefuto/qwertycd/blob/master/qwertycd.nimble#L18) and several others.
 
 Additional restrictions might be placed of other metadata fields like `foreignDep`, `author`, `description` etc. Foreign dependencies might also be checked upon installation, but that can be implemented later.
+
+
+**IDEA**: Small subset of important metadata like `requires` were written in much stricter declarative manner.
 
 <!-- ```nim
 let test = defined(windows) or defined(macos)
@@ -58,9 +63,10 @@ else:
 Instead I propose extension to the `requires`, `task` and other keywords that would actually match *intended semantics* of optional dependenices. Even with current implementation it is possible to statically parse approximately **97%** of the packages, but right now it is not possible to rely on this as `.nimble` is *not guaranteed* to support static parsing. -->
 
 
-# Remove compiler's knowledge of nimble
+# Streamline nimble-tooling interaction.
 
-I want to specifically mention several things - I don't think there should be any additional compiler changes. Package manager should be a separate tool that does not create two-way information flow. Instead we should adopt simple model `[pm] -> [compiler]` or `[pm] -> [build tool] -> [compiler]`. Package manager either runs compiler, or configures environment where compiler can run. Intermediate build tools might include something like `testament` or other tooling. We already have a pretty nice configuration format in form of `package.nim.cfg` that would allow `nimble` to inform compiler of all the necessary configuration values. Note that it can be either `.cfg`, or `nimble.paths` that is included in the `config.nims` file - exact details of the configuration file are not particularly important.
+<!-- I want to specifically mention several things - I don't think there should be any additional compiler changes.  -->
+Package manager should be a separate tool that does not create two-way information flow. Instead we should adopt simple model `[pm] -> [compiler]` or `[pm] -> [build tool] -> [compiler]`. Package manager either runs compiler, or configures environment where compiler can run. Intermediate build tools might include something like `testament` or other tooling. We already have a pretty nice configuration format in form of `package.nim.cfg` that would allow `nimble` to inform compiler of all the necessary configuration values. Note that it can be either `.cfg`, or `nimble.paths` that is included in the `config.nims` file - exact details of the configuration file are not particularly important.
 
 Having volatile configuration file would make it easier to inspect how nimble called the compiler, and even though n linked issue suggest that "If the experience becomes seamless then the user really won't need to care about what Nimble does.", in practice it is quite hard to run `nim` compiler the same way nimble does it - the only option is to wait for compilation to fail and then copy error message that contains the command itself, and I don't believe we would be able to make this seamless enough so nobody would *ever* need to run compiler manually or check how nimble communicates with compiler.
 
@@ -153,9 +159,14 @@ Dart implementation of the pubgrub algorithm provides following features:
 
 **IDEA**: adopt pubgrub algorithm for solving nimble dependency graph.
 
+**NOTE**: With support for full package dependency graph it might be possible to improve current implementation a little more, and introducing such major change in the implementation should be carefully considered.
+
 # Quality-of-life features
 
 In addition to changes directly related to package management, some quality-of-life improvements can be made.
+
+
+## End user
 
 - [Update all installed nimble packages](https://forum.nim-lang.org/t/4648)
 - [make noninteractive init possible](https://github.com/nim-lang/nimble/issues/806) 
@@ -163,26 +174,26 @@ In addition to changes directly related to package management, some quality-of-l
 - Disable warnings (by default) from external packages when installing dependencies - I usually can't fix the source of the warnings anyway, so they are almost useless (in context of installing dependency).
 - Not possible to perform `build`/`test` without dependency resolution and installation interfering. This becomes a non-issue if `nimble` is used to manage volatile configuration file - `nim c` simply does the right thing.
 - Several CLI flags are undocumented in `--help` (especiall `--json`)
-- Insanely noisy output
+- Very noisy output that repeats information about package resolution each time it is encountered in the dependency graph. Some of this might be important to unedrstand *why* package installation failed, but some of this information can certainly be reduced.
 - Allow disabling binary build - I don't always want to build binary for hybrid packages.
-- `nimble newversion` or something like that to automatically create a tagged commit. See [disruptek/bump](https://github.com/disruptek/bump).
     <!-- - Shows warnigns about structure of dependencies by default. Did I ask for this? No. Can I fix broken structure? Most likely no, and certainly not now.
     - Due to dependencies being resolved and *installed* in one recursive step it is not possible to first resolve all dependencies (possibly with cached elements) and then download everything. Package can appear multiple times in the output if it is required by more than one package, but each additional encounter will have useless 'requirement already satisfied' message.
-- Support all package dependencies at once -->
+  - Support all package dependencies at once -->
 
+## Developers
+
+Nimble already provides some api in form of `nimblepkg` package, but it does not provide full features of the nimble itself. For example I had to copy dependency resolution code and remove download/install parts for it in order to be able to correctly compile documentation for the whole project in haxdoc. Ideally most of the internal API for package handling should be available in form of tooling. Also, this might help with testing internal implementation details such as package resolution. 
 
 # Adopting changes
 
-Overwhelming number of existing packages won't have any breakages. For few ones that used certain patters listed below much easier (and cleaner) solution is provided.
+Most existing packages won't have any breakages. For few ones that used certain patters listed below much easier (and cleaner) solution is provided.
 
 Note: before we get comments like [this](https://github.com/nim-lang/nimble/issues/612#issuecomment-661299817) that start mentioning all possible ways of writing `requires` I want to say that, as it turns out, people right now *do indeed* write `requires "<string literal>"` almost all the time, so it is not an issue that we are facing right now. Out of `2763` requires processed I've found that `2738` can already be consireded 'canonical', and ones that don't are written as `requires: "str lit"`
 
 <!-- NOTE: volatile `.cfg` file generated by nimble that contains all the necessary information like author, version and so on.
 NOTE: Also write documentation on intended workflows with nimble or something -->
 
-## import-in-nimble
-
-In order to retrieve [`version`](https://github.com/h3rald/fae/blob/master/fae.nimble#L17) data following `import` must be resolved 
+In some packages in order to retrieve [`version`](https://github.com/h3rald/fae/blob/master/fae.nimble#L17) data following `import` must be resolved 
 ```nim
 when fileExists(thisModuleFile.parentDir / "src/faepkg/config.nim"):
   # In the git repository the Nimble sources are in a ``src`` directory.
@@ -208,7 +219,9 @@ bin = listFiles(thisDir()).
   mapIt(it.splitFile.name)
 ```
 
-Currently there is no way to use **package manifest** as a single source of truth about versions, package names, author and more. `version` hacks looks like a workaround proposed in [this forum thread](https://forum.nim-lang.org/t/7231) or [reddit post](https://www.reddit.com/r/nim/comments/chcr4m/best_practice_for_embedding_nimble_package/) where in latter it is described as "messy to accomplish". It works, but I would argue that API based on `--define:<Packagename>Minor` in the `package.nim.cfg` and `const <Package>Minor {.intdefine.}` in the code, the same way as `NimMajor` is handled right now. No special extensions to the compiler API are necessary. In other languages this information is exposed either via [Environment Variables](https://doc.rust-lang.org/cargo/reference/environment-variables.html) or [runtime manfiest parse](https://pub.dev/documentation/pubspec_parse/latest/pubspec_parse/Pubspec/Pubspec.parse.html). Again, no additional changes to compiler implementation are necessary, all required mechanisms are already in place.
+Since `0.11.0` nimble [defines](https://github.com/nim-lang/nimble/blob/686555cd347badfe6c48c4ac49afade1ef8409ad/changelog.markdown#0110---22092019) `NimblePkgVersion` flag - we can simply put it in the `package.nim.cfg` so other tools could pick it up.
+
+<!-- Currently there is no way to use **package manifest** as a single source of truth about versions, package names, author and more. `version` hacks looks like a workaround proposed in [this forum thread](https://forum.nim-lang.org/t/7231) or [reddit post](https://www.reddit.com/r/nim/comments/chcr4m/best_practice_for_embedding_nimble_package/) where in latter it is described as "messy to accomplish". It works, but I would argue that API based on `--define:<Packagename>Minor` in the `package.nim.cfg` and `const <Package>Minor {.intdefine.}` in the code, the same way as `NimMajor` is handled right now. No special extensions to the compiler API are necessary. In other languages this information is exposed either via [Environment Variables](https://doc.rust-lang.org/cargo/reference/environment-variables.html) or [runtime manfiest parse](https://pub.dev/documentation/pubspec_parse/latest/pubspec_parse/Pubspec/Pubspec.parse.html). Again, no additional changes to compiler implementation are necessary, all required mechanisms are already in place. -->
 
 # New features
 
