@@ -203,30 +203,119 @@ proc recordExecs*(node: PNode, execs: var seq[string]) =
       for sub in node:
         sub.recordExecs(execs)
 
-proc recordRequires*(
-  node: PNode, cmdRequires: var int, totalRequires: var int): bool =
+type
+  MetaUse = enum
+    metaCanonical
+    metaFromIdent
+    metaSpecial
+
+  ScopeKind = enum
+    scopeTop
+    scopeWhen
+    scopeTask
+    scopeOther
+
+type
+  MetaTable = Table[string, array[MetaUse, array[ScopeKind, int]]]
+
+var extraTop: array[TNodeKind, int]
+
+proc recordFields*(
+    node: PNode, meta: var MetaTable, scope: ScopeKind = scopeTop) =
+
+  template inc(name: string, kind: MetaUse): untyped =
+    if name notin meta:
+      meta[name] = [[0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]]
+
+    inc meta[name][kind][scope]
+
+  template unhandledNode(node: PNode): untyped =
+    if scope in {scopeWhen, scopeTop}:
+      if node.kind notin {nkStmtList, nkCommentStmt}:
+        inc extraTop[node.kind]
+
+      # if node.kind in {nkIfStmt}:
+      #   echo node
+
+
   case node.kind:
     of nkTokenKinds:
       discard
 
     of nkCall, nkCommand:
-      if node[0].kind in {nkIdent} and
-         node[0].getStrVal() == "requires":
-        if node.kind == nkCommand:
-          inc cmdRequires
+      let str = node[0].safeStrVal().normalize()
+      case str:
+        of "requires", "foreigndep":
+          var kind = metaCanonical
+          for arg in node[1 ..^ 1]:
+            case arg.kind:
+              of nkStringKinds: discard
+              of nkIdent:       kind = metaFromIdent
+              else:             kind = metaSpecial
+
+          inc str, kind
+
+        of "task", "before", "after":
+          for sub in node:
+            recordFields(sub, meta, scopeTask)
 
         else:
-          result = true
+          unhandledNode(node)
 
-        inc totalRequires
 
-      else:
-        for sub in node:
-          result = result or sub.recordRequires(cmdRequires, totalRequires)
+    of nkAsgn:
+      let str = node[0].safeStrVal().normalize()
+
+      case str:
+        of "author", "version", "packagename", "license",
+           "description", "srcdir", "bindir", "backend":
+          case node[1].kind:
+            of nkStringKinds: inc str, metaCanonical
+            of nkIdentKinds:  inc str, metaFromIdent
+            else:             inc str, metaSpecial
+
+        of "bin", "skipdirs", "skipext", "installfiles", "installdirs",
+           "skipfiles", "installext":
+          case node[1].kind:
+            of nkPrefix:
+              if node[1][0].eqIdent("@") and
+                 node[1][1].kind == nkBracket:
+                inc str, metaCanonical
+
+              else:
+                inc str, metaSpecial
+
+            else:
+              inc str, metaSpecial
+
+        of "namedbin":
+          inc str, metaCanonical
+
+        else:
+          unhandledNode(node)
 
     else:
+      let newtop =
+        case scope:
+          of scopeTop:
+            case node.kind:
+              of nkStmtList: scopeTop
+              of nkWhenStmt: scopeWhen
+              else: scopeOther
+
+          of scopeOther, scopeWhen:
+            scopeOther
+
+          of scopeTask:
+            scopeTask
+
+      if node.kind in nkAllDeclKinds + nkStmtBlockKinds + {
+        nkImportStmt, nkIncludeStmt}:
+
+        unhandledNode(node)
+
       for sub in node:
-        result = result or sub.recordRequires(cmdRequires, totalRequires)
+        recordFields(sub, meta, newtop)
 
 when isMainModule:
 
@@ -368,7 +457,6 @@ when isMainModule:
     parseStats: seq[Stat]
     commitTimes: seq[int64]
 
-  let commitPlot = false
 
 
   var db = sqliteOpenNew(dir /. "stats.sqlite")
@@ -405,11 +493,16 @@ when isMainModule:
     execStrs: seq[string]
     cmdRequires: int
     totalRequires: int
+    requires: seq[PkgTuple]
+    metaFields: MetaTable
 
   let
+    metaUses = true
+    commitPlot = false
     versionDb = false
-    execStore = true
+    execStore = false
     parseFail = false
+    requiresStats = false
 
   for dir in walkDir(packageDir, AbsDir):
     if commitPlot:
@@ -493,6 +586,9 @@ when isMainModule:
               text = file.readFile()
               info = text.parsePackageInfo(fails, extra, file)
 
+            requires.add info.requires
+
+
             stat.pnodeEvalTime = some cpuTime() - start
             if fails.len > 0:
               for key in fails.keys():
@@ -503,9 +599,9 @@ when isMainModule:
 
             if extra.nimsManifest:
               if execStore: extra.node.recordExecs(execStrs)
+              if metaUses:
+                extra.node.recordFields(metaFields)
 
-              let nonCanonical = extra.node.recordRequires(
-                cmdRequires, totalRequires)
 
               # if nonCanonical:
               #   l.warn info.name, "contains non-canonical requries"
@@ -543,6 +639,82 @@ when isMainModule:
     l.indented:
       for key, val in failTable:
         l.debug key, $val
+
+  for (kind, num) in sortedByIt(toSeq(pairs(extraTop)), it[1]):
+    if num > 0:
+      l.info ($kind)[2 ..^ 1] |<< 15, num
+
+  var canonCount, totalCount: int
+
+  if metaUses:
+    l.info
+    const
+      name = 14
+      sep = 7
+      calign = (sep * 3, '_', '|')
+
+    echo " " |<< 16,
+       "toplevel" |<> calign,
+       "when"  |<> calign,
+       "task" |<> calign,
+       "other" |<> calign
+
+    stdout.write " " |<< 16
+    for i in 0 .. 3:
+      stdout.write "canon" |>> sep, "ident" |>> sep, "spec" |>> sep
+
+    l.write("\n")
+
+    for (key, val) in sortedByIt(
+      toSeq(pairs(metaFields)),
+      it[1][metaCanonical][scopeTop]
+    ):
+
+      stdout.write ($key |<< (name, '.')) & "  "
+      for item in MetaUse:
+        for scope in ScopeKind:
+          let cnt = val[item][scope]
+          stdout.write $cnt |>> sep
+
+          inc totalCount, cnt
+          if item == metaCanonical:
+            inc canonCount, cnt
+
+          if key == "requires":
+            inc totalRequires, cnt
+            if item == metaCanonical:
+              inc cmdRequires, cnt
+
+
+      stdout.write("\n")
+        # $val[metaFromIdent][0] |>> sep,
+        # $val[metaSpecial][0]   |>> sep,
+        # $val[metaCanonical][1] |>> sep,
+        # $val[metaFromIdent][1] |>> sep,
+        # $val[metaSpecial][1]   |>> sep
+
+  l.info &"Total metadata fields found {totalCount}, {canonCount} of which are canonical",
+    &"({float(canonCount) / float(totalCount) * 100:5.3f}%)"
+
+  if requiresStats:
+    var cnt: array[VersionRangeEnum, int]
+    for (name, ver) in requires:
+      inc cnt[ver.kind]
+
+
+    proc toStr(rangeKind: VersionRangeEnum): string =
+      case rangeKind:
+        of verLater: "> V"
+        of verEarlier: "< V"
+        of verEqLater: ">= V"
+        of verEqEarlier: "<= V"
+        of verIntersect: "> V & < V"
+        of verEq: "V"
+        of verAny: "*"
+        of verSpecial: "#head"
+
+    for rangeKind in VersionRangeEnum:
+      l.info &"{rangeKind:<15} ({rangeKind.toStr():^10}): {cnt[rangeKind]}"
 
 
   if execStrs.len > 0:
@@ -592,6 +764,8 @@ when isMainModule:
 
 
   if commitPlot:
+    l.info "Total commit count", commitTimes.len
+
     var countTable: CountTable[int64]
 
     for time in commitTimes:
@@ -600,11 +774,11 @@ when isMainModule:
 
 
     var days, count: seq[int]
-    for (key, val) in sortedByIt(toSeq(countTable.pairs()), it[0]):
+    let commits = sortedByIt(toSeq(countTable.pairs()), it[0])
+    l.info commits[0]
+    for (key, val) in commits:
       days.add key.int
       count.add val.int
-
-
 
     when false:
       let df = seqsToDf(days, count)
