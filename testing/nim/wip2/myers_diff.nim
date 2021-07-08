@@ -93,28 +93,29 @@ when false:
         result.add Edit(kind: eInsert, positionOld: i, positionNew: j + n)
       # return [{"operation": "insert", "position_old": i,"position_new":j+n} for n in range(0,M)]
 
-proc diff(aLines, bLines: seq[string]): seq[Edit] =
-  var frontier: Table[int, tuple[x: int, history: seq[Edit]]]
-  frontier[1] = (0, @[])
+proc myersDiff[T](aSeq, bSeq: openarray[T]): seq[Edit] =
+  # https://gist.github.com/adamnew123456/37923cf53f51d6b9af32a539cdfa7cc4
+  var front: Table[int, tuple[x: int, history: seq[Edit]]]
+  front[1] = (0, @[])
 
   template one(idx: int): int = idx - 1
 
   let
-    aMax = len(aLines)
-    bMax = len(bLines)
+    aMax = len(aSeq)
+    bMax = len(bSeq)
 
   for d in countup(0, aMax + bMax + 1):
     for k in countup(-d, d + 1, 2):
       let goDown =
-        (k == -d or (k != d and frontier[k - 1].x < frontier[k + 1].x))
+        (k == -d or (k != d and front[k - 1].x < front[k + 1].x))
 
 
       var (x, history) =
         if goDown:
-          (frontier[k + 1].x, frontier[k + 1].history)
+          (front[k + 1].x, front[k + 1].history)
 
         else:
-          (frontier[k - 1].x + 1, frontier[k - 1].history)
+          (front[k - 1].x + 1, front[k - 1].history)
 
       var y = x - k
 
@@ -124,7 +125,7 @@ proc diff(aLines, bLines: seq[string]): seq[Edit] =
       elif 1 <= x and x <= aMax:
         history.add Edit(kind: eDelete, pos: one(x))
 
-      while x < aMax and y < bMax and aLines[one(x + 1)] == bLines[one(y + 1)]:
+      while x < aMax and y < bMax and aSeq[one(x + 1)] == bSeq[one(y + 1)]:
         x += 1
         y += 1
         history.add Edit(kind: eKeep, pos: one(x), newPos: one(y))
@@ -133,14 +134,14 @@ proc diff(aLines, bLines: seq[string]): seq[Edit] =
         return history
 
       else:
-        frontier[k] = (x, history)
+        front[k] = (x, history)
 
 when isMainModule:
   let
     oldText = @["apple","orange","pear", "text"]
     newText =  @["apple","orange","blueberry", "potato", "text"]
 
-  let d = diff(oldText, newText)
+  let d = myersDiff(oldText, newText)
 
   var oldDiff, newDiff: seq[string]
 
