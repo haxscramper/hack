@@ -1,0 +1,50 @@
+{
+  "packages": [
+    {
+      "name": "std",
+      "docText": {
+        "docBrief": "Brief documentatio for a package"
+      },
+      "modules": [
+        {
+          "categories": {
+            "ProcKinds": [
+              {
+                "name": "Searching",
+                "items": [
+                  {
+                    "name": "test",
+                    "link": "url"
+                  }
+                ]
+              },
+              {
+                "name": "Mutation",
+                "items": [
+                  {
+                    "name": "mutateProc",
+                    "link": "someLink"
+                  }
+                ]
+              }
+            ]
+          },
+          "name": "io",
+          "docText": {
+            "docBrief": "Module brief"
+          },
+          "types": [
+            {
+              "name": "SomeInteger",
+              "procs": [
+                {
+                  "name": "procedureDeclaration"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
