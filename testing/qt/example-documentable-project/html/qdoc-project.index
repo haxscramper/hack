@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE QDOCINDEX>
+<INDEX url="" title="QDoc Project Reference Documentation" version="" project="QDoc Project">
+    <namespace name="" status="active" access="public" module="qdoc project">
+        <class name="Test" href="test.html" status="internal" access="private" location="header.hpp" filepath="/mnt/workspace/clean-clone/hack/testing/qt/example-documentable-project/header.hpp" lineno="2"/>
+    </namespace>
+</INDEX>
