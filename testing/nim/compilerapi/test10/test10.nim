@@ -22,8 +22,13 @@ proc fromVm*(t: typedesc[int], node: PNode): int =
   assertKind(node, nkIntKinds)
   return node.intVal.int
 
-proc fromVm*(t: typedesc[float], node: PNode): float = node.floatVal
-proc fromVm*(t: typedesc[string], node: PNode): string = node.strVal
+proc fromVm*(t: typedesc[float], node: PNode): float =
+  assertKind(node, nkFloatKinds)
+  node.floatVal
+
+proc fromVm*(t: typedesc[string], node: PNode): string =
+  assertKind(node, nkStringKinds)
+  node.strVal
 
 macro fromVm*[T: object](obj: typedesc[T], vmNode: untyped): untyped =
   let
@@ -72,16 +77,13 @@ intr.implementRoutine("*", "scriptname", "dump",
         let data = args.getNode(0)
         echo data.treeRepr()
         case data.kind:
-          of nkTupleConstr:
-            discard
-
           of nkObjConstr:
             let obj = fromVm(VmObject, data)
             pprint obj
             args.setResult obj.toVm()
 
           else:
-            assert false, $data.kind
+            args.setResult data
 
       of rkFloat:
         let flt = args.getFloat(0)
@@ -89,12 +91,13 @@ intr.implementRoutine("*", "scriptname", "dump",
         args.setResult flt.toVm()
 
       of rkInt:
+        pprint args
         let intv = args.getInt(0)
         echo intv
         args.setResult intv.toVm()
 
       else:
-        echo "TODO ", slot.kind
+        assert false, $slot.kind
 )
 
 intr.evalScript(llStreamOpen(
@@ -111,8 +114,8 @@ echo dump(VmObject(field1: 123123))
 echo "\e[41m*========\e[49m  tuple  \e[41m=========*\e[49m"
 echo dump((var t: VmTuple; t))
 
-echo "\e[41m*=========\e[49m  enum  \e[41m=========*\e[49m"
-echo dump((var e: VmKind; e))
+# echo "\e[41m*=========\e[49m  enum  \e[41m=========*\e[49m"
+# echo dump((var e: VmKind; e))
 
 echo "\e[41m*=\e[49m  sequence of integers  \e[41m=*\e[49m"
 echo dump(@[1,2,3,4])
