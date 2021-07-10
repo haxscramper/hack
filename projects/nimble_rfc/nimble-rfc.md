@@ -241,6 +241,7 @@ In addition to changes directly related to package management, some quality-of-l
 - Very noisy output that repeats information about package resolution each time it is encountered in the dependency graph (for haxdoc I have one dependency printed 33 (!) times). Some of this might be important to uneunderstand *why* package installation failed, but some of this information can certainly be reduced.
 - Allow disabling binary build - I don't always want to build binary for hybrid packages.
 - Create `LICENSE` file in project when choosing license - otherwise 
+- Additional heuristics where `git` binary is used - if it fails for some reason (even unrelated to the original query), `nimble` falls back to `hg` and prints quite unhelpful error message `'hg' not in PATH`.
     <!-- - Shows warnigns about structure of dependencies by default. Did I ask for this? No. Can I fix broken structure? Most likely no, and certainly not now.
     - Due to dependencies being resolved and *installed* in one recursive step it is not possible to first resolve all dependencies (possibly with cached elements) and then download everything. Package can appear multiple times in the output if it is required by more than one package, but each additional encounter will have useless 'requirement already satisfied' message.
   - Support all package dependencies at once -->
@@ -389,6 +390,12 @@ Total commit count 203328
 `exec` has been used 2345 times in 2013 packages
 Total package release count 7706
 ```
+
+Total number of commits per day in all packages at the time of analysis.
+
+![image](https://user-images.githubusercontent.com/20562256/125093484-028a2680-e0db-11eb-9c41-ff705dd04fea.png)
+
+
 
 <!-- Due to limited nimscript features in `.nimble` (like inability to use helper procs form other dependencies) it might be necessary to resort to `exec("nim r src/actual_build_script.nim"`) -->
 

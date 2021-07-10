@@ -2,13 +2,15 @@
 
 import jsony
 
+const commitGraph = on
 
-# import ggplotnim
+when commitGraph:
+  import ggplotnim
 
 import
   nimblepkg/[version],
   hmisc/other/[oswrap, hshell, hlogger, hpprint, sqlite_extra],
-  hmisc/algo/[htemplates],
+  hmisc/algo/[htemplates, halgorithm],
   hmisc/[hdebug_misc, base_errors],
   std/[net, httpclient, tables, strutils, sets, times, options,
        strformat, sequtils, uri, algorithm, parseutils],
@@ -498,14 +500,13 @@ when isMainModule:
 
   let
     metaUses = true
-    commitPlot = false
     versionDb = false
     execStore = false
     parseFail = false
     requiresStats = false
 
   for dir in walkDir(packageDir, AbsDir):
-    if commitPlot:
+    if commitGraph:
       withDir dir:
         commitTimes.add dir.getCommitTimes()
 
@@ -763,13 +764,13 @@ when isMainModule:
     l.info "average processing time:", &"{nimbleStat.mean():5.3f}"
 
 
-  if commitPlot:
+  if commitGraph:
     l.info "Total commit count", commitTimes.len
 
     var countTable: CountTable[int64]
 
     for time in commitTimes:
-      let day = time div (60 * 60 * 24)
+      let day = ( time div (60 * 60 * 24) ) * ( 60 * 60 * 24 )
       countTable.inc day
 
 
@@ -780,11 +781,15 @@ when isMainModule:
       days.add key.int
       count.add val.int
 
-    when false:
+    when commitGraph:
       let df = seqsToDf(days, count)
       ggplot(df, aes("days", "count")) +
         geom_line() +
-        gg_save("/tmp/res.png", width = 1200, height = 1200)
+        gg_save("/tmp/res.png")
+
+      df.writeCsv("/tmp/commits.csv")
+
+  l.info "done"
 
 
   # var cnt = 0
