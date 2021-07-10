@@ -401,3 +401,5 @@ parse.cpp
 **/.gdb_history
 **/*.nimproject*
 **/cache
+
+**/callgrind.out*
