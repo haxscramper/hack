@@ -30,7 +30,7 @@ proc fromVm*(t: typedesc[string], node: PNode): string =
   assertKind(node, nkStringKinds)
   node.strVal
 
-macro fromVm*[T: object](obj: typedesc[T], vmNode: untyped): untyped =
+macro fromVm*[T: object](obj: typedesc[T], vmNode: PNode): untyped =
   let
     impl = getObjectStructure(obj)
     field = genSym(nskForVar, "field")
