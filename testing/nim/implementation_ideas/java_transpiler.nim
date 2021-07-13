@@ -2,10 +2,11 @@ import
   htsparse/java/java,
   hmisc/other/oswrap,
   hmisc/wrappers/treesitter,
+  hmisc/hdebug_misc,
   hnimast
 
 import
-  std/[sequtils, strutils, options]
+  std/[sequtils, strutils, options, sugar]
 
 proc toNType(node: JavaNode, str: string): PNtype =
   case node.kind:
@@ -26,11 +27,16 @@ proc toNType(node: JavaNode, str: string): PNtype =
       for arg in node[1]:
         result.add toNType(arg, str)
 
-    of javaIntegralType:
-      result = newPType("int")
-
-    of javaFloatingPointType:
-      result = newPType("float")
+    of javaPrimitiveTypes:
+      result = newPType(
+        case node.kind:
+          of javaIntegralType: "int"
+          of javaFloatingPointType: "float"
+          of javaVoidType: "void"
+          of javaBooleanType: "bool"
+          else:
+            raise newUnexpectedKindError(node)
+      )
 
     of javaArrayType:
       let
@@ -69,7 +75,13 @@ proc conv(
     of javaIdentifier, javaThis:
       result = newPident(str[node])
 
-    of javaIntegralType:
+    of javaFalse:
+      result = newPIdent("false")
+
+    of javaTrue:
+      result = newPIdent("true")
+
+    of javaPrimitiveTypes, javaTypeIdentifier:
       result = toNType(node, str).toNNode()
 
     of javaProgram, javaBlock, javaConstructorBody:
@@ -88,10 +100,11 @@ proc conv(
             res.addField newObjectField(
               str[entry[2][0]],
               toNType(entry[1], str),
-              value = if isNil(entry[2][1]):
-                        none(PNode)
-                      else:
+              value = if entry.has(2) and entry[2].has(1):
                         some conv(entry[2][1], str)
+
+                      else:
+                        none(PNode)
             )
 
           else:
@@ -126,16 +139,38 @@ proc conv(
 
 
     of javaLocalVariableDeclaration:
-      result = newVar(
-        str[node[1][0]],
-        toNType(node[0], str),
-        conv(node[1][1], str)
-      )
+      let vartype = toNType(node[0], str)
+      result = newPStmtList()
+      for decl in node[1 ..^ 1]:
+        assertKind(decl, javaVariableDeclarator)
+        result = newVar(
+          str[decl[0, javaIdentifier]],
+          vartype,
+          if decl.has(1):
+            conv(decl[1], str)
+
+          else:
+            newEmptyPNode())
 
     of javaObjectCreationExpression:
-      result = newPCall("new" & str[node[0]])
+      case node[0].kind:
+        of javaIdentifier, javaTypeIdentifier:
+          result = newPCall("new" & str[node[0]])
+
+        of javaGenericType:
+          let head = newXCall newBracketExpr(
+            newPident(
+              "new" & str[node[
+                0, {javaGenericType}][
+                  0, {javaTypeIdentifier}]]),
+            node[0][1, {javaTypeArguments}].mapIt(conv(it, str)))
+
+        else:
+          raise newImplementError(node.treeRepr(str))
+
       for arg in node[1]:
         result.add conv(arg, str)
+
 
 
     of javaDecimalFloatingPointLiteral:
@@ -155,19 +190,35 @@ proc conv(
       result = conv(node[0], str)
 
     of javaMethodInvocation:
-      echo node.treeRepr(str)
-      echo str[node]
-      result = newPCall(str[node[1]])
-      result.add conv(node[0], str)
-      for arg in node[2]:
-        result.add conv(arg, str)
+      if "object" in node:
+        result = newPCall(str[node[1]])
+        result.add conv(node[0], str)
+        for arg in node[2]:
+          result.add conv(arg, str)
+
+      else:
+        result = newPCall(str[node[0]])
+        for arg in node[1]:
+          result.add conv(arg, str)
 
     of javaEnhancedForStatement:
       result = nnkForStmt.newPTree(
         node[1].conv(str),
         node[2].conv(str),
-        node[3].conv(str)
-      )
+        node[3].conv(str))
+
+    of javaForStatement:
+      result = newBlock(
+        node["init"].conv(str),
+        newWhile(
+          node["condition"].conv(str),
+          node["body"].conv(str),
+          node["update"].conv(str)))
+
+    of javaWhileStatement:
+      result = newWhile(
+        node["condition"].conv(str),
+        node["body"].conv(str))
 
 
     of javaParenthesizedExpression:
@@ -189,40 +240,90 @@ proc conv(
         conv(node{0}, str),
         conv(node{2}, str))
 
+    of javaUnaryExpression:
+      result = newPCall(str[node{0}], conv(node{1}, str))
+
     of javaReturnStatement:
       result = nnkReturnStmt.newPTree(conv(node[0], str))
 
     of javaArrayCreationExpression:
-      result = newPCall(
-        "newSeqWith",
-        conv(node[1][0], str),
-        newPCall("default", conv(node[0], str)))
-
-    of javaIfStatement:
-      case node.len():
-        of 1:
-          result = nnkIfStmt.newPTree(
-            nnkElifBranch.newPTree(
-              conv(node[0], str),
-              conv(node[1], str)))
-
-        of 2:
-          result = nnkIfStmt.newPTree(
-            nnkElifBranch.newPTree(
-              conv(node[0], str),
-              conv(node[1], str)))
+      case str[node["dimensions"]]:
+        of "[]":
+          result = nnkBracket.newTree():
+            collect(newSeq):
+              for sub in node[2]:
+                conv(sub, str)
 
         else:
-          raise newImplementError(str[node] & "\n" & node.treeRepr(str, indexed = true))
+          result = newPCall(
+            "newSeqWith",
+            conv(node[1][0], str),
+            newPCall("default", conv(node[0], str)))
+
+    of javaCastExpression:
+      result = nnkCast.newPTree(
+        conv(node[0], str),
+        conv(node[1], str))
+
+    of javaArrayInitializer:
+      result = nnkBracket.newPTree()
+      for sub in node:
+        result.add conv(sub, str)
+
+    of javaTernaryExpression:
+      result = newPar newPar newIfStmt(
+        conv(node[0], str),
+        conv(node[1], str),
+        conv(node[2], str))
+
+    of javaUpdateExpression:
+      result = newPCall(
+        case str[node{1}]:
+          of "++": "inc"
+          of "--": "dec"
+          else: raise newUnexpectedKindError(str[node{1}]),
+        conv(node{0}, str)
+      )
+
+    of javaIfStatement:
+      result = newIfPStmt()
+      case node.len:
+        of 3:
+          result.addBranch(conv(node[0], str), conv(node[1], str))
+          result.addBranch(conv(node[2], str))
+
+        of 2:
+          result.addBranch(conv(node[0], str), conv(node[1], str))
+
+        else:
+          raise newImplementError(
+            str[node] & "\n" & node.treeRepr(str, indexed = true))
 
 
+    of javaSwitchExpression:
+      result = newCaseStmt(conv(node[0], str))
+      for label in node[1]:
+        var sub: seq[PNode]
+        for stmt in label[1 .. ^1]:
+          sub.add conv(stmt, str)
+
+        if label[0].len == 0:
+          result.addBranch(sub)
+
+        else:
+          result.addBranch(
+            conv(label[0, {javaSwitchLabel}][0], str),
+            sub)
 
     else:
       raise newImplementKindError(
-        node, "\n" & str[node], node.treeRepr(str, indexed = true))
+        node, "\n" & str[node], node.treeRepr(
+          str, pathIndexed = true, maxDepth = 5,
+          unnamed = false))
 
 
 
 let str = "tmp.java".readFile()
 
+startHax()
 echo str.parseJavaString().conv(str)
