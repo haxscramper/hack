@@ -1,7 +1,7 @@
 import
   htsparse/java/java,
   hmisc/other/oswrap,
-  hmisc/algo/[namegen, htemplates],
+  hmisc/algo/[namegen, htemplates, hseq_mapping],
   hmisc/wrappers/treesitter,
   hmisc/hdebug_misc,
   hnimast
@@ -186,18 +186,24 @@ proc conv(
     of javaConstructorDeclaration:
       assert parent.isSome()
       # echo str[node]
-      # echo treeRepr(node, str, unnamed = true)
+      # echo treeRepr(node, str)
       # echo node["name"].treeRepr(str)
       # echo node["parameters"].treeRepr(str)
 
-      var decl = newPProcDecl(
-        name = "new" & str[node["name"]],
-        args = node["parameters"].mapIt((str[it[1]], it["type"].toNType(str))),
-        impl = node["body"].conv(str).fixEmptyStmt(),
-        returnType = parent
-      )
+      if node["parameters"].findIt(
+        it.kind == javaSpreadParameter) != -1:
+        result = newEmptyPNode()
 
-      result = decl.toNNode()
+      else:
+        var decl = newPProcDecl(
+          name = "new" & str[node["name"]],
+          args = node["parameters"].mapIt((
+            str[it[1]], it["type"].toNType(str))),
+          impl = node["body"].conv(str).fixEmptyStmt(),
+          returnType = parent
+        )
+
+        result = decl.toNNode()
 
 
     of javaLocalVariableDeclaration:
@@ -205,7 +211,7 @@ proc conv(
       result = newPStmtList()
       for decl in node[1 ..^ 1]:
         assertKind(decl, javaVariableDeclarator)
-        result = newVar(
+        result.add newVar(
           str[decl[0, javaIdentifier]],
           vartype,
           if decl.has(1):
@@ -332,7 +338,7 @@ proc conv(
         newWhile(
           ~node["condition"],
           ~node["body"],
-          ~node["update"]))
+          if "update" in node: ~node["update"] else: newEmptyPNode()))
 
     of javaWhileStatement:
       result = newWhile(newPar ~node["condition"], ~node["body"])
@@ -409,7 +415,8 @@ proc conv(
         result.add conv(sub, str)
 
     of javaTernaryExpression:
-      result = newPar newPar newIfStmt(~node[0], ~node[1], ~node[2])
+      result = newPCall("tern", ~node[0], ~node[1], ~node[2])
+      # result = newPar newPar newIfStmt()
 
     of javaClassLiteral:
       result = toNType(node[0], str).toNNode()
@@ -521,7 +528,17 @@ for file in walkDir(cwd(), AbsFile, exts = @["java"], recurse = true):
 
     "Move", "Delete", "Update", "Addition", "Insert",
     "TreeInsert", "TreeAddition", "TreeDelete", "TreeAction", "Action",
-    "TreeMetrics"
+    "TreeMetrics",
+    "LcsMatcher",
+    "FakeTree",
+    "RtedMatcher",
+    "RtedAlgorithm",
+    "InfoTree",
+    "LabelDictionary",
+    "GreedyBottomUpMatcher",
+    "CompleteBottomUpMatcher",
+    "ZsMatcher",
+    "SimilarityMetrics"
   ]:
     echo file
     let str = file.readFile()
