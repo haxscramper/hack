@@ -10,6 +10,24 @@ import
   std/[sequtils, strutils, options, sugar,
        strformat, tables, sets]
 
+proc `=~`(
+  node: PNode,
+  check: tuple[kind: TNodeKind, strVals: seq[string]]): bool =
+
+  node.kind == check.kind and node.getStrVal() in check.strVals
+
+proc `=~`(node: PNode, kind: TNodeKind): bool =
+  node.kind == kind
+
+proc `=~`[R](nodes: seq[PNode], kinds: array[R, TNodeKind]): bool =
+  for (node, kind) in zip(nodes, kinds):
+    if node.kind != kind:
+      return false
+
+  return true
+
+
+
 proc convTypeName(name: string): string =
   case name:
     of "ArrayList", "List", "LinkedList", "Collection": "seq"
@@ -37,10 +55,10 @@ proc convertProcName(name: string): string =
 proc toNType(node: JavaNode, str: string): PNtype =
   case node.kind:
     of javaIdentifier, javaTypeIdentifier, javaSuper:
-      result = newPType(str[node].convTypeName())
+      result = newPType(convTypeName($node))
 
     of javaGenericType:
-      result = newPType(str[node[0]].convTypeName())
+      result = newPType(convTypeName($node[0]))
       for arg in node[1]:
         result.add toNType(arg, str)
 
@@ -57,7 +75,7 @@ proc toNType(node: JavaNode, str: string): PNtype =
 
     of javaArrayType:
       let
-        size = str[node["dimensions"]]
+        size = $node["dimensions"]
         element: PNType = toNType(node["element"], str)
 
 
@@ -114,7 +132,7 @@ proc conv(
       result = newEmptyPNode()
 
     of javaIdentifier, javaThis:
-      result = newPident(str[node].convIdentName())
+      result = newPident(convIdentName($node))
 
     of javaFalse:
       result = newPIdent("false")
@@ -132,14 +150,14 @@ proc conv(
 
     of javaClassDeclaration, javaInterfaceDeclaration:
       var
-        res = newPObjectDecl(str[node["name"]])
+        res = newPObjectDecl($node["name"])
         tmp = newPStmtList()
 
       for entry in node["body"]:
         case entry.kind:
           of javaFieldDeclaration:
             res.addField newObjectField(
-              str[entry["declarator"][0]],
+              $entry["declarator"][0],
               toNType(entry["type"], str),
               value = if entry.has(2) and entry[2].has(1):
                         some conv(entry[2][1], str)
@@ -160,13 +178,12 @@ proc conv(
       result.add tmp
 
     of javaMethodDeclaration:
-      if node[0].kind == javaModifiers and
-         "abstract" in str[node[0]]:
+      if node[0].kind == javaModifiers and "abstract" in $node[0]:
         result = newPStmtList()
 
       else:
         var decl = newPProcDecl(
-          name = str[node["name"]],
+          name = $node["name"],
           impl = tern(
             node.has(4),
             node.procBody().conv(str).fixEmptyStmt(),
@@ -185,11 +202,6 @@ proc conv(
 
     of javaConstructorDeclaration:
       assert parent.isSome()
-      # echo str[node]
-      # echo treeRepr(node, str)
-      # echo node["name"].treeRepr(str)
-      # echo node["parameters"].treeRepr(str)
-
       if node["parameters"].findIt(
         it.kind == javaSpreadParameter) != -1:
         result = newEmptyPNode()
@@ -276,7 +288,7 @@ proc conv(
       result = ~node[0]
 
     of javaMethodInvocation, javaExplicitConstructorInvocation:
-      if "object" in node:
+      if node.has("object"):
         let name = str[node["name"]]
 
         const renameTable = toTable {
@@ -333,12 +345,15 @@ proc conv(
       result = nnkForStmt.newPTree(~node[1], ~node[2], ~node[3])
 
     of javaForStatement:
+      let update =
+        if node.has("update"):
+          ~node["update"]
+        else:
+          newEmptyPNode()
+
       result = newBlock(
         ~node["init"],
-        newWhile(
-          ~node["condition"],
-          ~node["body"],
-          if "update" in node: ~node["update"] else: newEmptyPNode()))
+        newWhile(~node["condition"], ~node["body"], update))
 
     of javaWhileStatement:
       result = newWhile(newPar ~node["condition"], ~node["body"])
@@ -358,7 +373,7 @@ proc conv(
         result = node.conv(0)
 
     of javaAssignmentExpression:
-      result = newAsgn(~node[0], ~node[1])
+      result = newPCall($node{1}, ~node[0], ~node[1])
 
     of javaInstanceofExpression:
       result = newPcall("of", ~node[0], ~node[1])
@@ -503,6 +518,7 @@ proc conv(
       result = newPBreak()
 
     else:
+      echo node.treeRepr()
       raise newImplementKindError(
         node, "\n" & str[node], node.treeRepr(
           str, pathIndexed = true, maxDepth = 5,
@@ -538,11 +554,13 @@ for file in walkDir(cwd(), AbsFile, exts = @["java"], recurse = true):
     "GreedyBottomUpMatcher",
     "CompleteBottomUpMatcher",
     "ZsMatcher",
-    "SimilarityMetrics"
+    "SimilarityMetrics",
+    "TreeMetricComputer",
+    "TreeVisitor"
   ]:
     echo file
-    let str = file.readFile()
-    let code = str.parseJavaString().conv(str).`$`
+    var str = file.readFile()
+    let code = parseJavaString(addr str).conv(str).`$`
     getAppTempFile("outcode.nim").writeFile(
       &"# {file}\n" & code)
 
