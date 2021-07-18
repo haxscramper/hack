@@ -196,7 +196,7 @@ proc conv(
 
         if node.has("parameters"):
           for it in node["parameters"]:
-            decl.addArgument str[it[1]].convIdentName(), it[0].toNType(str)
+            decl.addArgument convIdentName($it[1]), it[0].toNType(str)
 
         result = decl.toNNode()
 
@@ -208,9 +208,8 @@ proc conv(
 
       else:
         var decl = newPProcDecl(
-          name = "new" & str[node["name"]],
-          args = node["parameters"].mapIt((
-            str[it[1]], it["type"].toNType(str))),
+          name = "new" & $node["name"],
+          args = node["parameters"].mapIt(($it[1], it["type"].toNType(str))),
           impl = node["body"].conv(str).fixEmptyStmt(),
           returnType = parent
         )
@@ -224,29 +223,23 @@ proc conv(
       for decl in node[1 ..^ 1]:
         assertKind(decl, javaVariableDeclarator)
         result.add newVar(
-          str[decl[0, javaIdentifier]],
-          vartype,
-          if decl.has(1):
-            ~decl[1]
-
-          else:
-            newEmptyPNode())
+          $decl[0, javaIdentifier], vartype,
+          if decl.has(1): ~decl[1] else: newEmptyPNode())
 
 
     of javaObjectCreationExpression:
       case node[0].kind:
         of javaIdentifier, javaTypeIdentifier:
-          result = newPCall("new" & str[node[0]].convTypeName())
+          result = newPCall("new" & convTypeName($node[0]))
 
         of javaGenericType:
           let
             args = node[0][1, {javaTypeArguments}].mapIt(conv(it, str))
             init = newPident(
-              "new" & str[node[
+              "new" & convTypeName($node[
                 0, {javaGenericType}][
-                  0, {javaTypeIdentifier}]].
-                  convTypeName().
-                  capitalizeAscii())
+                  0, {javaTypeIdentifier}]).
+                    capitalizeAscii())
 
           if args.len == 0:
             result = newXCall(init)
@@ -266,10 +259,10 @@ proc conv(
 
 
     of javaDecimalFloatingPointLiteral:
-      result = str[node][0 .. ^2].parseFloat().newPLit()
+      result = parseFloat(str[node][0 .. ^2]).newPLit()
 
     of javaDecimalIntegerLiteral:
-      result = str[node].parseInt().newPLit()
+      result = parseInt($node).newPLit()
 
     of javaCharacterLiteral:
       result = newPLit():
@@ -287,7 +280,8 @@ proc conv(
       assert node.len == 1
       result = ~node[0]
 
-    of javaMethodInvocation, javaExplicitConstructorInvocation:
+    of javaMethodInvocation,
+       javaExplicitConstructorInvocation:
       if node.has("object"):
         let name = str[node["name"]]
 
@@ -404,7 +398,8 @@ proc conv(
         str[node{0}].convertProcName(), ~node{1})
 
     of javaReturnStatement:
-      result = newReturn(~node[0])
+      result = newReturn(
+        if node.has(0): ~node[0] else: newEmptyPNode())
 
 
     of javaArrayCreationExpression:
@@ -517,6 +512,9 @@ proc conv(
     of javaBreakStatement:
       result = newPBreak()
 
+    of javaMethodReference:
+      result = newPIdent(str[node])
+
     else:
       echo node.treeRepr()
       raise newImplementKindError(
@@ -556,9 +554,19 @@ for file in walkDir(cwd(), AbsFile, exts = @["java"], recurse = true):
     "ZsMatcher",
     "SimilarityMetrics",
     "TreeMetricComputer",
-    "TreeVisitor"
+    "TreeVisitor",
+    "AbstractSubtreeMatcher",
+    "CliqueSubtreeMatcher",
+    "GreedySubtreeMatcher",
+    "HungarianSubtreeMatcher",
+    "MultiMappingStore",
+    "PriorityTreeQueue",
+    "DefaultPriorityTreeQueue",
+    "CliqueSubtreeMatcher",
+    "MappingComparators"
   ]:
     echo file
+
     var str = file.readFile()
     let code = parseJavaString(addr str).conv(str).`$`
     getAppTempFile("outcode.nim").writeFile(
