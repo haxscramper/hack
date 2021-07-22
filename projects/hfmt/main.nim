@@ -46,11 +46,13 @@ conf.mainPackageNotes.incl hintMsgOrigin
 
 
 let node = parseString1("""
-customCase:
+match head:
   of 1: echo 2
   of 2: echo 2
   else:
     echo "false"
+
+doAssert (A ⊗ B) ∘ (C + D)
 
 """)
 

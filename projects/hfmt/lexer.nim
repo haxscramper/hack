@@ -124,6 +124,8 @@ type
     when defined(nimsuggest):
       previousToken: TLineInfo
     config*: ConfigRef
+    tokens*: seq[Token]
+    tokenPos*: int
 
 proc getLineInfo*(L: Lexer, tok: Token): TLineInfo {.inline.} =
   result = newLineInfo(L.fileIdx, tok.line, tok.col)
@@ -1163,6 +1165,17 @@ proc rawGetTok*(L: var Lexer, tok: var Token) =
   tok.col = getColNumber(L, L.bufpos)
   if c in SymStartChars - {'r', 'R'}:
     getSymbol(L, tok)
+
+    const
+      unicodeOps = [
+        "±", "⊕", "⊖", "⊞", "⊟", "∪", "∨",
+        "⊔", "∙", "∘", "×", "★", "⊗", "⊘",
+        "⊙", "⊛", "⊠", "⊡", "∩", "∧", "⊓"
+      ]
+
+    if tok.ident.s in unicodeOps:
+      tok.tokType = tkOpr
+
   else:
     case c
     of '#':
@@ -1276,9 +1289,11 @@ proc rawGetTok*(L: var Lexer, tok: var Token) =
     else:
       if c in OpChars:
         getOperator(L, tok)
+
       elif c == nimlexbase.EndOfFile:
         tok.tokType = tkEof
         tok.indent = 0
+
       else:
         tok.literal = $c
         tok.tokType = tkInvalid
