@@ -1350,7 +1350,7 @@ proc postExprBlocks(p: var Parser, x: PNode): PNode =
         result.add stmtList
 
 
-    while sameInd(p):
+    while sameInd(p) or realInd(p):
       var nextBlock: PNode
       let nextToken = p.tok.tokType
       if nextToken == tkDo:

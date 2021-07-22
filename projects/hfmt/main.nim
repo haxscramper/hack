@@ -47,10 +47,10 @@ conf.mainPackageNotes.incl hintMsgOrigin
 
 let node = parseString1("""
 customCase:
-of 1: echo 2
-of 2: echo 2
-else:
-  echo "false"
+  of 1: echo 2
+  of 2: echo 2
+  else:
+    echo "false"
 
 """)
 
