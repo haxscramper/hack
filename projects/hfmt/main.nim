@@ -4,7 +4,7 @@ import
   ./cst
 
 import
-  compiler/[options, idents, lineinfos, ast, pathutils, llstream]
+  compiler/[options, idents, lineinfos, pathutils, llstream]
 
 import
   std/[strformat]
@@ -38,23 +38,38 @@ proc parseString1*(str: string): CstNode =
   result = parseAll(pars)
   closeParser(pars)
 
-import
-  hnimast/hast_common
-
 var conf = newCOnfigRef()
 
 conf.mainPackageNotes.incl hintMsgOrigin
 
 
 let node = parseString1("""
-match head:
-  of 1: echo 2
-  of 2: echo 2
-  else:
-    echo "false"
+iterator pairs*(main: `mainType`, slice: SliceTypes):
+  (int, `fieldType`) =
+  let slice = clamp(slice, main.`field`.high)
+  for idx in slice:
+    yield (idx, main.`field`[idx])
 
-doAssert (A ⊗ B) ∘ (C + D)
+proc opt*(
+    name,
+    doc, docDetailed, docBrief: string,
+    default:       CliDefault                  = nil,
+    values:        openarray[(string, string)] = @[],
+    docFull:       string                      = "",
+    alt:           seq[string]                 = @[],
+    defaultAsFlag: CLiDefault                  = nil,
+    groupKind:     CliOptKind                  = coOpt,
+    varname:       string                      = name,
+    maxRepeat:     int                         = 1,
+    aliasof:       CliOpt                      = CliOpt(),
+    selector:      CliCheck                    = nil,
+    check:         CliCheck                    = nil,
+    disabled:      string                      = ""
+  ): CliDesc =
+
+  discard
 
 """)
 
 echo node.treeRepr()
+echo node

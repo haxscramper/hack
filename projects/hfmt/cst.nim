@@ -5,12 +5,18 @@ import
   hnimast/hast_common
 
 import
-  std/[macros, with]
+  ./lexer
 
 import
-  hmisc/[helpers, hexceptions],
+  std/[macros, with, strformat, sequtils]
+
+import
+  hmisc/[helpers, hexceptions, base_errors],
   hmisc/types/colorstring,
-  hmisc/algo/[halgorithm, clformat]
+  hmisc/algo/[halgorithm, clformat],
+  hmisc/other/blockfmt
+
+
 
 type
   CstPoint* = object
@@ -29,6 +35,7 @@ type
     rangeInfo*: CstRange
     comment*: CstComment
     flags*: set[TNodeFlag]
+    baseTokens*: ref seq[Token]
 
     case kind*: TNodeKind
       of nkCharLit..nkUInt64Lit:
@@ -44,7 +51,7 @@ type
         ident*: PIdent
 
       else:
-        sons*: seq[CstNode]
+        subnodes*: seq[CstNode]
 
 macro wrapSeqContainer*(
     main: typed,
@@ -66,6 +73,7 @@ macro wrapSeqContainer*(
 
   result = quote do:
     proc len*(main: `mainType`): int = len(main.`field`)
+    proc high*(main: `mainType`): int = high(main.`field`)
     proc add*(main: `mutType`, other: `mainType` | seq[`mainType`]) =
       add(main.`field`, other)
 
@@ -92,11 +100,13 @@ macro wrapSeqContainer*(
 
       iterator pairs*(main: `mainType`, slice: SliceTypes):
         (int, `fieldType`) =
-        var slice = clamp(slice, main.`field`.len)
+        let slice = clamp(slice, main.`field`.high)
         for idx in slice:
           yield (idx, main.`field`[idx])
 
-  echo result.repr()
+      iterator items*(main: `mainType`, slice: SliceTypes): `fieldType` =
+        for idx, item in pairs(main, slice):
+          yield item
 
 macro wrapStructContainer*(
     main: untyped,
@@ -135,12 +145,10 @@ macro wrapStructContainer*(
 
       prev = @[]
 
-  echo result.repr
-
 wrapStructContainer(
   CstNode.rangeInfo, { startPoint, endPoint: CstPoint }, isRef = true)
 
-wrapSeqContainer(CstNode.sons, CstNode, isRef = true)
+wrapSeqContainer(CstNode.subnodes, CstNode, isRef = true)
 
 
 func getStrVal*(p: CstNode, doRaise: bool = true): string =
@@ -158,17 +166,24 @@ func getStrVal*(p: CstNode, doRaise: bool = true): string =
 
 func newEmptyCNode*(): CstNode = CstNode(kind: nkEmpty)
 func add*(comm: var CstComment, str: string) = comm.text.add str
-func newNodeI*(kind: TNodeKind, point: CstPoint): CstNode =
-  CstNode(kind: kind, rangeInfo: CstRange(startPoint: point))
+func newNodeI*(
+    kind: TNodeKind, point: CstPoint, base: ref seq[Token]): CstNode =
+  CstNode(
+    baseTokens: base,
+    kind: kind,
+    rangeInfo: CstRange(startPoint: point))
 
 proc newTreeI*(
-    kind: TNodeKind; info: CstPoint; children: varargs[CstNode]): CstNode =
+    kind: TNodeKind; info: CstPoint;
+    base: ref seq[Token],
+    children: varargs[CstNode]
+  ): CstNode =
 
-  result = newNodeI(kind, info)
+  result = newNodeI(kind, info, base)
   if children.len > 0:
     result.startPoint = children[0].startPoint
 
-  result.sons = @children
+  result.subnodes = @children
 
 
 template transitionNodeKindCommon(k: TNodeKind) =
@@ -183,9 +198,9 @@ template transitionNodeKindCommon(k: TNodeKind) =
   when defined(useNodeIds):
     n.id = obj.id
 
-proc transitionSonsKind*(n: CstNode, kind: range[nkComesFrom..nkTupleConstr]) =
+proc transitionSubnodesKind*(n: CstNode, kind: range[nkComesFrom..nkTupleConstr]) =
   transitionNodeKindCommon(kind)
-  n.sons = obj.sons
+  n.subnodes = obj.subnodes
 
 proc transitionIntKind*(n: CstNode, kind: range[nkCharLit..nkUInt64Lit]) =
   transitionNodeKindCommon(kind)
@@ -194,13 +209,20 @@ proc transitionIntKind*(n: CstNode, kind: range[nkCharLit..nkUInt64Lit]) =
 proc transitionNoneToSym*(n: CstNode) =
   transitionNodeKindCommon(nkSym)
 
+proc startToken*(node: CstNode): Token =
+  node.baseTokens[][node.startPoint.tokenIdx]
+
+proc relIndent*(node: CstNode, idx: IndexTypes): int =
+  let mainIndent = node.startToken.indent
+  let subIndent = node.subnodes[idx].startToken.indent
+
 proc newProcNode*(
     kind: TNodeKind, info: CstPoint, body: CstNode,
     params, name, pattern, genericParams, pragmas, exceptions: CstNode
   ): CstNode =
 
-  result = newNodeI(kind, info)
-  result.sons = @[
+  result = newNodeI(kind, info, body.baseTokens)
+  result.subnodes = @[
     name, pattern, genericParams, params, pragmas, exceptions, body]
 
 func `$`*(point: CstPoint): string =
@@ -276,3 +298,175 @@ func treeRepr*(
           if newIdx < n.len - 1: res &= "\n"
 
   aux(pnode, 0, @[])
+
+initBlockFmtDsl()
+
+proc toFmtBlock*(node: CstNode): LytBlock =
+  proc aux(n: CstNode): LytBLock =
+    case n.kind:
+      of nkStmtList:
+        result = V[]
+        for sub in n: result.add aux(sub)
+
+      of nkIdent:
+        result = T[n.getStrVal()]
+
+      of nkIntLit:
+        result = T[$n.intVal]
+
+      of nkStrLit:
+        result = T[&"\"{n.strVal}\""]
+
+      of nkElse:
+        result = V[T["else:"], I[2, aux(n[0])], S[]]
+
+      of nkOfBranch:
+        var head = H[T["of "]]
+        for idx, expr in pairs(n, 0 ..^ 2):
+          if idx > 0:
+            head.add T[", "]
+
+          head.add aux(expr)
+
+        head.add T[":"]
+        result = V[head, I[2, aux(n[^1])], S[]]
+
+      of nkCommand:
+        var head = H[aux(n[0]), T[" "]]
+        var body = V[]
+        var commandBody = false
+        for sub in items(n, 1 ..^ 1):
+          if sub.kind in { nkOfBranch, nkStmtList, nkElse }:
+            if not commandBody:
+              head.add T[":"]
+
+            commandBody = true
+
+          if commandBody:
+            body.add aux(sub)
+
+          else:
+            head.add aux(sub)
+
+        if not commandBody:
+          result = head
+
+        else:
+          result = V[head, I[2, body]]
+
+      of nkInfix:
+        result = H[aux(n[1]), T[" "], aux(n[0]), T[" "], aux(n[2])]
+
+      of nkPrefix:
+        result = H[aux(n[0]), aux(n[1])]
+
+      of nkBracket:
+        result = H[T["["]]
+        result.addItBlock n, aux(it), T[", "]
+        result.add T["]"]
+
+      of nkPostfix:
+        result = H[aux(n[1]), aux(n[0])]
+
+      of nkPar:
+        result = H[T["("]]
+        result.addItBlock n, aux(it), T[", "]
+        result.add T[")"]
+
+      of nkBracketExpr:
+        result = H[aux(n[0]), T["["]]
+        result.addItBLock n[1..^1], aux(it), T[", "]
+        result.add T["]"]
+
+      of nkDotExpr:
+        result = H[aux(n[0]), T["."], aux(n[1])]
+
+      of nkAccQuoted:
+        var txt = "`"
+        for item in n:
+          txt.add item.getStrVal()
+
+        txt.add "`"
+
+        result = T[txt]
+
+      of nkCall:
+        result = H[aux(n[0]), T["("]]
+        for idx, arg in n[1 ..^ 1]:
+          if idx > 0: result.add T[", "]
+          result.add aux(arg)
+
+        result.add T[")"]
+
+      of nkEmpty:
+        result = T[""]
+
+      of nkIdentDefs:
+        result = H[joinItBlock(bkLine, n[0 ..^ 3], aux(it), T[", "])]
+
+        if n[^2].kind != nkEmpty:
+          result.add T[": "]
+          result.add aux(n[^2])
+
+        if n[^1].kind != nkEmpty:
+          result.add T[" = "]
+          result.add aux(n[^1])
+
+      of nkForStmt:
+        var head = H[T["for "]]
+        head.addItBlock(n[0 ..^ 2], aux(it), T[", "])
+        result = V[H[head], I[2, aux(n[^1])]]
+
+      of nkYieldStmt:
+        result = H[T["yield "], aux(n[0])]
+
+      of nkDiscardStmt:
+        result = H[T["discard "], aux(n[0])]
+
+      of nkNilLit:
+        result = T["nil"]
+
+      of nkLetSection:
+        if n.len == 1:
+          result = H[T["let "], aux(n[0])]
+
+        else:
+          result = V[T["let"], I[2, V[mapIt(n, aux(it))]]]
+
+      of nkProcDeclKinds:
+        let name =
+          case n.kind:
+            of nkIteratorDef: "iterator "
+            of nkProcDef: "proc "
+            else: raise newImplementKindError(n)
+
+        var alts: seq[LytBlock]
+
+        block:
+          var alt = H[T[name], aux(n[0]), aux(n[1]), aux(n[2]), T["("]]
+          alt.addItBlock n[3][1..^1], aux(it), T[", "]
+          alt.add T["): "]
+          alt.add aux(n[3][0])
+          alt.add T[" = "]
+          alts.add alt
+
+        block:
+          var alt = V[H[T[name], aux(n[0]), aux(n[1]), aux(n[2]), T["("]]]
+          alt.add I[4, joinItBlock(bkStack, n[3][1..^1], aux(it), T[", "])]
+          alt.add H[T["  ): "], aux(n[3][0]), T[" = "]]
+          alt.add S[]
+          alts.add alt
+
+
+        result = V[C[alts], I[2, aux(n[6])]]
+
+
+      else:
+        raise newImplementKindError(n, n.treeRepr())
+
+  return aux(node)
+
+proc `$`*(node: CstNode): string =
+  let blc = toFmtBlock(node)
+  echo blc.treeRepr()
+  return blc.toString()
