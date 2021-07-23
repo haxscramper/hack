@@ -11,7 +11,7 @@ import
   std/[macros, with, strformat, sequtils]
 
 import
-  hmisc/[helpers, hexceptions, base_errors],
+  hmisc/[helpers, hexceptions, base_errors, hdebug_misc],
   hmisc/types/colorstring,
   hmisc/algo/[halgorithm, clformat],
   hmisc/other/blockfmt
@@ -301,12 +301,51 @@ func treeRepr*(
 
 initBlockFmtDsl()
 
+
+proc toFmtBlock*(node: CstNode): LytBlock
+
+proc lytIdentDefs(n: CstNode): tuple[idents, itype, default: LytBlock] =
+  result.idents = H[joinItBlock(bkLine, n[0 ..^ 3], toFmtBlock(it), T[", "])]
+
+  if n[^2].kind != nkEmpty:
+    result.idents.add T[": "]
+    result.itype = toFmtBlock(n[^2])
+
+  else:
+    result.itype = E[]
+
+  if n[^1].kind != nkEmpty:
+    result.default = H[T[" = "], toFmtBlock(n[^1])]
+
+  else:
+    result.default = E[]
+
+proc lytIdentList(idents: seq[CstNode]): LytBlock =
+  var argBlocks = mapIt(idents, lytIdentDefs(it))
+  let nameW = mapIt(argBlocks, it.idents.minWidth).sorted()[^2]
+  let typeW = maxIt(argBlocks, it.itype.minWidth)
+
+  for (idents, itype, _) in mitems(argBlocks):
+    idents.add T[repeat(" ", clampIdx(nameW - idents.minWidth))]
+    itype.add T[repeat(" ", clampIdx(typeW - itype.minWidth))]
+
+  result = V[]
+  for idx, (idents, itype, default) in pairs(argBlocks):
+    if idx < argBlocks.high:
+      result.add H[idents, itype, default, T[", "]]
+
+    else:
+      result.add H[idents, itype, default]
+
+
+
 proc toFmtBlock*(node: CstNode): LytBlock =
   proc aux(n: CstNode): LytBLock =
     case n.kind:
       of nkStmtList:
         result = V[]
-        for sub in n: result.add aux(sub)
+        for sub in n:
+          result.add aux(sub)
 
       of nkIdent:
         result = T[n.getStrVal()]
@@ -378,6 +417,7 @@ proc toFmtBlock*(node: CstNode): LytBlock =
         result.addItBLock n[1..^1], aux(it), T[", "]
         result.add T["]"]
 
+
       of nkDotExpr:
         result = H[aux(n[0]), T["."], aux(n[1])]
 
@@ -402,19 +442,14 @@ proc toFmtBlock*(node: CstNode): LytBlock =
         result = T[""]
 
       of nkIdentDefs:
-        result = H[joinItBlock(bkLine, n[0 ..^ 3], aux(it), T[", "])]
-
-        if n[^2].kind != nkEmpty:
-          result.add T[": "]
-          result.add aux(n[^2])
-
-        if n[^1].kind != nkEmpty:
-          result.add T[" = "]
-          result.add aux(n[^1])
+        let (idents, itype, default) = lytIdentDefs(n)
+        result = H[idents, itype, default]
 
       of nkForStmt:
         var head = H[T["for "]]
-        head.addItBlock(n[0 ..^ 2], aux(it), T[", "])
+        head.addItBlock(n[0 ..^ 3], aux(it), T[", "])
+        head.add T[" in "]
+        head.add aux(n[^2])
         result = V[H[head], I[2, aux(n[^1])]]
 
       of nkYieldStmt:
@@ -452,21 +487,22 @@ proc toFmtBlock*(node: CstNode): LytBlock =
 
         block:
           var alt = V[H[T[name], aux(n[0]), aux(n[1]), aux(n[2]), T["("]]]
-          alt.add I[4, joinItBlock(bkStack, n[3][1..^1], aux(it), T[", "])]
+          alt.add I[4, lytIdentList(n[3][1..^1])]
           alt.add H[T["  ): "], aux(n[3][0]), T[" = "]]
           alt.add S[]
           alts.add alt
 
 
-        result = V[C[alts], I[2, aux(n[6])]]
+        result = V[C[alts], I[2, aux(n[6])], S[]]
 
 
       else:
         raise newImplementKindError(n, n.treeRepr())
 
+    assertRef result, $n.kind
+
   return aux(node)
 
 proc `$`*(node: CstNode): string =
   let blc = toFmtBlock(node)
-  echo blc.treeRepr()
   return blc.toString()

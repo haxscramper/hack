@@ -10,7 +10,7 @@ import
   std/[strformat]
 
 import
-  hmisc/base_errors
+  hmisc/[base_errors, hdebug_misc]
 
 proc parseString1*(str: string): CstNode =
   let cache: IdentCache = newIdentCache()
@@ -70,6 +70,8 @@ proc opt*(
   discard
 
 """)
+
+startHax()
 
 echo node.treeRepr()
 echo node
