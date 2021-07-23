@@ -125,7 +125,7 @@ type
       previousToken: TLineInfo
     config*: ConfigRef
     tokens*: seq[Token]
-    tokenPos*: int
+    tokenIdx*: int
 
 proc getLineInfo*(L: Lexer, tok: Token): TLineInfo {.inline.} =
   result = newLineInfo(L.fileIdx, tok.line, tok.col)

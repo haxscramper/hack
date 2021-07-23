@@ -1,6 +1,7 @@
 import
   ./parser,
-  ./lexer
+  ./lexer,
+  ./cst
 
 import
   compiler/[options, idents, lineinfos, ast, pathutils, llstream]
@@ -11,7 +12,7 @@ import
 import
   hmisc/base_errors
 
-proc parseString1*(str: string): PNode =
+proc parseString1*(str: string): CstNode =
   let cache: IdentCache = newIdentCache()
   let config: ConfigRef = newConfigRef()
   var pars: Parser
