@@ -13,7 +13,7 @@ type
     requires*: seq[string] ## Other features that this feature requires.
 
     # ## A map from SDK identifiers to this feature's constraints on those SDKs.
-    # final Map<String, VersionConstraint> sdkConstraints;
+    # final Map<string, VersionConstraint> sdkConstraints;
 
   Source* = ref object of RootObj
     name*: string
@@ -24,17 +24,17 @@ type
     pubspec*: Pubspec ## The parsed pubspec associated with this package.
     source*: Source
 
-  Term* = ref object
+  Term* = ref object of RootObj
     ## A statement about a package which is true or false for a given
     ## selection of package versions.
     ##
     ## See https:#github.com/dart-lang/pub/tree/master/doc/solver.md#term.
 
     isPositive*: bool ## Whether the term is positive or not.
-      ##
-      ## A positive constraint is true when a package version that matches
-      ## [package] is selected a negative constraint is true when no
-      ## package versions that match [package] are selected.
+    ##
+    ## A positive constraint is true when a package version that matches
+    ## [package] is selected a negative constraint is true when no
+    ## package versions that match [package] are selected.
 
     package*: PackageRange ## The range of package versions referred to by
                           ## this term.
@@ -57,7 +57,7 @@ type
 
   Version* = ref object of VersionConstraint
 
-  VersionRange = ref object of VersionConstraint
+  VersionRange* = ref object of VersionConstraint
     ## Constrains versions to a fall within a given range.
     ##
     ## If there is a minimum, then this only allows versions that are at
@@ -221,30 +221,135 @@ type
     ##
     ## This defaults to `true`.
 
+  SetRelation* {.pure.} = enum
+    subset ## The second set contains all elements of the first, as well as
+           ## possibly more.
 
-proc isEnabled*(dep: FeatureDependency): bool =
-  dep != unused
+    disjoint ## Neither set contains any elements of the other.
 
-proc newVersionRange(
-    min, max: Option[Version],
-    includeMin: bool = false,
-    includeMax: bool = false,
-    alwaysIncludeMaxPreRelease: bool = false
-  ): VersionRange =
+    overlapping ## The sets have elements in common, but the first is not a
+    ## superset of the second.
+    ##
+    ## This is also used when the first set is a superset of the first, but
+    ## in practice we don't need to distinguish that from overlapping sets.
 
-  if (min.isSome() and max.isSome() and min.get() > max.get()):
-    assert false,
-      fmt"Minimum version (""{min}"") must be less than maximum (""{max}"")."
+  SolveType* = enum
+    get ## As few changes to the lockfile as possible to be consistent with
+    ## the pubspec.
 
-  if (not alwaysIncludeMaxPreRelease and
-      not includeMax and
-      max != null and
-      not max.isPreRelease and
-      max.build.isEmpty and
-      (min == null or
-          not min.isPreRelease or
-          not equalsWithoutPreRelease(min, max))):
-    max = max.firstPreRelease
+    upgrade ## Upgrade all packages or specific packages to the highest
+    ## versions possible, regardless of the lockfile.
 
-  return VersionRange(
-    min: min, max: max, includeMin: includeMin, includeMax: includeMax);
+    downgrade ## Downgrade all packages or specific packages to the lowest
+    ## versions possible, regardless of the lockfile.
+
+  IncompatibilityCause = enum
+    ## The reason an [Incompatibility]'s terms are incompatible.
+
+    root ## the incompatibility represents the requirement that the root
+    ## package exists.
+
+    dependency ## The incompatibility represents a package's dependency.
+
+    useLatest ## The incompatibility represents the user's request that we
+    ## use the latest version of a given package.
+
+    noVersion ## The incompatibility indicates that the package has no
+    ## versions that match the given constraint.
+
+    unknownSource ## The incompatibility indicates that the package has an
+                  ## unknown source.
+
+  Assignment* = ref object of Term
+    decisionLevel*: int
+    index*: int
+    cause*: Incompatibility
+
+  ConflictCause = object
+    ## The incompatibility was derived from two existing incompatibilities during
+    ## conflict resolution.
+
+    conflict: Incompatibility ## The incompatibility that was originally
+    ## found to be in conflict, from which the target incompatibility was
+    ## derived.
+
+    other: Incompatibility ## The incompatibility that caused the most
+    ## recent satisfier for [conflict], from which the target
+    ## incompatibility was derived.
+
+  PartialSolution  = object
+    ## A list of [Assignment]s that represent the solver's current best guess about
+    ## what's true for the eventual set of package versions that will comprise the
+    ## total solution.
+    ##
+    ## See https:#github.com/dart-lang/pub/tree/master/doc/solver.md#partial-solution.
+
+
+    assignments: seq[Assignment] ## The assignments that have been made so
+    ## far, in the order they were assigned.
+
+
+    decisions*: Table[string, PackageId] ## The decisions made for each package.
+
+    positive: Table[string, Term]     ## The intersection of all positive
+    ## [Assignment]s for each package, minus any negative [Assignment]s
+    ## that refer to that package.
+    ##
+    ## This is derived from [_assignments].
+
+
+    negative: Table[string, Table[PackageRef, Term]] ## The union of
+    ## all negative [Assignment]s for each package.
+    ##
+    ## If a package has any positive [Assignment]s, it doesn't appear in this
+    ## map.
+    ##
+    ## This is derived from [_assignments].
+
+    attemptedSolutions*: int ## The number of distinct solutions that have
+                             ## been attempted so far.
+
+
+  Incompatibility = ref object
+    terms: seq[Term]
+    cause: IncompatibilityCause
+
+  SystemCache = ref object
+
+  LockFile = ref object
+
+  VersionSolver* = object
+    incompatibilities*: Table[string, seq[Incompatibility]] ## All known
+    ## incompatibilities, indexed by package name.
+    ##
+    ## Each incompatibility is indexed by each package it refers to, and so may
+    ## appear in multiple values.
+
+    solution*: PartialSolution ## |
+    ## The partial solution that contains package versions we've selected and
+    ## assignments we've derived from those versions and [_incompatibilities].
+
+    packageListers*: Table[PackageRef, PackageLister]
+    ## Package listers that lazily convert package versions' dependencies into
+    ## incompatibilities.
+
+    `type`*: SolveType ## The type of version solve being performed.
+
+    systemCache*: SystemCache ## The system cache in which packages are
+                              ## stored.
+
+    root*: Package ## The entrypoint package, whose dependencies seed the
+                   ## version solve process.
+
+    lockFile*: LockFile ## The lockfile, indicating which package versions
+                        ## were previously selected.
+
+    overidenPackages*: HashSet[string] ## The set of package names that
+    ## were overridden by the root package, for which other packages'
+    ## constraints should be ignored.
+
+    unlock*: HashSet[string] ## The set of packages for which the lockfile
+                             ## should be ignored.
+
+
+func isEnabled*(dep: FeatureDependency): bool = dep != FeatureDependency.unused

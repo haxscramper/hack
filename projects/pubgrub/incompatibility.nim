@@ -1,14 +1,14 @@
 import
   ./package_name,
-  ./incompatibility_cause,
   ./term
 
 import std/[sugar, sequtils, tables]
 
-type
-  Incompatibility = ref object
-    terms: seq[Term]
-    cause: IncompatibilityCause
+proc newConflictCause(conflict, other: Incompatibility): ConflictCause =
+  ConflictCause(conflict: conflict, other: other)
+
+
+
 
 proc isFailure(self: Incompatibility): bool =
   self.terms.len() == 0 or (self.terms.len == 1 and

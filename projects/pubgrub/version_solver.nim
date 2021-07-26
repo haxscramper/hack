@@ -11,7 +11,7 @@ import
   ./result,
   ./set_relation,
   ./term,
-  ./`type`
+  ./version
 
 # TODO(nweiz): Currently, a bunch of tests that use the solver are skipped
 # because they exercise parts of the solver that haven't been reimplemented.
@@ -22,40 +22,6 @@ import
 ##
 ## See https:#github.com/dart-lang/pub/tree/master/doc/solver.md for details
 ## on how this solver works.
-
-type
-  VersionSolver = object
-    incompatibilities*: Table[String, seq[Incompatibility]] ## All known
-    ## incompatibilities, indexed by package name.
-    ##
-    ## Each incompatibility is indexed by each package it refers to, and so may
-    ## appear in multiple values.
-
-    solution*: PartialSolution ## |
-    ## The partial solution that contains package versions we've selected and
-    ## assignments we've derived from those versions and [_incompatibilities].
-
-    packageListers*: Table[PackageRef, PackageLister]
-    ## Package listers that lazily convert package versions' dependencies into
-    ## incompatibilities.
-
-    `type`*: SolveType ## The type of version solve being performed.
-
-    systemCache*: SystemCache ## The system cache in which packages are
-                              ## stored.
-
-    root*: Package ## The entrypoint package, whose dependencies seed the
-                   ## version solve process.
-
-    lockFile*: LockFile ## The lockfile, indicating which package versions
-                        ## were previously selected.
-
-    overidenPackages*: HashSet[string] ## The set of package names that
-    ## were overridden by the root package, for which other packages'
-    ## constraints should be ignored.
-
-    unlock*: HashSet[string] ## The set of packages for which the lockfile
-                             ## should be ignored.
 
 # VersionSolver(this._type, this._systemCache, this._root, this._lockFile,
 #     Iterable<String> unlock)

@@ -1,13 +1,8 @@
 import
   ./incompatibility,
-  ./term
+  ./term,
+  ./types
 
-
-type
-  Assignment = ref object of Term
-    decisionLevel: int
-    index: int
-    cause: Incompatibility
 
 proc isDecision(self: Assignment): bool = self.cause.isNil()
 proc decisition(package: PackageId, decisionLevel, index: int): Assignment =

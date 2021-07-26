@@ -1,4 +1,32 @@
-type
+import ./types
+
+proc isEnabled*(dep: FeatureDependency): bool =
+  dep != unused
+
+proc newVersionRange(
+    min, max: Option[Version],
+    includeMin: bool = false,
+    includeMax: bool = false,
+    alwaysIncludeMaxPreRelease: bool = false
+  ): VersionRange =
+
+  if (min.isSome() and max.isSome() and min.get() > max.get()):
+    assert false,
+      fmt"Minimum version (""{min}"") must be less than maximum (""{max}"")."
+
+  if (not alwaysIncludeMaxPreRelease and
+      not includeMax and
+      max != null and
+      not max.isPreRelease and
+      max.build.isEmpty and
+      (min == null or
+          not min.isPreRelease or
+          not equalsWithoutPreRelease(min, max))):
+    max = max.firstPreRelease
+
+  return VersionRange(
+    min: min, max: max, includeMin: includeMin, includeMax: includeMax);
+
 
   ## Creates a new version range from [min] to [max], either inclusive or
   ## exclusive.
@@ -366,43 +394,40 @@ type
     return 0;
   }
 
-  @override
-  String toString() {
-    var buffer = StringBuffer();
+String toString() {
+  var buffer = StringBuffer();
 
-    final min = this.min;
-    if (min != null) {
-      buffer..write(includeMin ? '>=' : '>')..write(min);
-    }
+  final min = this.min;
+  if (min != null) {
+    buffer..write(includeMin ? '>=' : '>')..write(min);
+  }
 
-    final max = this.max;
+  final max = this.max;
 
-    if (max != null) {
-      if (min != null) buffer.write(' ');
-      if (includeMax) {
-        buffer..write('<=')..write(max);
+  if (max != null) {
+    if (min != null) buffer.write(' ');
+    if (includeMax) {
+      buffer..write('<=')..write(max);
+    } else {
+      buffer.write('<');
+      if (max.isFirstPreRelease) {
+        # Since `"<$max"` would parse the same as `"<$max-0"`, we just emit
+        # `<$max` to avoid confusing "-0" suffixes.
+        buffer.write('${max.major}.${max.minor}.${max.patch}');
       } else {
-        buffer.write('<');
-        if (max.isFirstPreRelease) {
-          # Since `"<$max"` would parse the same as `"<$max-0"`, we just emit
-          # `<$max` to avoid confusing "-0" suffixes.
-          buffer.write('${max.major}.${max.minor}.${max.patch}');
-        } else {
-          buffer.write(max);
+        buffer.write(max);
 
-          # If `">=$min <$max"` would parse as `">=$min <$max-0"`, add `-*` to
-          # indicate that actually does allow pre-release versions.
-          var minIsPreReleaseOfMax = min != null &&
-              min.isPreRelease &&
-              equalsWithoutPreRelease(min, max);
-          if (!max.isPreRelease && max.build.isEmpty && !minIsPreReleaseOfMax) {
-            buffer.write('-∞');
-          }
+        # If `">=$min <$max"` would parse as `">=$min <$max-0"`, add `-*` to
+        # indicate that actually does allow pre-release versions.
+        var minIsPreReleaseOfMax = min != null &&
+            min.isPreRelease &&
+            equalsWithoutPreRelease(min, max);
+        if (!max.isPreRelease && max.build.isEmpty && !minIsPreReleaseOfMax) {
+          buffer.write('-∞');
         }
       }
     }
-
-    if (min == null && max == null) buffer.write('any');
-    return buffer.toString();
   }
-}
+
+  if (min == null && max == null) buffer.write('any');
+  return buffer.toString();

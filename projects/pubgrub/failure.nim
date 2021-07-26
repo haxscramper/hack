@@ -81,98 +81,92 @@ proc newWriter(root: Package): Writer =
   result = Writer(root: root)
   result.countIncompatibilities(root)
 
-## Populates [_derivations] for [incompatibility] and its transitive causes.
-void _countDerivations(Incompatibility incompatibility) {
-  if (_derivations.containsKey(incompatibility)) {
-    _derivations[incompatibility]++
-  } else {
+pr ccountDerivations(Incompatibility incompatibility):
+  ## Populates [_derivations] for [incompatibility] and its transitive causes.
+  if (_derivations.containsKey(incompatibility)):
+    inc _derivations[incompatibility]
+
+  else:
     _derivations[incompatibility] = 1
     var cause = incompatibility.cause
-    if (cause is ConflictCause) {
+    if (cause is ConflictCause):
       _countDerivations(cause.conflict)
       _countDerivations(cause.other)
-    }
-  }
-}
 
 String write() {
   var buffer = StringBuffer()
 
-  # SDKs whose version constraints weren't matched.
-  var sdkConstraintCauses = [Sdk>{}
+  # # SDKs whose version constraints weren't matched.
+  # var sdkConstraintCauses = [Sdk>{}
 
-  # SDKs implicated in any way in the solve failure.
-  var sdkCauses = [Sdk>{}
+  # # SDKs implicated in any way in the solve failure.
+  # var sdkCauses = [Sdk>{}
 
-  for (var incompatibility in _root.externalIncompatibilities) {
-    var cause = incompatibility.cause
-    if (cause is PackageNotFoundCause and cause.sdk != null) {
-      sdkCauses.add(cause.sdk)
-    } else if (cause is SdkCause) {
-      sdkCauses.add(cause.sdk)
-      sdkConstraintCauses.add(cause.sdk)
-    }
-  }
+  # for (var incompatibility in _root.externalIncompatibilities) {
+  #   var cause = incompatibility.cause
+  #   if (cause is PackageNotFoundCause and cause.sdk != null):
+  #     sdkCauses.add(cause.sdk)
 
-  # If the failure was caused in part by unsatisfied SDK constraints,
-  # indicate the actual versions so we don't have to list them (possibly
-  # multiple times) in the main body of the error message.
-  #
-  # Iterate through [sdks] to ensure that SDKs versions are printed in a
-  # consistent order
-  var wroteLine = false
-  for (var sdk in sdks.values) {
-    if (!sdkConstraintCauses.contains(sdk)) continue
-    if (!sdk.isAvailable) continue
-    wroteLine = true
-    buffer.writeln('The current ${sdk.name} SDK version is ${sdk.version}.')
-  }
-  if (wroteLine) buffer.writeln()
+  #   elif (cause is SdkCause):
+  #     sdkCauses.add(cause.sdk)
+  #     sdkConstraintCauses.add(cause.sdk)
 
-  if (_root.cause is ConflictCause) {
-    _visit(_root, const {})
-  } else {
-    _write(_root, 'Because $_root, version solving failed.')
-  }
+  # # If the failure was caused in part by unsatisfied SDK constraints,
+  # # indicate the actual versions so we don't have to list them (possibly
+  # # multiple times) in the main body of the error message.
+  # #
+  # # Iterate through [sdks] to ensure that SDKs versions are printed in a
+  # # consistent order
+  # var wroteLine = false
+  # for sdk in sdks.values:
+  #   if (!sdkConstraintCauses.contains(sdk)) continue
+  #   if (!sdk.isAvailable) continue
+  #   wroteLine = true
+  #   buffer.writeln('The current ${sdk.name} SDK version is ${sdk.version}.')
+  # }
+  # if (wroteLine) buffer.writeln()
+
+  # if (_root.cause is ConflictCause) {
+  #   _visit(_root, const {})
+  # } else {
+  #   _write(_root, 'Because $_root, version solving failed.')
+  # }
 
   # Only add line numbers if the derivation actually needs to refer to a line
   # by number.
   var padding =
-      _lineNumbers.isEmpty ? 0 : '(${_lineNumbers.values.last}) '.length
+      tern(_lineNumbers.isEmpty, 0,  &"({_lineNumbers.values.last}) ".len)
 
   var lastWasEmpty = false
-  for (var line in _lines) {
+  for (var line in _lines):
     var message = line.first
-    if (message.isEmpty) {
-      if (!lastWasEmpty) buffer.writeln()
+    if (message.isEmpty):
+      if (lastWasEmpty.not()): buffer.writeln()
       lastWasEmpty = true
       continue
-    } else {
+
+    else:
       lastWasEmpty = false
-    }
 
     var number = line.last
-    if (number != null) {
-      message = '($number)'.padRight(padding) + message
-    } else {
-      message = ' ' * padding + message
-    }
+    if (number != null):
+      message = "({number})".padRight(padding) & message
 
-    buffer.writeln(wordWrap(message, prefix: ' ' * (padding + 2)))
-  }
+    else:
+      message = " ".repeat(padding) + message
+
+    buffer.writeln(wordWrap(message, prefix: " ".repeat(padding + 2)))
 
   # Iterate through [sdks] to ensure that SDKs versions are printed in a
   # consistent order
-  for (var sdk in sdks.values) {
-    if (!sdkCauses.contains(sdk)) continue
-    if (sdk.isAvailable) continue
-    if (sdk.installMessage == null) continue
+  for (var sdk in sdks.values):
+    if (not sdkCauses.contains(sdk)): continue
+    if (sdk.isAvailable): continue
+    if (sdk.installMessage == null): continue
     buffer.writeln()
     buffer.writeln(sdk.installMessage)
-  }
 
   return buffer.toString()
-}
 
 proc write(
   incompatibility: Incompatibility, message: string,
@@ -219,7 +213,7 @@ proc visit(
       cause.other.cause is ConflictCause) {
     var conflictLine = _lineNumbers[cause.conflict]
     var otherLine = _lineNumbers[cause.other]
-    if (conflictLine != null and otherLine != null) {
+    if (conflictLine != null and otherLine != null):
       _write(
           incompatibility,
           'Because ' +
@@ -227,19 +221,18 @@ proc visit(
                   cause.other, detailsForCause, conflictLine, otherLine) +
               ', $incompatibilityString.',
           numbered: numbered)
-    } else if (conflictLine != null or otherLine != null) {
+    elif (conflictLine != null or otherLine != null):
       Incompatibility withLine
       Incompatibility withoutLine
       int line
-      if (conflictLine != null) {
+      if (conflictLine != null):
         withLine = cause.conflict
         withoutLine = cause.other
         line = conflictLine
-      } else {
+      else:
         withLine = cause.other
         withoutLine = cause.conflict
         line = otherLine
-      }
 
       _visit(withoutLine, detailsForCause)
       _write(
@@ -247,7 +240,7 @@ proc visit(
           '$conjunction because ${withLine.toString(detailsForCause)} '
           '($line), $incompatibilityString.',
           numbered: numbered)
-    } else {
+    else:
       var singleLineConflict = _isSingleLine(cause.conflict.cause)
       var singleLineOther = _isSingleLine(cause.other.cause)
       if (singleLineOther or singleLineConflict) {
@@ -269,31 +262,34 @@ proc visit(
             '(${_lineNumbers[cause.conflict]}), '
             '$incompatibilityString.',
             numbered: numbered)
-      }
-    }
-  } else if (cause.conflict.cause is ConflictCause or
-      cause.other.cause is ConflictCause) {
+  elif (cause.conflict.cause is ConflictCause or
+      cause.other.cause is ConflictCause):
+
     var derived =
-        cause.conflict.cause is ConflictCause ? cause.conflict : cause.other
+        tern(cause.conflict.cause is ConflictCause, cause.conflict,  cause.other)
     var ext =
-        cause.conflict.cause is ConflictCause ? cause.other : cause.conflict
+        tern(cause.conflict.cause is ConflictCause, cause.other,  cause.conflict)
 
     var derivedLine = _lineNumbers[derived]
-    if (derivedLine != null) {
+    if (derivedLine != null):
       _write(
           incompatibility,
           'Because ' +
               ext.andToString(derived, detailsForCause, null, derivedLine) +
               ', $incompatibilityString.',
           numbered: numbered)
-    } else if (_isCollapsible(derived)) {
+
+    elif (_isCollapsible(derived)):
       var derivedCause = derived.cause as ConflictCause
-      var collapsedDerived = derivedCause.conflict.cause is ConflictCause
-          ? derivedCause.conflict
-          : derivedCause.other
-      var collapsedExt = derivedCause.conflict.cause is ConflictCause
-          ? derivedCause.other
-          : derivedCause.conflict
+      var collapsedDerived = tern(
+        derivedCause.conflict.cause is ConflictCause,
+        derivedCause.conflict,
+        derivedCause.other)
+
+      var collapsedExt = tern(
+        derivedCause.conflict.cause is ConflictCause,
+        derivedCause.other,
+        derivedCause.conflict)
 
       detailsForCause = mergeMaps(
           detailsForCause, _detailsForCause(derivedCause),
@@ -306,23 +302,23 @@ proc visit(
           '${collapsedExt.andToString(ext, detailsForCause)}, '
           '$incompatibilityString.',
           numbered: numbered)
-    } else {
+
+    else:
       _visit(derived, detailsForCause)
       _write(
           incompatibility,
           '$conjunction because ${ext.toString(detailsForCause)}, '
           '$incompatibilityString.',
           numbered: numbered)
-    }
-  } else {
+
+  else:
     _write(
         incompatibility,
         'Because '
         '${cause.conflict.andToString(cause.other, detailsForCause)}, '
         '$incompatibilityString.',
         numbered: numbered)
-  }
-}
+
 
 proc isCollapsible(Incompatibility incompatibility): bool =
   ## Returns whether we can collapse the derivation of [incompatibility].

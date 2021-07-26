@@ -405,3 +405,4 @@ parse.cpp
 **/callgrind.out*
 
 **/*.code-workspace
+testing/nim/implementation_ideas/treediff/*.nim

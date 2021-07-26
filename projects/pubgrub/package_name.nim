@@ -1,9 +1,11 @@
-import std/[tables, os, hashes, strformat]
+import std/[tables, os, hashes, strformat, strutils]
 
 import
   ./pubspec,
   ./types,
   ./utils
+
+{.this: this.}
 
 # ## The equality to use when comparing the feature sets of two package names.
 # const _featureEquality = MapEquality<string, FeatureDependency>();
@@ -536,11 +538,11 @@ proc withFeatures(
 
 
 
-proc withTerseConstraint(self: PackageRange): PackageRange =
+proc withTerseConstraint*(this, self: PackageRange): PackageRange =
   ## Returns a copy of [this] with the same semantics, but with a `^`-style
   ## constraint if possible.
   if not(self.constraint of VersionRange): return this
-  if (self.constraint.tostring().startsWith('^')): return this
+  if (startsWith($self.constraint, '^')): return this
 
   var vRange = self.constraint.VersionRange()
   if (not vRange.includeMin): return this
@@ -559,18 +561,16 @@ proc withTerseConstraint(self: PackageRange): PackageRange =
 ##
 ## Specifically, whether [id] refers to the same package as [this] *and*
 ## [constraint] allows `id.version`.
-bool allows(PackageId id) => samePackage(id) && constraint.allows(id.version);
+proc allows(this: PackageName, id: PackageId): bool =
+   samePackage(id) and constraint.allows(id.version)
 
-@override
-int get hashCode =>
-    super.hashCode ^ constraint.hashCode ^ _featureEquality.hash(features);
+proc hash(this: PackageName): Hash = 
+  !$(super.hash() !& constraint.hash() !& _featureEquality.hash(features))
 
-@override
-bool operator ==(other) =>
-    other is PackageRange &&
-    samePackage(other) &&
-    other.constraint == constraint &&
-    _featureEquality.equals(other.features, features);
+proc `==`(this, other: PackageRange): bool = 
+  samePackage(other) and
+  other.constraint == constraint and
+  _featureEquality.equals(other.features, features)
 
 ## An enum of types of dependencies on a [Feature].
 # class FeatureDependency {
