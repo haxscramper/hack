@@ -1,4 +1,8 @@
-import std/[tables, sets, options, strformat]
+import 
+  std/[tables, sets, options, strformat, strutils]
+
+import
+  hmisc/algo/htemplates
 
 type
   Feature* = object
@@ -56,8 +60,30 @@ type
   VersionConstraint* = ref object of RootObj
 
   Version* = ref object of VersionConstraint
+    major*: int ## The major version number: "1" in "1.2.3".
 
-  VersionRange* = ref object of VersionConstraint
+    minor*: int ## The minor version number: "2" in "1.2.3".
+
+    patch*: int ## The patch version number: "3" in "1.2.3".
+
+    preRelease*: seq[string] ## The pre-release identifier: "foo" in "1.2.3-foo".
+    ##
+    ## This is split into a list of components, each of which may be either a
+    ## string or a non-negative integer. It may also be empty, indicating that
+    ## this version has no pre-release identifier.
+
+    build*: seq[string] ## The build identifier: "foo" in "1.2.3+foo".
+    ##
+    ## This is split into a list of components, each of which may be either a
+    ## string or a non-negative integer. It may also be empty, indicating that
+    ## this version has no build identifier.
+
+    text*: string ## The original string representation of the version number.
+    ##
+    ## This preserves textual artifacts like leading zeros that may be left out
+    ## of the parsed version.
+
+  VersionRange* = ref object of VersionConstraint 
     ## Constrains versions to a fall within a given range.
     ##
     ## If there is a minimum, then this only allows versions that are at
@@ -350,6 +376,10 @@ type
 
     unlock*: HashSet[string] ## The set of packages for which the lockfile
                              ## should be ignored.
+
+
+{.this: this.}
+
 
 
 func isEnabled*(dep: FeatureDependency): bool = dep != FeatureDependency.unused

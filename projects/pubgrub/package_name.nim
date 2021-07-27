@@ -1,9 +1,10 @@
-import std/[tables, os, hashes, strformat, strutils]
+import std/[tables, os, hashes, strformat, strutils, options]
 
 import
   ./pubspec,
   ./types,
-  ./utils
+  ./utils,
+  ./versions
 
 {.this: this.}
 
@@ -542,35 +543,38 @@ proc withTerseConstraint*(this, self: PackageRange): PackageRange =
   ## Returns a copy of [this] with the same semantics, but with a `^`-style
   ## constraint if possible.
   if not(self.constraint of VersionRange): return this
-  if (startsWith($self.constraint, '^')): return this
+  if (startsWith($self.constraint[], '^')): return this
 
   var vRange = self.constraint.VersionRange()
   if (not vRange.includeMin): return this
   if (vRange.includeMax): return this
-  if (vRange.min.isSome()): return this
+  if (vRange.min.isnone()): return this
 
   if (
-    vRange.max == vRange.min.nextBreaking.firstPreRelease or
-    (vRange.min.isPreRelease && vRange.max == vRange.min.nextBreaking)):
-    return withConstraint(VersionConstraint.compatibleWith(vRange.min))
+    vRange.max.get() == vRange.min.get().nextBreaking.firstPreRelease() or
+    (vRange.min.get().isPreRelease() and vRange.max.get() == vRange.min.get().nextBreaking())
+  ):
+    return withConstraint(compatibleWith(vRange.min.get()))
 
   else:
     return this
 
-## Whether [id] satisfies this dependency.
-##
-## Specifically, whether [id] refers to the same package as [this] *and*
-## [constraint] allows `id.version`.
-proc allows(this: PackageName, id: PackageId): bool =
-   samePackage(id) and constraint.allows(id.version)
+
+proc allows(this: PackageRange, id: PackageId): bool =
+  ## Whether [id] satisfies this dependency.
+  ##
+  ## Specifically, whether [id] refers to the same package as [this] *and*
+  ## [constraint] allows `id.version`.
+  samePackage(id) and constraint.allows(id.version)
 
 proc hash(this: PackageName): Hash = 
-  !$(super.hash() !& constraint.hash() !& _featureEquality.hash(features))
+  # FIXME super.hash() !&
+  !$( constraint.hash() !& featureEquality.hash(features))
 
 proc `==`(this, other: PackageRange): bool = 
   samePackage(other) and
   other.constraint == constraint and
-  _featureEquality.equals(other.features, features)
+  featureEquality.equals(other.features, features)
 
 ## An enum of types of dependencies on a [Feature].
 # class FeatureDependency {
