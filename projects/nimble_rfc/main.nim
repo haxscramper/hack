@@ -2,18 +2,28 @@
 
 import jsony
 
-const commitGraph = on
+const commitGraph = off
 
 when commitGraph:
   import ggplotnim
 
 import
-  nimblepkg/[version],
   hmisc/other/[oswrap, hshell, hlogger, hpprint, sqlite_extra],
   hmisc/algo/[htemplates, halgorithm],
   hmisc/[hdebug_misc, base_errors],
-  std/[net, httpclient, tables, strutils, sets, times, options,
-       strformat, sequtils, uri, algorithm, parseutils],
+  hmisc/wrappers/[treesitter]
+
+
+import
+  nimblepkg/[version]
+
+import
+  std/[
+    net, httpclient, tables, strutils, sets, times, options,
+    strformat, sequtils, uri, algorithm, parseutils, sugar
+  ]
+
+import
   hnimast/[hast_common, pnode_parse, compiler_aux, nimble_aux]
 
 import
@@ -73,7 +83,11 @@ type
     sCloneOk
     sNoUrl
 
+  StdUseFile = object
+    modules: Table[string, int]
+
   Stat = object
+    stdUseStat: seq[StdUseFile]
     package: Package
     flags: set[StatFlag]
 
@@ -108,8 +122,6 @@ proc joinPath*(T: typedesc, args: varargs[string]): T =
 #   for item in s:
 #     result.add toJson(item)
 
-
-proc pad(str: string): string = alignLeft(str, 20)
 
 proc dumpHook*[E: enum](s: var string, es: set[E]) =
   s.add "["
@@ -152,7 +164,7 @@ proc taggedCommits*(): seq[string] =
     result.add line
 
 proc parseVersion*(v: string): tuple[major, minor, patch: int] =
-  var s = v.strip().split(".")
+  var s = strutils.strip(v).split(".")
   for i in mitems(s):
     i = i[0 ..< i.skipWhile(Digits)]
 
@@ -319,6 +331,288 @@ proc recordFields*(
       for sub in node:
         recordFields(sub, meta, newtop)
 
+
+proc fileStat(node: PNode): StdUseFile =
+  const stdModules = toHashSet [
+
+    "channels",
+    "compilesettings",
+    "decls",
+    "editdistance",
+    "effecttraits",
+    "enumerate",
+    "enumutils",
+    "exitprocs",
+    "genasts",
+    "importutils",
+    "isolation",
+    "jsbigints",
+    "jsfetch",
+    "jsformdata",
+    "jsheaders",
+    "jsonutils",
+    "logic",
+    "monotimes",
+    "packedsets",
+    "setutils",
+    "sha1",
+    "socketstreams",
+    "stackframes",
+    "strbasics",
+    "sums",
+    "sysrand",
+    "tasks",
+    "tempfiles",
+    "time_t",
+    "varints",
+    "vmutils",
+    "with",
+    "wordwrap",
+    "wrapnils" ,
+    "epoll",
+    "inotify",
+    "kqueue",
+    "linux",
+    "posix",
+    "posix_freertos_consts",
+    "posix_haiku",
+    "posix_linux_amd64",
+    "posix_linux_amd64_consts",
+    "posix_macos_amd64",
+    "posix_nintendoswitch",
+    "posix_nintendoswitch_consts",
+    "posix_openbsd_amd64",
+    "posix_other",
+    "posix_other_consts",
+    "posix_utils",
+    "termios",
+    "algorithm",
+    "async",
+    "asyncdispatch",
+    "asyncfile",
+    "asyncftpclient",
+    "asyncfutures",
+    "asynchttpserver",
+    "asyncmacro",
+    "asyncnet",
+    "asyncstreams",
+    "base64",
+    "bitops",
+    "browsers",
+    "cgi",
+    "colors",
+    "complex",
+    "cookies",
+    "coro",
+    "cstrutils",
+    "db_common",
+    "distros",
+    "dynlib",
+    "encodings",
+    "endians",
+    "fenv",
+    "future",
+    "hashes",
+    "htmlgen",
+    "htmlparser",
+    "httpclient",
+    "httpcore",
+    "json",
+    "lenientops",
+    "lexbase",
+    "logging",
+    "marshal",
+    "math",
+    "md5",
+    "memfiles",
+    "mersenne",
+    "mimetypes",
+    "nativesockets",
+    "net",
+    "nimprof",
+    "nimtracker",
+    "oids",
+    "options",
+    "os",
+    "osproc",
+    "oswalkdir",
+    "parsecfg",
+    "parsecsv",
+    "parsejson",
+    "parseopt",
+    "parsesql",
+    "parseutils",
+    "parsexml",
+    "pathnorm",
+    "pegs",
+    "prelude",
+    "punycode",
+    "random",
+    "rationals",
+    "reservedmem",
+    "ropes",
+    "segfaults",
+    "selectors",
+    "smtp",
+    "ssl_certs",
+    "ssl_config",
+    "stats",
+    "streams",
+    "streamwrapper",
+    "strformat",
+    "strmisc",
+    "strscans",
+    "strtabs",
+    "strutils",
+    "sugar",
+    "terminal",
+    "times",
+    "typetraits",
+    "unicode",
+    "unittest",
+    "uri",
+    "volatile",
+    "xmlparser",
+    "xmltree",
+    "alloc",
+    "ansi_c",
+    "arc",
+    "arithm",
+    "arithmetics",
+    "assertions",
+    "assign",
+    "atomics",
+    "avltree",
+    "basic_types",
+    "bitmasks",
+    "cellseqs_v1",
+    "cellseqs_v2",
+    "cellsets",
+    "cgprocs",
+    "channels_builtin",
+    "chcks",
+    "comparisons",
+    "coro_detection",
+    "countbits_impl",
+    "cyclebreaker",
+    "deepcopy",
+    "dollars",
+    "dyncalls",
+    "embedded",
+    "exceptions",
+    "excpt",
+    "fatal",
+    "formatfloat",
+    "gc",
+    "gc2",
+    "gc_common",
+    "gc_hooks",
+    "gc_interface",
+    "gc_ms",
+    "gc_regions",
+    "hti",
+    "inclrtl",
+    "indexerrors",
+    "integerops",
+    "io",
+    "iterators",
+    "iterators_1",
+    "jssys",
+    "memalloc",
+    "memory",
+    "memtracker",
+    "mmdisp",
+    "nimscript",
+    "orc",
+    "osalloc",
+    "platforms",
+    "profiler",
+    "repr",
+    "repr_v2",
+    "reprjs",
+    "schubfach",
+    "seqs_v2",
+    "seqs_v2_reimpl",
+    "setops",
+    "sets",
+    "stacktraces",
+    "strmantle",
+    "strs_v2",
+    "syslocks",
+    "sysspawn",
+    "sysstr",
+    "threadlocalstorage",
+    "threads",
+    "timers"
+
+  ]
+
+  proc modname(n: PNode): seq[string] =
+    case n.kind:
+      of nkIdent: result = @[n.getStrVal()]
+      of nkInfix: result = modname(n[2])
+      of nkBracket:
+        for arg in n:
+          result.add modname(arg)
+
+      of nkPragmaExpr:
+        result = modname(n[0])
+
+      else:
+        raise newImplementKindError(n, n.treeRepr())
+
+  proc aux(node: PNode, table: var Table[string, int]) =
+    case node.kind:
+      of nkStmtList:
+        for sub in node:
+          aux(sub, table)
+
+      of nkFromStmt:
+        if node[0] =~ {nkInfix, nkIdent}:
+          for name in node[0].modname():
+            if name in stdModules:
+              inc table.mgetOrPut(name, 0)
+
+      of nkInfix:
+        if node[1] =~ nkPrefix and node[1][0] =~ "./":
+          discard
+
+        elif node[1] =~ (nkIdent, "std"):
+          for name in node.modname():
+            inc table.mgetOrPut(name, 0)
+
+      of nkImportStmt:
+        for sub in node:
+          aux(sub, table)
+
+      else:
+        discard
+
+  var table: Table[string, int]
+  aux(node, table)
+  return StdUseFile(modules: table)
+
+proc updateStdStats(stat: var Stat, dir: AbsDir, l: HLogger) =
+  for file in walkDir(dir, AbsFile, exts = @["nim"], recurse = true):
+    try:
+      let node = parsePnodeStr(file.readFile())
+      if not isNil(node):
+        stat.stdUseStat.add node.fileStat()
+
+    except:
+      # Error: unhandled exception: over- or underflow [OverflowDefect]
+      # while parsing `bgfx.nim`. dEfECTsShoUldNotBeCAuGht
+      discard
+
+let
+  doStdStats = true
+  doDownload = false
+  metaUses = true
+  versionDb = false
+  execStore = false
+  parseFail = false
+  requiresStats = false
+
 when isMainModule:
 
   let url = "https://raw.githubusercontent.com/nim-lang/packages/master/packages.json"
@@ -400,10 +694,6 @@ when isMainModule:
           cmds.add((cmd, pack))
 
 
-
-
-  let doDownload = false
-
   if doDownload:
     var failCnt = 0
     withEnv({ $$GIT_TERMINAL_PROMPT : "0"}):
@@ -433,24 +723,16 @@ when isMainModule:
 
           else:
             l.warn err
-            # errUrls.incl data.url
-            # l.warn "Failed to clone", data.name
-            # let dir = AbsDir(res.cmd[2].argument)
-            # # assert not exists(dir), $dir
-            # l.pdump res.cmd
-            # l.pdump res
-            # l.pdump data
-            # inc failCnt
-            # if failCnt > 1: break
 
         else:
           l.info "Cloned", data.name
 
-  writeFile(failedFile, errUrls.toJson())
-  writeFile(statsFile, stats.toJson())
-  l.done "Package download finished"
-  l.dump failedFile
-  l.dump statsFile
+  if doDownload:
+    writeFile(failedFile, errUrls.toJson())
+    writeFile(statsFile, stats.toJson())
+    l.done "Package download finished"
+    l.dump failedFile
+    l.dump statsFile
 
   var
     failTable: Table[string, seq[string]]
@@ -498,12 +780,6 @@ when isMainModule:
     requires: seq[PkgTuple]
     metaFields: MetaTable
 
-  let
-    metaUses = true
-    versionDb = false
-    execStore = false
-    parseFail = false
-    requiresStats = false
 
   for dir in walkDir(packageDir, AbsDir):
     if commitGraph:
@@ -600,15 +876,11 @@ when isMainModule:
 
             if extra.nimsManifest:
               if execStore: extra.node.recordExecs(execStrs)
-              if metaUses:
-                extra.node.recordFields(metaFields)
+              if metaUses: extra.node.recordFields(metaFields)
 
-
-              # if nonCanonical:
-              #   l.warn info.name, "contains non-canonical requries"
-              #   l.debug text
-
-
+            if doStdStats and globalTick() < 30_000:
+              l.info $globalTick() |<< 4, stat.package.name
+              updateStdStats(stat, dir, l)
 
 
           except NimbleError:
@@ -750,6 +1022,43 @@ when isMainModule:
 
 
   l.info "Found", totalRequires, "out of which 'canonical'", cmdRequires
+
+  if doStdStats:
+    var
+      totalFiles: int
+      totalUsage: Table[string, int]
+      perPackage: Table[string, int]
+
+    for stat in parseStats:
+      totalFiles += stat.stdUseStat.len
+      var used: HashSet[string]
+      for file in stat.stdUseStat:
+        for module, count in file.modules:
+          used.incl module
+          totalUsage.mgetOrPut(module, 0) += count
+
+      for module in used:
+        inc perPackage.mgetOrPut(module, 0)
+
+
+    let
+      total: seq[(string, int)] =
+        collect(newSeq, for it in pairs(totalUsage): it).sortedByIt(it[1])
+      sep = 21
+
+    echo "module" |<< sep,
+      &"per file / {totalFiles}" |<< sep,
+      "in % files" |<< sep,
+      &"per package / {parseStats.len}" |<< sep,
+      "in % packages" |<< sep
+
+    for (name, count) in total:
+      echo name |<< sep,
+        $count |<< sep,
+        &"{count / totalFiles:5.4f}" |<< sep,
+        $perPackage[name] |<< sep,
+        &"{perPackage[name] / parseStats.len:5.4f}"
+
 
   if pnodeStat.n > 0:
     l.info "Processed", pnodeStat.n, "packages via pnode in", &"{pnodeStat.sum:5.3f}"
