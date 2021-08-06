@@ -605,7 +605,7 @@ proc updateStdStats(stat: var Stat, dir: AbsDir, l: HLogger) =
       discard
 
 let
-  doStdStats = true
+  doStdStats = false
   doDownload = false
   metaUses = true
   versionDb = false

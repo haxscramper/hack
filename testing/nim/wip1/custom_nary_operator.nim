@@ -9,3 +9,8 @@ macro `~`(lhs: untyped{nkBracketExpr}, c: int): untyped =
 
 2[2] ~ 2
 3 ~ 2
+
+macro `~~`(lhs: untyped{nkBracketExpr}, c: int): untyped =
+  newCall("arrImpl", lhs[0], lhs[1], c)
+
+2[1] ~~ 3

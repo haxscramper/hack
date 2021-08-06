@@ -15,11 +15,9 @@ proc name(self: Package): string =
   ## The name of the package.
   return self.pubspec.name
 
-proc version(self: Package): Version =
+proc version(self: Package): VersionConstraint =
   ## The package's version.
   self.pubspec.version
-
-proc `<`*(v1, v2: Version): bool = assert false
 
 proc isInMemory*(self: Package): bool =
   ## An in-memory package can be created for doing a resolution without having
@@ -408,8 +406,6 @@ proc rootId*(package: Package): PackageId =
   # PackageId.root(Package package)
   #     : version = package.version,
   #       super._(package.name, null, package.name);
-
-proc hash(v: Version): Hash = assert false
 
 proc hash(id: PackageId): Hash =
   !$(hash(id.version) !& hash(PackageName(id)))

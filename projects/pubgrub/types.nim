@@ -4,6 +4,9 @@ import
 import
   hmisc/algo/htemplates
 
+import
+  ./versions
+
 type
   Feature* = object
     ## A feature declared by a package.
@@ -57,73 +60,12 @@ type
   PackageRef* = ref object of PackageName
     ## A reference to a [Package], but not any particular version(s) of it.
 
-  VersionConstraint* = ref object of RootObj
-
-  Version* = ref object of VersionConstraint
-    major*: int ## The major version number: "1" in "1.2.3".
-
-    minor*: int ## The minor version number: "2" in "1.2.3".
-
-    patch*: int ## The patch version number: "3" in "1.2.3".
-
-    preRelease*: seq[string] ## The pre-release identifier: "foo" in "1.2.3-foo".
-    ##
-    ## This is split into a list of components, each of which may be either a
-    ## string or a non-negative integer. It may also be empty, indicating that
-    ## this version has no pre-release identifier.
-
-    build*: seq[string] ## The build identifier: "foo" in "1.2.3+foo".
-    ##
-    ## This is split into a list of components, each of which may be either a
-    ## string or a non-negative integer. It may also be empty, indicating that
-    ## this version has no build identifier.
-
-    text*: string ## The original string representation of the version number.
-    ##
-    ## This preserves textual artifacts like leading zeros that may be left out
-    ## of the parsed version.
-
-  VersionRange* = ref object of VersionConstraint 
-    ## Constrains versions to a fall within a given range.
-    ##
-    ## If there is a minimum, then this only allows versions that are at
-    ## that minimum or greater. If there is a maximum, then only versions
-    ## less than that are allowed. In other words, this allows `>= min, <
-    ## max`.
-    ##
-    ## Version ranges are ordered first by their lower bounds, then by
-    ## their upper bounds. For example, `>=1.0.0 <2.0.0` is before `>=1.5.0
-    ## <2.0.0` is before `>=1.5.0 <3.0.0`.
-
-    min*: Option[Version] ## The minimum end of the range.
-    ##
-    ## If [includeMin] is `true`, this will be the minimum allowed version.
-    ## Otherwise, it will be the highest version below the range that is
-    ## not allowed.
-    ##
-    ## This may be `null` in which case the range has no minimum end and allows
-    ## any version less than the maximum.
-
-    max*: Option[Version]  ## The maximum end of the range.
-    ##
-    ## If [includeMax] is `true`, this will be the maximum allowed version.
-    ## Otherwise, it will be the lowest version above the range that is not
-    ## allowed.
-    ##
-    ## This may be `null` in which case the range has no maximum end and
-    ## allows any version greater than the minimum.
-
-    includeMin*: bool ## If `true` then [min] is allowed by the range.
-    includeMax*: bool ## If `true`, then [max] is allowed by the range.
-
-
-
 
 
   Pubspec* = ref object
     ## The parsed contents of a pubspec file.
     name*: string ## The package's name.
-    version*: Version ## The package's version.
+    version*: VersionConstraint ## The package's version.
     dependencies*: Table[string, PackageRange] ## The additional packages
     ## this package depends on.
 
@@ -171,7 +113,7 @@ type
     ## `git` source adds revision information to the description to ensure
     ## that the same ID always points to the same source.
 
-    version*: Version ## The package's version.
+    version*: VersionConstraint ## The package's version.
 
   PackageLister* = object
     ## A cache of all the versions of a single package that provides information
