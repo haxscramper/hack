@@ -3,15 +3,15 @@ import std/[tables]
 import
   ./assignment,
   ./failure,
-  ./incompatibility,
+  ./partial_solution,
   ./incompatibility_cause,
   ./package_lister,
-  ./partial_solution,
   ./reformat_ranges,
   ./result,
   ./set_relation,
   ./term,
-  ./version
+  ./versionm,
+  ./incompatibility
 
 # TODO(nweiz): Currently, a bunch of tests that use the solver are skipped
 # because they exercise parts of the solver that haven't been reimplemented.

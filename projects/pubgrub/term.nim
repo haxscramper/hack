@@ -1,14 +1,15 @@
 import
   ./package_name,
-  ./types
+  ./types,
+  ./versions
 
-import hmisc/base_errors
+import hmisc/core/all
 
 # import 'set_relation.dart'
 
 {.this: this.}
 
-proc getInverse*(this: Term): Term =
+proc inverse*(this: Term): Term =
   ## A copy of this term with the opposite [isPositive] value.
   Term(package: package, isPositive: not isPositive)
 
@@ -28,7 +29,7 @@ proc satisfies*(this, other: Term): bool =
   this.package.name == other.package.name and
   this.relation(other) == SetRelation.subset
 
-proc compatiblePackage(this, other: PackageRange): bool =
+proc compatiblePackage(this: Term, other: PackageRange): bool =
   ## Returns whether [other] is compatible with [package].
   package.isRoot or other.isRoot or other.samePackage(package);
 
@@ -49,20 +50,20 @@ proc relation*(this, other: Term): SetRelation =
       if (not compatiblePackage(other.package)): return SetRelation.disjoint
 
       # foo ^1.5.0 is a subset of foo ^1.0.0
-      if (otherConstraint.allowsAll(constraint)): return SetRelation.subset
+      if (otherConstraint.allowsAll(this.constraint)): return SetRelation.subset
 
       # foo ^2.0.0 is disjoint with foo ^1.0.0
-      if (not constraint.allowsAny(otherConstraint)): return SetRelation.disjoint
+      if (not this.constraint.allowsAny(otherConstraint)): return SetRelation.disjoint
 
       # foo >=1.5.0 <3.0.0 overlaps foo ^1.0.0
       return SetRelation.overlapping
 
     else:
       # not foo from hosted is a superset foo from git
-      if (!_compatiblePackage(other.package)): return SetRelation.overlapping
+      if (not compatiblePackage(other.package)): return SetRelation.overlapping
 
       # not foo ^1.0.0 is disjoint with foo ^1.5.0
-      if (constraint.allowsAll(otherConstraint)): return SetRelation.disjoint
+      if (this.constraint.allowsAll(otherConstraint)): return SetRelation.disjoint
 
       # not foo ^1.5.0 overlaps foo ^1.0.0
       # not foo ^2.0.0 is a superset of foo ^1.5.0
@@ -74,10 +75,10 @@ proc relation*(this, other: Term): SetRelation =
       if (not compatiblePackage(other.package)): return SetRelation.subset
 
       # foo ^2.0.0 is a subset of not foo ^1.0.0
-      if (not otherConstraint.allowsAny(constraint)): return SetRelation.subset
+      if (not otherConstraint.allowsAny(this.constraint)): return SetRelation.subset
 
       # foo ^1.5.0 is disjoint with not foo ^1.0.0
-      if (otherConstraint.allowsAll(constraint)): return SetRelation.disjoint
+      if (otherConstraint.allowsAll(this.constraint)): return SetRelation.disjoint
 
       # foo ^1.0.0 overlaps not foo ^1.5.0
       return SetRelation.overlapping
@@ -87,14 +88,24 @@ proc relation*(this, other: Term): SetRelation =
       if (not compatiblePackage(other.package)): return SetRelation.overlapping
 
       # not foo ^1.0.0 is a subset of not foo ^1.5.0
-      if (constraint.allowsAll(otherConstraint)): return SetRelation.subset
+      if (this.constraint.allowsAll(otherConstraint)): return SetRelation.subset
 
       # not foo ^2.0.0 overlaps not foo ^1.0.0
       # not foo ^1.5.0 is a superset of not foo ^1.0.0
       return SetRelation.overlapping
 
 
-proc intersect*(Term other): Term =
+proc nonEmptyTerm(this: Term, constraint: VersionConstraint, isPositive: bool): Option[Term] =
+  # Returns a new [Term] with the same package as [this] and with
+  # [constraint], unless that would produce a term that allows no packages,
+  # in which case this returns `null`
+  if constraint.isEmpty:
+    none(Term)
+
+  else:
+    some newTerm(package.withConstraint(constraint), isPositive)
+
+proc intersect*(this, other: Term): Option[Term] =
   ## Returns a [Term] that represents the packages allowed by both [this] and
   ## [other].
   ##
@@ -105,35 +116,34 @@ proc intersect*(Term other): Term =
   ## same name as [package].
 
   if (package.name != other.package.name):
-    throw ArgumentError.value(
-        other, 'other', 'should refer to package ${package.name}')
+    raise newArgumentError(" other should refer to package {package.name}")
 
-  if (_compatiblePackage(other.package)):
+  if (compatiblePackage(other.package)):
     if (isPositive != other.isPositive):
       # foo ^1.0.0 ∩ not foo ^1.5.0 → foo >=1.0.0 <1.5.0
-      var positive = isPositive ? this : other
-      var negative = isPositive ? other : this
-      return _nonEmptyTerm(
+      var positive = isPositive.tern(this, other)
+      var negative = isPositive.tern(other, this)
+      return nonEmptyTerm(
           positive.constraint.difference(negative.constraint), true)
 
-    else if (isPositive):
+    elif (isPositive):
       # foo ^1.0.0 ∩ foo >=1.5.0 <3.0.0 → foo ^1.5.0
-      return nonEmptyTerm(constraint.intersect(other.constraint), true)
+      return nonEmptyTerm(intersect(this.constraint, other.constraint), true)
 
     else:
       # not foo ^1.0.0 ∩ not foo >=1.5.0 <3.0.0 → not foo >=1.0.0 <3.0.0
-      return nonEmptyTerm(constraint.union(other.constraint), false)
+      return nonEmptyTerm(union(this.constraint, other.constraint), false)
 
-  else if (isPositive != other.isPositive):
+  elif (isPositive != other.isPositive):
     # foo from git ∩ not foo from hosted → foo from git
-    return if isPositive: this else: other
+    return if isPositive: some(this) else: some(other)
 
   else:
     #     foo from git ∩     foo from hosted → empty
     # not foo from git ∩ not foo from hosted → no single term
-    return null
+    return none(Term)
 
-proc difference*(this, other: Term): Term =
+proc difference*(this, other: Term): Option[Term] =
   ## Returns a [Term] that represents packages allowed by [this] and not by
   ## [other].
   ##
@@ -141,17 +151,8 @@ proc difference*(this, other: Term): Term =
   ## allowed by [this] are allowed by [other], returns `null`.
   ##
   ## Throws an [ArgumentError] if [other] doesn't refer to a package with the
-  intersect(other.inverse) # A ∖ B → A ∩ not B
+  intersect(this, other.inverse) # A ∖ B → A ∩ not B
 
 
-proc nonEmptyTerm(constraint: VersionConstraint, isPositive: bool): Term =
-  # Returns a new [Term] with the same package as [this] and with
-  # [constraint], unless that would produce a term that allows no packages,
-  # in which case this returns `null`
-  if constraint.isEmpty:
-    null
-
-  else:
-    newTerm(package.withConstraint(constraint), isPositive)
 
 proc `$`(thsi: Term): string = "${isPositive ? '' : 'not '}$package"

@@ -1,15 +1,15 @@
 import 
-  std/[options, strutils, strformat, hashes, sequtils, strformat]
+  std/[options, strutils, strformat, hashes, sequtils, strformat, algorithm]
 
 import
   hmisc/algo/htemplates,
-  hmisc/helpers 
+  hmisc/core/all 
 
 {.this: this.}
 
 
 type
-  VersionConstraintKind = enum
+  VersionConstraintKind* = enum
     vckVersion
     vckVersionRange
     vckVersionUnion
@@ -336,10 +336,10 @@ func `==`(this, other: VersionConstraint): bool =
     includeMin == other.includeMin and 
     includeMax == other.includeMax
 
-func hash(this: VersionConstraint): Hash =
+func hash*(this: VersionConstraint): Hash =
   !$(min.get().hash() !& (max.get().hash() *% 3) !& (includeMin.hash() *% 5) !& (includeMax.hash() *% 7))
 
-func isEmpty(this: VersionConstraint): bool = 
+func isEmpty*(this: VersionConstraint): bool = 
   case this.kind:
     else:
       assert false, $this.kind
@@ -361,7 +361,7 @@ proc allows*(this, other: VersionConstraint): bool =
       assert false
 
 
-proc allowsAll(this, other: VersionConstraint): bool =
+proc allowsAll*(this, other: VersionConstraint): bool =
   case this.kind:
     of vckVersionRange:
       if (other.isEmpty): return true
@@ -383,7 +383,7 @@ proc allowsAll(this, other: VersionConstraint): bool =
 
 
 
-proc rangesFor(constraint: VersionConstraint): seq[VersionConstraint] =
+proc rangesFor*(constraint: VersionConstraint): seq[VersionConstraint] =
   ## Returns [constraint] as a list of ranges.
   ##
   ## This is used to normalize ranges of various types.
@@ -392,7 +392,7 @@ proc rangesFor(constraint: VersionConstraint): seq[VersionConstraint] =
   if (constraint.kind == vckVersionRange): return @[constraint]
   assert false
 
-proc allowsAny(this, other: VersionConstraint): bool =
+proc allowsAny*(this, other: VersionConstraint): bool =
   case this.kind:
     of vckVersionRange:
       if (other.isEmpty): return false
@@ -434,7 +434,7 @@ proc allowsAny(this, other: VersionConstraint): bool =
 
 
 
-proc intersect(this, other: VersionConstraint): VersionConstraint =
+proc intersect*(this, other: VersionConstraint): VersionConstraint =
   if (other.isEmpty): return other
   if (other of vckVersionUnion): return other.intersect(this)
 
@@ -486,9 +486,9 @@ proc intersect(this, other: VersionConstraint): VersionConstraint =
       alwaysIncludeMaxPreRelease = true
     )
 
-proc union(this, other: VersionConstraint): VersionConstraint
+proc union*(this, other: VersionConstraint): VersionConstraint
 
-proc unionOf(constraints: seq[VersionConstraint]): VersionConstraint =
+proc unionOf*(constraints: seq[VersionConstraint]): VersionConstraint =
   ## Creates a new version constraint that is the union of [constraints].
   ##
   ## It allows any versions that any of those constraints allows. If
@@ -526,7 +526,7 @@ proc unionOf(constraints: seq[VersionConstraint]): VersionConstraint =
   if (merged.len == 1): return merged[0]
   return newVersionUnion(merged)
 
-proc union(this, other: VersionConstraint): VersionConstraint = 
+proc union*(this, other: VersionConstraint): VersionConstraint = 
   if (other of vckVersion):
     if (allows(other)): return this
 
@@ -585,7 +585,7 @@ proc union(this, other: VersionConstraint): VersionConstraint =
 
   return unionOf(@[this, other])
 
-proc difference(this, other: VersionConstraint): VersionConstraint =
+proc difference*(this, other: VersionConstraint): VersionConstraint =
   if (other.isEmpty): return this
 
   if (other of vckVersion):
@@ -700,7 +700,7 @@ proc difference(this, other: VersionConstraint): VersionConstraint =
 
 
 
-proc  `$`(this: VersionConstraint): string = 
+proc  `$`*(this: VersionConstraint): string = 
   if (min.isSome()):
     result.add(if includeMin: ">=" else: ">")
 

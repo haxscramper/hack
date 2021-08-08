@@ -211,41 +211,48 @@ type
     downgrade ## Downgrade all packages or specific packages to the lowest
     ## versions possible, regardless of the lockfile.
 
-  IncompatibilityCause = enum
+  IncompatibilityCauseReason* = enum
     ## The reason an [Incompatibility]'s terms are incompatible.
 
-    root ## the incompatibility represents the requirement that the root
+    icrRoot ## the incompatibility represents the requirement that the root
     ## package exists.
 
-    dependency ## The incompatibility represents a package's dependency.
+    icrDependency ## The incompatibility represents a package's dependency.
 
-    useLatest ## The incompatibility represents the user's request that we
+    icrUseLatest ## The incompatibility represents the user's request that we
     ## use the latest version of a given package.
 
-    noVersion ## The incompatibility indicates that the package has no
+    icrNoVersion ## The incompatibility indicates that the package has no
     ## versions that match the given constraint.
 
-    unknownSource ## The incompatibility indicates that the package has an
+    icrUnknownSource ## The incompatibility indicates that the package has an
                   ## unknown source.
+
+  IncompatibilityCauseKind* = enum
+    ickConflictCause
+
+  IncompatibilityCause* = object
+    case kind*: IncompatibilityCauseKind
+      of ickConflictCause:
+        ## The incompatibility was derived from two existing incompatibilities during
+        ## conflict resolution.
+
+        conflict*: Incompatibility ## The incompatibility that was originally
+        ## found to be in conflict, from which the target incompatibility was
+        ## derived.
+
+        other*: Incompatibility ## The incompatibility that caused the most
+        ## recent satisfier for [conflict], from which the target
+        ## incompatibility was derived.
 
   Assignment* = ref object of Term
     decisionLevel*: int
     index*: int
     cause*: Incompatibility
 
-  ConflictCause = object
-    ## The incompatibility was derived from two existing incompatibilities during
-    ## conflict resolution.
 
-    conflict: Incompatibility ## The incompatibility that was originally
-    ## found to be in conflict, from which the target incompatibility was
-    ## derived.
 
-    other: Incompatibility ## The incompatibility that caused the most
-    ## recent satisfier for [conflict], from which the target
-    ## incompatibility was derived.
-
-  PartialSolution  = object
+  PartialSolution*  = object
     ## A list of [Assignment]s that represent the solver's current best guess about
     ## what's true for the eventual set of package versions that will comprise the
     ## total solution.
@@ -278,9 +285,9 @@ type
                              ## been attempted so far.
 
 
-  Incompatibility = ref object
-    terms: seq[Term]
-    cause: IncompatibilityCause
+  Incompatibility* = ref object
+    terms*: seq[Term]
+    cause*: IncompatibilityCause
 
   SystemCache = ref object
 
