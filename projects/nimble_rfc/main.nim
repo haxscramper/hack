@@ -10,58 +10,6 @@ when commitGraph:
   import scinim / signals
 
 
-proc plot() =
-  when commitGraph:
-    var df = readCsv("/tmp/commits.csv")
-
-    let dates = @["2014-12-29",
-                  "2015-05-04",
-                  "2015-10-27",
-                  "2016-01-18",
-                  "2016-06-09",
-                  "2017-01-08",
-                  "2017-09-07",
-                  "2018-03-01",
-                  "2019-06-17",
-                  "2019-09-23",
-                  "2020-04-03",
-                  "2020-10-16"]
-    let versions = @["0.10.2",
-                     "0.11.2",
-                     "0.12.0",
-                     "0.13.0",
-                     "0.14.2",
-                     "0.16.0",
-                     "0.17.2",
-                     "0.18.0",
-                     "0.20.2",
-                     "1.0.0",
-                     "1.2.0",
-                     "1.4.0"]
-
-    # do something unconventional, to make it easier to add multiple annotations
-    var plt = ggplot(df, aes("days", "count")) +
-      geom_line() +
-      scale_x_date(isTimestamp = true,
-                   formatString = "MMM-yyyy",
-                   dateSpacing = initDuration(weeks = 52)) +
-      geom_smooth(smoother = "poly", polyOrder = 7, color = some(parseHex("FF0000"))) +
-      # geom_smooth(span = 0.64) +
-      ylab("Commit count") + xlab("Date") +
-      ggtitle("Daily commit counts in all nimble repositories")
-
-    # let red = some(parseHex("FF0000"))
-    # let transparent = color(0.0, 0.0, 0.0, 0.0)
-    # for i in 0 ..< dates.len:
-    #   let d = dates[i].parse("yyyy-MM-dd").totime.toUnix
-    #   let v = versions[i]
-    #   let dx = d.float - 86400 * 30 # bit hacky, need to compute location in timestamps
-    #   plt = plt + annotate(v, x = dx, y = 400, rotate = -90.0,
-    #                        backgroundColor = transparent) +
-    #     geom_linerange(aes(x = d, yMin = 0.0, yMax = f{int: `count`.max}), # draw lines from 0 to max
-    #                    color = red)
-
-    plt + ggsave("/tmp/smooth_test.png", width = 1000, height = 750)
 
 
 import
@@ -71,8 +19,8 @@ import
   hmisc/wrappers/[treesitter]
 
 
-if commitGraph and exists(AbsFile "/tmp/commits.csv"):
-  plot()
+# if commitGraph and exists(AbsFile "/tmp/commits.csv"):
+#   plot()
 
 
 
@@ -94,6 +42,86 @@ import
 {.passl: "-lstdc++".}
 
 startHax()
+
+proc getCommitTimes*(dir: AbsDir): seq[int64] =
+  let cmd = makeGnuShellCmd("git").withIt do:
+    it.arg "log"
+    it.opt "pretty", "format:%ct"
+
+  for line in cmd.eval().split({'\n'}):
+    result.add parseInt(line)
+
+const newDf = false
+
+proc plot(l: HLogger, dir: AbsDir) =
+  var commitTimes: seq[int64]
+
+  if newDf:
+    l.info "Processing commits"
+    for dir in walkDir(dir, AbsDir):
+      withDir dir:
+        commitTimes.add dir.getCommitTimes()
+
+    l.info "Total commit count", commitTimes.len
+
+  var countTable: CountTable[int64]
+
+  for time in commitTimes:
+    let day = ( time div (60 * 60 * 24) ) * ( 60 * 60 * 24 )
+    countTable.inc day
+
+  var days, count: seq[int]
+
+  when commitGraph:
+    var df =
+      if newDf:
+        let commits = sortedByIt(toSeq(countTable.pairs()), it[0])
+        for (key, val) in commits:
+          days.add key.int
+          count.add val.int
+
+        seqsToDf(days, count)
+
+      else:
+        readCsv("/tmp/commits.csv")
+
+    df.writeCsv("/tmp/commits.csv")
+
+    let versions = {
+      "2014-12-29": "0.10.2",
+      "2015-05-04": "0.11.2",
+      "2015-10-27": "0.12.0",
+      "2016-01-18": "0.13.0",
+      "2016-06-09": "0.14.2",
+      "2017-01-08": "0.16.0",
+      "2017-09-07": "0.17.2",
+      "2018-03-01": "0.18.0",
+      "2019-06-17": "0.20.2",
+      "2019-09-23": "1.0.0",
+      "2020-04-03": "1.2.0",
+      "2020-10-16": "1.4.0"
+    }
+
+    var plt = ggplot(df, aes("days", "count")) +
+      geom_line() +
+      scale_x_date(isTimestamp = true,
+                   formatString = "MMM-yyyy",
+                   dateSpacing = initDuration(weeks = 52)) +
+      geom_smooth(smoother = "poly", polyOrder = 7, color = some(parseHex("FF0000"))) +
+      ylab("Commit count") + xlab("Date") +
+      ggtitle("Daily commit counts in all nimble repositories")
+
+    let red = some(parseHex("FF0000"))
+    let transparent = color(0.0, 0.0, 0.0, 0.0)
+    for (d, v) in versions:
+      let d = d.parse("yyyy-MM-dd").totime.toUnix
+      let dx = d.float - 86400 * 30
+      plt = plt +
+        annotate(
+          v, x = dx, y = 400, rotate = -90.0, backgroundColor = transparent)
+
+    plt + ggsave("/tmp/smooth_test.png", width = 1000, height = 750)
+
 
 import std/stats as runstats
 
@@ -211,13 +239,6 @@ proc getGit*(dir: AbsDir): GitStat =
   s.add evalShellStdout(cmd)
   s[^1] = ']'
 
-proc getCommitTimes*(dir: AbsDir): seq[int64] =
-  let cmd = makeGnuShellCmd("git").withIt do:
-    it.arg "log"
-    it.opt "pretty", "format:%ct"
-
-  for line in cmd.eval().split({'\n'}):
-    result.add parseInt(line)
 
 proc taggedCommits*(): seq[string] =
   for line in shellCmd(
@@ -712,12 +733,15 @@ when isMainModule:
   for pack in packages:
     nimbleUrls.incl pack.url
     if pack.url.len == 0:
-      l.warn "Package", pack.name, "has empty url"
+      if doDownload:
+        l.warn "Package", pack.name, "has empty url"
+
       stats.add Stat(package: pack, flags: {sNoUrl})
       continue
 
     if pack.url in errUrls:
-      l.notice pack.name, "is known to fail download"
+      if doDownload:
+        l.notice pack.name, "is known to fail download"
 
 
     else:
@@ -802,7 +826,6 @@ when isMainModule:
     nimbleStat: RunningStat
     allVersionStat: RunningStat
     parseStats: seq[Stat]
-    commitTimes: seq[int64]
 
 
 
@@ -843,15 +866,12 @@ when isMainModule:
     requires: seq[PkgTuple]
     metaFields: MetaTable
 
+  if commitGraph:
+    plot(l, packageDir)
 
   for dir in walkDir(packageDir, AbsDir):
     if globalTick() > maxPackages:
       break
-
-    if commitGraph:
-      withDir dir:
-        commitTimes.add dir.getCommitTimes()
-
 
     var stat = Stat(package: packMap.getOrDefault(dir))
     for file in dir.findFilesWithExt(@["nimble", "babel"]):
@@ -1139,35 +1159,10 @@ when isMainModule:
     l.info "average processing time:", &"{nimbleStat.mean():5.3f}"
 
 
-  if commitGraph:
-    l.info "Total commit count", commitTimes.len
 
-    var countTable: CountTable[int64]
-
-    for time in commitTimes:
-      let day = ( time div (60 * 60 * 24) ) * ( 60 * 60 * 24 )
-      countTable.inc day
-
-
-    var days, count: seq[int]
-    let commits = sortedByIt(toSeq(countTable.pairs()), it[0])
-    l.info commits[0]
-    for (key, val) in commits:
-      days.add key.int
-      count.add val.int
-
-    when commitGraph:
-      let df = seqsToDf(days, count)
-      ggplot(df, aes("days", "count")) +
-        geom_line() +
-        gg_save("/tmp/res.png")
-
-      df.writeCsv("/tmp/commits.csv")
 
   l.info "done"
 
-when commitGraph:
-  plot()
 
 
 
