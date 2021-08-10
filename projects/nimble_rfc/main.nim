@@ -2,16 +2,78 @@
 
 import jsony
 
-const commitGraph = off
+const commitGraph = on
 
 when commitGraph:
   import ggplotnim
+  import ggplotnim, chroma, times
+  import scinim / signals
+
+
+proc plot() =
+  when commitGraph:
+    var df = readCsv("/tmp/commits.csv")
+
+    let dates = @["2014-12-29",
+                  "2015-05-04",
+                  "2015-10-27",
+                  "2016-01-18",
+                  "2016-06-09",
+                  "2017-01-08",
+                  "2017-09-07",
+                  "2018-03-01",
+                  "2019-06-17",
+                  "2019-09-23",
+                  "2020-04-03",
+                  "2020-10-16"]
+    let versions = @["0.10.2",
+                     "0.11.2",
+                     "0.12.0",
+                     "0.13.0",
+                     "0.14.2",
+                     "0.16.0",
+                     "0.17.2",
+                     "0.18.0",
+                     "0.20.2",
+                     "1.0.0",
+                     "1.2.0",
+                     "1.4.0"]
+
+    # do something unconventional, to make it easier to add multiple annotations
+    var plt = ggplot(df, aes("days", "count")) +
+      geom_line() +
+      scale_x_date(isTimestamp = true,
+                   formatString = "MMM-yyyy",
+                   dateSpacing = initDuration(weeks = 52)) +
+      geom_smooth(smoother = "poly", polyOrder = 7, color = some(parseHex("FF0000"))) +
+      # geom_smooth(span = 0.64) +
+      ylab("Commit count") + xlab("Date") +
+      ggtitle("Daily commit counts in all nimble repositories")
+
+    # let red = some(parseHex("FF0000"))
+    # let transparent = color(0.0, 0.0, 0.0, 0.0)
+    # for i in 0 ..< dates.len:
+    #   let d = dates[i].parse("yyyy-MM-dd").totime.toUnix
+    #   let v = versions[i]
+    #   let dx = d.float - 86400 * 30 # bit hacky, need to compute location in timestamps
+    #   plt = plt + annotate(v, x = dx, y = 400, rotate = -90.0,
+    #                        backgroundColor = transparent) +
+    #     geom_linerange(aes(x = d, yMin = 0.0, yMax = f{int: `count`.max}), # draw lines from 0 to max
+    #                    color = red)
+
+    plt + ggsave("/tmp/smooth_test.png", width = 1000, height = 750)
+
 
 import
   hmisc/other/[oswrap, hshell, hlogger, hpprint, sqlite_extra],
   hmisc/algo/[htemplates, halgorithm],
-  hmisc/[hdebug_misc, base_errors],
+  hmisc/core/all,
   hmisc/wrappers/[treesitter]
+
+
+if commitGraph and exists(AbsFile "/tmp/commits.csv"):
+  plot()
+
 
 
 import
@@ -607,11 +669,12 @@ proc updateStdStats(stat: var Stat, dir: AbsDir, l: HLogger) =
 let
   doStdStats = false
   doDownload = false
-  metaUses = true
+  metaUses = false
   versionDb = false
   execStore = false
   parseFail = false
   requiresStats = false
+  maxPackages = 10_000
 
 when isMainModule:
 
@@ -782,6 +845,9 @@ when isMainModule:
 
 
   for dir in walkDir(packageDir, AbsDir):
+    if globalTick() > maxPackages:
+      break
+
     if commitGraph:
       withDir dir:
         commitTimes.add dir.getCommitTimes()
@@ -1100,24 +1166,30 @@ when isMainModule:
 
   l.info "done"
 
+when commitGraph:
+  plot()
 
-  # var cnt = 0
 
-  # if fileExists(errUrlsFile):
-  #   for entry in errUrlsFile.parseJson():
-  #     errUrls.incl entry.asStr()
 
-  # for pack in parseJson(file):
-  #   inc stats.totalPack
-  #   if { "name" : (asStr: @name), "url" : (asStr: @web) } ?= pack:
-  #     stats.totalTime = cpuTime()
-  #     let raw = nimbleUrlForWeb(name, web)
-  #     if raw.isSome():
-  #       if $get(raw) notin errUrls:
-  #         getParseContent(name, raw.get, web)
 
-  #         echo toGreen(name.pad), " ok"
 
-  #       else:
-  #         stats.httpErrList.add (name, web)
-  #         echo toMagenta(name.pad), " is known to cause http error"
+# var cnt = 0
+
+# if fileExists(errUrlsFile):
+#   for entry in errUrlsFile.parseJson():
+#     errUrls.incl entry.asStr()
+
+# for pack in parseJson(file):
+#   inc stats.totalPack
+#   if { "name" : (asStr: @name), "url" : (asStr: @web) } ?= pack:
+#     stats.totalTime = cpuTime()
+#     let raw = nimbleUrlForWeb(name, web)
+#     if raw.isSome():
+#       if $get(raw) notin errUrls:
+#         getParseContent(name, raw.get, web)
+
+#         echo toGreen(name.pad), " ok"
+
+#       else:
+#         stats.httpErrList.add (name, web)
+#         echo toMagenta(name.pad), " is known to cause http error"

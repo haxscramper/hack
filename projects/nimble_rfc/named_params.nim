@@ -3,7 +3,8 @@ import
 
 import
   hmisc/core/[all, code_errors, colored],
-  hmisc/types/colorstring
+  hmisc/types/colorstring,
+  hmisc/algo/clformat
 
 import
   std/[sequtils, tables, strformat, sets]
@@ -21,18 +22,29 @@ var
   cnt = 0
   overloaded = 0
 
+const
+  maxFiles = 10_000
+
+type
+  SigTable = Table[string, Table[seq[string], seq[ProcInfo]]]
+  SigSet = OrderedTable[(string, seq[string]), ColoredText]
+
+
+proc print(dir: AbsDir, table: SigTable, sigSet: SigSet) =
+  if sigSet.len() > 0:
+    echo " ## ", dir.name().toRed()
+    for key, buf in sigSet:
+      inc overloaded
+      echo buf
 
 proc registerDir(dir: AbsDir) =
-  var
-    table: Table[string, Table[seq[string], seq[ProcInfo]]]
-    sigSet: OrderedSet[(string, seq[string])]
-
-
-  proc register(node: PNode, file: RelFile) =
+  proc register(
+      node: PNode, file: RelFile,
+      table: var SigTable, sigSet: var SigSet) =
     case node.kind:
       of nkStmtList:
         for sub in node:
-          register(sub, file)
+          register(sub, file, table, sigSet)
 
       of nkProcDeclKinds:
         let decl = parseProc(node)
@@ -56,20 +68,28 @@ proc registerDir(dir: AbsDir) =
 
             var namegroup = info.groupByIt(it.args)
             if namegroup.len > 1:
-              if (decl.name, signames) in sigSet:
-                echo " ! already started overload group".toRed()
+              var buf: ColoredText
+              # if (decl.name, signames) in sigSet:
+              #   buf.add "   ! already started overload group\n".toRed()
 
-              else:
-                sigSet.incl (decl.name, signames)
-                echo " @ new overload group".toGreen()
+              # else:
+              #   buf.add "   @ new overload group\n".toGreen()
 
 
-              echo " > ", decl.name.toCyan(), " ", signames
+              buf.add "   > "
+              buf.add decl.name.toCyan()
+              buf.add " "
+              buf.add signames.hshow()
+              buf.add "\n"
               for group in mitems(namegroup):
                 for item in mitems(group):
-                  echo "   > ", item.args, " :: ", toLink(
-                    (getStr(cwd() /. item.file), item.info.line.int, item.info.col.int),
-                    &"{item.file}:{item.info.line}:{item.info.col}")
+                  buf.add "     > "
+                  buf.add item.args.hshow()
+                  buf.add " :: "
+                  buf.add &"{item.file}:{item.info.line}:{item.info.col}\n"
+
+              sigSet[(decl.name, signames)] = buf
+
 
           inc cnt
 
@@ -77,33 +97,61 @@ proc registerDir(dir: AbsDir) =
       else:
         discard
 
-  for file in walkDir(dir, RelFile, recurse = true, exts = @["nim"]):
-    if globalTick() > 10_000:
-      break
+  if false: # As package
+    var
+      table: SigTable
+      sigSet: SigSet
 
-    elif "tests/" in file:
-      discard
+    for file in walkDir(dir, RelFile, recurse = true, exts = @["nim"]):
+      if globalTick() > maxFiles:
+        break
 
-    else:
-      let node = parsePNodeStr(readFile(dir / file), doRaise = false)
-      if not isNil(node):
-        try:
-          register(node, file)
+      elif "tests/" in file:
+        discard
 
-        except Exception as e:
-          pprintStacktrace(e)
+      else:
+        let node = parsePNodeStr(readFile(dir / file), doRaise = false)
+        if not isNil(node):
+          try:
+            register(node, file, table, sigSet)
 
-  if sigSet.len() > 0:
-    echo " ## ", AbsFile(dir.string).splitFile().name.toRed()
-    for (name, args) in sigSet:
-      inc overloaded
-      echo " + ", name.toCyan(), " ", args
+          except Exception as e:
+            pprintStacktrace(e)
 
+    print(dir, table, sigSet)
+
+  else:
+    for file in walkDir(dir, RelFile, recurse = true, exts = @["nim"]):
+      if globalTick() > maxFiles:
+        break
+
+      elif "tests/" in file:
+        discard
+
+      else:
+        let node = parsePNodeStr(readFile(dir / file), doRaise = false)
+        if not isNil(node):
+          try:
+            var
+              table: SigTable
+              sigSet: SigSet
+
+            register(node, file, table, sigSet)
+            print(dir, table, sigSet)
+
+          except Exception as e:
+            discard
+            # pprintStacktrace(e)
+
+
+import std/terminal
 
 for dir in walkDir(cwd() / "main/packages", AbsDir):
   if dir.name() notin @["bluu", "netwatch", "gcplat"]:
-    echo " ~ ", dir.name()
     registerDir(dir)
+
+registerDir(cwd() / "main/packages/nim-sys")
+
 
 
 echo &"""
