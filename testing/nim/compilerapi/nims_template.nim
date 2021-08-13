@@ -4,7 +4,7 @@ import
   compiler/[
     nimeval, ast, astalgo, pathutils, vm, scriptconfig,
     modulegraphs, options, idents, condsyms, sem, modules, llstream,
-    lineinfos, astalgo, msgs, parser, idgen
+    lineinfos, astalgo, msgs, parser, idgen, vmdef
   ]
 
 import
@@ -56,10 +56,28 @@ proc processModule3(graph: ModuleGraph; module: PSym, n: PNode) =
 
   closePasses(graph, a)
 
-proc newIdent(graph: ModuleGraph, name: string): PNode =
-  newIdentNode(graph.cache.getIdent("echo"), TLineInfo())
+proc getIdent(graph: ModuleGraph, name: string): PNode =
+  newIdentNode(graph.cache.getIdent(name), TLineInfo())
+
+
+graph.vm.PEvalContext().registerCallback(
+  "customProc",
+  proc(args: VmArgs) =
+    echo "Called custom proc with arg [", args.getString(0), "]"
+)
+
+proc empty(): PNode = nkEmpty.newTree()
 
 processModule3(graph, m,
-  nkCall.newTree(
-    graph.newIdent("echo"),
-    newStrNode(nkStrLit, "SSSSSSSSSSSSS")))
+  nkStmtList.newTree(
+    nkProcDef.newTree(
+      graph.getIdent("customProc"),
+      empty(),
+      empty(),
+      nkFormalParams.newTree(
+        empty(),
+        nkIdentDefs.newTree(graph.getIdent("arg"), graph.getIdent("string"), empty())),
+      empty(),
+      empty(),
+      nkStmtList.newTree(nkDiscardStmt.newTree(empty()))),
+  nkCall.newTree(graph.getIdent("customProc"), newStrNode(nkStrLit, "SSSSSSSSSSSSS"))))
