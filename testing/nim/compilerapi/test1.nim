@@ -1,11 +1,14 @@
-import hmisc/other/oswrap
-import compiler/[nimeval]
-import common
+import
+  compiler/[nimeval, llstream, ast]
+
+import
+  std/[sequtils, os]
+
+let stdlib* = getHomeDir() / ".choosenim/toolchains/nim-1.4.0/lib"
 
 let intr = createInterpreter(
-  "test1_script.nims",
-  toSeqString(@[stdlib, stdlib / "pure", stdlib / "core"]))
+  "scriptname.nims",
+  @[stdlib, stdlib / "pure", stdlib / "core"])
 
-
-intr.evalScript()
+intr.evalScript(llStreamOpen("echo \"hello world!\""))
 intr.destroyInterpreter()

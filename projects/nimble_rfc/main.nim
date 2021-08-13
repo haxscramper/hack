@@ -108,6 +108,7 @@ proc plot(l: HLogger, dir: AbsDir) =
                    formatString = "MMM-yyyy",
                    dateSpacing = initDuration(weeks = 52)) +
       geom_smooth(smoother = "poly", polyOrder = 7, color = some(parseHex("FF0000"))) +
+      geom_smooth(span = 0.64) +
       ylab("Commit count") + xlab("Date") +
       ggtitle("Daily commit counts in all nimble repositories")
 

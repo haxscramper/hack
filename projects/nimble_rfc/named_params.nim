@@ -21,13 +21,14 @@ type
 var
   cnt = 0
   overloaded = 0
+  overloadedProcs = 0
 
 const
-  maxFiles = 10_000
+  maxFiles = 1_000_000
 
 type
   SigTable = Table[string, Table[seq[string], seq[ProcInfo]]]
-  SigSet = OrderedTable[(string, seq[string]), ColoredText]
+  SigSet = OrderedTable[(string, seq[string]), (ColoredText, int)]
 
 
 proc print(dir: AbsDir, table: SigTable, sigSet: SigSet) =
@@ -35,7 +36,8 @@ proc print(dir: AbsDir, table: SigTable, sigSet: SigSet) =
     echo " ## ", dir.name().toRed()
     for key, buf in sigSet:
       inc overloaded
-      echo buf
+      overloadedProcs += buf[1]
+      echo buf[0]
 
 proc registerDir(dir: AbsDir) =
   proc register(
@@ -88,7 +90,7 @@ proc registerDir(dir: AbsDir) =
                   buf.add " :: "
                   buf.add &"{item.file}:{item.info.line}:{item.info.col}\n"
 
-              sigSet[(decl.name, signames)] = buf
+              sigSet[(decl.name, signames)] = (buf, namegroup.len)
 
 
           inc cnt
@@ -123,7 +125,7 @@ proc registerDir(dir: AbsDir) =
   else:
     for file in walkDir(dir, RelFile, recurse = true, exts = @["nim"]):
       if globalTick() > maxFiles:
-        break
+        echo "reached max file count"
 
       elif "tests/" in file:
         discard
@@ -145,16 +147,18 @@ proc registerDir(dir: AbsDir) =
 
 
 import std/terminal
+# registerDir(cwd() / "main/packages/nim-sys")
+
 
 for dir in walkDir(cwd() / "main/packages", AbsDir):
   if dir.name() notin @["bluu", "netwatch", "gcplat"]:
     registerDir(dir)
 
-registerDir(cwd() / "main/packages/nim-sys")
 
 
 
 echo &"""
-Total procedures processed:  {cnt}
-With name-based overloading: {overloaded}
+Total procedures processed : {cnt}
+With name-based overloading: {overloadedProcs}
+Overloaded groups          : {overloaded}
 """
