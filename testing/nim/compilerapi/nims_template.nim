@@ -2,13 +2,13 @@ include compiler/passes
 
 import
   compiler/[
-    nimeval, ast, astalgo, pathutils, vm, scriptconfig,
-    modulegraphs, options, idents, condsyms, sem, modules, llstream,
-    lineinfos, astalgo, msgs, parser, idgen, vmdef
+    ast, pathutils, vm, scriptconfig,
+    modulegraphs, options, idents, condsyms, sem, modules,
+    lineinfos, astalgo, parser, vmdef
   ]
 
 import
-  std/[strutils, strformat, parseutils, os]
+  std/[strutils, strformat, os, macros]
 
 
 let stdlib* = getHomeDir() / ".choosenim/toolchains/nim-1.4.8/lib"
@@ -68,6 +68,55 @@ graph.vm.PEvalContext().registerCallback(
 
 proc empty(): PNode = nkEmpty.newTree()
 
+
+macro pnodeGenRepr*(node: untyped) =
+  proc aux(n: NimNode, res: var string, level: int) =
+    res.add "  ".repeat(level)
+    case n.kind:
+      of nnkIdent:
+        res.add "graph.getIdent(\""
+        res.add n.strVal()
+        res.add "\")"
+
+      of nnkCharLit .. nnkUInt64Lit:
+        res.add "newIntNode("
+        res.add ($n.kind)[1 .. ^1]
+        res.add ", "
+        res.add $n.intVal()
+        res.add ")"
+
+      of nnkFloatLit .. nnkFloat128Lit:
+        res.add "newFloatNode"
+        res.add $n.floatVal()
+        res.add ", "
+        res.add ($n.kind)[1 .. ^1]
+        res.add ")"
+
+      of nnkStrLit .. nnkTripleStrLit:
+        res.add "newStrNode(\""
+        res.add n.strVal()
+        res.add "\", "
+        res.add ($n.kind)[1 .. ^1]
+        res.add ")"
+
+      else:
+        res.add ($n.kind)[1..^1]
+        res.add ".newTree(\n"
+        for idx, sub in n:
+          aux(sub, res, level + 1)
+          if idx < n.len - 1:
+            res.add ",\n"
+
+          # else:
+          #   res.add "\n"
+
+        # res.add "  ".repeat(level)
+        res.add ")"
+
+  var res: string
+  aux(node, res, 1)
+  echo res
+
 processModule3(graph, m,
   nkStmtList.newTree(
     nkProcDef.newTree(
@@ -81,3 +130,21 @@ processModule3(graph, m,
       empty(),
       nkStmtList.newTree(nkDiscardStmt.newTree(empty()))),
   nkCall.newTree(graph.getIdent("customProc"), newStrNode(nkStrLit, "SSSSSSSSSSSSS"))))
+
+
+pnodeGenRepr:
+  for i in 0 .. 12:
+    echo i
+
+processModule3(graph, m,
+  nkStmtList.newTree(
+    nkForStmt.newTree(
+      graph.getIdent("i"),
+      nkInfix.newTree(
+        graph.getIdent(".."),
+        newIntNode(nkIntLit, 0),
+        newIntNode(nkIntLit, 12)),
+      nkStmtList.newTree(
+        nkCommand.newTree(
+          graph.getIdent("echo"),
+          graph.getIdent("i"))))))
