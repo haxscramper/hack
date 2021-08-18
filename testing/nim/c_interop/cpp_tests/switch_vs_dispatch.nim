@@ -173,28 +173,37 @@ type
   OpcNegM = ref object of OpcBase
 
 method eval(_: OpcBase, result: ptr cint) {.base.} = assert false
+
+var methodCnt: array[OpcNimKind, uint64]
+
 method eval(_: OpcIncM, result: ptr cint) =
   {.emit: "/* eval for OpcIncM*/".}
+  inc methodCnt[Inc]
   inc result[]
 
 method eval(_: OpcDecM, result: ptr cint) =
   {.emit: "/* eval for OpcDecM*/".}
+  inc methodCnt[Dec]
   dec result[]
 
 method eval(_: OpcMul2M, result: ptr cint) =
   {.emit: "/* eval for OpcMul2M*/".}
+  inc methodCnt[Mul2]
   result[] *= 2
 
 method eval(_: OpcDiv2M, result: ptr cint) =
   {.emit: "/* eval for OpcDiv2M*/".}
+  inc methodCnt[Div2]
   result[] = result[] div 2
 
 method eval(_: OpcAdd7M, result: ptr cint) =
   {.emit: "/* eval for OpcAdd7M*/".}
+  inc methodCnt[Add7]
   inc result[], 7
 
 method eval(_: OpcNegM, result: ptr cint) =
   {.emit: "/* eval for OpcNegM*/".}
+  inc methodCnt[Neg]
   result[] = -result[]
 
 
@@ -203,6 +212,7 @@ var methodOpc = @[
   OpcDecM(),
   OpcMul2M(),
   OpcDiv2M(),
+  OpcAdd7M(),
   OpcNegM()
 ]
 
@@ -212,3 +222,5 @@ benchOpcodes:
   timeIt "Nim methods":
     for instr in instructionsVt:
       instr.eval(aRes)
+
+echo methodCnt
