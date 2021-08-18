@@ -1,5 +1,5 @@
 import std/[random, sequtils, times, strformat, algorithm]
-import pkg/
+import pkg/[benchy]
 
 {.push overflowChecks:off.}
 
@@ -194,21 +194,103 @@ template bench(impl: untyped): Res =
   res
 
 
-proc main(n: int)=
+type
+  OpD = ref object {.inheritable.}
+
+  Ohalt {.final.}= ref object of OpD
+  Oinc {.final.}= ref object of OpD
+  Odec {.final.}= ref object of OpD
+  Omul2 {.final.}= ref object of OpD
+  Odiv2 {.final.}= ref object of OpD
+  Oadd7 {.final.}= ref object of OpD
+  Oneg {.final.}= ref object of OpD
+
+  FuncTableToken = array[Op, OpD]
+
+method execute(op: OpD, result: var int, stop: var bool) {.base, inline, noSideEffect.} =
+  raise newException(ValueError, "To override")
+
+method execute(op: Ohalt, result: var int, stop: var bool) {.inline, noSideEffect.}=
+  stop = true
+
+method execute(op: Oinc, result: var int, stop: var bool) {.inline, noSideEffect.}=
+  inc result
+
+method execute(op: Odec, result: var int, stop: var bool) {.inline, noSideEffect.}=
+  dec result
+
+method execute(op: Omul2, result: var int, stop: var bool) {.inline, noSideEffect.}=
+  result *= 2
+
+method execute(op: Odiv2, result: var int, stop: var bool) {.inline, noSideEffect.}=
+  result = result div 2
+
+method execute(op: Oadd7, result: var int, stop: var bool) {.inline, noSideEffect.}=
+  inc result, 7
+
+method execute(op: Oneg, result: var int, stop: var bool) {.inline, noSideEffect.}=
+  result = -result
+
+let funcTableToken: FuncTableToken = [
+  Halt: Ohalt(),
+  Inc: Oinc(),
+  Dec: Odec(),
+  Mul2: Omul2(),
+  Div2: Odiv2(),
+  Add7: Oadd7(),
+  Neg: Oneg()
+]
+
+proc interp_methods(code: seq[Op], initVal: int): int =
+  # Requires dense enum
+  var
+    pc = 0
+    stop = false
+    opt: OpD
+  result = initVal
+
+  while not stop:
+    opt = funcTableToken[code[pc]]
+    opt.execute(result, stop)
+    inc pc
+
+proc main(n: int, benchy: bool = false) =
   var r = initRand(42)
 
   let ops = [Inc, Dec, Div2, Add7, Neg]
   let instructions = newSeqWith(Nb_Instructions, r.sample(ops)) & Halt
 
-  var stats: seq[Res]
-  stats.add bench(interp_switch)
-  stats.add bench(interp_cgoto)
-  stats.add bench(interp_cgoto_assign)
-  stats.add bench(interp_ftable)
-  stats.add bench(interp_handlers)
+  if benchy:
+    timeIt "switch":
+      discard bench(interp_switch)
 
-  for (name, elapsed, mips) in stats.sortedByIt(it.mips):
-    echo &"{name:<20} took {elapsed:<1.4}. Mips: {mips:<3.5}"
+    timeIt "cgoto":
+      discard bench(interp_cgoto)
+
+    timeIt "cgoto assign":
+      discard bench(interp_cgoto_assign)
+
+    timeIt "ftable":
+      discard bench(interp_ftable)
+
+    timeIt "handlers":
+      discard bench(interp_handlers)
+
+    timeIt "methods":
+      discard bench(interp_methods)
+
+
+  else:
+    var stats: seq[Res]
+    stats.add bench(interp_switch)
+    stats.add bench(interp_cgoto)
+    stats.add bench(interp_cgoto_assign)
+    stats.add bench(interp_ftable)
+    stats.add bench(interp_handlers)
+    stats.add bench(interp_methods)
+
+    for (name, elapsed, mips) in stats.sortedByIt(it.mips):
+      echo &"{name:<20} took {elapsed:<1.4}. Mips: {mips:<3.5}"
 
 
 var start = cpuTime()
@@ -222,4 +304,5 @@ block:
 var stop = cpuTime()
 echo "Warmup: " & $(stop - start) & "s"
 
-main(1)
+main(1, false)
+main(1, true)
