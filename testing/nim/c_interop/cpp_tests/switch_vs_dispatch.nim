@@ -23,15 +23,6 @@ proc newOpcNeg(): ptr OpcNeg {.importcpp: "new OpcNeg()".}
 proc eval(op: OpcCxx, val: ptr cint) {.importcpp: "#.eval(@)".}
 
 
-var opsCxx: seq[ptr OpcCxx] = @[
-  cast[ptr OpcCxx](newOpcInc()),
-  newOpcDec(),
-  newOpcMul2(),
-  newOpcDiv2(),
-  newOpcAdd7(),
-  newOpcNeg()
-]
-
 type
   OpcNimKind = enum
     Inc  # = 0x0100
@@ -47,23 +38,6 @@ type
 proc newOpcNim(kind: OpcNimKind): ref OpcNim = (ref OpcNim)(kind: kind)
 proc initOpcNim(kind: OpcNimKind): OpcNim = OpcNim(kind: kind)
 
-var opsNim: seq[ref OpcNim] = @[
-  newOpcNim(Inc),
-  newOpcNim(Dec),
-  newOpcNim(Mul2),
-  newOpcNim(Div2),
-  newOpcNim(Add7),
-  newOpcNim(Neg)
-]
-
-var opsNimVal: seq[OpcNim] = @[
-  initOpcNim(Inc),
-  initOpcNim(Dec),
-  initOpcNim(Mul2),
-  initOpcNim(Div2),
-  initOpcNim(Add7),
-  initOpcNim(Neg)
-]
 
 proc eval(opc: OpcNim, result: ptr cint) =
   case opc.kind:
@@ -74,27 +48,92 @@ proc eval(opc: OpcNim, result: ptr cint) =
     of Add7: inc result[], 7
     of Neg:  result[] = -result[]
 
+type
+  EvalProcType = proc(result: ptr cint) {.cdecl.}
+  OpcVtable = array[0 .. 0, pointer]
+  OpcVt = object
+    vtable: ref OpcVtable
+
+proc eval(opc: OpcVt, result: ptr cint) =
+  cast[EvalProcType](opc.vtable[][0])(result)
+
+proc newOpcVt(impl: EvalProcType): OpcVt =
+  new(result.vtable)
+  result.vtable[][0] = cast[pointer](impl)
+
 proc main()=
   var r = initRand(42)
 
   var Nb_Instructions = 1000_000
 
-  let instructionsCxx = newSeqWith(Nb_Instructions, r.sample(opsCxx))
-  let instructionsNim = newSeqWith(Nb_Instructions, r.sample(opsNim))
-  let instructionsNimVal = newSeqWith(Nb_Instructions, r.sample(opsNimVal))
   var result: cint = 0
   var aRes = addr result
 
-  timeIt "Cxx ops":
-    for instr in instructionsCxx:
-      eval(instr[], aRes)
 
-  timeIt "Nim ops":
-    for instr in instructionsNim:
-      eval(instr[], aRes)
+  block:
+    var opsVt: seq[OpcVt] = @[
+      newOpcVt(proc(result: ptr cint) {.cdecl.} = inc result[]),
+      newOpcVt(proc(result: ptr cint) {.cdecl.} = dec result[]),
+      newOpcVt(proc(result: ptr cint) {.cdecl.} = result[] *= 2),
+      newOpcVt(proc(result: ptr cint) {.cdecl.} = result[] = result[] div 2),
+      newOpcVt(proc(result: ptr cint) {.cdecl.} = inc result[], 7),
+      newOpcVt(proc(result: ptr cint) {.cdecl.} = result[] = -result[]),
+    ]
 
-  timeIt "Nim ops val":
-    for instr in instructionsNimVal:
-      eval(instr, aRes)
+    let instructionsVt = newSeqWith(Nb_Instructions, r.sample(opsVt))
+    timeIt "Nim manual vtable":
+      for instr in instructionsVt:
+        eval(instr, aRes)
+
+
+  block:
+    var opsCxx: seq[ptr OpcCxx] = @[
+      cast[ptr OpcCxx](newOpcInc()),
+      newOpcDec(),
+      newOpcMul2(),
+      newOpcDiv2(),
+      newOpcAdd7(),
+      newOpcNeg()
+    ]
+
+    let instructionsCxx = newSeqWith(Nb_Instructions, r.sample(opsCxx))
+    timeIt "Cxx ops":
+      for instr in instructionsCxx:
+        eval(instr[], aRes)
+
+  block:
+    var opsNim: seq[ref OpcNim] = @[
+      newOpcNim(Inc),
+      newOpcNim(Dec),
+      newOpcNim(Mul2),
+      newOpcNim(Div2),
+      newOpcNim(Add7),
+      newOpcNim(Neg)
+    ]
+
+
+    let instructionsNim = newSeqWith(Nb_Instructions, r.sample(opsNim))
+    timeIt "Nim ops":
+      for instr in instructionsNim:
+        eval(instr[], aRes)
+
+  block:
+    var opsNimVal: seq[OpcNim] = @[
+      initOpcNim(Inc),
+      initOpcNim(Dec),
+      initOpcNim(Mul2),
+      initOpcNim(Div2),
+      initOpcNim(Add7),
+      initOpcNim(Neg)
+    ]
+
+
+
+    let instructionsNimVal = newSeqWith(Nb_Instructions, r.sample(opsNimVal))
+    timeIt "Nim ops val":
+      for instr in instructionsNimVal:
+        eval(instr, aRes)
+
+
 
 main()
