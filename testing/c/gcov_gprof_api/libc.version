@@ -1,0 +1,3 @@
+libc: {
+  global: __bb_head;
+};

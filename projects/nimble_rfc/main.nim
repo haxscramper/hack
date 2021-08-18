@@ -2,13 +2,15 @@
 
 import jsony
 
-const commitGraph = on
+const commitGraph = off
+# TODO build commit graph that shows cumulative commits for projects
+# started in year X in different colors. "What fraction of year X's commits
+# come from repositories that started in year Y"
 
 when commitGraph:
   import ggplotnim
   import ggplotnim, chroma, times
   import scinim / signals
-
 
 
 
@@ -30,7 +32,8 @@ import
 import
   std/[
     net, httpclient, tables, strutils, sets, times, options,
-    strformat, sequtils, uri, algorithm, parseutils, sugar
+    strformat, sequtils, uri, algorithm, parseutils, sugar,
+    hashes
   ]
 
 import
@@ -689,7 +692,7 @@ proc updateStdStats(stat: var Stat, dir: AbsDir, l: HLogger) =
       discard
 
 let
-  doStdStats = false
+  doStdStats = true
   doDownload = false
   metaUses = false
   versionDb = false
@@ -894,7 +897,7 @@ when isMainModule:
                  "version" notin fails and
                  info.version.len > 0:
                 knownVersions.incl id
-                insert.bindParam(1, hash(id))
+                insert.bindParam(1, hashes.hash(id))
                 insert.bindParam(2, info.name)
 
                 # assert info.version.len > 0, content

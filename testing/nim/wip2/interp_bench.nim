@@ -1,5 +1,5 @@
 import std/[random, sequtils, times, strformat, algorithm]
-# import hmisc/algo/hseq_mapping
+import pkg/
 
 {.push overflowChecks:off.}
 
