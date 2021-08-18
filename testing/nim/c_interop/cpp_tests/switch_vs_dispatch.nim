@@ -44,8 +44,8 @@ type
   OpcNim = object
     kind: OpcNimKind
 
-proc newOpcNim(kind: OpcNimKind): ref OpcNim =
-  (ref OpcNim)(kind: kind)
+proc newOpcNim(kind: OpcNimKind): ref OpcNim = (ref OpcNim)(kind: kind)
+proc initOpcNim(kind: OpcNimKind): OpcNim = OpcNim(kind: kind)
 
 var opsNim: seq[ref OpcNim] = @[
   newOpcNim(Inc),
@@ -54,6 +54,15 @@ var opsNim: seq[ref OpcNim] = @[
   newOpcNim(Div2),
   newOpcNim(Add7),
   newOpcNim(Neg)
+]
+
+var opsNimVal: seq[OpcNim] = @[
+  initOpcNim(Inc),
+  initOpcNim(Dec),
+  initOpcNim(Mul2),
+  initOpcNim(Div2),
+  initOpcNim(Add7),
+  initOpcNim(Neg)
 ]
 
 proc eval(opc: OpcNim, result: ptr cint) =
@@ -72,6 +81,7 @@ proc main()=
 
   let instructionsCxx = newSeqWith(Nb_Instructions, r.sample(opsCxx))
   let instructionsNim = newSeqWith(Nb_Instructions, r.sample(opsNim))
+  let instructionsNimVal = newSeqWith(Nb_Instructions, r.sample(opsNimVal))
   var result: cint = 0
   var aRes = addr result
 
@@ -82,5 +92,9 @@ proc main()=
   timeIt "Nim ops":
     for instr in instructionsNim:
       eval(instr[], aRes)
+
+  timeIt "Nim ops val":
+    for instr in instructionsNimVal:
+      eval(instr, aRes)
 
 main()
