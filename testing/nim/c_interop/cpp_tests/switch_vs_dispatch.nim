@@ -41,8 +41,10 @@ benchOpcodes:
     newOpcNeg()
   ]
 
+
   let instructionsCxx = newSeqWith(Nb_Instructions, r.sample(opsCxx))
   timeIt "Cxx ops":
+    {.emit: "/* opcode evaluation for CXX*/".}
     for instr in instructionsCxx:
       eval(instr[], aRes)
 
@@ -85,6 +87,7 @@ benchOpcodes:
 
     let instructionsNim = newSeqWith(Nb_Instructions, r.sample(opsNim))
     timeIt "Nim ops":
+      {.emit: "/*Opcode evaluation for nim swtich case*/".}
       for instr in instructionsNim:
         eval(instr[], aRes)
 
