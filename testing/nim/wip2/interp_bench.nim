@@ -304,5 +304,5 @@ block:
 var stop = cpuTime()
 echo "Warmup: " & $(stop - start) & "s"
 
-main(1, false)
+# main(1, false)
 main(1, true)
