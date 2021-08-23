@@ -16,13 +16,25 @@ let inFile = "/tmp/mainModule.nim"
 
 proc main() =
 
-  inFile.writeFile("echo \"execute compiled code\"")
+  inFile.writeFile("""
+static:
+  echo "123"
+
+var str = "123"
+
+str.add 12
+
+echo str
+
+""")
 
   var graph = newModuleGraph(
     AbsFile(inFile),
     structuredErrorHook =
       proc(config: ConfigRef; info: TLineInfo; msg: string; level: Severity) =
+        echo "---------"
         echo msg
+        echo "---------"
   )
 
   var conf = graph.config

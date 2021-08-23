@@ -153,10 +153,18 @@ This approach enables range of workflows
 
 `nim.cfg` correctly sets environment for all subdirectories it is located in, which means paths are correctly set up for subdirectories, tests, other projects that you might want to develop in the same repository, dependencies and so on.
 
-Package manager can *edit* `nim.cfg` to modify volalile configuration elements like `--path`.
+Package manager is allowed to *edit* `nim.cfg` to modify volalile configuration elements like `--path` related to project dependencies. It is possible to provide additional paths in the `nim.cfg`, for example when one of the dependencies is located in the git submodule. In that case configuration file might take following form:
 
-<!-- This would allow to easily integrate `testament` with nimble? TODO could not test testament at all. 
+```bash
+# Section managed by nimble
+--path:~/.nimble/pkg/foo-1.2.4
+--path:~/.nimble/pkg/bar-0.1.12
+# End of section managed by nimble
 
+--path:submodule/src # Manually added to use submodule
+```
+
+<!-- 
 ----
 
 If nimble implementation is fully separated from the compiler it can easily use any external dependencies. Not integrating package management in compiler opens room for futher experiments and customized solutions.
