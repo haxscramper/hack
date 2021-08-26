@@ -40,6 +40,9 @@ import
   hnimast/[hast_common, pnode_parse, compiler_aux, nimble_aux]
 
 import
+  nimblepkg/[common, packageinfo, version]
+
+import
   htsparse/bash/bash
 
 {.passl: "-lstdc++".}
@@ -180,13 +183,33 @@ type
   StdUseFile = object
     modules: Table[string, int]
 
+  MetaUse = enum
+    metaCanonical
+    metaFromIdent
+    metaSpecial
+
+  ScopeKind = enum
+    scopeTop
+    scopeWhen
+    scopeTask
+    scopeOther
+
+  MetaTable = Table[string, array[MetaUse, array[ScopeKind, int]]]
+
+
   Stat = object
+    commitTimes: seq[int]
+    packageDir: AbsDir
+
     stdUseStat: seq[StdUseFile]
     package: Package
+    info: PackageInfo
     flags: set[StatFlag]
 
     reqList: seq[(string, VersionRange)]
 
+    metaFields: MetaTable
+    execStrs: seq[string]
     nimbleEvalTime: Option[float]
     pnodeEvalTime: Option[float]
 
@@ -304,21 +327,6 @@ proc recordExecs*(node: PNode, execs: var seq[string]) =
       for sub in node:
         sub.recordExecs(execs)
 
-type
-  MetaUse = enum
-    metaCanonical
-    metaFromIdent
-    metaSpecial
-
-  ScopeKind = enum
-    scopeTop
-    scopeWhen
-    scopeTask
-    scopeOther
-
-type
-  MetaTable = Table[string, array[MetaUse, array[ScopeKind, int]]]
-
 var extraTop: array[TNodeKind, int]
 
 proc recordFields*(
@@ -417,6 +425,163 @@ proc recordFields*(
 
       for sub in node:
         recordFields(sub, meta, newtop)
+
+proc logFields(l: HLogger, stats: seq[Stat]) =
+  var
+    metaFields: MetaTable
+    canonCount, totalCount, totalRequires, cmdRequires: int
+
+  for stat in stats:
+    for key, uses in stat.metaFields:
+      if key notin metaFields:
+        metaFields[key] = uses
+
+      else:
+        for use, scopeMetrics in uses:
+          for scope, count in scopeMetrics:
+            metaFields[key][use][scope] += count
+
+  l.info
+  const
+    name = 14
+    sep = 7
+    calign = (sep * 3, '_', '|')
+
+  echo " " |<< 16,
+     "toplevel" |<> calign,
+     "when"  |<> calign,
+     "task" |<> calign,
+     "other" |<> calign
+
+  stdout.write " " |<< 16
+  for i in 0 .. 3:
+    stdout.write "canon" |>> sep, "ident" |>> sep, "spec" |>> sep
+
+  l.write("\n")
+
+  for (key, val) in sortedByIt(
+    toSeq(pairs(metaFields)),
+    it[1][metaCanonical][scopeTop]
+  ):
+
+    stdout.write ($key |<< (name, '.')) & "  "
+    for item in MetaUse:
+      for scope in ScopeKind:
+        let cnt = val[item][scope]
+        stdout.write $cnt |>> sep
+
+        inc totalCount, cnt
+        if item == metaCanonical:
+          inc canonCount, cnt
+
+        if key == "requires":
+          inc totalRequires, cnt
+          if item == metaCanonical:
+            inc cmdRequires, cnt
+
+
+    stdout.write("\n")
+
+  l.info &"Total metadata fields found {totalCount}, {canonCount} of which are canonical",
+    &"({float(canonCount) / float(totalCount) * 100:5.3f}%)"
+
+
+
+proc logRequires(l: HLogger, stats: seq[Stat]) =
+  var requires: seq[PkgTuple]
+  for stat in stats:
+    requires.add stat.info.requires
+
+  var cnt: array[VersionRangeEnum, int]
+  for (name, ver) in requires:
+    inc cnt[ver.kind]
+
+
+  proc toStr(rangeKind: VersionRangeEnum): string =
+    case rangeKind:
+      of verLater: "> V"
+      of verEarlier: "< V"
+      of verEqLater: ">= V"
+      of verEqEarlier: "<= V"
+      of verIntersect: "> V & < V"
+      of verEq: "V"
+      of verAny: "*"
+      of verSpecial: "#head"
+
+  for rangeKind in VersionRangeEnum:
+    l.info &"{rangeKind:<15} ({rangeKind.toStr():^10}): {cnt[rangeKind]}"
+
+proc logExecStrs(l: HLogger, stats: seq[Stat]) =
+  var execStrs: seq[string]
+  for package in stats:
+    execStrs.add package.execStrs
+
+  l.info "`exec` has been used", execStrs.len(), "times in",
+    stats.len(), "packages"
+
+  var cmdCounts: CountTable[string]
+
+  proc count(tree: BashNode, s: string) =
+    case tree.kind:
+      of bashCommandName:
+        cmdCounts.inc s[tree.slice()]
+
+      else:
+        for sub in tree:
+          count(sub, s)
+
+
+
+  var ampCount = 0
+  for ex in execStrs:
+    # l.info ex
+    if "<&&>" in ex:
+      inc ampCount
+
+    let tree = ex.parseBashString()
+    count(tree, ex)
+
+  l.info "out of which", ampCount, "commands contained &"
+
+  for (k, v) in toSeq(cmdCounts.pairs()).sortedByIt(-it[1]):
+    if v > 10:
+      l.info &"{k:<10} {v}"
+
+proc logStdsStats(l: HLogger, stats: seq[Stat]) =
+  var
+    totalFiles: int
+    totalUsage: Table[string, int]
+    perPackage: Table[string, int]
+
+  for stat in stats:
+    totalFiles += stat.stdUseStat.len
+    var used: HashSet[string]
+    for file in stat.stdUseStat:
+      for module, count in file.modules:
+        used.incl module
+        totalUsage.mgetOrPut(module, 0) += count
+
+    for module in used:
+      inc perPackage.mgetOrPut(module, 0)
+
+
+  let
+    total: seq[(string, int)] =
+      collect(newSeq, for it in pairs(totalUsage): it).sortedByIt(it[1])
+    sep = 21
+
+  echo "module" |<< sep,
+    &"per file / {totalFiles}" |<< sep,
+    "in % files" |<< sep,
+    &"per package / {stats.len}" |<< sep,
+    "in % packages" |<< sep
+
+  for (name, count) in total:
+    echo name |<< sep,
+      $count |<< sep,
+      &"{count / totalFiles:5.4f}" |<< sep,
+      $perPackage[name] |<< sep,
+      &"{perPackage[name] / stats.len:5.4f}"
 
 
 proc fileStat(node: PNode): StdUseFile =
@@ -701,6 +866,85 @@ let
   requiresStats = false
   maxPackages = 10_000
 
+proc dbRegister(l: HLogger, pack: seq[Stat], db: var DbConn) =
+  let
+    packageTable = "packages"
+    requiresTable = "requires"
+
+  db.exec packageTable.newTable({
+    "id": sq(int) & sqPrimaryKey,
+    "name": sq(string),
+    "major": sq(int),
+    "minor": sq(int),
+    "patch": sq(int),
+  })
+
+  db.exec requiresTable.newTable({
+    "id": sq(int)
+  })
+
+
+  var insert = db.prepare packageTable.newInsert({
+    "id": 1, "name": 2, "major": 3, "minor": 4, "patch": 5})
+
+  db.disableSync()
+  db.journalMemory()
+  db.beginTransaction()
+
+  when false:
+    withDir dir:
+      let relPath = file.splitFile2().file
+      var okCount, failCount, gitFail: int
+      for commit in taggedCommits():
+        var fails: Table[string, NimsParseFail]
+        try:
+          let content = shellCmd(git, show, &"{commit}:{relPath}").eval()
+          let start = cpuTime()
+          var extra: ExtraPackageInfo
+          let info = content.parsePackageInfo(fails, extra, file)
+          allVersionStat.push cpuTime() - start
+
+          let id = info.name & info.version
+          if id notin knownVersions and
+             "version" notin fails and
+             info.version.len > 0:
+            knownVersions.incl id
+            insert.bindParam(1, hashes.hash(id))
+            insert.bindParam(2, info.name)
+
+            # assert info.version.len > 0, content
+            # l.info info.version
+            let (major, minor, patch)  = info.version.parseVersion()
+            insert.bindParam(3, major)
+            insert.bindParam(4, minor)
+            insert.bindParam(5, patch)
+
+            db.doExec(insert)
+
+            # for (name, ver) in info.requires:
+
+
+          inc okCount
+
+        except NimbleError:
+          l.fail file.name(), commit
+          inc failCount
+
+        except ShellError as sh:
+          inc gitFail
+          # l.fail file.name(), sh.errstr.strip()
+          # discard
+          # l.debug content
+          # raise
+
+      l.success file.name(), okCount
+
+  insert.finalize()
+  db.endTransaction()
+  db.close()
+
+
+
 when isMainModule:
 
   let url = "https://raw.githubusercontent.com/nim-lang/packages/master/packages.json"
@@ -828,166 +1072,57 @@ when isMainModule:
   var
     failTable: Table[string, seq[string]]
     nimbleStat: RunningStat
-    allVersionStat: RunningStat
     parseStats: seq[Stat]
 
+  for dir in walkDir(packageDir, AbsDir):
+    parseStats.add Stat(package: packMap.getOrDefault(dir))
 
-
-  var db = sqliteOpenNew(dir /. "stats.sqlite")
-
-  let
-    packageTable = "packages"
-    requiresTable = "requires"
-
-  db.exec packageTable.newTable({
-    "id": sq(int) & sqPrimaryKey,
-    "name": sq(string),
-    "major": sq(int),
-    "minor": sq(int),
-    "patch": sq(int),
-  })
-
-  db.exec requiresTable.newTable({
-    "id": sq(int)
-  })
-
-
-
-  var insert = db.prepare packageTable.newInsert({
-    "id": 1, "name": 2, "major": 3, "minor": 4, "patch": 5})
-
-
-  db.disableSync()
-  db.journalMemory()
-  db.beginTransaction()
-
-
-  var
-    knownVersions: HashSet[string]
-    execStrs: seq[string]
-    cmdRequires: int
-    totalRequires: int
-    requires: seq[PkgTuple]
-    metaFields: MetaTable
+  var knownVersions: HashSet[string]
 
   if commitGraph:
     plot(l, packageDir)
 
-  for dir in walkDir(packageDir, AbsDir):
+  for stat in mitems(parseStats):
     if globalTick() > maxPackages:
       break
 
-    var stat = Stat(package: packMap.getOrDefault(dir))
     for file in dir.findFilesWithExt(@["nimble", "babel"]):
-      if versionDb:
-        withDir dir:
-          let relPath = file.splitFile2().file
-          var okCount, failCount, gitFail: int
-          for commit in taggedCommits():
-            var fails: Table[string, NimsParseFail]
-            try:
-              let content = shellCmd(git, show, &"{commit}:{relPath}").eval()
-              let start = cpuTime()
-              var extra: ExtraPackageInfo
-              let info = content.parsePackageInfo(fails, extra, file)
-              allVersionStat.push cpuTime() - start
+      try:
+        var
+          fails: Table[string, NimsParseFail]
+          extra: ExtraPackageInfo
 
-              let id = info.name & info.version
-              if id notin knownVersions and
-                 "version" notin fails and
-                 info.version.len > 0:
-                knownVersions.incl id
-                insert.bindParam(1, hashes.hash(id))
-                insert.bindParam(2, info.name)
+        let
+          start = cpuTime()
+          text = file.readFile()
 
-                # assert info.version.len > 0, content
-                # l.info info.version
-                let (major, minor, patch)  = info.version.parseVersion()
-                insert.bindParam(3, major)
-                insert.bindParam(4, minor)
-                insert.bindParam(5, patch)
+        stat.info = text.parsePackageInfo(fails, extra, file)
 
-                db.doExec(insert)
+        stat.pnodeEvalTime = some cpuTime() - start
+        if fails.len > 0:
+          for key in fails.keys():
+            failTable.mgetOrPut(key, @[]).add stat.info.name
 
-                # for (name, ver) in info.requires:
+          if parseFail:
+            l.warn stat.info.name, "failed to parse", $toSeq(fails.keys())
+
+        if extra.nimsManifest:
+          if execStore: extra.node.recordExecs(stat.execStrs)
+          if metaUses: extra.node.recordFields(stat.metaFields)
+
+        if doStdStats and globalTick() < 30_000:
+          l.info $globalTick() |<< 4, stat.package.name
+          updateStdStats(stat, dir, l)
 
 
-              inc okCount
+      except NimbleError:
+        l.fail file.name(), "failed pnode evaluation"
+        stat.flags.incl sPnodeFailed
 
-            except NimbleError:
-              l.fail file.name(), commit
-              inc failCount
-
-            except ShellError as sh:
-              inc gitFail
-              # l.fail file.name(), sh.errstr.strip()
-              # discard
-              # l.debug content
-              # raise
-
-          l.success file.name(), okCount
-
-      else:
-        let tryNimble = nimbleStat.n < 0
-        if tryNimble:
-          withDir dir:
-            try:
-              let start = cpuTime()
-              let dump = runShell(shellCmd(nimble, dump, --json))
-              stat.nimbleEvalTime = some cpuTime() - start
-              nimbleStat.push stat.nimbleEvalTime.get()
-
-
-            except ShellError as e:
-              l.fail file.name(), "failed evaluation"
-              stat.flags.incl sNimbleFailed
-
-        block:
-          try:
-            var
-              fails: Table[string, NimsParseFail]
-              extra: ExtraPackageInfo
-
-            let
-              start = cpuTime()
-              text = file.readFile()
-              info = text.parsePackageInfo(fails, extra, file)
-
-            requires.add info.requires
-
-
-            stat.pnodeEvalTime = some cpuTime() - start
-            if fails.len > 0:
-              for key in fails.keys():
-                failTable.mgetOrPut(key, @[]).add info.name
-
-              if parseFail:
-                l.warn info.name, "failed to parse", $toSeq(fails.keys())
-
-            if extra.nimsManifest:
-              if execStore: extra.node.recordExecs(execStrs)
-              if metaUses: extra.node.recordFields(metaFields)
-
-            if doStdStats and globalTick() < 30_000:
-              l.info $globalTick() |<< 4, stat.package.name
-              updateStdStats(stat, dir, l)
-
-
-          except NimbleError:
-            l.fail file.name(), "failed pnode evaluation"
-            stat.flags.incl sPnodeFailed
-
-          except Exception as e:
-            l.debug file.readFile()
-            l.logStackTrace(e)
-            raise e
-
-      parseStats.add stat
-
-
-  insert.finalize()
-  db.endTransaction()
-  db.close()
+      except Exception as e:
+        l.debug file.readFile()
+        l.logStackTrace(e)
+        raise e
 
   l.done
 
@@ -1007,160 +1142,19 @@ when isMainModule:
     if num > 0:
       l.info ($kind)[2 ..^ 1] |<< 15, num
 
-  var canonCount, totalCount: int
-
-  if metaUses:
-    l.info
-    const
-      name = 14
-      sep = 7
-      calign = (sep * 3, '_', '|')
-
-    echo " " |<< 16,
-       "toplevel" |<> calign,
-       "when"  |<> calign,
-       "task" |<> calign,
-       "other" |<> calign
-
-    stdout.write " " |<< 16
-    for i in 0 .. 3:
-      stdout.write "canon" |>> sep, "ident" |>> sep, "spec" |>> sep
-
-    l.write("\n")
-
-    for (key, val) in sortedByIt(
-      toSeq(pairs(metaFields)),
-      it[1][metaCanonical][scopeTop]
-    ):
-
-      stdout.write ($key |<< (name, '.')) & "  "
-      for item in MetaUse:
-        for scope in ScopeKind:
-          let cnt = val[item][scope]
-          stdout.write $cnt |>> sep
-
-          inc totalCount, cnt
-          if item == metaCanonical:
-            inc canonCount, cnt
-
-          if key == "requires":
-            inc totalRequires, cnt
-            if item == metaCanonical:
-              inc cmdRequires, cnt
-
-
-      stdout.write("\n")
-        # $val[metaFromIdent][0] |>> sep,
-        # $val[metaSpecial][0]   |>> sep,
-        # $val[metaCanonical][1] |>> sep,
-        # $val[metaFromIdent][1] |>> sep,
-        # $val[metaSpecial][1]   |>> sep
-
-  l.info &"Total metadata fields found {totalCount}, {canonCount} of which are canonical",
-    &"({float(canonCount) / float(totalCount) * 100:5.3f}%)"
-
-  if requiresStats:
-    var cnt: array[VersionRangeEnum, int]
-    for (name, ver) in requires:
-      inc cnt[ver.kind]
-
-
-    proc toStr(rangeKind: VersionRangeEnum): string =
-      case rangeKind:
-        of verLater: "> V"
-        of verEarlier: "< V"
-        of verEqLater: ">= V"
-        of verEqEarlier: "<= V"
-        of verIntersect: "> V & < V"
-        of verEq: "V"
-        of verAny: "*"
-        of verSpecial: "#head"
-
-    for rangeKind in VersionRangeEnum:
-      l.info &"{rangeKind:<15} ({rangeKind.toStr():^10}): {cnt[rangeKind]}"
-
-
-  if execStrs.len > 0:
-    l.info "`exec` has been used", execStrs.len(), "times in", pnodeStat.n, "packages"
-    var cmdCounts: CountTable[string]
-
-    proc count(tree: BashNode, s: string) =
-      case tree.kind:
-        of bashCommandName:
-          cmdCounts.inc s[tree.slice()]
-
-        else:
-          for sub in tree:
-            count(sub, s)
-
-
-
-    var ampCount = 0
-    for ex in execStrs:
-      # l.info ex
-      if "<&&>" in ex:
-        inc ampCount
-
-      let tree = ex.parseBashString()
-      count(tree, ex)
-
-    l.info "out of which", ampCount, "commands contained &"
-
-    for (k, v) in toSeq(cmdCounts.pairs()).sortedByIt(-it[1]):
-      if v > 10:
-        l.info &"{k:<10} {v}"
-
-
-  l.info "Found", totalRequires, "out of which 'canonical'", cmdRequires
-
-  if doStdStats:
-    var
-      totalFiles: int
-      totalUsage: Table[string, int]
-      perPackage: Table[string, int]
-
-    for stat in parseStats:
-      totalFiles += stat.stdUseStat.len
-      var used: HashSet[string]
-      for file in stat.stdUseStat:
-        for module, count in file.modules:
-          used.incl module
-          totalUsage.mgetOrPut(module, 0) += count
-
-      for module in used:
-        inc perPackage.mgetOrPut(module, 0)
-
-
-    let
-      total: seq[(string, int)] =
-        collect(newSeq, for it in pairs(totalUsage): it).sortedByIt(it[1])
-      sep = 21
-
-    echo "module" |<< sep,
-      &"per file / {totalFiles}" |<< sep,
-      "in % files" |<< sep,
-      &"per package / {parseStats.len}" |<< sep,
-      "in % packages" |<< sep
-
-    for (name, count) in total:
-      echo name |<< sep,
-        $count |<< sep,
-        &"{count / totalFiles:5.4f}" |<< sep,
-        $perPackage[name] |<< sep,
-        &"{perPackage[name] / parseStats.len:5.4f}"
-
 
   if pnodeStat.n > 0:
     l.info "Processed", pnodeStat.n, "packages via pnode in", &"{pnodeStat.sum:5.3f}"
     l.info "average processing time:", &"{pnodeStat.mean():5.3f}"
 
-  if allVersionStat.n > 0:
-    l.info "Processed", allVersionStat.n, "package version in", &"{allVersionStat.sum:5.3f}"
-    l.info "average processing time:", &"{allVersionStat.mean():5.3f}"
+  # var allVersionStat: RunningStat
+  # if allVersionStat.n > 0:
+  #   l.info "Processed", allVersionStat.n, "package version in", &"{allVersionStat.sum:5.3f}"
+  #   l.info "average processing time:", &"{allVersionStat.mean():5.3f}"
 
-  if nimbleStat.n > 0:
-    l.info "Processed", nimbleStat.n, "packages via nimble in", &"{nimbleStat.sum:5.3f}"
-    l.info "average processing time:", &"{nimbleStat.mean():5.3f}"
+  # if nimbleStat.n > 0:
+  #   l.info "Processed", nimbleStat.n, "packages via nimble in", &"{nimbleStat.sum:5.3f}"
+  #   l.info "average processing time:", &"{nimbleStat.mean():5.3f}"
 
 
 
