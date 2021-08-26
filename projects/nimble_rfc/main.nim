@@ -59,75 +59,6 @@ proc getCommitTimes*(dir: AbsDir): seq[int64] =
 
 const newDf = false
 
-proc plot(l: HLogger, dir: AbsDir) =
-  var commitTimes: seq[int64]
-
-  if newDf:
-    l.info "Processing commits"
-    for dir in walkDir(dir, AbsDir):
-      withDir dir:
-        commitTimes.add dir.getCommitTimes()
-
-    l.info "Total commit count", commitTimes.len
-
-  var countTable: CountTable[int64]
-
-  for time in commitTimes:
-    let day = ( time div (60 * 60 * 24) ) * ( 60 * 60 * 24 )
-    countTable.inc day
-
-  var days, count: seq[int]
-
-  when commitGraph:
-    var df =
-      if newDf:
-        let commits = sortedByIt(toSeq(countTable.pairs()), it[0])
-        for (key, val) in commits:
-          days.add key.int
-          count.add val.int
-
-        seqsToDf(days, count)
-
-      else:
-        readCsv("/tmp/commits.csv")
-
-    df.writeCsv("/tmp/commits.csv")
-
-    let versions = {
-      "2014-12-29": "0.10.2",
-      "2015-05-04": "0.11.2",
-      "2015-10-27": "0.12.0",
-      "2016-01-18": "0.13.0",
-      "2016-06-09": "0.14.2",
-      "2017-01-08": "0.16.0",
-      "2017-09-07": "0.17.2",
-      "2018-03-01": "0.18.0",
-      "2019-06-17": "0.20.2",
-      "2019-09-23": "1.0.0",
-      "2020-04-03": "1.2.0",
-      "2020-10-16": "1.4.0"
-    }
-
-    var plt = ggplot(df, aes("days", "count")) +
-      geom_line() +
-      scale_x_date(isTimestamp = true,
-                   formatString = "MMM-yyyy",
-                   dateSpacing = initDuration(weeks = 52)) +
-      geom_smooth(smoother = "poly", polyOrder = 7, color = some(parseHex("FF0000"))) +
-      geom_smooth(span = 0.64) +
-      ylab("Commit count") + xlab("Date") +
-      ggtitle("Daily commit counts in all nimble repositories")
-
-    let red = some(parseHex("FF0000"))
-    let transparent = color(0.0, 0.0, 0.0, 0.0)
-    for (d, v) in versions:
-      let d = d.parse("yyyy-MM-dd").totime.toUnix
-      let dx = d.float - 86400 * 30
-      plt = plt +
-        annotate(
-          v, x = dx, y = 400, rotate = -90.0, backgroundColor = transparent)
-
-    plt + ggsave("/tmp/smooth_test.png", width = 1000, height = 750)
 
 
 import std/stats as runstats
@@ -198,7 +129,7 @@ type
 
 
   Stat = object
-    commitTimes: seq[int]
+    commitTimes: seq[int64]
     packageDir: AbsDir
 
     stdUseStat: seq[StdUseFile]
@@ -212,6 +143,76 @@ type
     execStrs: seq[string]
     nimbleEvalTime: Option[float]
     pnodeEvalTime: Option[float]
+
+proc plot(l: HLogger, stats: seq[Stat]) =
+  var commitTimes: seq[int64]
+
+  if newDf:
+    l.info "Processing commits"
+    for stat in stats:
+      commitTimes.add stat.commitTimes
+
+    l.info "Total commit count", commitTimes.len
+
+  var countTable: CountTable[int64]
+
+  for time in commitTimes:
+    let day = ( time div (60 * 60 * 24) ) * ( 60 * 60 * 24 )
+    countTable.inc day
+
+  var days, count: seq[int]
+
+  when commitGraph:
+    var df =
+      if newDf:
+        let commits = sortedByIt(toSeq(countTable.pairs()), it[0])
+        for (key, val) in commits:
+          days.add key.int
+          count.add val.int
+
+        seqsToDf(days, count)
+
+      else:
+        readCsv("/tmp/commits.csv")
+
+    df.writeCsv("/tmp/commits.csv")
+
+    let versions = {
+      "2014-12-29": "0.10.2",
+      "2015-05-04": "0.11.2",
+      "2015-10-27": "0.12.0",
+      "2016-01-18": "0.13.0",
+      "2016-06-09": "0.14.2",
+      "2017-01-08": "0.16.0",
+      "2017-09-07": "0.17.2",
+      "2018-03-01": "0.18.0",
+      "2019-06-17": "0.20.2",
+      "2019-09-23": "1.0.0",
+      "2020-04-03": "1.2.0",
+      "2020-10-16": "1.4.0"
+    }
+
+    var plt = ggplot(df, aes("days", "count")) +
+      geom_line() +
+      scale_x_date(isTimestamp = true,
+                   formatString = "MMM-yyyy",
+                   dateSpacing = initDuration(weeks = 52)) +
+      geom_smooth(smoother = "poly", polyOrder = 7, color = some(parseHex("FF0000"))) +
+      geom_smooth(span = 0.64) +
+      ylab("Commit count") + xlab("Date") +
+      ggtitle("Daily commit counts in all nimble repositories")
+
+    let red = some(parseHex("FF0000"))
+    let transparent = color(0.0, 0.0, 0.0, 0.0)
+    for (d, v) in versions:
+      let d = d.parse("yyyy-MM-dd").totime.toUnix
+      let dx = d.float - 86400 * 30
+      plt = plt +
+        annotate(
+          v, x = dx, y = 400, rotate = -90.0, backgroundColor = transparent)
+
+    plt + ggsave("/tmp/smooth_test.png", width = 1000, height = 750)
+
 
 proc joinPath*(T: typedesc, args: varargs[string]): T =
   when result is AbsFile: result = AbsFile joinPath(args)
@@ -856,15 +857,6 @@ proc updateStdStats(stat: var Stat, dir: AbsDir, l: HLogger) =
       # while parsing `bgfx.nim`. dEfECTsShoUldNotBeCAuGht
       discard
 
-let
-  doStdStats = true
-  doDownload = false
-  metaUses = false
-  versionDb = false
-  execStore = false
-  parseFail = false
-  requiresStats = false
-  maxPackages = 10_000
 
 proc dbRegister(l: HLogger, pack: seq[Stat], db: var DbConn) =
   let
@@ -892,6 +884,7 @@ proc dbRegister(l: HLogger, pack: seq[Stat], db: var DbConn) =
   db.beginTransaction()
 
   when false:
+    var knownVersions: HashSet[string]
     withDir dir:
       let relPath = file.splitFile2().file
       var okCount, failCount, gitFail: int
@@ -944,57 +937,73 @@ proc dbRegister(l: HLogger, pack: seq[Stat], db: var DbConn) =
   db.close()
 
 
+proc parseManifest(
+    l: HLogger, stat: var Stat,
+    failTable: var Table[string, seq[string]],
+    showParseFail, execStore, metaUses: bool,
+  ) =
+  for file in stat.packageDir.findFilesWithExt(@["nimble", "babel"]):
+    try:
+      var
+        fails: Table[string, NimsParseFail]
+        extra: ExtraPackageInfo
 
-when isMainModule:
+      let
+        start = cpuTime()
+        text = file.readFile()
 
-  let url = "https://raw.githubusercontent.com/nim-lang/packages/master/packages.json"
+      stat.info = text.parsePackageInfo(fails, extra, file)
 
-  let file = RelFile("packages.json")
-  block:
-    if not exists(file):
-      let client = newHttpClient()
-      client.downloadFile(url, file.string)
+      stat.pnodeEvalTime = some cpuTime() - start
+      if fails.len > 0:
+        for key in fails.keys():
+          failTable.mgetOrPut(key, @[]).add stat.info.name
 
-  let
-    packages = file.readFile().fromJson(seq[Package])
+        if showParseFail:
+          l.warn stat.info.name, "failed to parse", $toSeq(fails.keys())
 
-  var l = newTermLogger()
+      if extra.nimsManifest:
+        if execStore: extra.node.recordExecs(stat.execStrs)
+        if metaUses: extra.node.recordFields(stat.metaFields)
 
-  let
-    dir = cwd() / "main"
-    packageDir = dir / "packages"
-    failedFile = dir /. "failed.json"
-    statsFile = dir /. "stats.json"
 
-  l.dump failedFile
 
+    except NimbleError:
+      l.fail file.name(), "failed pnode evaluation"
+      stat.flags.incl sPnodeFailed
+
+    except Exception as e:
+      l.debug file.readFile()
+      l.logStackTrace(e)
+      raise e
+
+proc downloadPackages(
+    l: HLogger,
+    packages: seq[Package],
+    failedFile, statsFile: AbsFile, packageDir: AbsDir
+  ): Table[AbsDir, Package] =
   var errUrls: HashSet[string]
 
   if exists(failedFile):
     errUrls = readFile(failedFile).fromJson(HashSet[string])
 
   var cmds: seq[(ShellCmd, Package)]
-  var packMap: Table[AbsDir, Package]
   var nimbleUrls: HashSet[string]
-
   var stats: seq[Stat]
   for pack in packages:
     nimbleUrls.incl pack.url
     if pack.url.len == 0:
-      if doDownload:
-        l.warn "Package", pack.name, "has empty url"
+      l.warn "Package", pack.name, "has empty url"
 
       stats.add Stat(package: pack, flags: {sNoUrl})
       continue
 
     if pack.url in errUrls:
-      if doDownload:
         l.notice pack.name, "is known to fail download"
-
 
     else:
       let resDir = packageDir / pack.name
-      packMap[resDir] = pack
+      result[resDir] = pack
       if not exists(resDir):
         let cmd = makeGnuShellCmd("git").withIt do:
           it.cmd "clone"
@@ -1017,7 +1026,7 @@ when isMainModule:
         resDir = packageDir / AbsFile(url.path).splitFile().name
         pack = Package(name: name.split("/")[1], url: $url)
 
-      packMap[resDir] = pack
+      result[resDir] = pack
 
       if extraRepos:
         if not exists(resDir):
@@ -1029,110 +1038,117 @@ when isMainModule:
           cmds.add((cmd, pack))
 
 
-  if doDownload:
-    var failCnt = 0
-    withEnv({ $$GIT_TERMINAL_PROMPT : "0"}):
-      for (res, data) in runShellResult(cmds):
-        if not res.resultOk:
-          let err = res.execResult.stderr
-          if "terminal prompts disabled" in err:
-            l.fail data.name, "terminal prompt needed"
-            stats.add Stat(package: data, flags: {sCloneNeedsPrompt})
-            errUrls.incl data.url
+  var failCnt = 0
+  withEnv({ $$GIT_TERMINAL_PROMPT : "0"}):
+    for (res, data) in runShellResult(cmds):
+      if not res.resultOk:
+        let err = res.execResult.stderr
+        if "terminal prompts disabled" in err:
+          l.fail data.name, "terminal prompt needed"
+          stats.add Stat(package: data, flags: {sCloneNeedsPrompt})
+          errUrls.incl data.url
 
-          elif "SSL certificate problem" in err:
-            l.fail data.name, "ssl certificate"
-            stats.add Stat(package: data, flags: {sGenericCloneFail})
-            errUrls.incl data.url
+        elif "SSL certificate problem" in err:
+          l.fail data.name, "ssl certificate"
+          stats.add Stat(package: data, flags: {sGenericCloneFail})
+          errUrls.incl data.url
 
-          elif "repository either does not exist" in err:
-            l.fail data.name, "no repository"
-            stats.add Stat(package: data, flags: {sNoRepository})
-            errUrls.incl data.url
+        elif "repository either does not exist" in err:
+          l.fail data.name, "no repository"
+          stats.add Stat(package: data, flags: {sNoRepository})
+          errUrls.incl data.url
 
-          elif "Cloning into" in err and "..." in err:
-            l.success data.name
+        elif "Cloning into" in err and "..." in err:
+          l.success data.name
 
-          elif "already exists and is not" in err:
-            discard
-
-          else:
-            l.warn err
+        elif "already exists and is not" in err:
+          discard
 
         else:
-          l.info "Cloned", data.name
+          l.warn err
 
+      else:
+        l.info "Cloned", data.name
+
+  writeFile(failedFile, errUrls.toJson())
+  writeFile(statsFile, stats.toJson())
+  l.done "Package download finished"
+  l.dump failedFile
+  l.dump statsFile
+
+
+
+proc main(
+    dir, packageDir: AbsDir,
+    doStdStats: bool,
+    doDownload: bool,
+    metaUses: bool,
+    versionDb: bool,
+    execStore: bool,
+    showParseFail: bool,
+    requiresStats: bool,
+    maxPackages: int
+ ) =
+  var l = newTermLogger()
+  var packMap: Table[AbsDir, Package]
   if doDownload:
-    writeFile(failedFile, errUrls.toJson())
-    writeFile(statsFile, stats.toJson())
-    l.done "Package download finished"
-    l.dump failedFile
-    l.dump statsFile
+    let url = "https://raw.githubusercontent.com/nim-lang/packages/master/packages.json"
+    let file = RelFile("packages.json")
+    if not exists(file):
+      let client = newHttpClient()
+      client.downloadFile(url, file.string)
+
+    var packages = file.readFile().fromJson(seq[Package])
+
+    packMap = l.downloadPackages(
+      packageDir = packageDir,
+      packages = packages,
+      failedFile = dir /. "failed.json",
+      statsFile = dir /. "stats.json"
+    )
 
   var
     failTable: Table[string, seq[string]]
-    nimbleStat: RunningStat
     parseStats: seq[Stat]
 
   for dir in walkDir(packageDir, AbsDir):
-    parseStats.add Stat(package: packMap.getOrDefault(dir))
+    l.info dir.name()
+    var stat = Stat(
+      package: packMap.getOrDefault(dir),
+      packageDir: dir)
 
-  var knownVersions: HashSet[string]
+    if commitGraph:
+      stat.commitTimes.add getCommitTimes(dir)
+
+    parseStats.add stat
 
   if commitGraph:
-    plot(l, packageDir)
+    plot(l, parseStats)
 
   for stat in mitems(parseStats):
     if globalTick() > maxPackages:
       break
 
-    for file in dir.findFilesWithExt(@["nimble", "babel"]):
-      try:
-        var
-          fails: Table[string, NimsParseFail]
-          extra: ExtraPackageInfo
+    else:
+      l.parseManifest(
+        stat, failTable,
+        showParseFail = showParseFail,
+        execStore = execStore,
+        metaUses = metaUses
+      )
 
-        let
-          start = cpuTime()
-          text = file.readFile()
-
-        stat.info = text.parsePackageInfo(fails, extra, file)
-
-        stat.pnodeEvalTime = some cpuTime() - start
-        if fails.len > 0:
-          for key in fails.keys():
-            failTable.mgetOrPut(key, @[]).add stat.info.name
-
-          if parseFail:
-            l.warn stat.info.name, "failed to parse", $toSeq(fails.keys())
-
-        if extra.nimsManifest:
-          if execStore: extra.node.recordExecs(stat.execStrs)
-          if metaUses: extra.node.recordFields(stat.metaFields)
-
-        if doStdStats and globalTick() < 30_000:
-          l.info $globalTick() |<< 4, stat.package.name
-          updateStdStats(stat, dir, l)
-
-
-      except NimbleError:
-        l.fail file.name(), "failed pnode evaluation"
-        stat.flags.incl sPnodeFailed
-
-      except Exception as e:
-        l.debug file.readFile()
-        l.logStackTrace(e)
-        raise e
+      if doStdStats and globalTick() < 30_000:
+        l.info $globalTick() |<< 4, stat.package.name
+        updateStdStats(stat, stat.packageDir, l)
 
   l.done
 
   var pnodeStat: RunningStat
-
   for stat in parseStats:
     if stat.pnodeEvalTime.isSome():
       pnodeStat.push stat.pnodeEvalTime.get()
 
-  if parseFail:
+  if showParseFail:
     l.info "failed to parse"
     l.indented:
       for key, val in failTable:
@@ -1147,42 +1163,17 @@ when isMainModule:
     l.info "Processed", pnodeStat.n, "packages via pnode in", &"{pnodeStat.sum:5.3f}"
     l.info "average processing time:", &"{pnodeStat.mean():5.3f}"
 
-  # var allVersionStat: RunningStat
-  # if allVersionStat.n > 0:
-  #   l.info "Processed", allVersionStat.n, "package version in", &"{allVersionStat.sum:5.3f}"
-  #   l.info "average processing time:", &"{allVersionStat.mean():5.3f}"
-
-  # if nimbleStat.n > 0:
-  #   l.info "Processed", nimbleStat.n, "packages via nimble in", &"{nimbleStat.sum:5.3f}"
-  #   l.info "average processing time:", &"{nimbleStat.mean():5.3f}"
-
-
-
-
   l.info "done"
 
-
-
-
-
-
-# var cnt = 0
-
-# if fileExists(errUrlsFile):
-#   for entry in errUrlsFile.parseJson():
-#     errUrls.incl entry.asStr()
-
-# for pack in parseJson(file):
-#   inc stats.totalPack
-#   if { "name" : (asStr: @name), "url" : (asStr: @web) } ?= pack:
-#     stats.totalTime = cpuTime()
-#     let raw = nimbleUrlForWeb(name, web)
-#     if raw.isSome():
-#       if $get(raw) notin errUrls:
-#         getParseContent(name, raw.get, web)
-
-#         echo toGreen(name.pad), " ok"
-
-#       else:
-#         stats.httpErrList.add (name, web)
-#         echo toMagenta(name.pad), " is known to cause http error"
+main(
+  dir           = cwd() / "main",
+  packageDir    = cwd() / "main/packages",
+  doStdStats    = false,
+  doDownload    = false,
+  metaUses      = false,
+  versionDb     = false,
+  execStore     = false,
+  showParseFail = false,
+  requiresStats = false,
+  maxPackages   = 10_000
+)
