@@ -2,12 +2,12 @@
 
 import jsony
 
-const commitGraph = off
+const commitPlot = off
 # TODO build commit graph that shows cumulative commits for projects
 # started in year X in different colors. "What fraction of year X's commits
 # come from repositories that started in year Y"
 
-when commitGraph:
+when commitPlot:
   import ggplotnim
   import ggplotnim, chroma, times
   import scinim / signals
@@ -21,7 +21,7 @@ import
   hmisc/wrappers/[treesitter]
 
 
-# if commitGraph and exists(AbsFile "/tmp/commits.csv"):
+# if commitPlot and exists(AbsFile "/tmp/commits.csv"):
 #   plot()
 
 
@@ -56,10 +56,6 @@ proc getCommitTimes*(dir: AbsDir): seq[int64] =
 
   for line in cmd.eval().split({'\n'}):
     result.add parseInt(line)
-
-const newDf = false
-
-
 
 import std/stats as runstats
 
@@ -127,6 +123,21 @@ type
 
   MetaTable = Table[string, array[MetaUse, array[ScopeKind, int]]]
 
+  Conf = object
+    dir: AbsDir
+    packageDir: AbsDir
+    commitCsv: AbsFile
+    doStdStats: bool
+    doDownload: bool
+    metaUses: bool
+    versionDb: bool
+    execStore: bool
+    showParseFail: bool
+    requiresStats: bool
+    maxPackages: int
+    maxFiles: int
+    newDf: bool
+
 
   Stat = object
     commitTimes: seq[int64]
@@ -144,10 +155,10 @@ type
     nimbleEvalTime: Option[float]
     pnodeEvalTime: Option[float]
 
-proc plot(l: HLogger, stats: seq[Stat]) =
+proc plot(l: HLogger, stats: seq[Stat], conf: Conf,) =
   var commitTimes: seq[int64]
 
-  if newDf:
+  if conf.newDf:
     l.info "Processing commits"
     for stat in stats:
       commitTimes.add stat.commitTimes
@@ -162,9 +173,9 @@ proc plot(l: HLogger, stats: seq[Stat]) =
 
   var days, count: seq[int]
 
-  when commitGraph:
+  when commitPlot:
     var df =
-      if newDf:
+      if conf.newDf:
         let commits = sortedByIt(toSeq(countTable.pairs()), it[0])
         for (key, val) in commits:
           days.add key.int
@@ -173,9 +184,9 @@ proc plot(l: HLogger, stats: seq[Stat]) =
         seqsToDf(days, count)
 
       else:
-        readCsv("/tmp/commits.csv")
+        readCsv(conf.commitCsv.getStr())
 
-    df.writeCsv("/tmp/commits.csv")
+    df.writeCsv(conf.commitCsv.getStr())
 
     let versions = {
       "2014-12-29": "0.10.2",
@@ -940,7 +951,7 @@ proc dbRegister(l: HLogger, pack: seq[Stat], db: var DbConn) =
 proc parseManifest(
     l: HLogger, stat: var Stat,
     failTable: var Table[string, seq[string]],
-    showParseFail, execStore, metaUses: bool,
+    conf: Conf
   ) =
   for file in stat.packageDir.findFilesWithExt(@["nimble", "babel"]):
     try:
@@ -959,17 +970,17 @@ proc parseManifest(
         for key in fails.keys():
           failTable.mgetOrPut(key, @[]).add stat.info.name
 
-        if showParseFail:
+        if conf.showParseFail:
           l.warn stat.info.name, "failed to parse", $toSeq(fails.keys())
 
       if extra.nimsManifest:
-        if execStore: extra.node.recordExecs(stat.execStrs)
-        if metaUses: extra.node.recordFields(stat.metaFields)
-
-
+        if conf.execStore: extra.node.recordExecs(stat.execStrs)
+        if conf.metaUses: extra.node.recordFields(stat.metaFields)
 
     except NimbleError:
-      l.fail file.name(), "failed pnode evaluation"
+      if conf.showParseFail:
+        l.fail file.name(), "failed pnode evaluation"
+
       stat.flags.incl sPnodeFailed
 
     except Exception as e:
@@ -1078,20 +1089,10 @@ proc downloadPackages(
 
 
 
-proc main(
-    dir, packageDir: AbsDir,
-    doStdStats: bool,
-    doDownload: bool,
-    metaUses: bool,
-    versionDb: bool,
-    execStore: bool,
-    showParseFail: bool,
-    requiresStats: bool,
-    maxPackages: int
- ) =
+proc main(conf: Conf) =
   var l = newTermLogger()
   var packMap: Table[AbsDir, Package]
-  if doDownload:
+  if conf.doDownload:
     let url = "https://raw.githubusercontent.com/nim-lang/packages/master/packages.json"
     let file = RelFile("packages.json")
     if not exists(file):
@@ -1101,43 +1102,37 @@ proc main(
     var packages = file.readFile().fromJson(seq[Package])
 
     packMap = l.downloadPackages(
-      packageDir = packageDir,
+      packageDir = conf.packageDir,
       packages = packages,
-      failedFile = dir /. "failed.json",
-      statsFile = dir /. "stats.json"
+      failedFile = conf.dir /. "failed.json",
+      statsFile = conf.dir /. "stats.json"
     )
 
   var
     failTable: Table[string, seq[string]]
     parseStats: seq[Stat]
 
-  for dir in walkDir(packageDir, AbsDir):
-    l.info dir.name()
+  for dir in walkDir(conf.packageDir, AbsDir):
     var stat = Stat(
       package: packMap.getOrDefault(dir),
       packageDir: dir)
 
-    if commitGraph:
+    if commitPlot:
       stat.commitTimes.add getCommitTimes(dir)
 
     parseStats.add stat
 
-  if commitGraph:
-    plot(l, parseStats)
+  if commitPlot:
+    plot(l, parseStats, conf)
 
   for stat in mitems(parseStats):
-    if globalTick() > maxPackages:
+    if globalTick() > conf.maxPackages:
       break
 
     else:
-      l.parseManifest(
-        stat, failTable,
-        showParseFail = showParseFail,
-        execStore = execStore,
-        metaUses = metaUses
-      )
+      l.parseManifest(stat, failTable, conf)
 
-      if doStdStats and globalTick() < 30_000:
+      if conf.doStdStats and globalTick() < conf.maxFiles:
         l.info $globalTick() |<< 4, stat.package.name
         updateStdStats(stat, stat.packageDir, l)
 
@@ -1148,7 +1143,7 @@ proc main(
     if stat.pnodeEvalTime.isSome():
       pnodeStat.push stat.pnodeEvalTime.get()
 
-  if showParseFail:
+  if conf.showParseFail:
     l.info "failed to parse"
     l.indented:
       for key, val in failTable:
@@ -1165,15 +1160,19 @@ proc main(
 
   l.info "done"
 
-main(
-  dir           = cwd() / "main",
-  packageDir    = cwd() / "main/packages",
-  doStdStats    = false,
-  doDownload    = false,
-  metaUses      = false,
-  versionDb     = false,
-  execStore     = false,
-  showParseFail = false,
-  requiresStats = false,
-  maxPackages   = 10_000
+let conf = Conf(
+  dir: cwd() / "main",
+  packageDir: cwd() / "main/packages",
+  commitCsv: AbsFile("/tmp/commit_csv.csv"),
+  doStdStats: false,
+  doDownload: false,
+  metaUses: false,
+  versionDb: false,
+  execStore: false,
+  showParseFail: false,
+  requiresStats: false,
+  maxPackages: 10_000,
+  maxFiles: 30_000
 )
+
+main(conf)
