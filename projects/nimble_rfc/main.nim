@@ -2,7 +2,7 @@
 
 import jsony
 
-const commitPlot = false
+const commitPlot = on
 # TODO build commit graph that shows cumulative commits for projects
 # started in year X in different colors. "What fraction of year X's commits
 # come from repositories that started in year Y"
@@ -164,42 +164,9 @@ type
     nimbleEvalTime: Option[float]
     pnodeEvalTime: Option[float]
 
-proc plot(l: HLogger, stats: seq[Stat], conf: Conf,) =
-  var commitTimes: seq[int64]
-
-  if conf.newDf:
-    l.info "Processing commits"
-    for stat in stats:
-      commitTimes.add stat.commitTimes
-
-    l.info "Total commit count", commitTimes.len
-
-  var countTable: CountTable[int64]
-
-  for time in commitTimes:
-    let day = ( time div (60 * 60 * 24) ) * ( 60 * 60 * 24 )
-    countTable.inc day
-
-  var days, count: seq[int]
-
+proc plot(file: string) =
   when commitPlot:
-    var df =
-      if conf.newDf or not exists(conf.commitCsv):
-        let commits = sortedByIt(toSeq(countTable.pairs()), it[0])
-        for (key, val) in commits:
-          days.add key.int
-          count.add val.int
-
-        seqsToDf(days, count)
-
-      else:
-        l.info "Reusing CSV file"
-        readCsv(conf.commitCsv.getStr())
-
-    df.writeCsv(conf.commitCsv.getStr())
-
-    echo df
-
+    let df = readCsv(file)
     let versions = {
       "2014-12-29": "0.10.2",
       "2015-05-04": "0.11.2",
@@ -220,7 +187,9 @@ proc plot(l: HLogger, stats: seq[Stat], conf: Conf,) =
       scale_x_date(isTimestamp = true,
                    formatString = "MMM-yyyy",
                    dateSpacing = initDuration(weeks = 52)) +
-      geom_smooth(smoother = "poly", polyOrder = 7, color = some(parseHex("FF0000"))) +
+      geom_smooth(smoother = "poly",
+                  polyOrder = 7,
+                  color = some(parseHex("FF0000"))) +
       geom_smooth(span = 0.64) +
       ylab("Commit count") + xlab("Date") +
       ggtitle("Daily commit counts in all nimble repositories")
@@ -235,6 +204,44 @@ proc plot(l: HLogger, stats: seq[Stat], conf: Conf,) =
           v, x = dx, y = 400, rotate = -90.0, backgroundColor = transparent)
 
     plt + ggsave("/tmp/smooth_test.png", width = 1000, height = 750)
+
+
+proc plot(l: HLogger, stats: seq[Stat], conf: Conf,) =
+  var commitTimes: seq[int64]
+  if conf.newDf:
+    l.info "Processing commits"
+    for stat in stats:
+      commitTimes.add stat.commitTimes
+
+    l.info "Total commit count", commitTimes.len
+
+
+  when commitPlot:
+    var df =
+      if conf.newDf or not exists(conf.commitCsv):
+        var countTable: CountTable[int64]
+        for time in commitTimes:
+          let day = ( time div (60 * 60 * 24) ) * ( 60 * 60 * 24 )
+          countTable.inc day
+        var days, count: seq[int]
+
+        let commits = sortedByIt(toSeq(countTable.pairs()), it[0])
+        for (key, val) in commits:
+          days.add key.int
+          count.add val.int
+
+        seqsToDf(days, count)
+
+      else:
+        l.info "Reusing CSV file"
+        readCsv(conf.commitCsv.getStr())
+
+    let file: string = conf.commitCsv.getStr()
+    inDf.writeCsv(file)
+    l.info "Wrote DF to", file
+    plot(file)
+
+
 
 
 proc joinPath*(T: typedesc, args: varargs[string]): T =
@@ -571,7 +578,7 @@ proc logExecStrs(l: HLogger, stats: seq[Stat]) =
     if v > 10:
       l.info &"{k:<10} {v}"
 
-proc logStdsStats(l: HLogger, stats: seq[Stat]) =
+proc logStdStats(l: HLogger, stats: seq[Stat]) =
   var
     totalFiles: int
     totalUsage: Table[string, int]
@@ -1287,8 +1294,13 @@ proc main(conf: Conf) =
       break
 
     var stat = Stat(
-      package: packMap.getOrDefault(dir),
-      packageDir: dir)
+      package: packMap.mgetOrPut(
+        dir,
+        Package(name: dir.name())),
+      packageDir: dir
+    )
+
+    assertRef stat.package
 
     if commits:
       stat.commitTimes.add getCommitTimes(dir)
@@ -1304,6 +1316,9 @@ proc main(conf: Conf) =
     if conf.doStdStats and globalTick() < conf.maxFiles:
       l.info $globalTick() |<< 4, stat.package.name
       updateStdStats(stat, stat.packageDir, l)
+
+  if conf.doStdStats:
+    logStdStats(l, parseStats)
 
   l.done
 
@@ -1337,7 +1352,7 @@ let conf = Conf(
   maxSearchPages:         120,
   newDf: false,
   commitCsv:              AbsFile("/tmp/commit_csv.csv"),
-  doStdStats:             true,
+  doStdStats:             false,
 
   doDownload:             false,
   doUpdate:               false,
