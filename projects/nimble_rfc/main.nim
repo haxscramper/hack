@@ -61,6 +61,7 @@ import std/stats as runstats
 
 type
   Package* = ref object
+    stars: int
     name: string
     url: string
     `method`: string
@@ -124,11 +125,18 @@ type
   MetaTable = Table[string, array[MetaUse, array[ScopeKind, int]]]
 
   Conf = object
+    extraRepos: bool
     dir: AbsDir
     packageDir: AbsDir
     commitCsv: AbsFile
     doStdStats: bool
     doDownload: bool
+    doUpdate: bool
+    searchCache: AbsFile
+    newSearch: bool
+    maxSearchPages: int
+    doDownloadNimble: bool
+    doDownloadGithubSearch: bool
     metaUses: bool
     versionDb: bool
     execStore: bool
@@ -994,12 +1002,14 @@ proc downloadPackages(
     failedFile, statsFile: AbsFile, packageDir: AbsDir
   ): Table[AbsDir, Package] =
   var errUrls: HashSet[string]
+  var nimbleUrls: HashSet[string]
 
   if exists(failedFile):
     errUrls = readFile(failedFile).fromJson(HashSet[string])
 
+  l.dump packages.len
   var cmds: seq[(ShellCmd, Package)]
-  var nimbleUrls: HashSet[string]
+  var updateCmds: seq[(ShellCmd, Package)]
   var stats: seq[Stat]
   for pack in packages:
     nimbleUrls.incl pack.url
@@ -1010,7 +1020,7 @@ proc downloadPackages(
       continue
 
     if pack.url in errUrls:
-        l.notice pack.name, "is known to fail download"
+      l.notice pack.name, "is known to fail download"
 
     else:
       let resDir = packageDir / pack.name
@@ -1026,27 +1036,27 @@ proc downloadPackages(
       else:
         stats.add Stat(package: pack, flags: {sCloneOk})
 
-  let extraRepos = false
-  for pair in readFile("repos.json").fromJson(seq[seq[string]]):
-    let
-      name = pair[0]
-      url = parseUri(pair[1] & ".git")
-
-    if pair[1] & ".git" notin nimbleUrls:
+  if false #[ extra repos ]#:
+    for pair in readFile("repos.json").fromJson(seq[seq[string]]):
       let
-        resDir = packageDir / AbsFile(url.path).splitFile().name
-        pack = Package(name: name.split("/")[1], url: $url)
+        name = pair[0]
+        url = parseUri(pair[1] & ".git")
 
-      result[resDir] = pack
+      if pair[1] & ".git" notin nimbleUrls:
+        let
+          resDir = packageDir / AbsFile(url.path).splitFile().name
+          pack = Package(name: name.split("/")[1], url: $url)
 
-      if extraRepos:
-        if not exists(resDir):
-          let cmd = makeGnuShellCmd("git").withIt do:
-            it.cmd "clone"
-            it.arg $url
-            it.arg resDir
+        result[resDir] = pack
 
-          cmds.add((cmd, pack))
+        if false #[ extra repos ]#:
+          if not exists(resDir):
+            let cmd = makeGnuShellCmd("git").withIt do:
+              it.cmd "clone"
+              it.arg $url
+              it.arg resDir
+
+            cmds.add((cmd, pack))
 
 
   var failCnt = 0
@@ -1087,23 +1097,73 @@ proc downloadPackages(
   l.dump failedFile
   l.dump statsFile
 
+type
+  GhItem = object
+    name: string
+    fork: bool
+    git_url: string
+    stargazers_count: int
+    description: string
+
+  GhSearch = object
+    total_count: int
+    items: seq[GhItem]
+
 
 
 proc main(conf: Conf) =
   var l = newTermLogger()
   var packMap: Table[AbsDir, Package]
   if conf.doDownload:
-    let url = "https://raw.githubusercontent.com/nim-lang/packages/master/packages.json"
-    let file = RelFile("packages.json")
-    if not exists(file):
-      let client = newHttpClient()
-      client.downloadFile(url, file.string)
+    var packages: Table[string, Package]
+    if conf.doDownloadNimble:
+      let file = RelFile("packages.json")
+      if not exists(file):
+        let url = "https://raw.githubusercontent.com/nim-lang/packages/master/packages.json"
+        let client = newHttpClient()
+        client.downloadFile(url, file.string)
 
-    var packages = file.readFile().fromJson(seq[Package])
+      for pack in file.readFile().fromJson(seq[Package]):
+        packages[pack.url] = pack
+
+    if conf.doDownloadGithubSearch:
+      const url = "https://api.github.com/search/repositories?q=language:nim&per_page=$1&page=$2"
+      let client = newHttpClient()
+      # var pages: seq[()]
+
+      var allPages: seq[GhItem]
+      if conf.newSearch:
+        let init = client.getContent(url % ["1", "1"]).fromJson(GhSearch)
+        for pageNum in 1 .. min(init.totalCount + 2, conf.maxSearchPages):
+          # For unauthenticated requests, the rate limit allows you to make
+          # up to 10 requests per minute. (and 2s extra timeout because I
+          # had bugs otherwise)
+          let page = client.getContent(url % ["100", $pageNum])
+          let search = page.fromJson(GhSearch)
+          l.success pageNum
+          allPages.add search.items
+
+          sleep(8 * 1000)
+
+        conf.searchCache.writeFile(allPages.toJson())
+
+      else:
+        allPages = conf.searchCache.readFile().fromJson(seq[GhItem])
+
+      for item in allpages:
+        if item.gitUrl notin packages and not item.fork:
+          packages[item.gitUrl] = Package(
+            stars: item.stargazersCount,
+            name: item.name,
+            url: item.gitUrl,
+            description: item.description)
+
+        else:
+          packages[item.gitUrl].stars = item.stargazersCount
 
     packMap = l.downloadPackages(
       packageDir = conf.packageDir,
-      packages = packages,
+      packages = collect(newSeq, for _, v in packages: v),
       failedFile = conf.dir /. "failed.json",
       statsFile = conf.dir /. "stats.json"
     )
@@ -1161,18 +1221,26 @@ proc main(conf: Conf) =
   l.info "done"
 
 let conf = Conf(
-  dir: cwd() / "main",
-  packageDir: cwd() / "main/packages",
-  commitCsv: AbsFile("/tmp/commit_csv.csv"),
-  doStdStats: false,
-  doDownload: false,
-  metaUses: false,
-  versionDb: false,
-  execStore: false,
-  showParseFail: false,
-  requiresStats: false,
-  maxPackages: 10_000,
-  maxFiles: 30_000
+  dir:                    cwd() / "main",
+  packageDir:             cwd() / "main/packages",
+  searchCache: cwd() /. "search-cache.json",
+
+  newSearch: true,
+  maxSearchPages: 120,
+
+  commitCsv:              AbsFile("/tmp/commit_csv.csv"),
+  doStdStats:             false,
+  doDownload:             true,
+  doUpdate:               true,
+  doDownloadNimble:       false,
+  doDownloadGithubSearch: true,
+  metaUses:               false,
+  versionDb:              false,
+  execStore:              false,
+  showParseFail:          false,
+  requiresStats:          false,
+  maxPackages:            10_000,
+  maxFiles:               30_000
 )
 
 main(conf)
