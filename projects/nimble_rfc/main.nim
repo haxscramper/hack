@@ -2,7 +2,7 @@
 
 import jsony
 
-const commitPlot = off
+const commitPlot = false
 # TODO build commit graph that shows cumulative commits for projects
 # started in year X in different colors. "What fraction of year X's commits
 # come from repositories that started in year Y"
@@ -136,6 +136,7 @@ type
     newSearch: bool
     maxSearchPages: int
     doDownloadNimble: bool
+    newNimbleList: bool
     doDownloadGithubSearch: bool
     metaUses: bool
     versionDb: bool
@@ -183,7 +184,7 @@ proc plot(l: HLogger, stats: seq[Stat], conf: Conf,) =
 
   when commitPlot:
     var df =
-      if conf.newDf:
+      if conf.newDf or not exists(conf.commitCsv):
         let commits = sortedByIt(toSeq(countTable.pairs()), it[0])
         for (key, val) in commits:
           days.add key.int
@@ -192,9 +193,12 @@ proc plot(l: HLogger, stats: seq[Stat], conf: Conf,) =
         seqsToDf(days, count)
 
       else:
+        l.info "Reusing CSV file"
         readCsv(conf.commitCsv.getStr())
 
     df.writeCsv(conf.commitCsv.getStr())
+
+    echo df
 
     let versions = {
       "2014-12-29": "0.10.2",
@@ -1079,8 +1083,10 @@ proc downloadPackages(
           stats.add Stat(package: data, flags: {sNoRepository})
           errUrls.incl data.url
 
-        elif "Cloning into" in err and "..." in err:
-          l.success data.name
+        elif "Cloning into" in err and
+             "..." in err and
+             "not valid: is this a git repository?" in err:
+          errUrls.incl data.url
 
         elif "already exists and is not" in err:
           discard
@@ -1109,6 +1115,110 @@ type
     total_count: int
     items: seq[GhItem]
 
+  GhRateStat = object
+    limit: int
+    remaining: int
+    reset: int
+    used: int
+
+  GhRateGroup = object
+    core, search: GhRateStat
+
+  GhRate = object
+    resources: GhRateGroup
+    rate: GhRateStat
+
+
+proc addNimblePackages(conf: Conf, l: HLogger, packages: var Table[string, Package]) =
+  let file = RelFile("packages.json")
+  if not exists(file) or conf.newNimbleList:
+    let url = "https://raw.githubusercontent.com/nim-lang/packages/master/packages.json"
+    let client = newHttpClient()
+    client.downloadFile(url, file.string)
+
+  for pack in file.readFile().fromJson(seq[Package]):
+    packages[pack.url] = pack
+
+proc addSearchPackages(conf: Conf, l: HLogger, packages: var Table[string, Package]) =
+  const url = "https://api.github.com/search/repositories?q=language:nim&per_page=$1&page=$2"
+  let client = newHttpClient()
+  # var pages: seq[()]
+
+  proc getRate(): GhRateStat =
+    let j = client.getContent("https://api.github.com/rate_limit")
+    return j.fromJson(GhRate).resources.search
+
+  var allPages: Table[string, seq[GhItem]]
+  proc waitRate(cutoff: int = 1) =
+    let rate = getRate()
+    if rate.remaining == cutoff:
+      let waitTo = rate.reset
+      let now = now().toTime().toUnix()
+      let diff = (waitTo - now) + 2
+      l.info "Time limit on free search API reached, waiting", diff, "seconds"
+      conf.searchCache.writeFile(allPages.toJson())
+      sleep(int(diff * 1000))
+
+    assert cutoff < getRate().remaining
+
+  if conf.searchCache.exists():
+    allPages = conf.searchCache.readFile().fromJson(typeof(allPages))
+    l.info "loaded", allPages.len, "pages from cache"
+
+
+  waitRate()
+  let init = client.getContent(url % ["1", "1"]).fromJson(GhSearch)
+  for pageNum in 1 .. min(init.totalCount + 2, conf.maxSearchPages):
+    # For unauthenticated requests, the rate limit allows you to make
+    # up to 10 requests per minute. (and 2s extra timeout because I
+    # had bugs otherwise)
+    if $pageNum in allPages:
+      l.info "Already processed page", pageNum
+
+    else:
+      waitRate()
+
+      l.wait "Processing search page", pageNum
+
+      let getUrl = url % ["100", $pageNum]
+      try:
+        let page = client.getContent(getUrl)
+        let search = page.fromJson(GhSearch)
+
+        l.success
+        allPages[$pageNum] = search.items
+
+      except HttpRequestError as err:
+        l.fail "Processing page", pageNum
+        l.pdump getRate()
+        l.dump getUrl
+        l.debug err.msg
+        # TODO https://stackoverflow.com/questions/37602893/github-search-limit-results
+        #
+        # It seems like neither authorized no anauthorized API calls
+        # can really featch more than 1000 results, which means I would
+        # have to get smarter with queries. Searching for all
+        # repositories that were created in particular timeframe
+        # (starting from 2004 and to current time, in one month chunks
+        # (I really doubt there is more than a thousand nim
+        # repositories created per month, so we are mostlyt safe
+        # here))
+        break
+
+  conf.searchCache.writeFile(allPages.toJson())
+
+  for page, pageItems in allpages:
+    for item in pageItems:
+      if item.gitUrl notin packages and not item.fork:
+        packages[item.gitUrl] = Package(
+          stars: item.stargazersCount,
+          name: item.name,
+          url: item.gitUrl,
+          description: item.description)
+
+      else:
+        packages[item.gitUrl].stars = item.stargazersCount
+
 
 
 proc main(conf: Conf) =
@@ -1117,49 +1227,12 @@ proc main(conf: Conf) =
   if conf.doDownload:
     var packages: Table[string, Package]
     if conf.doDownloadNimble:
-      let file = RelFile("packages.json")
-      if not exists(file):
-        let url = "https://raw.githubusercontent.com/nim-lang/packages/master/packages.json"
-        let client = newHttpClient()
-        client.downloadFile(url, file.string)
-
-      for pack in file.readFile().fromJson(seq[Package]):
-        packages[pack.url] = pack
+      conf.addNimblePackages(l, packages)
+      l.info "packages after adding nimble:", packages.len
 
     if conf.doDownloadGithubSearch:
-      const url = "https://api.github.com/search/repositories?q=language:nim&per_page=$1&page=$2"
-      let client = newHttpClient()
-      # var pages: seq[()]
-
-      var allPages: seq[GhItem]
-      if conf.newSearch:
-        let init = client.getContent(url % ["1", "1"]).fromJson(GhSearch)
-        for pageNum in 1 .. min(init.totalCount + 2, conf.maxSearchPages):
-          # For unauthenticated requests, the rate limit allows you to make
-          # up to 10 requests per minute. (and 2s extra timeout because I
-          # had bugs otherwise)
-          let page = client.getContent(url % ["100", $pageNum])
-          let search = page.fromJson(GhSearch)
-          l.success pageNum
-          allPages.add search.items
-
-          sleep(8 * 1000)
-
-        conf.searchCache.writeFile(allPages.toJson())
-
-      else:
-        allPages = conf.searchCache.readFile().fromJson(seq[GhItem])
-
-      for item in allpages:
-        if item.gitUrl notin packages and not item.fork:
-          packages[item.gitUrl] = Package(
-            stars: item.stargazersCount,
-            name: item.name,
-            url: item.gitUrl,
-            description: item.description)
-
-        else:
-          packages[item.gitUrl].stars = item.stargazersCount
+      conf.addSearchPackages(l, packages)
+      l.info "packages after adding github search:", packages.len
 
     packMap = l.downloadPackages(
       packageDir = conf.packageDir,
@@ -1168,16 +1241,56 @@ proc main(conf: Conf) =
       statsFile = conf.dir /. "stats.json"
     )
 
+  if conf.doUpdate:
+    var cmds: seq[(ShellCmd, AbsDir)]
+    for dir in walkDir(conf.packageDir, AbsDir):
+      let cmd = makeGnuShellCmd("git").withIt do:
+        it.opt "C", " ", $dir
+        it.cmd("pull")
+
+      cmds.add(cmd, dir)
+
+    withEnv({ $$GIT_TERMINAL_PROMPT : "0"}):
+      for (res, dir) in runShellResult(cmds):
+        if not res.resultOk:
+          let (stdout, stderr, code) = split(res)
+          if "Already up to date" in res.execResult.stdout:
+            l.success dir.name(), "already up to date"
+
+          elif "Updating" in stdout and "Fast-forward" in stdout:
+            l.success dir.name(), "updated"
+            l.info stdout
+
+          elif "terminal prompts disabled" in stderr:
+            discard
+
+          else:
+            l.dump stderr
+            l.dump stdout
+            l.dump dir
+            break
+
+        else:
+          l.success "updated", dir.name()
+
+
   var
     failTable: Table[string, seq[string]]
     parseStats: seq[Stat]
 
+  let commits = commitPlot and (conf.newDf or not exists(conf.commitCsv))
+  if commits:
+    l.info "Getting commit stats"
+
   for dir in walkDir(conf.packageDir, AbsDir):
+    if conf.maxPackages < globalTick():
+      break
+
     var stat = Stat(
       package: packMap.getOrDefault(dir),
       packageDir: dir)
 
-    if commitPlot:
+    if commits:
       stat.commitTimes.add getCommitTimes(dir)
 
     parseStats.add stat
@@ -1186,15 +1299,11 @@ proc main(conf: Conf) =
     plot(l, parseStats, conf)
 
   for stat in mitems(parseStats):
-    if globalTick() > conf.maxPackages:
-      break
+    l.parseManifest(stat, failTable, conf)
 
-    else:
-      l.parseManifest(stat, failTable, conf)
-
-      if conf.doStdStats and globalTick() < conf.maxFiles:
-        l.info $globalTick() |<< 4, stat.package.name
-        updateStdStats(stat, stat.packageDir, l)
+    if conf.doStdStats and globalTick() < conf.maxFiles:
+      l.info $globalTick() |<< 4, stat.package.name
+      updateStdStats(stat, stat.packageDir, l)
 
   l.done
 
@@ -1223,24 +1332,26 @@ proc main(conf: Conf) =
 let conf = Conf(
   dir:                    cwd() / "main",
   packageDir:             cwd() / "main/packages",
-  searchCache: cwd() /. "search-cache.json",
-
-  newSearch: true,
-  maxSearchPages: 120,
-
+  searchCache:            cwd() /. "search-cache.json",
+  newSearch:              true,
+  maxSearchPages:         120,
+  newDf: false,
   commitCsv:              AbsFile("/tmp/commit_csv.csv"),
-  doStdStats:             false,
-  doDownload:             true,
-  doUpdate:               true,
-  doDownloadNimble:       false,
-  doDownloadGithubSearch: true,
+  doStdStats:             true,
+
+  doDownload:             false,
+  doUpdate:               false,
+  doDownloadNimble:       true,
+  newNimbleList:          false,
+  doDownloadGithubSearch: false,
+
   metaUses:               false,
   versionDb:              false,
   execStore:              false,
   showParseFail:          false,
   requiresStats:          false,
-  maxPackages:            10_000,
-  maxFiles:               30_000
+  maxPackages:            4_000,
+  maxFiles:               45_000
 )
 
 main(conf)
