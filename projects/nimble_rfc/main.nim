@@ -164,8 +164,8 @@ type
     nimbleEvalTime: Option[float]
     pnodeEvalTime: Option[float]
 
-proc plot(file: string) =
-  when commitPlot:
+when commitPlot:
+  proc plot(file: string) =
     let df = readCsv(file)
     let versions = {
       "2014-12-29": "0.10.2",
@@ -184,6 +184,7 @@ proc plot(file: string) =
 
     var plt = ggplot(df, aes("days", "count")) +
       geom_line() +
+      scale_y_continuous() +
       scale_x_date(isTimestamp = true,
                    formatString = "MMM-yyyy",
                    dateSpacing = initDuration(weeks = 52)) +
@@ -224,6 +225,7 @@ proc plot(l: HLogger, stats: seq[Stat], conf: Conf,) =
           let day = ( time div (60 * 60 * 24) ) * ( 60 * 60 * 24 )
           countTable.inc day
         var days, count: seq[int]
+        l.info countTable.len
 
         let commits = sortedByIt(toSeq(countTable.pairs()), it[0])
         for (key, val) in commits:
@@ -237,7 +239,7 @@ proc plot(l: HLogger, stats: seq[Stat], conf: Conf,) =
         readCsv(conf.commitCsv.getStr())
 
     let file: string = conf.commitCsv.getStr()
-    inDf.writeCsv(file)
+    df.writeCsv(file)
     l.info "Wrote DF to", file
     plot(file)
 
@@ -1350,7 +1352,7 @@ let conf = Conf(
   searchCache:            cwd() /. "search-cache.json",
   newSearch:              true,
   maxSearchPages:         120,
-  newDf: false,
+  newDf: true,
   commitCsv:              AbsFile("/tmp/commit_csv.csv"),
   doStdStats:             false,
 
@@ -1368,5 +1370,6 @@ let conf = Conf(
   maxPackages:            4_000,
   maxFiles:               45_000
 )
+
 
 main(conf)
