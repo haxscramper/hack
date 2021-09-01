@@ -1,8 +1,8 @@
 # Spec: https://www.w3.org/TR/css3-selectors/
-
 # Based on https://github.com/GULPF/nimquery
 
 import std/[xmltree, strutils, strtabs, unicode, math, deques]
+import hmisc/core/all
 
 type
   ParseError* = object of ValueError
@@ -84,6 +84,10 @@ type
     queries: seq[seq[QueryPart[N, K]]]
     options: set[QueryOption]
 
+  QueryCtx*[N, K] = object
+    eqElement: proc(node: N, element: K): bool
+    eqKind: proc(node1, node2: N): bool
+
   QueryPart[N, K] = object
     demands: seq[Demand[N, K]]
     combinator: Combinator
@@ -150,7 +154,7 @@ func `$`*[N, K](demand: Demand[N, K]): string =
       result = ":" & $demand.kind
 
     of tkElement:
-      result = demand.element
+      result = $demand.element
 
     else:
       result = $demand.kind
@@ -184,15 +188,18 @@ iterator children[N, K](
 
   var idx = offset.index + 1
   var elIdx = offset.elementIndex + 1
-  while idx < node.len:
+  while idx < len(node):
     let el = node[idx]
-    if el.kind == xnElement:
+    let ok = (when N is XmlNode: el.kind == xnElement else: true)
+
+    if ok:
       yield NodeWithParent[N, K](
-        parent: node, index: idx, elementIndex: elIdx)
+        parent: el, index: idx, elementIndex: elIdx)
 
-      elIdx.inc
+      inc elIdx
 
-    idx.inc
+    inc idx
+
 
 func initToken(kind: TokenKind, value: string = ""): Token =
   return Token(kind: kind, value: value)
@@ -270,9 +277,16 @@ func validateNth(a, b, nSiblings: int): bool =
     return n.floor == n and n >= 0
 
 proc satisfies[N, K](
-    pair: NodeWithParent[N, K], demands: seq[Demand[N, K]]): bool
+    pair: NodeWithParent[N, K],
+    demands: seq[Demand[N, K]],
+    ctx: QueryCtx[N, K]
+  ): bool
 
-proc satisfies[N, K](pair: NodeWithParent[N, K], demand: Demand[N, K]): bool =
+proc satisfies[N, K](
+    pair: NodeWithParent[N, K],
+    demand: Demand[N, K],
+    ctx: QueryCtx[N, K]
+  ): bool =
   let node = pair.node
 
   case demand.kind:
@@ -280,7 +294,7 @@ proc satisfies[N, K](pair: NodeWithParent[N, K], demand: Demand[N, K]): bool =
       return demand.predicate(node)
 
     of tkElement:
-      return node.tag == demand.element
+      return ctx.eqElement(node, demand.element)
 
     of tkPseudoEmpty:
       return node.len == 0
@@ -295,7 +309,7 @@ proc satisfies[N, K](pair: NodeWithParent[N, K], demand: Demand[N, K]): bool =
     of tkPseudoOnlyOfType:
       for siblingPair in children[N, K](pair.parent):
         if siblingPair.node != node and
-           siblingPair.node.tag == node.tag:
+           ctx.eqKind(siblingPair.node, node):
 
           return false
 
@@ -312,17 +326,18 @@ proc satisfies[N, K](pair: NodeWithParent[N, K], demand: Demand[N, K]): bool =
 
     of tkPseudoFirstOfType:
       for siblingPair in children[N, K](pair.parent):
-        if siblingPair.node.tag == node.tag:
+        if ctx.eqKind(siblingPair.node, node):
           return siblingPair.node == node
 
     of tkPseudoLastOfType:
       for siblingPair in children[N, K](pair.parent, offset = pair):
-        if siblingPair.node.tag == node.tag:
+        if ctx.eqKind(siblingPair.node, node):
           return false
+
       return true
 
     of tkPseudoNot:
-      return not pair.satisfies(demand.notQuery.demands)
+      return not pair.satisfies(demand.notQuery.demands, ctx)
 
     of tkPseudoNthChild:
       return validateNth(demand.a, demand.b, pair.elementIndex)
@@ -339,7 +354,7 @@ proc satisfies[N, K](pair: NodeWithParent[N, K], demand: Demand[N, K]): bool =
         if siblingPair.node == node:
           break
 
-        elif siblingPair.node.tag == node.tag:
+        elif ctx.eqKind(siblingPair.node, node):
           nSiblingsOfTypeBefore.inc
 
       return validateNth(demand.a, demand.b, nSiblingsOfTypeBefore)
@@ -347,7 +362,7 @@ proc satisfies[N, K](pair: NodeWithParent[N, K], demand: Demand[N, K]): bool =
     of tkPseudoNthLastOfType:
       var nSiblingsOfTypeAfter = 0
       for siblingPair in pair.parent.children(offset = pair):
-        if siblingPair.node.tag == node.tag:
+        if ctx.eqKind(siblingPair.node, node):
           nSiblingsOfTypeAfter.inc
 
         return validateNth(demand.a, demand.b, nSiblingsOfTypeAfter)
@@ -357,18 +372,20 @@ proc satisfies[N, K](pair: NodeWithParent[N, K], demand: Demand[N, K]): bool =
 
 proc satisfies[N, K](
     pair: NodeWithParent[N, K],
-    demands: seq[Demand[N, K]]
+    demands: seq[Demand[N, K]],
+    ctx: QueryCtx[N, K]
   ): bool =
 
   for demand in demands:
-    if not pair.satisfies(demand):
+    if not pair.satisfies(demand, ctx):
       return false
 
   return true
 
 iterator searchDescendants[N, K](
     queryPart: QueryPart[N, K],
-    position: NodeWithParent[N, K]
+    position: NodeWithParent[N, K],
+    ctx: QueryCtx[N, K]
   ): NodeWithParent[N, K] =
 
   var queue = initDeque[NodeWithParent[N, K]]()
@@ -378,7 +395,7 @@ iterator searchDescendants[N, K](
 
   while queue.len > 0:
     let pair = queue.popFirst()
-    if pair.satisfies queryPart.demands:
+    if pair.satisfies(queryPart.demands, ctx):
       yield pair
 
     for nodeData in children[N, K](pair.node):
@@ -387,38 +404,49 @@ iterator searchDescendants[N, K](
 
 iterator searchChildren[N, K](
     queryPart: QueryPart[N, K],
-    position: NodeWithParent[N, K]
+    position: NodeWithParent[N, K],
+    ctx: QueryCtx[N, K]
   ): NodeWithParent[N, K] =
 
   for pair in children[N, K](position.node):
-    if pair.satisfies queryPart.demands:
+    if pair.satisfies(queryPart.demands, ctx):
       yield pair
 
 iterator searchSiblings[N, K](
     queryPart: QueryPart[N, K],
-    position: NodeWithParent[N, K]
+    position: NodeWithParent[N, K],
+    ctx: QueryCtx[N, K]
   ): NodeWithParent[N, K] =
 
   for pair in children[N, K](position.parent, offset = position):
-    if pair.satisfies(queryPart.demands):
+    if pair.satisfies(queryPart.demands, ctx):
       yield pair
 
-iterator searchNextSibling(queryPart: QueryPart,
-                           position: NodeWithParent): NodeWithParent =
+iterator searchNextSibling[N, K](
+    queryPart: QueryPart[N, K],
+    position: NodeWithParent[N, K],
+    ctx: QueryCtx[N, K]
+  ): NodeWithParent[N, K] =
+
   for pair in position.parent.children(offset = position):
-    if pair.satisfies queryPart.demands:
+    if pair.satisfies(queryPart.demands, ctx):
       yield pair
     break
 
 type SearchIterator[N, K] =
-  iterator(q: QueryPart[N, K], p: NodeWithParent[N, K]): NodeWithParent[N, K] {.inline.}
+  iterator(
+    q: QueryPart[N, K],
+    p: NodeWithParent[N, K],
+    ctx: QueryCtx[N, K]
+  ): NodeWithParent[N, K] {.inline.}
 
 proc exec[N, K](
     parts: seq[QueryPart],
     root: NodeWithParent[N, K],
     single: bool,
     options: set[QueryOption],
-    result: var seq[N]
+    result: var seq[N],
+    ctx: QueryCtx[N, K]
   ) =
 
   var combinator = cmDescendants
@@ -427,7 +455,7 @@ proc exec[N, K](
   buffer.addLast root
 
   template search(position: NodeWithParent[N, K], itr: SearchIterator) =
-    for next in itr(parts[partIndex], position):
+    for next in itr(parts[partIndex], position, ctx):
       if partIndex == high(parts):
         result.add next.node
         if single:
@@ -436,7 +464,7 @@ proc exec[N, K](
       else:
         buffer.addLast next
 
-      if not parts[partIndex].canFindMultiple(combinator, options):
+      if not canFindMultiple(parts[partIndex], combinator, options):
         break
 
   while buffer.len > 0:
@@ -456,42 +484,79 @@ proc exec*[N, K](
     query: Query[N, K],
     root: N,
     single: bool,
-    wrapperRoot: N
+    wrapperRoot: N,
+    ctx: QueryCtx[N, K]
   ): seq[N] =
 
   result = newSeq[N, K]()
   let wRoot = NodeWithParent[N, K](parent: wrapperRoot, index: 0, elementIndex: 0)
   for parts in query.queries:
-    parts.exec(wRoot, single, query.options, result)
+    parts.exec(wRoot, single, query.options, result, ctx)
 
-import std/[htmlparser, streams]
+import std/[htmlparser, streams, parsesql]
+
+iterator items(node: SqlNode): SqlNode =
+  for idx in 0 ..< len(node):
+    yield node[idx]
 
 when isMainModule:
-  let html = """
-<!DOCTYPE html>
-<html>
-  <head><title>Example</title></head>
-  <body>
-    <p>1</p>
-    <p>2</p>
-    <p>3</p>
-    <p>4</p>
-  </body>
-</html>
-"""
+  block query_html:
+    let html = lit3"""
+      <!DOCTYPE html>
+      <html>
+        <head><title>Example</title></head>
+        <body>
+          <p>1</p>
+          <p>2</p>
+          <p>3</p>
+          <p>4</p>
+        </body>
+      </html>
+      """
 
-  let xml = parseHtml(newStringStream(html))
+    let xml = parseHtml(newStringStream(html))
 
-  var query = initQuery(@[
-    initQueryPart(@[
-      initElementDemand[XmlNode, string]("p"),
-      initNthChildDemand[XmlNode, string](tkPseudoNthChild, 2, 1)
-    ], cmLeaf)
-  ])
+    var query = initQuery(@[
+      initQueryPart(@[
+        initElementDemand[XmlNode, string]("p"),
+        initNthChildDemand[XmlNode, string](tkPseudoNthChild, 2, 1)
+      ], cmLeaf)
+    ])
 
-  let wrapper = <>wrapper(xml)
-  let wrapperRoot = <>"wrapper-root"(wrapper)
+    let wrapper = <>wrapper(xml)
+    let wrapperRoot = <>"wrapper-root"(wrapper)
 
-  let res = query.exec(wrapper, false, wrapperRoot)
-  echo res
-  echo "ok"
+    let res = query.exec(
+      wrapper, false, wrapperRoot,
+      QueryCtx[XmlNode, string](
+        eqElement: proc(node: XmlNode, elem: string): bool =
+          node.kind == xnElement and node.tag == elem,
+        eqKind: proc(node1, node2: XmlNode): bool =
+          node1.kind == xnElement and
+          node2.kind == xnElement and
+          node1.tag == node2.tag))
+
+    echo res
+
+  block query_sql:
+    let sql = parseSql("SELECT * FROM table_name;")
+    echo sql.treeRepr()
+    echo "ok"
+
+    let wrapper = nkStmtList.newNode(@[sql])
+    let wrapperRoot = nkStmtList.newNode(@[wrapper])
+
+    var query = initQuery(@[
+      initQueryPart(@[
+        initElementDemand[SqlNode, SqlNodeKind](nkSelect),
+        initNthChildDemand[SqlNode, SqlNodeKind](tkPseudoNthChild, 2, 1)
+      ], cmLeaf)
+    ])
+
+    let res = query.exec(
+      wrapper, false, wrapperRoot,
+      QueryCtx[SqlNode, SqlNodeKind](
+        eqElement: proc(node: SqlNode, elem: SqlNodeKind): bool = node.kind== elem,
+        eqKind: proc(node1, node2: SqlNode): bool = node1.kind == node2.kind))
+
+    echo res[0].treeRepr()
