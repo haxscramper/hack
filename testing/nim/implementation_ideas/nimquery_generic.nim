@@ -21,14 +21,6 @@ type
     tkCombinatorDescendents, tkCombinatorChildren
     tkCombinatorNextSibling, tkCombinatorSiblings
 
-    tkAttributeExact     # [attr=...]
-    tkAttributeItem      # [attr~=...]
-    tkAttributePipe      # [attr|=...]
-    tkAttributeExists    # [attr]
-    tkAttributeStart     # [attr^=...]
-    tkAttributeEnd       # [attr$=...]
-    tkAttributeSubstring # [attr*=...]
-
     tkPseudoNthChild, tkPseudoNthLastChild
     tkPseudoNthOfType, tkPseudoNthLastOfType
 
@@ -38,18 +30,13 @@ type
 
     tkPseudoNot
 
+    tkPredicate
+
     tkEoi # End of input
 
   Token = object
     kind: TokenKind
     value: string
-
-const AttributeKinds = {
-  tkAttributeExact, tkAttributeItem,
-  tkAttributePipe, tkAttributeExists,
-  tkAttributeStart, tkAttributeEnd,
-  tkAttributeSubstring
-}
 
 const NthKinds = {
   tkPseudoNthChild, tkPseudoNthLastChild,
@@ -57,16 +44,16 @@ const NthKinds = {
 }
 
 type
-  Demand = object
+  Demand[N] = object
     case kind: Tokenkind
-      of AttributeKinds:
-        attrName, attrValue: string
+      of tkPredicate:
+        predicate: proc(node: N): bool
 
       of NthKinds:
         a, b: int
 
       of tkPseudoNot:
-        notQuery: QueryPart
+        notQuery: QueryPart[N]
 
       of tkElement:
         element: string
@@ -93,18 +80,12 @@ type
                           ## for ":not". Combinators and/or commas are not
                           ## allowed even if this option is excluded.
 
-  Lexer = object
-    input: string
-    pos: int
-    options: set[QueryOption]
-    current, next: Token
-
-  Query* = object ## Represents a parsed query.
-    queries: seq[seq[QueryPart]]
+  Query*[N] = object ## Represents a parsed query.
+    queries: seq[seq[QueryPart[N]]]
     options: set[QueryOption]
 
-  QueryPart = object
-    demands: seq[Demand]
+  QueryPart[N] = object
+    demands: seq[Demand[N]]
     combinator: Combinator
 
 const
@@ -136,58 +117,29 @@ func safeCharCompare(str: string, idx: int, c: char): bool {.inline.} =
 func node[N](pair: NodeWithParent[N]): N =
   return pair.parent[pair.index]
 
-func attrComparerString(kind: TokenKind): string =
-  case kind:
-    of tkAttributeExact: return "="
-    of tkAttributeItem: return "~="
-    of tkAttributePipe: return "|="
-    of tkAttributeExists: return ""
-    of tkAttributeStart: return "^="
-    of tkAttributeEnd: return "$="
-    of tkAttributeSubstring: return "*="
-    else: raiseAssert "Invalid attr kind: " & $kind
+func initNotDemand[N](notQuery: QueryPart[N]): Demand[N] =
+  result = Demand[N](kind: tkPseudoNot, notQuery: notQuery)
 
-func newUnexpectedCharacterException(s: string): ref ParseError =
-  return newException(ParseError, "Unexpected character: '" & s & "'")
+func initElementDemand[N](element: string): Demand[N] =
+  result = Demand[N](kind: tkElement, element: element)
 
-func newUnexpectedCharacterException(c: char): ref ParseError =
-  newUnexpectedCharacterException($c)
+func initPseudoDemand[N](kind: TokenKind): Demand[N] =
+  result = Demand[N](kind: kind)
 
-func initNotDemand(notQuery: QueryPart): Demand =
-  result = Demand(kind: tkPseudoNot, notQuery: notQuery)
+func initPredicateDemand[N](
+    kind: TokenKind, predicate: proc(node: N): bool): Demand[N] =
+  Demand(kind: kind, predicate: predicate)
 
-func initElementDemand(element: string): Demand =
-  result = Demand(kind: tkElement, element: element)
-
-func initPseudoDemand(kind: TokenKind): Demand =
-  result = Demand(kind: kind)
-
-func initAttributeDemand(kind: TokenKind, name, value: string): Demand =
-  case kind
-    of AttributeKinds:
-      result = Demand(kind: kind, attrName: name, attrValue: value)
-
-    else:
-      raiseAssert "invalid kind: " & $kind
-
-func initNthChildDemand(kind: TokenKind, a, b: int): Demand =
+func initNthChildDemand[N](kind: TokenKind, a, b: int): Demand[N] =
   case kind
     of NthKinds:
-      result = Demand(kind: kind, a: a, b: b)
+      result = Demand[N](kind: kind, a: a, b: b)
 
     else:
       raiseAssert "invalid kind: " & $kind
 
-func `$`*(demand: Demand): string =
+func `$`*[N](demand: Demand[N]): string =
   case demand.kind:
-    of AttributeKinds:
-      if demand.kind == tkAttributeExists:
-        result = "[" & demand.attrName & "]"
-
-      else:
-        result = "[" & demand.attrName & demand.kind.attrComparerString &
-          "'" & demand.attrValue & "']"
-
     of tkPseudoNot:
       result = ":" & $demand.kind & "(" & $demand.notQuery & ")"
 
@@ -209,8 +161,8 @@ func `==`*(d1, d2: Demand): bool =
 
   else:
     case d1.kind:
-      of AttributeKinds:
-        return d1.attrName == d2.attrName and d1.attrValue == d2.attrValue
+      of tkPredicate:
+        return d1.predicate == d2.predicate
 
       of NthKinds:
         return d1.a == d2.b
@@ -245,13 +197,15 @@ iterator children[N](
 func initToken(kind: TokenKind, value: string = ""): Token =
   return Token(kind: kind, value: value)
 
-func initQueryPart(demands: seq[Demand], combinator: Combinator): QueryPart =
-  return QueryPart(demands: demands, combinator: combinator)
+func initQueryPart[N](
+    demands: seq[Demand[N]], combinator: Combinator): QueryPart[N] =
+  return QueryPart[N](demands: demands, combinator: combinator)
 
-func initQuery(
-    parts: seq[QueryPart],
-    options: set[QueryOption] = DefaultQueryOptions): Query =
-  Query(queries: @[parts], options: options)
+func initQuery[N](
+    parts: seq[QueryPart[N]],
+    options: set[QueryOption] = DefaultQueryOptions): Query[N] =
+
+  Query[N](queries: @[parts], options: options)
 
 func initWithParent*[N](
     parent: N, index: int, elementIndex: int): NodeWithParent[N] =
@@ -261,12 +215,6 @@ func initWithParent*[N](
 func canFindMultiple(q: Querypart, comb: Combinator,
                      options: set[QueryOption]): bool =
   for demand in q.demands:
-    if optUniqueIds in options and
-       demand.kind in AttributeKinds and
-       demand.attrName == "id":
-
-      return false
-
     if comb in {cmChildren, cmSiblings} and demand.kind in {
       tkPseudoFirstOfType, tkPseudoLastOfType,
       tkPseudoFirstChild, tkPseudoLastChild, tkPseudoOnlyOfType
@@ -321,114 +269,89 @@ func validateNth(a, b, nSiblings: int): bool =
     let n = (nSiblings - (b - 1)) / a
     return n.floor == n and n >= 0
 
-func satisfies(pair: NodeWithParent, demands: seq[Demand]): bool
-               {.raises: [], gcsafe.}
+proc satisfies(pair: NodeWithParent, demands: seq[Demand]): bool
 
-func satisfies(pair: NodeWithParent, demand: Demand): bool =
-    let node = pair.node
+proc satisfies[N](pair: NodeWithParent[N], demand: Demand[N]): bool =
+  let node = pair.node
 
-    case demand.kind:
-      of tkAttributeExists:
-        return node.hasAttr(demand.attrName)
+  case demand.kind:
+    of tkPredicate:
+      return demand.predicate(node)
 
-      of tkAttributeItem:
-        return node.hasAttr(demand.attrName) and
-          (demand.attrValue.len > 0) and
-          demand.attrValue in node.attr(demand.attrName).split(CssWhitespace)
+    of tkElement:
+      return node.tag == demand.element
 
-      of tkAttributePipe:
-        return node.hasAttr(demand.attrName) and
-          demand.attrValue == node.attr(demand.attrName).split("-")[0]
+    of tkPseudoEmpty:
+      return node.len == 0
 
-      of tkAttributeExact:
-        return node.attr(demand.attrName) == demand.attrValue
+    of tkPseudoOnlyChild:
+      for siblingPair in pair.parent.children:
+          if siblingPair.node != node:
+              return false
+      return true
 
-      of tkAttributeStart:
-        return demand.attrValue.len > 0 and
-          node.attr(demand.attrName).startsWith(demand.attrValue)
-
-      of tkAttributeEnd:
-        return demand.attrValue.len > 0 and
-          node.attr(demand.attrName).endsWith(demand.attrValue)
-
-      of tkAttributeSubstring:
-        return demand.attrValue.len > 0 and
-          node.attr(demand.attrName) in demand.attrValue
-
-      of tkElement:
-        return node.tag == demand.element
-
-      of tkPseudoEmpty:
-        return node.len == 0
-
-      of tkPseudoOnlyChild:
-        for siblingPair in pair.parent.children:
-            if siblingPair.node != node:
-                return false
-        return true
-
-      of tkPseudoOnlyOfType:
-        for siblingPair in pair.parent.children:
-          if siblingPair.node != node and
-              siblingPair.node.tag == node.tag:
-            return false
-        return true
-
-      of tkPseudoFirstChild:
-        return pair.elementIndex == 0
-
-      of tkPseudoLastChild:
-        for siblingPair in pair.parent.children(offset = pair):
+    of tkPseudoOnlyOfType:
+      for siblingPair in pair.parent.children:
+        if siblingPair.node != node and
+            siblingPair.node.tag == node.tag:
           return false
+      return true
 
-        return true
+    of tkPseudoFirstChild:
+      return pair.elementIndex == 0
 
-      of tkPseudoFirstOfType:
-        for siblingPair in pair.parent.children:
-          if siblingPair.node.tag == node.tag:
-            return siblingPair.node == node
+    of tkPseudoLastChild:
+      for siblingPair in pair.parent.children(offset = pair):
+        return false
 
-      of tkPseudoLastOfType:
-        for siblingPair in pair.parent.children(offset = pair):
-          if siblingPair.node.tag == node.tag:
-            return false
-        return true
+      return true
 
-      of tkPseudoNot:
-        return not pair.satisfies(demand.notQuery.demands)
+    of tkPseudoFirstOfType:
+      for siblingPair in pair.parent.children:
+        if siblingPair.node.tag == node.tag:
+          return siblingPair.node == node
 
-      of tkPseudoNthChild:
-        return validateNth(demand.a, demand.b, pair.elementIndex)
+    of tkPseudoLastOfType:
+      for siblingPair in pair.parent.children(offset = pair):
+        if siblingPair.node.tag == node.tag:
+          return false
+      return true
 
-      of tkPseudoNthLastChild:
-        var nSiblingsAfter = 0
-        for siblingPair in pair.parent.children(offset = pair):
-          nSiblingsAfter.inc
-        return validateNth(demand.a, demand.b, nSiblingsAfter)
+    of tkPseudoNot:
+      return not pair.satisfies(demand.notQuery.demands)
 
-      of tkPseudoNthOfType:
-        var nSiblingsOfTypeBefore = 0
-        for siblingPair in pair.parent.children:
-          if siblingPair.node == node:
-            break
+    of tkPseudoNthChild:
+      return validateNth(demand.a, demand.b, pair.elementIndex)
 
-          elif siblingPair.node.tag == node.tag:
-            nSiblingsOfTypeBefore.inc
+    of tkPseudoNthLastChild:
+      var nSiblingsAfter = 0
+      for siblingPair in pair.parent.children(offset = pair):
+        nSiblingsAfter.inc
+      return validateNth(demand.a, demand.b, nSiblingsAfter)
 
-        return validateNth(demand.a, demand.b, nSiblingsOfTypeBefore)
+    of tkPseudoNthOfType:
+      var nSiblingsOfTypeBefore = 0
+      for siblingPair in pair.parent.children:
+        if siblingPair.node == node:
+          break
 
-      of tkPseudoNthLastOfType:
-        var nSiblingsOfTypeAfter = 0
-        for siblingPair in pair.parent.children(offset = pair):
-          if siblingPair.node.tag == node.tag:
-            nSiblingsOfTypeAfter.inc
+        elif siblingPair.node.tag == node.tag:
+          nSiblingsOfTypeBefore.inc
 
-          return validateNth(demand.a, demand.b, nSiblingsOfTypeAfter)
+      return validateNth(demand.a, demand.b, nSiblingsOfTypeBefore)
 
-      else:
-          raiseAssert "Invalid demand: " & $demand
+    of tkPseudoNthLastOfType:
+      var nSiblingsOfTypeAfter = 0
+      for siblingPair in pair.parent.children(offset = pair):
+        if siblingPair.node.tag == node.tag:
+          nSiblingsOfTypeAfter.inc
 
-func satisfies(pair: NodeWithParent, demands: seq[Demand]): bool =
+        return validateNth(demand.a, demand.b, nSiblingsOfTypeAfter)
+
+    else:
+        raiseAssert "Invalid demand: " & $demand
+
+proc satisfies(pair: NodeWithParent, demands: seq[Demand]): bool =
   for demand in demands:
     if not pair.satisfies(demand):
       return false
@@ -471,9 +394,9 @@ iterator searchNextSibling(queryPart: QueryPart,
     break
 
 type SearchIterator[N] =
-  iterator(q: QueryPart, p: NodeWithParent[N]): NodeWithParent[N] {.inline.}
+  iterator(q: QueryPart[N], p: NodeWithParent[N]): NodeWithParent[N] {.inline.}
 
-func exec[N](
+proc exec[N](
     parts: seq[QueryPart],
     root: NodeWithParent[N],
     single: bool,
@@ -512,7 +435,7 @@ func exec[N](
     combinator = parts[partIndex].combinator
     partIndex.inc
 
-func exec*[N](
+proc exec*[N](
     query: Query,
     root: N,
     single: bool,
@@ -544,8 +467,8 @@ when isMainModule:
 
   var query = initQuery(@[
     initQueryPart(@[
-      initElementDemand("p"),
-      initNthChildDemand(tkPseudoNthChild, 2, 1)
+      initElementDemand[XmlNode]("p"),
+      initNthChildDemand[XmlNode](tkPseudoNthChild, 2, 1)
     ], cmLeaf)
   ])
 
