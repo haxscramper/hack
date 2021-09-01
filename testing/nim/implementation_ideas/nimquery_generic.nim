@@ -5,44 +5,44 @@ import std/[xmltree, strutils, strtabs, unicode, math, deques]
 const DEBUG = false
 
 type
-    ParseError* = object of ValueError
+  ParseError* = object of ValueError
 
-    TokenKind = enum
-      tkInvalid
+  TokenKind = enum
+    tkInvalid
 
-      tkBracketStart, tkBracketEnd
-      tkParam
-      tkComma
+    tkBracketStart, tkBracketEnd
+    tkParam
+    tkComma
 
-      tkIdentifier, tkString
+    tkIdentifier, tkString
 
-      tkClass, tkId, tkElement
+    tkClass, tkId, tkElement
 
-      tkCombinatorDescendents, tkCombinatorChildren
-      tkCombinatorNextSibling, tkCombinatorSiblings
+    tkCombinatorDescendents, tkCombinatorChildren
+    tkCombinatorNextSibling, tkCombinatorSiblings
 
-      tkAttributeExact     # [attr=...]
-      tkAttributeItem      # [attr~=...]
-      tkAttributePipe      # [attr|=...]
-      tkAttributeExists    # [attr]
-      tkAttributeStart     # [attr^=...]
-      tkAttributeEnd       # [attr$=...]
-      tkAttributeSubstring # [attr*=...]
+    tkAttributeExact     # [attr=...]
+    tkAttributeItem      # [attr~=...]
+    tkAttributePipe      # [attr|=...]
+    tkAttributeExists    # [attr]
+    tkAttributeStart     # [attr^=...]
+    tkAttributeEnd       # [attr$=...]
+    tkAttributeSubstring # [attr*=...]
 
-      tkPseudoNthChild, tkPseudoNthLastChild
-      tkPseudoNthOfType, tkPseudoNthLastOfType
+    tkPseudoNthChild, tkPseudoNthLastChild
+    tkPseudoNthOfType, tkPseudoNthLastOfType
 
-      tkPseudoFirstOfType, tkPseudoLastOfType
-      tkPseudoOnlyChild, tkPseudoOnlyOfType, tkPseudoEmpty
-      tkPseudoFirstChild, tkPseudoLastChild
+    tkPseudoFirstOfType, tkPseudoLastOfType
+    tkPseudoOnlyChild, tkPseudoOnlyOfType, tkPseudoEmpty
+    tkPseudoFirstChild, tkPseudoLastChild
 
-      tkPseudoNot
+    tkPseudoNot
 
-      tkEoi # End of input
+    tkEoi # End of input
 
-    Token = object
-      kind: TokenKind
-      value: string
+  Token = object
+    kind: TokenKind
+    value: string
 
 const AttributeKinds = {
   tkAttributeExact, tkAttributeItem,
@@ -74,15 +74,16 @@ type
       else:
         discard
 
-  NodeWithParent = tuple
-    parent: XmlNode
-    index, elementIndex: int
+  NodeWithParent[N] = object
+    parent: N
+    index: int
+    elementIndex: int
 
   Combinator = enum
-    cmDescendants = tkCombinatorDescendents,
-    cmChildren = tkCombinatorChildren,
-    cmNextSibling = tkCombinatorNextSibling,
-    cmSiblings = tkCombinatorSiblings,
+    cmDescendants = tkCombinatorDescendents
+    cmChildren = tkCombinatorChildren
+    cmNextSibling = tkCombinatorNextSibling
+    cmSiblings = tkCombinatorSiblings
     cmLeaf # Special case for the last query
 
   QueryOption* = enum
@@ -132,7 +133,7 @@ func safeCharCompare(str: string, idx: int, cs: set[char]): bool {.inline.} =
 func safeCharCompare(str: string, idx: int, c: char): bool {.inline.} =
   return str.safeCharCompare(idx, {c})
 
-func node(pair: NodeWithParent): XmlNode =
+func node[N](pair: NodeWithParent[N]): N =
   return pair.parent[pair.index]
 
 func attrComparerString(kind: TokenKind): string =
@@ -223,14 +224,20 @@ func `==`*(d1, d2: Demand): bool =
       else:
         raise newException(Exception, "Invalid demand kind: " & $d1.kind)
 
-iterator children(node: XmlNode,
-                  offset: NodeWithParent = (nil, -1, -1)): NodeWithParent =
+iterator children[N](
+    node: N,
+    offset: NodeWithParent[N] =
+      NodeWithParent[N](parent: nil, index: -1, elementIndex: -1)
+  ): NodeWithParent[N] =
+
   var idx = offset.index + 1
   var elIdx = offset.elementIndex + 1
   while idx < node.len:
     let el = node[idx]
     if el.kind == xnElement:
-      yield (parent: node, index: idx, elementIndex: elIdx).NodeWithParent
+      yield NodeWithParent[N](
+        parent: node, index: idx, elementIndex: elIdx)
+
       elIdx.inc
 
     idx.inc
@@ -246,6 +253,10 @@ func initQuery(
     options: set[QueryOption] = DefaultQueryOptions): Query =
   Query(queries: @[parts], options: options)
 
+func initWithParent*[N](
+    parent: N, index: int, elementIndex: int): NodeWithParent[N] =
+
+  NodeWithParent[N](parent: parent, index: index, elementIndex: elementIndex)
 
 func canFindMultiple(q: Querypart, comb: Combinator,
                      options: set[QueryOption]): bool =
@@ -300,7 +311,7 @@ func isFinishedSimpleSelector(prev: Token, prevPrev: Token): bool =
   if prev.kind == tkIdentifier and prevPrev.kind in {tkClass, tkId}:
     return true
 
-func hasAttr(node: XmlNode, attr: string): bool {.inline.} =
+func hasAttr[N](node: N, attr: string): bool {.inline.} =
   return not node.attrs.isNil and node.attrs.hasKey(attr)
 
 func validateNth(a, b, nSiblings: int): bool =
@@ -428,8 +439,8 @@ iterator searchDescendants(queryPart: QueryPart,
                            position: NodeWithParent): NodeWithParent =
   var queue = initDeque[NodeWithParent]()
   for nodeData in position.node.children:
-    queue.addLast((parent: position.node, index: nodeData.index,
-      elementIndex: nodeData.elementIndex))
+    queue.addLast(initWithParent(
+      position.node, nodeData.index, nodeData.elementIndex))
 
   while queue.len > 0:
     let pair = queue.popFirst()
@@ -437,8 +448,8 @@ iterator searchDescendants(queryPart: QueryPart,
       yield pair
 
     for nodeData in pair.node.children:
-      queue.addLast((parent: pair.node, index: nodeData.index,
-        elementIndex: nodeData.elementIndex))
+      queue.addLast(initWithParent(
+        pair.node, nodeData.index, nodeData.elementIndex))
 
 iterator searchChildren(queryPart: QueryPart,
                         position: NodeWithParent): NodeWithParent =
@@ -459,20 +470,23 @@ iterator searchNextSibling(queryPart: QueryPart,
       yield pair
     break
 
-type SearchIterator = iterator(q: QueryPart,
-                               p: NodeWithParent): NodeWithParent {.inline.}
+type SearchIterator[N] =
+  iterator(q: QueryPart, p: NodeWithParent[N]): NodeWithParent[N] {.inline.}
 
-func exec(parts: seq[QueryPart],
-          root: NodeWithParent,
-          single: bool,
-          options: set[QueryOption],
-          result: var seq[XmlNode]) =
+func exec[N](
+    parts: seq[QueryPart],
+    root: NodeWithParent[N],
+    single: bool,
+    options: set[QueryOption],
+    result: var seq[N]
+  ) =
+
   var combinator = cmDescendants
-  var buffer = initDeque[NodeWithParent]()
+  var buffer = initDeque[NodeWithParent[N]]()
   var partIndex = 0
   buffer.addLast root
 
-  template search(position: NodeWithParent, itr: SearchIterator) =
+  template search(position: NodeWithParent[N], itr: SearchIterator) =
     for next in itr(parts[partIndex], position):
       if partIndex == high(parts):
         result.add next.node
@@ -498,15 +512,17 @@ func exec(parts: seq[QueryPart],
     combinator = parts[partIndex].combinator
     partIndex.inc
 
-func exec*(query: Query, root: XmlNode, single: bool): seq[XmlNode]
-           {.raises: [].} =
+func exec*[N](
+    query: Query,
+    root: N,
+    single: bool,
+    wrapperRoot: N
+  ): seq[N] =
 
-  result = newSeq[XmlNode]()
-
-  let wrapper = <>wrapper(root)
-  let wRoot = (parent: <>"wrapper-root"(wrapper), index: 0, elementIndex: 0)
+  result = newSeq[N]()
+  let wRoot = NodeWithParent[N](parent: wrapperRoot, index: 0, elementIndex: 0)
   for parts in query.queries:
-      parts.exec(wRoot, single, query.options, result)
+    parts.exec(wRoot, single, query.options, result)
 
 import std/[htmlparser, streams]
 
@@ -525,6 +541,7 @@ when isMainModule:
 """
 
   let xml = parseHtml(newStringStream(html))
+
   var query = initQuery(@[
     initQueryPart(@[
       initElementDemand("p"),
@@ -532,6 +549,9 @@ when isMainModule:
     ], cmLeaf)
   ])
 
-  let res = query.exec(xml, single = false)
+  let wrapper = <>wrapper(xml)
+  let wrapperRoot = <>"wrapper-root"(wrapper)
+
+  let res = query.exec(wrapper, false, wrapperRoot)
   echo res
   echo "ok"
