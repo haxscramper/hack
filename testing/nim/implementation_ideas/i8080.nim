@@ -2,6 +2,8 @@ import std/[strformat, strutils]
 import hmisc/core/all
 import hmisc/algo/clformat
 
+startHax()
+
 var oPCODES_CYCLES = [
   4.uint8, 10, 7,  5,  5,  5,  7,  4,  4,  10, 7,  5,  5,  5,
   7,       4,  4,  10, 7,  5,  5,  5,  7,  4,  4,  10, 7,  5,
@@ -62,12 +64,12 @@ var dISASSEMBLE_TABLE = ["nop", "lxi b,#", "stax b", "inx b",
 type
   Opc = enum
     opNop             = (0x00, "nop")
-    opLxib_Imm        = (0x01, "lxi b,#")
+    opLxib        = (0x01, "lxi b,#")
     opStaxb           = (0x02, "stax b")
     opInxb            = (0x03, "inx b")
     opInrb            = (0x04, "inr b")
     opDcrb            = (0x05, "dcr b")
-    opMvib_Imm        = (0x06, "mvi b,#")
+    opMvib        = (0x06, "mvi b,#")
     opRlc             = (0x07, "rlc")
     opIll             = (0x08, "ill")
     opDadb            = (0x09, "dad b")
@@ -75,15 +77,15 @@ type
     opDcxb            = (0x0B, "dcx b")
     opInrc            = (0x0C, "inr c")
     opDcrc            = (0x0D, "dcr c")
-    opMvic_Imm        = (0x0E, "mvi c,#")
+    opMvic        = (0x0E, "mvi c,#")
     opRrc             = (0x0F, "rrc")
     opIll1            = (0x10, "ill")
-    opLxid_Imm        = (0x11, "lxi d,#")
+    opLxid        = (0x11, "lxi d,#")
     opStaxd           = (0x12, "stax d")
     opInxd            = (0x13, "inx d")
     opInrd            = (0x14, "inr d")
     opDcrd            = (0x15, "dcr d")
-    opMvid_Imm        = (0x16, "mvi d,#")
+    opMvid        = (0x16, "mvi d,#")
     opRal             = (0x17, "ral")
     opIll2            = (0x18, "ill")
     opDadd            = (0x19, "dad d")
@@ -91,15 +93,15 @@ type
     opDcxd            = (0x1B, "dcx d")
     opInre            = (0x1C, "inr e")
     opDcre            = (0x1D, "dcr e")
-    opMvie_Imm        = (0x1E, "mvi e,#")
+    opMvie        = (0x1E, "mvi e,#")
     opRar             = (0x1F, "rar")
     opIll3            = (0x20, "ill")
-    opLxih_Imm        = (0x21, "lxi h,#")
+    opLxih        = (0x21, "lxi h,#")
     opShld            = (0x22, "shld")
     opInxh            = (0x23, "inx h")
     opInrh            = (0x24, "inr h")
     opDcrh            = (0x25, "dcr h")
-    opMvih_Imm        = (0x26, "mvi h,#")
+    opMvih        = (0x26, "mvi h,#")
     opDaa             = (0x27, "daa")
     opIll4            = (0x28, "ill")
     opDadh            = (0x29, "dad h")
@@ -107,15 +109,15 @@ type
     opDcxh            = (0x2B, "dcx h")
     opInrl            = (0x2C, "inr l")
     opDcrl            = (0x2D, "dcr l")
-    opMvil_Imm        = (0x2E, "mvi l,#")
+    opMvil        = (0x2E, "mvi l,#")
     opCma             = (0x2F, "cma")
     opIll5            = (0x30, "ill")
-    opLxisp_Imm       = (0x31, "lxi sp,#")
+    opLxisp       = (0x31, "lxi sp,#")
     opStaAbs          = (0x32, "sta $")
     opInxsp           = (0x33, "inx sp")
     opInrM            = (0x34, "inr M")
     opDcrM            = (0x35, "dcr M")
-    opMviM_Imm        = (0x36, "mvi M,#")
+    opMviM        = (0x36, "mvi M,#")
     opStc             = (0x37, "stc")
     opIll6            = (0x38, "ill")
     opDadsp           = (0x39, "dad sp")
@@ -123,7 +125,7 @@ type
     opDcxsp           = (0x3B, "dcx sp")
     opInra            = (0x3C, "inr a")
     opDcra            = (0x3D, "dcr a")
-    opMvia_Imm        = (0x3E, "mvi a,#")
+    opMvia        = (0x3E, "mvi a,#")
     opCmc             = (0x3F, "cmc")
     opMovb_b          = (0x40, "mov b,b")
     opMovb_c          = (0x41, "mov b,c")
@@ -634,21 +636,21 @@ proc i8080_execute*(c: ptr i8080; opcode: Opc): void =
     of opMovM_e: i8080_wb(c, i8080_get_hl(c), c.e)
     of opMovM_h: i8080_wb(c, i8080_get_hl(c), c.h)
     of opMovM_l: i8080_wb(c, i8080_get_hl(c), c.l)
-    of opMvia_Imm: c.a = i8080_next_byte(c)
-    of opMvib_Imm: c.b = i8080_next_byte(c)
-    of opMvic_Imm: c.c = i8080_next_byte(c)
-    of opMvid_Imm: c.d = i8080_next_byte(c)
-    of opMvie_Imm: c.e = i8080_next_byte(c)
-    of opMvih_Imm: c.h = i8080_next_byte(c)
-    of opMvil_Imm: c.l = i8080_next_byte(c)
-    of opMviM_Imm: i8080_wb(c, i8080_get_hl(c), i8080_next_byte(c))
+    of opMvia: c.a = i8080_next_byte(c)
+    of opMvib: c.b = i8080_next_byte(c)
+    of opMvic: c.c = i8080_next_byte(c)
+    of opMvid: c.d = i8080_next_byte(c)
+    of opMvie: c.e = i8080_next_byte(c)
+    of opMvih: c.h = i8080_next_byte(c)
+    of opMvil: c.l = i8080_next_byte(c)
+    of opMviM: i8080_wb(c, i8080_get_hl(c), i8080_next_byte(c))
     of opStaxb: i8080_wb(c, i8080_get_bc(c), c.a)
     of opStaxd: i8080_wb(c, i8080_get_de(c), c.a)
     of opStaAbs: i8080_wb(c, i8080_next_word(c), c.a)
-    of opLxib_Imm: i8080_set_bc(c, i8080_next_word(c))
-    of opLxid_Imm: i8080_set_de(c, i8080_next_word(c))
-    of opLxih_Imm: i8080_set_hl(c, i8080_next_word(c))
-    of opLxisp_Imm: c.sp = i8080_next_word(c)
+    of opLxib: i8080_set_bc(c, i8080_next_word(c))
+    of opLxid: i8080_set_de(c, i8080_next_word(c))
+    of opLxih: i8080_set_hl(c, i8080_next_word(c))
+    of opLxisp: c.sp = i8080_next_word(c)
     of opLhld: i8080_set_hl(c, i8080_rw(c, i8080_next_word(c)))
     of opShld: i8080_ww(c, i8080_next_word(c), i8080_get_hl(c))
     of opSphl: c.sp = i8080_get_hl(c)
@@ -845,6 +847,7 @@ proc i8080_init*(c: ptr i8080): void =
   c.interrupt_delay = 0
 
 proc i8080_step*(c: ptr i8080): void =
+  echov c.pc
   if c.interrupt_pending and c.iff and (c.interrupt_delay == 0):
     c.interrupt_pending = false
     c.iff = false
@@ -871,37 +874,41 @@ proc i8080_debug_output*(c: ptr i8080; print_disassembly: bool): void =
        fmt"DE: {i8080_get_de(c)}, HL: {i8080_get_hl(c)}, SP: {c.sp}, CYC: {c.cyc}",
        fmt"({i8080_rb(c, c.pc)} {i8080_rb(c, c.pc + 1)} {i8080_rb(c, c.pc + 2)} {i8080_rb(c, c.pc + 3)})"
 
-var memory: seq[Opc]
-var test_finished: bool = false
-proc rb*(userdata: pointer; aAddr: uint16): uint8 =
-  return memory[aAddr].uint8
+import hmisc/other/hpprint
 
-proc wb*(userdata: pointer; aAddr: uint16; val: uint8): void =
-  memory[aAddr] = val.Opc
-
-proc port_in*(userdata: pointer; port: uint8): uint8 =
-  return 0x00
-
-proc port_out*(userdata: pointer; port: uint8; value: uint8): void =
-  var c: ptr i8080 = cast[ptr i8080](userdata)
-  if port == 0:
-    test_finished = true
-
-
-proc run_test*(c: ptr i8080; filename: string; cyc_expected: culong): void =
+proc run_test*(c: ptr i8080; memory: ref seq[Opc]): void =
   i8080_init(c)
   c.userdata = c
-  c.read_byte = rb
-  c.write_byte = wb
-  c.port_in = port_in
-  c.port_out = port_out
-  c.pc = 0x100
-  var nb_instructions: clong = 0
-  test_finished = false
-  while (not(test_finished)):
-    nb_instructions += 1
+  c.read_byte = proc(userdata: pointer; aAddr: uint16): uint8 =
+    memory[aAddr].uint8
+
+
+  c.write_byte = proc(userdata: pointer; aAddr: uint16; val: uint8): void =
+    memory[aAddr] = val.Opc
+
+
+
+  c.port_in = proc(userdata: pointer; port: uint8): uint8 =
+    return 0x00
+
+
+  c.port_out = proc(userdata: pointer; port: uint8; value: uint8): void =
+    var c: ptr i8080 = cast[ptr i8080](userdata)
+
+  # c.pc = 0x100
+
+  while (not(c.halted)):
     i8080_step(c)
-  var diff = cyc_expected - c.cyc
+
+  pprint c[]
 
 proc main*() =
   var cpu: i8080
+  run_test(addr cpu, asRef @[
+    opMviB, 10.Opc,
+    opMviA, 2.Opc,
+    opAddB, opHlt])
+
+  pprint cpu
+
+main()
