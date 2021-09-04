@@ -1,4 +1,6 @@
-import std/[strformat]
+import std/[strformat, strutils]
+import hmisc/core/all
+import hmisc/algo/clformat
 
 var oPCODES_CYCLES = [
   4.uint8, 10, 7,  5,  5,  5,  7,  4,  4,  10, 7,  5,  5,  5,
@@ -56,6 +58,282 @@ var dISASSEMBLE_TABLE = ["nop", "lxi b,#", "stax b", "inx b",
     "ani #", "rst 4", "rpe", "pchl", "jpe $", "xchg", "cpe $", "ill", "xri #",
     "rst 5", "rp", "pop psw", "jp $", "di", "cp $", "push psw", "ori #",
     "rst 6", "rm", "sphl", "jm $", "ei", "cm $", "ill", "cpi #", "rst 7"]
+
+type
+  Opc = enum
+    opNop             = (0x00, "nop")
+    opLxib_Imm        = (0x01, "lxi b,#")
+    opStaxb           = (0x02, "stax b")
+    opInxb            = (0x03, "inx b")
+    opInrb            = (0x04, "inr b")
+    opDcrb            = (0x05, "dcr b")
+    opMvib_Imm        = (0x06, "mvi b,#")
+    opRlc             = (0x07, "rlc")
+    opIll             = (0x08, "ill")
+    opDadb            = (0x09, "dad b")
+    opLdaxb           = (0x0A, "ldax b")
+    opDcxb            = (0x0B, "dcx b")
+    opInrc            = (0x0C, "inr c")
+    opDcrc            = (0x0D, "dcr c")
+    opMvic_Imm        = (0x0E, "mvi c,#")
+    opRrc             = (0x0F, "rrc")
+    opIll1            = (0x10, "ill")
+    opLxid_Imm        = (0x11, "lxi d,#")
+    opStaxd           = (0x12, "stax d")
+    opInxd            = (0x13, "inx d")
+    opInrd            = (0x14, "inr d")
+    opDcrd            = (0x15, "dcr d")
+    opMvid_Imm        = (0x16, "mvi d,#")
+    opRal             = (0x17, "ral")
+    opIll2            = (0x18, "ill")
+    opDadd            = (0x19, "dad d")
+    opLdaxd           = (0x1A, "ldax d")
+    opDcxd            = (0x1B, "dcx d")
+    opInre            = (0x1C, "inr e")
+    opDcre            = (0x1D, "dcr e")
+    opMvie_Imm        = (0x1E, "mvi e,#")
+    opRar             = (0x1F, "rar")
+    opIll3            = (0x20, "ill")
+    opLxih_Imm        = (0x21, "lxi h,#")
+    opShld            = (0x22, "shld")
+    opInxh            = (0x23, "inx h")
+    opInrh            = (0x24, "inr h")
+    opDcrh            = (0x25, "dcr h")
+    opMvih_Imm        = (0x26, "mvi h,#")
+    opDaa             = (0x27, "daa")
+    opIll4            = (0x28, "ill")
+    opDadh            = (0x29, "dad h")
+    opLhld            = (0x2A, "lhld")
+    opDcxh            = (0x2B, "dcx h")
+    opInrl            = (0x2C, "inr l")
+    opDcrl            = (0x2D, "dcr l")
+    opMvil_Imm        = (0x2E, "mvi l,#")
+    opCma             = (0x2F, "cma")
+    opIll5            = (0x30, "ill")
+    opLxisp_Imm       = (0x31, "lxi sp,#")
+    opStaAbs          = (0x32, "sta $")
+    opInxsp           = (0x33, "inx sp")
+    opInrM            = (0x34, "inr M")
+    opDcrM            = (0x35, "dcr M")
+    opMviM_Imm        = (0x36, "mvi M,#")
+    opStc             = (0x37, "stc")
+    opIll6            = (0x38, "ill")
+    opDadsp           = (0x39, "dad sp")
+    opLdaAbs          = (0x3A, "lda $")
+    opDcxsp           = (0x3B, "dcx sp")
+    opInra            = (0x3C, "inr a")
+    opDcra            = (0x3D, "dcr a")
+    opMvia_Imm        = (0x3E, "mvi a,#")
+    opCmc             = (0x3F, "cmc")
+    opMovb_b          = (0x40, "mov b,b")
+    opMovb_c          = (0x41, "mov b,c")
+    opMovb_d          = (0x42, "mov b,d")
+    opMovb_e          = (0x43, "mov b,e")
+    opMovb_h          = (0x44, "mov b,h")
+    opMovb_l          = (0x45, "mov b,l")
+    opMovb_M          = (0x46, "mov b,M")
+    opMovb_a          = (0x47, "mov b,a")
+    opMovc_b          = (0x48, "mov c,b")
+    opMovc_c          = (0x49, "mov c,c")
+    opMovc_d          = (0x4A, "mov c,d")
+    opMovc_e          = (0x4B, "mov c,e")
+    opMovc_h          = (0x4C, "mov c,h")
+    opMovc_l          = (0x4D, "mov c,l")
+    opMovc_M          = (0x4E, "mov c,M")
+    opMovc_a          = (0x4F, "mov c,a")
+    opMovd_b          = (0x50, "mov d,b")
+    opMovd_c          = (0x51, "mov d,c")
+    opMovd_d          = (0x52, "mov d,d")
+    opMovd_e          = (0x53, "mov d,e")
+    opMovd_h          = (0x54, "mov d,h")
+    opMovd_l          = (0x55, "mov d,l")
+    opMovd_M          = (0x56, "mov d,M")
+    opMovd_a          = (0x57, "mov d,a")
+    opMove_b          = (0x58, "mov e,b")
+    opMove_c          = (0x59, "mov e,c")
+    opMove_d          = (0x5A, "mov e,d")
+    opMove_e          = (0x5B, "mov e,e")
+    opMove_h          = (0x5C, "mov e,h")
+    opMove_l          = (0x5D, "mov e,l")
+    opMove_M          = (0x5E, "mov e,M")
+    opMove_a          = (0x5F, "mov e,a")
+    opMovh_b          = (0x60, "mov h,b")
+    opMovh_c          = (0x61, "mov h,c")
+    opMovh_d          = (0x62, "mov h,d")
+    opMovh_e          = (0x63, "mov h,e")
+    opMovh_h          = (0x64, "mov h,h")
+    opMovh_l          = (0x65, "mov h,l")
+    opMovh_M          = (0x66, "mov h,M")
+    opMovh_a          = (0x67, "mov h,a")
+    opMovl_b          = (0x68, "mov l,b")
+    opMovl_c          = (0x69, "mov l,c")
+    opMovl_d          = (0x6A, "mov l,d")
+    opMovl_e          = (0x6B, "mov l,e")
+    opMovl_h          = (0x6C, "mov l,h")
+    opMovl_l          = (0x6D, "mov l,l")
+    opMovl_M          = (0x6E, "mov l,M")
+    opMovl_a          = (0x6F, "mov l,a")
+    opMovM_b          = (0x70, "mov M,b")
+    opMovM_c          = (0x71, "mov M,c")
+    opMovM_d          = (0x72, "mov M,d")
+    opMovM_e          = (0x73, "mov M,e")
+    opMovM_h          = (0x74, "mov M,h")
+    opMovM_l          = (0x75, "mov M,l")
+    opHlt             = (0x76, "hlt")
+    opMovM_a          = (0x77, "mov M,a")
+    opMova_b          = (0x78, "mov a,b")
+    opMova_c          = (0x79, "mov a,c")
+    opMova_d          = (0x7A, "mov a,d")
+    opMova_e          = (0x7B, "mov a,e")
+    opMova_h          = (0x7C, "mov a,h")
+    opMova_l          = (0x7D, "mov a,l")
+    opMova_M          = (0x7E, "mov a,M")
+    opMova_a          = (0x7F, "mov a,a")
+    opAddb            = (0x80, "add b")
+    opAddc            = (0x81, "add c")
+    opAddd            = (0x82, "add d")
+    opAdde            = (0x83, "add e")
+    opAddh            = (0x84, "add h")
+    opAddl            = (0x85, "add l")
+    opAddM            = (0x86, "add M")
+    opAdda            = (0x87, "add a")
+    opAdcb            = (0x88, "adc b")
+    opAdcc            = (0x89, "adc c")
+    opAdcd            = (0x8A, "adc d")
+    opAdce            = (0x8B, "adc e")
+    opAdch            = (0x8C, "adc h")
+    opAdcl            = (0x8D, "adc l")
+    opAdcM            = (0x8E, "adc M")
+    opAdca            = (0x8F, "adc a")
+    opSubb            = (0x90, "sub b")
+    opSubc            = (0x91, "sub c")
+    opSubd            = (0x92, "sub d")
+    opSube            = (0x93, "sub e")
+    opSubh            = (0x94, "sub h")
+    opSubl            = (0x95, "sub l")
+    opSubM            = (0x96, "sub M")
+    opSuba            = (0x97, "sub a")
+    opSbbb            = (0x98, "sbb b")
+    opSbbc            = (0x99, "sbb c")
+    opSbbd            = (0x9A, "sbb d")
+    opSbbe            = (0x9B, "sbb e")
+    opSbbh            = (0x9C, "sbb h")
+    opSbbl            = (0x9D, "sbb l")
+    opSbbM            = (0x9E, "sbb M")
+    opSbba            = (0x9F, "sbb a")
+    opAnab            = (0xA0, "ana b")
+    opAnac            = (0xA1, "ana c")
+    opAnad            = (0xA2, "ana d")
+    opAnae            = (0xA3, "ana e")
+    opAnah            = (0xA4, "ana h")
+    opAnal            = (0xA5, "ana l")
+    opAnaM            = (0xA6, "ana M")
+    opAnaa            = (0xA7, "ana a")
+    opXrab            = (0xA8, "xra b")
+    opXrac            = (0xA9, "xra c")
+    opXrad            = (0xAA, "xra d")
+    opXrae            = (0xAB, "xra e")
+    opXrah            = (0xAC, "xra h")
+    opXral            = (0xAD, "xra l")
+    opXraM            = (0xAE, "xra M")
+    opXraa            = (0xAF, "xra a")
+    opOrab            = (0xB0, "ora b")
+    opOrac            = (0xB1, "ora c")
+    opOrad            = (0xB2, "ora d")
+    opOrae            = (0xB3, "ora e")
+    opOrah            = (0xB4, "ora h")
+    opOral            = (0xB5, "ora l")
+    opOraM            = (0xB6, "ora M")
+    opOraa            = (0xB7, "ora a")
+    opCmpb            = (0xB8, "cmp b")
+    opCmpc            = (0xB9, "cmp c")
+    opCmpd            = (0xBA, "cmp d")
+    opCmpe            = (0xBB, "cmp e")
+    opCmph            = (0xBC, "cmp h")
+    opCmpl            = (0xBD, "cmp l")
+    opCmpM            = (0xBE, "cmp M")
+    opCmpa            = (0xBF, "cmp a")
+    opRnz             = (0xC0, "rnz")
+    opPopb            = (0xC1, "pop b")
+    opJnzAbs          = (0xC2, "jnz $")
+    opJmpAbs          = (0xC3, "jmp $")
+    opCnzAbs          = (0xC4, "cnz $")
+    opPushb           = (0xC5, "push b")
+    opAdiImm          = (0xC6, "adi #")
+    opRst0            = (0xC7, "rst 0")
+    opRz              = (0xC8, "rz")
+    opRet             = (0xC9, "ret")
+    opJzAbs           = (0xCA, "jz $")
+    opIll7            = (0xCB, "ill")
+    opCzAbs           = (0xCC, "cz $")
+    opCallAbs         = (0xCD, "call $")
+    opAciImm          = (0xCE, "aci #")
+    opRst1            = (0xCF, "rst 1")
+    opRnc             = (0xD0, "rnc")
+    opPopd            = (0xD1, "pop d")
+    opJncAbs          = (0xD2, "jnc $")
+    opOutp            = (0xD3, "out p")
+    opCncAbs          = (0xD4, "cnc $")
+    opPushd           = (0xD5, "push d")
+    opSuiImm          = (0xD6, "sui #")
+    opRst2            = (0xD7, "rst 2")
+    opRc              = (0xD8, "rc")
+    opIll8            = (0xD9, "ill")
+    opJcAbs           = (0xDA, "jc $")
+    opInp             = (0xDB, "in p")
+    opCcAbs           = (0xDC, "cc $")
+    opIll9            = (0xDD, "ill")
+    opSbiImm          = (0xDE, "sbi #")
+    opRst3            = (0xDF, "rst 3")
+    opRpo             = (0xE0, "rpo")
+    opPoph            = (0xE1, "pop h")
+    opJpoAbs          = (0xE2, "jpo $")
+    opXthl            = (0xE3, "xthl")
+    opCpoAbs          = (0xE4, "cpo $")
+    opPushh           = (0xE5, "push h")
+    opAniImm          = (0xE6, "ani #")
+    opRst4            = (0xE7, "rst 4")
+    opRpe             = (0xE8, "rpe")
+    opPchl            = (0xE9, "pchl")
+    opJpeAbs          = (0xEA, "jpe $")
+    opXchg            = (0xEB, "xchg")
+    opCpeAbs          = (0xEC, "cpe $")
+    opIll10           = (0xED, "ill")
+    opXriImm          = (0xEE, "xri #")
+    opRst5            = (0xEF, "rst 5")
+    opRp              = (0xF0, "rp")
+    opPoppsw          = (0xF1, "pop psw")
+    opJpAbs           = (0xF2, "jp $")
+    opDi              = (0xF3, "di")
+    opCpAbs           = (0xF4, "cp $")
+    opPushpsw         = (0xF5, "push psw")
+    opOriImm          = (0xF6, "ori #")
+    opRst6            = (0xF7, "rst 6")
+    opRm              = (0xF8, "rm")
+    opSphl            = (0xF9, "sphl")
+    opJmAbs           = (0xFA, "jm $")
+    opEi              = (0xFB, "ei")
+    opCmAbs           = (0xFC, "cm $")
+    opIll11           = (0xFD, "ill")
+    opCpiImm          = (0xFE, "cpi #")
+    opRst7            = (0xFF, "rst 7")
+
+
+var map: seq[(string, string)]
+for val in uint8(0) .. 255:
+  let name = dISASSEMBLE_TABLE[val]
+  let ident = toDescriptiveIdent(
+    name,
+    toMapArray {
+      ' ': some "",
+      ',': some "_",
+      '$': some "Abs",
+      '#': some "Imm"
+  }).capitalizeAscii()
+  map.add((&"0x{val.toHex()}", &"op{ident}"))
+  # echo &"    op{ident:<15} = (0x{val.toHex()}, \"{name}\")"
+
+# writeFile("/tmp/res.nim", currentSourcePath().readFile().multiReplace(map))
 
 type
   i8080 = object
@@ -285,508 +563,259 @@ proc i8080_xthl*(c: ptr i8080): void =
   i8080_ww(c, c.sp, i8080_get_hl(c))
   i8080_set_hl(c, val)
 
-proc i8080_execute*(c: ptr i8080; opcode: uint8): void =
-  c.cyc += oPCODES_CYCLES[opcode]
+proc i8080_execute*(c: ptr i8080; opcode: Opc): void =
+  c.cyc += oPCODES_CYCLES[opcode.uint8]
   if c.interrupt_delay > 0:
     c.interrupt_delay -= 1
-  case opcode
-  of 0x7F:
-    c.a = c.a
-  of 0x78:
-    c.a = c.b
-  of 0x79:
-    c.a = c.c
-  of 0x7A:
-    c.a = c.d
-  of 0x7B:
-    c.a = c.e
-  of 0x7C:
-    c.a = c.h
-  of 0x7D:
-    c.a = c.l
-  of 0x7E:
-    c.a = i8080_rb(c, i8080_get_hl(c))
-  of 0x0A:
-    c.a = i8080_rb(c, i8080_get_bc(c))
-  of 0x1A:
-    c.a = i8080_rb(c, i8080_get_de(c))
-  of 0x3A:
-    c.a = i8080_rb(c, i8080_next_word(c))
-  of 0x47:
-    c.b = c.a
-  of 0x40:
-    c.b = c.b
-  of 0x41:
-    c.b = c.c
-  of 0x42:
-    c.b = c.d
-  of 0x43:
-    c.b = c.e
-  of 0x44:
-    c.b = c.h
-  of 0x45:
-    c.b = c.l
-  of 0x46:
-    c.b = i8080_rb(c, i8080_get_hl(c))
-  of 0x4F:
-    c.c = c.a
-  of 0x48:
-    c.c = c.b
-  of 0x49:
-    c.c = c.c
-  of 0x4A:
-    c.c = c.d
-  of 0x4B:
-    c.c = c.e
-  of 0x4C:
-    c.c = c.h
-  of 0x4D:
-    c.c = c.l
-  of 0x4E:
-    c.c = i8080_rb(c, i8080_get_hl(c))
-  of 0x57:
-    c.d = c.a
-  of 0x50:
-    c.d = c.b
-  of 0x51:
-    c.d = c.c
-  of 0x52:
-    c.d = c.d
-  of 0x53:
-    c.d = c.e
-  of 0x54:
-    c.d = c.h
-  of 0x55:
-    c.d = c.l
-  of 0x56:
-    c.d = i8080_rb(c, i8080_get_hl(c))
-  of 0x5F:
-    c.e = c.a
-  of 0x58:
-    c.e = c.b
-  of 0x59:
-    c.e = c.c
-  of 0x5A:
-    c.e = c.d
-  of 0x5B:
-    c.e = c.e
-  of 0x5C:
-    c.e = c.h
-  of 0x5D:
-    c.e = c.l
-  of 0x5E:
-    c.e = i8080_rb(c, i8080_get_hl(c))
-  of 0x67:
-    c.h = c.a
-  of 0x60:
-    c.h = c.b
-  of 0x61:
-    c.h = c.c
-  of 0x62:
-    c.h = c.d
-  of 0x63:
-    c.h = c.e
-  of 0x64:
-    c.h = c.h
-  of 0x65:
-    c.h = c.l
-  of 0x66:
-    c.h = i8080_rb(c, i8080_get_hl(c))
-  of 0x6F:
-    c.l = c.a
-  of 0x68:
-    c.l = c.b
-  of 0x69:
-    c.l = c.c
-  of 0x6A:
-    c.l = c.d
-  of 0x6B:
-    c.l = c.e
-  of 0x6C:
-    c.l = c.h
-  of 0x6D:
-    c.l = c.l
-  of 0x6E:
-    c.l = i8080_rb(c, i8080_get_hl(c))
-  of 0x77:
-    i8080_wb(c, i8080_get_hl(c), c.a)
-  of 0x70:
-    i8080_wb(c, i8080_get_hl(c), c.b)
-  of 0x71:
-    i8080_wb(c, i8080_get_hl(c), c.c)
-  of 0x72:
-    i8080_wb(c, i8080_get_hl(c), c.d)
-  of 0x73:
-    i8080_wb(c, i8080_get_hl(c), c.e)
-  of 0x74:
-    i8080_wb(c, i8080_get_hl(c), c.h)
-  of 0x75:
-    i8080_wb(c, i8080_get_hl(c), c.l)
-  of 0x3E:
-    c.a = i8080_next_byte(c)
-  of 0x06:
-    c.b = i8080_next_byte(c)
-  of 0x0E:
-    c.c = i8080_next_byte(c)
-  of 0x16:
-    c.d = i8080_next_byte(c)
-  of 0x1E:
-    c.e = i8080_next_byte(c)
-  of 0x26:
-    c.h = i8080_next_byte(c)
-  of 0x2E:
-    c.l = i8080_next_byte(c)
-  of 0x36:
-    i8080_wb(c, i8080_get_hl(c), i8080_next_byte(c))
-  of 0x02:
-    i8080_wb(c, i8080_get_bc(c), c.a)
-  of 0x12:
-    i8080_wb(c, i8080_get_de(c), c.a)
-  of 0x32:
-    i8080_wb(c, i8080_next_word(c), c.a)
-  of 0x01:
-    i8080_set_bc(c, i8080_next_word(c))
-  of 0x11:
-    i8080_set_de(c, i8080_next_word(c))
-  of 0x21:
-    i8080_set_hl(c, i8080_next_word(c))
-  of 0x31:
-    c.sp = i8080_next_word(c)
-  of 0x2A:
-    i8080_set_hl(c, i8080_rw(c, i8080_next_word(c)))
-  of 0x22:
-    i8080_ww(c, i8080_next_word(c), i8080_get_hl(c))
-  of 0xF9:
-    c.sp = i8080_get_hl(c)
-  of 0xEB:
-    i8080_xchg(c)
-  of 0xE3:
-    i8080_xthl(c)
-  of 0x87:
-    i8080_add(c, addr c.a, c.a, false)
-  of 0x80:
-    i8080_add(c, addr c.a, c.b, false)
-  of 0x81:
-    i8080_add(c, addr c.a, c.c, false)
-  of 0x82:
-    i8080_add(c, addr c.a, c.d, false)
-  of 0x83:
-    i8080_add(c, addr c.a, c.e, false)
-  of 0x84:
-    i8080_add(c, addr c.a, c.h, false)
-  of 0x85:
-    i8080_add(c, addr c.a, c.l, false)
-  of 0x86:
-    i8080_add(c, addr c.a, i8080_rb(c, i8080_get_hl(c)), false)
-  of 0xC6:
-    i8080_add(c, addr c.a, i8080_next_byte(c), false)
-  of 0x8F:
-    i8080_add(c, addr c.a, c.a, c.cf)
-  of 0x88:
-    i8080_add(c, addr c.a, c.b, c.cf)
-  of 0x89:
-    i8080_add(c, addr c.a, c.c, c.cf)
-  of 0x8A:
-    i8080_add(c, addr c.a, c.d, c.cf)
-  of 0x8B:
-    i8080_add(c, addr c.a, c.e, c.cf)
-  of 0x8C:
-    i8080_add(c, addr c.a, c.h, c.cf)
-  of 0x8D:
-    i8080_add(c, addr c.a, c.l, c.cf)
-  of 0x8E:
-    i8080_add(c, addr c.a, i8080_rb(c, i8080_get_hl(c)), c.cf)
-  of 0xCE:
-    i8080_add(c, addr c.a, i8080_next_byte(c), c.cf)
-  of 0x97:
-    i8080_sub(c, addr c.a, c.a, false)
-  of 0x90:
-    i8080_sub(c, addr c.a, c.b, false)
-  of 0x91:
-    i8080_sub(c, addr c.a, c.c, false)
-  of 0x92:
-    i8080_sub(c, addr c.a, c.d, false)
-  of 0x93:
-    i8080_sub(c, addr c.a, c.e, false)
-  of 0x94:
-    i8080_sub(c, addr c.a, c.h, false)
-  of 0x95:
-    i8080_sub(c, addr c.a, c.l, false)
-  of 0x96:
-    i8080_sub(c, addr c.a, i8080_rb(c, i8080_get_hl(c)), false)
-  of 0xD6:
-    i8080_sub(c, addr c.a, i8080_next_byte(c), false)
-  of 0x9F:
-    i8080_sub(c, addr c.a, c.a, c.cf)
-  of 0x98:
-    i8080_sub(c, addr c.a, c.b, c.cf)
-  of 0x99:
-    i8080_sub(c, addr c.a, c.c, c.cf)
-  of 0x9A:
-    i8080_sub(c, addr c.a, c.d, c.cf)
-  of 0x9B:
-    i8080_sub(c, addr c.a, c.e, c.cf)
-  of 0x9C:
-    i8080_sub(c, addr c.a, c.h, c.cf)
-  of 0x9D:
-    i8080_sub(c, addr c.a, c.l, c.cf)
-  of 0x9E:
-    i8080_sub(c, addr c.a, i8080_rb(c, i8080_get_hl(c)), c.cf)
-  of 0xDE:
-    i8080_sub(c, addr c.a, i8080_next_byte(c), c.cf)
-  of 0x09:
-    i8080_dad(c, i8080_get_bc(c))
-  of 0x19:
-    i8080_dad(c, i8080_get_de(c))
-  of 0x29:
-    i8080_dad(c, i8080_get_hl(c))
-  of 0x39:
-    i8080_dad(c, c.sp)
-  of 0xF3:
-    c.iff = false
-  of 0xFB:
-    c.iff = true
-    c.interrupt_delay = 1
-  of 0x00:
-    discard
-  of 0x76:
-    c.halted = true
-  of 0x3C:
-    c.a = i8080_inr(c, c.a)
-  of 0x04:
-    c.b = i8080_inr(c, c.b)
-  of 0x0C:
-    c.c = i8080_inr(c, c.c)
-  of 0x14:
-    c.d = i8080_inr(c, c.d)
-  of 0x1C:
-    c.e = i8080_inr(c, c.e)
-  of 0x24:
-    c.h = i8080_inr(c, c.h)
-  of 0x2C:
-    c.l = i8080_inr(c, c.l)
-  of 0x34:
-    i8080_wb(c, i8080_get_hl(c), i8080_inr(c, i8080_rb(c, i8080_get_hl(c))))
-  of 0x3D:
-    c.a = i8080_dcr(c, c.a)
-  of 0x05:
-    c.b = i8080_dcr(c, c.b)
-  of 0x0D:
-    c.c = i8080_dcr(c, c.c)
-  of 0x15:
-    c.d = i8080_dcr(c, c.d)
-  of 0x1D:
-    c.e = i8080_dcr(c, c.e)
-  of 0x25:
-    c.h = i8080_dcr(c, c.h)
-  of 0x2D:
-    c.l = i8080_dcr(c, c.l)
-  of 0x35:
-    i8080_wb(c, i8080_get_hl(c), i8080_dcr(c, i8080_rb(c, i8080_get_hl(c))))
-  of 0x03:
-    i8080_set_bc(c, i8080_get_bc(c) + 1)
-  of 0x13:
-    i8080_set_de(c, i8080_get_de(c) + 1)
-  of 0x23:
-    i8080_set_hl(c, i8080_get_hl(c) + 1)
-  of 0x33:
-    c.sp += 1
-  of 0x0B:
-    i8080_set_bc(c, i8080_get_bc(c) - 1)
-  of 0x1B:
-    i8080_set_de(c, i8080_get_de(c) - 1)
-  of 0x2B:
-    i8080_set_hl(c, i8080_get_hl(c) - 1)
-  of 0x3B:
-    c.sp -= 1
-  of 0x27:
-    i8080_daa(c)
-  of 0x2F:
-    c.a = not(c.a)
-  of 0x37:
-    c.cf = true
-  of 0x3F:
-    c.cf = not(c.cf)
-  of 0x07:
-    i8080_rlc(c)
-  of 0x0F:
-    i8080_rrc(c)
-  of 0x17:
-    i8080_ral(c)
-  of 0x1F:
-    i8080_rar(c)
-  of 0xA7:
-    i8080_ana(c, c.a)
-  of 0xA0:
-    i8080_ana(c, c.b)
-  of 0xA1:
-    i8080_ana(c, c.c)
-  of 0xA2:
-    i8080_ana(c, c.d)
-  of 0xA3:
-    i8080_ana(c, c.e)
-  of 0xA4:
-    i8080_ana(c, c.h)
-  of 0xA5:
-    i8080_ana(c, c.l)
-  of 0xA6:
-    i8080_ana(c, i8080_rb(c, i8080_get_hl(c)))
-  of 0xE6:
-    i8080_ana(c, i8080_next_byte(c))
-  of 0xAF:
-    i8080_xra(c, c.a)
-  of 0xA8:
-    i8080_xra(c, c.b)
-  of 0xA9:
-    i8080_xra(c, c.c)
-  of 0xAA:
-    i8080_xra(c, c.d)
-  of 0xAB:
-    i8080_xra(c, c.e)
-  of 0xAC:
-    i8080_xra(c, c.h)
-  of 0xAD:
-    i8080_xra(c, c.l)
-  of 0xAE:
-    i8080_xra(c, i8080_rb(c, i8080_get_hl(c)))
-  of 0xEE:
-    i8080_xra(c, i8080_next_byte(c))
-  of 0xB7:
-    i8080_ora(c, c.a)
-  of 0xB0:
-    i8080_ora(c, c.b)
-  of 0xB1:
-    i8080_ora(c, c.c)
-  of 0xB2:
-    i8080_ora(c, c.d)
-  of 0xB3:
-    i8080_ora(c, c.e)
-  of 0xB4:
-    i8080_ora(c, c.h)
-  of 0xB5:
-    i8080_ora(c, c.l)
-  of 0xB6:
-    i8080_ora(c, i8080_rb(c, i8080_get_hl(c)))
-  of 0xF6:
-    i8080_ora(c, i8080_next_byte(c))
-  of 0xBF:
-    i8080_cmp(c, c.a)
-  of 0xB8:
-    i8080_cmp(c, c.b)
-  of 0xB9:
-    i8080_cmp(c, c.c)
-  of 0xBA:
-    i8080_cmp(c, c.d)
-  of 0xBB:
-    i8080_cmp(c, c.e)
-  of 0xBC:
-    i8080_cmp(c, c.h)
-  of 0xBD:
-    i8080_cmp(c, c.l)
-  of 0xBE:
-    i8080_cmp(c, i8080_rb(c, i8080_get_hl(c)))
-  of 0xFE:
-    i8080_cmp(c, i8080_next_byte(c))
-  of 0xC3:
-    i8080_jmp(c, i8080_next_word(c))
-  of 0xC2:
-    i8080_cond_jmp(c, c.zf == false)
-  of 0xCA:
-    i8080_cond_jmp(c, c.zf == true)
-  of 0xD2:
-    i8080_cond_jmp(c, c.cf == false)
-  of 0xDA:
-    i8080_cond_jmp(c, c.cf == true)
-  of 0xE2:
-    i8080_cond_jmp(c, c.pf == false)
-  of 0xEA:
-    i8080_cond_jmp(c, c.pf == true)
-  of 0xF2:
-    i8080_cond_jmp(c, c.sf == false)
-  of 0xFA:
-    i8080_cond_jmp(c, c.sf == true)
-  of 0xE9:
-    c.pc = i8080_get_hl(c)
-  of 0xCD:
-    i8080_call(c, i8080_next_word(c))
-  of 0xC4:
-    i8080_cond_call(c, c.zf == false)
-  of 0xCC:
-    i8080_cond_call(c, c.zf == true)
-  of 0xD4:
-    i8080_cond_call(c, c.cf == false)
-  of 0xDC:
-    i8080_cond_call(c, c.cf == true)
-  of 0xE4:
-    i8080_cond_call(c, c.pf == false)
-  of 0xEC:
-    i8080_cond_call(c, c.pf == true)
-  of 0xF4:
-    i8080_cond_call(c, c.sf == false)
-  of 0xFC:
-    i8080_cond_call(c, c.sf == true)
-  of 0xC9:
-    i8080_ret(c)
-  of 0xC0:
-    i8080_cond_ret(c, c.zf == false)
-  of 0xC8:
-    i8080_cond_ret(c, c.zf == true)
-  of 0xD0:
-    i8080_cond_ret(c, c.cf == false)
-  of 0xD8:
-    i8080_cond_ret(c, c.cf == true)
-  of 0xE0:
-    i8080_cond_ret(c, c.pf == false)
-  of 0xE8:
-    i8080_cond_ret(c, c.pf == true)
-  of 0xF0:
-    i8080_cond_ret(c, c.sf == false)
-  of 0xF8:
-    i8080_cond_ret(c, c.sf == true)
-  of 0xC7:
-    i8080_call(c, 0x00)
-  of 0xCF:
-    i8080_call(c, 0x08)
-  of 0xD7:
-    i8080_call(c, 0x10)
-  of 0xDF:
-    i8080_call(c, 0x18)
-  of 0xE7:
-    i8080_call(c, 0x20)
-  of 0xEF:
-    i8080_call(c, 0x28)
-  of 0xF7:
-    i8080_call(c, 0x30)
-  of 0xFF:
-    i8080_call(c, 0x38)
-  of 0xC5:
-    i8080_push_stack(c, i8080_get_bc(c))
-  of 0xD5:
-    i8080_push_stack(c, i8080_get_de(c))
-  of 0xE5:
-    i8080_push_stack(c, i8080_get_hl(c))
-  of 0xF5:
-    i8080_push_psw(c)
-  of 0xC1:
-    i8080_set_bc(c, i8080_pop_stack(c))
-  of 0xD1:
-    i8080_set_de(c, i8080_pop_stack(c))
-  of 0xE1:
-    i8080_set_hl(c, i8080_pop_stack(c))
-  of 0xF1:
-    i8080_pop_psw(c)
-  of 0xDB:
-    c.a = c.port_in(c.userdata, i8080_next_byte(c))
-  of 0xD3:
-    c.port_out(c.userdata, i8080_next_byte(c), c.a)
-  of 0x08, 0x10, 0x18, 0x20, 0x28, 0x30, 0x38:
-    discard
-  of 0xD9:
-    i8080_ret(c)
-  of 0xDD, 0xED, 0xFD:
-    i8080_call(c, i8080_next_word(c))
-  of 0xCB:
-    i8080_jmp(c, i8080_next_word(c))
+  case opcode:
+    of opMova_a: c.a = c.a
+    of opMova_b: c.a = c.b
+    of opMova_c: c.a = c.c
+    of opMova_d: c.a = c.d
+    of opMova_e: c.a = c.e
+    of opMova_h: c.a = c.h
+    of opMova_l: c.a = c.l
+    of opMova_M: c.a = i8080_rb(c, i8080_get_hl(c))
+    of opLdaxb: c.a = i8080_rb(c, i8080_get_bc(c))
+    of opLdaxd: c.a = i8080_rb(c, i8080_get_de(c))
+    of opLdaAbs: c.a = i8080_rb(c, i8080_next_word(c))
+    of opMovb_a: c.b = c.a
+    of opMovb_b: c.b = c.b
+    of opMovb_c: c.b = c.c
+    of opMovb_d: c.b = c.d
+    of opMovb_e: c.b = c.e
+    of opMovb_h: c.b = c.h
+    of opMovb_l: c.b = c.l
+    of opMovb_M: c.b = i8080_rb(c, i8080_get_hl(c))
+    of opMovc_a: c.c = c.a
+    of opMovc_b: c.c = c.b
+    of opMovc_c: c.c = c.c
+    of opMovc_d: c.c = c.d
+    of opMovc_e: c.c = c.e
+    of opMovc_h: c.c = c.h
+    of opMovc_l: c.c = c.l
+    of opMovc_M: c.c = i8080_rb(c, i8080_get_hl(c))
+    of opMovd_a: c.d = c.a
+    of opMovd_b: c.d = c.b
+    of opMovd_c: c.d = c.c
+    of opMovd_d: c.d = c.d
+    of opMovd_e: c.d = c.e
+    of opMovd_h: c.d = c.h
+    of opMovd_l: c.d = c.l
+    of opMovd_M: c.d = i8080_rb(c, i8080_get_hl(c))
+    of opMove_a: c.e = c.a
+    of opMove_b: c.e = c.b
+    of opMove_c: c.e = c.c
+    of opMove_d: c.e = c.d
+    of opMove_e: c.e = c.e
+    of opMove_h: c.e = c.h
+    of opMove_l: c.e = c.l
+    of opMove_M: c.e = i8080_rb(c, i8080_get_hl(c))
+    of opMovh_a: c.h = c.a
+    of opMovh_b: c.h = c.b
+    of opMovh_c: c.h = c.c
+    of opMovh_d: c.h = c.d
+    of opMovh_e: c.h = c.e
+    of opMovh_h: c.h = c.h
+    of opMovh_l: c.h = c.l
+    of opMovh_M: c.h = i8080_rb(c, i8080_get_hl(c))
+    of opMovl_a: c.l = c.a
+    of opMovl_b: c.l = c.b
+    of opMovl_c: c.l = c.c
+    of opMovl_d: c.l = c.d
+    of opMovl_e: c.l = c.e
+    of opMovl_h: c.l = c.h
+    of opMovl_l: c.l = c.l
+    of opMovl_M: c.l = i8080_rb(c, i8080_get_hl(c))
+    of opMovM_a: i8080_wb(c, i8080_get_hl(c), c.a)
+    of opMovM_b: i8080_wb(c, i8080_get_hl(c), c.b)
+    of opMovM_c: i8080_wb(c, i8080_get_hl(c), c.c)
+    of opMovM_d: i8080_wb(c, i8080_get_hl(c), c.d)
+    of opMovM_e: i8080_wb(c, i8080_get_hl(c), c.e)
+    of opMovM_h: i8080_wb(c, i8080_get_hl(c), c.h)
+    of opMovM_l: i8080_wb(c, i8080_get_hl(c), c.l)
+    of opMvia_Imm: c.a = i8080_next_byte(c)
+    of opMvib_Imm: c.b = i8080_next_byte(c)
+    of opMvic_Imm: c.c = i8080_next_byte(c)
+    of opMvid_Imm: c.d = i8080_next_byte(c)
+    of opMvie_Imm: c.e = i8080_next_byte(c)
+    of opMvih_Imm: c.h = i8080_next_byte(c)
+    of opMvil_Imm: c.l = i8080_next_byte(c)
+    of opMviM_Imm: i8080_wb(c, i8080_get_hl(c), i8080_next_byte(c))
+    of opStaxb: i8080_wb(c, i8080_get_bc(c), c.a)
+    of opStaxd: i8080_wb(c, i8080_get_de(c), c.a)
+    of opStaAbs: i8080_wb(c, i8080_next_word(c), c.a)
+    of opLxib_Imm: i8080_set_bc(c, i8080_next_word(c))
+    of opLxid_Imm: i8080_set_de(c, i8080_next_word(c))
+    of opLxih_Imm: i8080_set_hl(c, i8080_next_word(c))
+    of opLxisp_Imm: c.sp = i8080_next_word(c)
+    of opLhld: i8080_set_hl(c, i8080_rw(c, i8080_next_word(c)))
+    of opShld: i8080_ww(c, i8080_next_word(c), i8080_get_hl(c))
+    of opSphl: c.sp = i8080_get_hl(c)
+    of opXchg: i8080_xchg(c)
+    of opXthl: i8080_xthl(c)
+    of opAdda: i8080_add(c, addr c.a, c.a, false)
+    of opAddb: i8080_add(c, addr c.a, c.b, false)
+    of opAddc: i8080_add(c, addr c.a, c.c, false)
+    of opAddd: i8080_add(c, addr c.a, c.d, false)
+    of opAdde: i8080_add(c, addr c.a, c.e, false)
+    of opAddh: i8080_add(c, addr c.a, c.h, false)
+    of opAddl: i8080_add(c, addr c.a, c.l, false)
+    of opAddM: i8080_add(c, addr c.a, i8080_rb(c, i8080_get_hl(c)), false)
+    of opAdiImm: i8080_add(c, addr c.a, i8080_next_byte(c), false)
+    of opAdca: i8080_add(c, addr c.a, c.a, c.cf)
+    of opAdcb: i8080_add(c, addr c.a, c.b, c.cf)
+    of opAdcc: i8080_add(c, addr c.a, c.c, c.cf)
+    of opAdcd: i8080_add(c, addr c.a, c.d, c.cf)
+    of opAdce: i8080_add(c, addr c.a, c.e, c.cf)
+    of opAdch: i8080_add(c, addr c.a, c.h, c.cf)
+    of opAdcl: i8080_add(c, addr c.a, c.l, c.cf)
+    of opAdcM: i8080_add(c, addr c.a, i8080_rb(c, i8080_get_hl(c)), c.cf)
+    of opAciImm: i8080_add(c, addr c.a, i8080_next_byte(c), c.cf)
+    of opSuba: i8080_sub(c, addr c.a, c.a, false)
+    of opSubb: i8080_sub(c, addr c.a, c.b, false)
+    of opSubc: i8080_sub(c, addr c.a, c.c, false)
+    of opSubd: i8080_sub(c, addr c.a, c.d, false)
+    of opSube: i8080_sub(c, addr c.a, c.e, false)
+    of opSubh: i8080_sub(c, addr c.a, c.h, false)
+    of opSubl: i8080_sub(c, addr c.a, c.l, false)
+    of opSubM: i8080_sub(c, addr c.a, i8080_rb(c, i8080_get_hl(c)), false)
+    of opSuiImm: i8080_sub(c, addr c.a, i8080_next_byte(c), false)
+    of opSbba: i8080_sub(c, addr c.a, c.a, c.cf)
+    of opSbbb: i8080_sub(c, addr c.a, c.b, c.cf)
+    of opSbbc: i8080_sub(c, addr c.a, c.c, c.cf)
+    of opSbbd: i8080_sub(c, addr c.a, c.d, c.cf)
+    of opSbbe: i8080_sub(c, addr c.a, c.e, c.cf)
+    of opSbbh: i8080_sub(c, addr c.a, c.h, c.cf)
+    of opSbbl: i8080_sub(c, addr c.a, c.l, c.cf)
+    of opSbbM: i8080_sub(c, addr c.a, i8080_rb(c, i8080_get_hl(c)), c.cf)
+    of opSbiImm: i8080_sub(c, addr c.a, i8080_next_byte(c), c.cf)
+    of opDadb: i8080_dad(c, i8080_get_bc(c))
+    of opDadd: i8080_dad(c, i8080_get_de(c))
+    of opDadh: i8080_dad(c, i8080_get_hl(c))
+    of opDadsp: i8080_dad(c, c.sp)
+    of opDi: c.iff = false
+    of opEi: c.iff = true; c.interrupt_delay = 1
+    of opNop: discard
+    of opHlt: c.halted = true
+    of opInra: c.a = i8080_inr(c, c.a)
+    of opInrb: c.b = i8080_inr(c, c.b)
+    of opInrc: c.c = i8080_inr(c, c.c)
+    of opInrd: c.d = i8080_inr(c, c.d)
+    of opInre: c.e = i8080_inr(c, c.e)
+    of opInrh: c.h = i8080_inr(c, c.h)
+    of opInrl: c.l = i8080_inr(c, c.l)
+    of opInrM: i8080_wb(c, i8080_get_hl(c), i8080_inr(c, i8080_rb(c, i8080_get_hl(c))))
+    of opDcra: c.a = i8080_dcr(c, c.a)
+    of opDcrb: c.b = i8080_dcr(c, c.b)
+    of opDcrc: c.c = i8080_dcr(c, c.c)
+    of opDcrd: c.d = i8080_dcr(c, c.d)
+    of opDcre: c.e = i8080_dcr(c, c.e)
+    of opDcrh: c.h = i8080_dcr(c, c.h)
+    of opDcrl: c.l = i8080_dcr(c, c.l)
+    of opDcrM: i8080_wb(c, i8080_get_hl(c), i8080_dcr(c, i8080_rb(c, i8080_get_hl(c))))
+    of opInxb: i8080_set_bc(c, i8080_get_bc(c) + 1)
+    of opInxd: i8080_set_de(c, i8080_get_de(c) + 1)
+    of opInxh: i8080_set_hl(c, i8080_get_hl(c) + 1)
+    of opInxsp: c.sp += 1
+    of opDcxb: i8080_set_bc(c, i8080_get_bc(c) - 1)
+    of opDcxd: i8080_set_de(c, i8080_get_de(c) - 1)
+    of opDcxh: i8080_set_hl(c, i8080_get_hl(c) - 1)
+    of opDcxsp: c.sp -= 1
+    of opDaa: i8080_daa(c)
+    of opCma: c.a = not(c.a)
+    of opStc: c.cf = true
+    of opCmc: c.cf = not(c.cf)
+    of opRlc: i8080_rlc(c)
+    of opRrc: i8080_rrc(c)
+    of opRal: i8080_ral(c)
+    of opRar: i8080_rar(c)
+    of opAnaa: i8080_ana(c, c.a)
+    of opAnab: i8080_ana(c, c.b)
+    of opAnac: i8080_ana(c, c.c)
+    of opAnad: i8080_ana(c, c.d)
+    of opAnae: i8080_ana(c, c.e)
+    of opAnah: i8080_ana(c, c.h)
+    of opAnal: i8080_ana(c, c.l)
+    of opAnaM: i8080_ana(c, i8080_rb(c, i8080_get_hl(c)))
+    of opAniImm: i8080_ana(c, i8080_next_byte(c))
+    of opXraa: i8080_xra(c, c.a)
+    of opXrab: i8080_xra(c, c.b)
+    of opXrac: i8080_xra(c, c.c)
+    of opXrad: i8080_xra(c, c.d)
+    of opXrae: i8080_xra(c, c.e)
+    of opXrah: i8080_xra(c, c.h)
+    of opXral: i8080_xra(c, c.l)
+    of opXraM: i8080_xra(c, i8080_rb(c, i8080_get_hl(c)))
+    of opXriImm: i8080_xra(c, i8080_next_byte(c))
+    of opOraa: i8080_ora(c, c.a)
+    of opOrab: i8080_ora(c, c.b)
+    of opOrac: i8080_ora(c, c.c)
+    of opOrad: i8080_ora(c, c.d)
+    of opOrae: i8080_ora(c, c.e)
+    of opOrah: i8080_ora(c, c.h)
+    of opOral: i8080_ora(c, c.l)
+    of opOraM: i8080_ora(c, i8080_rb(c, i8080_get_hl(c)))
+    of opOriImm: i8080_ora(c, i8080_next_byte(c))
+    of opCmpa: i8080_cmp(c, c.a)
+    of opCmpb: i8080_cmp(c, c.b)
+    of opCmpc: i8080_cmp(c, c.c)
+    of opCmpd: i8080_cmp(c, c.d)
+    of opCmpe: i8080_cmp(c, c.e)
+    of opCmph: i8080_cmp(c, c.h)
+    of opCmpl: i8080_cmp(c, c.l)
+    of opCmpM: i8080_cmp(c, i8080_rb(c, i8080_get_hl(c)))
+    of opCpiImm: i8080_cmp(c, i8080_next_byte(c))
+    of opJmpAbs: i8080_jmp(c, i8080_next_word(c))
+    of opJnzAbs: i8080_cond_jmp(c, c.zf == false)
+    of opJzAbs: i8080_cond_jmp(c, c.zf == true)
+    of opJncAbs: i8080_cond_jmp(c, c.cf == false)
+    of opJcAbs: i8080_cond_jmp(c, c.cf == true)
+    of opJpoAbs: i8080_cond_jmp(c, c.pf == false)
+    of opJpeAbs: i8080_cond_jmp(c, c.pf == true)
+    of opJpAbs: i8080_cond_jmp(c, c.sf == false)
+    of opJmAbs: i8080_cond_jmp(c, c.sf == true)
+    of opPchl: c.pc = i8080_get_hl(c)
+    of opCallAbs: i8080_call(c, i8080_next_word(c))
+    of opCnzAbs: i8080_cond_call(c, c.zf == false)
+    of opCzAbs: i8080_cond_call(c, c.zf == true)
+    of opCncAbs: i8080_cond_call(c, c.cf == false)
+    of opCcAbs: i8080_cond_call(c, c.cf == true)
+    of opCpoAbs: i8080_cond_call(c, c.pf == false)
+    of opCpeAbs: i8080_cond_call(c, c.pf == true)
+    of opCpAbs: i8080_cond_call(c, c.sf == false)
+    of opCmAbs: i8080_cond_call(c, c.sf == true)
+    of opRet: i8080_ret(c)
+    of opRnz: i8080_cond_ret(c, c.zf == false)
+    of opRz: i8080_cond_ret(c, c.zf == true)
+    of opRnc: i8080_cond_ret(c, c.cf == false)
+    of opRc: i8080_cond_ret(c, c.cf == true)
+    of opRpo: i8080_cond_ret(c, c.pf == false)
+    of opRpe: i8080_cond_ret(c, c.pf == true)
+    of opRp: i8080_cond_ret(c, c.sf == false)
+    of opRm: i8080_cond_ret(c, c.sf == true)
+    of opRst0: i8080_call(c, 0x00)
+    of opRst1: i8080_call(c, 0x08)
+    of opRst2: i8080_call(c, 0x10)
+    of opRst3: i8080_call(c, 0x18)
+    of opRst4: i8080_call(c, 0x20)
+    of opRst5: i8080_call(c, 0x28)
+    of opRst6: i8080_call(c, 0x30)
+    of opRst7: i8080_call(c, 0x38)
+    of opPushb: i8080_push_stack(c, i8080_get_bc(c))
+    of opPushd: i8080_push_stack(c, i8080_get_de(c))
+    of opPushh: i8080_push_stack(c, i8080_get_hl(c))
+    of opPushpsw: i8080_push_psw(c)
+    of opPopb: i8080_set_bc(c, i8080_pop_stack(c))
+    of opPopd: i8080_set_de(c, i8080_pop_stack(c))
+    of opPoph: i8080_set_hl(c, i8080_pop_stack(c))
+    of opPoppsw: i8080_pop_psw(c)
+    of opInp: c.a = c.port_in(c.userdata, i8080_next_byte(c))
+    of opOutp: c.port_out(c.userdata, i8080_next_byte(c), c.a)
+    of opIll, opIll1, opIll2, opIll3, opIll4, opIll5, opIll6: discard
+    of opIll7: i8080_ret(c)
+    of opIll8, opIll9, opIll10: i8080_call(c, i8080_next_word(c))
+    of opIll11: i8080_jmp(c, i8080_next_word(c))
 
 proc i8080_init*(c: ptr i8080): void =
   c.read_byte = nil
@@ -820,7 +849,10 @@ proc i8080_step*(c: ptr i8080): void =
     c.interrupt_pending = false
     c.iff = false
     c.halted = false
-    i8080_execute(c, c.interrupt_vector)
+    i8080_execute(c, c.interrupt_vector.Opc)
+  else:
+    if not(c.halted):
+      i8080_execute(c, i8080_next_byte(c).Opc)
 
 proc i8080_interrupt*(c: ptr i8080; opcode: uint8): void =
   c.interrupt_pending = true
@@ -839,13 +871,13 @@ proc i8080_debug_output*(c: ptr i8080; print_disassembly: bool): void =
        fmt"DE: {i8080_get_de(c)}, HL: {i8080_get_hl(c)}, SP: {c.sp}, CYC: {c.cyc}",
        fmt"({i8080_rb(c, c.pc)} {i8080_rb(c, c.pc + 1)} {i8080_rb(c, c.pc + 2)} {i8080_rb(c, c.pc + 3)})"
 
-var memory: seq[uint8]
+var memory: seq[Opc]
 var test_finished: bool = false
 proc rb*(userdata: pointer; aAddr: uint16): uint8 =
-  return memory[aAddr]
+  return memory[aAddr].uint8
 
 proc wb*(userdata: pointer; aAddr: uint16; val: uint8): void =
-  memory[aAddr] = val
+  memory[aAddr] = val.Opc
 
 proc port_in*(userdata: pointer; port: uint8): uint8 =
   return 0x00
@@ -864,11 +896,6 @@ proc run_test*(c: ptr i8080; filename: string; cyc_expected: culong): void =
   c.port_in = port_in
   c.port_out = port_out
   c.pc = 0x100
-  memory[0x0000] = 0xD3
-  memory[0x0001] = 0x00
-  memory[0x0005] = 0xD3
-  memory[0x0006] = 0x01
-  memory[0x0007] = 0xC9
   var nb_instructions: clong = 0
   test_finished = false
   while (not(test_finished)):
