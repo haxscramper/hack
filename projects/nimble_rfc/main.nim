@@ -7,6 +7,34 @@ const commitPlot = on
 # started in year X in different colors. "What fraction of year X's commits
 # come from repositories that started in year Y"
 
+# TODO register new package version and requirement changes. Build a tree
+# with `Table[<package>, Table[<major>, Table[<minor>, Table[<patch>, <leave time>]]]]`
+# and record each 'leave' event - new major/minor/patch version. Collect full
+# list of each requirement for each package and when it was left, and then track average
+# time when upgrading from major/minor/patch versions for each package.
+
+# Use ordered table to retain correct sequence of changes. ...
+
+# For package events it would be better to just store everything in the
+# sequence. This way I don't have to mix events from all package manifests
+# in a single table, and can get more detailed info about number of skipped
+# patch versions.
+
+type
+  VerChangeEventKind = enum
+    vceChangePatch
+    vceChangeMinor
+    vceChangeMajor
+
+  VerChangeEvent = object
+    kind: VerChangeEventKind
+
+  VerChangeTable = Table[
+    string, Map[ # Package name
+      int, Map[ # Major version
+        int, Map[ # Minor version
+          int, seq[VerChangeEvent #[ List of events ]# ]]]]]
+
 when commitPlot:
   import ggplotnim
   import ggplotnim, chroma, times
