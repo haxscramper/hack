@@ -152,3 +152,15 @@ when isMainModule:
     later.
 
 ]#
+
+#[
+
+For hcparse I want to provide multiple APIs, some of which have large (in
+terms of SLOC nearing millions of auto-generated C code) dependencies or
+complicated build steps (binary requires compilation of intermediate static
+library, which in turn depends on `cmake`, `g++`, `boost` begin available,
+and takes several minutes to finish). If user only wants to use particular
+subset of the API, it makes sense to allow `requires hcparse/[macros] >
+0.1.3`
+
+]#
