@@ -3,106 +3,139 @@
 #include <string>
 #include <vector>
 
-///////////////////////////////////////////////////////////////////////////////
-//  Include Wave itself
 #include <boost/wave.hpp>
-
-///////////////////////////////////////////////////////////////////////////////
-// Include the lexer stuff
 #include <boost/wave/cpplexer/cpp_lex_iterator.hpp> // lexer class
 #include <boost/wave/cpplexer/cpp_lex_token.hpp>    // token class
 
-///////////////////////////////////////////////////////////////////////////////
-// main entry point
-int main(int argc, char* argv[]) {
-    char* infile;
-    if (2 != argc) {
-        infile = "boost_wave_infile.hpp";
-    } else {
-        infile = argv[1];
+using namespace boost::wave;
+
+struct WaveHooksImpl;
+
+using WaveTokenT = cpplexer::lex_token<>;
+
+using WaveTokenList = std::list<
+    WaveTokenT,
+    boost::fast_pool_allocator<
+        cpplexer::lex_token<>,
+        boost::default_user_allocator_new_delete>>;
+
+using WaveContextImpl = context<
+    std::string::iterator,
+    cpplexer::lex_iterator<WaveTokenT>,
+    iteration_context_policies::load_file_to_string,
+    WaveHooksImpl>;
+
+template <typename ResultT, typename... Arguments>
+struct method_impl {
+    ResultT (*impl)(Arguments..., void* env);
+    void* env;
+
+    method_impl() {
+        env  = nullptr;
+        impl = nullptr;
+    };
+
+
+    method_impl(
+        ResultT (*_impl)(Arguments..., void* env),
+        void* _env = nullptr)
+        : impl(_impl), env(_env) {
     }
 
-    // current file position is saved for exception handling
-    boost::wave::util::file_position_type current_position;
-    std::cout << "input file is '" << infile << "' \n";
+    ResultT operator()(Arguments... arguments) {
+        return (*impl)(arguments..., env);
+    }
+};
+
+enum class EntryHandling
+{
+    skip,
+    process,
+    raise
+};
+
+const char* to_string(EntryHandling handling) {
+    switch (handling) {
+        case EntryHandling::skip: return "skip";
+        case EntryHandling::process: return "skip";
+        case EntryHandling::raise: return "skip";
+    }
+}
+
+using FoundWarningDirectiveCbType = method_impl<
+    EntryHandling,
+    WaveContextImpl const&,
+    WaveTokenList const&>;
+
+
+struct WaveHooksImpl : public context_policies::default_preprocessing_hooks {
+    FoundWarningDirectiveCbType found_warning_directive_impl;
+
+    inline void set_found_warning_directive_impl(
+        FoundWarningDirectiveCbType impl) {
+        found_warning_directive_impl = impl;
+    }
+
+
+    inline bool found_warning_directive(
+        WaveContextImpl const& ctx,
+        WaveTokenList const&    message) {
+        auto handling = found_warning_directive_impl(ctx, message);
+
+        switch (handling) {
+            case EntryHandling::raise: return false;
+            case EntryHandling::skip: return true;
+            default:
+                throw std::logic_error(
+                    std::string("'found_warning_directive_impl' returned "
+                                "unexpected "
+                                "entry handling value - wanted 'raise' or "
+                                "'skip', but "
+                                "got ")
+                    + to_string(handling));
+        }
+    }
+};
+
+EntryHandling found_warning_directive_impl(
+    WaveContextImpl const& ctx,
+    WaveTokenList const&    message,
+    void*               env) {
+    std::cout << "Found warning directive with message [["
+              << util::impl::as_string(message) << "]]\n";
+    return EntryHandling::skip;
+}
+
+int main(int argc [[maybe_unused]], char* argv [[maybe_unused]][]) {
+    std::string instring
+        = "#pragma once\n"
+          "#warning \"asdfasdf\"\n"
+          "#warning \"zzzz\"\n";
+
+
+    WaveHooksImpl hooks;
+    hooks.set_found_warning_directive_impl(&found_warning_directive_impl);
+
+    WaveContextImpl ctx(
+        instring.begin(), instring.end(), "in_file.hpp", hooks);
+
+    util::file_position_type    current_position;
+    WaveContextImpl::iterator_type first = ctx.begin();
+    WaveContextImpl::iterator_type last  = ctx.end();
 
     try {
-        //[quick_start_main
-        //  The following preprocesses the input file given by argv[1].
-        //  Open and read in the specified input file.
-        std::ifstream instream(infile);
-        std::string   instring;
-
-        if (!instream.is_open()) {
-            std::cerr << "Could not open input file: " << infile
-                      << std::endl;
-            return -2;
-        }
-        instream.unsetf(std::ios::skipws);
-        instring = std::string(
-            std::istreambuf_iterator<char>(instream.rdbuf()),
-            std::istreambuf_iterator<char>());
-
-        //  This token type is one of the central types used throughout the library.
-        //  It is a template parameter to some of the public classes and instances
-        //  of this type are returned from the iterators.
-        typedef boost::wave::cpplexer::lex_token<> token_type;
-
-        //  The template boost::wave::cpplexer::lex_iterator<> is the lexer type to
-        //  to use as the token source for the preprocessing engine. It is
-        //  parametrized with the token type.
-        typedef boost::wave::cpplexer::lex_iterator<token_type>
-            lex_iterator_type;
-
-        //  This is the resulting context type. The first template parameter should
-        //  match the iterator type used during construction of the context
-        //  instance (see below). It is the type of the underlying input stream.
-        typedef boost::wave::
-            context<std::string::iterator, lex_iterator_type>
-                context_type;
-
-        //  The preprocessor iterator shouldn't be constructed directly. It is
-        //  generated through a wave::context<> object. This wave:context<> object
-        //  is additionally used to initialize and define different parameters of
-        //  the actual preprocessing (not done here).
-        //
-        //  The preprocessing of the input stream is done on the fly behind the
-        //  scenes during iteration over the range of context_type::iterator_type
-        //  instances.
-        context_type ctx(instring.begin(), instring.end(), argv[1]);
-
-        //  Get the preprocessor iterators and use them to generate the token
-        //  sequence.
-        context_type::iterator_type first = ctx.begin();
-        context_type::iterator_type last  = ctx.end();
-
-        //  The input stream is preprocessed for you while iterating over the range
-        //  [first, last). The dereferenced iterator returns tokens holding
-        //  information about the preprocessed input stream, such as token type,
-        //  token value, and position.
         while (first != last) {
             current_position = (*first).get_position();
             std::cout << (*first).get_value();
             ++first;
         }
-        //]
-    } catch (boost::wave::cpp_exception const& e) {
-        // some preprocessing error
+    } catch (cpplexer::lexing_exception const& e) {
+        std::cerr << e.file_name() << "(" << e.line_no()
+                  << "): " << e.description() << std::endl;
+
+    } catch (cpp_exception const& e) {
         std::cerr << e.file_name() << "(" << e.line_no()
                   << "): " << e.description() << std::endl;
         return 2;
-    } catch (std::exception const& e) {
-        // use last recognized token to retrieve the error position
-        std::cerr << current_position.get_file() << "("
-                  << current_position.get_line() << "): "
-                  << "exception caught: " << e.what() << std::endl;
-        return 3;
-    } catch (...) {
-        // use last recognized token to retrieve the error position
-        std::cerr << current_position.get_file() << "("
-                  << current_position.get_line() << "): "
-                  << "unexpected exception caught." << std::endl;
-        return 4;
     }
-    return 0;
 }
