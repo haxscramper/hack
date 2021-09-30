@@ -1,0 +1,43 @@
+- Using ~writeFiles("generated", "test")~ in empty repository causes
+  compile-time error - this can be checked for when macro is evaluated.
+  Creating ~generated~ directory solves the issue.
+- Compilation has to be performed with ~--app:lib~ option - not mentioned
+  in the readme, probably obvious though.
+- Generated python bindings contain hardcoded ~"pixie"~ for library name in
+  shared library paths. The issue is not present for js/nim/C targets.
+  #+begin_src nim
+    import genny
+
+    proc printText() =
+      echo "print text called"
+
+    exportProcs:
+      printText
+
+    writeFiles("generated", "test")
+
+    include generated/internal
+  #+end_src
+- Trying to export object with non-exported fields causes macro error in
+  ~exportObjectTyped~
+  #+begin_src nim
+    type
+      Obj = object
+        field: int
+  #+end_src
+- Is generated C/C++ object ABI-compatible with underlying nim type? What
+  happens when I try to export case object, or derived object?
+- No way to configure style of the genrated bindings. For some languages
+  that have more or less consistent naming policies this it not all that
+  problematic, but for C++ it will become an issue eventually, since there
+  is no set style.
+- Consider adding more high-level IR and making it easier to create single
+  entry point for the generation? Code generator can be implemented as an
+  object with collection of callbacks that would be invoked when needed.
+  Would make it easier for other people to implement their own binding
+  generators for less common programming languages.
+- Not being able to get comments from anything but procedures is
+  *extremely* daunting. I don't know how long it will take to make a full
+  PR for that, but what about ~import compiler/parser~ and extracting
+  comments ourselves? This will take a little more time (compile-time
+  increased due to second re-parsing), but currently there is no other way.
