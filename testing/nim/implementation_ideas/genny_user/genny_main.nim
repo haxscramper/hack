@@ -7,8 +7,13 @@ type
   Obj = object
     field*: int
 
-proc getData(o: Obj): int = o.field + 12
+proc getData(o: Obj): int =
+  echo o
+  result = o.field + 12
 
+iterator items(o: Obj): int =
+  for i in 0 .. o.field:
+    yield i
 
 # exportProcs:
 #   printText
@@ -16,6 +21,9 @@ proc getData(o: Obj): int = o.field + 12
 exportObject Obj:
   procs:
     getData(Obj)
+
+  iterators:
+    items(Obj)
 
 writeFiles("generated", "genny_main")
 

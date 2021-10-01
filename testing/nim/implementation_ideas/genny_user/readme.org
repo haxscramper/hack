@@ -41,3 +41,22 @@
   PR for that, but what about ~import compiler/parser~ and extracting
   comments ourselves? This will take a little more time (compile-time
   increased due to second re-parsing), but currently there is no other way.
+- Support closure iterators?
+- Making generic ~NimSeq<T>~ available would require generation of the
+  ~TNimType~ as well, /or/ exporting definition of the nim type in another
+  shared library that can later be used. Other things that are
+  ~{.exportc.}~-ed from ~std/system~
+- There *must* be a proper IR implementation instead of loosely specified
+  bunch of nimnodes that is being passed around without any validation. In
+  addition, this would make it much easier to specify new backends for the
+  target languages. Also to avoid copy-pasting implementation again and
+  again for the same logic:
+  #+begin_src nim
+    let
+      procName = sym.repr
+      procNameSnaked = toSnakeCase(procName)
+      procType = sym.getTypeInst()
+      procParams = procType[0][1 .. ^1]
+      procReturn = procType[0][0]
+      procRaises = sym.raises()
+  #+end_src
