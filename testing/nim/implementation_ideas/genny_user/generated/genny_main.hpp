@@ -28,14 +28,14 @@ struct Obj { // cpp:213
 extern "C" int64 genny_main_obj_get_data(Obj o); // cpp:62
 
 // Implementation of 'items' iterator for obj
-extern "C"  Obj::items_iter genny_main_obj_items_begin(Obj obj);
+extern "C"  NimClosureIter genny_main_obj_items_begin(Obj obj);
 extern "C"  int64 genny_main_obj_items_get_next(NimClosureIter* iter);
 extern "C"  bool genny_main_obj_items_finished(NimClosureIter* iter);
 
 // C++ methods
 inline int64 Obj::get_data() { return genny_main_obj_get_data(*this); }
 inline Obj::items_iter Obj::items_begin() {
-  return genny_main_obj_items_begin(*this);
+  return Obj::items_iter{genny_main_obj_items_begin(*this)};
 }
 
 inline bool Obj::items_iter::operator!=(NimClosureEnd other) {
