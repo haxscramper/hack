@@ -1,4 +1,5 @@
 import hmisc/core/all
+import std/[strutils]
 
 type
   WordKind* = enum
@@ -9,9 +10,8 @@ type
     wkMarkup
     wkVerbatim
 
-  Word*[Text, Attr] = object
+  Word*[Text] = object
     text*: Text
-    attr*: Attr
     forceNl: bool
     isBreaking: bool
     kind*: WordKind
@@ -19,8 +19,10 @@ type
   WordTreeKind = enum
     wtConcat
     wtSentence
+    wtParagraph
 
     wtDescItem
+    wtExplainItem
     wtStrong
     wtEmphasis
     wtUnderscore
@@ -33,41 +35,55 @@ type
     wtItemList
 
 
-  WordTree*[Text, Attr] = ref object
+  WordTree*[Text] = ref object
     kind: WordTreeKind
-    subnodes: seq[WordTree[Text, Attr]]
-    word: Word[Text, Attr]
+    subnodes: seq[WordTree[Text]]
+    word: Word[Text]
 
-  TextWord = Word[string, char]
-  TextTree = WordTree[string, char]
+  TextWord = Word[string]
+  TextTree = WordTree[string]
 
-func len*[T, A](t: WordTree[T, A]): int =
+func len*[T](t: WordTree[T]): int =
   t.subnodes.len
 
-func tree*[T, A](
-    kind: WordTreeKind,
-    subnodes: varargs[WordTree[T, A]]): WordTree[T, A] =
-  WordTree[T, A](kind: kind, subnodes: @subnodes)
+# func `[]`*[T](t: WordTree[T], idx: int): WordTree[T] =
+#   t.subnodes[idx]
 
-func tree*[T, A](
-    kind: WordTreeKind, word: Word[T, A],
-    subnodes: varargs[WordTree[T, A]]): WordTree[T, A] =
-  WordTree[T, A](kind: kind, word: word, subnodes: @subnodes)
+func tree*[T](
+    kind: WordTreeKind,
+    subnodes: varargs[WordTree[T]]): WordTree[T] =
+  WordTree[T](kind: kind, subnodes: @subnodes)
+
+func tree*[T](
+    kind: WordTreeKind, word: Word[T],
+    subnodes: varargs[WordTree[T]]): WordTree[T] =
+  WordTree[T](kind: kind, word: word, subnodes: @subnodes)
 
 
 
 func initWord*(word: var string, s: string) = word = s
 
-func word*[T, A](s: string): WordTree[T, A] =
+func word*[T](s: string): WordTree[T] =
   var text: T
   initWord(text, s)
-  tree(wtWord, Word[T, A](text: text))
+  tree(wtWord, Word[T](text: text))
 
-func textWord*(s: string): TextTree = word[string, char](s)
+func textWord*(s: string): TextTree = word[string](s)
+
+func `$~~`*(s: string): TextTree =
+  tree(wtSentence, word[string](s))
+
 proc `$~`*[T](arg: T): TextTree = textWord($arg)
+proc `$~`*[T](arg: seq[T]): seq[TextTree] =
+  for item in arg:
+    result.add textWord($item)
 
-func wordMap*[O, T, A](
-    obj: openarray[O], fmap: proc(obj: O): WordTree[T, A]): seq[WordTree[T, A]] =
+proc `$~`*[R, T](arg: array[R, T]): seq[TextTree] =
+  for item in arg:
+    result.add textWord($item)
+
+func wordMap*[O, T](
+    obj: openarray[O], fmap: proc(obj: O): WordTree[T]): seq[WordTree[T]] =
   for item in obj:
     result.add fmap(item)
 
@@ -75,38 +91,48 @@ func wordMap*[O](obj: openarray[O]): seq[TextTree] =
   for item in obj:
     result.add textWord($item)
 
-func strong*[T, A](words: varargs[WordTree[T, A]]): WordTree[T, A] = tree(wtStrong, @words)
-func anyOf*[T, A](words: varargs[WordTree[T, A]]): WordTree[T, A] = tree(wtAnyOf, @words)
-func wantGot*[T, A](want, got: WordTree[T, A]): WordTree[T, A] =
-  tree(wtConcat, word[T, A]("expected "),
-       want, word[T, A](", but got "), got)
+func strong*[T](words: varargs[WordTree[T]]): WordTree[T] = tree(wtStrong, @words)
+func anyOf*[T](words: varargs[WordTree[T]]): WordTree[T] = tree(wtAnyOf, @words)
+func wantGot*[T](want, got: WordTree[T]): WordTree[T] =
+  tree(wtConcat, word[T]("expected "),
+       want, word[T](", but got "), got)
 
-func wantGot*[T, A](thing, want, got: WordTree[T, A]): WordTree[T, A] =
-  tree(wtConcat, thing, word[T, A](" has "),
-       got, word[T, A](", but expected "), want)
+func gotWant*[T](got, want: WordTree[T]): WordTree[T] =
+  tree(wtConcat, word[T]("got "),
+       got, word[T](", but expected "), want)
 
-func desc*[T, A](desc: string, item: WordTree[T, A]): WordTree[T, A] =
-  tree(wtDescItem, word[T, A](desc), item)
+func wantGot*[T](thing, want, got: WordTree[T]): WordTree[T] =
+  tree(wtConcat, thing, word[T](" has "),
+       got, word[T](", but expected "), want)
 
-func sent*[T, A](words: varargs[WordTree[T, A]]): WordTree[T, A] =
+func desc*[T](desc: string, item: WordTree[T]): WordTree[T] =
+  tree(wtDescItem, word[T](desc), item)
+
+func expl*[T](item, explain: WordTree[T]): WordTree[T] =
+  tree(wtExplainItem, item, explain)
+
+func sent*[T](words: varargs[WordTree[T]]): WordTree[T] =
   tree(wtSentence, @words)
 
-func many*[T, A](onMany, onOne: string, tree: WordTree[T, A]): WordTree[T, A] =
+func par*[T](words: varargs[WordTree[T]]): WordTree[T] =
+  tree(wtParagraph, @words)
+
+func many*[T](onMany, onOne: string, tree: WordTree[T]): WordTree[T] =
   if len(tree) == 0:
-    result = word[T, A](onOne)
+    result = word[T](onOne)
 
   else:
-    result = tree(wtConcat, word[T, A](onMany), tree)
+    result = tree(wtConcat, word[T](onMany), tree)
 
 
 
-func quote*[T, A](words: varargs[WordTree[T, A]]): seq[WordTree[T, A]] =
+func quote*[T](words: varargs[WordTree[T]]): seq[WordTree[T]] =
   for word in words:
     result.add tree(wtQuoted, word)
 
-func `[]`*[T, A](tree: WordTree[T, A], idx: int): WordTree[T, A] = tree.subnodes[idx]
+func `[]`*[T](tree: WordTree[T], idx: int): WordTree[T] = tree.subnodes[idx]
 
-func toStr*[T, A](tree: WordTree[T, A]): string =
+func toStr*[T](tree: WordTree[T]): string =
   case tree.kind:
     of wtStrong, wtConcat, wtDescItem,
        wtSentence, wtQuoted:
@@ -125,8 +151,26 @@ func toStr*[T, A](tree: WordTree[T, A]): string =
         of wtSentence: result.add ". "
         else: discard
 
+    of wtParagraph:
+      for idx, item in pairs(tree.subnodes):
+        if item.kind == wtSentence:
+          var pos = result.len
+          result.add toStr(item)
+          if result[pos] in {'a' .. 'z'}:
+            result[pos] = toUpperAscii(result[pos])
+
+
+        else:
+          result.add toStr(item)
+
     of wtWord:
       result.add $tree.word.text
+
+    of wtExplainItem:
+      result.add toStr(tree[0])
+      result.add " ("
+      result.add toStr(tree[1])
+      result.add ")"
 
     of wtAnyOf:
       case tree.subnodes.len:
@@ -152,17 +196,25 @@ func toStr*[T, A](tree: WordTree[T, A]): string =
     else:
       raise newImplementKindError(tree)
 
-echo quote($~"1", $~"2").anyOf().toStr()
-echo quote($~"1", $~"2", $~"3").anyOf().toStr()
+func `$`*[T](w: WordTree[T]): string = toStr(w)
+
+echo quote($~"1", $~"2").anyOf()
+echo quote($~"1", $~"2", $~"3").anyOf()
 
 for idx in 0 ..< 5:
   echo many(
     "Allowed items - ",
     "No items allowed",
     wordMap([0,2,3,4,5,6,7][0..idx]).quote().anyOf()
-  ).sent().toStr()
+  ).sent()
 
-echo quote($~"1", $~"2", $~"3").anyOf().toStr()
-echo anyOf($~"test", $~"test1").toStr()
-echo wantGot($~"at least tree", $~"none").toStr()
-echo wantGot($~"file", desc("extension ", $~"ext"), $~"filename without any extension").sent().toStr()
+echo expl($~"test", $~"missing")
+echo quote($~"1", $~"2", $~"3").anyOf()
+echo anyOf($~"test", $~"test1")
+echo wantGot($~"at least tree", $~"none")
+echo wantGot($~"file", desc("extension ", $~"ext"), $~"filename without any extension").sent()
+
+echo par(
+  $~~"no matching option",
+  gotWant($~(1 + 2), anyOf($~[1,2,3,4])).sent()
+)
