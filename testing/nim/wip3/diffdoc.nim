@@ -15,8 +15,8 @@ starthax()
 var files = paramStrs()
 
 if files.len == 0:
-  files.add "/tmp/file1.odt"
-  files.add "/tmp/file2.odt"
+  files.add relToSource"file1.odt"
+  files.add relToSource"file2.odt"
 
 let dir = getAppTempDir()
 mkDir dir
@@ -43,7 +43,7 @@ for idx, file in files:
   for file in walkDir(dest, RelFile, recurse = true):
     if file.ext() == "xml":
       let pretty = evalShellStdout shellCmd(xmllint).withIt do:
-        it.opt("pretty", " ", "2")
+        it.opt("pretty", " ", "1")
         it.arg $(dest / file)
 
       writeFile(dest / file, pretty)
@@ -72,15 +72,18 @@ for line in items(diff):
       let t1 = abs1.readFile()
       let t2 = abs2.readFile()
       if t1 != t2:
-        if lists.f1[line.oldPos].ext() notin ["png"]:
+        let f = lists.f1[line.oldPos]
+        if f.ext() notin ["png"]:
           echov "has changes", lists.f1[line.oldPos]
           let l1 = t1.split('\n')
           let l2 = t2.split('\n')
 
-          echo myersDiff(l1, l2).shiftDiffed(l1, l2).formatDiffed(
-            l1, l2,
-            maxUnchanged = 0,
-            showLines = true,
-            wordSplit = proc(s: string): seq[string] =
-                          splitTokenize(s, {':', ' ', '<', '>', '='})
-          )
+          if f.name() in ["content"]:
+            echo myersDiff(l1, l2).shiftDiffed(l1, l2).formatDiffed(
+              l1, l2,
+              maxUnchanged = 0,
+              showLines = true,
+              wordSplit = proc(s: string): seq[string] =
+                            splitTokenize(s, {':', ' ', '<', '>', '='}),
+              stackLongLines = 80
+            )
