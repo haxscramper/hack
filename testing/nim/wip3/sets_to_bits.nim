@@ -1,6 +1,6 @@
 import std/bitops
 
-proc setcast[I: uint8 | uint16 | uint32 | uint64; E](s: set[E]): I =
+proc setcast[I: uint8 | uint16 | uint32 | uint64 | cint; E](s: set[E]): I =
   static:
     assert sizeof(s) <= sizeof(I),
      "Set cast integer size mismatch - sizeof(" & $I & ") was " & $sizeof(I) &
@@ -46,3 +46,15 @@ assert setcast[uint16, En9]({en9Item2, en9Item1}) == 3
 
 assert getBits(setcast[uint16, En9]({en9Item1, en9Item5, en9Item9})) == @[
   0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1]
+
+type
+  CE = enum
+    ce1 = 1 shl 0
+    ce2 = 1 shl 2
+
+  NE = enum
+    ne1
+    ne2
+
+echo cast[cint]({ne1, ne2})
+echo ce2.ord or ce1.ord

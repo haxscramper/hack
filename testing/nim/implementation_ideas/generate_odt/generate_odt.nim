@@ -64,11 +64,11 @@ proc image(writer; file: AbsFile) =
     "draw:z-index": "0"
   }):
     writer.esingle("draw:image", {
-      "xlink:href": "Pictures/" & file.name(),
+      "xlink:href": "Pictures/" & file.nameExt(),
       "xlink:type": "simple",
       "xlink:show": "embed",
       "xlink:actuate": "onLoad",
-      "draw:mime-type": "image/jpeg"
+      "draw:mime-type": "image/png"
     })
 
     writer.cpFile(file, "Pictures")
@@ -96,6 +96,12 @@ for (kind, value) in interpolatedExprs(contentXml):
     of iekVar:
       case value:
         of "document_body":
+          w.ewrap("text:h", {
+            "text:style-name": "Heading-1",
+            "text:outline-level": "1",
+          }):
+            w.raw("Outline text")
+
           w.p({"style-name": "P1"}):
             w.raw("test12")
 
@@ -105,9 +111,9 @@ for (kind, value) in interpolatedExprs(contentXml):
           w.p({"style-name": "P1"}):
             w.raw("Secon paragrasfdasdfin the document")
 
-          # w.p({"style-name": "P1"}):
-          #   w.span({"style-name": "T1"}):
-          #     w.image(AbsFile"/tmp/file.jpg")
+          w.p({"style-name": "P1"}):
+            w.span({"style-name": "T1"}):
+              w.image(AbsFile"/tmp/file.png")
 
 
         else:
@@ -152,6 +158,8 @@ mkWithDirStructure dir:
 
 let res = dir /. "res.odt"
 
+echov res
+
 withDir dir:
   discard runShell shellCmd(zip).withIt do:
     it - "r"
@@ -160,6 +168,7 @@ withDir dir:
 
 let final = AbsFile("/tmp/res.odt")
 rmFile final
+echov final
 mvFile res, final
 
 # echov "opening", final
