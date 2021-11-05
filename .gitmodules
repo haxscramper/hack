@@ -3,4 +3,8 @@
 	url = https://gitlab.com/haxscamper-misc/cpp/Algorithm.git
 [submodule "DebugMacro"]
 	path = cpp_general/DebugMacro
-	url = https://gitlab.com/haxscamper-misc/cpp/DebugMacro.git
+    url = https://gitlab.com/haxscamper-misc/cpp/DebugMacro.git
+
+[submodule "genny"]
+    path = testing/nim/implementation_ideas/genny_user/genny
+    url = https://github.com/treeform/genny.git

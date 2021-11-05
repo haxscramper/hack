@@ -406,3 +406,6 @@ parse.cpp
 
 **/*.code-workspace
 testing/nim/implementation_ideas/treediff/*.nim
+
+nimdeps/*
+**/.~*#
