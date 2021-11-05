@@ -1,0 +1,10 @@
+version = "999.999.999"
+author        = "haxscramper"
+description   = "Collection of helper utilities"
+license       = "Apache-2.0"
+srcDir        = "src"
+
+requires "unicodedb"
+requires "benchy"
+requires "jsony"
+requires "hmisc"
