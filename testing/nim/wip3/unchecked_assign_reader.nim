@@ -108,7 +108,8 @@ proc load[K, V](buffer, pos; target: var OrderedTable[K, V]) =
 
 type Object = object | tuple | ref object
 
-proc load[T: Object](buffer, pos; target: var T) =
+
+proc loadObject[T](buffer, pos; target: var T) =
   when target is ref:
     if buffer[pos] == "nil":
       target = nil
@@ -129,7 +130,9 @@ proc load[T: Object](buffer, pos; target: var T) =
         load(buffer, pos, field)
 
 
-proc store[T: Object](buffer: var seq[string], target: T) =
+proc load[T: Object](buffer, pos; target: var T) = loadObject(buffer, pos, target)
+
+proc storeObject[T](buffer: var seq[string], target: T) =
   when target is ref:
     if isNil(target):
       buffer.add "nil"
@@ -142,6 +145,10 @@ proc store[T: Object](buffer: var seq[string], target: T) =
   else:
     for name, field in fieldPairs(target):
       buffer.store(field)
+
+proc store[T: Object](buffer: var seq[string], target: T) =
+  storeObject(buffer, target)
+
 
 
 proc load[T: distinct](buffer, pos; target: var T) =
@@ -228,6 +235,12 @@ proc `==`(a, b: W | X): bool =
 proc `$`*(s: S): string = s.string
 proc `$`*(w: W): string = $(w[])
 
+proc store(buffer; f: F) = storeObject(buffer, f)
+proc load(buffer, pos; f: var F) = loadObject(buffer, pos, f)
+
+proc store(buffer; f: Y) = storeObject(buffer, f)
+proc load(buffer, pos; f: var Y) = loadObject(buffer, pos, f)
+
 proc roundTrip[T](obj: T) =
   var buffer: seq[string]
   bind store
@@ -252,12 +265,12 @@ roundTrip @["goats", "pigs"]
 roundTrip (food: "pigs", quantity: 43)
 roundTrip ("pigs", 43, 22.0, Three)
 roundTrip S"snakes"
-when false: roundTrip F(x: 4, y: 5.3)
+roundTrip F(x: 4, y: 5.3)
 roundTrip W(a: 23)
 roundTrip X(a: 48, b: 59)
-when false: roundTrip Y(a: 23)
+roundTrip Y(a: 23)
 
-when false: roundTrip Z(a: 23, b: 59)
+roundTrip Z(a: 23, b: 59)
 roundTrip @[{One, Two}, {Two, Three}]
 roundTrip [Three, One, Two]
 roundTrip ["three", "one", "two"]
