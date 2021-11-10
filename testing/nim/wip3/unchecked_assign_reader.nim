@@ -160,10 +160,10 @@ proc `$`*(s: S): string = s.string
 
 proc roundTrip[T](obj: T) =
   var buffer: seq[string]
-  store[T](buffer, obj)
+  store(buffer, obj)
   var target: T
   var pos: int = 0
-  load[T](buffer, pos, target)
+  load(buffer, pos, target)
 
   echo "---"
   echo target
