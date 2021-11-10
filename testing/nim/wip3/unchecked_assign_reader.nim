@@ -230,10 +230,12 @@ proc `$`*(w: W): string = $(w[])
 
 proc roundTrip[T](obj: T) =
   var buffer: seq[string]
+  bind store
+  bind load
   store(buffer, obj)
   echo "---"
-  echo buffer
-  echo typeof obj
+  # echo buffer
+  # echo typeof obj
 
   var target: T
   var pos: int = 0
@@ -248,14 +250,14 @@ roundTrip {Two, Three}
 roundTrip NimVersion
 roundTrip @["goats", "pigs"]
 roundTrip (food: "pigs", quantity: 43)
-# roundTrip ("pigs", 43, 22.0, Three)
+roundTrip ("pigs", 43, 22.0, Three)
 roundTrip S"snakes"
-# roundTrip F(x: 4, y: 5.3)
+when false: roundTrip F(x: 4, y: 5.3)
 roundTrip W(a: 23)
-# roundTrip X(a: 48, b: 59)
-# roundTrip Y(a: 23)
+roundTrip X(a: 48, b: 59)
+when false: roundTrip Y(a: 23)
 
-roundTrip Z(a: 23, b: 59)
+when false: roundTrip Z(a: 23, b: 59)
 roundTrip @[{One, Two}, {Two, Three}]
 roundTrip [Three, One, Two]
 roundTrip ["three", "one", "two"]
