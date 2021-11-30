@@ -412,3 +412,5 @@ nimdeps/*
 
 **/.xmake
 nim.cfg
+
+**/massif.out.*
