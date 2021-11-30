@@ -1,0 +1,13 @@
+target("lib")
+    set_kind("shared")
+    add_files("lib.c")
+    set_targetdir(os.scriptdir())
+
+target("main")
+    set_kind("binary")
+    add_deps("lib")
+    -- add_ncflags("--backend:cpp")
+    add_ncflags("-d:nimDebugDlOpen")
+    add_files("nim_cxx_const_main.nim")
+    add_links("lib")
+    set_targetdir(os.scriptdir())

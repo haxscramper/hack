@@ -1,10 +1,4 @@
-import std/[strformat, strutils, unittest, algorithm]
-import fusion/[matching]
-import hmisc/[base_errors, hdebug_misc]
-
-startHax()
-
-{.experimental: "caseStmtMacros".}
+import std/[strformat, strutils, unittest, algorithm, options]
 
 type
   SKind = enum
@@ -82,8 +76,8 @@ proc peek(lex: var Lexer): Token =
 
 proc prefix_binding_power(op: char): int =
   case op:
-    of '+', '-': 9
-    else: raiseImplementError("")
+    of '+', '-': result = 9
+    else: assert false, $op
 
 proc postfix_binding_power(op: char): Option[int] =
   case op:
@@ -102,22 +96,24 @@ proc infix_binding_power(op: char): Option[(int, int)] =
 
 
 proc exprBp(lexer: var Lexer, min_bp: int): S =
-  var lhs = case lexer.next():
-    of Atom(ch: @ch):
-      S(kind: skAtom, ch: ch)
+  let tok = lexer.next()
+  var lhs = case tok.kind:
+    of tkAtom:
+      S(kind: skAtom, ch: tok.ch)
 
-    of Op(ch: '('):
-      let lhs = exprBp(lexer, 0)
-      assertMatch(lexer.next(), Op(ch: ')'))
-      lhs
+    of tkOp:
+      if tok.ch == '(':
+        let lhs = exprBp(lexer, 0)
+        assert lexer.next().ch == ')'
+        lhs
 
-    of Op(ch: @op):
-      let r_bp = prefix_binding_power(op);
-      let rhs = expr_bp(lexer, r_bp);
-      S(kind: skCons, ch: op, sub: @[rhs])
+      else:
+        let r_bp = prefix_binding_power(tok.ch);
+        let rhs = expr_bp(lexer, r_bp);
+        S(kind: skCons, ch: tok.ch, sub: @[rhs])
 
     else:
-      raiseImplementError("")
+      assert false
 
   while true:
     var op: char

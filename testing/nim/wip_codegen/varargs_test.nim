@@ -1,8 +1,33 @@
 import std/[tables, lists]
 
+var level = 0
+
+
+proc get(): string =
+  case level:
+    of 0: ""
+    of 1: "  "
+    of 2: "    "
+    else: "      "
+
+
+type
+  Base = object of RootObj
+    fbase: int
+
+  Derived = object of Base
+    fderived: int
+
+echo Derived().Base()
+let z = Derived().Base()
+
+proc print[T](s: T) =
+  echo get(), "  = ", $s
+
 template ceblock(str: static[string], body: untyped): untyped =
   block:
-    echo str
+    inc level
+    echo get(), "--- \e[32m", str, "\e[0m"
 
     try:
       {.emit: "\n\n\n".}
@@ -12,8 +37,9 @@ template ceblock(str: static[string], body: untyped): untyped =
       {.emit: "\n\n\n".}
 
     except:
-      echo "Failed at runtime with ", getCurrentException().name
-      echo getCurrentExceptionMsg()
+      echo get(), "  > \e[31m", getCurrentException().name, "\e[0m ",  getCurrentExceptionMsg()
+
+    dec level
 
 proc main() =
   type
@@ -31,33 +57,33 @@ proc main() =
 
 
   ceblock "Derived to regular proc":
-    proc impl(arg: Base) = echo arg
+    proc impl(arg: Base) = print arg
     impl(Derived())
 
   ceblock "Derived from bycopy to regular proc":
-    proc impl(arg: CBase) = echo arg
+    proc impl(arg: CBase) = print arg
     impl(CDerived())
 
   ceblock "Multiple derived to regular proc":
     proc impl(a1, a2, a3: Base) =
-      echo a1
-      echo a2
-      echo a3
+      print a1
+      print a2
+      print a3
 
     impl(Derived(), Derived(), Base())
 
   ceblock "Multiple derived from bycopy to regular proc":
     proc impl(a1, a2, a3: CBase) =
-      echo a1
-      echo a2
-      echo a3
+      print a1
+      print a2
+      print a3
 
     impl(CDerived(), CDerived(), CBase())
 
   ceblock "Multiple to varargs":
     proc impl(args: varargs[Base]) =
       for arg in args:
-        echo arg
+        print arg
 
     ceblock "Single object":
       impl(Base())
@@ -71,11 +97,14 @@ proc main() =
     ceblock "Derived and base":
       impl(Derived(), Base())
 
+    ceblock "Base and derived":
+      impl(Base(), Derived())
+
 
   ceblock "Multiple bycopy to varargs":
     proc impl(args: varargs[CBase]) =
       for arg in args:
-        echo arg
+        print arg
 
     ceblock "Single object":
       impl(CBase())
@@ -114,23 +143,27 @@ proc main() =
     ceblock "Add derived":
       s.add Derived()
 
-    echo s
+    print s
+
+  ceblock "Assign to var":
+    var s: Base
+    s = Derived().Base()
 
   ceblock "Add to table":
     var t: Table[int, Base]
     t[0] = Base()
     t[1] = Derived()
 
-    echo t
+    print t
 
   ceblock "Lists":
     var l = initDoublyLinkedList[Base]()
     l.add Base()
     l.add Derived()
 
-    echo l
+    print l
 
-  echo 1
+  print 1
 
 
 main()

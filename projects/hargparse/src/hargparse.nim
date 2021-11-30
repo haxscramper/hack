@@ -3,9 +3,9 @@ import math
 import terminal
 import algorithm
 
-import hmisc/strparser
-import hmisc/termformat
-import hmisc/helpers
+import hmisc/other/strparser
+# import hmisc/termformat
+# import hmisc/helpers
 
 export macros
 export tables
@@ -83,6 +83,8 @@ proc parseTo*[int](val: CmdArg): int =
 
 #~#=== Error reporting
 
+# proc justifyFitTerminal()
+
 # TODO @idea: use colecho pretty-printing for colorizing error
 # messages. Add support for writing mixed sequence of strings and
 # colored strings (write echo wrapper). Simple rst-based message
@@ -105,14 +107,8 @@ proc writeErrors(
   echo ""
   mecho("error", msgWidth, @[$err])
   mecho("parsing", msgWidth, @[optName])
-  mecho(
-    "opt_help",
-    msgWidth,
-    help.justifyFitTerminal((msgWidth, 10)))
-  mecho(
-    "message",
-    msgWidth,
-    msg.join(" ").justifyFitTerminal((msgWidth, 10)))
+  mecho("opt_help", msgWidth, help.split("\n"))
+  mecho("message", msgWidth, @[msg.join(" ")])
 
 
 #~#=== Helper procs
@@ -359,12 +355,7 @@ proc cmdPrintHelp*(
   let totalWidth = min(terminalWidth(), maxHelpWidth)
 
   let final = optionEntry
-  .mapIt(
-    (it.flags.join(" ")
-       .justifyFitTerminal(maxWidth = flagColWidth),
-     it.help.messg.replace("\n", " ")
-        .justifyFitTerminal(
-          maxWidth = totalWidth - flagColWidth - 4)))
+  .mapIt((it.flags.join(" "), it.help.messg.replace("\n", " ")))
 
   # TODO compute help message lenght after justification of the flags
   # section to minimize wasted spacing
@@ -379,11 +370,14 @@ proc cmdPrintHelp*(
     for line in 0 ..< max(flag.len, help.len):
       echo " $# $#" % [
         if line < flag.len:
-          flag[line].alignLeft(flagColWidth)
+          alignLeft($flag[line], flagColWidth)
         else: " ".repeat(flagColWidth),
+
         if line < help.len:
-          help[line]
-        else: " ".repeat(flagColWidth)
+          $help[line]
+
+        else:
+          " ".repeat(flagColWidth)
       ]
 
     if flag.len != 1 or help.len != 1:
@@ -424,15 +418,22 @@ proc getOptionParserBranch*(optConfig: NimNode): NimNode =
 
   let helpMessageExpr = options["help"]
 
-  var optParser = quoteDoInterpolStmt:
+  let
+    a = getDefaultValueChecker(options)
+    b = getMissingValueChecker(options)
+    c = getParseErrorChecker(options)
+    d = getAllowedValuesChecker(options)
+    e = getOnSuccessAction(options)
+
+  var optParser = quote do:
     let helpMessage {.inject.} = `helpMessageExpr`
-    `"getDefaultValueChecker(options)"`
+    `a`
 
-    `"getMissingValueChecker(options)"`
-    `"getParseErrorChecker(options)"`
-    `"getAllowedValuesChecker(options)"`
+    `b`
+    `c`
+    `d`
 
-    `"getOnSuccessAction(options)"`
+    `e`
 
   let optFlags: seq[string] = options["opt"].mapIt(it.strVal)
   result = newTree(

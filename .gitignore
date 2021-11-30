@@ -409,3 +409,6 @@ testing/nim/implementation_ideas/treediff/*.nim
 
 nimdeps/*
 **/.~*#
+
+**/.xmake
+nim.cfg

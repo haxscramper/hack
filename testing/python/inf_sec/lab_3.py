@@ -7,8 +7,6 @@ n = 1_000_000
 numbers = [i for i in range(n + 1)]
 is_prime = [True for i in range(n + 1)]
 
-# print(numbers)
-
 i = 2
 while i < len(numbers):
     a = i**2
@@ -22,10 +20,6 @@ primes = []
 for i in range(n+1):
     if is_prime[i]:
         primes.append(numbers[i])
-
-# print(primes)
-
-print(len(primes))
 
 def get_random_prime(n):
     numbers = [i for i in range(n+1)]
@@ -73,4 +67,4 @@ print("Eva got B:", B)
 
 print("Alice generated", B**a % p)
 print("Bob generated", A**b % p)
-print("Eva got nothing, lol")
+print("Eva got nothing")

@@ -1,3 +1,5 @@
 main
 packages.json
 repos.json
+search-cache.json
+github-search.json

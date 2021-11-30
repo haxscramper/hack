@@ -1,11 +1,6 @@
-import strformat, strutils
-import hargparse
-import macros
-
-import re
-import os
-import times
-import math
+import std/[re, os, times, math, macros, strformat, strutils]
+import ../../hargparse/src/hargparse
+# import /mnt/workspace/clean-clone/hack/projects/hargparse/src/hargparse.nim
 
 const newDayAfter = 5
 const logMinDelay = 8
@@ -36,8 +31,8 @@ proc getWeekNum(time: DateTime): int =
 proc getCurrentNote(fileDirectory: string, ntype: NoteType = ntDaily): string =
   ## Return path to current daily note
   var time = now()
-  if time.hour < newDayAfter:
-    time.monthday = time.monthday - 1
+  # if time.hour < newDayAfter:
+  #   time.monthday = time.monthday - 1
 
 
   result = fileDirectory.joinPath(
@@ -102,7 +97,7 @@ proc createNewNote(note: string, ntype: NoteType): void =
         let tail = &"""
 * TODO Tasks [/]
   DEADLINE: <{org_time}>
-** TODO <++>
+** TODO {{{{{{replace-target}}}}}}
 
 * Logs
 
