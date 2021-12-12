@@ -9,7 +9,7 @@
 import std/[
   strutils, sequtils, macros, tables, strformat,
   lenientops, options, hashes, math, sugar, streams,
-  intsets
+  intsets, unicode
 ]
 
 const
@@ -64,7 +64,7 @@ type
     lekNewlineSpace
     lekLayoutPrint
 
-  LayoutElement = ref object
+  LayoutElement[R] = ref object
     ## An element of a layout object - a directive to the console.
     ##
     ## This class sports a collection of static methods, each of which
@@ -75,16 +75,16 @@ type
     ## descriptions of the methods involved.
     id {.requiresinit.}: int
     kind: LayoutElementKind
-    text: LytStr ## Layout element text
+    text: LytStr[R] ## Layout element text
     indent: bool
     spaceNum: int
-    layout: Layout
+    layout: Layout[R]
 
-  Layout* = ref object
+  Layout*[R] = ref object
     ## An object containing a sequence of directives to the console.
-    elements: seq[LayoutElement]
+    elements: seq[LayoutElement[R]]
 
-  LytSolution* = ref object
+  LytSolution*[R] = ref object
     id {.requiresinit.}: int
     ## A Solution object effectively maps an integer (the left margin at
     ## which the solution is placed) to a layout notionally optimal for
@@ -101,7 +101,7 @@ type
     gradients: seq[float] ## at each knot, the rate with which the layout
                           ## cost increases with an additional margin
                           ## indent of 1 character.
-    layouts*: seq[Layout] ## the Layout objects expressing the optimal
+    layouts*: seq[Layout[R]] ## the Layout objects expressing the optimal
                           ## layout between each knot.
     index: int
 
@@ -114,11 +114,11 @@ type
     bkVerb ## Multiple lines verbatim
     bkEmpty ## Empty layout block - ignored by `add` etc.
 
-  LytStr* = object
-    text*: string
+  LytStr*[R] = object
+    text*: seq[R]
 
-  LytBlock* = ref object
-    layoutCache: Table[Option[LytSolution], Option[LytSolution]]
+  LytBlock*[R] = ref object
+    layoutCache: Table[Option[LytSolution[R]], Option[LytSolution[R]]]
     isBreaking* {.requiresinit.}: bool ## Whether or not this block should end the line
     breakMult* {.requiresinit.}: int ## Local line break cost change
 
@@ -129,29 +129,29 @@ type
 
     case kind*: LytBlockKind
       of bkVerb:
-        textLines*: seq[LytStr] ## Multiple lines of text
+        textLines*: seq[LytStr[R]] ## Multiple lines of text
         firstNl*: bool ## Insert newline at the block start
 
       of bkText:
-        text*: LytStr ## A single line of text, free of carriage
+        text*: LytStr[R] ## A single line of text, free of carriage
                       ## returs etc.
 
       of bkWrap:
         prefix*: Option[string]
-        sep*: string ## Separator for block wraps
-        wrapElements*: seq[LytBlock]
+        sep*: LytStr[R] ## Separator for block wraps
+        wrapElements*: seq[LytBlock[R]]
 
       of bkStack, bkChoice, bkLine:
-        elements*: seq[LytBlock]
+        elements*: seq[LytBlock[R]]
 
       of bkEmpty:
         discard
 
-  LytFormatPolicy = object
+  LytFormatPolicy[R] = object
     breakElementLines: proc(
-      blc: seq[seq[LytBlock]]): seq[seq[LytBlock]] ## Hook
+      blc: seq[seq[LytBlock[R]]]): seq[seq[LytBlock[R]]] ## Hook
 
-  LytOptions* = object
+  LytOptions*[R] = object
     leftMargin*: int ## position of the first right margin. Expected `0`
     rightMargin*: int ## position of the second right margin. Set for `80`
                       ## to wrap on default column limit.
@@ -168,7 +168,7 @@ type
     # adj_arg: int
     cpack*: float ## cost (per element) for packing justified layouts.
                  ## Expected value `~0.001`
-    format_policy*: LytFormatPolicy
+    format_policy*: LytFormatPolicy[R]
 
 
   OutConsole* = object
@@ -180,12 +180,18 @@ type
 
 proc margin(buf: OutConsole): int = buf.margins[^1]
 
-func `$`(s: LytStr): string = $s.text
-func len*(s: LytStr): int = s.text.len
-func lytStr(s: string): LytStr = LytStr(text: s)
+func `$`[R](s: LytStr[R]): string =
+  for item in $s.text:
+    result.add $item
 
-proc printStr(buf: var OutConsole, str: LytStr) =
-  buf.outStr.add str.text
+func len*[R](s: LytStr[R]): int = s.text.len
+func lytStr[R](s: seq[R]): LytStr[R] = LytStr[R](text: s)
+func lytStr*(s: string): LytStr[Rune] =
+  LytStr[Rune](text: toSeq(runes(s)))
+
+proc printStr[R](buf: var OutConsole, str: LytStr[R]) =
+  for it in str.text:
+    buf.outStr.add $it
   buf.hPos += str.len
 
 proc printStr(buf: var OutConsole, str: string) =
@@ -193,24 +199,24 @@ proc printStr(buf: var OutConsole, str: string) =
   buf.hPos += str.len
 
 proc printSpace(buf: var OutConsole, n: int) =
-  buf.printStr(repeat(" ", n))
+  buf.printStr(repeat(' ', n))
 
 proc printNewline(buf: var OutConsole, indent: bool = true) =
-  buf.printStr("\n")
+  printStr(buf, "\n")
   buf.hPos = 0
   if indent:
     buf.printSpace(buf.margin())
 
 proc printNewlineSpace(buf: var OutConsole, n: int) =
-  buf.printNewline()
-  buf.printSpace(n)
+  printNewline(buf)
+  printSpace(buf, n)
 
-proc treeRepr*(self: Layout, level: int = 0): string =
+proc treeRepr*[R](self: Layout[R], level: int = 0): string =
   var r = addr result
   proc add(s: string) = r[].add s
 
-  proc aux(lyt: Layout, l: int)
-  proc aux(lyt: LayoutElement, l: int) =
+  proc aux(lyt: Layout[R], l: int)
+  proc aux(lyt: LayoutElement[R], l: int) =
     add repeat("  ", l)
     add &"id {lyt.id} "
     case lyt.kind:
@@ -229,7 +235,7 @@ proc treeRepr*(self: Layout, level: int = 0): string =
         add "[lyt]\n"
         aux(lyt.layout, l + 1)
 
-  proc aux(lyt: Layout, l: int) =
+  proc aux(lyt: Layout[R], l: int) =
     for idx, elem in pairs(lyt.elements):
       if not idx == 0:
         add "\n"
@@ -237,25 +243,25 @@ proc treeRepr*(self: Layout, level: int = 0): string =
 
   aux(self, level)
 
-proc treeRepr*(self: LytSolution, level: int = 0): string =
+proc treeRepr*[R](self: LytSolution[R], level: int = 0): string =
   result.add "[lyt solution]\n"
   for lyt in self.layouts:
     result.add "  [lyt]\n"
     result.add treeRepr(lyt, 2)
     result.add "\n"
 
-proc printOn*(self: Layout, buf: var OutConsole) =
+proc printOn*[R](self: Layout[R], buf: var OutConsole) =
   buf.margins.add buf.hPos
   for elem in self.elements:
     case elem.kind:
-      of lekString: buf.printStr(elem.text)
-      of lekNewline: buf.printNewline(elem.indent)
+      of lekString: printStr[R](buf, elem.text)
+      of lekNewline: printNewline(buf, elem.indent)
       of lekNewlineSpace: buf.printNewlineSpace(elem.spaceNum)
       of lekLayoutPrint: elem.layout.printOn(buf)
 
   discard buf.margins.pop()
 
-proc write*(stream: Stream | File, self: Layout, indent: int = 0) =
+proc write*[R](stream: Stream | File, self: Layout[R], indent: int = 0) =
   if indent == 0:
     for elem in self.elements:
       stream.write(elem.text)
@@ -269,18 +275,18 @@ proc write*(stream: Stream | File, self: Layout, indent: int = 0) =
         stream.write ch
 
 
-proc debugOn*(self: Layout, buf: var string): void =
+proc debugOn*[R](self: Layout[R], buf: var string): void =
   for elem in self.elements:
     buf &= $elem.text
 
-proc `$`*(le: LayoutElement): string = $le.text
+proc `$`*[R](le: LayoutElement[R]): string = $le.text
 
-proc `$`*(lt: Layout): string =
+proc `$`*[R](lt: Layout[R]): string =
   lt.debugOn(result)
 
 
 
-proc `$`*(sln: LytSolution): string =
+proc `$`*[R](sln: LytSolution[R]): string =
   result &= "<"
   var idx: int = 0
   for s in zip(
@@ -294,10 +300,10 @@ proc `$`*(sln: LytSolution): string =
 
   result &= ">"
 
-proc `$`*(sln: Option[LytSolution]): string =
+proc `$`*[R](sln: Option[LytSolution[R]]): string =
   if sln.isSome(): return $sln.get()
 
-proc `$`*(blc: LytBlock): string =
+proc `$`*[R](blc: LytBlock[R]): string =
   result = $blc.minWidth & " "
   result &= (
     case blc.kind:
@@ -326,8 +332,8 @@ proc `$`*(blc: LytBlock): string =
 
 
 
-func treeRepr*(inBl: LytBlock): string =
-  func aux(bl: LytBlock, level: int): string =
+func treeRepr*[R](inBl: LytBlock[R]): string =
+  func aux(bl: LytBlock[R], level: int): string =
     let name =
       case bl.kind:
         of bkLine: "L"
@@ -381,7 +387,7 @@ func treeRepr*(inBl: LytBlock): string =
 func hash(elem: LayoutElement): Hash = hash(elem.text.text)
 func hash(lyt: Layout): Hash = hash(lyt.elements)
 
-func hash(sln: Option[LytSolution]): Hash =
+func hash[R](sln: Option[LytSolution[R]]): Hash =
   if sln.isNone():
     return
   else:
@@ -406,89 +412,86 @@ func getSId(): int =
     inc slnId
     result = slnId
 
-func lytString(s: string): LayoutElement =
-  LayoutElement(text: lytStr(s), kind: lekString, id: getSId())
+func lytString[R](s: LytStr[R]): LayoutElement[R] =
+  LayoutElement[R](text: s, kind: lekString, id: getSId())
 
-func lytString(s: LytStr): LayoutElement =
-  LayoutElement(text: s, kind: lekString, id: getSId())
+func lytNewline[R](indent: bool = true): LayoutElement[R] =
+  LayoutElement[R](indent: indent, kind: lekNewline, id: getSId())
 
-func lytNewline(indent: bool = true): LayoutElement =
-  LayoutElement(indent: indent, kind: lekNewline, id: getSId())
+func lytNewlineSpace[R](n: int): LayoutElement[R] =
+  LayoutElement[R](spaceNum: n, kind: lekNewlineSpace, id: getSId())
 
-func lytNewlineSpace(n: int): LayoutElement =
-  LayoutElement(spaceNum: n, kind: lekNewlineSpace, id: getSId())
+proc lytPrint[R](lyt: Layout[R]): LayoutElement[R] =
+  LayoutElement[R](kind: lekLayoutPrint, layout: lyt, id: getSId())
 
-proc lytPrint(lyt: Layout): LayoutElement =
-  LayoutElement(kind: lekLayoutPrint, layout: lyt, id: getSId())
-
-proc getStacked(layouts: seq[Layout]): Layout =
+proc getStacked[R](layouts: seq[Layout[R]]): Layout[R] =
   ## Return the vertical composition of a sequence of layouts.
 
   ## Args:
   ##   layouts: a sequence of Layout objects.
   ## Returns:
   ##   A new Layout, stacking the arguments.
-  var lElts: seq[LayoutElement]
+  var lElts: seq[LayoutElement[R]]
   for l in layouts:
     for e in l.elements:
       lElts.add e
 
-    lElts.add lytNewLine()
+    lElts.add lytNewLine[R]()
 
-  return Layout(elements: lElts[0 .. ^2])  # Drop the last NewLine()
+  return Layout[R](elements: lElts[0 .. ^2])  # Drop the last NewLine()
 
-func initLayout(elems: seq[LayoutElement]): Layout =
-  Layout(elements: elems)
+func initLayout[R](elems: seq[LayoutElement[R]]): Layout[R] =
+  Layout[R](elements: elems)
 
 #*************************************************************************#
 #******************************  LytSolution  *******************************#
 #*************************************************************************#
 
-proc initSolution(
+proc initSolution[R](
     knots: seq[int], spans: seq[int], intercepts: seq[float],
-    gradients: seq[float], layouts: seq[Layout]): LytSolution =
-  result = LytSolution(
+    gradients: seq[float], layouts: seq[Layout]): LytSolution[R] =
+  result = LytSolution[R](
     knots: knots, spans: spans, intercepts: intercepts,
     gradients: gradients, layouts: layouts, id: getSId())
 
 
 #===========================  Helper methods  ============================#
-func reset(self: var LytSolution) =
+func reset[R](self: var LytSolution[R]) =
   ## Begin iteration.
   self.index = 0
 
-func advance(self: var LytSolution) =
+func advance[R](self: var LytSolution[R]) =
   ## Advance to the next knot.
   self.index += 1
 
-func retreat(self: var LytSolution) =
+func retreat[R](self: var LytSolution[R]) =
   ## Move back a knot.
   self.index -= 1
 
-func curKnot(self: LytSolution): int =
+func curKnot[R](self: LytSolution[R]): int =
   ## The currently indexed knot.
   return self.knots[self.index]
 
-func curSpan(self: LytSolution): int =
+func curSpan[R](self: LytSolution[R]): int =
   return self.spans[self.index]
 
-func curIntercept(self: LytSolution): float =
+func curIntercept[R](self: LytSolution[R]): float =
   return self.intercepts[self.index]
 
-func curGradient(self: LytSolution): float =
+func curGradient[R](self: LytSolution[R]): float =
   return self.gradients[self.index]
 
-func curLayout(self: LytSolution): Layout = self.layouts[self.index]
-func curIndex(self: LytSolution): int = self.index
+func curLayout[R](self: LytSolution[R]): Layout[R] = self.layouts[self.index]
+func curIndex[R](self: LytSolution[R]): int = self.index
 
-func curValueAt(self: LytSolution, margin: int): float =
+func curValueAt[R](self: LytSolution[R], margin: int): float =
   ## The value (cost) extrapolated for margin m from the current knot.
   # Since a LytSolution's cost is represented by a piecewise linear function,
   # the extrapolation in this case is linear, from the current knot.
   return self.curIntercept() + self.curGradient() * float(
     margin - self.curKnot())
 
-func nextKnot(self: LytSolution): int =
+func nextKnot[R](self: LytSolution[R]): int =
   ## The knot after the once currently indexed.
   if self.index + 1 >= self.knots.len:
     infty
@@ -511,14 +514,14 @@ proc moveToMargin(self: var LytSolution, margin: int) =
 #==========================  LytSolution factory  ===========================#
 
 type
-  LytSolutionFactory = object
+  LytSolutionFactory[R] = object
     ## A factory object used to construct new LytSolution objects.
     ##
     ## The factory performs basic consistency checks, and eliminates
     ## redundant segments that are linear extrapolations of those that
     ## precede them.
     entries: seq[tuple[
-      knot, span: int, intercept, gradient: float, lyt: Layout]]
+      knot, span: int, intercept, gradient: float, lyt: Layout[R]]]
 
 proc add(
   self: var LytSolutionFactory,
@@ -540,7 +543,7 @@ proc add(
 
   self.entries.add (knot, span, intercept, gradient, layout)
 
-proc makeSolution(self: LytSolutionFactory): LytSolution =
+proc makeSolution[R](self: LytSolutionFactory[R]): LytSolution[R] =
   ## Construct and return a new LytSolution with the data in this
   ## object
   new(result)
@@ -554,7 +557,7 @@ proc makeSolution(self: LytSolutionFactory): LytSolution =
 #=====================  LytSolution manipulation logic  =====================#
 
 
-proc minSolution(solutions: seq[LytSolution]): Option[LytSolution] =
+proc minSolution[R](solutions: seq[LytSolution[R]]): Option[LytSolution[R]] =
   ## Form the piecewise minimum of a sequence of LytSolutions.
 
   ## Args:
@@ -567,7 +570,7 @@ proc minSolution(solutions: seq[LytSolution]): Option[LytSolution] =
     return some(solutions[0])
 
   var
-    factory: LytSolutionFactory
+    factory: LytSolutionFactory[R]
     solutions = solutions
 
   for s in mitems(solutions):
@@ -632,7 +635,7 @@ proc minSolution(solutions: seq[LytSolution]): Option[LytSolution] =
 
   return some factory.makeSolution()
 
-proc vSumSolution(solutions: seq[LytSolution]): LytSolution =
+proc vSumSolution[R](solutions: seq[LytSolution[R]]): LytSolution[R] =
   ## The layout that results from stacking several LytSolutions vertically.
   ## Args:
   ##   solutions: a non-empty sequence of LytSolution objects
@@ -648,7 +651,7 @@ proc vSumSolution(solutions: seq[LytSolution]): LytSolution =
 
   var
     solutions = solutions # XXXX
-    col: LytSolutionFactory
+    col: LytSolutionFactory[R]
 
   for s in mitems(solutions):
     s.reset()
@@ -660,7 +663,7 @@ proc vSumSolution(solutions: seq[LytSolution]): LytSolution =
       solutions[^1].curSpan(),
       solutions.mapIt(it.curValueAt(margin)).sum(),
       solutions.mapIt(it.curGradient()).sum(),
-      solutions.mapIt(it.curLayout()).getStacked()
+      getStacked[R](solutions.mapIt(it.curLayout()))
     )
 
     # The distance to the closest next knot from the current margin.
@@ -679,7 +682,7 @@ proc vSumSolution(solutions: seq[LytSolution]): LytSolution =
 
   result = col.makeSolution()
 
-proc hPlusSolution(s1, s2: var LytSolution, opts: LytOptions): LytSolution =
+proc hPlusSolution[R](s1, s2: var LytSolution[R], opts: LytOptions[R]): LytSolution[R] =
   ## The LytSolution that results from joining two LytSolutions side-by-side.
 
   ## Args:
@@ -697,7 +700,7 @@ proc hPlusSolution(s1, s2: var LytSolution, opts: LytOptions): LytSolution =
   ## `s2`'s layouts may occupy multiple lines, in which case `s2`'s
   ## layout begins at the end of the last line of `s1`'s layout---the
   ## span in this case is the span of `s1`'s last line.
-  var col: LytSolutionFactory
+  var col: LytSolutionFactory[R]
   s1.reset()
   s2.reset()
   var
@@ -758,16 +761,16 @@ proc hPlusSolution(s1, s2: var LytSolution, opts: LytOptions): LytSolution =
 
 
 
-func plusConst(self: LytSolution, val: float): LytSolution =
+func plusConst[R](self: LytSolution[R], val: float): LytSolution[R] =
   ## Add a constant to all values of this LytSolution.
   result = self
   for a in mitems(result.intercepts):
     a += val
 
-proc withRestOfLine(
-    self: var Option[LytSolution],
-    rest: var Option[LytSolution], opts: LytOptions
-  ): Option[LytSolution] =
+proc withRestOfLine[R](
+    self: var Option[LytSolution[R]],
+    rest: var Option[LytSolution[R]], opts: LytOptions[R]
+  ): Option[LytSolution[R]] =
   ## Return a LytSolution that joins the rest of the line right of this one.
 
   ## Args:
@@ -785,14 +788,14 @@ proc withRestOfLine(
 #*************************************************************************#
 #*****************************  LytBlock type  ******************************#
 #*************************************************************************#
-proc elements(self: LytBlock): seq[LytBlock] =
+proc elements[R](self: LytBlock[R]): seq[LytBlock[R]] =
   if contains({bkWrap}, self.kind):
     return self.elements
   if contains({bkStack, bkChoice, bkLine}, self.kind):
     return self.elements
   raiseAssert("#[ IMPLEMENT:ERRMSG ]#")
 
-proc `elements=`(self: var LytBlock; it: seq[LytBlock]) =
+proc `elements=`[R](self: var LytBlock[R]; it: seq[LytBlock[R]]) =
   var matched: bool = false
   if contains({bkWrap}, self.kind):
     if true:
@@ -805,7 +808,7 @@ proc `elements=`(self: var LytBlock; it: seq[LytBlock]) =
   if not matched:
     raiseAssert("#[ IMPLEMENT:ERRMSG ]#")
 
-func len*(blc: LytBlock): int =
+func len*[R](blc: LytBlock[R]): int =
   case blc.kind:
     of bkWrap:
       blc.wrapElements.len()
@@ -817,28 +820,28 @@ func len*(blc: LytBlock): int =
       0
 
 
-func textLen*(b: LytBlock): int =
+func textLen*[R](b: LytBlock[R]): int =
   b.minWidth
 
-func `[]`*(blc: LytBlock, idx: int): LytBlock =
+func `[]`*[R](blc: LytBlock[R], idx: int): LytBlock[R] =
   blc.elements[idx]
 
-func `[]`*(blc: var LytBlock, idx: int): var LytBlock =
+func `[]`*[R](blc: var LytBlock[R], idx: int): var LytBlock[R] =
   blc.elements[idx]
 
-iterator items*(blc: LytBlock): LytBlock =
+iterator items*[R](blc: LytBlock[R]): LytBlock[R] =
   for item in blc.elements:
     yield item
 
-iterator pairs*(blc: LytBlock): (int, LytBlock) =
+iterator pairs*[R](blc: LytBlock[R]): (int, LytBlock[R]) =
   for idx, item in blc.elements:
     yield (idx, item)
 
-iterator mitems*(blc: var LytBlock): var LytBlock =
+iterator mitems*[R](blc: var LytBlock[R]): var LytBlock[R] =
   for item in mitems(blc.elements):
     yield item
 
-iterator mpairs*(blc: var LytBlock): (int, var LytBlock) =
+iterator mpairs*[R](blc: var LytBlock[R]): (int, var LytBlock[R]) =
   for idx, item in mpairs(blc.elements):
     yield (idx, item)
 
@@ -850,50 +853,62 @@ func getBId(): int =
     inc id
     return id
 
-func makeBlock*(kind: LytBlockKind, breakMult: int = 1): LytBlock =
-  result = LytBlock(
+func makeBlock*[R](kind: LytBlockKind, breakMult: int = 1): LytBlock[R] =
+  result = LytBlock[R](
     id: getBId(),
     kind: kind, breakMult: breakMult, minWidth: 0, isBreaking: false)
 
   if kind == bkVerb:
     result.isBreaking = true
 
-func makeEmptyBlock*(): LytBlock =
-  LytBlock(
+func makeEmptyBlock*[R](): LytBlock[R] =
+  LytBlock[R](
     id: getBId(), kind: bkEmpty, breakMult: 1, minWidth: 0, isBreaking: false)
 
-func filterEmpty*(blocks: openarray[LytBlock]): seq[LytBlock] =
+func filterEmpty*[R](blocks: openarray[LytBlock[R]]): seq[LytBlock[R]] =
   for bl in blocks:
     if bl.kind != bkEmpty:
       result.add bl
+
+func makeTextBlock*[R](
+    text: seq[R] | LytStr[R],
+    breakMult: int = 1,
+    breaking: bool = false
+  ): LytBlock[R] =
+
+  assert not breaking
+  result = LytBlock[R](
+    kind: bkText,
+    text: when text is seq: lytStr(text) else: text,
+    isBreaking: breaking,
+    id: getBId(),
+    breakMult: breakMult,
+    minWidth: 0
+  )
+
+  result.minWidth = result.text.len()
 
 func makeTextBlock*(
     text: string,
     breakMult: int = 1,
     breaking: bool = false
-  ): LytBlock =
+  ): LytBlock[Rune] =
 
-  assert not breaking
-  result = LytBlock(
-    kind: bkText, text: lytStr(text), isBreaking: breaking,
-    id: getBId(), breakMult: breakMult, minWidth: 0
-  )
+  makeTextBlock(toSeq(runes(text)), breakMult, breaking)
 
-  result.minWidth = result.text.len()
-
-proc makeTextBlocks*(text: openarray[string]): seq[LytBlock] =
+proc makeTextBlocks*[R](text: openarray[string]): seq[LytBlock[R]] =
   text.mapIt(makeTextBlock(it))
 
 
-func makeIndentBlock*(
-  blc: LytBlock, indent: int, breakMult: int = 1): LytBlock
+func makeIndentBlock*[R](
+  blc: LytBlock[R], indent: int, breakMult: int = 1): LytBlock[R]
 
 
-func isEmpty*(bl: LytBlock): bool {.inline.} =
+func isEmpty*[R](bl: LytBlock[R]): bool {.inline.} =
   bl.kind == bkEmpty or
   (bl.kind in {bkStack, bkLine, bkChoice} and bl.len == 0)
 
-template findSingle*(elems: typed, targetKind: typed): untyped =
+template findSingle*[R](elems: typed, targetKind: typed): untyped =
   var
     countEmpty = 0
     countFull = 0
@@ -925,7 +940,7 @@ template findSingle*(elems: typed, targetKind: typed): untyped =
     -1
 
 
-func updateSizes(bk: var LytBlock) =
+func updateSizes[R](bk: var LytBlock[R]) =
   bk.minWidth =
     case bk.kind:
       of bkStack: bk.elements.mapIt(it.minWidth).max()
@@ -946,8 +961,8 @@ func updateSizes(bk: var LytBlock) =
     bk.isBreaking = bk.elements[^1].isBreaking
 
 
-func convertBlock*(bk: LytBlock, newKind: LytBlockKind): LytBlock =
-  result = LytBlock(
+func convertBlock*[R](bk: LytBlock[R], newKind: LytBlockKind): LytBlock[R] =
+  result = LytBlock[R](
     id: getBId(), breakMult: bk.breakMult, kind: newKind,
     minWidth: 0, isBreaking: false
   )
@@ -957,7 +972,7 @@ func convertBlock*(bk: LytBlock, newKind: LytBlockKind): LytBlock =
   updateSizes(result)
 
 
-func flatten*(bl: LytBlock, kind: set[LytBlockKind]): LytBlock =
+func flatten*[R](bl: LytBlock[R], kind: set[LytBlockKind]): LytBlock[R] =
   if bl.kind in kind and
      (let idx = findSingle(bl.elements, {
     low(LytBlockKind) .. high(LytBlockKind) } - { bkEmpty }); idx != -1):
@@ -966,12 +981,12 @@ func flatten*(bl: LytBlock, kind: set[LytBlockKind]): LytBlock =
   else:
     result = bl
 
-func makeChoiceBlock*(
-    elems: openarray[LytBlock],
+func makeChoiceBlock*[R](
+    elems: openarray[LytBlock[R]],
     breakMult: int = 1
-  ): LytBlock =
+  ): LytBlock[R] =
 
-  result = LytBlock(
+  result = LytBlock[R](
     id: getBId(),
     isBreaking: false,
     breakMult: breakMult,
@@ -982,20 +997,20 @@ func makeChoiceBlock*(
   updateSizes(result)
 
 
-func makeLineBlock*(
-    elems: openarray[LytBlock],
+func makeLineBlock*[R](
+    elems: openarray[LytBlock[R]],
     breakMult: int = 1
-  ): LytBlock =
+  ): LytBlock[R] =
 
-  result = LytBlock(
+  result = LytBlock[R](
     id: getBId(), isBreaking: false,
     breakMult: breakMult, kind: bkLine,
     minWidth: 0, elements: filterEmpty(elems))
 
   updateSizes(result)
 
-func makeIndentBlock*(
-    blc: LytBlock, indent: int, breakMult: int = 1): LytBlock =
+func makeIndentBlock*[R](
+    blc: LytBlock[R], indent: int, breakMult: int = 1): LytBlock[R] =
 
   if indent == 0:
     blc
@@ -1005,8 +1020,8 @@ func makeIndentBlock*(
 
 
 
-proc makeStackBlock*(elems: openarray[LytBlock], breakMult: int = 1): LytBlock =
-  result = LytBlock(
+proc makeStackBlock*[R](elems: openarray[LytBlock[R]], breakMult: int = 1): LytBlock[R] =
+  result = LytBlock[R](
     id: getBId(), isBreaking: false,
     minWidth: 0,
     breakMult: breakMult, kind: bkStack,
@@ -1015,13 +1030,13 @@ proc makeStackBlock*(elems: openarray[LytBlock], breakMult: int = 1): LytBlock =
   updateSizes(result)
 
 
-func makeWrapBlock*(
-    elems: openarray[LytBlock],
+func makeWrapBlock*[R](
+    elems: openarray[LytBlock[R]],
+    sep: LytStr[R],
     breakMult: int = 1,
-    sep: string = ", "
-  ): LytBlock =
+  ): LytBlock[R] =
 
-  LytBlock(
+  LytBlock[R](
     isBreaking: false,
     id: getBId(),
     sep: sep,
@@ -1030,15 +1045,15 @@ func makeWrapBlock*(
     breakMult: breakMult,
     minWidth: elems.mapIt(it.minWidth).max())
 
-func makeVerbBlock*(
-    textLines: openarray[string],
+func makeVerbBlock*[R](
+    textLines: seq[seq[R]],
     breaking: bool = true,
     firstNl: bool = false,
     breakMult: int = 1
-  ): LytBlock =
+  ): LytBlock[R] =
 
   assert breaking
-  result = LytBlock(
+  result = LytBlock[R](
     breakMult: breakMult,
     id: getBId(), kind: bkVerb,
     textLines: mapIt(textLines, lytStr(it)),
@@ -1055,24 +1070,20 @@ func makeTextOrStackTextBlock*(
     breaking: bool = false,
     firstNl: bool = false,
     breakMult: int = 1
-  ): LytBlock =
+  ): LytBlock[Rune] =
 
   if '\n' in text:
     let ls = text.splitLines(keepEol = false)
     result = makeStackBlock(
-      mapIt(ls, makeTextBlock(it)),
+      mapIt(ls, makeTextBlock(toSeq(runes(it)))),
       breakMult)
 
   else:
-    result = makeTextBlock(text, breakMult)
+    result = makeTextBlock(toSeq(runes(text)), breakMult)
 
 
-func makeForceLinebreak*(text: string = ""): LytBlock =
-  makeVerbBlock(@[text], true, false)
-
-func makeLineCommentBlock*(
-  text: string, prefix: string = "# "): LytBlock =
-  makeVerbBlock(@[prefix & text])
+func makeForceLinebreak*[R](text: seq[R] = @[]): LytBlock[R] =
+  makeVerbBlock[R](@[text], true, false)
 
 func add*(target: var LytBlock, other: varargs[LytBlock]) =
   for bl in other:
@@ -1081,11 +1092,11 @@ func add*(target: var LytBlock, other: varargs[LytBlock]) =
 
   updateSizes(target)
 
-proc makeAlignedGrid*(
-    blocks: seq[seq[LytBlock]],
+proc makeAlignedGrid*[R](
+    blocks: seq[seq[LytBlock[R]]],
     aligns: openarray[tuple[
       leftPad, rightPad: int, direction: StringAlignDirection]]
-  ): LytBlock =
+  ): LytBlock[R] =
 
   for idx, row in pairs(blocks):
     assert len(aligns) >= len(row):
@@ -1131,25 +1142,25 @@ proc makeAlignedGrid*(
     result.add resRow
 
 
-proc makeAlignedGrid*(
-    blocks: seq[seq[LytBlock]],
+proc makeAlignedGrid*[R](
+    blocks: seq[seq[LytBlock[R]]],
     aligns: openarray[StringAlignDirection]
-  ): LytBlock =
+  ): LytBlock[R] =
 
   makeAlignedGrid(blocks, mapIt(aligns, (0, 0, it)))
 
 
 #============================  Layout logic  =============================#
 
-proc doOptLayout*(
-  self: var LytBlock,
-  rest: var Option[LytSolution], opts: LytOptions): Option[LytSolution]
+proc doOptLayout*[R](
+  self: var LytBlock[R],
+  rest: var Option[LytSolution[R]], opts: LytOptions[R]): Option[LytSolution[R]]
 
-proc optLayout(
-    self: var LytBlock,
-    rest: var Option[LytSolution],
-    opts: LytOptions
-  ): Option[LytSolution] =
+proc optLayout[R](
+    self: var LytBlock[R],
+    rest: var Option[LytSolution[R]],
+    opts: LytOptions[R]
+  ): Option[LytSolution[R]] =
   ## Retrieve or compute the least-cost (optimum) layout for this block.
   ## - @arg{rest} :: text to the right of this block.
   ## - @ret{} :: Optimal layout for this block and the rest of the line.
@@ -1161,9 +1172,9 @@ proc optLayout(
 
   return self.layoutCache[rest]
 
-proc doOptTextLayout(
-  self: LytBlock,
-  rest: var Option[LytSolution], opts: LytOptions): Option[LytSolution] =
+proc doOptTextLayout[R](
+  self: LytBlock[R],
+  rest: var Option[LytSolution[R]], opts: LytOptions[R]): Option[LytSolution[R]] =
 
   let
     span = len(self.text)
@@ -1173,7 +1184,7 @@ proc doOptTextLayout(
   # margins (leftMargin and rightMargin) in opts. Note that we assume
   # opts.rightMargin >= opts.leftMargin >= 0, as asserted in base.Options.Check().
   if span >= opts.rightMargin:
-    result = some initSolution(
+    result = some initSolution[R](
       @[0],
       @[span],
       @[float(
@@ -1184,7 +1195,7 @@ proc doOptTextLayout(
     )
 
   elif span >= opts.leftMargin:
-    result = some initSolution(
+    result = some initSolution[R](
       @[0, opts.rightMargin - span],
       @[span, span], # XXXX
       @[float((span - opts.leftMargin) * opts.leftMarginCost),
@@ -1193,7 +1204,7 @@ proc doOptTextLayout(
       @[layout, layout] # XXXX
     )
   else:
-    result = some initSolution(
+    result = some initSolution[R](
       @[0, opts.leftMargin - span, opts.rightMargin - span],
       @[span, span, span], # XXXX
       @[float(0), float(0), float((opts.rightMargin - opts.leftMargin) * opts.leftMarginCost)],
@@ -1204,17 +1215,17 @@ proc doOptTextLayout(
   return result.withRestOfLine(rest, opts)
 
 
-proc doOptLineLayout(
-    self: var LytBlock,
-    rest: var Option[LytSolution],
-    opts: LytOptions
-  ): Option[LytSolution] =
+proc doOptLineLayout[R](
+    self: var LytBlock[R],
+    rest: var Option[LytSolution[R]],
+    opts: LytOptions[R]
+  ): Option[LytSolution[R]] =
 
   assert self != nil
   if self.elements.len == 0:
     return rest
 
-  var elementLines: seq[seq[LytBlock]] = @[]
+  var elementLines: seq[seq[LytBlock[R]]] = @[]
   elementLines.add @[]
 
   for i, elt in self.elements:
@@ -1226,14 +1237,14 @@ proc doOptLineLayout(
     assert opts.format_policy.breakElementLines != nil
     elementLines = opts.format_policy.breakElementLines(elementLines)
 
-  var lineSolns: seq[LytSolution]
+  var lineSolns: seq[LytSolution[R]]
 
   for i, ln in mpairs(elementLines):
     var lnLayout =
       if i == elementLines.high:
         rest
       else:
-        none(LytSolution)
+        none(LytSolution[R])
 
     for idx, elt in rmpairs(ln):
       lnLayout = elt.optLayout(lnLayout, opts)
@@ -1247,13 +1258,15 @@ proc doOptLineLayout(
     float(opts.linebreakCost * (len(lineSolns) - 1)))
 
 
-proc doOptChoiceLayout(
-  self: var LytBlock, rest: var Option[LytSolution],
-  opts: LytOptions): Option[LytSolution] =
+proc doOptChoiceLayout[R](
+    self: var LytBlock[R],
+    rest: var Option[LytSolution[R]],
+    opts: LytOptions[R]
+  ): Option[LytSolution[R]] =
   # The optimum layout of this block is simply the piecewise minimum of its
   # elements' layouts.
   return minSolution():
-    var tmp: seq[LytSolution]
+    var tmp: seq[LytSolution[R]]
     for it in mitems(self.elements):
       let lyt = it.optLayout(rest, opts)
       if lyt.isSome():
@@ -1262,11 +1275,11 @@ proc doOptChoiceLayout(
     tmp
 
 
-proc doOptStackLayout(
-    self: var LytBlock,
-    rest: var Option[LytSolution],
-    opts: LytOptions
-  ): Option[LytSolution] =
+proc doOptStackLayout[R](
+    self: var LytBlock[R],
+    rest: var Option[LytSolution[R]],
+    opts: LytOptions[R]
+  ): Option[LytSolution[R]] =
 
   # The optimum layout for this block arranges the elements vertically. Only
   # the final element is composed with the continuation provided---all the
@@ -1278,7 +1291,7 @@ proc doOptStackLayout(
   let soln = vSumSolution: get: collect(newSeq):
     for idx, elem in mpairs(self.elements):
       if idx < self.elements.high:
-        var it = none(LytSolution)
+        var it = none(LytSolution[R])
         optLayout(elem, it, opts)
       else:
         elem.optLayout(rest, opts)
@@ -1296,36 +1309,38 @@ proc doOptStackLayout(
     max(len(self.elements) - 1, 0))
 
 
-proc doOptWrapLayout(
-  self: var LytBlock,
-  rest: var Option[LytSolution], opts: LytOptions): Option[LytSolution] =
+proc doOptWrapLayout[R](
+    self: var LytBlock[R],
+    rest: var Option[LytSolution[R]],
+    opts: LytOptions[R]
+  ): Option[LytSolution[R]] =
   ## Computing the optimum layout for this class of block involves
   ## finding the optimal packing of elements into lines, a problem
   ## which we address using dynamic programming.
   var sep_layout = block:
-    var it = (makeTextBlock(self.sep), none(LytSolution))
+    var it = (makeTextBlock(self.sep), none(LytSolution[R]))
     it[0].optLayout(it[1], opts)
 
   # TODO(pyelland): Investigate why OptLayout doesn't work here.
-  var prefix_layout: Option[LytSolution] =
+  var prefix_layout: Option[LytSolution[R]] =
     if self.prefix.isSome():
-      var it = (makeTextBlock(self.prefix.get()), none(LytSolution))
+      var it = (makeTextBlock(self.prefix.get()), none(LytSolution[R]))
       it[0].doOptLayout(it[1], opts)
     else:
-      none(LytSolution)
+      none(LytSolution[R])
 
   var elt_layouts = block:
-    var res: seq[Option[LytSolution]]
+    var res: seq[Option[LytSolution[R]]]
     for it in mitems(self.wrapElements):
-      var tmp = none(LytSolution)
+      var tmp = none(LytSolution[R])
       res.add it.optLayout(tmp, opts)
 
     res
 
   # Entry i in the list wrap_solutions contains the optimum layout for the
   # last n - i elements of the block.
-  var wrap_solutions: seq[Option[LytSolution]] =
-    self.len.newSeqWith(none(LytSolution))
+  var wrap_solutions: seq[Option[LytSolution[R]]] =
+    self.len.newSeqWith(none(LytSolution[R]))
 
   # Note that we compute the entries for wrap_solutions in reverse
   # order, at each iteration considering all the elements from i ... n
@@ -1341,10 +1356,10 @@ proc doOptWrapLayout(
     # wrap_solutions corresponding to the elements after the break.
     # The optimum layout to be entered into wrap_solutions[i] is then
     # simply the minimum of the full layouts calculated for each j.
-    var solutions_i: seq[LytSolution]
+    var solutions_i: seq[LytSolution[R]]
     # The layout of the elements before the break is built up incrementally
     # in line_layout.
-    var line_layout: Option[LytSolution] =
+    var line_layout: Option[LytSolution[R]] =
       if prefix_layout.isNone():
         elt_layouts[i]
       else:
@@ -1380,26 +1395,26 @@ proc doOptWrapLayout(
   # block is the optimum layout for the last n - 0 elements.
   return wrap_solutions[0]
 
-proc doOptVerbLayout(
-    self: var LytBlock,
-    rest: var Option[LytSolution],
-    opts: LytOptions
-  ): Option[LytSolution] =
+proc doOptVerbLayout[R](
+    self: var LytBlock[R],
+    rest: var Option[LytSolution[R]],
+    opts: LytOptions[R]
+  ): Option[LytSolution[R]] =
 
 
   # The solution for this block is essentially that of a TextBlock(''), with
   # an abberant layout calculated as follows.
-  var lElts: seq[LayoutElement]
+  var lElts: seq[LayoutElement[R]]
 
   for i, ln in self.textLines:
     if i > 0 or self.first_nl:
-      lElts.add lytNewLine()
+      lElts.add lytNewLine[R]()
 
     lElts.add lytString(ln)
 
   let layout = initLayout(lElts)
   let span = 0
-  var sf: LytSolutionFactory
+  var sf: LytSolutionFactory[R]
   if opts.leftMargin > 0:  # Prevent incoherent solutions
     sf.add(0, span, 0, 0, layout)
   # opts.rightMargin == 0 is absurd
@@ -1411,11 +1426,11 @@ proc doOptVerbLayout(
 
   result = some sf.makeSolution()
 
-proc doOptLayout*(
-    self: var LytBlock,
-    rest: var Option[LytSolution],
-    opts: LytOptions
-  ): Option[LytSolution] =
+proc doOptLayout*[R](
+    self: var LytBlock[R],
+    rest: var Option[LytSolution[R]],
+    opts: LytOptions[R]
+  ): Option[LytSolution[R]] =
 
   case self.kind:
     of bkText:   result = self.doOptTextLayout(rest, opts)
@@ -1427,7 +1442,7 @@ proc doOptLayout*(
     of bkEmpty:  assert false
 
 
-const defaultFormatOpts* = LytOptions(
+const defaultFormatOpts* = LytOptions[Rune](
   leftMargin: 0,
   rightMargin: 80,
   leftMarginCost: 0.05,
@@ -1435,13 +1450,13 @@ const defaultFormatOpts* = LytOptions(
   linebreakCost: 5,
   indentSpaces: 2,
   cpack: 0.001,
-  formatPolicy: LytFormatPolicy(
+  formatPolicy: LytFormatPolicy[Rune](
     breakElementLines: (
-      proc(blc: seq[seq[LytBlock]]): seq[seq[LytBlock]] =
+      proc(blc: seq[seq[LytBlock[Rune]]]): seq[seq[LytBlock[Rune]]] =
 
         let spaceText = makeTextBlock(" ")
-        func strippedLine(line: seq[LytBlock]): LytBlock =
-          return makeLineBlock(line#[(leftSpaces)..(rightSpaces)]#)
+        func strippedLine(line: seq[LytBlock[Rune]]): LytBlock[Rune] =
+          return makeLineBlock(line)
 
         result.add @[blc[0]]
         if blc.len > 1:
@@ -1462,9 +1477,18 @@ type
     blkEmpty
     blkWrap
 
-proc `[]`*(
-    b: static[LytBuilderKind], s: seq[LytBlock], sep: string = ", "
-  ): LytBlock =
+proc sepComma*[R](): LytStr[R] =
+  when R is Rune:
+    lytStr(", ")
+
+  else:
+    {.error: "No comma separator for " & $R.}
+
+proc `[]`*[R](
+    b: static[LytBuilderKind],
+    s: seq[LytBlock[R]],
+    sep: LytStr[R] = sepComma[R]()
+  ): LytBlock[R] =
   static:
     assert b in {blkLine, blkStack, blkChoice, blkWrap},
       "Layout builder for block sequences must be a line, start, choice " &
@@ -1482,17 +1506,19 @@ proc `[]`*(
       makeChoiceBlock(s)
 
     of blkWrap:
-      makeWrapBlock(s, sep = sep)
+      makeWrapBlock(s, sep)
 
     else:
       raiseAssert("#[ IMPLEMENT ]#")
 
+proc wrap*[R](sep: LytStr[R], blocks: openarray[LytBlock[R]]) =
+  makeWrapBlock(blocks, sep)
 
-proc `[]`*(
+proc `[]`*[R](
     b: static[LytBuilderKind],
-    bl: LytBlock,
-    args: varargs[LytBlock],
-  ): LytBlock =
+    bl: LytBlock[R],
+    args: varargs[LytBlock[R]],
+  ): LytBlock[R] =
   static:
     assert b in {blkLine, blkStack, blkChoice, blkWrap},
       "Layout builder for block sequences must be a line, start, choice " &
@@ -1505,7 +1531,7 @@ proc `[]`*(
     b: static[LytBuilderKind],
     a: string,
     breaking: bool = false
-  ): LytBlock =
+  ): LytBlock[Rune] =
 
   static:
     assert(
@@ -1550,23 +1576,15 @@ func `??`*(bl: LytBlock, condOk: bool): LytBlock =
 func `??`*(blocks: tuple[ok, fail: LytBlock], condOk: bool): LytBlock =
   if condOk: blocks.ok else: blocks.fail
 
-func condOr*(
-    cond: bool,
-    ok: LytBlock,
-    fail: LytBlock = makeEmptyBlock()): LytBlock =
-  if cond: ok else: fail
-
-
-
-func join*(
-    blocks: LytBlock,
-    sep: LytBlock,
+func join*[R](
+    blocks: LytBlock[R],
+    sep: LytBlock[R],
     vertLines: bool = true
-  ): LytBlock =
+  ): LytBlock[R] =
   assert blocks.kind in {bkLine, bkStack},
     "Only stack or line layouts can be joined"
 
-  result = makeBlock(blocks.kind)
+  result = makeBlock[R](blocks.kind)
 
   for idx, item in pairs(blocks):
     let isLast = idx == len(blocks) - 1
@@ -1582,11 +1600,11 @@ func join*(
       if not isLast:
         result.add sep
 
-func join*(
-    blocks: seq[LytBlock],
-    sep: LytBlock,
+func join*[R](
+    blocks: seq[LytBlock[R]],
+    sep: LytBlock[R],
     direction: LytBlockKind
-  ): LytBlock  =
+  ): LytBlock[R] =
 
   result = makeBlock(direction)
   for idx, item in pairs(blocks):
@@ -1595,11 +1613,11 @@ func join*(
     if not isLast:
       result.add sep
 
-template addItBlock*(
-    res: LytBlock,
+template addItBlock*[R](
+    res: LytBlock[R],
     item: typed,
     expr: untyped,
-    join: LytBlock
+    join: LytBlock[R]
   ): untyped =
 
   var idx = 0
@@ -1637,9 +1655,7 @@ template joinItLine*(
   res.addItBlock(item, expr, join)
   res
 
-proc toLayouts*(
-    bl: LytBlock, opts: LytOptions = defaultFormatOpts): seq[Layout] =
-
+proc toLayouts*[R](bl: LytBlock[R], opts: LytOptions[R]): seq[Layout[R]] =
   assert(not(
      (bl.kind in {bkStack, bkLine, bkChoice} and bl.elements.len == 0) or
      (bl.kind in {bkWrap} and bl.wrapElements.len == 0)),
@@ -1659,34 +1675,32 @@ proc toLayouts*(
 
   var bl = bl
   let sln = block:
-    var it = none(LytSolution)
+    var it = none(LytSolution[R])
     bl.doOptLayout(it, opts)
 
   assert isSome(sln), "Could not perform layout for block " & $bl
 
   return sln.get().layouts
 
-proc toString*(
-    bl: LytBlock,
-    rightMargin: int = 80,
-    opts: LytOptions = defaultFormatOpts
-  ): string =
-
+proc toString*[R](bl: LytBlock[R], opts: LytOptions[R]): string =
   if bl.kind == bkEmpty:
     return ""
 
   else:
     var bl = bl
-    let opts = block:
-      var it = opts
-      it.rightMargin = rightMargin
-      it
-
     var console: OutConsole
-    let lyt = bl.toLayouts()[0]
+    let lyt = toLayouts[R](bl, opts)[0]
     lyt.printOn(console)
     return console.outStr
 
+proc toString*(
+    bl: LytBlock[Rune],
+    width: int = 80,
+    opts: LytOptions[Rune] = defaultFormatOpts): string =
+
+  var opts = opts
+  opts.rightMargin = width
+  return toString(bl, opts)
 
 
 func codegenRepr*(inBl: LytBlock, indent: int = 0): string =
