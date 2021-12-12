@@ -939,15 +939,20 @@ template findSingle*[R](elems: typed, targetKind: typed): untyped =
   else:
     -1
 
+func max(ints: seq[int], onEmpty: int): int =
+  if ints.len == 0: onEmpty else: max(ints)
+
+func min(ints: seq[int], onEmpty: int): int =
+  if ints.len == 0: onEmpty else: min(ints)
 
 func updateSizes[R](bk: var LytBlock[R]) =
   bk.minWidth =
     case bk.kind:
-      of bkStack: bk.elements.mapIt(it.minWidth).max()
+      of bkStack: bk.elements.mapIt(it.minWidth).max(0)
       of bkLine: bk.elements.mapIt(it.minWidth).sum()
       of bkText: bk.text.len()
-      of bkChoice: bk.elements.mapIt(it.minWidth).min()
-      of bkVerb: bk.textLines.mapIt(it.len).max()
+      of bkChoice: bk.elements.mapIt(it.minWidth).min(0)
+      of bkVerb: bk.textLines.mapIt(it.len).max(0)
       else: 0
 
 
@@ -1140,6 +1145,40 @@ proc makeAlignedGrid*[R](
 
 
     result.add resRow
+
+proc makeSeparated*[R](
+    blocks: seq[LytBlock[R]],
+    vertical: bool,
+    sep: LytBlock[R]
+  ): LytBlock[R] =
+  result =
+    if vertical:
+      makeStackBlock[R](@[])
+    else:
+      makeLineBlock[R](@[])
+
+  if vertical:
+    for idx, item in blocks:
+      if idx < len(blocks) - 1:
+        result.add makeLineBlock([item, sep])
+
+      else:
+        result.add item
+
+  else:
+    for idx, item in blocks:
+      if idx > 0:
+        result.add sep
+
+      result.add item
+
+proc makeVSeparated*[R](
+    blocks: seq[LytBlock[R]], sep: LytBlock[R]): LytBlock[R] =
+  makeSeparated(blocks, true, sep)
+
+proc makeHSeparated*[R](
+    blocks: seq[LytBlock[R]], sep: LytBlock[R]): LytBlock[R] =
+  makeSeparated(blocks, false, sep)
 
 
 proc makeAlignedGrid*[R](
@@ -1835,39 +1874,27 @@ template initBlockFmtDSL*() {.dirty.} =
 when isMainModule:
   initBlockFmtDsl()
 
-  if true:
-    echo toString(
-      H[
-        T["proc ("],
-        V[T["arg1: int"], T["arg2: int"], T["arg3: int"]].join(T[", "]),
-        T[")"]
-      ]
-    )
-
-  if true:
-    echo toString(
-      H[
-        T["proc ("],
-        C[
-          V[@[T["arg1: int"], T["arg2: int"],]].join(T[", "])
-        ],
-        T[")"]
-      ]
-    )
+  proc lytProc(
+      args: openarray[LytBlock[Rune]], body: LytBlock[Rune]): LytBlock[Rune] =
+    let
+      h = T["proc ("]
+      t = T[") = "]
+      hsep = makeHSeparated[Rune](@args, T[", "])
+      vsep = makeVSeparated[Rune](@args, T[", "])
 
 
-  if true:
-    echo toString(
-      H[
-        T["proc ("],
-        C[
-          H[@[T["arg1: int"], T["arg2: int"],]].join(T[", "]),
-          V[@[T["arg1: int"], T["arg2: int"],]].join(T[", "]),
-        ],
-        T[")"]
-      ],
-      40
-    )
+    result = C[
+      H[h, hsep, t, body],
+      V[H[h, hsep, t, I[2, body]]],
+      V[h, I[4, vsep], t, I[2, body]]
+    ]
+
+  for args in [1, 2]:
+    for body in [20, 60]:
+      echo toString lytProc(
+        args = mapIt(0 ..< args, T[&"arg{it}: arg{it}_type"]),
+        body = T[repeat("?", body)]
+      )
 
   if true:
     for i in [1, 5, 10]:
