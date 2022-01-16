@@ -12,8 +12,9 @@ bool forceResetComPort(const QString& portName) {
 
     qDebug() << "Forcing reset using 1200bps open/close on port "
              << portName;
-    if (!serial.open(QIODevice::ReadWrite))
+    if (!serial.open(QIODevice::ReadWrite)) {
         return false;
+    }
 
     // This seems optional
     serial.setDataTerminalReady(false);
@@ -51,9 +52,14 @@ bool forceResetComPort(const QString& portName) {
     while (!isPortPresent && !timeoutWatcher.hasExpired(timeoutMs)) {
         isPortPresent = fetchIsPortPresent();
 
-        if (!isPortPresent)
+        if (!isPortPresent) {
             QThread::msleep(1);
+        }
     }
 
     return !timeoutWatcher.hasExpired(timeoutMs);
+}
+
+int main() {
+    forceResetComPort("/dev/ttyACM0");
 }

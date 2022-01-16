@@ -57,6 +57,8 @@ test:
 </main>
 """
 
+test("/tmp/q.xml".readFile())
+
 # test:
 #   """
 # <main id="0">

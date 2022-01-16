@@ -3,9 +3,11 @@ CFLAGS=-Wall -mmcu=$(MCU) -Os
 LDFLAGS=-Wl,-gc-sections -Wl,-relax
 CC=avr-gcc
 
-all: blink.hex
-	./reset.py
-	avrdude -v -p $(MCU) -cavr109 -P/dev/ttyACM0 -c arduino -b57600 -D -Uflash:w:blink.hex:i
+all: main.hex
+	avrdude -p m32u4 -c usbasp \
+    -U flash:w:main.hex \
+    -U hfuse:w:0xd8:m \
+    -U efuse:w:0xcb:m
 
 clean:
 	rm -f *.o *.hex *.obj *.hex
@@ -13,7 +15,7 @@ clean:
 %.hex: %.obj
 	avr-objcopy -R .eeprom -O ihex $< $@
 
-%obj: blink.c
-	$(CC) $(CFLAGS) blink.c $(LDFLAGS) -o $@
+%obj: main.c
+	$(CC) $(CFLAGS) main.c $(LDFLAGS) -o $@
 
 .PHONY: all

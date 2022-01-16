@@ -5,10 +5,6 @@ MCU=MK66FX1M0
 LOWER_MCU := $(subst A,a,$(subst B,b,$(subst C,c,$(subst D,d,$(subst E,e,$(subst F,f,$(subst G,g,$(subst H,h,$(subst I,i,$(subst J,j,$(subst K,k,$(subst L,l,$(subst M,m,$(subst N,n,$(subst O,o,$(subst P,p,$(subst Q,q,$(subst R,r,$(subst S,s,$(subst T,t,$(subst U,u,$(subst V,v,$(subst W,w,$(subst X,x,$(subst Y,y,$(subst Z,z,$(MCU)))))))))))))))))))))))))))
 MCU_LD = $(LOWER_MCU).ld
 
-
-
-
-
 OPTIONS = -DF_CPU=48000000 -DUSB_SERIAL -DLAYOUT_US_ENGLISH -DUSING_MAKEFILE
 OPTIONS += -D__$(MCU)__ -DARDUINO=10805 -DTEENSYDUINO=144
 CPUARCH = cortex-m4
@@ -19,7 +15,7 @@ CPUARCH = cortex-m4
 # https://github.com/xxxajk/Arduino_Makefile_master
 # https://github.com/JonHylands/uCee
 
-ROOT_DIR      ?= $(abspath ../../../../../..)
+ROOT_DIR      ?= $(abspath .)
 
 ARDUINOPATH    = $(ROOT_DIR)/arduino-1.8.15
 TOOLSPATH      = $(ARDUINOPATH)/hardware/tools
@@ -37,6 +33,7 @@ $(info Using teensy headers at       $(TEENSY_LIBS))
 $(info Tools installation path is    $(TOOLSPATH))
 $(info Compiler path is              $(COMPILERPATH))
 
+
 MAKEFILE_DIR := $(shell dirname $(realpath $(firstword $(MAKEFILE_LIST))))
 
 CPPFLAGS = -fmax-errors=1 -Wall -g -Os -mcpu=$(CPUARCH) -mthumb -MMD \
@@ -47,14 +44,15 @@ CPPFLAGS = -fmax-errors=1 -Wall -g -Os -mcpu=$(CPUARCH) -mthumb -MMD \
 	-I$(TEENSY_LIBS)/SPI \
 	-I$(TEENSY_LIBS)/SoftwareSerial \
 	-I$(TEENSY_LIBS)/OneWire \
-	-I$(DEPS_PATH)/U8g2/src \
+	-I$(DEPS_PATH)/u8g2/src \
 	-I$(DEPS_PATH)/DHT \
-	-I$(TOOLSPATH)/avr/avr/include/util
+	-I$(TOOLSPATH)/avr/avr/include/util \
+	-I$(EXAMPLE_DIR)
 
 CXXFLAGS = -std=gnu++14 -felide-constructors -fno-exceptions -fno-rtti
 CFLAGS =
 
-LDFLAGS = -Os -Wl,--gc-sections,--defsym=__rtc_localtime=0 --specs=nano.specs -mcpu=$(CPUARCH) -mthumb -T$(MCU_LD)
+LDFLAGS = -Os -Wl,--gc-sections,--defsym=__rtc_localtime=0 --specs=nano.specs -mcpu=$(CPUARCH) -mthumb -T$(EXAMPLE_DIR)/$(MCU_LD)
 LIBS = -lm
 
 CC         = $(COMPILERPATH)/arm-none-eabi-gcc
@@ -64,11 +62,11 @@ SIZE       = $(COMPILERPATH)/arm-none-eabi-size
 
 C_FILES := \
   $(wildcard $(EXAMPLE_DIR)/*.c) \
-	$(wildcard $(DEPS_PATH)/U8g2/src/clib/*.c)
+	$(wildcard $(DEPS_PATH)/u8g2/src/clib/*.c)
 
 CPP_FILES := \
   $(wildcard $(EXAMPLE_DIR)/*.cpp) \
-  $(DEPS_PATH)/U8g2/src/U8x8lib.cpp \
+  $(DEPS_PATH)/u8g2/src/U8x8lib.cpp \
 	$(DEPS_PATH)/DHT/DHT.cpp \
 	$(TEENSY_LIBS)/SPI/SPI.cpp \
   $(TEENSY_LIBS)/Wire/WireKinetis.cpp \
@@ -79,13 +77,21 @@ CPP_FILES := \
 OBJS := $(CPP_FILES:.cpp=.o) $(C_FILES:.c=.o)
 
 TARGET = main
+ABS_TARGET = $(EXAMPLE_DIR)/$(TARGET)
 
-all: $(TARGET).hex
 
-$(TARGET).elf: $(OBJS) $(MCU_LD)
+
+all: $(ABS_TARGET).cpp $(ABS_TARGET).hex
+
+
+.PHONY: $(ABS_TARGET).cpp
+$(ABS_TARGET).cpp: $(TARGET).cpp
+	cp $(TARGET).cpp $(ABS_TARGET).cpp
+
+$(ABS_TARGET).elf: $(OBJS) $(EXAMPLE_DIR)/$(MCU_LD)
 	@$(CC) $(LDFLAGS) -o $@ $(OBJS) $(LIBS)
 
-%.hex: %.elf
+$(EXAMPLE_DIR)/%.hex: $(EXAMPLE_DIR)/%.elf
 	$(SIZE) $<
 	$(OBJCOPY) -O ihex -R .eeprom $< $@
 ifneq (,$(wildcard $(TOOLSPATH)))
@@ -93,12 +99,12 @@ ifneq (,$(wildcard $(TOOLSPATH)))
 	-$(TOOLSPATH)/teensy_reboot
 endif
 
-#@echo C $<
-%.o: %.c
+$(EXAMPLE_DIR)/%.o: $(EXAMPLE_DIR)/%.c
+	@echo C $<
 	@$(CC) -c $(CFLAGS) $(CPPFLAGS) $< -o $@
 
-#@echo CXX $<
-%.o: %.cpp
+$(EXAMPLE_DIR)/%.o: $(EXAMPLE_DIR)/%.cpp
+	@echo CXX $<
 	@$(CC) -c $(CXXFLAGS) $(CPPFLAGS) $< -o $@
 
 

@@ -1939,3 +1939,12 @@ when isMainModule:
       T[")"]
     ]
   ], 50)
+
+  echo toString(V[
+    T["stmtPragmas* = {"],
+    I[2, V[
+      T["wChecks,      wObjChecks,"],
+      T["wBoundChecks, wOverflowChecks, wNilChecks"]
+    ]],
+    T["}"]
+  ])
