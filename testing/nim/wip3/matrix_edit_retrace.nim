@@ -6,9 +6,22 @@ type
   Cell = tuple[cost: int, edit: Edit]
   Matrix = seq[seq[Cell]]
 
-proc format(m: seq[seq[Cell]]): string =
-  for line in m:
-    for item in line:
+proc format(m: Matrix, a, b: string, offset: int = 2): string =
+  result.add "  "
+  result.add repeat("    ", offset)
+  for ch in b:
+    result.add align($ch, 4)
+
+  result.add "\n"
+
+  for lineIdx, line in m:
+    if (offset - 1) < lineIdx:
+      result.add align($a[lineIdx - offset], 3)
+
+    else:
+      result.add "   "
+
+    for colIdx, item in line:
       result.add align($item.cost, 3)
       result.add case item.edit:
         of None: "\e[35m?\e[39m"
@@ -31,7 +44,7 @@ func min(cells: seq[Cell]): Cell =
       result = cell
 
 
-proc damerau_levenshtein_distance(a, b: string): Matrix =
+proc damerauLevenshteinDistance(a, b: string): Matrix =
     # "Infinity" -- greater than maximum possible edit distance
     # Used to prevent transpositions for first characters
     let inf = len(a) + len(b)
@@ -46,8 +59,6 @@ proc damerau_levenshtein_distance(a, b: string): Matrix =
         @[cell(inf), cell(m)] & repeat(cell(0), len(b))
 
     matrix &= tmp
-
-    echo format(matrix)
 
     # Holds last row each element was encountered: `DA` in the Wikipedia pseudocode
     var lastRow: Table[char, int]
@@ -103,4 +114,74 @@ proc damerau_levenshtein_distance(a, b: string): Matrix =
     # Return last element
     return matrix
 
-echo damerau_levenshtein_distance("a cat", "an act").format()
+
+proc levenshteinDistance*(str1, str2: string): Matrix =
+  var
+    l1 = str1.len
+    l2 = str2.len
+    m: Matrix = newSeqWith(l1 + 1, newSeqWith(l2 + 1, cell(0)))
+
+  for i in 0 .. l1:
+    m[i][0] = cell(i)
+
+  for j in 0 .. l2:
+    m[0][j] = cell(j)
+
+  const
+    insertCost = 1
+    deleteCost = 1
+    changeCost = 1
+
+  for i in 1 .. l1:
+    for j in 1 .. l2:
+      if (str1[i - 1] == str2[j - 1]):
+        m[i][j] = m[i - 1][j - 1]
+
+      else:
+        m[i][j] = min(@[
+          cell(m[i - 1][j].cost + deleteCost, Delete),
+          cell(m[i][j - 1].cost + insertCost, Insert),
+          cell(m[i - 1][j - 1].cost + changeCost, Change)])
+
+  return m
+
+
+type
+  SeqEdit* = object
+    kind*: Edit
+    pos*: (int,int)
+
+func `[]`(matrix: Matrix, pos: (int, int)): Cell = matrix[pos[0]][pos[1]]
+
+func step*(matrix: Matrix, pos: (int, int)): (int, int) =
+  let (c, r) = pos
+  result = pos
+  var cost = high(int)
+
+
+  if 0 < c and 0 < r and matrix[(c - 1, r - 1)].cost < cost:
+    result = (c - 1, r - 1)
+    cost = matrix[result].cost
+
+  if 0 < r and matrix[(c, r - 1)].cost < cost:
+    result = (c, r - 1)
+    cost = matrix[result].cost
+
+  if 0 < c and matrix[(c - 1, r)].cost < cost:
+    result = (c - 1, r)
+    cost = matrix[result].cost
+
+
+proc traceEdits(matrix: Matrix): seq[SeqEdit] =
+  var pos = (matrix.high, matrix[^1].high)
+  while (0, 0) < pos:
+    pos = matrix.step(pos)
+    result.add SeqEdit(kind: matrix[pos].edit, pos: pos)
+
+block:
+  let ed = damerauLevenshteinDistance("democrat", "republican")
+  echo ed.format("democrat", "republican")
+  for ed in ed.traceEdits():
+    echo ed
+
+echo levenshteinDistance("a cat", "an act").format("a cat", "an act", 1)
