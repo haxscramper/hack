@@ -8,7 +8,7 @@
 
 import std/[
   strutils, sequtils, macros, tables, strformat,
-  lenientops, options, hashes, math, sugar, streams,
+  lenientops, options, hashes, math, sugar,
   intsets
 ]
 
@@ -1103,7 +1103,7 @@ func initWrapBlock*(
     minWidth: elems.mapIt(it.minWidth).max())
 
 func initVerbBlock*(
-    textLines: seq[seq],
+    textLines: openarray[LytStr],
     breaking: bool = true,
     firstNl: bool = false,
     breakMult: int = 1
@@ -1113,7 +1113,7 @@ func initVerbBlock*(
   result = LytBlock(
     breakMult: breakMult,
     id: getBId(), kind: bkVerb,
-    textLines: mapIt(textLines, lytStr(it)),
+    textLines: @textLines,
     isBreaking: breaking,
     firstNl: firstNl,
     minWidth: textLines.mapIt(it.len).max()
@@ -1541,100 +1541,6 @@ proc initLytOptions(): LytOptions =
 
             result.add @[ind])))
 
-type
-  LytBuilderKind* = enum
-    blkLine
-    blkStack
-    blkIndent
-    blkText
-    blkSpace
-    blkChoice
-    blkEmpty
-    blkWrap
-
-proc `[]`*(
-    b: static[LytBuilderKind],
-    s: seq[LytBlock],
-    sep: LytStr = NilLytStr
-  ): LytBlock =
-  static:
-    assert b in {blkLine, blkStack, blkChoice, blkWrap},
-      "Layout builder for block sequences must be a line, start, choice " &
-      "or wrap, but found " & $b &
-      "Change builder kind, or add missing arguments"
-
-
-  case b:
-    of blkLine:
-      initLineBlock(s)
-
-    of blkStack:
-      initStackBlock(s)
-
-    of blkChoice:
-      initChoiceBlock(s)
-
-    of blkWrap:
-      initWrapBlock(s, sep)
-
-    else:
-      raiseAssert("#[ IMPLEMENT ]#")
-
-
-proc `[]`*(
-    b: static[LytBuilderKind],
-    a: LytStr,
-    breaking: bool = false
-  ): LytBlock =
-
-  static:
-    assert(
-      b == blkText,
-      "Single-argument block builder for string must use `T[\"somestring\"]`" &
-      "Change builder kind to `T` (current kind is " & $b & ")"
-    )
-
-  initTextBlock(a, breaking = breaking)
-
-proc wrap*(sep: LytStr, blocks: openarray[LytBlock]): LytBlock =
-  initWrapBlock(blocks, sep)
-
-proc `[]`*(
-    b: static[LytBuilderKind],
-    bl: LytBlock,
-    args: varargs[LytBlock],
-  ): LytBlock =
-  static:
-    assert b in {blkLine, blkStack, blkChoice, blkWrap},
-      "Layout builder for block sequences must be a line, start, choice " &
-      "or wrap, but found " & $b &
-      "Change builder kind, or add missing arguments"
-
-  b[@[ bl ] & toSeq(args)]
-
-proc `[]`*(b: static[LytBuilderKind], tlen: int = 1): LytBlock =
-  case b:
-    of blkSpace:  result = initTextBlock(lytStrSpaces(tlen))
-    of blkEmpty:  result = initEmptyBlock()
-    of blkLine:   result = initLineBlock(@[])
-    of blkChoice: result = initChoiceBlock(@[])
-    of blkStack:  result = initStackBlock(@[])
-    of blkWrap:   result = initWrapBlock(@[])
-    else:
-      static:
-        assert(
-          b in {blkSpace, blkLine, blkChoice, blkStack, blkEmpty, blkWrap},
-          "Block builder without arguments must use space or " &
-          "combinator layouts. " & "Unexpected builder kind"
-        )
-
-
-
-
-proc `[]`*(b: static[LytBuilderKind], i: int, bl: LytBlock): LytBlock =
-  static: assert b == blkIndent
-  return initIndentBlock(bl, i)
-
 func `&?`*(bl: LytBlock, added: tuple[condOk: bool, bl: LytBlock]): LytBlock =
   result = bl
   if added.condOk:
@@ -1954,19 +1860,29 @@ proc toString(s: StrStore, opts: LytOptions, blc: LytBlock): string =
 
 
 template initBlockFmtDSL*() {.dirty.} =
-  # proc H(args: varargs[LytBlock]): LytBlock = initLineBlock(@args)
-  # proc V(args: varargs[LytBlock]): LytBlock = initStackBlock(@args)
-  # proc I(sp: int, b: LytBlock): LytBlock = initIndentBlock(sp, b)
-  # proc
-  const
-    H = blkLine
-    V = blkStack
-    I = blkIndent
-    T = blkText
-    S = blkSpace
-    C = blkChoice
-    E = blkEmpty
-    W = blkWrap
+  proc H(args: varargs[LytBlock]): LytBlock = initLineBlock(@args)
+  proc V(args: varargs[LytBlock]): LytBlock = initStackBlock(@args)
+  proc I(sp: int, b: LytBlock): LytBlock = initIndentBlock(b, sp)
+  proc C(args: varargs[LytBlock]): LytBlock = initChoiceBlock(@args)
+  proc W(args: varargs[LytBlock]): LytBlock = initWrapBlock(@args, NilLytStr)
+  proc W(sep: LytStr, args: varargs[LytBlock]): LytBlock = initWrapBlock(@args, sep)
+  proc E(): LytBlock = initEmptyBlock()
+  proc T(str: LytStr): LytBlock = initTextBlock(str)
+  proc T(
+    strs: openarray[LytStr],
+    breaking: bool = true,
+    firstNl: bool = false,
+    breakMult: int
+  ): LytBlock = initVerbBlock(strs, breaking, firstNl, breakMult)
+  # const
+  #   H = blkLine
+  #   V = blkStack
+  #   I = blkIndent
+  #   T = blkText
+  #   S = blkSpace
+  #   C = blkChoice
+  #   E = blkEmpty
+  #   W = blkWrap
 
 
 when isMainModule:
@@ -1980,7 +1896,7 @@ when isMainModule:
     opts.rightMargin = width
     toString(s, opts, b)
 
-  proc TX(str: string): LytBlock = T[s.str(str)]
+  proc TX(str: string): LytBlock = T(s.str(str))
 
   proc lytProc(args: openarray[LytBlock], body: LytBlock): LytBlock =
     let
@@ -1990,11 +1906,11 @@ when isMainModule:
       vsep = initVSeparated(@args, TX(", "))
 
 
-    result = C[
-      H[TX(h), hsep, TX(t), body],
-      V[H[TX(h), hsep, TX(t), I[2, body]]],
-      V[TX(h), I[4, vsep], TX(t), I[2, body]]
-    ]
+    result = C(
+      H(TX(h), hsep, TX(t), body),
+      V(H(TX(h), hsep, TX(t), I(2, body))),
+      V(TX(h), I(4, vsep), TX(t), I(2, body))
+    )
 
 
 
@@ -2010,52 +1926,38 @@ when isMainModule:
   if true:
     for i in [1, 5, 10]:
       var blocks = mapIt(0 .. i, TX(&"arg{it}: int{it}"))
-      let bl = H[
-        TX("proc ("),
-        C[join(H[blocks], TX(", ")), join(V[blocks], TX(","))],
-        TX(")")
-      ]
+      let bl = H(TX("proc ("),
+        C(join(H(blocks), TX(", ")), join(V(blocks), TX(","))),
+        TX(")"))
 
       echo toString(bl)
 
+  let comm = s.str(", ")
 
+  echo toString(
+    H(H(TX("FnName"), TX("(")),
+    W(comm, mapIt(1 .. 10, TX(&"argument{it}"))),
+    TX(")")), 50)
 
-  echo toString(H[
-    H[TX("FnName"), TX("(")],
-    W[mapIt(1 .. 10, TX(&"argument{it}"))],
-    TX(")")
-  ], 50)
+  echo toString(
+    H(H(TX("FnName"), TX("(")),
+    W(comm, mapIt(1 .. 10, TX(&"argument{it}"))),
+    TX(")")), 30)
 
-  echo toString(H[
-    H[TX("FnName"), TX("(")],
-    W[mapIt(1 .. 10, TX(&"argument{it}"))],
-    TX(")")
-  ], 30)
+  echo toString(H(H(TX("AVeryLongAndDescriptiveFunctionName"), TX("(")),
+    W(comm, mapIt(1 .. 10, TX(&"argument{it}"))),
+    TX(")")), 50)
 
-  echo toString(H[
-    H[TX("AVeryLongAndDescriptiveFunctionName"), TX("(")],
-    W[mapIt(1 .. 10, TX(&"argument{it}"))],
-    TX(")")
-  ], 50)
+  echo toString(C(H(H(TX("AVeryLongAndDescriptiveFunctionName"), TX("(")),
+      W(comm, mapIt(1 .. 10, TX(&"argument{it}"))),
+      TX(")")),
+    V(H(TX("AVeryLongAndDescriptiveFunctionName"), TX("(")),
+      I(4, W(comm, mapIt(1 .. 10, TX(&"argument{it}")))),
+      TX(")"))), 50)
 
-  echo toString(C[
-    H[
-      H[TX("AVeryLongAndDescriptiveFunctionName"), TX("(")],
-      W[mapIt(1 .. 10, TX(&"argument{it}"))],
-      TX(")")
-    ],
-    V[
-      H[TX("AVeryLongAndDescriptiveFunctionName"), TX("(")],
-      I[4, W[mapIt(1 .. 10, TX(&"argument{it}"))]],
-      TX(")")
-    ]
-  ], 50)
-
-  echo toString(V[
-    TX("stmtPragmas* = {"),
-    I[2, V[
+  echo toString(V(TX("stmtPragmas* = {"),
+    I(2, V(
       TX("wChecks,      wObjChecks,"),
       TX("wBoundChecks, wOverflowChecks, wNilChecks")
-    ]],
-    TX("}")
-  ])
+    )),
+    TX("}")))
