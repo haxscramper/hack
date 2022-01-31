@@ -147,6 +147,23 @@ type
 
     indent: bool
 
+  LytEventKind* = enum
+    layEvStr
+    layEvNewline
+    layEvSpaces
+
+  LytEvent* = object
+    case kind*: LytEventKind
+      of layEvStr:
+        str*: LytStr
+
+      of layEvSpaces:
+        spaces*: int
+
+      of layEvNewline:
+        discard
+
+
   Layout* = ref object
     ## An object containing a sequence of directives to the console.
     elements: seq[LayoutElement]
@@ -235,9 +252,8 @@ type
     format_policy*: LytFormatPolicy
     writer*: OutWriter
 
-  OutWriter * = object
-    writeCb*: proc(text: LytStrId, kind: LayoutElementKind): int
-    writeSpace*: proc(ind: int)
+  OutWriter = object
+    event: proc(event: LytEvent)
 
   OutConsole* = object
     leftMargin: int
@@ -298,30 +314,55 @@ func lytStrSpaces(spaces: int): LytStr =
 func lytStrIdx(idx: int, len: int): LytStr =
   LytStr(id: toLytStrId(idx), len: len)
 
-proc margin(buf: OutConsole): int = buf.margins[^1]
+proc margin(buf: OutConsole): int =
+  # echo "margins >  ", buf.margins
+  buf.margins[^1]
+
+
+proc addMargin(c: var OutConsole, m: int) =
+  # echo "\e[32mADD\e[39m margin ", m
+  c.margins.add m
+
+proc popMargin(c: var OutConsole) =
+  # echo "\e[31mPOP\e[39m margin ", c.margins.pop
+  discard c.margins.pop
+
+func event(s: LytStr): LytEvent =
+  LytEvent(kind: layEvStr, str: s)
+
+func event(spaces: int): LytEvent =
+  LytEvent(kind: layEvSpaces, spaces: spaces)
+
+func event(): LytEvent = LytEvent(kind: layEvNewline)
 
 proc printStr(buf: var OutConsole, str: LytStr) =
   if str.id == LytSpacesId:
-    buf.writer.writeSpace(str.len)
-    buf.hPos = str.len
+    buf.writer.event(str.len.event())
 
   else:
-    buf.hPos = buf.writer.writeCb(str.id, lekString)
+    buf.writer.event(str.event())
+
+  buf.hPos = str.len
 
 proc printSpace(buf: var OutConsole, n: int) =
-  buf.writer.writeSpace(n)
+  buf.writer.event(event n)
 
 proc printNewline(buf: var OutConsole, indent: bool = true) =
-  discard buf.writer.writeCb(EmptyLytStrId, lekNewline)
+  buf.writer.event(event())
   buf.hPos = 0
   if indent:
-    buf.writer.writeSpace(buf.margin())
+    buf.writer.event(event buf.margin())
 
 proc printNewlineSpace(buf: var OutConsole, n: int) =
   printNewline(buf)
   printSpace(buf, n)
 
-proc treeRepr*(self: Layout, level: int = 0): string =
+proc treeRepr*(
+    self: Layout,
+    level: int = 0,
+    getStr: proc(s: LytStr): string = nil
+  ): string =
+
   var r = addr result
   proc add(s: string) = r[].add s
 
@@ -331,15 +372,18 @@ proc treeRepr*(self: Layout, level: int = 0): string =
     add &"id {lyt.id} "
     case lyt.kind:
       of lekString:
-         add "[text] 《"
-         add $lyt.text
-         add "》\n"
+        add "[text] 《"
+        if lyt.text.id == LytSpacesId or getStr.isNil():
+          add $lyt.text
+        else:
+          add getStr(lyt.text)
+        add "》\n"
 
       of lekNewline:
-        add "[newline]"
+        add "[newline]\n"
 
       of lekNewlineSpace:
-        add "[newline][space]"
+        add "[newline][space]\n"
 
       of lekLayoutPrint:
         add "[lyt]\n"
@@ -361,7 +405,7 @@ proc treeRepr*(self: LytSolution, level: int = 0): string =
     result.add "\n"
 
 proc printOn*(self: Layout, buf: var OutConsole) =
-  buf.margins.add buf.hPos
+  buf.addMargin buf.hPos
   for elem in self.elements:
     case elem.kind:
       of lekString: printStr(buf, elem.text)
@@ -369,7 +413,7 @@ proc printOn*(self: Layout, buf: var OutConsole) =
       of lekNewlineSpace: buf.printNewlineSpace(elem.spaceNum)
       of lekLayoutPrint: elem.layout.printOn(buf)
 
-  discard buf.margins.pop()
+  buf.popMargin()
 
 proc write*(stream: Stream | File, self: Layout, indent: int = 0) =
   if indent == 0:
@@ -1818,32 +1862,14 @@ proc toLayouts*(bl: LytBlock, opts: LytOptions): seq[Layout] =
 
 proc toLayout*(bl: LytBlock, opts: LytOptions): Layout = toLayouts(bl, opts)[0]
 
-type
-  LytEventKind* = enum
-    layEvStr
-    layEvNewline
-    layEvSpaces
-
-  LytEvent* = object
-    case kind*: LytEventKind
-      of layEvStr:
-        str*: LytStr
-
-      of layEvSpaces:
-        spaces*: int
-
-      of layEvNewline:
-        discard
 
 
 iterator formatEvents(lyt: Layout): LytEvent =
   var buf: OutConsole
   var stack: seq[tuple[lyt: Layout, idx: int]] = @[(lyt, 0)]
 
-  echo lyt.treeRepr()
-
+  buf.addMargin buf.hPos
   while 0 < len(stack):
-    buf.margins.add buf.hPos
     while stack[^1].idx < stack[^1].lyt.elements.len:
       let elem = stack[^1].lyt.elements[stack[^1].idx]
       inc stack[^1].idx
@@ -1862,22 +1888,22 @@ iterator formatEvents(lyt: Layout): LytEvent =
             buf.hPos += elem.text.len
 
         of lekNewline:
-          yield LytEvent(kind: layEvSpaces, spaces: buf.margin())
           yield LytEvent(kind: layEvNewline)
           buf.hPos = 0
+          yield LytEvent(kind: layEvSpaces, spaces: buf.margin())
 
         of lekNewlineSpace:
-          yield LytEvent(kind: layEvSpaces, spaces: buf.margin())
           yield LytEvent(kind: layEvNewline)
-          yield LytEvent(kind: layEvSpaces, spaces: elem.spaceNum)
           buf.hPos = 0
+          yield LytEvent(kind: layEvSpaces, spaces: buf.margin())
+          yield LytEvent(kind: layEvSpaces, spaces: elem.spaceNum)
 
         of lekLayoutPrint:
           stack.add((elem.layout, 0))
-          buf.margins.add buf.hPos
+          buf.addMargin buf.hPos
 
     discard stack.pop()
-    discard buf.margins.pop()
+    buf.popMargin()
 
 func codegenRepr*(inBl: LytBlock, indent: int = 0): string =
   func aux(bl: LytBlock, level: int): string =
@@ -2004,18 +2030,37 @@ proc str(store: var StrStore, str: string): LytStr =
   result = lytStrIdx(store.strings.len, str.len)
   store.strings.add str
 
+proc str(s: StrStore, str: LytStr): string =
+  s.strings[str.id.toIndex()]
+
 proc toString(s: StrStore, opts: LytOptions, blc: LytBlock): string =
   assert blc.ok, treeRepr(blc)
-  for event in formatEvents(blc.toLayout(opts)):
+  let lyt = blc.toLayout(opts)
+  # echo lyt.treeRepr(getStr = proc(str: LytStr): string = s.str(str))
+
+  var r = addr result
+  proc onEvent(event: LytEvent) =
     case event.kind:
       of layEvNewline:
-        result.add "\n"
+        r[].add "\n"
 
       of layEvSpaces:
-        result.add repeat(" ", event.spaces)
+        # writeStackTrace()
+        r[].add repeat(" ", event.spaces)
 
       of layEvStr:
-        result.add s.strings[event.str.id.toIndex()]
+        r[].add s.str(event.str)
+
+  for event in formatEvents(lyt):
+    onEvent(event)
+
+  # echo "------"
+
+  # result.add "\n\n------\n\n"
+
+  # var buf: OutConsole
+  # buf.writer.event = onEvent
+  # lyt.printOn(buf)
 
 
 template initBlockFmtDSL*() {.dirty.} =
@@ -2078,7 +2123,7 @@ when isMainModule:
       let bl = H[
         TX("proc ("),
         C[join(H[blocks], TX(", ")), join(V[blocks], TX(","))],
-        TX(")s")
+        TX(")")
       ]
 
       echo toString(bl)
