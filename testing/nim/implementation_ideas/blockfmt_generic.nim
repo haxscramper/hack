@@ -250,17 +250,12 @@ type
     cpack*: float ## cost (per element) for packing justified layouts.
                  ## Expected value `~0.001`
     format_policy*: LytFormatPolicy
-    writer*: OutWriter
-
-  OutWriter = object
-    event: proc(event: LytEvent)
 
   OutConsole* = object
     leftMargin: int
     rightMargin: int
     hPos: int ## Horizontal position on the output console
     margins: seq[int]
-    writer: OutWriter
 
 
 # Special magic to handle user-provided indentation blocks of text without
@@ -274,39 +269,6 @@ func `$`(s: LytStr): string =
 
   else:
     $s.id
-
-func ok(s: LytStr): bool =
-  true
-
-func ok(s: LytBlock): bool =
-  result = true
-  case s.kind:
-    of bkText:
-      return s.text.ok
-
-    of bkWrap:
-      for item in s.wrapElements:
-        if not item.ok:
-          return false
-
-      if not s.sep.ok:
-        return false
-
-      if s.prefix.isSome() and not s.prefix.get().ok():
-        return false
-
-    of bkVerb:
-      for line in s.textLines:
-        if not line.ok():
-          return false
-
-    of bkStack, bkChoice, bkLine:
-      for elem in s.elements:
-        if not elem.ok:
-          return false
-
-    else:
-      discard
 
 func lytStrSpaces(spaces: int): LytStr =
   LytStr(id: LytSpacesId, len: spaces)
@@ -334,28 +296,6 @@ func event(spaces: int): LytEvent =
   LytEvent(kind: layEvSpaces, spaces: spaces)
 
 func event(): LytEvent = LytEvent(kind: layEvNewline)
-
-proc printStr(buf: var OutConsole, str: LytStr) =
-  if str.id == LytSpacesId:
-    buf.writer.event(str.len.event())
-
-  else:
-    buf.writer.event(str.event())
-
-  buf.hPos = str.len
-
-proc printSpace(buf: var OutConsole, n: int) =
-  buf.writer.event(event n)
-
-proc printNewline(buf: var OutConsole, indent: bool = true) =
-  buf.writer.event(event())
-  buf.hPos = 0
-  if indent:
-    buf.writer.event(event buf.margin())
-
-proc printNewlineSpace(buf: var OutConsole, n: int) =
-  printNewline(buf)
-  printSpace(buf, n)
 
 proc treeRepr*(
     self: Layout,
@@ -404,41 +344,7 @@ proc treeRepr*(self: LytSolution, level: int = 0): string =
     result.add treeRepr(lyt, 2)
     result.add "\n"
 
-proc printOn*(self: Layout, buf: var OutConsole) =
-  buf.addMargin buf.hPos
-  for elem in self.elements:
-    case elem.kind:
-      of lekString: printStr(buf, elem.text)
-      of lekNewline: printNewline(buf, elem.indent)
-      of lekNewlineSpace: buf.printNewlineSpace(elem.spaceNum)
-      of lekLayoutPrint: elem.layout.printOn(buf)
-
-  buf.popMargin()
-
-proc write*(stream: Stream | File, self: Layout, indent: int = 0) =
-  if indent == 0:
-    for elem in self.elements:
-      stream.write(elem.text)
-
-  else:
-    for elem in self.elements:
-      for ch in elem.text:
-        if ch == '\n':
-          stream.write " ".repeat(indent)
-
-        stream.write ch
-
-
-proc debugOn*(self: Layout, buf: var string): void =
-  for elem in self.elements:
-    buf &= $elem.text
-
 proc `$`*(le: LayoutElement): string = $le.text
-
-proc `$`*(lt: Layout): string =
-  lt.debugOn(result)
-
-
 
 proc `$`*(sln: LytSolution): string =
   result &= "<"
@@ -449,7 +355,7 @@ proc `$`*(sln: LytSolution): string =
     if idx > 0:
       result &= ", "
 
-    result &= &"{s[0]}/({s[1]}, {s[2]:.2}, {s[3]}, \"{$s[4]}\")"
+    result &= &"{s[0]}/({s[1]}, {s[2]:.2}, {s[3]})"
     inc idx
 
   result &= ">"
@@ -530,13 +436,6 @@ func treeRepr*(inBl: LytBlock): string =
   return aux(inBl, 0)
 
 
-func `?`(b: LytBlock) =
-  assert b.ok(), "\n\n" & b.treeRepr()
-
-func `??`(b: LytBlock): LytBlock =
-  ?b
-  return b
-
 
 
 
@@ -574,7 +473,6 @@ func getSId(): int =
     result = slnId
 
 func lytString(s: LytStr): LayoutElement =
-  assert s.ok, $s
   LayoutElement(text: s, kind: lekString, id: getSId())
 
 func lytNewline(indent: bool = true): LayoutElement =
@@ -1297,20 +1195,16 @@ proc initSeparated*(
   if vertical:
     for idx, item in blocks:
       if idx < len(blocks) - 1:
-        ?sep
         result.add initLineBlock([item, sep])
 
       else:
-        ?item
         result.add item
 
   else:
     for idx, item in blocks:
       if idx > 0:
-        ?sep
         result.add sep
 
-      ?item
       result.add item
 
 proc initVSeparated*(
@@ -1347,7 +1241,6 @@ proc optLayout(
   # Deeply-nested choice block may result in the same continuation
   # supplied repeatedly to the same block. Without memoisation, this
   # may result in an exponential blow-up in the layout algorithm.
-  assert self.ok, treeRepr(self)
   if rest notin self.layoutCache:
     self.layoutCache[rest] = self.doOptLayout(rest, opts)
 
@@ -1357,14 +1250,14 @@ proc doOptTextLayout(
   self: LytBlock,
   rest: var Option[LytSolution], opts: LytOptions): Option[LytSolution] =
 
-  assert self.text.ok, $self.text
   let
     span = self.text.len
     layout = initLayout(@[lytString(self.text)])
-  # The costs associated with the layout of this block may require 1, 2 or 3
-  # knots, depending on how the length of the text compares with the two
+  # The costs associated with the layout of this block may require 1, 2 or
+  # 3 knots, depending on how the length of the text compares with the two
   # margins (leftMargin and rightMargin) in opts. Note that we assume
-  # opts.rightMargin >= opts.leftMargin >= 0, as asserted in base.Options.Check().
+  # opts.rightMargin >= opts.leftMargin >= 0, as asserted in
+  # base.Options.Check().
   if span >= opts.rightMargin:
     result = some initSolution(
       @[0],
@@ -1411,7 +1304,6 @@ proc doOptLineLayout(
   elementLines.add @[]
 
   for i, elt in self.elements:
-    assert elt.ok, treeRepr(elt)
     elementLines[^1].add elt
     if i < self.elements.high() and elt.isBreaking:
       elementLines.add @[]
@@ -2034,9 +1926,7 @@ proc str(s: StrStore, str: LytStr): string =
   s.strings[str.id.toIndex()]
 
 proc toString(s: StrStore, opts: LytOptions, blc: LytBlock): string =
-  assert blc.ok, treeRepr(blc)
   let lyt = blc.toLayout(opts)
-  # echo lyt.treeRepr(getStr = proc(str: LytStr): string = s.str(str))
 
   var r = addr result
   proc onEvent(event: LytEvent) =
@@ -2101,9 +1991,9 @@ when isMainModule:
 
 
     result = C[
-      H[??TX(h), ??hsep, ??TX(t), ??body],
-      V[??H[TX(h), ??hsep, ??TX(t), ??I[2, body]]],
-      V[??TX(h), ??I[4, ??vsep], ??TX(t), ??I[2, body]]
+      H[TX(h), hsep, TX(t), body],
+      V[H[TX(h), hsep, TX(t), I[2, body]]],
+      V[TX(h), I[4, vsep], TX(t), I[2, body]]
     ]
 
 
