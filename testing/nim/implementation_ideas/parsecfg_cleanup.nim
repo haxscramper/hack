@@ -208,10 +208,19 @@ type
     tkStrLit
     tkEquals
     tkColon
+    tkComma
+    tkParLe
+    tkParRi
     tkBracketLe
     tkBracketRi
     tkDashDash
-    tkAt
+    tkIf
+    tkElif
+    tkEnd
+    tkCommand
+    tkOr
+    tkAnd
+    tkNot
 
   Token = object    # a token
     kind: TokKind   # the type of the token
@@ -221,6 +230,7 @@ type
     getBool: proc(name: string): bool
     tok: Token
     filename: string
+    inCond: bool
 
   CfgAstKind = enum
     cfgNodeIf
@@ -231,10 +241,12 @@ type
     cfgNodeAnd
     cfgNodeNot
     cfgNodeKvPair
+    cfgNodeAppend
+    cfgDirective
 
   CfgAst = ref object
     case kind*: CfgAstKind
-      of cfgNodeIdent, cfgNodeStrLit:
+      of cfgNodeIdent, cfgNodeStrLit, cfgDirective:
         token: Token
 
       else:
@@ -394,7 +406,13 @@ proc getSymbol(c: var CfgParser, tok: var Token) =
   while true:
     add(tok.literal, c.buf[pos])
     inc(pos)
-    if not (c.buf[pos] in SymChars): break
+    if c.inCond:
+      if not (c.buf[pos] in IdentChars):
+        break
+
+    else:
+      if not (c.buf[pos] in SymChars):
+        break
 
   while tok.literal.len > 0 and tok.literal[^1] == ' ':
     tok.literal.setLen(tok.literal.len - 1)
@@ -436,13 +454,33 @@ proc rawGetTok(c: var CfgParser, tok: var Token) =
       getSymbol(c, tok)
 
   of '@':
-    tok.kind = tkAt
-    inc(c.bufpos)
-    tok.literal = "@"
+    if c.buf[c.bufpos + 1 .. c.bufpos + 2] == "if":
+      tok.kind = tkIf
+      inc(c.bufpos, 3)
+      tok.literal = "if"
+      c.inCond = true
+
+    elif c.buf[c.bufpos + 1 .. c.bufpos + 4] == "elif":
+      tok.kind = tkElif
+      inc(c.bufpos, 5)
+      tok.literal = "elif"
+      c.inCond = true
+
+    elif c.buf[c.bufpos + 1 .. c.bufpos + 3] == "end":
+      tok.kind = tkEnd
+      inc(c.bufpos, 4)
+      tok.literal = "end"
+
+    else:
+      inc(c.bufpos)
+      getSymbol(c, tok)
+      tok.kind = tkCommand
+
   of ':':
     tok.kind = tkColon
     inc(c.bufpos)
     tok.literal = ":"
+    c.inCond = false
   of 'r', 'R':
     if c.buf[c.bufpos + 1] == '\"':
       inc(c.bufpos)
@@ -453,6 +491,22 @@ proc rawGetTok(c: var CfgParser, tok: var Token) =
     tok.kind = tkBracketLe
     inc(c.bufpos)
     tok.literal = "["
+
+  of '(':
+    tok.kind = tkParLe
+    inc(c.bufpos)
+    tok.literal = "("
+
+  of ',':
+    tok.kind = tkComma
+    inc(c.bufpos)
+    tok.literal = ","
+
+  of ')':
+    tok.kind = tkParRi
+    inc(c.bufpos)
+    tok.literal = ")"
+
   of ']':
     tok.kind = tkBracketRi
     inc(c.bufpos)
@@ -525,16 +579,38 @@ proc parse(c: var CfgParser): CfgAst =
     of tkEof:
       return
 
-    of tkAt:
+    of tkSymbol:
+      result = newCfgAst(cfgNodeIdent, c.tok)
       advance(c)
-      if c.tok.literal == "if":
+      if c.tok.kind in {tkEquals, tkColon}:
         advance(c)
-        result = newCfgAst(cfgNodeIf)
-        while c.tok.literal != "end":
-          discard
+        result = newCfgAst(cfgNodeKvPair, result, parse(c))
+
+    of tkIf:
+      advance(c)
+      result = newCfgAst(cfgNodeIf)
+      while c.tok.kind notin {tkEnd}:
+        var branch = newCfgAst(cfgNodeElifBranch, parseExpr(c))
+        assert c.tok.kind == tkColon
+        advance(c)
+        while c.tok.kind notin {tkEnd, tkElif}:
+          branch.subnodes.add parse(c)
+
+        result.subnodes.add branch
+
+    of tkCommand:
+      result = newCfgAst(cfgDirective)
+      advance(c) # token after @
+      result.subnodes.add parse(c)
+      advance(c) # opening par
+      while c.tok.kind != tkParRi:
+        result.subnodes.add parse(c)
+        advance(c)
+        if c.tok.kind == tkComma:
+          advance(c)
 
     else:
-      discard
+      assert false, $c.tok.kind
 
 
 proc next*(c: var CfgParser): CfgEvent {.rtl, extern: "npc$1".} =
@@ -542,7 +618,7 @@ proc next*(c: var CfgParser): CfgEvent {.rtl, extern: "npc$1".} =
   case c.tok.kind
   of tkEof:
     result = CfgEvent(kind: cfgEof)
-  of tkAt:
+  of tkIf:
     let stmt = parse(c)
   of tkDashDash:
     advance(c)
@@ -562,7 +638,7 @@ proc next*(c: var CfgParser): CfgEvent {.rtl, extern: "npc$1".} =
     else:
       result = CfgEvent(kind: cfgError,
         msg: errorStr(c, "']' expected, but found: " & c.tok.literal))
-  of tkInvalid, tkEquals, tkColon, tkBracketRi, tkStrLit:
+  else:
     result = CfgEvent(kind: cfgError,
       msg: errorStr(c, "invalid token: " & c.tok.literal))
     advance(c)
@@ -745,7 +821,30 @@ proc getTokens(s: string): seq[Token] =
         rawGetTok(parser, parser.tok)
 
 
+import hmisc/other/hpprint
+
 when isMainModule:
-  echo getTokens("--test:\"value\"")
-  echo getTokens("@if:")
-  echo getTokens("name.test=value")
+  proc plex(s: string) =
+    echo ">> ", s
+    pprint getTokens(s)
+
+  proc pparse(s: string) =
+    echo "!!>> ", s
+    var ss = newStringStream(s)
+    var parser: CfgParser
+    open(parser, ss)
+    discard next(parser)
+    pprint parse(parser)
+
+  plex("--test:\"value\"")
+  plex("@if:")
+  plex("name.test=value")
+  plex("@appendenv(a, b)")
+
+  plex("@if a: test=val @end")
+  plex("@if a and not b: test = val @end")
+
+  plex("key=value")
+  pparse("key:value")
+
+  pparse("@if a: test = q @end")
