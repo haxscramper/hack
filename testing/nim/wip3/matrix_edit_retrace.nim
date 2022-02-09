@@ -1,8 +1,8 @@
-import std/[sugar, tables, sequtils, strutils, strformat]
+import std/[sugar, tables, sequtils, strutils, strformat, algorithm]
 
 
 type
-  Edit = enum None, Insert, Delete, Transpose, Change
+  Edit = enum None, Insert, Delete, Transpose, Change, Keep
   Cell = tuple[cost: int, edit: Edit]
   Matrix = seq[seq[Cell]]
 
@@ -29,7 +29,7 @@ proc format(m: Matrix, a, b: string, offset: int = 2): string =
         of Delete: "\e[31m-\e[39m"
         of Transpose: "\e[36m%\e[39m"
         of Change: "\e[33m~\e[39m"
-
+        of Keep: "."
 
     result.add "\n"
 
@@ -86,20 +86,24 @@ proc damerauLevenshteinDistance(a, b: string): Matrix =
 
             # Compute substring distance
             matrix[row + 1][col + 1] = min(@[
-                cell(
-                  matrix[row][col].cost +
-                  (if chA == chB: 0 else: changeCost),
-                  Change), # Substitution
-                cell(matrix[row + 1][col].cost + insCost, Insert),  # Addition
-                cell(matrix[row][col + 1].cost + delCost, Delete),  # Deletion
+              (
+                if chA == chB:
+                  cell(matrix[row][col].cost, Keep)
 
-                # Transposition
-                cell(
-                  matrix[lastMatchingRow][lastMatchCol].cost +
-                    (row - lastMatchingRow - 1) + transposeCost +
-                    (col - lastMatchCol - 1),
-                  Transpose
-                )
+                else:
+                  # Substitution
+                  cell(matrix[row][col].cost + changeCost, Change)
+              ),
+              cell(matrix[row + 1][col].cost + insCost, Insert),  # Addition
+              cell(matrix[row][col + 1].cost + delCost, Delete),  # Deletion
+
+              # Transposition
+              cell(
+                matrix[lastMatchingRow][lastMatchCol].cost +
+                  (row - lastMatchingRow - 1) + transposeCost +
+                  (col - lastMatchCol - 1),
+                Transpose
+              )
               ]
             )
 
@@ -172,16 +176,43 @@ func step*(matrix: Matrix, pos: (int, int)): (int, int) =
     cost = matrix[result].cost
 
 
-proc traceEdits(matrix: Matrix): seq[SeqEdit] =
+proc traceEdits(matrix: Matrix, offset: int): seq[SeqEdit] =
   var pos = (matrix.high, matrix[^1].high)
-  while (0, 0) < pos:
+  while (offset, offset) < pos:
     pos = matrix.step(pos)
-    result.add SeqEdit(kind: matrix[pos].edit, pos: pos)
+    result.add SeqEdit(
+      kind: matrix[pos].edit,
+      pos: (pos[0] - offset, pos[1] - offset))
+
+  return result.reversed()
+
+proc applyEdits(a, b: string, edits: seq[SeqEdit]): string =
+  result = a
+  for edit in edits:
+    let (pa, pb) = edit.pos
+    case edit.kind:
+      of Change:
+        result[pa] = b[pb]
+
+      of Keep:
+        discard
+
+      of Insert:
+        result.insert($b[pb], pa + 1)
+
+      else:
+        discard
+
+    echo result
 
 block:
-  let ed = damerauLevenshteinDistance("democrat", "republican")
-  echo ed.format("democrat", "republican")
-  for ed in ed.traceEdits():
+  let (a, b) = ("democrat", "republican")
+  let ed = damerauLevenshteinDistance(a, b)
+  echo ed.format(a, b)
+  let edits = ed.traceEdits(2)
+  for ed in edits:
     echo ed
+
+  discard applyEdits(a, b, edits)
 
 echo levenshteinDistance("a cat", "an act").format("a cat", "an act", 1)

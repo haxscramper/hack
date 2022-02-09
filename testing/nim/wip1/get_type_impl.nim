@@ -1,4 +1,4 @@
-import macros, typetraits
+import std/[macros, typetraits]
 
 macro dumpType(a: typed) =
   echo "\e[33m################3\e[39m"

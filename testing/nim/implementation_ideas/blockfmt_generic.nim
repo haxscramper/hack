@@ -4,11 +4,17 @@
 # Thanks to nim being syntactically close to python this is mostly
 # just blatant copy-paste of python code with added type annotations.
 
-## .. include:: blockfmt-doc.rst
-
 import std/[
-  strutils, sequtils, macros, tables, strformat,
-  lenientops, options, hashes, math, sugar,
+  strutils,
+  sequtils,
+  macros,
+  tables,
+  strformat,
+  lenientops,
+  options,
+  hashes,
+  math,
+  sugar,
   intsets
 ]
 
@@ -1833,30 +1839,16 @@ proc str(s: StrStore, str: LytStr): string =
 
 proc toString(s: StrStore, opts: LytOptions, blc: LytBlock): string =
   let lyt = blc.toLayout(opts)
-
-  var r = addr result
-  proc onEvent(event: LytEvent) =
+  for event in formatEvents(lyt):
     case event.kind:
       of layEvNewline:
-        r[].add "\n"
+        result.add "\n"
 
       of layEvSpaces:
-        # writeStackTrace()
-        r[].add repeat(" ", event.spaces)
+        result.add repeat(" ", event.spaces)
 
       of layEvStr:
-        r[].add s.str(event.str)
-
-  for event in formatEvents(lyt):
-    onEvent(event)
-
-  # echo "------"
-
-  # result.add "\n\n------\n\n"
-
-  # var buf: OutConsole
-  # buf.writer.event = onEvent
-  # lyt.printOn(buf)
+        result.add s.str(event.str)
 
 
 template initBlockFmtDSL*() {.dirty.} =
@@ -1874,16 +1866,6 @@ template initBlockFmtDSL*() {.dirty.} =
     firstNl: bool = false,
     breakMult: int
   ): LytBlock = initVerbBlock(strs, breaking, firstNl, breakMult)
-  # const
-  #   H = blkLine
-  #   V = blkStack
-  #   I = blkIndent
-  #   T = blkText
-  #   S = blkSpace
-  #   C = blkChoice
-  #   E = blkEmpty
-  #   W = blkWrap
-
 
 when isMainModule:
   initBlockFmtDsl()

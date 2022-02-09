@@ -4,7 +4,7 @@ LDFLAGS=-Wl,-gc-sections -Wl,-relax
 CC=avr-gcc
 
 all: main.hex
-	avrdude -p m32u4 -c usbasp \
+	avrdude -B10 -F -p atmega32u4 -c usbasp \
     -U flash:w:main.hex \
     -U hfuse:w:0xd8:m \
     -U efuse:w:0xcb:m
