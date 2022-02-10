@@ -4,3 +4,4 @@
 (message "hello")
 
 (message "[%s]" (test))
+(message "emcall: [%s]" (hax/returnValue 1))

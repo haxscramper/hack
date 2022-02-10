@@ -24,7 +24,6 @@ emacs -Q --batch --directory "$PWD" -l mymod_user.el
 
 nim c \
     -d=danger \
-    --stacktrace=off \
     --define=emcallPrefix="hax/" \
     --nimcache=cache \
     --app=lib \

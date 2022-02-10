@@ -174,9 +174,9 @@ type
     impl: EmProc
     data: pointer
 
-proc defun(env: PemEnv, name: string, impl: EmProcData) =
+proc defun(env: PemEnv, impl: EmProcData) =
   discard env.funcall("defalias", @[
-    env.intern(name),
+    env.intern(impl.name),
     env.makeFunction(
       env,
       impl.minArity.uint,
@@ -213,33 +213,76 @@ template defun(
       data: rawEnv(implProc)
     )
 
-    nowEnv.defun(procName, impl)
+    nowEnv.defun(impl)
 
 const
   emcallPrefix {.strdefine.}: string = ""
 
 # proc treeRepr(env: PemEnv, )
 
+proc fromEmacs[I: SomeInteger](env: PemEnv, target: var I, value: EmValue) =
+  target = I(env.extractInteger(env, value))
+
+proc toEmacs(env: PemEnv, value: SomeInteger): EmValue =
+  env.makeInteger(env, value.int64)
+
 macro emcall(impl: untyped): untyped =
   echo treeRepr(impl)
 
+  let
+    wrapName = ident(impl.name().strVal() & "Emcall")
+    wrapImpl = ident(impl.name().strVal() & "Emprox")
+    nargs = ident("nargs")
+    args = ident("args")
+    env = ident("env")
+
   var data: EmProcData
-  let wrapName = ident(impl.name().strVal() & "Emcall")
   data.name = emcallPrefix & impl.name().strVal()
   data.maxArity = impl.params().len() - 1
 
+  var
+    implRepack = newStmtList()
+    recall = newCall(impl.name())
+    count = 0
+
+
+  for arg in impl.params()[1..^1]:
+    let typ = arg[^2]
+    for name in arg[0..^3]:
+      var pass = ident(name.strVal())
+
+      implRepack.add quote do:
+        var `pass`: `typ` = default(`typ`)
+        if `count` < `nargs`:
+          fromEmacs(`env`, `pass`, `args`[`count`])
+
+      recall.add pass
+      inc count
+
   result = quote do:
     `impl`
-    let `wrapName` = `data`
 
-  echo result.repr()
+    let `wrapImpl` = proc(
+      `env`: PemEnv,
+      `nargs`: uint,
+      `args`: ptr UncheckedArray[EmValue]
+    ): EmValue {.closure.} =
+      `implRepack`
+      return toEmacs(`env`, `recall`)
+
+    let `wrapName` =
+      block:
+        var base = `data`
+        base.impl = cast[EmProc](rawProc(`wrapImpl`))
+        base.data = rawEnv(`wrapImpl`)
+
+        base
 
 
 proc returnValue(val: int, other: int = 12): int {.emcall.} =
-  return 12
+  result = val + 12
 
 echo returnValueEmcall
-
 
 template emInit(body: untyped): untyped =
   proc init(runtime {.inject.}: ptr EmRuntime): cint {.
@@ -260,3 +303,5 @@ emInit():
 
   env.defun("test", 0..0, "doc"):
     return env.makeInteger(env, 123)
+
+  env.defun(returnValueEmcall)
