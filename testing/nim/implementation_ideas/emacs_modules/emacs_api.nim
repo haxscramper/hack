@@ -396,53 +396,66 @@ proc symStrVal*(env: EmEnv, value: EmValue): string =
   env.strVal(env.funcall("symbol-name", @[value]))
 
 type
-  EmAtom = distinct EmValue
-  EmArray = distinct EmValue
-  EmBignum = distinct EmValue
-  EmBoolVector = distinct EmValue
-  EmBool = distinct EmValue
-  EmBuffer = distinct EmValue
-  EmByteCodeFunction = distinct EmValue
-  EmCaseTable = distinct EmValue
-  EmCharOrString = distinct EmValue
-  EmCharTable = distinct EmValue
-  EmCommand = distinct EmValue
-  EmConditionVariable = distinct EmValue
-  EmCons = distinct EmValue
-  EmCustomVariable = distinct EmValue
-  EmFixnum = distinct EmValue
-  EmFloat = distinct EmValue
-  EmFont = distinct EmValue
-  EmFrameConfiguration = distinct EmValue
-  EmFrameLive = distinct EmValue
-  EmFrame = distinct EmValue
-  EmFunction = distinct EmValue
-  EmHashTable = distinct EmValue
-  EmIntegerOrMarker = distinct EmValue
-  EmInteger = distinct EmValue
-  EmKeymap = distinct EmValue
-  EmKeyword = distinct EmValue
-  EmList = distinct EmValue
-  EmMarker = distinct EmValue
-  EmMutex = distinct EmValue
-  EmNlist = distinct EmValue
-  EmNumberOrMarker = distinct EmValue
-  EmNumber = distinct EmValue
-  EmOverlay = distinct EmValue
-  EmProcess = distinct EmValue
-  EmRecord = distinct EmValue
-  EmSequence = distinct EmValue
-  EmStringOrNull = distinct EmValue
-  EmString = distinct EmValue
-  EmSubr = distinct EmValue
-  EmSymbol = distinct EmValue
-  EmSyntaxTable = distinct EmValue
-  EmThread = distinct EmValue
-  EmVector = distinct EmValue
-  EmWholenum = distinct EmValue
-  EmWindowConfiguration = distinct EmValue
-  EmWindowLive = distinct EmValue
-  EmWindow = distinct EmValue
+  EmAtom* = distinct EmValue
+  EmArray* = distinct EmValue
+  EmBignum* = distinct EmValue
+  EmBoolVector* = distinct EmValue
+  EmBool* = distinct EmValue
+  EmBuffer* = distinct EmValue
+  EmByteCodeFunction* = distinct EmValue
+  EmCaseTable* = distinct EmValue
+  EmCharOrString* = distinct EmValue
+  EmCharTable* = distinct EmValue
+  EmCommand* = distinct EmValue
+  EmConditionVariable* = distinct EmValue
+  EmCons* = distinct EmValue
+  EmCustomVariable* = distinct EmValue
+  EmFixnum* = distinct EmValue
+  EmFloat* = distinct EmValue
+  EmFont* = distinct EmValue
+  EmFrameConfiguration* = distinct EmValue
+  EmFrameLive* = distinct EmValue
+  EmFrame* = distinct EmValue
+  EmFunction* = distinct EmValue
+  EmHashTable* = distinct EmValue
+  EmIntegerOrMarker* = distinct EmValue
+  EmInteger* = distinct EmValue
+  EmKeymap* = distinct EmValue
+  EmKeyword* = distinct EmValue
+  EmList* = distinct EmValue
+  EmMarker* = distinct EmValue
+  EmMutex* = distinct EmValue
+  EmNlist* = distinct EmValue
+  EmNumberOrMarker* = distinct EmValue
+  EmNumber* = distinct EmValue
+  EmOverlay* = distinct EmValue
+  EmProcess* = distinct EmValue
+  EmRecord* = distinct EmValue
+  EmSequence* = distinct EmValue
+  EmStringOrNull* = distinct EmValue
+  EmString* = distinct EmValue
+  EmSubr* = distinct EmValue
+  EmSymbol* = distinct EmValue
+  EmSyntaxTable* = distinct EmValue
+  EmThread* = distinct EmValue
+  EmVector* = distinct EmValue
+  EmWholenum* = distinct EmValue
+  EmWindowConfiguration* = distinct EmValue
+  EmWindowLive* = distinct EmValue
+  EmWindow* = distinct EmValue
+
+  EmBuiltinType* =
+    EmAtom | EmArray | EmBignum | EmBoolVector | EmBool | EmBuffer |
+    EmByteCodeFunction | EmCaseTable | EmCharOrString | EmCharTable |
+    EmCommand | EmConditionVariable | EmCons | EmCustomVariable |
+    EmFixnum | EmFloat | EmFont | EmFrameConfiguration | EmFrameLive | EmFrame |
+    EmFunction | EmHashTable | EmIntegerOrMarker | EmInteger | EmKeymap |
+    EmKeyword | EmList | EmMarker | EmMutex | EmNlist | EmNumberOrMarker |
+    EmNumber | EmOverlay | EmProcess | EmRecord | EmSequence |
+    EmStringOrNull | EmString | EmSubr | EmSymbol | EmSyntaxTable |
+    EmThread | EmVector | EmWholenum | EmWindowConfiguration |
+    EmWindowLive | EmWindow
+
 
 func emTypePredicate[T](expect: typedesc[T]): string =
   when T is EmAtom: "atom"
@@ -495,12 +508,21 @@ func emTypePredicate[T](expect: typedesc[T]): string =
   else:
     {.error: "Unexpected type for mismatch checking - " & $T.}
 
+type
+  OrNil*[T] = object
+    value*: Option[T]
+
 func getValidationCall[I: SomeInteger](expect: typedesc[I]): string =
   emTypePredicate(EmNumber)
 
+func getValidationCall[I: EmBuiltinType](expect: typedesc[I]): string =
+    emTypePredicate(I)
+
+func getValidationCall[T](expect: typedesc[OrNil[T]]): string =
+  getValidationCall(T)
+
 type
   EmTypeError* = object of CatchableError
-
 
 proc mismatch[T](env: EmEnv, value: EmValue, expect: T):
     Option[tuple[want, got: string]] =
@@ -529,10 +551,25 @@ proc expectValid[T](
     return true
 
 
+proc fromEmacs*[B: EmBuiltinType](
+  env: EmEnv, target: var B, value: EmValue, check: bool = true) =
+  if not check or expectValid(env, value, target):
+    target = B(value)
+
+proc toEmacs*[B: EmBuiltinType](env: EmEnv, value: B): EmValue =
+  EmValue(value)
+
 proc fromEmacs*[I: SomeInteger](
     env: EmEnv, target: var I, value: EmValue, check: bool = true) =
   if not check or expectValid(env, value, target):
     target = I(env.intVal(value))
+
+proc fromEmacs*[T](
+    env: EmEnv, target: var OrNil[T], value: EmValue, check: bool = true) =
+  if env.isNotNil(env, value):
+    var tmp: T
+    fromEmacs(env, target, value, check)
+    target.value = some tmp
 
 proc toEmacs*(env: EmEnv, value: SomeInteger): EmValue =
   env.makeInteger(env, value.int64)
@@ -651,8 +688,12 @@ proc emcallImpl(bindpatt: string, impl: NimNode): NimNode =
     for name in arg[0..^3]:
       var pass = ident(name.strVal())
       let argname = name.toStrLit()
+      var init = newCall("default", typ)
+      if arg[^1].kind != nnkEmpty:
+        init = arg[^1]
+
       implRepack.add quote do:
-        var `pass`: `typ` = default(`typ`)
+        var `pass`: `typ` = `init`
         if `count` < `nargs`:
           if expectValid(
             `env`,
@@ -707,7 +748,7 @@ macro embind*(name: static[string], body: untyped): untyped =
 
   var pass = nnkTupleConstr.newTree()
   for arg in body.params()[2..^1]:
-    for name in arg:
+    for name in arg[0..^3]:
       pass.add name
 
   result = body
@@ -723,6 +764,7 @@ macro embind*(name: static[string], body: untyped): untyped =
     body.params()[0],
   ), env, fcall)
 
+  echo result.repr()
 
 type
   EmDefun*[Args, Ret] = object

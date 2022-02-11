@@ -2,10 +2,6 @@
 ;;; Code:
 ;;; Commentary:
 
-
-(message "Running emacs. Module suffix is '%s'" module-file-suffix)
-(setq edebug-print-length 1200)
-
 (toggle-debug-on-error)
 
 (setq backtrace-print-function
@@ -17,8 +13,7 @@
 (require 'module)
 (message "hello")
 (message "[%s]" (test))
-(message "emcall: [%s]" (hax:returnValue "1"))
-(message "?? %s" (documentation-property 'hax:returnValue))
+(message "emcall: [%s]" (hax:bind 1))
 
 (provide 'main)
 ;;; main.el ends here
