@@ -23,8 +23,7 @@ gcc -shared -o mymod.so mymod.o
 emacs -Q --batch --directory "$PWD" -l mymod_user.el
 
 nim c \
-    -d=danger \
-    --define=emcallPrefix="hax/" \
+    --define=emcallNamespace="hax" \
     --nimcache=cache \
     --app=lib \
     -o=emacs_api.so \
