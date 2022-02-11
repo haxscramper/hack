@@ -37,9 +37,9 @@ type
   EmProcNim* = proc(env: ptr EmEnvObj, nargs: uint, args: ptr EmValue)
 
   EmFuncallExit* = enum
-    EmFuncallExitReturn = 0
-    EmFuncallExitSignal = 1
-    EmFuncallExitThrow = 2
+    emFuncallExitReturn = 0 ## The last API function exited normally.
+    emFuncallExitSignal = 1 ## The last API function signaled an error.
+    emFuncallExitThrow = 2 ## The last API function exited via throw.
 
   EmMakeFunctionNim = proc(
       env: ptr EmEnvObj;
@@ -58,24 +58,64 @@ type
     freeGlobalRef* {.importc: "free_global_ref".}:
       proc (env: ptr EmEnvObj; globalReference: EmValue) {.cdecl.}
 
-    nonLocalExitCheck* {.importc: "make_local_exit_check".}:
-      proc (env: ptr EmEnvObj): EmFuncallExit {.cdecl.}
+    nonLocalExitCheck* {.importc: "non_local_exit_check".}:
+      proc (env: ptr EmEnvObj): EmFuncallExit {.cdecl.} ##[
 
-    nonLocalExitClear* {.importc: "non_local_exit_check".}:
-      proc (env: ptr EmEnvObj) {.cdecl.}
+This function returns the kind of nonlocal exit condition stored in env.
+
+]##
+
+    nonLocalExitClear* {.importc: "non_local_exit_clear".}:
+      proc (env: ptr EmEnvObj) {.cdecl.} ##[
+
+This function clears the pending nonlocal exit conditions and data from
+env. After calling it, the module API functions will work normally. Use
+this function if your module function can recover from nonlocal exits of
+the Lisp functions it calls and continue, and also before calling any of
+the following two functions (or any other API functions, if you want them
+to perform their intended processing when a nonlocal exit is pending).
+
+]##
 
     nonLocalExitGet* {.importc: "non_local_exit_get".}: proc (
       env: ptr EmEnvObj;
       nonLocalExitSymbolOut: ptr EmValue;
-      nonLocalExitDataOut: ptr EmValue): EmFuncallExit {.cdecl.}
+      nonLocalExitDataOut: ptr EmValue): EmFuncallExit {.cdecl.} ##[
+
+This function returns the kind of nonlocal exit condition stored in env,
+like non_local_exit_check does, but it also returns the full information
+about the nonlocal exit, if any. If the return value is
+emacs_funcall_exit_signal, the function stores the error symbol in *symbol
+and the error data in *data (see Signaling Errors). If the return value is
+emacs_funcall_exit_throw, the function stores the catch tag symbol in
+*symbol and the throw value in *data. The function doesn’t store anything
+in memory pointed by these arguments when the return value is
+emacs_funcall_exit_return.
+
+]##
 
     nonLocalExitSignal* {.importc: "non_local_exit_signal"}: proc (
       env: ptr EmEnvObj;
       nonLocalExitSymbol: EmValue;
-      nonLocalExitData: EmValue) {.cdecl.}
+      nonLocalExitData: EmValue) {.cdecl.} ##[
+
+This function signals the error represented by error with the specified
+error data `data`. The module function should return soon after calling this
+function. This function could be useful, e.g., for signaling errors from
+module functions to Emacs.
+
+]##
 
     nonLocalExitThrow* {.importc: "non_local_exit_throw"}: proc (
-      env: ptr EmEnvObj; tag: EmValue; value: EmValue) {.cdecl.}
+      env: ptr EmEnvObj; tag: EmValue; value: EmValue) {.cdecl.} ##[
+
+This function throws to the Lisp catch symbol represented by tag, passing
+it value as the value to return. Your module function should in general
+return soon after calling this function. One use of this function is when
+you want to re-throw a non-local exit from one of the called API or Lisp
+functions.
+
+]##
 
     makeFunction* {.importc: "make_function"}: proc (
       env: ptr EmEnvObj,
@@ -174,37 +214,24 @@ the text copying.
     setUserFinalizer* {.importc: "set_user_finalizer"}: proc (
       env: ptr EmEnvObj; uptr: EmValue; fin: proc (a1: pointer)) {.cdecl.}
 
-    vecGet* {.importc: "vec_get"}: proc (
-      env: ptr EmEnvObj; vec: EmValue; i: uint): EmValue {.cdecl.}
+    vecGetImpl* {.importc: "vec_get"}:
+      proc(env: ptr EmEnvObj; vec: EmValue; i: uint): EmValue {.cdecl.}
 
-    vecSet* {.importc: "vec_set"}: proc (
-      env: ptr EmEnvObj; vec: EmValue; i: uint; val: EmValue) {.cdecl.}
+    vecSetImpl* {.importc: "vec_set"}:
+      proc(env: ptr EmEnvObj; vec: EmValue; i: uint; val: EmValue) {.cdecl.}
 
-    vecSize* {.importc: "vec_size"}: proc (env: ptr EmEnvObj; vec: EmValue): uint {.cdecl.}
+    vecSizeImpl* {.importc: "vec_size"}:
+      proc(env: ptr EmEnvObj; vec: EmValue): uint {.cdecl.}
 
 proc EmModuleInit*(ert: ptr EmRuntime): cint {.importc.}
 
 type
   EmEnv = ptr EmEnvObj
 
+  EmNonlocalSignal* = object of CatchableError
+
 proc intern(env: EmEnv, name: string): EmValue =
   result = env.internImpl(env, name.cstring)
-
-proc funcall*(
-    env: EmEnv, fun: EmValue, args: seq[EmValue] = @[]
-  ): EmValue {.discardable.} =
-
-  if len(args) == 0:
-    env.funcallImpl(env, fun, 0, nil)
-
-  else:
-    env.funcallImpl(env, fun, args.len.uint, unsafeAddr args[0])
-
-proc funcall*(
-    env: EmEnv, fun: string, args: seq[EmValue] = @[]
-  ): EmValue {.discardable.} =
-
-  return funcall(env, env.intern(fun), args)
 
 proc intVal*(env: EmEnv, value: EmValue): int64 =
   env.extractInteger(env, value)
@@ -215,11 +242,23 @@ proc floatVal*(env: EmEnv, value: EmValue): cdouble =
 proc strVal*(env: EmEnv, value: EmValue): string =
   var size: uint = 0
   discard env.copyStringContents(env, value, nil, addr size)
-  result = newString(size + 1)
+  result = newString(size - 1)
   discard env.copyStringContents(env, value, addr result[0], addr size)
 
-proc symStrVal*(env: EmEnv, value: EmValue): string =
-  env.strVal(env.funcall("symbol-name", @[value]))
+proc symStrVal*(env: EmEnv, value: EmValue): string
+
+proc vecGet*(env: EmEnv, vec: EmValue, idx: int): EmValue =
+  env.vecGetImpl(env, vec, idx.uint)
+
+proc vecSet*(env: EmEnv, vec: EmValue, idx: int, val: EmValue) =
+  env.vecSetImpl(env, vec, idx.uint, val)
+
+proc vecLen*(env: EmEnv, vec: EmValue): int =
+  env.vecSizeImpl(env, vec).int
+
+iterator vecItems*(env: EmEnv, vec: EmValue): EmValue =
+  for idx in 0 ..< env.vecLen(vec):
+    yield env.vecGet(vec, idx)
 
 proc boolVal*(env: EmEnv, value: EmValue): bool =
   if env.isNotNil(env, value):
@@ -227,6 +266,94 @@ proc boolVal*(env: EmEnv, value: EmValue): bool =
 
   else:
     return false
+
+proc emTypeof*(env: EmEnv, value: EmValue): string =
+  env.symStrVal(env.typeOfImpl(env, value))
+
+
+proc emVal*(env: EmEnv, value: string): EmValue =
+  env.makeString(env, value.cstring, value.len.uint)
+
+proc funcallRaw*(env: EmEnv, fun: EmValue, args: seq[EmValue]): EmValue =
+  if len(args) == 0:
+    result = env.funcallImpl(env, fun, 0, nil)
+
+  else:
+    result = env.funcallImpl(env, fun, args.len.uint, unsafeAddr args[0])
+
+proc treeRepr*(env: EmEnv, value: EmValue): string =
+  var res = addr result
+  proc add(args: varargs[string, `$`]) =
+    for arg in args:
+      res[].add arg
+
+  proc addi(level: int, args: varargs[string, `$`]) =
+    add repeat("  ", level)
+    add args
+
+
+  proc aux(value: EmValue, level: int) =
+    let typ = env.emTypeof(value)
+    addi level, typ
+    case typ:
+      of "cons":
+        add "\n"
+        addi level + 1, "car\n"
+        aux(env.funcallRaw(env.intern("car"), @[value]), level + 2)
+        add "\n"
+        addi level + 1, "cdr\n"
+        aux(env.funcallRaw(env.intern("cdr"), @[value]), level + 2)
+
+      else:
+        add "[[!" & $typ & "!]]"
+
+
+  aux(value, 0)
+
+
+proc funcall*(
+    env: EmEnv,
+    fun: EmValue,
+    name: string,
+    args: seq[EmValue],
+    checkErr: bool
+  ): EmValue {.discardable.} =
+
+  result = funcallRaw(env, fun, args)
+
+  if not checkErr:
+    return
+
+  var
+    symOut: EmValue
+    dataOut: EmValue
+
+  case env.nonLocalExitGet(env, addr symOut, addr dataOut):
+    of emFuncallExitSignal:
+      env.nonLocalExitClear(env)
+      var err: ref EmNonlocalSignal
+      new(err)
+
+      err.msg = "Call to '$#' exited via signal '$#. Err data $#" % [
+        name,
+        env.strVal(env.funcallRaw(env.intern("symbol-name"), @[symOut])),
+        env.treeRepr(dataOut)
+      ]
+
+      raise err
+
+    else:
+      discard
+
+proc funcall*(
+    env: EmEnv, fun: string, args: seq[EmValue] = @[],
+    checkErr: bool = true
+  ): EmValue {.discardable.} =
+
+  return funcall(env, env.intern(fun), fun, args, checkErr = checkErr)
+
+proc symStrVal*(env: EmEnv, value: EmValue): string =
+  env.strVal(env.funcall("symbol-name", @[value]))
 
 type
   EmAtom = distinct EmValue
@@ -296,35 +423,35 @@ func emTypePredicate[T](expect: typedesc[T]): string =
   elif T is EmFloat: "floatp"
   elif T is EmFont: "fontp"
   elif T is EmFrameConfiguration: "frame-configuration-p"
-  elif T is EmFrameLive: ""
-  elif T is EmFrame: ""
-  elif T is EmFunction: ""
-  elif T is EmHashTable: ""
-  elif T is EmIntegerOrMarker: ""
-  elif T is EmInteger: ""
-  elif T is EmKeymap: ""
-  elif T is EmKeyword: ""
-  elif T is EmList: ""
-  elif T is EmMarker: ""
-  elif T is EmMutex: ""
-  elif T is EmNlist: ""
-  elif T is EmNumberOrMarker: ""
+  elif T is EmFrameLive: "frame-live-p"
+  elif T is EmFrame: "framep"
+  elif T is EmFunction: "functionp"
+  elif T is EmHashTable: "hash-table-p"
+  elif T is EmIntegerOrMarker: "integer-or-marker-p"
+  elif T is EmInteger: "integerp"
+  elif T is EmKeymap: "keymapp"
+  elif T is EmKeyword: "keywordp"
+  elif T is EmList: "listp"
+  elif T is EmMarker: "markerp"
+  elif T is EmMutex: "mutexp"
+  elif T is EmNlist: "nlistp"
+  elif T is EmNumberOrMarker: "number-or-marker-p"
   elif T is EmNumber: "numberp"
   elif T is EmOverlay: "overlayp"
   elif T is EmProcess: "processp"
   elif T is EmRecord: "recordp"
   elif T is EmSequence: "sequencep"
-  elif T is EmStringOrNull: ""
-  elif T is EmString: ""
-  elif T is EmSubr: ""
-  elif T is EmSymbol: ""
-  elif T is EmSyntaxTable: ""
-  elif T is EmThread: ""
-  elif T is EmVector: ""
-  elif T is EmWholenum: ""
-  elif T is EmWindowConfiguration: ""
-  elif T is EmWindowLive: ""
-  elif T is EmWindow: ""
+  elif T is EmStringOrNull: "string-or-null-p"
+  elif T is EmString: "stringp"
+  elif T is EmSubr: "subrp"
+  elif T is EmSymbol: "symbolp"
+  elif T is EmSyntaxTable: "syntax-table-p"
+  elif T is EmThread: "threadp"
+  elif T is EmVector: "vectorp"
+  elif T is EmWholenum: "wholenump"
+  elif T is EmWindowConfiguration: "window-configuration-p"
+  elif T is EmWindowLive: "window-live-p"
+  elif T is EmWindow: "windowp"
   else:
     {.error: "Unexpected type for mismatch checking - " & $T.}
 
@@ -334,13 +461,13 @@ func getValidationCall[I: SomeInteger](expect: typedesc[I]): string =
 type
   EmTypeError = object of CatchableError
 
+
 proc mismatch[T](env: EmEnv, value: EmValue, expect: T):
     Option[tuple[want, got: string]] =
 
   let callname = getValidationCall(T)
   if not env.boolVal(env.funcall(callname, @[value])):
-    let res = env.typeOfImpl(env, value)
-    result = some (callname, env.symStrVal(res))
+    result = some (callname, env.emTypeof(value))
 
 proc expectValid[T](
     env: EmEnv, value: EmValue, expect: T,
@@ -374,12 +501,15 @@ proc toEmacs(env: EmEnv, value: string): EmValue =
   env.makeString(env, value.cstring, value.len.uint)
 
 proc funcall*[Args](
-    env: EmEnv, name: string, args: Args): EmValue {.discardable.} =
+    env: EmEnv, name: string, args: Args,
+    checkErr: bool = true
+  ): EmValue {.discardable.} =
+
   var emArgs: seq[EmValue]
   for name, value in fieldPairs(args):
     emArgs.add env.toEmacs(value)
 
-  return env.funcall(env.intern(name), emArgs)
+  return env.funcall(name, emArgs, checkErr = checkErr)
 
 
 
@@ -438,11 +568,17 @@ const
   emcallNamespace {.strdefine.}: string = ""
 
 template emError(env: EmEnv): untyped =
-  let ex = getCurrentException()
-  let trace = ex.getStackTrace()
-  let msg = getCurrentExceptionMsg()
-  env.funcall("error", ("Nim exception: $# - $#\n$#" % [
-    $ex.name, $ex.msg, trace],))
+  {.line: instantiationInfo(fullPaths = true).}:
+    let ex = getCurrentException()
+    let trace = ex.getStackTrace()
+    let msg = getCurrentExceptionMsg()
+    echo "Raising error"
+    discard env.funcallRaw(
+      env.intern("error"), @[env.emVal(
+        "Nim exception: $# - $#\n$#" % [$ex.name, $ex.msg, trace]
+      )])
+
+    # quit QuitFailure
 
 
 macro emcall(impl: untyped): untyped =
@@ -527,12 +663,16 @@ func getfun*[Args, Ret](
 
 
 proc funcall*[Args, Ret](
-    env: EmEnv, fun: EmDefun[Args, Ret], args: Args): Ret =
-  env.fromEmacs(result, env.funcall(fun.name, args))
+    env: EmEnv, fun: EmDefun[Args, Ret],
+    args: Args,
+    checkErr: bool = true): Ret =
+  env.fromEmacs(result, env.funcall(fun.name, args, checkErr = checkErr))
 
 
-proc funcall*[Args, Ret](env: EmEnv, fun: EmDefun[Args, Ret]): Ret =
-  env.fromEmacs(result, env.funcall(env.intern(fun.name), @[]))
+proc funcall*[Args, Ret](
+    env: EmEnv, fun: EmDefun[Args, Ret],
+    checkErr: bool = true): Ret =
+  env.fromEmacs(result, env.funcall(fun.name, @[], checkErr = checkErr))
 
 proc returnValue(val: int, other: int = 12): int {.emcall.} =
   result = val + 12
@@ -550,11 +690,10 @@ template emInit(body: untyped): untyped =
 
     try:
       body
+      discard env.funcall("provide", @[env.intern("emacs_api")])
 
     except:
       env.emError()
-
-    discard env.funcall("provide", @[env.intern("emacs_api")])
 
     return 0
 
@@ -567,6 +706,7 @@ emInit():
   env.defun("test", 0..0, "doc"):
     return env.toEmacs(123)
 
+  env.funcall("point-min", (1, 2, 3))
   env.defun(returnValueEmcall)
 
   echo "from emacs: ", env.funcall(pointMin)

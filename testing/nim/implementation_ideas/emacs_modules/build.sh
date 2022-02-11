@@ -24,6 +24,8 @@ emacs -Q --batch --directory "$PWD" -l mymod_user.el
 
 nim c \
     --define=emcallNamespace="hax" \
+    --filenames=canonical \
+    --excessiveStackTrace=off \
     --nimcache=cache \
     --app=lib \
     -o=emacs_api.so \
