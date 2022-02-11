@@ -28,8 +28,8 @@ nim c \
     --excessiveStackTrace=off \
     --nimcache=cache \
     --app=lib \
-    -o=emacs_api.so \
-    emacs_api.nim
+    -o=module.so \
+    module.nim
 
 clang-format -i cache/@memacs_api.nim.c
 emacs -Q --batch --directory "$PWD" -l main.el

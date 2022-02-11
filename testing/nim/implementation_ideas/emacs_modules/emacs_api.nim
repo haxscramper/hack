@@ -226,11 +226,13 @@ the text copying.
 proc EmModuleInit*(ert: ptr EmRuntime): cint {.importc.}
 
 type
-  EmEnv = ptr EmEnvObj
+  EmEnv* = ptr EmEnvObj
 
   EmNonlocalSignal* = object of CatchableError
 
-proc intern(env: EmEnv, name: string): EmValue =
+  EmWrongNumberOfArguments* = object of EmNonLocalSignal
+
+proc intern*(env: EmEnv, name: string): EmValue =
   result = env.internImpl(env, name.cstring)
 
 proc intVal*(env: EmEnv, value: EmValue): int64 =
@@ -281,6 +283,11 @@ proc funcallRaw*(env: EmEnv, fun: EmValue, args: seq[EmValue]): EmValue =
   else:
     result = env.funcallImpl(env, fun, args.len.uint, unsafeAddr args[0])
 
+proc formatRaw*(
+    env: EmEnv, value: EmValue, fmtCall: string = "prin1-to-string"
+  ): string =
+  env.strVal(env.funcallRaw(env.intern(fmtCall), @[value]))
+
 proc treeRepr*(env: EmEnv, value: EmValue): string =
   var res = addr result
   proc add(args: varargs[string, `$`]) =
@@ -304,11 +311,21 @@ proc treeRepr*(env: EmEnv, value: EmValue): string =
         addi level + 1, "cdr\n"
         aux(env.funcallRaw(env.intern("cdr"), @[value]), level + 2)
 
+      of "integer":
+        add " ", env.intVal(value)
+
+      of "symbol":
+        add " '", env.symStrVal(value)
+
+      of "subr":
+        add " '", env.formatRaw(value)
+
       else:
         add "[[!" & $typ & "!]]"
 
 
   aux(value, 0)
+
 
 
 proc funcall*(
@@ -331,14 +348,37 @@ proc funcall*(
   case env.nonLocalExitGet(env, addr symOut, addr dataOut):
     of emFuncallExitSignal:
       env.nonLocalExitClear(env)
-      var err: ref EmNonlocalSignal
-      new(err)
+      let errname = env.strVal(
+        env.funcallRaw(env.intern("symbol-name"), @[symOut]))
 
-      err.msg = "Call to '$#' exited via signal '$#. Err data $#" % [
-        name,
-        env.strVal(env.funcallRaw(env.intern("symbol-name"), @[symOut])),
-        env.treeRepr(dataOut)
-      ]
+      var err: ref EmNonlocalSignal
+
+      proc car(env: EmEnv, value: EmValue): EmValue =
+        env.funcallRaw(env.intern("car"), @[value])
+
+      proc cdr(env: EmEnv, value: EmValue): EmValue =
+        env.funcallRaw(env.intern("cdr"), @[value])
+
+      case errname:
+        of "wrong-number-of-arguments":
+          err = (ref EmWrongNumberOfArguments)()
+          let
+            dr = env.cdr(dataOut)
+            exp = env.cdr(dr)
+            got = env.car(dr)
+
+          err.msg = (
+            "Wrong number of arguments for '$#' " &
+              "- expected $# but got $#") % [
+                name,
+                env.formatRaw(exp),
+                env.formatRaw(got),
+          ]
+
+        else:
+          err = (ref EmNonLocalSignal)()
+          err.msg = "Call to '$#' exited via signal '$#. Err data $#" % [
+            name, errname, env.treeRepr(dataOut)]
 
       raise err
 
@@ -459,7 +499,7 @@ func getValidationCall[I: SomeInteger](expect: typedesc[I]): string =
   emTypePredicate(EmNumber)
 
 type
-  EmTypeError = object of CatchableError
+  EmTypeError* = object of CatchableError
 
 
 proc mismatch[T](env: EmEnv, value: EmValue, expect: T):
@@ -489,16 +529,19 @@ proc expectValid[T](
     return true
 
 
-proc fromEmacs[I: SomeInteger](
+proc fromEmacs*[I: SomeInteger](
     env: EmEnv, target: var I, value: EmValue, check: bool = true) =
   if not check or expectValid(env, value, target):
-    target = I(env.extractInteger(env, value))
+    target = I(env.intVal(value))
 
-proc toEmacs(env: EmEnv, value: SomeInteger): EmValue =
+proc toEmacs*(env: EmEnv, value: SomeInteger): EmValue =
   env.makeInteger(env, value.int64)
 
-proc toEmacs(env: EmEnv, value: string): EmValue =
+proc toEmacs*(env: EmEnv, value: string): EmValue =
   env.makeString(env, value.cstring, value.len.uint)
+
+proc fromEmacs*[T](env: EmEnv, value: EmValue, check: bool = true): T =
+  fromEmacs(env, result, value, check)
 
 proc funcall*[Args](
     env: EmEnv, name: string, args: Args,
@@ -515,15 +558,15 @@ proc funcall*[Args](
 
 
 type
-  EmProcData = object
-    minArity: int
-    maxArity: int
-    name: string
-    docstring: string
-    impl: EmProc
-    data: pointer
+  EmProcData* = object
+    minArity*: int
+    maxArity*: int
+    name*: string
+    docstring*: string
+    impl*: EmProc
+    data*: pointer
 
-proc defun(env: EmEnv, impl: EmProcData) =
+proc defun*(env: EmEnv, impl: EmProcData) =
   discard env.funcall("defalias", @[
     env.intern(impl.name),
     env.makeFunction(
@@ -536,7 +579,7 @@ proc defun(env: EmEnv, impl: EmProcData) =
     )
   ])
 
-template defun(
+template defun*(
     nowEnv: EmEnv,
     procName: string,
     argLen: Slice[int],
@@ -567,12 +610,11 @@ template defun(
 const
   emcallNamespace {.strdefine.}: string = ""
 
-template emError(env: EmEnv): untyped =
+template emError*(env: EmEnv): untyped =
   {.line: instantiationInfo(fullPaths = true).}:
     let ex = getCurrentException()
     let trace = ex.getStackTrace()
     let msg = getCurrentExceptionMsg()
-    echo "Raising error"
     discard env.funcallRaw(
       env.intern("error"), @[env.emVal(
         "Nim exception: $# - $#\n$#" % [$ex.name, $ex.msg, trace]
@@ -580,10 +622,7 @@ template emError(env: EmEnv): untyped =
 
     # quit QuitFailure
 
-
-macro emcall(impl: untyped): untyped =
-  echo treeRepr(impl)
-
+proc emcallImpl(bindpatt: string, impl: NimNode): NimNode =
   let
     wrapName = ident(impl.name().strVal() & "Emcall")
     wrapImpl = ident(impl.name().strVal() & "Emprox")
@@ -595,7 +634,8 @@ macro emcall(impl: untyped): untyped =
   if 0 < len(emcallNamespace):
     data.name = emcallNamespace & ":"
 
-  data.name.add impl.name().strVal()
+  data.name.add bindpatt % [impl.name().strVal()]
+
   data.maxArity = impl.params().len() - 1
   let implName = impl.name().toStrLit()
 
@@ -651,9 +691,42 @@ macro emcall(impl: untyped): untyped =
 
         base
 
+
+macro emcallp*(bindname: static[string], impl: untyped): untyped =
+  result = emcallImpl(bindname, impl)
+
+macro emcall*(body: untyped): untyped =
+  result = emcallImpl("$1", body)
+
+macro embind*(name: static[string], body: untyped): untyped =
+  let env = body.params()[1][0]
+  if body.params()[1][1].strVal() != "EmEnv":
+    error(
+      "Expected `EmEnv` as a first argument for embind target proc",
+      body)
+
+  var pass = nnkTupleConstr.newTree()
+  for arg in body.params()[2..^1]:
+    for name in arg:
+      pass.add name
+
+  result = body
+  let fcall =
+    if len(pass) == 0:
+      newCall("funcall", env, newLit(name))
+
+    else:
+      newCall("funcall", env, newLit(name), pass)
+
+  result.body = newCall(nnkBracketExpr.newTree(
+    ident"fromEmacs",
+    body.params()[0],
+  ), env, fcall)
+
+
 type
-  EmDefun[Args, Ret] = object
-    name: string
+  EmDefun*[Args, Ret] = object
+    name*: string
 
 func getfun*[Args, Ret](
     name: string, args: typedesc[Args], ret: typedesc[Ret]
@@ -674,13 +747,9 @@ proc funcall*[Args, Ret](
     checkErr: bool = true): Ret =
   env.fromEmacs(result, env.funcall(fun.name, @[], checkErr = checkErr))
 
-proc returnValue(val: int, other: int = 12): int {.emcall.} =
-  result = val + 12
-
-echo returnValueEmcall
 
 
-template emInit(body: untyped): untyped =
+template emInit*(body: untyped): untyped =
   proc init(runtime {.inject.}: ptr EmRuntime): cint {.
     exportc: "emacs_module_init", cdecl, dynlib.} =
 
@@ -690,24 +759,11 @@ template emInit(body: untyped): untyped =
 
     try:
       body
-      discard env.funcall("provide", @[env.intern("emacs_api")])
+      discard env.funcall("provide", @[
+        env.intern(querySetting(projectName))])
 
     except:
       env.emError()
 
     return 0
 
-let pointMin = getfun("point-min", void, int)
-let pointMax = getfun("point-max", void, int)
-
-emInit():
-  echo "initalized emacs"
-
-  env.defun("test", 0..0, "doc"):
-    return env.toEmacs(123)
-
-  env.funcall("point-min", (1, 2, 3))
-  env.defun(returnValueEmcall)
-
-  echo "from emacs: ", env.funcall(pointMin)
-  echo "from emacs: ", env.funcall(pointMax)

@@ -14,7 +14,7 @@
    (princ a b)))
 
 
-(require 'emacs_api)
+(require 'module)
 (message "hello")
 (message "[%s]" (test))
 (message "emcall: [%s]" (hax:returnValue "1"))
