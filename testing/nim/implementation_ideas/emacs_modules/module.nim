@@ -18,7 +18,4 @@ emInit():
     return env.toEmacs(123)
 
   echo "point-max: ", env.pointMax()
-
-  env.defun(returnValueEmcall)
-
   echo "from emacs: ", env.pointMin()

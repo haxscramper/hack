@@ -10,7 +10,9 @@
    (princ a b)))
 
 
-(require 'module)
+(require 'haxloader)
+;; (setq haxloader-dirs '(buffer-file-name))
+(hax:load-file "module.nim")
 (message "hello")
 (message "[%s]" (test))
 (message "emcall: [%s]" (hax:bind 1))

@@ -4,9 +4,6 @@
 set -o nounset
 set -o errexit
 
-echo 1
-
-
 function gdb_cmd {
     gdb                                           \
         -batch                                    \
@@ -17,19 +14,12 @@ function gdb_cmd {
         --args $@
 }
 
-gcc -ggdb3 -Wall -fPIC -c mymod.c
-gcc -shared -o mymod.so mymod.o
+# gcc -ggdb3 -Wall -fPIC -c mymod.c
+# gcc -shared -o mymod.so mymod.o
 
 emacs -Q --batch --directory "$PWD" -l mymod_user.el
 
-nim c \
-    --define=emcallNamespace="hax" \
-    --filenames=canonical \
-    --excessiveStackTrace=off \
-    --nimcache=cache \
-    --app=lib \
-    -o=module.so \
-    module.nim
+nim c -o=haxloader.so haxloader.nim
 
-clang-format -i cache/@memacs_api.nim.c
+# clang-format -i cache/@memacs_api.nim.c
 emacs -Q --batch --directory "$PWD" -l main.el
