@@ -21,6 +21,9 @@ DHT dht(dhtPin, DHT11);
 // Создание подключение к дисплею
 Adafruit_SSD1306 display(128, 32, &Wire, 4);
 
+#define RED "\033[31m"
+#define NONE "\033[0m"
+
 void readEnvironment(int targetHumidity, int targetTemp, int threshold) {
     int humidity = (int)dht.readHumidity();
     int temp     = (int)dht.readTemperature();
@@ -94,31 +97,32 @@ void parseCommand(
     // Обработка входной комманды управления настройкой
     if (cmd.startsWith("temp ")) {
         // Установка целевой температуры
-        temp = cmd.substring(5, cmd.length() - 1).toInt();
+        temp = cmd.substring(5, cmd.length()).toInt();
         Serial.print("Set target temperature to '");
         Serial.print(temp, DEC);
         Serial.print("' C");
 
     } else if (cmd.startsWith("humid ")) {
         // Установка целевой влажности
-        humidity = cmd.substring(6, cmd.length() - 1).toInt();
+        humidity = cmd.substring(6, cmd.length()).toInt();
         Serial.print("Set target humidity to '");
         Serial.print(humidity, DEC);
         Serial.print("' %");
 
     } else if (cmd.startsWith("tolerance ")) {
         // Установка диапазона отклонений для измеряемых значений
-        threshold = cmd.substring(cmd.length() - 1).toInt();
+        threshold = cmd.substring(cmd.length()).toInt();
         Serial.print("Set threshold to '+-");
         Serial.print(threshold, DEC);
         Serial.print("'");
 
     } else {
         // Вывод сообщения об ошибке
-        Serial.print("Unexpected input command '");
+        Serial.print(RED "Unexpected input command '");
         Serial.print(cmd);
         Serial.print(
-            "' - wanted 'temp NN#', 'tolerance NN' or 'humid NN#'");
+            "' - wanted '!temp NN!', '!tolerance NN!' or '!humid "
+            "NN!'" NONE);
     }
 }
 
@@ -142,29 +146,32 @@ void setup() {
 
 
 // Скорость проверки состояния окружающей среды
-const int speed = 1000;
+const int speed = 250;
 
 // Бесконечный цикл проверки состояния окружающей среды
 void loop() {
     if (Serial.available()) {
-        Serial.println("Found input command, reading...");
         String val;
         while (0 < Serial.available()) {
-            val += Serial.read();
-            // char command = Serial.read();
-            // if (command != '\n') {
-            //     val += command;
-            // }
-
-            // // Обнаружен конец комманды управления, обрабатываем входные
-            // // данные
-            // if (command == '#') {
-            //     parseCommand(val, targetHumidity, targetTemp, threshold);
-            //     val = "";
-            // }
+            val += (char)Serial.read();
         }
-        Serial.print("Read: ");
-        Serial.println(val);
+        // Обнаружен конец комманды управления, обрабатываем входные
+        // данные
+        int start = val.indexOf('!');
+        while (start != -1) {
+            int    end = val.indexOf('!', start + 1);
+            String cmd = val.substring(start + 1, end);
+            Serial.print("Found command: ");
+            Serial.println(cmd);
+            parseCommand(cmd, targetHumidity, targetTemp, threshold);
+            int tmp = val.indexOf('!', end + 1);
+            if (tmp != -1) {
+                start = end;
+                end   = tmp;
+            } else {
+                start = -1;
+            }
+        }
     }
 
     // Чтение состояния окружающей среды и установка сообщения на
