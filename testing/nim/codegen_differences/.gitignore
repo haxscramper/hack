@@ -2,3 +2,4 @@ cache*
 c_section*
 cpp_section*
 results*
+!nim.cfg
