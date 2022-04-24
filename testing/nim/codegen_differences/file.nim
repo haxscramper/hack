@@ -83,24 +83,6 @@ proc newMySeq*(size: int, initial_value = 0.0): MySeq =
 converter literalToLen*(x: int{lit}): MyLen =
   x.MyLen
 
-
-#-------------------------------------------------------------
-# Unique pointer implementation
-#-------------------------------------------------------------
-
-proc `=destroy`*[T](p: var UniquePtr[T]) =
-  if p.val != nil:
-    `=destroy`(p.val[])
-    dealloc(p.val)
-    p.val = nil
-
-proc `=`*[T](dest: var UniquePtr[T], src: UniquePtr[T]) {.error.}
-
-proc `=sink`*[T](dest: var UniquePtr[T], src: UniquePtr[T]) {.inline.} =
-  if dest.val != nil and dest.val != src.val:
-    `=destroy`(dest)
-  dest.val = src.val
-
 proc newUniquePtr*[T](val: sink T): UniquePtr[T] =
   result.val = cast[type(result.val)](alloc(sizeof(result.val[])))
   reset(result.val[])
