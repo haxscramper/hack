@@ -65,21 +65,24 @@ for bl in blocks.values().toSeq().sortedByIt(it.id):
     join("\n").
     dedent().
     split("\n").
-    mapIt(it[3..^1]).
+    mapIt(if 3 < it.len: it[3..^1] else: "").
     join("\n").
     dedent()
 
   let c = bl.ccode[1..^2].join("\n").dedent()
   let cpp = bl.cppcode[1..^2].join("\n").dedent()
   res.add &"""
+**Original NIM code**
 ```nim
 {orig}
 ```
 
+**C code**
 ```c
 {c}
 ```
 
+**C++ code**
 ```c++
 {cpp}
 ```

@@ -10,4 +10,4 @@ nim cpp --nimcache:cache_cpp file.nim
 clang-format -i cache_cpp/*.cpp
 echo "nim cpp ok"
 
-nim r cut_patterns.nim
+nim r --stacktrace:on --linetrace:on cut_patterns.nim
