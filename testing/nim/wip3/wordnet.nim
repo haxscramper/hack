@@ -138,7 +138,8 @@ const
   PREDICATIVE* = PADJ
   IMMED_POSTNOMINAL* = IPADJ
 
-{.pragma: cvar, importc, nodecl.}
+{.pragma: cvar, importc, nodecl, header: "wn.h".}
+{.pragma: cobj, importc, bycopy, header: "wn.h"}
 
 var wnrelease* {.cvar.}: cstring ##  WordNet release/version number
 var lexfiles* {.cvar.}: ptr UncheckedArray[cstring] ##  names of lexicographer files
@@ -146,70 +147,69 @@ var ptrtyp* {.cvar.}: ptr UncheckedArray[cstring] ##  pointer characters
 var partnames* {.cvar.}: ptr UncheckedArray[cstring] ##  POS strings
 var partchars* {.cvar.}: ptr UncheckedArray[char] ##  single chars for each POS
 var adjclass* {.cvar.}: ptr UncheckedArray[cstring] ##  adjective class strings
-var frametext* {.cvar.}: ptr UncheckedArray[cstring]
-##  text of verb frames
+var frametext* {.cvar.}: ptr UncheckedArray[cstring] ##  text of verb frames
+
 ##  Data structures used by search code functions.
 ##  Structure for index file entry
 
 type
-  Index* {.bycopy.} = object
-    idxoffset*: clong          ##  byte offset of entry in index file
-    wd*: cstring               ##  word string
-    pos*: cstring              ##  part of speech
-    sense_cnt*: cint           ##  sense (collins) count
-    off_cnt*: cint             ##  number of offsets
-    tagged_cnt*: cint          ##  number senses that are tagged
-    offset*: ptr culong         ##  offsets of synsets containing word
-    ptruse_cnt*: cint          ##  number of pointers used
-    ptruse*: ptr cint           ##  pointers used
+  Index* {.cobj.} = object
+    idxoffset*: clong   ## byte offset of entry in index file
+    wd*: cstring        ## word string
+    pos*: cstring       ## part of speech
+    sense_cnt*: cint    ## sense (collins) count
+    off_cnt*: cint      ## number of offsets
+    tagged_cnt*: cint   ## number senses that are tagged
+    offset*: ptr culong ## offsets of synsets containing word
+    ptruse_cnt*: cint   ## number of pointers used
+    ptruse*: ptr cint   ## pointers used
 
   IndexPtr* = ptr Index
 
 ##  Structure for data file synset
 
 type
-  Synset* {.bycopy.} = object
-    hereiam*: clong            ##  current file position
-    sstype*: cint              ##  type of ADJ synset
-    fnum*: cint                ##  file number that synset comes from
-    pos*: cstring              ##  part of speech
-    wcount*: cint              ##  number of words in synset
-    words*: cstringArray       ##  words in synset
-    lexid*: ptr cint            ##  unique id in lexicographer file
-    wnsns*: ptr cint            ##  sense number in wordnet
-    whichword*: cint           ##  which word in synset we're looking for
-    ptrcount*: cint            ##  number of pointers
-    ptrtyp*: ptr cint           ##  pointer types
-    ptroff*: ptr clong          ##  pointer offsets
-    ppos*: ptr cint             ##  pointer part of speech
-    pto*: ptr cint              ##  pointer 'to' fields
-    pfrm*: ptr cint             ##  pointer 'from' fields
-    fcount*: cint              ##  number of verb frames
-    frmid*: ptr cint            ##  frame numbers
-    frmto*: ptr cint            ##  frame 'to' fields
-    defn*: cstring             ##  synset gloss (definition)
-    key*: cuint ##  unique synset key
-              ##  these fields are used if a data structure is returned
-              ##        instead of a text buffer
-    nextss*: ptr Synset             ##  ptr to next synset containing searchword
-    nextform*: ptr Synset           ##  ptr to list of synsets for alternate
-                   ## 				   spelling of wordform
+  Synset* {.cobj.} = object
+    hereiam*: clong      ## current file position
+    sstype*: cint        ## type of ADJ synset
+    fnum*: cint          ## file number that synset comes from
+    pos*: cstring        ## part of speech
+    wcount*: cint        ## number of words in synset
+    words*: cstringArray ## words in synset
+    lexid*: ptr cint     ## unique id in lexicographer file
+    wnsns*: ptr cint     ## sense number in wordnet
+    whichword*: cint     ## which word in synset we're looking for
+    ptrcount*: cint      ## number of pointers
+    ptrtyp*: ptr cint    ## pointer types
+    ptroff*: ptr clong   ## pointer offsets
+    ppos*: ptr cint      ## pointer part of speech
+    pto*: ptr cint       ## pointer 'to' fields
+    pfrm*: ptr cint      ## pointer 'from' fields
+    fcount*: cint        ## number of verb frames
+    frmid*: ptr cint     ## frame numbers
+    frmto*: ptr cint     ## frame 'to' fields
+    defn*: cstring       ## synset gloss (definition)
+    key*: cuint ## unique synset key these fields are used if a data
+    ## structure is returned instead of a text buffer
+    nextss*: ptr Synset   ## ptr to next synset containing searchword
+    nextform*: ptr Synset ## ptr to list of synsets for alternate spelling
+                          ## of wordform
     searchtype*: cint          ##  type of search performed
     ptrlist*: ptr Synset            ##  ptr to synset list result of search
     headword*: cstring         ##  if pos is "s", this is cluster head word
     headsense*: cshort         ##  sense number of headword
 
   SynsetPtr* = ptr Synset
-  SnsIndex* {.bycopy.} = object
-    sensekey*: cstring         ##  sense key
-    word*: cstring             ##  word string
-    loc*: clong                ##  synset offset
-    wnsense*: cint             ##  WordNet sense number
-    tag_cnt*: cint             ##  number of semantic tags to sense
-    nextsi*: ptr SnsIndex             ##  ptr to next sense index entry
+  SnsIndex* {.cobj.} = object
+    sensekey*: cstring ## sense key
+    word*: cstring     ## word string
+    loc*: clong        ## synset offset
+    wnsense*: cint     ## WordNet sense number
+    tag_cnt*: cint     ## number of semantic tags to sense
+    nextsi*: ptr SnsIndex ## ptr to next sense index entry
 
   SnsIndexPtr* = ptr SnsIndex
-  SearchResults* {.bycopy.} = object
+  SearchResults* {.cobj.} = object
     SenseCount*: array[MAX_FORMS, cint] ##  number of senses word form has
     OutSenseCount*: array[MAX_FORMS, cint] ##  number of senses printed for word form
     numforms*: cint            ##  number of word forms searchword has
@@ -221,30 +221,27 @@ type
 
 ##  Global variables and flags
 
-var wnresults*: SearchResults ##  structure containing results of search
-var fnflag*: cint ##  if set, print lex filename after sense
-var dflag*: cint ##  if set, print definitional glosses
-var saflag*: cint ##  if set, print SEE ALSO pointers
-var fileinfoflag*: cint ##  if set, print lex file info on synsets
-var frflag*: cint ##  if set, print verb frames after synset
-var abortsearch*: cint ##  if set, stop search algorithm
-var offsetflag*: cint ##  if set, print byte offset of each synset
-var wnsnsflag*: cint ##  if set, print WN sense # for each word
-##  File pointers for database files
-
-var OpenDB*: cint
-
-##  if non-zero, database file are open
-
 var
-  datafps*: array[NUMPARTS + 1, ptr FILE]
-  indexfps*: array[NUMPARTS + 1, ptr FILE]
-  sensefp*: ptr FILE
-  cntlistfp*: ptr FILE
-  keyindexfp*: ptr FILE
-  revkeyindexfp*: ptr FILE
-  vidxfilefp*: ptr FILE
-  vsentfilefp*: ptr FILE
+  wnresults*     {.cvar.}: SearchResults ##  structure containing results of search
+  fnflag*        {.cvar.}: cint ##  if set, print lex filename after sense
+  dflag*         {.cvar.}: cint ##  if set, print definitional glosses
+  saflag*        {.cvar.}: cint ##  if set, print SEE ALSO pointers
+  fileinfoflag*  {.cvar.}: cint ##  if set, print lex file info on synsets
+  frflag*        {.cvar.}: cint ##  if set, print verb frames after synset
+  abortsearch*   {.cvar.}: cint ##  if set, stop search algorithm
+  offsetflag*    {.cvar.}: cint ##  if set, print byte offset of each synset
+  wnsnsflag*     {.cvar.}: cint ##  if set, print WN sense # for each word
+
+  OpenDB*        {.cvar.}: cint ##  File pointers for database files if
+                           ## non-zero, database file are open
+  datafps*       {.cvar.}: array[NUMPARTS + 1, ptr FILE]
+  indexfps*      {.cvar.}: array[NUMPARTS + 1, ptr FILE]
+  sensefp*       {.cvar.}: ptr FILE
+  cntlistfp*     {.cvar.}: ptr FILE
+  keyindexfp*    {.cvar.}: ptr FILE
+  revkeyindexfp* {.cvar.}: ptr FILE
+  vidxfilefp*    {.cvar.}: ptr FILE
+  vsentfilefp*   {.cvar.}: ptr FILE
 
 ##  Method for interface to check for events while search is running
 
@@ -445,6 +442,7 @@ const
 {.passl: "-lWN".}
 
 proc main() =
+  echo frflag
   echo 123
 
 main()
