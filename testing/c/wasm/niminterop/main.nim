@@ -6,7 +6,7 @@ proc printTest*(arg: cstring): cstring {.exportc.} =
 
   let node = parsePNodeStr($arg)
 
-  let res = treeRepr(node, colored = false)
+  let res = treeRepr(node, colored = false).toString(color = false)
   result = res.cstring
 # result = arg
 

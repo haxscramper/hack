@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rules lang="en-US" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+    <category id="TYPOS" name="Possible Typo" type="misspelling">
+      <rule id="EXAMPLE_RULE" name="My example rule">
+        <pattern>
+          <token>foo</token>
+          <token>bar</token>
+        </pattern>
+        <message>Did you mean <suggestion>bicycle</suggestion>?</message>
+        <example correction="bicycle">My <marker>foo bar</marker> is broken.</example>
+        <example>My car is broken.</example>
+        </rule>
+    </category>
+</rules>
