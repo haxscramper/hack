@@ -218,10 +218,12 @@ IndexPtr getindex(char* searchstr, int dbase) {
         /* remove all spaces and hyphens from last search string, then
 	   all periods */
         for (i = j = k = 0; (c = searchstr[i]) != '\0'; i++) {
-            if (c != '_' && c != '-')
+            if (c != '_' && c != '-') {
                 strings[3][j++] = c;
-            if (c != '.')
+            }
+            if (c != '.') {
                 strings[4][k++] = c;
+            }
         }
         strings[3][j] = '\0';
         strings[4][k] = '\0';
@@ -229,13 +231,15 @@ IndexPtr getindex(char* searchstr, int dbase) {
         /* Get offset of first entry.  Then eliminate duplicates
 	   and get offsets of unique strings. */
 
-        if (strings[0][0] != NULL)
+        if (strings[0][0] != NULL) {
             offsets[0] = index_lookup(strings[0], dbase);
-
-        for (i = 1; i < MAX_FORMS; i++)
+        }
+        for (i = 1; i < MAX_FORMS; i++) {
             if ((strings[i][0]) != NULL
-                && (strcmp(strings[0], strings[i])))
+                && (strcmp(strings[0], strings[i]))) {
                 offsets[i] = index_lookup(strings[i], dbase);
+            }
+        }
     }
 
 
@@ -1714,12 +1718,13 @@ char* findtheinfo(char* searchstr, int dbase, int ptrtyp, int whichsense) {
     } /* end switch */
 
     interface_doevents();
-    if (abortsearch)
+    if (abortsearch) {
         printbuffer("\nSearch Interrupted...\n");
-    else if (overflag)
+    } else if (overflag) {
         sprintf(
             searchbuffer,
             "Search too large.  Narrow search and try again...\n");
+    }
 
     /* replace underscores with spaces before returning */
 
@@ -2365,12 +2370,14 @@ static char* printant(
 }
 
 static void printbuffer(char* string) {
-    if (overflag)
+    if (overflag) {
         return;
-    if (strlen(searchbuffer) + strlen(string) >= SEARCHBUF)
+    }
+    if (strlen(searchbuffer) + strlen(string) >= SEARCHBUF) {
         overflag = 1;
-    else
+    } else {
         strcat(searchbuffer, string);
+    }
 }
 
 static void printsns(SynsetPtr synptr, int sense) {
@@ -2384,14 +2391,16 @@ static void printsense(SynsetPtr synptr, int sense) {
 
     /* Append lexicographer filename after Sense # if flag is set. */
 
-    if (fnflag)
+    if (fnflag) {
         sprintf(
             tbuf,
             "\nSense %d in file \"%s\"\n",
             sense,
             lexfiles[synptr->fnum]);
-    else
+    } else {
         sprintf(tbuf, "\nSense %d\n", sense);
+    }
+
 
     printbuffer(tbuf);
 
@@ -2408,20 +2417,26 @@ static void printspaces(int trace, int depth) {
 
     switch (trace) {
         case TRACEP: /* traceptrs(), tracenomins() */
-            if (depth)
+            if (depth) {
                 printbuffer("   ");
-            else
+            } else {
                 printbuffer("       ");
+            }
+
             break;
 
         case TRACEC: /* tracecoords() */
-            if (!depth)
+            if (!depth) {
                 printbuffer("    ");
+            }
+
             break;
 
         case TRACEI: /* traceinherit() */
-            if (!depth)
+            if (!depth) {
                 printbuffer("\n    ");
+            }
+
             break;
     }
 }
@@ -2430,8 +2445,9 @@ static void printspaces(int trace, int depth) {
    the user wants to stop the search. */
 
 static void interface_doevents(void) {
-    if (interface_doevents_func != NULL)
+    if (interface_doevents_func != NULL) {
         interface_doevents_func();
+    }
 }
 
 /*

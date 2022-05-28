@@ -1,0 +1,3 @@
+!Makefile
+obj_dir/*
+waveform.vcd

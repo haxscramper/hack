@@ -8,6 +8,9 @@
 
 ##  Platform specific path and filename specifications
 
+
+{.pragma: cvar, importc.}
+
 when defined(windows):
   const
     DICTDIR* = "\\dict"
@@ -41,71 +44,73 @@ else:
 ##  Various buffer sizes
 
 const
-  SEARCHBUF* = cast[clong](200 * cast[clong](1024))
-  LINEBUF* = (15 * 1024)          ##  15K buffer to read index & data files
-  SMLINEBUF* = (3 * 1024)         ##  small buffer for output lines
-  WORDBUF* = (256)              ##  buffer for one word or collocation
-  ALLSENSES* = 0
-  MAXID* = 15
-  MAXDEPTH* = 20
-  MAXSENSE* = 75
-  MAX_FORMS* = 5
-  MAXFNUM* = 44
+  SEARCHBUF* = ((clong)(200 * cast[clong](1024)))
+  LINEBUF*   = (15 * 1024) ##  15K buffer to read index & data files
+  SMLINEBUF* = (3 * 1024)  ##  small buffer for output lines
+  WORDBUF*   = (256)       ##  buffer for one word or collocation
+  ALLSENSES* = 0           ## pass to findtheinfo() if want all senses
+  MAXID*     = 15          ##  maximum id number in lexicographer file
+  MAXDEPTH*  = 20          ## maximum tree depth - used to find cycles
+  MAXSENSE*  = 75          ## maximum number of senses in database
+  MAX_FORMS* = 5           ## max # of different 'forms' word can have
+  MAXFNUM*   = 44          ## maximum number of lexicographer files
 
 ##  Pointer type and search type counts
 ##  Pointers
 
-const
-  ANTPTR* = 1
-  HYPERPTR* = 2
-  HYPOPTR* = 3
-  ENTAILPTR* = 4
-  SIMPTR* = 5
-  ISMEMBERPTR* = 6
-  ISSTUFFPTR* = 7
-  ISPARTPTR* = 8
-  HASMEMBERPTR* = 9
-  HASSTUFFPTR* = 10
-  HASPARTPTR* = 11
-  MERONYM* = 12
-  HOLONYM* = 13
-  CAUSETO* = 14
-  PPLPTR* = 15
-  SEEALSOPTR* = 16
-  PERTPTR* = 17
-  ATTRIBUTE* = 18
-  VERBGROUP* = 19
-  DERIVATION* = 20
-  CLASSIFICATION* = 21
-  CLASS* = 22
-  LASTTYPE* = CLASS
+type
+  PTR_TYPES* = enum
+    ANTPTR         = 1 ## `!`
+    HYPERPTR       = 2 ## `@`
+    HYPOPTR        = 3 ## `~`
+    ENTAILPTR      = 4 ## `*`
+    SIMPTR         = 5 ## `&`
+    ISMEMBERPTR    = 6 ## `#m`
+    ISSTUFFPTR     = 7 ## `#s`
+    ISPARTPTR      = 8 ## `#p`
+    HASMEMBERPTR   = 9 ## `%m`
+    HASSTUFFPTR    = 10 ## `%s`
+    HASPARTPTR     = 11 ## `%p`
+    MERONYM        = 12
+    HOLONYM        = 13
+    CAUSETO        = 14
+    PPLPTR         = 15
+    SEEALSOPTR     = 16
+    PERTPTR        = 17
+    ATTRIBUTE      = 18
+    VERBGROUP      = 19
+    DERIVATION     = 20
+    CLASSIFICATION = 21
+    CLASS          = 22
+
+const LASTTYPE       = CLASS
 
 ##  Misc searches
 
 const
-  SYNS* = (LASTTYPE + 1)
-  FREQ* = (LASTTYPE + 2)
-  FRAMES* = (LASTTYPE + 3)
-  COORDS* = (LASTTYPE + 4)
-  RELATIVES* = (LASTTYPE + 5)
-  HMERONYM* = (LASTTYPE + 6)
-  HHOLONYM* = (LASTTYPE + 7)
-  WNGREP* = (LASTTYPE + 8)
-  OVERVIEW* = (LASTTYPE + 9)
-  MAXSEARCH* = OVERVIEW
-  CLASSIF_START* = (MAXSEARCH + 1)
+  SYNS*             = (LASTTYPE.cint + 1)
+  FREQ*             = (LASTTYPE.cint + 2)
+  FRAMES*           = (LASTTYPE.cint + 3)
+  COORDS*           = (LASTTYPE.cint + 4)
+  RELATIVES*        = (LASTTYPE.cint + 5)
+  HMERONYM*         = (LASTTYPE.cint + 6)
+  HHOLONYM*         = (LASTTYPE.cint + 7)
+  WNGREP*           = (LASTTYPE.cint + 8)
+  OVERVIEW*         = (LASTTYPE.cint + 9)
+  MAXSEARCH*        = OVERVIEW
+  CLASSIF_START*    = (MAXSEARCH + 1)
   CLASSIF_CATEGORY* = (CLASSIF_START) ##  ,c
-  CLASSIF_USAGE* = (CLASSIF_START + 1) ##  ,u
+  CLASSIF_USAGE*    = (CLASSIF_START + 1) ##  ,u
   CLASSIF_REGIONAL* = (CLASSIF_START + 2) ##  ,r
-  CLASSIF_END* = CLASSIF_REGIONAL
-  CLASS_START* = (CLASSIF_END + 1)
-  CLASS_CATEGORY* = (CLASS_START) ##  -c
-  CLASS_USAGE* = (CLASS_START + 1) ##  -u
-  CLASS_REGIONAL* = (CLASS_START + 2) ##  -r
-  CLASS_END* = CLASS_REGIONAL
-  INSTANCE* = (CLASS_END + 1)     ##  @i
-  INSTANCES* = (CLASS_END + 2)    ##  ~i
-  MAXPTR* = INSTANCES
+  CLASSIF_END*      = CLASSIF_REGIONAL
+  CLASS_START*      = (CLASSIF_END + 1)
+  CLASS_CATEGORY*   = (CLASS_START) ##  -c
+  CLASS_USAGE*      = (CLASS_START + 1) ##  -u
+  CLASS_REGIONAL*   = (CLASS_START + 2) ##  -r
+  CLASS_END*        = CLASS_REGIONAL
+  INSTANCE*         = (CLASS_END + 1)     ##  @i
+  INSTANCES*        = (CLASS_END + 2)    ##  ~i
+  MAXPTR*           = INSTANCES
 
 ##  WordNet part of speech stuff
 
@@ -116,13 +121,13 @@ const
 ##  Generic names for part of speech
 
 const
-  NOUN* = 1
-  VERB* = 2
-  ADJ* = 3
-  ADV* = 4
+  NOUN*      = 1
+  VERB*      = 2
+  ADJ*       = 3
+  ADV*       = 4
   SATELLITE* = 5
-  ADJSAT* = SATELLITE
-  ALL_POS* = 0
+  ADJSAT*    = SATELLITE
+  ALL_POS*   = 0
 
 template bit*(n: untyped): untyped =
   (cast[cuint]((cast[cuint](1) shl (cast[cuint](n)))))
@@ -130,19 +135,17 @@ template bit*(n: untyped): untyped =
 ##  Adjective markers
 
 const
-  PADJ* = 1
-  NPADJ* = 2
-  IPADJ* = 3
-  UNKNOWN_MARKER* = 0
-  ATTRIBUTIVE* = NPADJ
-  PREDICATIVE* = PADJ
+  PADJ*              = 1
+  NPADJ*             = 2
+  IPADJ*             = 3
+  UNKNOWN_MARKER*    = 0
+  ATTRIBUTIVE*       = NPADJ
+  PREDICATIVE*       = PADJ
   IMMED_POSTNOMINAL* = IPADJ
 
-{.pragma: cvar, importc, nodecl, header: "wn.h".}
-{.pragma: cobj, importc, bycopy, header: "wn.h"}
-
 var wnrelease* {.cvar.}: cstring ##  WordNet release/version number
-var lexfiles* {.cvar.}: ptr UncheckedArray[cstring] ##  names of lexicographer files
+var lexfiles* {.cvar.}: ptr UncheckedArray[cstring] ##  names of
+                                                    ## lexicographer files
 var ptrtyp* {.cvar.}: ptr UncheckedArray[cstring] ##  pointer characters
 var partnames* {.cvar.}: ptr UncheckedArray[cstring] ##  POS strings
 var partchars* {.cvar.}: ptr UncheckedArray[char] ##  single chars for each POS
@@ -150,66 +153,66 @@ var adjclass* {.cvar.}: ptr UncheckedArray[cstring] ##  adjective class strings
 var frametext* {.cvar.}: ptr UncheckedArray[cstring] ##  text of verb frames
 
 ##  Data structures used by search code functions.
-##  Structure for index file entry
 
 type
-  Index* {.cobj.} = object
-    idxoffset*: clong   ## byte offset of entry in index file
-    wd*: cstring        ## word string
-    pos*: cstring       ## part of speech
-    sense_cnt*: cint    ## sense (collins) count
-    off_cnt*: cint      ## number of offsets
-    tagged_cnt*: cint   ## number senses that are tagged
-    offset*: ptr culong ## offsets of synsets containing word
-    ptruse_cnt*: cint   ## number of pointers used
-    ptruse*: ptr cint   ## pointers used
+  Index* {.bycopy.} = object
+    ## Structure for index file entry
+    idxoffset*: clong          ##  byte offset of entry in index file
+    wd*: cstring               ##  word string
+    pos*: cstring              ##  part of speech
+    sense_cnt*: cint           ##  sense (collins) count
+    off_cnt*: cint             ##  number of offsets
+    tagged_cnt*: cint          ##  number senses that are tagged
+    offset*: ptr culong         ##  offsets of synsets containing word
+    ptruse_cnt*: cint          ##  number of pointers used
+    ptruse*: ptr cint           ##  pointers used
 
   IndexPtr* = ptr Index
 
-##  Structure for data file synset
 
-type
-  Synset* {.cobj.} = object
-    hereiam*: clong      ## current file position
-    sstype*: cint        ## type of ADJ synset
-    fnum*: cint          ## file number that synset comes from
-    pos*: cstring        ## part of speech
-    wcount*: cint        ## number of words in synset
-    words*: cstringArray ## words in synset
-    lexid*: ptr cint     ## unique id in lexicographer file
-    wnsns*: ptr cint     ## sense number in wordnet
-    whichword*: cint     ## which word in synset we're looking for
-    ptrcount*: cint      ## number of pointers
-    ptrtyp*: ptr cint    ## pointer types
-    ptroff*: ptr clong   ## pointer offsets
-    ppos*: ptr cint      ## pointer part of speech
-    pto*: ptr cint       ## pointer 'to' fields
-    pfrm*: ptr cint      ## pointer 'from' fields
-    fcount*: cint        ## number of verb frames
-    frmid*: ptr cint     ## frame numbers
-    frmto*: ptr cint     ## frame 'to' fields
-    defn*: cstring       ## synset gloss (definition)
-    key*: cuint ## unique synset key these fields are used if a data
-    ## structure is returned instead of a text buffer
-    nextss*: ptr Synset   ## ptr to next synset containing searchword
-    nextform*: ptr Synset ## ptr to list of synsets for alternate spelling
-                          ## of wordform
+  Synset* {.bycopy.} = object
+    ##  Structure for data file synset
+    hereiam*: clong            ##  current file position
+    sstype*: cint              ##  type of ADJ synset
+    fnum*: cint                ##  file number that synset comes from
+    pos*: cstring              ##  part of speech
+    wcount*: cint              ##  number of words in synset
+    words*: cstringArray       ##  words in synset
+    lexid*: ptr cint            ##  unique id in lexicographer file
+    wnsns*: ptr cint            ##  sense number in wordnet
+    whichword*: cint           ##  which word in synset we're looking for
+    ptrcount*: cint            ##  number of pointers
+    ptrtyp*: ptr cint           ##  pointer types
+    ptroff*: ptr clong          ##  pointer offsets
+    ppos*: ptr cint             ##  pointer part of speech
+    pto*: ptr cint              ##  pointer 'to' fields
+    pfrm*: ptr cint             ##  pointer 'from' fields
+    fcount*: cint              ##  number of verb frames
+    frmid*: ptr cint            ##  frame numbers
+    frmto*: ptr cint            ##  frame 'to' fields
+    defn*: cstring             ##  synset gloss (definition)
+    key*: cuint ##  unique synset key
+              ##  these fields are used if a data structure is returned
+              ##        instead of a text buffer
+    nextss*: ptr Synset             ##  ptr to next synset containing searchword
+    nextform*: ptr Synset           ##  ptr to list of synsets for alternate
+                   ## 				   spelling of wordform
     searchtype*: cint          ##  type of search performed
     ptrlist*: ptr Synset            ##  ptr to synset list result of search
     headword*: cstring         ##  if pos is "s", this is cluster head word
     headsense*: cshort         ##  sense number of headword
 
   SynsetPtr* = ptr Synset
-  SnsIndex* {.cobj.} = object
-    sensekey*: cstring ## sense key
-    word*: cstring     ## word string
-    loc*: clong        ## synset offset
-    wnsense*: cint     ## WordNet sense number
-    tag_cnt*: cint     ## number of semantic tags to sense
-    nextsi*: ptr SnsIndex ## ptr to next sense index entry
+  SnsIndex* {.bycopy.} = object
+    sensekey*: cstring         ##  sense key
+    word*: cstring             ##  word string
+    loc*: clong                ##  synset offset
+    wnsense*: cint             ##  WordNet sense number
+    tag_cnt*: cint             ##  number of semantic tags to sense
+    nextsi*: ptr SnsIndex             ##  ptr to next sense index entry
 
   SnsIndexPtr* = ptr SnsIndex
-  SearchResults* {.cobj.} = object
+  SearchResults* {.bycopy.} = object
     SenseCount*: array[MAX_FORMS, cint] ##  number of senses word form has
     OutSenseCount*: array[MAX_FORMS, cint] ##  number of senses printed for word form
     numforms*: cint            ##  number of word forms searchword has
@@ -221,27 +224,31 @@ type
 
 ##  Global variables and flags
 
-var
-  wnresults*     {.cvar.}: SearchResults ##  structure containing results of search
-  fnflag*        {.cvar.}: cint ##  if set, print lex filename after sense
-  dflag*         {.cvar.}: cint ##  if set, print definitional glosses
-  saflag*        {.cvar.}: cint ##  if set, print SEE ALSO pointers
-  fileinfoflag*  {.cvar.}: cint ##  if set, print lex file info on synsets
-  frflag*        {.cvar.}: cint ##  if set, print verb frames after synset
-  abortsearch*   {.cvar.}: cint ##  if set, stop search algorithm
-  offsetflag*    {.cvar.}: cint ##  if set, print byte offset of each synset
-  wnsnsflag*     {.cvar.}: cint ##  if set, print WN sense # for each word
+var wnresults* {.cvar.}: SearchResults ##  structure containing results of search
+var fnflag* {.cvar.}: cint ##  if set, print lex filename after sense
+var dflag* {.cvar.}: cint ##  if set, print definitional glosses
+var saflag* {.cvar.}: cint ##  if set, print SEE ALSO pointers
+var fileinfoflag* {.cvar.}: cint ##  if set, print lex file info on synsets
+var frflag* {.cvar.}: cint ##  if set, print verb frames after synset
+var abortsearch* {.cvar.}: cint ##  if set, stop search algorithm
+var offsetflag* {.cvar.}: cint ##  if set, print byte offset of each synset
+var wnsnsflag* {.cvar.}: cint ##  if set, print WN sense # for each word
 
-  OpenDB*        {.cvar.}: cint ##  File pointers for database files if
-                           ## non-zero, database file are open
-  datafps*       {.cvar.}: array[NUMPARTS + 1, ptr FILE]
-  indexfps*      {.cvar.}: array[NUMPARTS + 1, ptr FILE]
-  sensefp*       {.cvar.}: ptr FILE
-  cntlistfp*     {.cvar.}: ptr FILE
-  keyindexfp*    {.cvar.}: ptr FILE
+##  File pointers for database files
+
+var OpenDB*: cint
+
+##  if non-zero, database file are open
+
+var
+  datafps* {.cvar.}: array[NUMPARTS + 1, ptr FILE]
+  indexfps* {.cvar.}: array[NUMPARTS + 1, ptr FILE]
+  sensefp* {.cvar.}: ptr FILE
+  cntlistfp* {.cvar.}: ptr FILE
+  keyindexfp* {.cvar.}: ptr FILE
   revkeyindexfp* {.cvar.}: ptr FILE
-  vidxfilefp*    {.cvar.}: ptr FILE
-  vsentfilefp*   {.cvar.}: ptr FILE
+  vidxfilefp* {.cvar.}: ptr FILE
+  vsentfilefp* {.cvar.}: ptr FILE
 
 ##  Method for interface to check for events while search is running
 
@@ -260,15 +267,28 @@ var display_message*: proc (a1: cstring): cint
 
 ##  External library function prototypes
 ## ** Search and database functions (search.c) **
-##  Primry search algorithm for use with user interfaces
 
 proc findtheinfo*(
-    searchstr: cstring, a2: cint, a3: cint, a4: cint): cstring {.
+    searchstr: cstring,
+    dbase: cint,
+    ptrtyp: cint,
+    whichsense: cint
+  ): cstring {.
     importc: "findtheinfo".}
-  ##  Primary search algorithm for use with programs (returns data structure)
+  ## Immediately print search results into stdout. Formatting is not
+  ## configurable, so most likely you would need to use `findtheinfo_ds`
+  ## instead, since it returns a proper data structure.
 
-proc findtheinfo_ds*(a1: cstring, a2: cint, a3: cint, a4: cint): SynsetPtr {.
+
+proc findtheinfo_ds*(
+    searchstr: cstring,
+    dbase: cint,
+    ptrtyp: cint,
+    whichsense: cint): SynsetPtr {.
     importc: "findtheinfo_ds".}
+  ## Return search results as a linked list of data instead of printing it
+  ## immediately.
+
 ##  Set bit for each search type that is valid for the search word
 ##    passed and return bit mask.
 
@@ -388,14 +408,14 @@ proc WNSnsToStr*(a1: IndexPtr, a2: cint): cstring {.importc: "WNSnsToStr".}
 
 proc GetValidIndexPointer*(a1: cstring, a2: cint): IndexPtr {.
     importc: "GetValidIndexPointer".}
-  ##  Return sense number in database for word and lexsn passed.
+##  Return sense number in database for word and lexsn passed.
 
 proc GetWNSense*(a1: cstring, a2: cstring): cint {.importc: "GetWNSense".}
 proc GetSenseIndex*(a1: cstring): SnsIndexPtr {.importc: "GetSenseIndex".}
 proc GetOffsetForKey*(a1: cuint): cstring {.importc: "GetOffsetForKey".}
 proc GetKeyForOffset*(a1: cstring): cuint {.importc: "GetKeyForOffset".}
 proc SetSearchdir*(): cstring {.importc: "SetSearchdir".}
-  ##  Return number of times sense is tagged
+##  Return number of times sense is tagged
 
 proc GetTagcnt*(a1: IndexPtr, a2: cint): cint {.importc: "GetTagcnt".}
 ##
@@ -412,32 +432,31 @@ proc GetTagcnt*(a1: IndexPtr, a2: cint): cint {.importc: "GetTagcnt".}
 proc strstr_init*(a1: cstring, a2: cstring) {.importc: "strstr_init".}
 proc strstr_getnext*(): cint {.importc: "strstr_getnext".}
 
-## Binary search functions (binsearch.c) General purpose binary search
-## function to search for key as first item on line in open file. Item is
-## delimited by space.
+## ** Binary search functions (binsearch.c) **
+##  General purpose binary search function to search for key as first
+##    item on line in open file.  Item is delimited by space.
 
 proc bin_search*(a1: cstring, a2: ptr FILE): cstring {.importc: "bin_search".}
 proc read_index*(a1: clong, a2: ptr FILE): cstring {.importc: "read_index".}
-  ## Copy contents from one file to another.
+  ##  Copy contents from one file to another.
 
 proc copyfile*(a1: ptr FILE, a2: ptr FILE) {.importc: "copyfile".}
-  ## Function to replace a line in a file. Returns the original line, or
-  ## NULL in case of error.
+  ##  Function to replace a line in a file.  Returns the original line,
+  ##    or NULL in case of error.
 
 proc replace_line*(a1: cstring, a2: cstring, a3: ptr FILE): cstring {.
     importc: "replace_line".}
-  ## Find location to insert line at in file. If line with this key is
-  ## already in file, return NULL.
+  ##  Find location to insert line at in file.  If line with this
+  ##    key is already in file, return NULL.
 
 proc insert_line*(a1: cstring, a2: cstring, a3: ptr FILE): cstring {.
     importc: "insert_line".}
 var helptext*: array[NUMPARTS + 1, cstringArray]
 
-var license*: cstring = """
-This software and database is being provided to you, the LICENSEE, by
+var license*: cstring = """This software and database is being provided to you, the LICENSEE, by
 Princeton University under the following license.  By obtaining, using
 and/or copying this software and database, you agree that you have
-read, understood, and will comply with these terms and conditions.:  
+read, understood, and will comply with these terms and conditions.:
 
 Permission to use, copy, modify and distribute this software and
 database and its documentation for any purpose and without fee or
@@ -466,15 +485,15 @@ Princeton University and LICENSEE agrees to preserve same.
 """
 
 var dblicense*: cstring = """
-1 This software and database is being provided to you, the LICENSEE, by
-2 Princeton University under the following license.  By obtaining, using
-3 and/or copying this software and database, you agree that you have
-4 read, understood, and will comply with these terms and conditions.:
+1  This software and database is being provided to you, the LICENSEE, by
+2  Princeton University under the following license.  By obtaining, using
+3  and/or copying this software and database, you agree that you have
+4  read, understood, and will comply with these terms and conditions.:
 5
-6 Permission to use, copy, modify and distribute this software and
-7 database and its documentation for any purpose and without fee or
-8 royalty is hereby granted, provided that you agree to comply with
-9 the following copyright notice and statements, including the disclaimer,
+6  Permission to use, copy, modify and distribute this software and
+7  database and its documentation for any purpose and without fee or
+8  royalty is hereby granted, provided that you agree to comply with
+9  the following copyright notice and statements, including the disclaimer,
 10 and that the same appear on ALL copies of the software, database and
 11 documentation, including modifications that you make for internal
 12 use or for distribution.
@@ -499,11 +518,3 @@ var dblicense*: cstring = """
 
 const
   DBLICENSE_SIZE* = (sizeof((dblicense)))
-
-{.passl: "-lWN".}
-
-proc main() =
-  echo frflag
-  echo 123
-
-main()

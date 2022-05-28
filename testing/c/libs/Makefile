@@ -6,7 +6,6 @@ WL=$(WN)/lib
 
 wordnet: export WNHOME = /usr/share/wordnet
 
-wordnet:
-	gcc -o wordnet *.c
-	echo "compiled"
-	./wordnet test -synsn
+wordnet: *.c main.nim
+	rm -rf nimcache
+	nim c -r --nimcache=nimcache main.nim

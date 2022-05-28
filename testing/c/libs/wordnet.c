@@ -237,9 +237,9 @@ static void printusage(), printlicense(),
     printsearches(char*, int, unsigned long);
 static int error_message(char*);
 
-int main(int argc, char* argv[]) {
+int wordnet_main(int argc, char* argv[]) {
+    printf(">> Called wordnet main\n");
     display_message = error_message;
-
     if (argc < 2) {
         printusage();
         exit(-1);
@@ -252,9 +252,10 @@ int main(int argc, char* argv[]) {
         display_message(
             "wn: Fatal error - cannot open WordNet database\n");
         exit(-1);
+    } else {
+        display_message("Opened wordnet database, executing searchwn");
+        return searchwn(argc, argv);
     }
-
-    exit(searchwn(argc, argv));
 }
 
 static int searchwn(int ac, char* av[]) {
@@ -263,28 +264,31 @@ static int searchwn(int ac, char* av[]) {
     int  errcount = 0, outsenses = 0;
     char tmpbuf[256]; /* buffer for constuction error messages */
 
-    if (ac == 2) /* print available searches for word */
+    if (ac == 2) {
+        /* print available searches for word */
         exit(do_is_defined(av[1]));
-
+    }
     /* Parse command line options once and set flags */
 
     dflag = fileinfoflag = offsetflag = wnsnsflag = 0;
 
     for (i = 1; i < ac; i++) {
-        if (!strcmp("-g", av[i]))
+        if (!strcmp("-g", av[i])) {
             dflag++;
-        else if (!strcmp("-h", av[i]))
+        } else if (!strcmp("-h", av[i])) {
             help++;
-        else if (!strcmp("-l", av[i]))
+        } else if (!strcmp("-l", av[i])) {
             printlicense();
-        else if (!strncmp("-n", av[i], 2) && strncmp("-nomn", av[i], 5))
+        } else if (
+            !strncmp("-n", av[i], 2) && strncmp("-nomn", av[i], 5)) {
             whichsense = atoi(av[i] + 2);
-        else if (!strcmp("-a", av[i]))
+        } else if (!strcmp("-a", av[i])) {
             fileinfoflag = 1;
-        else if (!strcmp("-o", av[i]))
+        } else if (!strcmp("-o", av[i])) {
             offsetflag = 1;
-        else if (!strcmp("-s", av[i]))
+        } else if (!strcmp("-s", av[i])) {
             wnsnsflag = 1;
+        }
     }
 
     /* Replace spaces with underscores before looking in database */
@@ -300,25 +304,27 @@ static int searchwn(int ac, char* av[]) {
                 optptr = &optlist[i];
 
                 /* print help text before search output */
-                if (help && optptr->helpmsgidx >= 0)
+                if (help && optptr->helpmsgidx >= 0) {
                     printf(
                         "%s\n", helptext[optptr->pos][optptr->helpmsgidx]);
-
-                if (optptr->pos == ALL_POS)
-                    for (pos = 1; pos <= NUMPARTS; pos++)
+                }
+                if (optptr->pos == ALL_POS) {
+                    for (pos = 1; pos <= NUMPARTS; pos++) {
                         outsenses += do_search(
                             av[1],
                             pos,
                             optptr->search,
                             whichsense,
                             optptr->label);
-                else
+                    }
+                } else {
                     outsenses += do_search(
                         av[1],
                         optptr->pos,
                         optptr->search,
                         whichsense,
                         optptr->label);
+                }
             } else {
                 sprintf(tmpbuf, "wn: invalid search option: %s\n", av[j]);
                 display_message(tmpbuf);
@@ -338,6 +344,7 @@ static int do_search(
     int   totsenses = 0;
     char *morphword, *outbuf;
 
+    printf(">> do_search POS:%d SEARCH:%d\n", pos, search);
     outbuf = findtheinfo(searchword, pos, search, whichsense);
     totsenses += wnresults.printcnt;
     if (strlen(outbuf) > 0)
