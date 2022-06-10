@@ -1,3 +1,6 @@
 renders/*
 *.odt
 *.xml
+*.dot
+*.png
+!Makefile
