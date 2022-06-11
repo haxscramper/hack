@@ -22,6 +22,8 @@ static PyObject* triggerFromPy(PyObject* self, PyObject* args) {
 
     }
 
+    printf("ARGS: %s\n", _PyUnicode_AsString(PyObject_Repr(args)));
+
     PyThreadState* ts    = PyThreadState_Get();
     PyFrameObject* frame = ts->frame;
     while (frame != 0) {
@@ -85,6 +87,6 @@ int main() {
         "Trigger function from python"});
 
     eval("import sapr");
-    eval("sapr.trigger()");
+    eval("sapr.trigger(12, 3, 4)");
     Py_Finalize();
 }
