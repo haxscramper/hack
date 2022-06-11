@@ -1,12 +1,7 @@
 #include <Python.h>
 #include <frameobject.h>
+#include <vector>
 
-// HACK because python API does not allow for custom user data passing, so
-// I have to
-static PyModuleDef module;
-static PyObject*   PyInit_sapr(void) {
-    return PyModule_Create(&module);
-}
 
 void eval(const char* text) {
     PyRun_SimpleString(text);
@@ -19,10 +14,17 @@ static PyObject* triggerFromPy(PyObject* self, PyObject* args) {
         puts("SELF IS NIL");
     } else {
         printf("SELF: %s\n", _PyUnicode_AsString(PyObject_Repr(self)));
-
     }
 
     printf("ARGS: %s\n", _PyUnicode_AsString(PyObject_Repr(args)));
+
+    void* capsule = PyCapsule_Import(
+        "sapr.__capsule", // MODULE.CAPSULE name
+        0                 // This can be set to 0 almost all the time
+    );
+    if (capsule != nullptr) {
+        printf("Capsule internal pointer: '%s'\n", (char*)capsule);
+    }
 
     PyThreadState* ts    = PyThreadState_Get();
     PyFrameObject* frame = ts->frame;
@@ -51,25 +53,33 @@ struct MethodTable {
         methods = new PyMethodDef[size]();
     }
     /// Add new method to the method table
-    inline void add(PyMethodDef def) {
+    PyMethodDef* add(PyMethodDef def) {
         methods[idx] = def;
+        auto pos     = idx;
         ++idx;
+        return &methods[pos];
     }
     inline ~MethodTable() {
         delete[] methods;
     }
 };
 
+// HACK because python API does not allow for custom user data passing, so
+// I have to
+static PyModuleDef module;
+static PyObject*   saprModule;
+static PyObject*   PyInit_sapr(void) {
+    saprModule = PyModule_Create(&module);
+    return saprModule;
+}
+
 int main() {
-    MethodTable table;
     PyModuleDef sapr = {
         PyModuleDef_HEAD_INIT,
         "sapr",
         NULL,
         -1,
-        // List of methods is null-terminated, which means I can
-        // dynamically add to it at runtime.
-        table.methods,
+        NULL,
         NULL,
         NULL,
         NULL,
@@ -79,14 +89,49 @@ int main() {
 
     PyImport_AppendInittab("sapr", &PyInit_sapr);
     Py_Initialize();
+    eval("import sapr");
 
-    table.add(PyMethodDef{
+    // Provide user-defined data to the module, so wrapped functions could
+    // properly import the necessary parts.
+    PyModule_AddObject(
+        saprModule,
+        "__capsule",
+        PyCapsule_New(
+            (void*)"user data", // User pointer to `void*`
+            "sapr.__capsule", // Capsule name must have the fully qualified
+                              // path to it, even though it can be
+                              // constructed from module again.
+            nullptr));
+
+
+    std::vector<PyMethodDef> methods;
+
+    methods.push_back(PyMethodDef{
         "trigger",
         triggerFromPy,
         METH_VARARGS,
         "Trigger function from python"});
 
-    eval("import sapr");
+    PyModule_AddObject(
+        saprModule,
+        "trigger",
+        (PyObject*)PyCFunction_New(&methods[0], nullptr));
+
+    if (false) {
+        // Test whether Python API can handle relocation (it can't)
+        auto start      = &methods[0];
+        auto iterations = 0;
+        while (start == &methods[0]) {
+            ++iterations;
+            methods.push_back(PyMethodDef{});
+        }
+
+        printf(
+            "Method relocation happened after %d iterations\n",
+            iterations);
+        fflush(stdout);
+    }
+
     eval("sapr.trigger(12, 3, 4)");
     Py_Finalize();
 }
