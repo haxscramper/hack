@@ -3,6 +3,7 @@
 import sqlite3
 import importlib
 import logging
+import os
 from common import *
 
 
@@ -32,6 +33,7 @@ def load_analyzer(class_name: str):
 
 if __name__ == "__main__":
     # Подключится к базе данных
+    os.remove("main.sqlite")
     con = sqlite3.connect("main.sqlite")
     indexers = []
     # Загрузить индексаторы
