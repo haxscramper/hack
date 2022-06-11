@@ -12,6 +12,7 @@ class BaseAnalyzer:
         # Создать новую таблицу, используя имя и список дополнительных
         # полей. Поле с названием языка добавляется автоматически
         fs = ", ".join(fields)
+        # self.bd.execute(f"drop table if exists {table}")
         sql = f"create table if not exists {table}(language, {fs})"
         self.bd.execute(sql)
         self.tables.append((table, fields))

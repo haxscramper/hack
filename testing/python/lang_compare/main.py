@@ -54,7 +54,6 @@ if __name__ == "__main__":
     metrics = [
         "rust",
         "ghc",
-        "icx",
         "swift",
         "dart",
         "gpp",
@@ -72,3 +71,5 @@ if __name__ == "__main__":
     metrics = sorted(metrics, key=lambda tup: tup[1], reverse=True)
     for row in metrics:
         print(f"| {row[0]:^10} | {row[1]:^10.4f} |")
+
+    con.close()

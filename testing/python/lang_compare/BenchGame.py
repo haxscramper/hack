@@ -17,6 +17,8 @@ class BenchGame(BaseAnalyzer):
             for row in csv.DictReader(c):
                 lang = normalize_lang(row["lang"])
                 bench = row["name"]
-                self.add_table(bench, ["speed"])
-                sql = f"insert into {bench} (language, speed) values (?, ?)"
-                self.bd.execute(sql, (lang, float(row["cpu(s)"])))
+                self.add_table(bench, ["speed", "mem"])
+                sql = f"insert into {bench} (language, speed, mem) values (?, ?, ?)"
+                self.bd.execute(
+                    sql, (lang, float(row["cpu(s)"]), float(row["mem(KB)"]))
+                )

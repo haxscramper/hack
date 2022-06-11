@@ -38,12 +38,22 @@ class Compare(CompareBase):
             + self.nbody_speed(lang)
         )
 
+        mem = (
+            self.spectralnorm_mem(lang)
+            + self.binarytrees_mem(lang)
+            + self.fasta_mem(lang)
+            + self.mandelbrot_mem(lang)
+            + self.nbody_mem(lang)
+        )
+
         result = 0
 
         if speed != 0:
             # Итоговое значение обратно пропорционально времени работы -
             # языки, требущие много времени для выполнения задачи получают
             # меньше значения
-            result += 1 / speed
+            p_mem = 1 / (mem / 10000)
+            p_speed = 1 / speed
+            result += p_speed * 2 + p_mem
 
         return result
