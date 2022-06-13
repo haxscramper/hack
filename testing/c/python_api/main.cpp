@@ -74,6 +74,7 @@ static PyObject*   PyInit_sapr(void) {
 }
 
 int main() {
+    MethodTable table;
     PyModuleDef sapr = {
         PyModuleDef_HEAD_INIT,
         "sapr",
@@ -106,31 +107,18 @@ int main() {
 
     std::vector<PyMethodDef> methods;
 
-    methods.push_back(PyMethodDef{
-        "trigger",
-        triggerFromPy,
-        METH_VARARGS,
-        "Trigger function from python"});
 
     PyModule_AddObject(
         saprModule,
         "trigger",
-        (PyObject*)PyCFunction_New(&methods[0], nullptr));
+        (PyObject*)PyCFunction_New(
+            table.add(PyMethodDef{
+                "trigger",
+                triggerFromPy,
+                METH_VARARGS,
+                "Trigger function from python"}),
+            nullptr));
 
-    if (false) {
-        // Test whether Python API can handle relocation (it can't)
-        auto start      = &methods[0];
-        auto iterations = 0;
-        while (start == &methods[0]) {
-            ++iterations;
-            methods.push_back(PyMethodDef{});
-        }
-
-        printf(
-            "Method relocation happened after %d iterations\n",
-            iterations);
-        fflush(stdout);
-    }
 
     eval("sapr.trigger(12, 3, 4)");
     Py_Finalize();

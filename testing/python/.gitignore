@@ -1,4 +1,7 @@
 *.md
 *.org
 *.odt
+*.dot
+*.png
+*.svg
 loader.py
