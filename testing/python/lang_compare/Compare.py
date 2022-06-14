@@ -1,17 +1,17 @@
 #!/usr/bin/env python
 
 
-class CompareBase:
-    # Базовый класс для реализации частных решений для сравнения метрик для
+class comparebase:
+    # базовый класс для реализации частных решений для сравнения метрик для
     # различных языков
     def __init__(self, bd):
         self.bd = bd
 
     def define_metric(self, table, field):
-        # Динамически добавить метод в класс. Имя метода формируется из
+        # динамически добавить метод в класс. имя метода формируется из
         # имени таблицы и строки как `table_field`
         def method_impl(self, lang: str):
-            # Реализация нового метода, которая будет добавлена в класс
+            # реализация нового метода, которая будет добавлена в класс
             sql = f"select {field} from {table} where language = '{lang}'"
             for row in self.bd.execute(sql):
                 return row[0]
@@ -19,8 +19,8 @@ class CompareBase:
             return 0
 
         name = f"{table}_{field}"
-        # Добавить новый метод в класс
-        setattr(CompareBase, name, method_impl)
+        # добавить новый метод в класс
+        setattr(comparebase, name, method_impl)
 
 
 class Compare(CompareBase):

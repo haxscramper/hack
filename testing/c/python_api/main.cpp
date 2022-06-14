@@ -73,6 +73,22 @@ static PyObject*   PyInit_sapr(void) {
     return saprModule;
 }
 
+PyObject* expr(const char* expr) {
+    PyObject* code        = Py_CompileString(expr, "test", Py_eval_input);
+    PyObject* main_module = PyImport_AddModule("__main__");
+    PyObject* global_dict = PyModule_GetDict(main_module);
+    PyObject* local_dict  = PyDict_New();
+    PyObject* obj         = PyEval_EvalCode(code, global_dict, local_dict);
+    if (PyErr_Occurred()) {
+        PyErr_Print();
+    }
+    return obj;
+}
+
+void print(PyObject* it) {
+    printf("PRINT: %s\n", _PyUnicode_AsString(PyObject_Str(it)));
+}
+
 int main() {
     MethodTable table;
     PyModuleDef sapr = {
@@ -120,6 +136,7 @@ int main() {
             nullptr));
 
 
+    print(expr("12 + 12"));
     eval("sapr.trigger(12, 3, 4)");
     Py_Finalize();
 }
