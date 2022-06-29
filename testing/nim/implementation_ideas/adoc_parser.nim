@@ -8,11 +8,34 @@ type
     akPlainItalicOpen
     akPlainItalicClose
     akInlineItalic
+    akPlainMonospaceOpen
+    akPlainMonospaceClose
+    akPlainMonospace
+    akHighlight
     akHeadingPrefix
-    akTableDelimiter
     akSpace
     akWord
+    akIdent
+    akColon
+    akRaw
+    akDoubleColon
+    akListColon ## Trailing token for the delimiter list
+    akCustomRoleStart
+    akCustomRoleEnd
+    akNewline
+    akAngledReference
+    akCallout
+    akTableDelimiter
     akTablePipe
+    akPlusJoin
+    akPlaceholder
+    akBlockDelimiter
+    akPlassDelimiter
+    # akSuperScriptStart
+    # akSuperScriptEnd
+    # akSubScriptStart
+    # akSubScriptEnd
+    akBraces
 
   AdocToken = object
     kind*: AdocTokenKind
@@ -37,10 +60,49 @@ func `[]`*(l: AdocLexer, chars: set[char]): bool = l[] in chars
 func `[]`*(l: AdocLexer, chars1, chars2: set[char]): bool =
   l[+0] in chars1 and l[+1] in chars2
 
+func `[]`*(l: AdocLexer, c1, c2: char): bool =
+  l[+0] == c1 and l[+1] == c2
+
 func atEnd*(l: AdocLexer): bool = l.str.len <= l.pos
+func hasNext*(l: AdocLexer, pos: int): bool =
+  l.pos + pos < l.str.len
+
+func `[]`*(l: AdocLexer, t: AdocToken): string = l.str[t.slice]
+func `[]`*(l: AdocLexer, str: string): bool =
+  var idx = 0
+  result = true
+  while idx < str.len and l.hasNext(idx):
+    if l[idx] != str[idx]:
+      return false
+
+    inc idx
+
+
+
+
+
+func `$`*(l: AdocToken): string =
+  &"{substr($l.kind, 2)}: {l.slice.a}..{l.slice.b}"
+
+func fail*(l: AdocLexer) =
+  assert false, &"l: '{l[]}', p: {l.pos}, s: '{l.str[l.pos ..< min(l.str.len, l.pos + 5)]}'"
+
+func hasBehind*(l: AdocLexer, skippable, chars: set[char]): bool =
+  var idx = -1
+  while (-l.pos + 1) < idx and l[idx] in skippable:
+    dec idx
+
+  return (-l.pos + 1) < idx and l[idx] in chars
+
+func hasAhead*(l: AdocLexer, skippable, chars: set[char]): bool =
+  var idx = 1
+  while l[idx] in skippable:
+    inc idx
+
+  return l[idx] in chars
+
 
 func next*(l: var AdocLexer, change: int = 1) =
-  debugecho l[]
   l.pos += change
 
 
@@ -48,51 +110,177 @@ func token*(l: var AdocLexer, kind: AdocTokenKind, final: int) =
   l.add token(kind, l.pos ..< l.pos + final)
   l.next(final)
 
-template addToken*(l: var AdocLexer, kind: AdocTokenKind, body: untyped): untyped =
+template popToken*(l: var AdocLexer, kind: AdocTokenKind, body: untyped): untyped =
   block:
     let start = l.pos
     body
     let final = l.pos
-    l.add token(kind, start ..< final)
+    token(kind, start ..< final)
 
+template addToken*(l: var AdocLexer, kind: AdocTokenKind, body: untyped): untyped =
+  l.add popToken(l, kind, body)
+
+const
+  EmphChars = {'*', '_', '`'}
+  NonWordChars = {' ', '.'}
 
 proc lex*(l: var AdocLexer) =
   while not l.atEnd():
     case l[]:
       of IdentChars:
-        addToken(l, akWord):
-          while l[] in IdentChars:
+        var token = popToken(l, akWord):
+          while l[] in IdentChars + {'\'', '-'}:
             l.next()
 
-      of ' ':
-        l.token(akSpace, 1)
+        if l[] == ':' and l[token].allIt(it in IdentStartChars):
+          if l.hasAhead({':'}, Whitespace):
+            l.add token
+            addToken(l, akListColon):
+              while l[] in {':'}:
+                l.next()
 
-      of '*':
-        if l[+1] in Whitespace: l.token(akPlainItalicClose, 1)
-        elif l[-1] in Whitespace: l.token(akPlainItalicOpen, 1)
+          else:
+            token.kind = akIdent
+            l.add token
+
+            if l[':', ':']:
+              l.token(akDoubleColon, 2)
+
+            else:
+              l.token(akColon, 1)
+
+            addToken(l, akRaw):
+              while l[] notin {' ', '['}:
+                l.next()
 
         else:
-          assert false, $l[0 .. 3]
+          l.add token
+
+      of '[':
+        addToken(l, akBraces):
+          while l[] notin {']'}:
+            l.next()
+
+          l.next()
+
+      of '{':
+        addToken(l, akPlaceholder):
+          while l[] notin {'}'}:
+            l.next()
+
+          l.next()
+
+      of ' ':
+        addToken(l, akSpace):
+          while l[] == ' ':
+            l.next()
+
+      of '.', '?', ',':
+        l.token(akWord, 1)
+
+      of '<':
+        if l[+1] in {'<'}:
+          addToken(l, akAngledReference):
+            while not l[{'>'}, {'>'}]:
+              l.next()
+
+            l.next(2)
+
+        elif l[+1] in Digits:
+          addToken(l, akCallout):
+            while not l[{'>'}]:
+              l.next()
+
+            l.next()
+
+        else:
+          l.fail()
+
+      of '*':
+        if l.hasBehind(EmphChars - {'*'}, NonWordChars):
+          l.token(akPlainItalicOpen, 1)
+
+        elif l.hasAhead(EmphChars - {'*'}, NonWordChars):
+          l.token(akPlainItalicClose, 1)
+
+        else:
+          l.fail()
+
+      of '+':
+        if l["++++"]:
+          l.token(akBlockDelimiter, 4)
+          addToken(l, akRaw):
+            while not l["++++"]:
+              l.next()
+
+        else:
+          l.token(akPlusJoin, 1)
+
+      of '`':
+        if l.hasBehind(EmphChars - {'`'}, NonWordChars):
+          l.token(akPlainMonospaceOpen, 1)
+
+        elif l.hasAhead(EmphChars - {'`'}, NonWordChars):
+          l.token(akPlainMonospaceClose, 1)
+
+        else:
+          l.fail()
+
+      of '|':
+        if l[+1] == '=' and l[+2] == '=' and l[+3] == '=':
+          l.token(akTableDelimiter, 4)
+
+        else:
+          l.token(akTablePipe, 1)
+
+      of '-':
+        if l["----"]:
+          l.token(akBlockDelimiter, 4)
+          addToken(l, akRaw):
+            while not l["----"]:
+              l.next()
+
+        else:
+          l.fail()
+
+      of '#':
+        if l[+1] == '#':
+          l.token(akHighlight, 2)
+
+        elif l[-1] == ']':
+          l.token(akCustomRoleStart, 1)
+
+        elif l.hasAhead({}, NonWordChars):
+          l.token(akCustomRoleEnd, 1)
+
+        else:
+          l.fail()
+
+      of '\n':
+        l.token(akNewline, 1)
 
       else:
-        assert false, $l[]
+        l.fail()
 
 
 func lexer*(str: string): AdocLexer =
   AdocLexer(str: str)
 
 var l = lexer("""
-It has *strong* significance to me.
+.Some Ruby code
+[source,ruby]
+----
+require 'sinatra'
 
-I _cannot_ stress this enough.
+get '/hi' do
+  "Hello World!"
+end
+----
 
-Type `OK` to accept.
 
-That *_really_* has to go.
-
-Can't pick one? Let's use them `*_all_*`.
 """)
 
 l.lex()
 
-echo "ok"
+for t in l.tokens:
+  echo "'", l[t], "' ", t
