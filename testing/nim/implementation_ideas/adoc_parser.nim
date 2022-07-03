@@ -462,7 +462,6 @@ proc foldParagraph*(p: var AdocParser, slice: Slice[int]) =
   # IMPLEMENT full paragraph folding
   p.maybeNode(anParagraph)
   for idx, tok in p.l.items(slice):
-    echov idx, tok
     case tok.kind:
       of akSpace:
         discard p.node(anSpace, AdocNodeIdx(idx))
@@ -554,7 +553,6 @@ func tree*(p: AdocParser): string =
         inc idx
         var subId = 0
         while idx in node.left.int .. node.right.int:
-          echov idx
           if subId == 0:
             if node.kind notin anTokenKinds:
               lines.add &"{idxpref}{prefix}+{fmtNode(node)}*"
@@ -582,7 +580,8 @@ var l = lexer("""
 [source,ruby]
 ----
 require 'sinatra'
-----""")
+----
+""")
 
 echo "executing lexer"
 l.lex()
@@ -596,5 +595,3 @@ while not p.atEnd():
 
 echo p.tree()
 
-for node in p.nodes:
-  echo node
