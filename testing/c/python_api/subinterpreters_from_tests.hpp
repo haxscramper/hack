@@ -52,6 +52,10 @@ static int test_repeated_init_and_subinterpreters(void) {
             // thread state as a new interpreter and return the created
             // thread as well.
             substate = Py_NewInterpreter();
+            // Reset the current interpreter thread
+            PyThreadState_Swap(NULL);
+            // Set the subinterpreter thread state
+            PyThreadState_Swap(substate);
             // Currently in the new interpreter thread state
             print_subinterp();
             // "Destroy the (sub-)interpreter represented by the given

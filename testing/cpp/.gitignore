@@ -1,1 +1,6 @@
 !Makefile
+ogdf
+*.gml
+*.png
+*.dot
+*.svg

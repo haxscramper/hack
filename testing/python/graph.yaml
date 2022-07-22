@@ -1,0 +1,262 @@
+- name: colortext
+  todo: done
+  text: |-
+    Colored text library
+
+- name: cli_parser
+  todo: done
+  text: |
+    Refactor command-line parsing of the compiler. Instead of mutating
+    globally used `ConfigRef` it would be much better (for the purposes of
+    testing) to parse the arguments into the ActiveConfig object and then
+    apply said config to the config ref
+- name: active_config
+  todo: done
+  text: |
+    Refactor active configuration handling Approach of treating a compiler
+    as a function of its inputs can be pretty useful in testing. With
+    structured reports, there is really not a lot of things (aside from
+    generated binary itself) that does not fit this mold
+
+    https://github.com/nim-works/nimskull/issues/158
+- name: document_things
+  text: |
+    Document all involved compiler parts in approachable manner
+  deps:
+    - name: doc_annotation
+    - name: dod_ast
+      reason: |
+        New-style IR is instrumental part of the refactoring and further
+        improvements
+    - name: exec_trace
+      reason: |
+        Not a requirement (like anything related to the documentation), but
+        it would be very easy to describe how execution is orderede if we
+        actually have a full trace for the said execution
+
+- name: builder_library
+  text: |
+    Builder library
+
+    Implementation of the generic builder library that can be used for
+    differen tooling needs later on
+
+    https://github.com/nim-works/nimskull/discussions/123
+
+- name: different_vm_data
+  todo: done
+  text: |
+    Decoupling VM data representation from the AST and IR handling in the
+    compiler would allow us to specify it separately as well as factor out
+    parts that need to be tested to ensure execution correctness
+- group: testing
+  label: Testament
+  items:
+    - name: task_orchestrator
+      text: Use builder to orchestrate all test execution tasks
+      deps:
+        - name: builder_library
+    - name: auto_rewrite_tests
+      text: Rewriter must change the spec description
+    - name: diff_ux
+      todo: done
+      text: |
+        Implement error message diff using nim code instead of calling out
+        to the git diff and presenting abominable output to the compiler
+        developer
+      deps:
+        - name: colortext
+    - name: diff_sexp
+      todo: done
+      text: Support structured output diff
+    - name: seal_arguments
+      text: |
+        Completely seal arguments that are passed to the nim compiler -
+        default execution must not read any configuration files, must have
+        `--lib` specified explicitly. Right now tests can fail simply
+        because user had a configuration file with `--hints=off`
+      deps:
+        - name: cli_parser
+          reason: |
+            In order to parse and understand DSL in the `cmd` and `matrix`
+            fields we need to have the command-line parser of the compiler
+            available as a separate library that testament can properly use
+        - name: active_config
+          reason: |
+            Compiler can be treated as a regular function of it's arguments
+            - we supply an active configuration object, compiler executes
+            it, and produces the output.
+
+            If all arguments are guaranteed to be properly sealed testament
+            can directly parse the `cmd:` field as well, instead of
+            executing the command as an interpolated string. with '$file'
+
+- group: dod
+  label: DOD refactor https://github.com/nim-works/nimskull/discussions/139
+  items:
+    - name: dod_tokens
+      text: "Dod refactor for lexer"
+    - name: dod_ast
+      text: "Dod refactor for parser"
+      deps:
+        - name: dod_tokens
+        - name: different_vm_data
+          reason: |
+            Untying VM data from AST would allow for easier refactors, as
+            well speed up the VM by not using 40-byte heap-allocated
+            objects for every basic operation
+
+- group: errormsg
+  label: Error message improvements
+  items:
+    - name: sexp_fixups
+      text: Support :colon in the S-expression parser
+      todo: done
+    - name: structure_reports
+      text: Structure error message information handling in the compiler
+    - name: structure_errtests
+      text: Make error tests structured
+      deps:
+        - name: auto_rewrite_tests
+        - name: diff_sexp
+        - name: sexp_fixups
+          reason: |
+            Can be done using JSON, but tests would see severe drop in
+            readability which is already less than stellar in some cases
+        - name: seal_arguments
+          reason: |
+            Not a mandatory requriement, but for each test that uses
+            structued output we need to also provide a --msgFormat=sexp
+            option to the compiler. Considering there are 2056 separate
+            test files (at the time of writing) this might be a
+            non-negligible point of friction.
+    - name: style_errs
+      text: Start error improvements
+      deps:
+        - name: structure_errtests
+        - name: colortext
+          reason: |
+            Good errors must use coloring, and without basic abstractinons
+            for dealing with colored text we would need to mainainw awkward
+            hacks for --colors=off
+
+- group: nimdoc
+  pass: |-
+    style=filled;
+    color=lightgrey;
+  label: |
+    Documentation generator
+    https://github.com/nim-works/nimskull/discussions/75
+  items:
+    - name: doc_annotation
+      text: |
+        Annotation must be positioned precisely in the code, otherwise it
+        looses most of it's meaning
+      deps:
+        - name: dod_ast
+        - name: dod_tokens
+          reason: |
+            Annotation must be positioned precisely in the code, otherwise
+            it looses most of it's meaning
+    - name: doc_general
+      text: https://github.com/nim-works/nimskull/discussions/75
+    - name: dependencies
+      text: |
+        Trace intermodule dependencies
+- group: nimpretty
+  label: Nimpretty
+  pass: |-
+    style=filled;
+    color=lightgrey;
+
+  items:
+    - name: formatter
+      todo: done
+      text: |
+        Generic code block layout library
+
+        https://github.com/nim-works/nimskull/discussions/113
+
+    - name: nimpretty
+      text: Nimpretty refactor
+      deps:
+        - name: dod_tokens
+          reason: |
+            In order to format source code all the tokens must be available
+            - without proprely storing them nimpretty would require ugly
+            hacks that are built into the parser
+        - name: formatter
+- group: debugging
+  label: Debugging
+  items:
+    - name: exec_trace
+      text: Execution traces
+      deps:
+        - name: dod_ast
+          deps: Generated trace should refer to AST nodes in the file
+    - name: sem_define
+      text: |
+        {.debug.} define Special define for configuration of the compiler
+        debugging functionality to avoid misusing regular .define.
+
+    - name: sem_trace
+      todo: done
+      text: Trace execution of the semantic analysis phase of the compiler
+- group: spec
+  label: Specification and testing
+  items:
+    - name: spec_out
+      text: |
+        Specify compiler output Make sure every single warning is accounted
+        for, every single error message has at least one tests where it is
+        triggered
+    - name: spec_modules
+      text: |
+        Specify module search paths, regular modules, `std/` and `pkg/`
+        prefixes, `--lib` flag, 'foreignPachageNodes'
+    - name: spec_parser
+      text: |
+        Spec parser and lexer tokens
+
+        Add --dumpFileAst and --dumpFileTokens flags for 'nim scan'
+        command. This would allow to specify tests in the manner similar to
+        the tree-sitter parser, where it compares produced output with the
+        given one, structurally
+      deps:
+        - name: dod_tokens
+          text: |
+            In order to dump all stored tokens in the file it would be a
+            lot more convenient to report the lexed file afterwards,
+            instead of having to report each processed token.
+        - name: structure_reports
+          reason: |
+            Parser implementation would need to report data in the
+            structured format in order for test to make any sense.
+    - name: spec_conf
+      text: |
+        Spec configuration file reading
+
+        Provide a full specification of how, in what order and in what
+        environment configuration file are processed.
+    - name: test_vm
+      text: |
+        Test VM code generation specify it's execution.
+
+        Ideally, vm should be treated as just another backend, *and* it is
+        pretty close to the general idea of the specification when it comes
+        to not being bounded by a specific target
+- group: pm
+  label: Package manager
+  items:
+    - name: environment_fixup_tool
+      text: |
+        Package manager manages the packages. Packages are downloaded and
+        added to the envrionment. The envrionment is specified via
+        configuration files. Compiler execution is a function of it's
+        environment and input source code.
+      deps:
+        - name: spec_modules
+    - name: write_cfg
+      text: Read and write .cfg files
+      deps:
+        - name: spec_conf

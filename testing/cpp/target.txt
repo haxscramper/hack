@@ -1,1 +1,1 @@
-variant_object
+ogdf_test
