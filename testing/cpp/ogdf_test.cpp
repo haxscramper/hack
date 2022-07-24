@@ -33,7 +33,7 @@ int main() {
     }
 
 
-    if (false) {
+    if (true) {
         SugiyamaLayout SL;
         SL.setRanking(new OptimalRanking);
         SL.setCrossMin(new MedianHeuristic);
