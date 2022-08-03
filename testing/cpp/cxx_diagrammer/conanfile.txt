@@ -1,0 +1,6 @@
+[requires]
+fmt/9.0.0
+cli11/2.2.0
+
+[generators]
+cmake
