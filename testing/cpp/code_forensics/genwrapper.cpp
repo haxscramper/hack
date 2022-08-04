@@ -48,8 +48,31 @@ struct UserWrapRule {
                     ///< result
     } errorHandling;
 
-    Opt<Str> outArg;
+    Opt<Str> outArg; /// Mutable argument used as return value
 };
+
+
+template <>
+struct fmt::formatter<StringRef> : formatter<Str> {
+    auto format(StringRef c, format_context& ctx) {
+        return formatter<Str>::format(Str(c.data()), ctx);
+    }
+};
+
+template <typename T>
+Str clangToString(T* t) {
+    Str                      out_str;
+    llvm::raw_string_ostream outstream(out_str);
+    t->print(outstream);
+    return out_str;
+}
+
+Str clangToString(const QualType& t) {
+    Str                      out_str;
+    llvm::raw_string_ostream outstream(out_str);
+    t.print(outstream, clang::PrintingPolicy(clang::LangOptions()));
+    return out_str;
+}
 
 void operator>>(
     const YAML::Node&            node,
@@ -68,13 +91,13 @@ void operator>>(
 void operator>>(const YAML::Node& node, Str& str) { str = node.as<Str>(); }
 
 void operator>>(const YAML::Node& node, UserWrapRule& rule) {
-    // It looks like YAML parser documentation is outdated for ~half a
-    // decade if not more (there is an issue dating back 2015) - it says
-    // there is a `.FindValue` method, which is not the case. For constant
-    // nodes `operator[]` returns 'null' node, for mutable it might insert
-    // a new node. This API has the same pitfall as `std::map::operator[]`,
-    // but short of iterating over all child nodes I don't see any
-    // reasonable way to find a matching solution.
+    // WARNING It looks like YAML parser documentation is outdated for
+    // ~half a decade if not more (there is an issue dating back 2015) - it
+    // says there is a `.FindValue` method, which is not the case. For
+    // constant nodes `operator[]` returns 'null' node, for mutable it
+    // might insert a new node. This API has the same pitfall as
+    // `std::map::operator[]`, but short of iterating over all child nodes
+    // I don't see any reasonable way to find a matching solution.
     if (node["function"]) {
         rule.pattern = fmt::format(
             R"(functionDecl(hasName("{}")))", node["function"].as<Str>());
@@ -107,6 +130,8 @@ class ConvertPusher : public MatchFinder::MatchCallback
     MatchFinder finder;               /// Finder for customizer rules
 
   public:
+    /// Return matched user-provided rules that were triggered during last
+    /// run of the finder.
     Vec<UserWrapRule> getMatchedRules() {
         Vec<UserWrapRule> result;
         for (const auto& it : collector) {
@@ -126,6 +151,58 @@ class ConvertPusher : public MatchFinder::MatchCallback
         finder.addDynamicMatcher(Matcher.getValue(), &collector.back());
     }
 
+    /// Generate wrapping for the function \arg func using  provided \arg
+    /// rule
+    void wrapWithRule(const FunctionDecl* func, const UserWrapRule& rule) {
+        llvm::outs() << "found triggered declaration " << func->getName()
+                     << "\n";
+
+
+        if (rule.outArg) {
+            auto out = rule.outArg.value();
+            Str  arguments;
+            Str  retType;
+            Str  argpass = "&out";
+
+            bool first = true;
+            for (const auto& param : func->parameters()) {
+                if (out == param->getName()) {
+                    QualType    qtype = param->getOriginalType();
+                    const Type* type  = qtype.getTypePtr();
+
+                    if (type->isPointerType()) {
+                        retType = clangToString(type->getPointeeType());
+                    }
+
+                } else {
+                    if (!first) { arguments += ", "; }
+                    first = false;
+                    arguments += clangToString(param);
+                    argpass += ", ";
+                    argpass += param->getName().data();
+                }
+            }
+
+            Str recall = fmt::format(
+                R"(
+{Out} {Name}({In}){{
+    {Out} out;
+    auto code = {Name}({Pass});
+    if (code < 0) {{
+        throw git::exception(code);
+    }} else {{
+        return out;
+    }}
+}})",
+                fmt::arg("Out", retType),
+                fmt::arg("Name", func->getName()),
+                fmt::arg("In", arguments),
+                fmt::arg("Pass", argpass));
+
+            llvm::outs() << recall << "\n";
+        }
+    }
+
     virtual void run(const MatchFinder::MatchResult& Result) {
         auto func = Result.Nodes.getNodeAs<FunctionDecl>("function");
 
@@ -140,19 +217,8 @@ class ConvertPusher : public MatchFinder::MatchCallback
         auto matched = getMatchedRules();
 
         if (0 < matched.size()) {
-            llvm::outs()
-                << "found declaration matched by the explicit rule";
-
+            wrapWithRule(func, matched[0]);
         } else {
-            llvm::outs() << "found declaration " << func->getName()
-                         << "\n";
-            for (const auto& param : func->parameters()) {
-                llvm::outs() << "  arg ";
-                param->print(llvm::outs());
-                llvm::outs() << "\n";
-                // << param->getName() << " "
-                //              << param->getOriginalType() << "\n";
-            }
         }
     }
 };
