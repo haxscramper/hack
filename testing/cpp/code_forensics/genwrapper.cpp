@@ -1,11 +1,13 @@
-#include "clang/Tooling/CommonOptionsParser.h"
-#include "clang/Tooling/Tooling.h"
+#include <clang/Tooling/CommonOptionsParser.h>
+#include <clang/Tooling/Tooling.h>
 
-#include "llvm/Support/CommandLine.h"
+#include <llvm/Support/CommandLine.h>
 
-#include "clang/ASTMatchers/Dynamic/Parser.h"
-#include "clang/ASTMatchers/ASTMatchers.h"
-#include "clang/ASTMatchers/ASTMatchFinder.h"
+#include <clang/ASTMatchers/Dynamic/Parser.h>
+#include <clang/ASTMatchers/ASTMatchers.h>
+#include <clang/ASTMatchers/ASTMatchFinder.h>
+
+#include <yaml-cpp/yaml.h>
 
 #include <CLI/App.hpp>
 #include <CLI/Formatter.hpp>
@@ -19,6 +21,7 @@
 #include <vector>
 #include <string>
 #include <algorithm>
+#include <optional>
 
 namespace stdf = std::filesystem;
 
@@ -32,6 +35,9 @@ template <typename T>
 using Vec = std::vector<T>;
 using Str = std::string;
 
+template <typename T>
+using Opt = std::optional<T>;
+
 /// User-provided customization for handing of different procedure kinds
 struct UserWrapRule {
     Str pattern;
@@ -41,7 +47,44 @@ struct UserWrapRule {
         ReturnCode, ///< Function might return error code as a part of the
                     ///< result
     } errorHandling;
+
+    Opt<Str> outArg;
 };
+
+void operator>>(
+    const YAML::Node&            node,
+    UserWrapRule::ErrorHandling& error) {
+    auto err = node.as<Str>();
+    using E  = UserWrapRule::ErrorHandling;
+    if (err == "none") {
+        error = E::NoErrors;
+
+    } else if (err == "code") {
+        error = E::ReturnCode;
+    } else {
+    }
+}
+
+void operator>>(const YAML::Node& node, Str& str) { str = node.as<Str>(); }
+
+void operator>>(const YAML::Node& node, UserWrapRule& rule) {
+    // It looks like YAML parser documentation is outdated for ~half a
+    // decade if not more (there is an issue dating back 2015) - it says
+    // there is a `.FindValue` method, which is not the case. For constant
+    // nodes `operator[]` returns 'null' node, for mutable it might insert
+    // a new node. This API has the same pitfall as `std::map::operator[]`,
+    // but short of iterating over all child nodes I don't see any
+    // reasonable way to find a matching solution.
+    if (node["function"]) {
+        rule.pattern = fmt::format(
+            R"(functionDecl(hasName("{}")))", node["function"].as<Str>());
+    } else {
+        node["patt"] >> rule.pattern;
+    }
+
+    if (node["out"]) { rule.outArg = node["out"].as<Str>(); }
+    if (node["err"]) { node["err"] >> rule.errorHandling; }
+}
 
 
 /// Handle user-provided wrapper customization patterns - simply store them
@@ -179,9 +222,14 @@ int main(int argc, char** argv) {
     ConvertPusher convert;
     MatchFinder   finder;
 
-    convert.addUserRule(
-        {R"(functionDecl(hasName("git_diff_patchid")))",
-         UserWrapRule::ErrorHandling::ReturnCode});
+    { // Collect user-provided pattern matching rules
+        YAML::Node doc = YAML::LoadFile("wrapconf.yaml");
+        for (unsigned i = 0; i < doc.size(); i++) {
+            UserWrapRule rule;
+            doc[i] >> rule;
+            convert.addUserRule(rule);
+        }
+    }
 
     finder.addMatcher(functionDecl().bind("function"), &convert);
 

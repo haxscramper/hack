@@ -1,0 +1,4 @@
+- function: git_status_list_new
+  err: code # Type of the error handing for the function
+  out: out # argument name used to output results
+

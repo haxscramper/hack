@@ -414,3 +414,5 @@ nimdeps/*
 nim.cfg
 
 **/massif.out.*
+
+**/*.srctrl*
