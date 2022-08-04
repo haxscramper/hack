@@ -9,7 +9,6 @@ path=$(
         conanbuildinfo.json
 )
 
-echo ">>>", $path/git
 clang++ genwrapper.cpp \
     -std=c++2a \
     -ferror-limit=1 \

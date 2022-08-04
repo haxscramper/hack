@@ -69,14 +69,20 @@ class ASTBuilder
     void setContext(ASTContext* _context) { context = _context; }
 
     struct ParmVarDeclParams {
-        const QualType&    type;
-        const Str&         name;
-        const StorageClass storage = SC_None;
-        Expr*              defArg  = nullptr;
+        QualType     type;
+        Str          name;
+        StorageClass storage = SC_None;
+        Expr*        defArg  = nullptr;
+        ParmVarDeclParams() {}
+        ParmVarDeclParams(ParmVarDecl* decl)
+            : type(decl->getOriginalType())
+            , name(decl->getNameAsString())
+            , storage(decl->getStorageClass())
+            , defArg(decl->getDefaultArg()) {}
     };
 
 
-    ParmVarDecl* parmVarDecl(const ParmVarDeclParams& p) {
+    ParmVarDecl* ParmVarDecl(const ParmVarDeclParams& p) {
         return ParmVarDecl::Create(
             ctx(),
             dc(),
@@ -90,9 +96,9 @@ class ASTBuilder
     }
 
     void setParams(FunctionDecl& decl, Vec<ParmVarDeclParams>& params) {
-        Vec<ParmVarDecl*> out;
+        Vec<class ParmVarDecl*> out;
         for (const auto& param : params) {
-            out.push_back(parmVarDecl(param));
+            out.push_back(ParmVarDecl(param));
         }
 
         decl.setParams(out);
@@ -100,13 +106,24 @@ class ASTBuilder
 
 
     struct FunctionDeclParams {
-        const Str&                name;
-        const QualType&           resultTy = QualType();
-        const ArrayRef<QualType>& argsTy   = {};
-        const StorageClass        storage  = SC_None;
+        Str           name;
+        QualType      resultTy = QualType();
+        Vec<QualType> argsTy   = {};
+        StorageClass  storage  = SC_None;
     };
 
-    FunctionDecl* functionDecl(FunctionDeclParams p) {
+    FunctionDecl* FunctionDecl(
+        FunctionDeclParams            p,
+        const Vec<ParmVarDeclParams>& params = {}) {
+        if (p.resultTy.isNull()) { p.resultTy = context->VoidTy; }
+        //        if (!params.empty()) {
+        //            p.argsTy.clear();
+        //            for (const auto& param : params) {
+        //                assert(!param.type.isNull());
+        //                p.argsTy.push_back(param.type);
+        //            }
+        //        }
+
         return FunctionDecl::Create(
             ctx(),
             dc(),
@@ -118,6 +135,154 @@ class ASTBuilder
             nullptr,
             p.storage,
             false);
+    }
+
+    struct CompoundStmtParams {
+        ArrayRef<Stmt*> Stmts;
+    };
+
+    CompoundStmt* CompoundStmt(const CompoundStmtParams& p) {
+        return CompoundStmt::Create(ctx(), p.Stmts, sl(), sl());
+    }
+
+    struct VarDeclParams {
+        Str          name;
+        QualType     type;
+        StorageClass storage = SC_None;
+        Expr*        Init    = nullptr;
+    };
+
+    VarDecl* VarDecl(VarDeclParams p) {
+        if (p.type.isNull()) { p.type = context->getAutoDeductType(); }
+
+        auto result = VarDecl::Create(
+            ctx(),
+            dc(),
+            sl(),
+            sl(),
+            id(p.name),
+            p.type,
+            nullptr,
+            p.storage);
+
+        if (p.Init != nullptr) { result->setInit(p.Init); }
+        return result;
+    }
+
+    struct IfStmtParams {
+        Expr*      Cond;
+        Vec<Stmt*> Then;
+        Vec<Stmt*> Else;
+
+        Expr*           Init = nullptr;
+        class VarDecl*  Var  = nullptr;
+        IfStatementKind kind = IfStatementKind::Ordinary;
+    };
+
+    IfStmt* IfStmt(const IfStmtParams& p) {
+        return IfStmt::Create(
+            ctx(),
+            sl(),
+            p.kind,
+            p.Init,
+            p.Var,
+            p.Cond,
+            sl(),
+            sl(),
+            CompoundStmt({p.Then}),
+            sl(),
+            CompoundStmt({p.Else}));
+    }
+
+    class IfStmt* IfStmt(const ArrayRef<IfStmtParams>& p)
+    {
+        if (p.size() == 1) {
+            return IfStmt(p[0]);
+        } else {
+            auto p0 = p[0];
+            p0.Else = {IfStmt(p.slice(1))};
+            return IfStmt(p0);
+        }
+    }
+
+    DeclStmt* Stmt(Decl* decl) {
+        return new (ctx()) DeclStmt(DeclGroupRef(decl), sl(), sl());
+    }
+
+    struct BinaryOperatorParams {
+        BinaryOperator::Opcode opc;
+        Expr*                  lhs;
+        Expr*                  rhs;
+        ExprValueKind          VK;
+        ExprObjectKind         OK;
+        FPOptionsOverride      FPFeatures;
+    };
+
+    BinaryOperator* BinaryOperator(const BinaryOperatorParams& p) {
+        return BinaryOperator::Create(
+            ctx(),
+            p.lhs,
+            p.rhs,
+            p.opc,
+            QualType(),
+            p.VK,
+            p.OK,
+            sl(),
+            p.FPFeatures);
+    };
+
+
+    DeclRefExpr* Ref(class VarDecl* decl) {
+        return DeclRefExpr::Create(
+            ctx(),
+            NestedNameSpecifierLoc(),
+            sl(),
+            decl,
+            false,
+            sl(),
+            decl->getType(),
+            ExprValueKind::VK_LValue);
+    }
+
+
+    DeclRefExpr* Ref(const Str& name) {
+        auto tmp = VarDecl({name, QualType()});
+        return Ref(tmp);
+    }
+
+    DeclRefExpr* Ref(const class FunctionDecl* decl) {
+        return Ref(decl->getName().str());
+    }
+
+
+    struct CallExprParams {
+        Expr*      Fn;
+        Vec<Expr*> Args = {};
+    };
+
+    CallExpr* CallExpr(const CallExprParams& p) {
+        return CallExpr::Create(
+            ctx(),
+            p.Fn,
+            p.Args,
+            QualType(),
+            ExprValueKind(),
+            sl(),
+            FPOptionsOverride());
+    }
+
+    IntegerLiteral* Literal(uint64_t value) {
+        return IntegerLiteral::Create(
+            ctx(), APInt(sizeof(value) * 8, value), ctx().IntTy, sl());
+    }
+
+    CXXThrowExpr* Throw(Expr* expr) {
+        return new (ctx())
+            CXXThrowExpr(expr, expr->getType(), sl(), false);
+    }
+
+    ReturnStmt* Return(Expr* expr) {
+        return ReturnStmt::Create(ctx(), sl(), expr, nullptr);
     }
 };
 
@@ -201,8 +366,8 @@ class ConvertPusher : public MatchFinder::MatchCallback
     Vec<CustomizerCollect> collector; /// Store results of the
                                       /// customized rules
     MatchFinder finder;               /// Finder for customizer rules
-    ASTBuilder  builder; /// Construct wrapped AST for processed
-                         /// declarations
+    ASTBuilder  b; /// Construct wrapped AST for processed
+                   /// declarations
 
   public:
     /// Return matched user-provided rules that were triggered during last
@@ -234,34 +399,51 @@ class ConvertPusher : public MatchFinder::MatchCallback
 
 
         if (rule.outArg) {
-            auto out = rule.outArg.value();
-            Str  arguments;
-            Str  retType;
-            Str  argpass = "&out";
+            Str arguments;
+            Str retType;
+            Str argpass = "&out";
 
-            bool first = true;
+            QualType                           resultTy;
+            Vec<ASTBuilder::ParmVarDeclParams> params;
+
             for (const auto& param : func->parameters()) {
-                if (out == param->getName()) {
+                if (rule.outArg.value() == param->getName()) {
                     QualType    qtype = param->getOriginalType();
                     const Type* type  = qtype.getTypePtr();
 
                     if (type->isPointerType()) {
-                        retType = clangToString(type->getPointeeType());
+                        resultTy = type->getPointeeType();
                     }
 
                 } else {
-                    if (!first) { arguments += ", "; }
-                    first = false;
-                    arguments += clangToString(param);
-                    argpass += ", ";
-                    argpass += param->getName().data();
+                    params.push_back(param);
                 }
             }
 
 
-            std::cout << "created function declaration" << std::endl;
-            auto fd = builder.functionDecl({"function_name"});
-            llvm::outs() << ">>> " << clangToString(fd) << "<<<";
+            auto fd = b.FunctionDecl(
+                {.name = func->getName().str(), .resultTy = resultTy},
+                params);
+
+
+            auto out = b.VarDecl({"out", resultTy});
+            fd->setBody(b.CompoundStmt(
+                {{b.Stmt(out),
+                  b.Stmt(b.VarDecl(
+                      {.name = "code",
+                       .Init = b.CallExpr({b.Ref(func)})})),
+                  b.IfStmt(
+                      {.Cond = b.BinaryOperator(
+                           {BinaryOperator::Opcode::BO_LT,
+                            b.Ref(out),
+                            b.Literal(0)}),
+                       .Then = {b.Throw(b.Literal(0))},
+                       .Else = {b.Return(b.Ref(out))}})}}));
+
+            llvm::outs() << "-------------\n";
+            fd->print(llvm::outs());
+            llvm::outs() << "\n-------------\n";
+
 
             Str recall = fmt::format(
                 R"(
@@ -285,7 +467,7 @@ class ConvertPusher : public MatchFinder::MatchCallback
 
     virtual void run(const MatchFinder::MatchResult& Result) {
         auto func = Result.Nodes.getNodeAs<FunctionDecl>("function");
-        builder.setContext(Result.Context);
+        b.setContext(Result.Context);
 
         for (auto& it : collector) {
             it.bindings.clear();

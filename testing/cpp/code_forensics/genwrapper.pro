@@ -8,4 +8,4 @@ CONFIG -= app_bundle
 
 SOURCES += genwrapper.cpp
 LIBS *= -lLLVM -lclang-cpp
-
+QMAKE_CXXFLAGS *= -fpermissive
