@@ -9,10 +9,12 @@ path=$(
         conanbuildinfo.json
 )
 
+echo ">>>", $path/git
 clang++ genwrapper.cpp \
     -std=c++2a \
     -ferror-limit=1 \
     -o genwrapper \
+    -g \
     -lclang-cpp \
     -lLLVM \
     @conanbuildinfo.gcc

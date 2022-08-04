@@ -51,6 +51,75 @@ struct UserWrapRule {
     Opt<Str> outArg; /// Mutable argument used as return value
 };
 
+class ASTBuilder
+{
+    ASTContext*     context;
+    IdentifierTable idents;
+
+    clang::SourceLocation sl() { return clang::SourceLocation(); }
+    ASTContext&           ctx() { return *context; }
+    DeclContext*    dc() { return context->getTranslationUnitDecl(); }
+    IdentifierInfo* id(const Str& name) { return &idents.get(name); }
+
+    DeclarationName name(const Str& name) {
+        return DeclarationName(id(name));
+    }
+
+  public:
+    void setContext(ASTContext* _context) { context = _context; }
+
+    struct ParmVarDeclParams {
+        const QualType&    type;
+        const Str&         name;
+        const StorageClass storage = SC_None;
+        Expr*              defArg  = nullptr;
+    };
+
+
+    ParmVarDecl* parmVarDecl(const ParmVarDeclParams& p) {
+        return ParmVarDecl::Create(
+            ctx(),
+            dc(),
+            sl(),
+            sl(),
+            id(p.name),
+            p.type,
+            nullptr,
+            p.storage,
+            p.defArg);
+    }
+
+    void setParams(FunctionDecl& decl, Vec<ParmVarDeclParams>& params) {
+        Vec<ParmVarDecl*> out;
+        for (const auto& param : params) {
+            out.push_back(parmVarDecl(param));
+        }
+
+        decl.setParams(out);
+    }
+
+
+    struct FunctionDeclParams {
+        const Str&                name;
+        const QualType&           resultTy = QualType();
+        const ArrayRef<QualType>& argsTy   = {};
+        const StorageClass        storage  = SC_None;
+    };
+
+    FunctionDecl* functionDecl(FunctionDeclParams p) {
+        return FunctionDecl::Create(
+            ctx(),
+            dc(),
+            sl(),
+            sl(),
+            name(p.name),
+            context->getFunctionType(
+                p.resultTy, p.argsTy, FunctionProtoType::ExtProtoInfo()),
+            nullptr,
+            p.storage,
+            false);
+    }
+};
 
 template <>
 struct fmt::formatter<StringRef> : formatter<Str> {
@@ -122,12 +191,18 @@ struct CustomizerCollect : public MatchFinder::MatchCallback {
     }
 };
 
+
+/// Execute conversion logic for each matching declaration. REFACTOR in the
+/// future IR should be introduces and written to the output - codegen
+/// could be handled by external tools.
 class ConvertPusher : public MatchFinder::MatchCallback
 {
     Vec<Str>               wrapped;   /// Wrapped node results
     Vec<CustomizerCollect> collector; /// Store results of the
                                       /// customized rules
     MatchFinder finder;               /// Finder for customizer rules
+    ASTBuilder  builder; /// Construct wrapped AST for processed
+                         /// declarations
 
   public:
     /// Return matched user-provided rules that were triggered during last
@@ -183,6 +258,11 @@ class ConvertPusher : public MatchFinder::MatchCallback
                 }
             }
 
+
+            std::cout << "created function declaration" << std::endl;
+            auto fd = builder.functionDecl({"function_name"});
+            llvm::outs() << ">>> " << clangToString(fd) << "<<<";
+
             Str recall = fmt::format(
                 R"(
 {Out} {Name}({In}){{
@@ -205,6 +285,7 @@ class ConvertPusher : public MatchFinder::MatchCallback
 
     virtual void run(const MatchFinder::MatchResult& Result) {
         auto func = Result.Nodes.getNodeAs<FunctionDecl>("function");
+        builder.setContext(Result.Context);
 
         for (auto& it : collector) {
             it.bindings.clear();

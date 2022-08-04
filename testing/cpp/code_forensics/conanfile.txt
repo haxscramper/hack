@@ -8,3 +8,4 @@ yaml-cpp/0.7.0
 cmake
 json
 gcc
+qmake
