@@ -7,5 +7,21 @@
 - function: "git_config_next"
   err: code
   out: entry
+- function: "git_repository_free"
+  err: none
+- function: "git_repository_path"
+  err: none
+- function: "git_repository_workdir"
+  err: none
+- function: "git_repository_open"
+  err: code
+  out: out
+- function: "git_repository_commondir"
+  err: none
+- function: "git_config_multivar_iterator_new"
+  out: out
+  err: code
+- function: "git_repository_get_namespace"
+  err: none
 - patt: functionDecl()
   err: code

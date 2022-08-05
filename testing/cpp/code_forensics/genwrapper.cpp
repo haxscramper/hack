@@ -191,6 +191,7 @@ class ASTBuilder
         Vec<QualType> ArgsTy   = {};
         StorageClass  Storage  = SC_None;
         Stmt*         Body     = nullptr;
+        bool          Inline   = false;
     };
 
 
@@ -220,7 +221,7 @@ class ASTBuilder
                 p.ResultTy, p.ArgsTy, FunctionProtoType::ExtProtoInfo()),
             nullptr,
             p.Storage,
-            false);
+            p.Inline);
         res->setParams(passParams);
         if (p.Body != nullptr) { res->setBody(p.Body); }
         return res;
@@ -556,10 +557,10 @@ class ConvertPusher : public MatchFinder::MatchCallback
 
         // Declare function builder parameters and start pupulating it's
         // parts as input is processed
-        ASTBuilder::FunctionDeclParams DeclParams;
-
-        // Default to `void` return type
-        DeclParams.ResultTy = func->getASTContext().VoidTy;
+        ASTBuilder::FunctionDeclParams DeclParams{
+            // Default to `void` return type
+            .ResultTy = func->getASTContext().VoidTy,
+            .Inline   = true};
 
 
         // Function body is constructed along the way
@@ -615,22 +616,25 @@ class ConvertPusher : public MatchFinder::MatchCallback
         } else {
             // Otherwise assign it to the `code` output
             Body.push_back(
-                b.Stmt(b.VarDecl({.Name = "code", .Init = call})));
+                b.Stmt(b.VarDecl({.Name = "__result", .Init = call})));
         }
 
         // Failure code is user-customizable - generator only adds call to
         // the macro and passes the relevant information to it.
         auto Fail = b.XCall(
             "__GIT_THROW_EXCEPTION",
-            {b.Ref("code"), b.Literal(func->getName().str())});
+            {b.Ref("__result"), b.Literal(func->getName().str())});
 
         switch (rule.errorHandling) {
             case UserWrapRule::ErrorHandling::NoErrors: {
                 // If error should not be handled for this function, use
                 // it's output value as a final result
                 if (!func->getCallResultType()->isVoidType()) {
-                    Body.push_back(b.Return(b.Ref("code")));
+                    Body.push_back(b.Return(b.Ref("__result")));
+                    DeclParams.ResultTy = func->getCallResultType();
                 }
+                //                outs() << "No errors for " <<
+                //                func->getName() << "\n";
                 break;
             }
             case UserWrapRule::ErrorHandling::ReturnCode: {
@@ -638,7 +642,7 @@ class ConvertPusher : public MatchFinder::MatchCallback
                 ASTBuilder::IfStmtParams IfParams{
                     .Cond = b.XCall(
                         BinaryOperator::Opcode::BO_LT,
-                        {b.Ref("code"), b.Literal(0)}),
+                        {b.Ref("__result"), b.Literal(0)}),
                     // If code is less than zero (HACK, different libraries
                     // might have other strategy for error denotation)
                     // handle it as error
@@ -648,7 +652,9 @@ class ConvertPusher : public MatchFinder::MatchCallback
                     // If out argument is present return it in the
                     // 'else' branch
                     IfParams.Else = {b.Return(b.Ref(rule.outArg.value()))};
-                }
+                } /* else if (!func->getCallResultType()->isVoidType()) {
+                     IfParams.Else = {b.Return(b.Ref("__result"))};
+                 }*/
                 Body.push_back(b.IfStmt(IfParams));
                 break;
             }

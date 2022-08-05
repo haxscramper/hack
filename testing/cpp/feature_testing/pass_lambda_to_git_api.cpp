@@ -37,6 +37,7 @@ int exec_c_callback(std::function<int(const char*)> callback) {
 }
 
 int main() {
+    // comment
     std::cout << exec_c_callback([](const char* in) -> int {
         return strlen(in);
     }) << "\n";
