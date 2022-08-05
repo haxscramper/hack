@@ -51,21 +51,31 @@ struct UserWrapRule {
     Opt<Str> outArg; /// Mutable argument used as return value
 };
 
+/// Class to manage state required for the AST creation - `ASTContext`,
+/// identifiers. Constructs AST nodes with no extra location information.
+/// Class declares collection of constructor methods and structures - one
+/// for each clang node kind. Structures allow using named parameters via
+/// designated initializers (`.Cond = <expr>`)
 class ASTBuilder
 {
     ASTContext*     context;
     IdentifierTable idents;
 
+    /// Create empty source location
     clang::SourceLocation sl() { return clang::SourceLocation(); }
-    ASTContext&           ctx() { return *context; }
-    DeclContext*    dc() { return context->getTranslationUnitDecl(); }
+    /// Get reference to stored context
+    ASTContext& ctx() { return *context; }
+    /// Get translation unit declaration
+    DeclContext* dc() { return context->getTranslationUnitDecl(); }
+    /// Create new identifier info from \arg name
     IdentifierInfo* id(const Str& name) { return &idents.get(name); }
-
+    /// Create declaration namme from \arg name
     DeclarationName name(const Str& name) {
         return DeclarationName(id(name));
     }
 
   public:
+    /// Update stored AST context
     void setContext(ASTContext* _context) { context = _context; }
 
     struct ParmVarDeclParams {
@@ -487,66 +497,34 @@ class ConvertPusher : public MatchFinder::MatchCallback
 };
 
 
-int main(int argc, char** argv) {
-    Vec<Str> input;
-    Vec<Str> extra;
+int main(int argc, const char** argv) {
+    cl::OptionCategory category("genwrapper");
+    auto cli = CommonOptionsParser::create(argc, argv, category);
 
-    bool extra_section = false;
-    for (int i = 1; i < argc; ++i) {
-        if (strcmp(argv[i], "--") == 0) {
-            extra_section = true;
-            continue;
-        }
-
-        if (extra_section) {
-            extra.push_back(argv[i]);
-        } else {
-            input.push_back(argv[i]);
-        }
+    if (!cli) {
+        llvm::errs() << cli.takeError();
+        return 1;
     }
 
-    Vec<stdf::path> files;
+    CommonOptionsParser& OptionsParser = cli.get();
 
-    for (const auto& dir : input) {
-        if (dir.find("email.h") != Str::npos) {
-            continue;
-        } else if (stdf::is_regular_file(dir)) {
-            files.push_back(dir);
+
+    Vec<Str> files;
+    for (const auto& in : OptionsParser.getSourcePathList()) {
+        auto dir = stdf::path(in);
+        if (stdf::is_regular_file(dir)) {
+            files.push_back(in);
         } else {
             for (const auto& file : stdf::directory_iterator(dir)) {
-                if (stdf::is_regular_file(file)) { files.push_back(file); }
+                if (stdf::is_regular_file(file)) {
+                    files.push_back(file.path().native());
+                }
             }
         }
     }
 
-    Vec<const char*> clang_argv;
-    for (const auto& path : files) {
-        clang_argv.push_back(path.c_str());
-    }
 
-    for (const auto& opt : extra) {
-        clang_argv.push_back(opt.c_str());
-    }
-
-
-    llvm::cl::OptionCategory category("genwrapper");
-
-    int          cl_argc = clang_argv.size();
-    const char** cl_argv = clang_argv.data();
-
-    auto ExpectedParser = CommonOptionsParser::create(
-        cl_argc, cl_argv, category);
-
-    if (!ExpectedParser) {
-        // Fail gracefully for unsupported options.
-        llvm::errs() << ExpectedParser.takeError();
-        return 1;
-    }
-
-    CommonOptionsParser& OptionsParser = ExpectedParser.get();
-    ClangTool            Tool(
-        OptionsParser.getCompilations(),
-        OptionsParser.getSourcePathList());
+    ClangTool Tool(OptionsParser.getCompilations(), files);
 
     ConvertPusher convert;
     MatchFinder   finder;

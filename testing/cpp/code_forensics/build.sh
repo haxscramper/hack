@@ -20,7 +20,6 @@ clang++ genwrapper.cpp \
 
 ./genwrapper \
     $path/git2 \
-    -- \
     -extra-arg=-I/usr/lib/clang/14.0.6/include
 
 # cmake .
