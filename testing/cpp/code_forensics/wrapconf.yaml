@@ -1,6 +1,11 @@
-- patt: functionDecl()
-  err: code
 - function: "git_config_free"
   err: none
 - function: "git_config_entry_free"
   err: none
+- function: "git_config_iterator_free"
+  err: none
+- function: "git_config_next"
+  err: code
+  out: entry
+- patt: functionDecl()
+  err: code

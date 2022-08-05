@@ -21,6 +21,7 @@
 #include <iostream>
 #include <fstream>
 #include <exception>
+#include <memory>
 
 #include <range/v3/all.hpp>
 
@@ -85,6 +86,9 @@ using Str = std::string;
 
 template <typename T>
 using Opt = std::optional<T>;
+
+template <typename T>
+using UPtr = std::unique_ptr<T>;
 
 /// User-provided customization for handing of different procedure kinds
 struct UserWrapRule {
@@ -325,6 +329,33 @@ class ASTBuilder
             {.opc = opc, .lhs = args[0], .rhs = args[1]});
     }
 
+    struct UnaryOperatorParams {
+        UnaryOperator::Opcode opc;
+        Expr*                 Expr;
+        ExprValueKind         VK;
+        ExprObjectKind        OK;
+        FPOptionsOverride     FPFeatures;
+    };
+
+    class UnaryOperator* UnaryOperator(const UnaryOperatorParams& p)
+    {
+        return clang::UnaryOperator::Create(
+            ctx(),
+            p.Expr,
+            p.opc,
+            ctx().VoidTy,
+            p.VK,
+            p.OK,
+            sl(),
+            false,
+            p.FPFeatures);
+    }
+
+    class UnaryOperator* XCall(const UnaryOperator::Opcode opc, Expr* expr)
+    {
+        return UnaryOperator({.opc = opc, .Expr = expr});
+    }
+
 
     DeclRefExpr* Ref(class VarDecl* decl) {
         return DeclRefExpr::Create(
@@ -415,6 +446,14 @@ struct fmt::formatter<StringRef> : formatter<Str> {
     }
 };
 
+struct yaml_processing_error : std::exception {
+    const Str msg;
+    yaml_processing_error(const Str& _in) : msg(_in) {}
+    virtual const char* what() const noexcept override {
+        return msg.c_str();
+    }
+};
+
 void operator>>(
     const YAML::Node&            node,
     UserWrapRule::ErrorHandling& error) {
@@ -425,17 +464,13 @@ void operator>>(
 
     } else if (err == "code") {
         error = E::ReturnCode;
+
     } else {
+        throw_with_trace(yaml_processing_error(
+            fmt::format("Unknown error handling strategy {}", err)));
     }
 }
 
-struct yaml_processing_error : std::exception {
-    const Str msg;
-    yaml_processing_error(const Str& _in) : msg(_in) {}
-    virtual const char* what() const noexcept override {
-        return msg.c_str();
-    }
-};
 
 void operator>>(const YAML::Node& node, Str& str) { str = node.as<Str>(); }
 
@@ -474,17 +509,34 @@ struct CustomizerCollect : public MatchFinder::MatchCallback {
 };
 
 
+struct SubFinder : public MatchFinder {
+    UPtr<CustomizerCollect> collector;
+    SubFinder(const UserWrapRule& rule)
+        : collector(new CustomizerCollect(rule)) {
+        Diagnostics Diag;
+        StringRef   MatcherSource{rule.pattern};
+
+        Optional<DynTypedMatcher> Matcher = Parser::parseMatcherExpression(
+            MatcherSource, nullptr, nullptr, &Diag);
+
+        assert(Matcher.hasValue());
+        addDynamicMatcher(Matcher.getValue(), collector.get());
+    }
+};
+
 /// Execute conversion logic for each matching declaration. REFACTOR in the
 /// future IR should be introduces and written to the output - codegen
 /// could be handled by external tools.
 class ConvertPusher : public MatchFinder::MatchCallback
 {
-    Vec<Str>               wrapped;   /// Wrapped node results
-    Vec<CustomizerCollect> collector; /// Store results of the
-                                      /// customized rules
-    MatchFinder finder;               /// Finder for customizer rules
-    ASTBuilder  b; /// Construct wrapped AST for processed
-                   /// declarations
+    Vec<Str>       wrapped; /// Wrapped node results
+    Vec<SubFinder> finder;  /// Finder for customizer rules. Patterns are
+                            /// tried in order, from the first to the last.
+                            /// First triggered rule is used - approach
+                            /// allows prioritization of the more specific
+    /// rules over generic `functionDecl()` pattern.
+    ASTBuilder b; /// Construct wrapped AST for processed
+                  /// declarations
 
     std::function<Str(const Str&)> renameCb;
 
@@ -494,105 +546,129 @@ class ConvertPusher : public MatchFinder::MatchCallback
                    renameCb = _rename;
     }
 
-    /// Return matched user-provided rules that were triggered during last
-    /// run of the finder.
-    Vec<UserWrapRule> getMatchedRules() {
-        Vec<UserWrapRule> result;
-        for (const auto& it : collector) {
-            if (0 < it.bindings.size()) { result.push_back(it.rule); }
-        }
-        return result;
-    }
 
-    void addUserRule(const UserWrapRule& rule) {
-        Diagnostics Diag;
-        StringRef   MatcherSource{rule.pattern};
-
-        Optional<DynTypedMatcher> Matcher = Parser::parseMatcherExpression(
-            MatcherSource, nullptr, nullptr, &Diag);
-
-        collector.emplace_back(rule);
-        finder.addDynamicMatcher(Matcher.getValue(), &collector.back());
-    }
+    void addUserRule(const UserWrapRule& rule) { finder.push_back(rule); }
 
     /// Generate wrapping for the function \arg func using  provided \arg
     /// rule
     void wrapWithRule(const FunctionDecl* func, const UserWrapRule& rule) {
         Vec<ASTBuilder::ParmVarDeclParams> Params;
-        ASTBuilder::FunctionDeclParams     DeclParams;
+
+        // Declare function builder parameters and start pupulating it's
+        // parts as input is processed
+        ASTBuilder::FunctionDeclParams DeclParams;
+
+        // Default to `void` return type
         DeclParams.ResultTy = func->getASTContext().VoidTy;
-        auto Fail           = b.XCall(
-            "__GIT_THROW_EXCEPTION",
-            {b.Ref("code"), b.Literal(func->getName().str())});
+
+
+        // Function body is constructed along the way
+        Vec<Stmt*> Body;
+        // Expressions for passing arguments to the original function
+        Vec<Expr*> Pass;
+
+        // If 'out' argument is present it must be found and handled
+        // differently
         if (rule.outArg) {
-            auto out = b.VarDecl(
-                {rule.outArg.value(), DeclParams.ResultTy});
             for (const auto& param : func->parameters()) {
                 if (rule.outArg.value() == param->getName()) {
                     QualType    qtype = param->getOriginalType();
                     const Type* type  = qtype.getTypePtr();
 
                     if (type->isPointerType()) {
+                        // Assuming double pointer (`T**`) for now, in the
+                        // future this might change
                         DeclParams.ResultTy = type->getPointeeType();
+                        Body.push_back(b.Stmt(b.VarDecl(
+                            {rule.outArg.value(), DeclParams.ResultTy})));
+
+                        Pass.push_back(b.XCall(
+                            UnaryOperator::Opcode::UO_AddrOf,
+                            b.Ref(param)));
                     }
 
                 } else {
+                    // This is not an 'out' argument, process it in a
+                    // regular manner (passthrough)
                     Params.push_back(param);
+                    Pass.push_back(b.Ref(param));
                 }
             }
 
-            DeclParams.Body = b.CompoundStmt(
-                {{b.Stmt(out),
-                  b.Stmt(b.VarDecl(
-                      {.Name = "code",
-                       .Init = b.XCall(
-                           func,
-                           Params |
-                               rv::transform(
-                                   [this](const auto& it) -> Expr* {
-                                       return b.Expr(b.Ref(it.name));
-                                   }) |
-                               ranges::to_vector)})),
-                  b.IfStmt(
-                      {.Cond = b.XCall(
-                           BinaryOperator::Opcode::BO_LT,
-                           {b.Ref("code"), b.Literal(0)}),
-                       .Then = {Fail},
-                       .Else = {b.Return(b.Ref(out))}})}});
 
         } else {
+            // No 'out' argument, process everything in one go
             for (const auto& param : func->parameters()) {
                 Params.push_back(param);
+                Pass.push_back(b.Ref(param));
             }
-
-            DeclParams.Body = b.CompoundStmt(
-                {{b.Stmt(b.VarDecl(
-                      {.Name = "code",
-                       .Init = b.XCall(
-                           func,
-                           Params |
-                               rv::transform(
-                                   [this](const auto& it) -> Expr* {
-                                       return b.Expr(b.Ref(it.name));
-                                   }) |
-                               ranges::to_vector)})),
-                  b.IfStmt(
-                      {.Cond = b.XCall(
-                           BinaryOperator::Opcode::BO_LT,
-                           {b.Ref("code"), b.Literal(0)}),
-                       .Then = {Fail}})}});
         }
 
 
+        // Construct function call AST
+        auto call = b.XCall(func, Pass);
+
+        if (func->getCallResultType()->isVoidType()) {
+            // If no result is expected simply append call to the body
+            Body.push_back(call);
+
+        } else {
+            // Otherwise assign it to the `code` output
+            Body.push_back(
+                b.Stmt(b.VarDecl({.Name = "code", .Init = call})));
+        }
+
+        // Failure code is user-customizable - generator only adds call to
+        // the macro and passes the relevant information to it.
+        auto Fail = b.XCall(
+            "__GIT_THROW_EXCEPTION",
+            {b.Ref("code"), b.Literal(func->getName().str())});
+
+        switch (rule.errorHandling) {
+            case UserWrapRule::ErrorHandling::NoErrors: {
+                // If error should not be handled for this function, use
+                // it's output value as a final result
+                if (!func->getCallResultType()->isVoidType()) {
+                    Body.push_back(b.Return(b.Ref("code")));
+                }
+                break;
+            }
+            case UserWrapRule::ErrorHandling::ReturnCode: {
+                // Otherwise process output
+                ASTBuilder::IfStmtParams IfParams{
+                    .Cond = b.XCall(
+                        BinaryOperator::Opcode::BO_LT,
+                        {b.Ref("code"), b.Literal(0)}),
+                    // If code is less than zero (HACK, different libraries
+                    // might have other strategy for error denotation)
+                    // handle it as error
+                    .Then = {Fail}};
+
+                if (rule.outArg) {
+                    // If out argument is present return it in the
+                    // 'else' branch
+                    IfParams.Else = {b.Return(b.Ref(rule.outArg.value()))};
+                }
+                Body.push_back(b.IfStmt(IfParams));
+                break;
+            }
+        }
+
+        // Create compound statement from all collected statements
+        DeclParams.Body = b.CompoundStmt({Body});
+        // If rename callback is present use it, otherwise assign the same
+        // name as before
         DeclParams.Name =
             (renameCb ? renameCb(func->getName().str())
                       : func->getName().str());
 
-
+        // Convert wrapped function to string and push it to the output
+        // list
         wrapped.push_back(
             clangToString(b.FunctionDecl(DeclParams, Params)));
     }
 
+    /// Override of the match finder result handing.
     virtual void run(const MatchFinder::MatchResult& Result) {
         auto func = Result.Nodes.getNodeAs<FunctionDecl>("function");
         if (!Result.Context->getSourceManager().isWrittenInMainFile(
@@ -602,17 +678,14 @@ class ConvertPusher : public MatchFinder::MatchCallback
 
         b.setContext(Result.Context);
 
-        for (auto& it : collector) {
-            it.bindings.clear();
+        for (auto& find : finder) {
+            find.match<FunctionDecl>(*func, func->getASTContext());
+            if (0 < find.collector->bindings.size()) {
+                wrapWithRule(func, find.collector->rule);
+                find.collector->bindings.clear();
+                break;
+            }
         }
-
-        finder.match<Decl>(
-            *Result.Nodes.getNodeAs<Decl>("function"),
-            func->getASTContext());
-
-        auto matched = getMatchedRules();
-
-        if (0 < matched.size()) { wrapWithRule(func, matched[0]); }
     }
 };
 
@@ -621,7 +694,8 @@ int main_impl(int argc, const char** argv) {
     std::set_terminate(&boost_terminate_handler);
 
     cl::OptionCategory category("genwrapper");
-    cl::opt<Str>       OutputFilename(
+    // Optional output filename to write converted libraries to
+    cl::opt<Str> OutputFilename(
         "o",
         cl::desc("Specify output filename"),
         cl::value_desc("filename"),
@@ -629,7 +703,6 @@ int main_impl(int argc, const char** argv) {
 
 
     auto cli = CommonOptionsParser::create(argc, argv, category);
-
 
     if (!cli) {
         llvm::errs() << cli.takeError();
@@ -639,6 +712,7 @@ int main_impl(int argc, const char** argv) {
     CommonOptionsParser& OptionsParser = cli.get();
 
 
+    // Expand any directory names used in the parameter list
     Vec<Str> files;
     for (const auto& in : OptionsParser.getSourcePathList()) {
         auto dir = stdf::path(in);
@@ -658,6 +732,9 @@ int main_impl(int argc, const char** argv) {
     ConvertPusher convert;
     MatchFinder   finder;
 
+    // HACK - remove first four letters in the function names, because I'm
+    // working with `git_` library right now. In future should be
+    // refactored to a more general rename tool
     convert.setRenameCb([](const Str& in) { return in.substr(4); });
 
     { // Collect user-provided pattern matching rules
