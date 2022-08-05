@@ -13,6 +13,7 @@ clang++ genwrapper.cpp \
     -std=c++2a \
     -ferror-limit=1 \
     -o genwrapper \
+    -fuse-ld=mold \
     -g \
     -lclang-cpp \
     -lLLVM \

@@ -9,10 +9,6 @@
 
 #include <yaml-cpp/yaml.h>
 
-#include <CLI/App.hpp>
-#include <CLI/Formatter.hpp>
-#include <CLI/Config.hpp>
-
 #include <fmt/core.h>
 #include <fmt/ranges.h>
 
@@ -22,6 +18,17 @@
 #include <string>
 #include <algorithm>
 #include <optional>
+#include <iostream>
+#include <exception>
+
+#include <boost/stacktrace.hpp>
+
+void boost_terminate_handler() {
+    try {
+        std::cerr << boost::stacktrace::stacktrace();
+    } catch (...) {}
+    std::abort();
+}
 
 namespace stdf = std::filesystem;
 
@@ -50,6 +57,23 @@ struct UserWrapRule {
 
     Opt<Str> outArg; /// Mutable argument used as return value
 };
+
+
+template <typename T>
+Str clangToString(T* t) {
+    Str                      out_str;
+    llvm::raw_string_ostream outstream(out_str);
+    t->print(outstream);
+    return out_str;
+}
+
+Str clangToString(const QualType& t) {
+    Str                      out_str;
+    llvm::raw_string_ostream outstream(out_str);
+    t.print(outstream, clang::PrintingPolicy(clang::LangOptions()));
+    return out_str;
+}
+
 
 /// Class to manage state required for the AST creation - `ASTContext`,
 /// identifiers. Constructs AST nodes with no extra location information.
@@ -126,15 +150,21 @@ class ASTBuilder
         FunctionDeclParams            p,
         const Vec<ParmVarDeclParams>& params = {}) {
         if (p.resultTy.isNull()) { p.resultTy = context->VoidTy; }
-        //        if (!params.empty()) {
-        //            p.argsTy.clear();
-        //            for (const auto& param : params) {
-        //                assert(!param.type.isNull());
-        //                p.argsTy.push_back(param.type);
-        //            }
-        //        }
+        Vec<class ParmVarDecl*> passParams;
+        if (!params.empty()) {
+            outs() << "Cleared parameters [";
+            p.argsTy.clear();
+            for (const auto& param : params) {
+                passParams.push_back(ParmVarDecl(param));
+                assert(!param.type.isNull());
+                p.argsTy.push_back(param.type);
+                outs() << clangToString(p.argsTy.back());
+            }
 
-        return FunctionDecl::Create(
+            outs() << "] ???\n";
+        }
+
+        auto res = FunctionDecl::Create(
             ctx(),
             dc(),
             sl(),
@@ -145,6 +175,8 @@ class ASTBuilder
             nullptr,
             p.storage,
             false);
+        res->setParams(passParams);
+        return res;
     }
 
     struct CompoundStmtParams {
@@ -228,7 +260,8 @@ class ASTBuilder
         FPOptionsOverride      FPFeatures;
     };
 
-    BinaryOperator* BinaryOperator(const BinaryOperatorParams& p) {
+    class BinaryOperator* BinaryOperator(const BinaryOperatorParams& p)
+    {
         return BinaryOperator::Create(
             ctx(),
             p.lhs,
@@ -240,6 +273,14 @@ class ASTBuilder
             sl(),
             p.FPFeatures);
     };
+
+    class BinaryOperator* XCall(
+        const BinaryOperator::Opcode& opc,
+        Vec<Expr*>                    args)
+    {
+        return BinaryOperator(
+            {.opc = opc, .lhs = args[0], .rhs = args[1]});
+    }
 
 
     DeclRefExpr* Ref(class VarDecl* decl) {
@@ -270,7 +311,8 @@ class ASTBuilder
         Vec<Expr*> Args = {};
     };
 
-    CallExpr* CallExpr(const CallExprParams& p) {
+    class CallExpr* CallExpr(const CallExprParams& p)
+    {
         return CallExpr::Create(
             ctx(),
             p.Fn,
@@ -279,6 +321,11 @@ class ASTBuilder
             ExprValueKind(),
             sl(),
             FPOptionsOverride());
+    }
+
+    class CallExpr* XCall(const Str& name, Vec<Expr*> Args)
+    {
+        return CallExpr({Ref(name), Args});
     }
 
     IntegerLiteral* Literal(uint64_t value) {
@@ -302,21 +349,6 @@ struct fmt::formatter<StringRef> : formatter<Str> {
         return formatter<Str>::format(Str(c.data()), ctx);
     }
 };
-
-template <typename T>
-Str clangToString(T* t) {
-    Str                      out_str;
-    llvm::raw_string_ostream outstream(out_str);
-    t->print(outstream);
-    return out_str;
-}
-
-Str clangToString(const QualType& t) {
-    Str                      out_str;
-    llvm::raw_string_ostream outstream(out_str);
-    t.print(outstream, clang::PrintingPolicy(clang::LangOptions()));
-    return out_str;
-}
 
 void operator>>(
     const YAML::Node&            node,
@@ -404,15 +436,7 @@ class ConvertPusher : public MatchFinder::MatchCallback
     /// Generate wrapping for the function \arg func using  provided \arg
     /// rule
     void wrapWithRule(const FunctionDecl* func, const UserWrapRule& rule) {
-        llvm::outs() << "found triggered declaration " << func->getName()
-                     << "\n";
-
-
         if (rule.outArg) {
-            Str arguments;
-            Str retType;
-            Str argpass = "&out";
-
             QualType                           resultTy;
             Vec<ASTBuilder::ParmVarDeclParams> params;
 
@@ -443,35 +467,14 @@ class ConvertPusher : public MatchFinder::MatchCallback
                       {.name = "code",
                        .Init = b.CallExpr({b.Ref(func)})})),
                   b.IfStmt(
-                      {.Cond = b.BinaryOperator(
-                           {BinaryOperator::Opcode::BO_LT,
-                            b.Ref(out),
-                            b.Literal(0)}),
-                       .Then = {b.Throw(b.Literal(0))},
+                      {.Cond = b.XCall(
+                           BinaryOperator::Opcode::BO_LT,
+                           {b.Ref(out), b.Literal(0)}),
+                       .Then = {b.XCall(
+                           "__GIT_THROW_EXCEPTION", {b.Ref(out)})},
                        .Else = {b.Return(b.Ref(out))}})}}));
 
-            llvm::outs() << "-------------\n";
-            fd->print(llvm::outs());
-            llvm::outs() << "\n-------------\n";
-
-
-            Str recall = fmt::format(
-                R"(
-{Out} {Name}({In}){{
-    {Out} out;
-    auto code = {Name}({Pass});
-    if (code < 0) {{
-        throw git::exception(code);
-    }} else {{
-        return out;
-    }}
-}})",
-                fmt::arg("Out", retType),
-                fmt::arg("Name", func->getName()),
-                fmt::arg("In", arguments),
-                fmt::arg("Pass", argpass));
-
-            llvm::outs() << recall << "\n";
+            wrapped.push_back(clangToString(fd));
         }
     }
 
@@ -498,6 +501,8 @@ class ConvertPusher : public MatchFinder::MatchCallback
 
 
 int main(int argc, const char** argv) {
+    std::set_terminate(&boost_terminate_handler);
+
     cl::OptionCategory category("genwrapper");
     auto cli = CommonOptionsParser::create(argc, argv, category);
 
