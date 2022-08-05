@@ -9,16 +9,21 @@ path=$(
         conanbuildinfo.json
 )
 
-ROOT=$(realpath ..)
+clang++ \
+    -fuse-ld=mold \
+    -o git-user \
+    git-user.cpp \
+    @conanbuildinfo.gcc
+
+echo "git user compile ok"
+./git-user
+echo "git user run ok"
 
 clang++ genwrapper.cpp \
     -std=c++2a \
     -ferror-limit=1 \
     -o genwrapper \
     -fuse-ld=mold \
-    -I$ROOT/common \
-    -ldl \
-    -rdynamic \
     -g \
     -lclang-cpp \
     -lLLVM \
@@ -26,7 +31,7 @@ clang++ genwrapper.cpp \
 
 ./genwrapper \
     $path/git2/config.h \
-    -o=/tmp/gitwrap.hpp \
+    -o=$PWD/gitwrap.hpp \
     -extra-arg=-I/usr/lib/clang/14.0.6/include
 
 # cmake .
