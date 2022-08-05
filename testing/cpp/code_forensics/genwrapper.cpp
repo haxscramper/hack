@@ -144,29 +144,30 @@ class ASTBuilder
     }
 
 
+    /// Function declaration signature
     struct FunctionDeclParams {
-        Str           name;
-        QualType      resultTy = QualType();
-        Vec<QualType> argsTy   = {};
-        StorageClass  storage  = SC_None;
+        Str           Name;
+        QualType      ResultTy = QualType();
+        Vec<QualType> ArgsTy   = {};
+        StorageClass  Storage  = SC_None;
+        Stmt*         Body     = nullptr;
     };
 
+
+    /// Create function declaration. If \arg params is not empty use it to
+    /// construct argument types in the resulting function signature.
     FunctionDecl* FunctionDecl(
         FunctionDeclParams            p,
         const Vec<ParmVarDeclParams>& params = {}) {
-        if (p.resultTy.isNull()) { p.resultTy = context->VoidTy; }
+        if (p.ResultTy.isNull()) { p.ResultTy = context->VoidTy; }
         Vec<class ParmVarDecl*> passParams;
         if (!params.empty()) {
-            outs() << "Cleared parameters [";
-            p.argsTy.clear();
+            p.ArgsTy.clear();
             for (const auto& param : params) {
                 passParams.push_back(ParmVarDecl(param));
                 assert(!param.type.isNull());
-                p.argsTy.push_back(param.type);
-                outs() << clangToString(p.argsTy.back());
+                p.ArgsTy.push_back(param.type);
             }
-
-            outs() << "] ???\n";
         }
 
         auto res = FunctionDecl::Create(
@@ -174,13 +175,14 @@ class ASTBuilder
             dc(),
             sl(),
             sl(),
-            name(p.name),
+            name(p.Name),
             context->getFunctionType(
-                p.resultTy, p.argsTy, FunctionProtoType::ExtProtoInfo()),
+                p.ResultTy, p.ArgsTy, FunctionProtoType::ExtProtoInfo()),
             nullptr,
-            p.storage,
+            p.Storage,
             false);
         res->setParams(passParams);
+        if (p.Body != nullptr) { res->setBody(p.Body); }
         return res;
     }
 
@@ -193,24 +195,24 @@ class ASTBuilder
     }
 
     struct VarDeclParams {
-        Str          name;
-        QualType     type;
-        StorageClass storage = SC_None;
+        Str          Name;
+        QualType     Type;
+        StorageClass Storage = SC_None;
         Expr*        Init    = nullptr;
     };
 
     VarDecl* VarDecl(VarDeclParams p) {
-        if (p.type.isNull()) { p.type = context->getAutoDeductType(); }
+        if (p.Type.isNull()) { p.Type = context->getAutoDeductType(); }
 
         auto result = VarDecl::Create(
             ctx(),
             dc(),
             sl(),
             sl(),
-            id(p.name),
-            p.type,
+            id(p.Name),
+            p.Type,
             nullptr,
-            p.storage);
+            p.Storage);
 
         if (p.Init != nullptr) { result->setInit(p.Init); }
         return result;
@@ -238,7 +240,7 @@ class ASTBuilder
             sl(),
             CompoundStmt({p.Then}),
             sl(),
-            CompoundStmt({p.Else}));
+            p.Else.empty() ? nullptr : CompoundStmt({p.Else}));
     }
 
     class IfStmt* IfStmt(const ArrayRef<IfStmtParams>& p)
@@ -345,6 +347,16 @@ class ASTBuilder
             ctx(), APInt(sizeof(value) * 8, value), ctx().IntTy, sl());
     }
 
+    clang::StringLiteral* Literal(const Str& str) {
+        return clang::StringLiteral::Create(
+            ctx(),
+            str,
+            clang::StringLiteral::StringKind::Ascii,
+            false,
+            QualType(),
+            sl());
+    }
+
     CXXThrowExpr* Throw(Expr* expr) {
         return new (ctx())
             CXXThrowExpr(expr, expr->getType(), sl(), false);
@@ -410,7 +422,6 @@ struct CustomizerCollect : public MatchFinder::MatchCallback {
     Vec<BoundNodes> bindings;
     inline CustomizerCollect(const UserWrapRule& _rule) : rule(_rule) {}
     virtual void run(const MatchFinder::MatchResult& result) override {
-        llvm::outs() << "Customized collector rule matching triggered\n";
         bindings.push_back(result.Nodes);
     }
 };
@@ -428,8 +439,13 @@ class ConvertPusher : public MatchFinder::MatchCallback
     ASTBuilder  b; /// Construct wrapped AST for processed
                    /// declarations
 
+    std::function<Str(const Str&)> renameCb;
+
   public:
     const Vec<Str>& getWrapped() { return wrapped; }
+    void            setRenameCb(std::function<Str(const Str&)> _rename) {
+                   renameCb = _rename;
+    }
 
     /// Return matched user-provided rules that were triggered during last
     /// run of the finder.
@@ -455,38 +471,36 @@ class ConvertPusher : public MatchFinder::MatchCallback
     /// Generate wrapping for the function \arg func using  provided \arg
     /// rule
     void wrapWithRule(const FunctionDecl* func, const UserWrapRule& rule) {
+        Vec<ASTBuilder::ParmVarDeclParams> Params;
+        ASTBuilder::FunctionDeclParams     DeclParams;
+        DeclParams.ResultTy = func->getASTContext().VoidTy;
+        auto Fail           = b.XCall(
+            "__GIT_THROW_EXCEPTION",
+            {b.Ref("code"), b.Literal(func->getName().str())});
         if (rule.outArg) {
-            QualType                           resultTy;
-            Vec<ASTBuilder::ParmVarDeclParams> params;
-
+            auto out = b.VarDecl(
+                {rule.outArg.value(), DeclParams.ResultTy});
             for (const auto& param : func->parameters()) {
                 if (rule.outArg.value() == param->getName()) {
                     QualType    qtype = param->getOriginalType();
                     const Type* type  = qtype.getTypePtr();
 
                     if (type->isPointerType()) {
-                        resultTy = type->getPointeeType();
+                        DeclParams.ResultTy = type->getPointeeType();
                     }
 
                 } else {
-                    params.push_back(param);
+                    Params.push_back(param);
                 }
             }
 
-
-            auto fd = b.FunctionDecl(
-                {.name = func->getName().str(), .resultTy = resultTy},
-                params);
-
-
-            auto out = b.VarDecl({"out", resultTy});
-            fd->setBody(b.CompoundStmt(
+            DeclParams.Body = b.CompoundStmt(
                 {{b.Stmt(out),
                   b.Stmt(b.VarDecl(
-                      {.name = "code",
+                      {.Name = "code",
                        .Init = b.XCall(
                            func,
-                           params |
+                           Params |
                                rv::transform(
                                    [this](const auto& it) -> Expr* {
                                        return b.Expr(b.Ref(it.name));
@@ -495,17 +509,50 @@ class ConvertPusher : public MatchFinder::MatchCallback
                   b.IfStmt(
                       {.Cond = b.XCall(
                            BinaryOperator::Opcode::BO_LT,
-                           {b.Ref(out), b.Literal(0)}),
-                       .Then = {b.XCall(
-                           "__GIT_THROW_EXCEPTION", {b.Ref(out)})},
-                       .Else = {b.Return(b.Ref(out))}})}}));
+                           {b.Ref("code"), b.Literal(0)}),
+                       .Then = {Fail},
+                       .Else = {b.Return(b.Ref(out))}})}});
 
-            wrapped.push_back(clangToString(fd));
+        } else {
+            for (const auto& param : func->parameters()) {
+                Params.push_back(param);
+            }
+
+            DeclParams.Body = b.CompoundStmt(
+                {{b.Stmt(b.VarDecl(
+                      {.Name = "code",
+                       .Init = b.XCall(
+                           func,
+                           Params |
+                               rv::transform(
+                                   [this](const auto& it) -> Expr* {
+                                       return b.Expr(b.Ref(it.name));
+                                   }) |
+                               ranges::to_vector)})),
+                  b.IfStmt(
+                      {.Cond = b.XCall(
+                           BinaryOperator::Opcode::BO_LT,
+                           {b.Ref("code"), b.Literal(0)}),
+                       .Then = {Fail}})}});
         }
+
+
+        DeclParams.Name =
+            (renameCb ? renameCb(func->getName().str())
+                      : func->getName().str());
+
+
+        wrapped.push_back(
+            clangToString(b.FunctionDecl(DeclParams, Params)));
     }
 
     virtual void run(const MatchFinder::MatchResult& Result) {
         auto func = Result.Nodes.getNodeAs<FunctionDecl>("function");
+        if (!Result.Context->getSourceManager().isWrittenInMainFile(
+                func->getLocation())) {
+            return;
+        }
+
         b.setContext(Result.Context);
 
         for (auto& it : collector) {
@@ -518,10 +565,7 @@ class ConvertPusher : public MatchFinder::MatchCallback
 
         auto matched = getMatchedRules();
 
-        if (0 < matched.size()) {
-            wrapWithRule(func, matched[0]);
-        } else {
-        }
+        if (0 < matched.size()) { wrapWithRule(func, matched[0]); }
     }
 };
 
@@ -562,11 +606,12 @@ int main(int argc, const char** argv) {
         }
     }
 
-
     ClangTool Tool(OptionsParser.getCompilations(), files);
 
     ConvertPusher convert;
     MatchFinder   finder;
+
+    convert.setRenameCb([](const Str& in) { return in.substr(4); });
 
     { // Collect user-provided pattern matching rules
         YAML::Node doc = YAML::LoadFile("wrapconf.yaml");
@@ -582,8 +627,7 @@ int main(int argc, const char** argv) {
     auto result = Tool.run(newFrontendActionFactory(&finder).get());
 
     if (!OutputFilename.empty()) {
-        Str name = OutputFilename.getValue();
-        outs() << "specified output filename " << name << "\n";
+        Str           name = OutputFilename.getValue();
         std::ofstream out{name};
         for (const auto& entry : convert.getWrapped()) {
             out << entry;

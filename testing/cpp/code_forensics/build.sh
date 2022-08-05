@@ -23,7 +23,7 @@ clang++ genwrapper.cpp \
     @conanbuildinfo.gcc
 
 ./genwrapper \
-    $path/git2 \
+    $path/git2/config.h \
     -o=/tmp/gitwrap.hpp \
     -extra-arg=-I/usr/lib/clang/14.0.6/include
 
