@@ -19,7 +19,10 @@
 #include <algorithm>
 #include <optional>
 #include <iostream>
+#include <fstream>
 #include <exception>
+
+#include <range/v3/all.hpp>
 
 #include <boost/stacktrace.hpp>
 
@@ -37,6 +40,8 @@ using namespace clang::ast_matchers;
 using namespace clang::tooling;
 using namespace llvm;
 using namespace clang::ast_matchers::dynamic;
+
+namespace rv = ranges::views;
 
 template <typename T>
 using Vec = std::vector<T>;
@@ -323,9 +328,16 @@ class ASTBuilder
             FPOptionsOverride());
     }
 
-    class CallExpr* XCall(const Str& name, Vec<Expr*> Args)
+    class CallExpr* XCall(const Str& name, Vec<Expr*> Args = {})
     {
         return CallExpr({Ref(name), Args});
+    }
+
+    class CallExpr* XCall(
+        const class FunctionDecl* decl,
+        Vec<Expr*>                Args = {})
+    {
+        return CallExpr({Ref(decl), Args});
     }
 
     IntegerLiteral* Literal(uint64_t value) {
@@ -340,6 +352,11 @@ class ASTBuilder
 
     ReturnStmt* Return(Expr* expr) {
         return ReturnStmt::Create(ctx(), sl(), expr, nullptr);
+    }
+
+    class Expr* Expr(Expr* expr)
+    {
+        return expr;
     }
 };
 
@@ -412,6 +429,8 @@ class ConvertPusher : public MatchFinder::MatchCallback
                    /// declarations
 
   public:
+    const Vec<Str>& getWrapped() { return wrapped; }
+
     /// Return matched user-provided rules that were triggered during last
     /// run of the finder.
     Vec<UserWrapRule> getMatchedRules() {
@@ -465,7 +484,14 @@ class ConvertPusher : public MatchFinder::MatchCallback
                 {{b.Stmt(out),
                   b.Stmt(b.VarDecl(
                       {.name = "code",
-                       .Init = b.CallExpr({b.Ref(func)})})),
+                       .Init = b.XCall(
+                           func,
+                           params |
+                               rv::transform(
+                                   [this](const auto& it) -> Expr* {
+                                       return b.Expr(b.Ref(it.name));
+                                   }) |
+                               ranges::to_vector)})),
                   b.IfStmt(
                       {.Cond = b.XCall(
                            BinaryOperator::Opcode::BO_LT,
@@ -504,7 +530,15 @@ int main(int argc, const char** argv) {
     std::set_terminate(&boost_terminate_handler);
 
     cl::OptionCategory category("genwrapper");
+    cl::opt<Str>       OutputFilename(
+        "o",
+        cl::desc("Specify output filename"),
+        cl::value_desc("filename"),
+        cl::cat(category));
+
+
     auto cli = CommonOptionsParser::create(argc, argv, category);
+
 
     if (!cli) {
         llvm::errs() << cli.takeError();
@@ -546,6 +580,16 @@ int main(int argc, const char** argv) {
     finder.addMatcher(functionDecl().bind("function"), &convert);
 
     auto result = Tool.run(newFrontendActionFactory(&finder).get());
+
+    if (!OutputFilename.empty()) {
+        Str name = OutputFilename.getValue();
+        outs() << "specified output filename " << name << "\n";
+        std::ofstream out{name};
+        for (const auto& entry : convert.getWrapped()) {
+            out << entry;
+            out << "\n\n\n";
+        }
+    }
 
     std::cout << "ok\n";
 }
