@@ -24,13 +24,49 @@
 
 #include <range/v3/all.hpp>
 
+
+#define BOOST_STACKTRACE_USE_ADDR2LINE
+#define BOOST_STACKTRACE_ADDR2LINE_LOCATION "/bin/addr2line"
+
 #include <boost/stacktrace.hpp>
+#include <boost/exception/all.hpp>
+
+#include <cxxabi.h>
+
+using traced = boost::
+    error_info<struct tag_stacktrace, boost::stacktrace::stacktrace>;
+
+template <class E>
+void throw_with_trace(const E& e) {
+    throw boost::enable_error_info(e)
+        << traced(boost::stacktrace::stacktrace(1, -1));
+}
 
 void boost_terminate_handler() {
     try {
         std::cerr << boost::stacktrace::stacktrace();
     } catch (...) {}
     std::abort();
+}
+
+inline std::string cxxDemangle(char const* mangled) {
+    int   status;
+    char* ret = abi::__cxa_demangle(mangled, nullptr, nullptr, &status);
+    switch (status) {
+        case 0: break;
+        case -1: throw std::bad_alloc();
+        case -2:
+            throw std::logic_error(
+                "Not a proper mangled name" + std::string(mangled));
+        case -3:
+            throw std::invalid_argument(
+                "Invalid argument to __cxa_demangle");
+        default:
+            throw std::logic_error("Unknown error from __cxa_demangle");
+    }
+    std::string name(ret);
+    free(ret);
+    return name;
 }
 
 namespace stdf = std::filesystem;
@@ -393,6 +429,14 @@ void operator>>(
     }
 }
 
+struct yaml_processing_error : std::exception {
+    const Str msg;
+    yaml_processing_error(const Str& _in) : msg(_in) {}
+    virtual const char* what() const noexcept override {
+        return msg.c_str();
+    }
+};
+
 void operator>>(const YAML::Node& node, Str& str) { str = node.as<Str>(); }
 
 void operator>>(const YAML::Node& node, UserWrapRule& rule) {
@@ -406,8 +450,11 @@ void operator>>(const YAML::Node& node, UserWrapRule& rule) {
     if (node["function"]) {
         rule.pattern = fmt::format(
             R"(functionDecl(hasName("{}")))", node["function"].as<Str>());
-    } else {
+    } else if (node["patt"]) {
         node["patt"] >> rule.pattern;
+    } else {
+        throw_with_trace(yaml_processing_error(
+            "Either 'function' or 'patt' should be used"));
     }
 
     if (node["out"]) { rule.outArg = node["out"].as<Str>(); }
@@ -570,7 +617,7 @@ class ConvertPusher : public MatchFinder::MatchCallback
 };
 
 
-int main(int argc, const char** argv) {
+int main_impl(int argc, const char** argv) {
     std::set_terminate(&boost_terminate_handler);
 
     cl::OptionCategory category("genwrapper");
@@ -636,4 +683,23 @@ int main(int argc, const char** argv) {
     }
 
     std::cout << "ok\n";
+
+    return 0;
+}
+
+
+int main(int argc, const char** argv) {
+    try {
+        return main_impl(argc, argv);
+    } catch (std::exception const& e) {
+        const boost::stacktrace::stacktrace*
+            st = boost::get_error_info<traced>(e);
+
+        if (st) { std::cerr << *st << std::endl; }
+
+        std::cerr << "Got exception with type "
+                  << cxxDemangle(typeid(e).name()) << ": " << e.what()
+                  << std::endl;
+        return 1;
+    }
 }

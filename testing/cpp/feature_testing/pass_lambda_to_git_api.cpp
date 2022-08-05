@@ -3,7 +3,6 @@
 #include <exception>
 #include <functional>
 #include <git2/config.h>
-
 #define __GIT_THROW_EXCEPTION throw "git failed with code???";
 
 void config_backend_foreach_match(

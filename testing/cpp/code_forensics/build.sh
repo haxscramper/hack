@@ -17,6 +17,8 @@ clang++ genwrapper.cpp \
     -o genwrapper \
     -fuse-ld=mold \
     -I$ROOT/common \
+    -ldl \
+    -rdynamic \
     -g \
     -lclang-cpp \
     -lLLVM \
