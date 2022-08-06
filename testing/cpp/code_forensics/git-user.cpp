@@ -7,6 +7,7 @@
 #include <fstream>
 #include <thread>
 #include <mutex>
+#include <algorithm>
 #include <tuple>
 #include <future>
 
@@ -93,56 +94,70 @@ int exec_walker(
     std::string path{tree_entry_name(entry)};
     // Check for provided predicate
     if (config.allow_path && !config.allow_path(path)) { return GIT_OK; }
-
+    // Init default blame creation options
     git_blame_options blameopts = GIT_BLAME_OPTIONS_INIT;
-    blameopts.newest_commit     = oid;
-
+    // We are only interested in blame information up until target commit
+    blameopts.newest_commit = oid;
+    // Extract git blob object
     auto object = tree_entry_to_object(repo, entry);
-
-    assert(object_type(object) == GIT_OBJECT_BLOB);
-
+    // Create full relative path for the target object
     auto relpath = std::string{root + path};
-    auto blame   = blame_file(repo, relpath.c_str(), &blameopts);
-    auto blob    = (git_blob*)object;
-    int  i       = 0;
-    int  line    = 1;
+    // get blame information
+    auto blame = blame_file(repo, relpath.c_str(), &blameopts);
+    assert(object_type(object) == GIT_OBJECT_BLOB);
+    // `git_object` can be freely cast to the blob, provided we checked the
+    // type first
+    auto blob = (git_blob*)object;
+    // Byte position in the blob content
+    int i = 0;
+    // Counter for file line iteration
+    int line = 1;
+    // When null hunk is encountered - complete execution
+    bool break_on_null_hunk = false;
+    // Get full size (in bytes) of the target blob
+    git_object_size_t rawsize = blob_rawsize(blob);
+    // Get raw content of the git blob
+    const char* rawdata = (const char*)git_blob_rawcontent(blob);
 
-    bool              break_on_null_hunk = false;
-    git_object_size_t rawsize            = blob_rawsize(blob);
-    const char*       rawdata = (const char*)git_blob_rawcontent(blob);
-
+    // Process blob bytes - this is the only explicit delimiter we get when
+    // working with blobs
     while (i < rawsize) {
+        // Search for the next end of line
         const char* eol = (const char*)memchr(
             rawdata + i, '\n', (size_t)(rawsize - i));
-        char                  oid[10] = {0};
-        const git_blame_hunk* hunk    = blame_get_hunk_byline(blame, line);
+        // get information for the current line
+        const git_blame_hunk* hunk = blame_get_hunk_byline(blame, line);
 
+        // if hunk is empty stop processing
         if (break_on_null_hunk && !hunk) { break; }
 
         if (hunk != nullptr && hunk->final_signature != nullptr) {
-
-            break_on_null_hunk   = true;
+            break_on_null_hunk = true;
+            // get date when hunk had been altered
             gregorian::date date = posix_time::from_time_t(
                                        hunk->final_signature->when.time)
                                        .date();
+            // get period index and used it to update the analysis
+            // information
             int period = config.get_period(date);
 
             ++stats.per_period[period].second;
+            // if this is a first time we've seen this period, store the
+            // current 'date' for latter plotting.
             if (!stats.per_period[period].first) {
                 stats.per_period[period].first = date;
             }
-
-            //            std::cout << period << " [" << date << "] ";
-            //            printf("%.*s\n", (int)(eol - rawdata - i),
-            //            rawdata + i);
         }
 
+        // Advance over raw data
         i = (int)(eol - rawdata + 1);
+        // Increment line
         line++;
     }
 
+    // Blame information is no longer needed
     blame_free(blame);
-
+    // Increase file count (for statistics)
     ++stats.filecount;
     return GIT_OK;
 }
@@ -151,6 +166,8 @@ commit_analysis_result process_commit(
     git_repository*      repo,
     git_oid              oid,
     const walker_config& config) {
+    // Create task closure - NOTE maybe at some point git won't break with
+    // threads and I could implement parallel processing.
     auto task = [oid, repo, &config]() {
         git_commit* commit = commit_lookup(repo, &oid);
 
@@ -171,6 +188,7 @@ commit_analysis_result process_commit(
                 return exec_walker(repo, oid, stats, root, entry, config);
             });
 
+        // commit information is no longer needed
         commit_free(commit);
         return stats;
     };
@@ -182,18 +200,19 @@ commit_analysis_result process_commit(
 #define REPO "/tmp/fusion"
 #define GIT_SUCCESS 0
 
-// git_blame* blame_file(git_repository*repo, const std::string& path,
-// git_blame_options options) {
-
-// }
-
 int main() {
     libgit2_init();
+    // Check whether threads are enabled
     assert(libgit2_features() & GIT_FEATURE_THREADS);
+    // Open directory from the provided path - for now hardcoded
     git_repository* repo = repository_open_ext(REPO, 0, nullptr);
 
     // Read HEAD on master
-    char  head_filepath[512];
+    char head_filepath[512];
+
+    // REFACTOR this part was copied from the SO example and I'm pretty
+    // sure it can be implemented in a cleaner manner, but I haven't
+    // touched this part yet.
     FILE* head_fileptr;
     char  head_rev[41];
 
@@ -214,47 +233,59 @@ int main() {
     fclose(head_fileptr);
 
 
-    git_oid      oid    = oid_fromstr(head_rev);
+    git_oid oid = oid_fromstr(head_rev);
+    // Initialize revision walker
     git_revwalk* walker = revwalk_new(repo);
-
+    // Iterate all commits in the topological order
     revwalk_sorting(walker, GIT_SORT_TOPOLOGICAL);
     revwalk_push(walker, &oid);
 
-    std::map<int, int>                  per_week;
+    // All constructed information
     std::vector<commit_analysis_result> processed;
 
-    gregorian::date start       = {2020, 1, 1};
-    int             days_period = 30;
-    walker_config   config{
-          .get_period = [&](const gregorian::date& date) -> int {
+
+    // Analyse commits starting from this date
+    gregorian::date start = {2020, 1, 1};
+    // Configuration for date period analysis
+    const int days_period = 20;
+    // Main confugration for walker checks
+    walker_config config{
+        .get_period = [&](const gregorian::date& date) -> int {
+            // Get period number using simple integer division - 20 days
+            // from now will be a period 1, 40 days will be period 2 and
+            // so on.
             return (date - start).days() / days_period;
         },
-          .check_date = [&](const gregorian::date& date) -> bool {
+        .check_date = [&](const gregorian::date& date) -> bool {
+            // If date is exactly divisible by target period, process it
             return (date - start).days() % days_period == 0;
         }};
 
 
-    //    int prev_period = 0;
+    // Walk over every commit in the history
     while (revwalk_next(&oid, walker) == GIT_SUCCESS) {
-
+        // Get commit from the provided oid
         git_commit* commit = commit_lookup(repo, &oid);
         // Convert from unix timestamp used by git to humane format
         gregorian::date date = posix_time::from_time_t(commit_time(commit))
                                    .date();
-        auto diff = date - start;
-        auto days = diff.days();
-        //        ++per_week[days / 7];
+
+        // commit is no longer needed in this scope
         commit_free(commit);
+        // check if we can process it
         if (config.check_date(date)) {
+            // and store analysis results if we can
             processed.push_back(process_commit(repo, oid, config));
         }
     }
 
 
+    // Walker and repository are no longer necessary
     revwalk_free(walker);
     repository_free(repo);
 
 
+    // Initial data retrival
     std::map<int, std::pair<gregorian::date, std::vector<int>>>
         period_burndown;
     for (auto& res : processed) {
@@ -264,16 +295,27 @@ int main() {
         }
     }
 
+
+    // Find out how many data points we had, reverse commits (they were
+    // iterated from the last to first, we need from first to last)
+    int sample_points = 0;
     for (auto& [period, lines] : period_burndown) {
+        sample_points = std::max<int>(sample_points, lines.second.size());
         std::reverse(lines.second.begin(), lines.second.end());
         fmt::print("period {} lines {}\n", period, lines.second);
     }
 
+    // matplot data
     std::vector<std::vector<double>> Y;
-    std::vector<std::string>         legend;
+    // legend annotation information
+    std::vector<std::string> legend;
     for (auto& [period, stats] : period_burndown) {
         const auto& date  = stats.first;
-        const auto& lines = stats.second;
+        auto        lines = stats.second;
+        // for proper stacked barplot I need to equalize sizes of all data
+        // series, padding information about misssing dates with zeroes.
+        lines.insert(lines.begin(), sample_points - lines.size(), 0);
+        // store current period time into legend annotations
         legend.push_back(gregorian::to_iso_extended_string(date));
         Y.push_back(std::vector<double>(lines.size()));
 
@@ -285,22 +327,6 @@ int main() {
     matplot::barstacked(Y);
     auto plot_legend = matplot::legend(legend);
     plot_legend->location(matplot::legend::general_alignment::topleft);
-
-    if (false) {
-        std::vector<int> weeks;
-        std::vector<int> commits;
-
-        std::ofstream csv{"/tmp/commit-count.csv"};
-
-        for (auto& [week, count] : per_week) {
-            csv << week << "," << count << "\n";
-            weeks.push_back(week);
-            commits.push_back(count);
-        }
-        matplot::plot(weeks, commits);
-    }
-
-
     matplot::save("/tmp/commit-count.png");
 
     return 0;
