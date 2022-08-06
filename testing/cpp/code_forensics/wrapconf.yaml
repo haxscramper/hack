@@ -10,7 +10,15 @@
 - function: "git_commit_lookup_prefix"
   err: code
   out: commit
+- function: "git_tree_entry_to_object"
+  out: object_out
+  code: err
 - function: "git_revwalk_next"
+  err: none
+- function: "git_commit_tree"
+  out: tree_out
+  err: code
+- function: git_libgit2_features
   err: none
 - patt: |
     functionDecl(

@@ -694,7 +694,7 @@ class ConvertPusher : public MatchFinder::MatchCallback
 
     /// Override of the match finder result handing.
     virtual void run(const MatchFinder::MatchResult& Result) {
-        auto func = Result.Nodes.getNodeAs<FunctionDecl>("function");
+        auto func = Result.Nodes1.getNodeAs<FunctionDecl>("function");
         if (allowCb &&
             !allowCb(DynTypedNode::create<FunctionDecl>(*func))) {
             return;

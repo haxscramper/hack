@@ -14,11 +14,9 @@ const char *libgit2_prerelease() {
 
 
 
-void libgit2_features() {
+int libgit2_features() {
     auto __result = git_libgit2_features();
-    if (__result < 0) {
-        __GIT_THROW_EXCEPTION(__result, "git_libgit2_features");
-    }
+    return __result;
 }
 
 
@@ -994,10 +992,13 @@ void tree_entry_cmp(const git_tree_entry *e1, const git_tree_entry *e2) {
 
 
 
-void tree_entry_to_object(git_object **object_out, git_repository *repo, const git_tree_entry *entry) {
-    auto __result = git_tree_entry_to_object(object_out, repo, entry);
+git_object *tree_entry_to_object(git_repository *repo, const git_tree_entry *entry) {
+    git_object *object_out;
+    auto __result = git_tree_entry_to_object(&object_out, repo, entry);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_tree_entry_to_object");
+    } else {
+        return object_out;
     }
 }
 
@@ -3942,10 +3943,13 @@ const char *commit_raw_header(const git_commit *commit) {
 
 
 
-void commit_tree(git_tree **tree_out, const git_commit *commit) {
-    auto __result = git_commit_tree(tree_out, commit);
+git_tree *commit_tree(const git_commit *commit) {
+    git_tree *tree_out;
+    auto __result = git_commit_tree(&tree_out, commit);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_commit_tree");
+    } else {
+        return tree_out;
     }
 }
 

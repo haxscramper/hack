@@ -19,6 +19,7 @@ function try_build() {
         -fuse-ld=mold \
         -std=c++2a \
         -o git-user \
+        -g \
         -ferror-limit=8 \
         -lmatplot \
         git-user.cpp \
@@ -53,7 +54,7 @@ function wrap_git() {
 # try_build
 # build_git_wrapper
 # wrap_git
-# try_build
-py_plotter
+try_build
+# py_plotter
 # cmake .
 # make -j 12
