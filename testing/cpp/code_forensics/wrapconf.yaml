@@ -1,12 +1,23 @@
 - function: "git_config_next"
   err: code
   out: entry
+- function: "git_revparse"
+  err: code
+  out: revspec
+- function: "git_commit_lookup"
+  err: code
+  out: commit
+- function: "git_commit_lookup_prefix"
+  err: code
+  out: commit
+- function: "git_revwalk_next"
+  err: none
 - patt: |
     functionDecl(
       hasAnyParameter(
         allOf(
           hasName("out"),
-          hasType(pointerType(pointee(pointerType()))))),
+          hasType(pointerType()))),
       hasReturnTypeLoc(loc(asString("int")))
     )
   err: code
@@ -16,7 +27,7 @@
       hasAnyParameter(
         allOf(
           hasName("out"),
-          hasType(pointerType(pointee(pointerType())))))
+          hasType(pointerType())))
     )
   err: none
   out: out

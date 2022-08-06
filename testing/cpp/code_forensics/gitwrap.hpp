@@ -38,64 +38,85 @@ void buf_dispose(git_buf *buffer) {
 
 
 
-void oid_fromstr(git_oid *out, const char *str) {
-    auto __result = git_oid_fromstr(out, str);
+git_oid oid_fromstr(const char *str) {
+    git_oid out;
+    auto __result = git_oid_fromstr(&out, str);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_oid_fromstr");
+    } else {
+        return out;
     }
 }
 
 
 
-void oid_fromstrp(git_oid *out, const char *str) {
-    auto __result = git_oid_fromstrp(out, str);
+git_oid oid_fromstrp(const char *str) {
+    git_oid out;
+    auto __result = git_oid_fromstrp(&out, str);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_oid_fromstrp");
+    } else {
+        return out;
     }
 }
 
 
 
-void oid_fromstrn(git_oid *out, const char *str, size_t length) {
-    auto __result = git_oid_fromstrn(out, str, length);
+git_oid oid_fromstrn(const char *str, size_t length) {
+    git_oid out;
+    auto __result = git_oid_fromstrn(&out, str, length);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_oid_fromstrn");
+    } else {
+        return out;
     }
 }
 
 
 
-void oid_fromraw(git_oid *out, const unsigned char *raw) {
-    auto __result = git_oid_fromraw(out, raw);
+git_oid oid_fromraw(const unsigned char *raw) {
+    git_oid out;
+    auto __result = git_oid_fromraw(&out, raw);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_oid_fromraw");
+    } else {
+        return out;
     }
 }
 
 
 
-void oid_fmt(char *out, const git_oid *id) {
-    auto __result = git_oid_fmt(out, id);
+char oid_fmt(const git_oid *id) {
+    char out;
+    auto __result = git_oid_fmt(&out, id);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_oid_fmt");
+    } else {
+        return out;
     }
 }
 
 
 
-void oid_nfmt(char *out, size_t n, const git_oid *id) {
-    auto __result = git_oid_nfmt(out, n, id);
+char oid_nfmt(size_t n, const git_oid *id) {
+    char out;
+    auto __result = git_oid_nfmt(&out, n, id);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_oid_nfmt");
+    } else {
+        return out;
     }
 }
 
 
 
-void oid_pathfmt(char *out, const git_oid *id) {
-    auto __result = git_oid_pathfmt(out, id);
+char oid_pathfmt(const git_oid *id) {
+    char out;
+    auto __result = git_oid_pathfmt(&out, id);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_oid_pathfmt");
+    } else {
+        return out;
     }
 }
 
@@ -108,17 +129,21 @@ char *oid_tostr_s(const git_oid *oid) {
 
 
 
-char *oid_tostr(char *out, size_t n, const git_oid *id) {
-    auto __result = git_oid_tostr(out, n, id);
+char *oid_tostr(size_t n, const git_oid *id) {
+    char out;
+    auto __result = git_oid_tostr(&out, n, id);
     return __result;
 }
 
 
 
-void oid_cpy(git_oid *out, const git_oid *src) {
-    auto __result = git_oid_cpy(out, src);
+git_oid oid_cpy(const git_oid *src) {
+    git_oid out;
+    auto __result = git_oid_cpy(&out, src);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_oid_cpy");
+    } else {
+        return out;
     }
 }
 
@@ -236,10 +261,13 @@ git_repository *repository_wrap_odb(git_odb *odb) {
 
 
 
-void repository_discover(git_buf *out, const char *start_path, int across_fs, const char *ceiling_dirs) {
-    auto __result = git_repository_discover(out, start_path, across_fs, ceiling_dirs);
+git_buf repository_discover(const char *start_path, int across_fs, const char *ceiling_dirs) {
+    git_buf out;
+    auto __result = git_repository_discover(&out, start_path, across_fs, ceiling_dirs);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_repository_discover");
+    } else {
+        return out;
     }
 }
 
@@ -368,10 +396,13 @@ void repository_is_empty(git_repository *repo) {
 
 
 
-void repository_item_path(git_buf *out, const git_repository *repo, git_repository_item_t item) {
-    auto __result = git_repository_item_path(out, repo, item);
+git_buf repository_item_path(const git_repository *repo, git_repository_item_t item) {
+    git_buf out;
+    auto __result = git_repository_item_path(&out, repo, item);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_repository_item_path");
+    } else {
+        return out;
     }
 }
 
@@ -485,10 +516,13 @@ git_index *repository_index(git_repository *repo) {
 
 
 
-void repository_message(git_buf *out, git_repository *repo) {
-    auto __result = git_repository_message(out, repo);
+git_buf repository_message(git_repository *repo) {
+    git_buf out;
+    auto __result = git_repository_message(&out, repo);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_repository_message");
+    } else {
+        return out;
     }
 }
 
@@ -530,10 +564,13 @@ void repository_mergehead_foreach(git_repository *repo, git_repository_mergehead
 
 
 
-void repository_hashfile(git_oid *out, git_repository *repo, const char *path, git_object_t type, const char *as_path) {
-    auto __result = git_repository_hashfile(out, repo, path, type, as_path);
+git_oid repository_hashfile(git_repository *repo, const char *path, git_object_t type, const char *as_path) {
+    git_oid out;
+    auto __result = git_repository_hashfile(&out, repo, path, type, as_path);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_repository_hashfile");
+    } else {
+        return out;
     }
 }
 
@@ -732,10 +769,13 @@ const git_oid *object_id(const git_object *obj) {
 
 
 
-void object_short_id(git_buf *out, const git_object *obj) {
-    auto __result = git_object_short_id(out, obj);
+git_buf object_short_id(const git_object *obj) {
+    git_buf out;
+    auto __result = git_object_short_id(&out, obj);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_object_short_id");
+    } else {
+        return out;
     }
 }
 
@@ -1064,10 +1104,13 @@ git_tree *tree_dup(git_tree *source) {
 
 
 
-void tree_create_updated(git_oid *out, git_repository *repo, git_tree *baseline, size_t nupdates, const git_tree_update *updates) {
-    auto __result = git_tree_create_updated(out, repo, baseline, nupdates, updates);
+git_oid tree_create_updated(git_repository *repo, git_tree *baseline, size_t nupdates, const git_tree_update *updates) {
+    git_oid out;
+    auto __result = git_tree_create_updated(&out, repo, baseline, nupdates, updates);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_tree_create_updated");
+    } else {
+        return out;
     }
 }
 
@@ -1100,10 +1143,13 @@ git_reference *reference_lookup(git_repository *repo, const char *name) {
 
 
 
-void reference_name_to_id(git_oid *out, git_repository *repo, const char *name) {
-    auto __result = git_reference_name_to_id(out, repo, name);
+git_oid reference_name_to_id(git_repository *repo, const char *name) {
+    git_oid out;
+    auto __result = git_reference_name_to_id(&out, repo, name);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_reference_name_to_id");
+    } else {
+        return out;
     }
 }
 
@@ -1630,10 +1676,13 @@ void diff_print(git_diff *diff, git_diff_format_t format, git_diff_line_cb print
 
 
 
-void diff_to_buf(git_buf *out, git_diff *diff, git_diff_format_t format) {
-    auto __result = git_diff_to_buf(out, diff, format);
+git_buf diff_to_buf(git_diff *diff, git_diff_format_t format) {
+    git_buf out;
+    auto __result = git_diff_to_buf(&out, diff, format);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_diff_to_buf");
+    } else {
+        return out;
     }
 }
 
@@ -1711,10 +1760,13 @@ size_t diff_stats_deletions(const git_diff_stats *stats) {
 
 
 
-void diff_stats_to_buf(git_buf *out, const git_diff_stats *stats, git_diff_stats_format_t format, size_t width) {
-    auto __result = git_diff_stats_to_buf(out, stats, format, width);
+git_buf diff_stats_to_buf(const git_diff_stats *stats, git_diff_stats_format_t format, size_t width) {
+    git_buf out;
+    auto __result = git_diff_stats_to_buf(&out, stats, format, width);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_diff_stats_to_buf");
+    } else {
+        return out;
     }
 }
 
@@ -1735,10 +1787,13 @@ void diff_patchid_options_init(git_diff_patchid_options *opts, unsigned int vers
 
 
 
-void diff_patchid(git_oid *out, git_diff *diff, git_diff_patchid_options *opts) {
-    auto __result = git_diff_patchid(out, diff, opts);
+git_oid diff_patchid(git_diff *diff, git_diff_patchid_options *opts) {
+    git_oid out;
+    auto __result = git_diff_patchid(&out, diff, opts);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_diff_patchid");
+    } else {
+        return out;
     }
 }
 
@@ -1914,10 +1969,13 @@ void blob_filter_options_init(git_blob_filter_options *opts, unsigned int versio
 
 
 
-void blob_filter(git_buf *out, git_blob *blob, const char *as_path, git_blob_filter_options *opts) {
-    auto __result = git_blob_filter(out, blob, as_path, opts);
+git_buf blob_filter(git_blob *blob, const char *as_path, git_blob_filter_options *opts) {
+    git_buf out;
+    auto __result = git_blob_filter(&out, blob, as_path, opts);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_blob_filter");
+    } else {
+        return out;
     }
 }
 
@@ -1953,10 +2011,13 @@ git_writestream *blob_create_from_stream(git_repository *repo, const char *hintp
 
 
 
-void blob_create_from_stream_commit(git_oid *out, git_writestream *stream) {
-    auto __result = git_blob_create_from_stream_commit(out, stream);
+git_oid blob_create_from_stream_commit(git_writestream *stream) {
+    git_oid out;
+    auto __result = git_blob_create_from_stream_commit(&out, stream);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_blob_create_from_stream_commit");
+    } else {
+        return out;
     }
 }
 
@@ -2178,10 +2239,13 @@ void branch_set_upstream(git_reference *branch, const char *branch_name) {
 
 
 
-void branch_upstream_name(git_buf *out, git_repository *repo, const char *refname) {
-    auto __result = git_branch_upstream_name(out, repo, refname);
+git_buf branch_upstream_name(git_repository *repo, const char *refname) {
+    git_buf out;
+    auto __result = git_branch_upstream_name(&out, repo, refname);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_branch_upstream_name");
+    } else {
+        return out;
     }
 }
 
@@ -2205,10 +2269,13 @@ void branch_is_checked_out(const git_reference *branch) {
 
 
 
-void branch_remote_name(git_buf *out, git_repository *repo, const char *refname) {
-    auto __result = git_branch_remote_name(out, repo, refname);
+git_buf branch_remote_name(git_repository *repo, const char *refname) {
+    git_buf out;
+    auto __result = git_branch_remote_name(&out, repo, refname);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_branch_remote_name");
+    } else {
+        return out;
     }
 }
 
@@ -2454,19 +2521,25 @@ void index_read_tree(git_index *index, const git_tree *tree) {
 
 
 
-void index_write_tree(git_oid *out, git_index *index) {
-    auto __result = git_index_write_tree(out, index);
+git_oid index_write_tree(git_index *index) {
+    git_oid out;
+    auto __result = git_index_write_tree(&out, index);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_index_write_tree");
+    } else {
+        return out;
     }
 }
 
 
 
-void index_write_tree_to(git_oid *out, git_index *index, git_repository *repo) {
-    auto __result = git_index_write_tree_to(out, index, repo);
+git_oid index_write_tree_to(git_index *index, git_repository *repo) {
+    git_oid out;
+    auto __result = git_index_write_tree_to(&out, index, repo);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_index_write_tree_to");
+    } else {
+        return out;
     }
 }
 
@@ -2760,64 +2833,85 @@ void merge_analysis_for_ref(git_merge_analysis_t *analysis_out, git_merge_prefer
 
 
 
-void merge_base(git_oid *out, git_repository *repo, const git_oid *one, const git_oid *two) {
-    auto __result = git_merge_base(out, repo, one, two);
+git_oid merge_base(git_repository *repo, const git_oid *one, const git_oid *two) {
+    git_oid out;
+    auto __result = git_merge_base(&out, repo, one, two);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_merge_base");
+    } else {
+        return out;
     }
 }
 
 
 
-void merge_bases(git_oidarray *out, git_repository *repo, const git_oid *one, const git_oid *two) {
-    auto __result = git_merge_bases(out, repo, one, two);
+git_oidarray merge_bases(git_repository *repo, const git_oid *one, const git_oid *two) {
+    git_oidarray out;
+    auto __result = git_merge_bases(&out, repo, one, two);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_merge_bases");
+    } else {
+        return out;
     }
 }
 
 
 
-void merge_base_many(git_oid *out, git_repository *repo, size_t length, const git_oid input_array[]) {
-    auto __result = git_merge_base_many(out, repo, length, input_array);
+git_oid merge_base_many(git_repository *repo, size_t length, const git_oid input_array[]) {
+    git_oid out;
+    auto __result = git_merge_base_many(&out, repo, length, input_array);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_merge_base_many");
+    } else {
+        return out;
     }
 }
 
 
 
-void merge_bases_many(git_oidarray *out, git_repository *repo, size_t length, const git_oid input_array[]) {
-    auto __result = git_merge_bases_many(out, repo, length, input_array);
+git_oidarray merge_bases_many(git_repository *repo, size_t length, const git_oid input_array[]) {
+    git_oidarray out;
+    auto __result = git_merge_bases_many(&out, repo, length, input_array);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_merge_bases_many");
+    } else {
+        return out;
     }
 }
 
 
 
-void merge_base_octopus(git_oid *out, git_repository *repo, size_t length, const git_oid input_array[]) {
-    auto __result = git_merge_base_octopus(out, repo, length, input_array);
+git_oid merge_base_octopus(git_repository *repo, size_t length, const git_oid input_array[]) {
+    git_oid out;
+    auto __result = git_merge_base_octopus(&out, repo, length, input_array);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_merge_base_octopus");
+    } else {
+        return out;
     }
 }
 
 
 
-void merge_file(git_merge_file_result *out, const git_merge_file_input *ancestor, const git_merge_file_input *ours, const git_merge_file_input *theirs, const git_merge_file_options *opts) {
-    auto __result = git_merge_file(out, ancestor, ours, theirs, opts);
+git_merge_file_result merge_file(const git_merge_file_input *ancestor, const git_merge_file_input *ours, const git_merge_file_input *theirs, const git_merge_file_options *opts) {
+    git_merge_file_result out;
+    auto __result = git_merge_file(&out, ancestor, ours, theirs, opts);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_merge_file");
+    } else {
+        return out;
     }
 }
 
 
 
-void merge_file_from_index(git_merge_file_result *out, git_repository *repo, const git_index_entry *ancestor, const git_index_entry *ours, const git_index_entry *theirs, const git_merge_file_options *opts) {
-    auto __result = git_merge_file_from_index(out, repo, ancestor, ours, theirs, opts);
+git_merge_file_result merge_file_from_index(git_repository *repo, const git_index_entry *ancestor, const git_index_entry *ours, const git_index_entry *theirs, const git_merge_file_options *opts) {
+    git_merge_file_result out;
+    auto __result = git_merge_file_from_index(&out, repo, ancestor, ours, theirs, opts);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_merge_file_from_index");
+    } else {
+        return out;
     }
 }
 
@@ -2962,19 +3056,25 @@ void refspec_dst_matches(const git_refspec *refspec, const char *refname) {
 
 
 
-void refspec_transform(git_buf *out, const git_refspec *spec, const char *name) {
-    auto __result = git_refspec_transform(out, spec, name);
+git_buf refspec_transform(const git_refspec *spec, const char *name) {
+    git_buf out;
+    auto __result = git_refspec_transform(&out, spec, name);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_refspec_transform");
+    } else {
+        return out;
     }
 }
 
 
 
-void refspec_rtransform(git_buf *out, const git_refspec *spec, const char *name) {
-    auto __result = git_refspec_rtransform(out, spec, name);
+git_buf refspec_rtransform(const git_refspec *spec, const char *name) {
+    git_buf out;
+    auto __result = git_refspec_rtransform(&out, spec, name);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_refspec_rtransform");
+    } else {
+        return out;
     }
 }
 
@@ -3490,10 +3590,13 @@ void remote_free(git_remote *remote) {
 
 
 
-void remote_list(git_strarray *out, git_repository *repo) {
-    auto __result = git_remote_list(out, repo);
+git_strarray remote_list(git_repository *repo) {
+    git_strarray out;
+    auto __result = git_remote_list(&out, repo);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_remote_list");
+    } else {
+        return out;
     }
 }
 
@@ -3666,10 +3769,13 @@ void remote_delete(git_repository *repo, const char *name) {
 
 
 
-void remote_default_branch(git_buf *out, git_remote *remote) {
-    auto __result = git_remote_default_branch(out, remote);
+git_buf remote_default_branch(git_remote *remote) {
+    git_buf out;
+    auto __result = git_remote_default_branch(&out, remote);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_remote_default_branch");
+    } else {
+        return out;
     }
 }
 
@@ -3696,19 +3802,25 @@ git_repository *clone(const char *url, const char *local_path, const git_clone_o
 
 
 
-void commit_lookup(git_commit **commit, git_repository *repo, const git_oid *id) {
-    auto __result = git_commit_lookup(commit, repo, id);
+git_commit *commit_lookup(git_repository *repo, const git_oid *id) {
+    git_commit *commit;
+    auto __result = git_commit_lookup(&commit, repo, id);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_commit_lookup");
+    } else {
+        return commit;
     }
 }
 
 
 
-void commit_lookup_prefix(git_commit **commit, git_repository *repo, const git_oid *id, size_t len) {
-    auto __result = git_commit_lookup_prefix(commit, repo, id, len);
+git_commit *commit_lookup_prefix(git_repository *repo, const git_oid *id, size_t len) {
+    git_commit *commit;
+    auto __result = git_commit_lookup_prefix(&commit, repo, id, len);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_commit_lookup_prefix");
+    } else {
+        return commit;
     }
 }
 
@@ -3881,10 +3993,13 @@ void commit_nth_gen_ancestor(git_commit **ancestor, const git_commit *commit, un
 
 
 
-void commit_header_field(git_buf *out, const git_commit *commit, const char *field) {
-    auto __result = git_commit_header_field(out, commit, field);
+git_buf commit_header_field(const git_commit *commit, const char *field) {
+    git_buf out;
+    auto __result = git_commit_header_field(&out, commit, field);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_commit_header_field");
+    } else {
+        return out;
     }
 }
 
@@ -3926,19 +4041,25 @@ void commit_amend(git_oid *id, const git_commit *commit_to_amend, const char *up
 
 
 
-void commit_create_buffer(git_buf *out, git_repository *repo, const git_signature *author, const git_signature *committer, const char *message_encoding, const char *message, const git_tree *tree, size_t parent_count, const git_commit *parents[]) {
-    auto __result = git_commit_create_buffer(out, repo, author, committer, message_encoding, message, tree, parent_count, parents);
+git_buf commit_create_buffer(git_repository *repo, const git_signature *author, const git_signature *committer, const char *message_encoding, const char *message, const git_tree *tree, size_t parent_count, const git_commit *parents[]) {
+    git_buf out;
+    auto __result = git_commit_create_buffer(&out, repo, author, committer, message_encoding, message, tree, parent_count, parents);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_commit_create_buffer");
+    } else {
+        return out;
     }
 }
 
 
 
-void commit_create_with_signature(git_oid *out, git_repository *repo, const char *commit_content, const char *signature, const char *signature_field) {
-    auto __result = git_commit_create_with_signature(out, repo, commit_content, signature, signature_field);
+git_oid commit_create_with_signature(git_repository *repo, const char *commit_content, const char *signature, const char *signature_field) {
+    git_oid out;
+    auto __result = git_commit_create_with_signature(&out, repo, commit_content, signature, signature_field);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_commit_create_with_signature");
+    } else {
+        return out;
     }
 }
 
@@ -3962,37 +4083,49 @@ void config_entry_free(git_config_entry *entry) {
 
 
 
-void config_find_global(git_buf *out) {
-    auto __result = git_config_find_global(out);
+git_buf config_find_global() {
+    git_buf out;
+    auto __result = git_config_find_global(&out);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_config_find_global");
+    } else {
+        return out;
     }
 }
 
 
 
-void config_find_xdg(git_buf *out) {
-    auto __result = git_config_find_xdg(out);
+git_buf config_find_xdg() {
+    git_buf out;
+    auto __result = git_config_find_xdg(&out);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_config_find_xdg");
+    } else {
+        return out;
     }
 }
 
 
 
-void config_find_system(git_buf *out) {
-    auto __result = git_config_find_system(out);
+git_buf config_find_system() {
+    git_buf out;
+    auto __result = git_config_find_system(&out);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_config_find_system");
+    } else {
+        return out;
     }
 }
 
 
 
-void config_find_programdata(git_buf *out) {
-    auto __result = git_config_find_programdata(out);
+git_buf config_find_programdata() {
+    git_buf out;
+    auto __result = git_config_find_programdata(&out);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_config_find_programdata");
+    } else {
+        return out;
     }
 }
 
@@ -4097,37 +4230,49 @@ git_config_entry *config_get_entry(const git_config *cfg, const char *name) {
 
 
 
-void config_get_int32(int32_t *out, const git_config *cfg, const char *name) {
-    auto __result = git_config_get_int32(out, cfg, name);
+int32_t config_get_int32(const git_config *cfg, const char *name) {
+    int32_t out;
+    auto __result = git_config_get_int32(&out, cfg, name);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_config_get_int32");
+    } else {
+        return out;
     }
 }
 
 
 
-void config_get_int64(int64_t *out, const git_config *cfg, const char *name) {
-    auto __result = git_config_get_int64(out, cfg, name);
+int64_t config_get_int64(const git_config *cfg, const char *name) {
+    int64_t out;
+    auto __result = git_config_get_int64(&out, cfg, name);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_config_get_int64");
+    } else {
+        return out;
     }
 }
 
 
 
-void config_get_bool(int *out, const git_config *cfg, const char *name) {
-    auto __result = git_config_get_bool(out, cfg, name);
+int config_get_bool(const git_config *cfg, const char *name) {
+    int out;
+    auto __result = git_config_get_bool(&out, cfg, name);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_config_get_bool");
+    } else {
+        return out;
     }
 }
 
 
 
-void config_get_path(git_buf *out, const git_config *cfg, const char *name) {
-    auto __result = git_config_get_path(out, cfg, name);
+git_buf config_get_path(const git_config *cfg, const char *name) {
+    git_buf out;
+    auto __result = git_config_get_path(&out, cfg, name);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_config_get_path");
+    } else {
+        return out;
     }
 }
 
@@ -4145,10 +4290,13 @@ const char *config_get_string(const git_config *cfg, const char *name) {
 
 
 
-void config_get_string_buf(git_buf *out, const git_config *cfg, const char *name) {
-    auto __result = git_config_get_string_buf(out, cfg, name);
+git_buf config_get_string_buf(const git_config *cfg, const char *name) {
+    git_buf out;
+    auto __result = git_config_get_string_buf(&out, cfg, name);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_config_get_string_buf");
+    } else {
+        return out;
     }
 }
 
@@ -4298,55 +4446,73 @@ void config_foreach_match(const git_config *cfg, const char *regexp, git_config_
 
 
 
-void config_get_mapped(int *out, const git_config *cfg, const char *name, const git_configmap *maps, size_t map_n) {
-    auto __result = git_config_get_mapped(out, cfg, name, maps, map_n);
+int config_get_mapped(const git_config *cfg, const char *name, const git_configmap *maps, size_t map_n) {
+    int out;
+    auto __result = git_config_get_mapped(&out, cfg, name, maps, map_n);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_config_get_mapped");
+    } else {
+        return out;
     }
 }
 
 
 
-void config_lookup_map_value(int *out, const git_configmap *maps, size_t map_n, const char *value) {
-    auto __result = git_config_lookup_map_value(out, maps, map_n, value);
+int config_lookup_map_value(const git_configmap *maps, size_t map_n, const char *value) {
+    int out;
+    auto __result = git_config_lookup_map_value(&out, maps, map_n, value);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_config_lookup_map_value");
+    } else {
+        return out;
     }
 }
 
 
 
-void config_parse_bool(int *out, const char *value) {
-    auto __result = git_config_parse_bool(out, value);
+int config_parse_bool(const char *value) {
+    int out;
+    auto __result = git_config_parse_bool(&out, value);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_config_parse_bool");
+    } else {
+        return out;
     }
 }
 
 
 
-void config_parse_int32(int32_t *out, const char *value) {
-    auto __result = git_config_parse_int32(out, value);
+int32_t config_parse_int32(const char *value) {
+    int32_t out;
+    auto __result = git_config_parse_int32(&out, value);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_config_parse_int32");
+    } else {
+        return out;
     }
 }
 
 
 
-void config_parse_int64(int64_t *out, const char *value) {
-    auto __result = git_config_parse_int64(out, value);
+int64_t config_parse_int64(const char *value) {
+    int64_t out;
+    auto __result = git_config_parse_int64(&out, value);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_config_parse_int64");
+    } else {
+        return out;
     }
 }
 
 
 
-void config_parse_path(git_buf *out, const char *value) {
-    auto __result = git_config_parse_path(out, value);
+git_buf config_parse_path(const char *value) {
+    git_buf out;
+    auto __result = git_config_parse_path(&out, value);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_config_parse_path");
+    } else {
+        return out;
     }
 }
 
@@ -4409,10 +4575,13 @@ git_describe_result *describe_workdir(git_repository *repo, git_describe_options
 
 
 
-void describe_format(git_buf *out, const git_describe_result *result, const git_describe_format_options *opts) {
-    auto __result = git_describe_format(out, result, opts);
+git_buf describe_format(const git_describe_result *result, const git_describe_format_options *opts) {
+    git_buf out;
+    auto __result = git_describe_format(&out, result, opts);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_describe_format");
+    } else {
+        return out;
     }
 }
 
@@ -4485,28 +4654,37 @@ void filter_list_contains(git_filter_list *filters, const char *name) {
 
 
 
-void filter_list_apply_to_buffer(git_buf *out, git_filter_list *filters, const char *in, size_t in_len) {
-    auto __result = git_filter_list_apply_to_buffer(out, filters, in, in_len);
+git_buf filter_list_apply_to_buffer(git_filter_list *filters, const char *in, size_t in_len) {
+    git_buf out;
+    auto __result = git_filter_list_apply_to_buffer(&out, filters, in, in_len);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_filter_list_apply_to_buffer");
+    } else {
+        return out;
     }
 }
 
 
 
-void filter_list_apply_to_file(git_buf *out, git_filter_list *filters, git_repository *repo, const char *path) {
-    auto __result = git_filter_list_apply_to_file(out, filters, repo, path);
+git_buf filter_list_apply_to_file(git_filter_list *filters, git_repository *repo, const char *path) {
+    git_buf out;
+    auto __result = git_filter_list_apply_to_file(&out, filters, repo, path);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_filter_list_apply_to_file");
+    } else {
+        return out;
     }
 }
 
 
 
-void filter_list_apply_to_blob(git_buf *out, git_filter_list *filters, git_blob *blob) {
-    auto __result = git_filter_list_apply_to_blob(out, filters, blob);
+git_buf filter_list_apply_to_blob(git_filter_list *filters, git_blob *blob) {
+    git_buf out;
+    auto __result = git_filter_list_apply_to_blob(&out, filters, blob);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_filter_list_apply_to_blob");
+    } else {
+        return out;
     }
 }
 
@@ -4738,19 +4916,25 @@ void revparse_ext(git_object **object_out, git_reference **reference_out, git_re
 
 
 
-void revparse(git_revspec *revspec, git_repository *repo, const char *spec) {
-    auto __result = git_revparse(revspec, repo, spec);
+git_revspec revparse(git_repository *repo, const char *spec) {
+    git_revspec revspec;
+    auto __result = git_revparse(&revspec, repo, spec);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_revparse");
+    } else {
+        return revspec;
     }
 }
 
 
 
-void stash_save(git_oid *out, git_repository *repo, const git_signature *stasher, const char *message, uint32_t flags) {
-    auto __result = git_stash_save(out, repo, stasher, message, flags);
+git_oid stash_save(git_repository *repo, const git_signature *stasher, const char *message, uint32_t flags) {
+    git_oid out;
+    auto __result = git_stash_save(&out, repo, stasher, message, flags);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_stash_save");
+    } else {
+        return out;
     }
 }
 
@@ -5005,10 +5189,13 @@ const char *submodule_url(git_submodule *submodule) {
 
 
 
-void submodule_resolve_url(git_buf *out, git_repository *repo, const char *url) {
-    auto __result = git_submodule_resolve_url(out, repo, url);
+git_buf submodule_resolve_url(git_repository *repo, const char *url) {
+    git_buf out;
+    auto __result = git_submodule_resolve_url(&out, repo, url);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_submodule_resolve_url");
+    } else {
+        return out;
     }
 }
 
@@ -5174,10 +5361,13 @@ void submodule_location(unsigned int *location_status, git_submodule *submodule)
 
 
 
-void worktree_list(git_strarray *out, git_repository *repo) {
-    auto __result = git_worktree_list(out, repo);
+git_strarray worktree_list(git_repository *repo) {
+    git_strarray out;
+    auto __result = git_worktree_list(&out, repo);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_worktree_list");
+    } else {
+        return out;
     }
 }
 
@@ -5323,19 +5513,25 @@ git_credential *credential_userpass(const char *url, const char *user_from_url, 
 
 
 
-void email_create_from_diff(git_buf *out, git_diff *diff, size_t patch_idx, size_t patch_count, const git_oid *commit_id, const char *summary, const char *body, const git_signature *author, const git_email_create_options *opts) {
-    auto __result = git_email_create_from_diff(out, diff, patch_idx, patch_count, commit_id, summary, body, author, opts);
+git_buf email_create_from_diff(git_diff *diff, size_t patch_idx, size_t patch_count, const git_oid *commit_id, const char *summary, const char *body, const git_signature *author, const git_email_create_options *opts) {
+    git_buf out;
+    auto __result = git_email_create_from_diff(&out, diff, patch_idx, patch_count, commit_id, summary, body, author, opts);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_email_create_from_diff");
+    } else {
+        return out;
     }
 }
 
 
 
-void email_create_from_commit(git_buf *out, git_commit *commit, const git_email_create_options *opts) {
-    auto __result = git_email_create_from_commit(out, commit, opts);
+git_buf email_create_from_commit(git_commit *commit, const git_email_create_options *opts) {
+    git_buf out;
+    auto __result = git_email_create_from_commit(&out, commit, opts);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_email_create_from_commit");
+    } else {
+        return out;
     }
 }
 
@@ -5485,10 +5681,13 @@ git_signature *mailmap_resolve_signature(const git_mailmap *mm, const git_signat
 
 
 
-void message_prettify(git_buf *out, const char *message, int strip_comments, char comment_char) {
-    auto __result = git_message_prettify(out, message, strip_comments, comment_char);
+git_buf message_prettify(const char *message, int strip_comments, char comment_char) {
+    git_buf out;
+    auto __result = git_message_prettify(&out, message, strip_comments, comment_char);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_message_prettify");
+    } else {
+        return out;
     }
 }
 
@@ -5600,10 +5799,13 @@ const git_oid *note_id(const git_note *note) {
 
 
 
-void note_create(git_oid *out, git_repository *repo, const char *notes_ref, const git_signature *author, const git_signature *committer, const git_oid *oid, const char *note, int force) {
-    auto __result = git_note_create(out, repo, notes_ref, author, committer, oid, note, force);
+git_oid note_create(git_repository *repo, const char *notes_ref, const git_signature *author, const git_signature *committer, const git_oid *oid, const char *note, int force) {
+    git_oid out;
+    auto __result = git_note_create(&out, repo, notes_ref, author, committer, oid, note, force);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_note_create");
+    } else {
+        return out;
     }
 }
 
@@ -5642,10 +5844,13 @@ void note_free(git_note *note) {
 
 
 
-void note_default_ref(git_buf *out, git_repository *repo) {
-    auto __result = git_note_default_ref(out, repo);
+git_buf note_default_ref(git_repository *repo) {
+    git_buf out;
+    auto __result = git_note_default_ref(&out, repo);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_note_default_ref");
+    } else {
+        return out;
     }
 }
 
@@ -5750,10 +5955,13 @@ void odb_exists_ext(git_odb *db, const git_oid *id, unsigned int flags) {
 
 
 
-void odb_exists_prefix(git_oid *out, git_odb *db, const git_oid *short_id, size_t len) {
-    auto __result = git_odb_exists_prefix(out, db, short_id, len);
+git_oid odb_exists_prefix(git_odb *db, const git_oid *short_id, size_t len) {
+    git_oid out;
+    auto __result = git_odb_exists_prefix(&out, db, short_id, len);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_odb_exists_prefix");
+    } else {
+        return out;
     }
 }
 
@@ -5786,10 +5994,13 @@ void odb_foreach(git_odb *db, git_odb_foreach_cb cb, void *payload) {
 
 
 
-void odb_write(git_oid *out, git_odb *odb, const void *data, size_t len, git_object_t type) {
-    auto __result = git_odb_write(out, odb, data, len, type);
+git_oid odb_write(git_odb *odb, const void *data, size_t len, git_object_t type) {
+    git_oid out;
+    auto __result = git_odb_write(&out, odb, data, len, type);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_odb_write");
+    } else {
+        return out;
     }
 }
 
@@ -5816,10 +6027,13 @@ void odb_stream_write(git_odb_stream *stream, const char *buffer, size_t len) {
 
 
 
-void odb_stream_finalize_write(git_oid *out, git_odb_stream *stream) {
-    auto __result = git_odb_stream_finalize_write(out, stream);
+git_oid odb_stream_finalize_write(git_odb_stream *stream) {
+    git_oid out;
+    auto __result = git_odb_stream_finalize_write(&out, stream);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_odb_stream_finalize_write");
+    } else {
+        return out;
     }
 }
 
@@ -5873,19 +6087,25 @@ void odb_write_multi_pack_index(git_odb *db) {
 
 
 
-void odb_hash(git_oid *out, const void *data, size_t len, git_object_t type) {
-    auto __result = git_odb_hash(out, data, len, type);
+git_oid odb_hash(const void *data, size_t len, git_object_t type) {
+    git_oid out;
+    auto __result = git_odb_hash(&out, data, len, type);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_odb_hash");
+    } else {
+        return out;
     }
 }
 
 
 
-void odb_hashfile(git_oid *out, const char *path, git_object_t type) {
-    auto __result = git_odb_hashfile(out, path, type);
+git_oid odb_hashfile(const char *path, git_object_t type) {
+    git_oid out;
+    auto __result = git_odb_hashfile(&out, path, type);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_odb_hashfile");
+    } else {
+        return out;
     }
 }
 
@@ -6149,10 +6369,13 @@ void patch_print(git_patch *patch, git_diff_line_cb print_cb, void *payload) {
 
 
 
-void patch_to_buf(git_buf *out, git_patch *patch) {
-    auto __result = git_patch_to_buf(out, patch);
+git_buf patch_to_buf(git_patch *patch) {
+    git_buf out;
+    auto __result = git_patch_to_buf(&out, patch);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_patch_to_buf");
+    } else {
+        return out;
     }
 }
 
@@ -6538,11 +6761,9 @@ void revwalk_hide_ref(git_revwalk *walk, const char *refname) {
 
 
 
-void revwalk_next(git_oid *out, git_revwalk *walk) {
+int revwalk_next(git_oid *out, git_revwalk *walk) {
     auto __result = git_revwalk_next(out, walk);
-    if (__result < 0) {
-        __GIT_THROW_EXCEPTION(__result, "git_revwalk_next");
-    }
+    return __result;
 }
 
 

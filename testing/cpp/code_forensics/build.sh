@@ -9,16 +9,23 @@ path=$(
         conanbuildinfo.json
 )
 
+function py_plotter() {
+    ./plotter.py
+    echo "py plotter ok"
+}
+
 function try_build() {
     clang++ \
         -fuse-ld=mold \
+        -std=c++2a \
         -o git-user \
         -ferror-limit=8 \
+        -lmatplot \
         git-user.cpp \
-        @conanbuildinfo.gcc || true
+        @conanbuildinfo.gcc
 
     echo "git user compile ok"
-    ./git-user || true
+    ./git-user
     echo "git user run ok"
 }
 
@@ -36,7 +43,6 @@ function build_git_wrapper() {
 }
 
 function wrap_git() {
-
     ./genwrapper \
         $path/git2.h \
         -o=$PWD/gitwrap.hpp \
@@ -44,10 +50,10 @@ function wrap_git() {
 
 }
 
-try_build
+# try_build
 # build_git_wrapper
 # wrap_git
-try_build
-
+# try_build
+py_plotter
 # cmake .
 # make -j 12
