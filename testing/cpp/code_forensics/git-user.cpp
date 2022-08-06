@@ -30,8 +30,11 @@ namespace git {
 #include "gitwrap.hpp"
 }
 
+using namespace git;
+
 int main() {
-    git::libgit2_init();
+    libgit2_init();
+    // auto repo =
 
     std::cout << "1\n";
     return 0;

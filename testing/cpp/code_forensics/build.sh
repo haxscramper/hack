@@ -22,22 +22,31 @@ function try_build() {
     echo "git user run ok"
 }
 
+function build_git_wrapper() {
+    clang++ genwrapper.cpp \
+        -std=c++2a \
+        -ferror-limit=1 \
+        -o genwrapper \
+        -fuse-ld=mold \
+        -g \
+        -lclang-cpp \
+        -lLLVM \
+        @conanbuildinfo.gcc
+
+}
+
+function wrap_git() {
+
+    ./genwrapper \
+        $path/git2.h \
+        -o=$PWD/gitwrap.hpp \
+        -extra-arg=-I/usr/lib/clang/14.0.6/include
+
+}
+
 try_build
-clang++ genwrapper.cpp \
-    -std=c++2a \
-    -ferror-limit=1 \
-    -o genwrapper \
-    -fuse-ld=mold \
-    -g \
-    -lclang-cpp \
-    -lLLVM \
-    @conanbuildinfo.gcc
-
-./genwrapper \
-    $path/git2.h \
-    -o=$PWD/gitwrap.hpp \
-    -extra-arg=-I/usr/lib/clang/14.0.6/include
-
+# build_git_wrapper
+# wrap_git
 try_build
 
 # cmake .

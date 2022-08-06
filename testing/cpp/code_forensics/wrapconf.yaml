@@ -1,14 +1,25 @@
 - function: "git_config_next"
   err: code
   out: entry
-- function: "git_strarray_copy"
-  ignore: true
-- function: "git_repository_open"
+- patt: |
+    functionDecl(
+      hasAnyParameter(
+        allOf(
+          hasName("out"),
+          hasType(pointerType(pointee(pointerType()))))),
+      hasReturnTypeLoc(loc(asString("int")))
+    )
   err: code
   out: out
-- function: "git_config_multivar_iterator_new"
+- patt: |
+    functionDecl(
+      hasAnyParameter(
+        allOf(
+          hasName("out"),
+          hasType(pointerType(pointee(pointerType())))))
+    )
+  err: none
   out: out
-  err: code
 - patt: functionDecl(hasReturnTypeLoc(loc(asString("int"))))
   err: code
 - patt: functionDecl()
