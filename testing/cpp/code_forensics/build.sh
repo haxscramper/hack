@@ -13,12 +13,12 @@ function try_build() {
     clang++ \
         -fuse-ld=mold \
         -o git-user \
-        -ferror-limit=4 \
+        -ferror-limit=8 \
         git-user.cpp \
         @conanbuildinfo.gcc || true
 
     echo "git user compile ok"
-    ./git-user
+    ./git-user || true
     echo "git user run ok"
 }
 
@@ -34,9 +34,7 @@ clang++ genwrapper.cpp \
     @conanbuildinfo.gcc
 
 ./genwrapper \
-    $path/git2/config.h \
-    $path/git2/global.h \
-    $path/git2/repository.h \
+    $path/git2.h \
     -o=$PWD/gitwrap.hpp \
     -extra-arg=-I/usr/lib/clang/14.0.6/include
 

@@ -100,6 +100,7 @@ struct UserWrapRule {
                     ///< result
     } errorHandling;
 
+    bool     ignore = false;
     Opt<Str> outArg; /// Mutable argument used as return value
 };
 
@@ -474,6 +475,9 @@ void operator>>(
 
 
 void operator>>(const YAML::Node& node, Str& str) { str = node.as<Str>(); }
+void operator>>(const YAML::Node& node, bool& str) {
+    str = node.as<bool>();
+}
 
 void operator>>(const YAML::Node& node, UserWrapRule& rule) {
     // WARNING It looks like YAML parser documentation is outdated for
@@ -495,6 +499,7 @@ void operator>>(const YAML::Node& node, UserWrapRule& rule) {
 
     if (node["out"]) { rule.outArg = node["out"].as<Str>(); }
     if (node["err"]) { node["err"] >> rule.errorHandling; }
+    if (node["ignore"]) { node["ignore"] >> rule.ignore; }
 }
 
 
@@ -539,12 +544,18 @@ class ConvertPusher : public MatchFinder::MatchCallback
     ASTBuilder b; /// Construct wrapped AST for processed
                   /// declarations
 
-    std::function<Str(const Str&)> renameCb;
+    std::function<Str(const Str&)> renameCb; /// Change declaration name
+    std::function<bool(const DynTypedNode&)> allowCb; /// Allow or skip
+                                                      /// declaration
 
   public:
     const Vec<Str>& getWrapped() { return wrapped; }
     void            setRenameCb(std::function<Str(const Str&)> _rename) {
                    renameCb = _rename;
+    }
+
+    void setAllowCb(std::function<bool(const DynTypedNode&)> impl) {
+        allowCb = impl;
     }
 
 
@@ -607,7 +618,9 @@ class ConvertPusher : public MatchFinder::MatchCallback
 
 
         // Construct function call AST
-        auto call = b.XCall(func, Pass);
+        auto call      = b.XCall(func, Pass);
+        bool hasResult = false;
+
 
         if (func->getCallResultType()->isVoidType()) {
             // If no result is expected simply append call to the body
@@ -615,6 +628,7 @@ class ConvertPusher : public MatchFinder::MatchCallback
 
         } else {
             // Otherwise assign it to the `code` output
+            hasResult = true;
             Body.push_back(
                 b.Stmt(b.VarDecl({.Name = "__result", .Init = call})));
         }
@@ -629,7 +643,7 @@ class ConvertPusher : public MatchFinder::MatchCallback
             case UserWrapRule::ErrorHandling::NoErrors: {
                 // If error should not be handled for this function, use
                 // it's output value as a final result
-                if (!func->getCallResultType()->isVoidType()) {
+                if (hasResult) {
                     Body.push_back(b.Return(b.Ref("__result")));
                     DeclParams.ResultTy = func->getCallResultType();
                 }
@@ -638,24 +652,28 @@ class ConvertPusher : public MatchFinder::MatchCallback
                 break;
             }
             case UserWrapRule::ErrorHandling::ReturnCode: {
-                // Otherwise process output
-                ASTBuilder::IfStmtParams IfParams{
-                    .Cond = b.XCall(
-                        BinaryOperator::Opcode::BO_LT,
-                        {b.Ref("__result"), b.Literal(0)}),
-                    // If code is less than zero (HACK, different libraries
-                    // might have other strategy for error denotation)
-                    // handle it as error
-                    .Then = {Fail}};
+                // Otherwise process output if there is an explicit result
+                // in the function call.
+                if (hasResult) {
+                    ASTBuilder::IfStmtParams IfParams{
+                        .Cond = b.XCall(
+                            BinaryOperator::Opcode::BO_LT,
+                            {b.Ref("__result"), b.Literal(0)}),
+                        // If code is less than zero (HACK, different
+                        // libraries might have other strategy for error
+                        // denotation) handle it as error
+                        .Then = {Fail}};
 
-                if (rule.outArg) {
-                    // If out argument is present return it in the
-                    // 'else' branch
-                    IfParams.Else = {b.Return(b.Ref(rule.outArg.value()))};
-                } /* else if (!func->getCallResultType()->isVoidType()) {
-                     IfParams.Else = {b.Return(b.Ref("__result"))};
-                 }*/
-                Body.push_back(b.IfStmt(IfParams));
+                    if (rule.outArg) {
+                        // If out argument is present return it in the
+                        // 'else' branch
+                        IfParams.Else = {
+                            b.Return(b.Ref(rule.outArg.value()))};
+                    } /* else if (!func->getCallResultType()->isVoidType())
+                     { IfParams.Else = {b.Return(b.Ref("__result"))};
+                     }*/
+                    Body.push_back(b.IfStmt(IfParams));
+                }
                 break;
             }
         }
@@ -677,8 +695,8 @@ class ConvertPusher : public MatchFinder::MatchCallback
     /// Override of the match finder result handing.
     virtual void run(const MatchFinder::MatchResult& Result) {
         auto func = Result.Nodes.getNodeAs<FunctionDecl>("function");
-        if (!Result.Context->getSourceManager().isWrittenInMainFile(
-                func->getLocation())) {
+        if (allowCb &&
+            !allowCb(DynTypedNode::create<FunctionDecl>(*func))) {
             return;
         }
 
@@ -687,7 +705,9 @@ class ConvertPusher : public MatchFinder::MatchCallback
         for (auto& find : finder) {
             find.match<FunctionDecl>(*func, func->getASTContext());
             if (0 < find.collector->bindings.size()) {
-                wrapWithRule(func, find.collector->rule);
+                if (!find.collector->rule.ignore) {
+                    wrapWithRule(func, find.collector->rule);
+                }
                 find.collector->bindings.clear();
                 break;
             }
@@ -742,6 +762,17 @@ int main_impl(int argc, const char** argv) {
     // working with `git_` library right now. In future should be
     // refactored to a more general rename tool
     convert.setRenameCb([](const Str& in) { return in.substr(4); });
+    convert.setAllowCb([](const DynTypedNode& node) {
+        auto      func = node.get<FunctionDecl>();
+        StringRef path = func->getASTContext()
+                             .getSourceManager()
+                             .getFilename(func->getLocation());
+        if (path.contains("deprecated.h")) { return false; }
+        auto name = func->getNameAsString();
+
+        auto result = name.rfind("git_", 0) == 0;
+        return result;
+    });
 
     { // Collect user-provided pattern matching rules
         YAML::Node doc = YAML::LoadFile("wrapconf.yaml");

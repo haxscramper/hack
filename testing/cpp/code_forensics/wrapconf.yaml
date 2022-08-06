@@ -1,27 +1,15 @@
-- function: "git_config_free"
-  err: none
-- function: "git_config_entry_free"
-  err: none
-- function: "git_config_iterator_free"
-  err: none
 - function: "git_config_next"
   err: code
   out: entry
-- function: "git_repository_free"
-  err: none
-- function: "git_repository_path"
-  err: none
-- function: "git_repository_workdir"
-  err: none
+- function: "git_strarray_copy"
+  ignore: true
 - function: "git_repository_open"
   err: code
   out: out
-- function: "git_repository_commondir"
-  err: none
 - function: "git_config_multivar_iterator_new"
   out: out
   err: code
-- function: "git_repository_get_namespace"
-  err: none
-- patt: functionDecl()
+- patt: functionDecl(hasReturnTypeLoc(loc(asString("int"))))
   err: code
+- patt: functionDecl()
+  err: none
