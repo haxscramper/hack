@@ -790,6 +790,7 @@ int main_impl(int argc, const char** argv) {
     if (!OutputFilename.empty()) {
         Str           name = OutputFilename.getValue();
         std::ofstream out{name};
+        out << "#pragma once\n";
         for (const auto& entry : convert.getWrapped()) {
             out << entry;
             out << "\n\n\n";

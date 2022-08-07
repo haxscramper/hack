@@ -18,15 +18,15 @@ function try_build() {
     clang++ \
         -fuse-ld=mold \
         -std=c++2a \
-        -o git-user \
-        -g \
+        -o git_user.bin \
+        -O3 \
         -ferror-limit=8 \
         -lmatplot \
-        git-user.cpp \
+        git_user/git_user.cpp \
         @conanbuildinfo.gcc
 
     echo "git user compile ok"
-    ./git-user
+    ./git_user.bin
     echo "git user run ok"
 }
 
@@ -46,7 +46,7 @@ function build_git_wrapper() {
 function wrap_git() {
     ./genwrapper \
         $path/git2.h \
-        -o=$PWD/gitwrap.hpp \
+        -o=$PWD/git_user/gitwrap.hpp \
         -extra-arg=-I/usr/lib/clang/14.0.6/include
 
 }

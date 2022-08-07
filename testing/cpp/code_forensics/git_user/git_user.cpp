@@ -92,22 +92,28 @@ int exec_walker(
     if (tree_entry_type(entry) != GIT_OBJECT_BLOB) { return GIT_OK; }
     // get entry name relative to `root`
     std::string path{tree_entry_name(entry)};
+    // Create full relative path for the target object
+    auto relpath = std::string{root + path};
     // Check for provided predicate
-    if (config.allow_path && !config.allow_path(path)) { return GIT_OK; }
+    if (config.allow_path && !config.allow_path(relpath)) {
+        std::cout << "    SKIP " << relpath << "\n";
+        return GIT_OK;
+    } else {
+        std::cout << "    EXEC " << relpath << "\n";
+    }
+
     // Init default blame creation options
     git_blame_options blameopts = GIT_BLAME_OPTIONS_INIT;
     // We are only interested in blame information up until target commit
     blameopts.newest_commit = oid;
     // Extract git blob object
-    auto object = tree_entry_to_object(repo, entry);
-    // Create full relative path for the target object
-    auto relpath = std::string{root + path};
+    git_object* object = tree_entry_to_object(repo, entry);
     // get blame information
-    auto blame = blame_file(repo, relpath.c_str(), &blameopts);
+    git_blame* blame = blame_file(repo, relpath.c_str(), &blameopts);
     assert(object_type(object) == GIT_OBJECT_BLOB);
     // `git_object` can be freely cast to the blob, provided we checked the
     // type first
-    auto blob = (git_blob*)object;
+    git_blob* blob = (git_blob*)object;
     // Byte position in the blob content
     int i = 0;
     // Counter for file line iteration
@@ -245,11 +251,16 @@ int main() {
 
 
     // Analyse commits starting from this date
-    gregorian::date start = {2020, 1, 1};
+    gregorian::date start = {2007, 1, 1};
     // Configuration for date period analysis
-    const int days_period = 20;
+    const int days_period = 360;
     // Main confugration for walker checks
     walker_config config{
+        .allow_path = [](const std::string& path) -> bool {
+            return path.ends_with(".nim") /*&&
+                   path.find("compiler/") != std::string::npos*/
+                ;
+        },
         .get_period = [&](const gregorian::date& date) -> int {
             // Get period number using simple integer division - 20 days
             // from now will be a period 1, 40 days will be period 2 and
@@ -263,6 +274,7 @@ int main() {
 
 
     // Walk over every commit in the history
+    int prev_period = -1;
     while (revwalk_next(&oid, walker) == GIT_SUCCESS) {
         // Get commit from the provided oid
         git_commit* commit = commit_lookup(repo, &oid);
@@ -273,9 +285,15 @@ int main() {
         // commit is no longer needed in this scope
         commit_free(commit);
         // check if we can process it
-        if (config.check_date(date)) {
+        if (config.check_date(date) &&
+            config.get_period(date) != prev_period) {
+            std::cout << "EXEC " << date << "\n";
             // and store analysis results if we can
             processed.push_back(process_commit(repo, oid, config));
+            std::cout << "DONE " << date << "\n";
+
+            // HACK ignore multiple commits that happened on the same day
+            prev_period = config.get_period(date);
         }
     }
 
@@ -324,10 +342,12 @@ int main() {
         }
     }
 
-    matplot::barstacked(Y);
-    auto plot_legend = matplot::legend(legend);
-    plot_legend->location(matplot::legend::general_alignment::topleft);
-    matplot::save("/tmp/commit-count.png");
+    if (!legend.empty()) {
+        matplot::barstacked(Y);
+        auto plot_legend = matplot::legend(legend);
+        plot_legend->location(matplot::legend::general_alignment::topleft);
+        matplot::save("/tmp/commit-count.png");
+    }
 
     return 0;
 }

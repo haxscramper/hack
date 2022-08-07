@@ -1,3 +1,5 @@
+#pragma once
+
 void libgit2_version(int *major, int *minor, int *rev) {
     auto __result = git_libgit2_version(major, minor, rev);
     if (__result < 0) {
