@@ -139,7 +139,6 @@ using TimePoint = stime::time_point<stime::system_clock>;
 /// Mutable state passed around walker configurations
 struct walker_state {
     git_revwalk* walker;
-    git_oid      oid;
 
     /// Current git repository
     git_repository* repo;
@@ -399,6 +398,7 @@ void stats_via_libgit(
 }
 
 Opt<analysis> exec_walker(
+    git_oid               oid,
     walker_state*         state,
     const char*           root,
     const git_tree_entry* entry,
@@ -418,9 +418,9 @@ Opt<analysis> exec_walker(
     }
 
     if (config->use_subprocess) {
-        stats_via_subprocess(state->oid, stats, config, relpath);
+        stats_via_subprocess(oid, stats, config, relpath);
     } else {
-        stats_via_libgit(state, state->oid, stats, entry, config, relpath);
+        stats_via_libgit(state, oid, stats, entry, config, relpath);
     }
 
     static std::mutex done;
@@ -428,10 +428,7 @@ Opt<analysis> exec_walker(
     {
         std::unique_lock print_lock{done};
         fmt::print(
-            "DONE ({:<5}) {} {}\n",
-            total_done++,
-            oid_tostr(state->oid),
-            relpath);
+            "DONE ({:<5}) {} {}\n", total_done++, oid_tostr(oid), relpath);
     }
     // Increase file count (for statistics)
     ++stats.filecount;
@@ -439,12 +436,13 @@ Opt<analysis> exec_walker(
 }
 
 std::future<analysis> process_commit(
+    git_oid           oid,
     walker_state*     state,
     CP<walker_config> config) {
     // Create task closure - NOTE maybe at some point git won't break with
     // threads and I could implement parallel processing.
-    auto task = [state, config]() {
-        git_commit* commit = commit_lookup(state->repo, &state->oid);
+    auto task = [oid, state, config]() {
+        git_commit* commit = commit_lookup(state->repo, &oid);
         // Get tree for a commit
         auto tree = commit_tree(commit);
         // Create object with c
@@ -466,7 +464,7 @@ std::future<analysis> process_commit(
             // order is not particularly important, doing preorder
             // traversal here
             GIT_TREEWALK_PRE,
-            [state, config, &sub_futures](
+            [oid, state, config, &sub_futures](
                 const char* root, const git_tree_entry* entry) {
                 // Duplicate all data passed to the callback - it is not
                 // owned by the user code and might disappear by the time
@@ -486,7 +484,7 @@ std::future<analysis> process_commit(
                     state->semaphore.acquire();
                     // Walker returns optional analysis result
                     auto result = exec_walker(
-                        state, user_str->c_str(), user_dup, config);
+                        oid, state, user_str->c_str(), user_dup, config);
                     state->semaphore.release();
 
                     // tree entry must be freed manually, FIXME work around
@@ -525,15 +523,16 @@ struct analysis_config {
 };
 
 Vec<std::future<analysis>> launch_analysis(
+    git_oid&       oid,
     walker_config* config,
     walker_state*  state) {
     // All constructed information
     Vec<std::future<analysis>> processed;
 
     // Walk over every commit in the history
-    while (revwalk_next(&state->oid, state->walker) == GIT_SUCCESS) {
+    while (revwalk_next(&oid, state->walker) == GIT_SUCCESS) {
         // Get commit from the provided oid
-        git_commit* commit = commit_lookup(state->repo, &state->oid);
+        git_commit* commit = commit_lookup(state->repo, &oid);
         // Convert from unix timestamp used by git to humane format
         Date date = posix_time::from_time_t(commit_time(commit)).date();
 
@@ -542,14 +541,17 @@ Vec<std::future<analysis>> launch_analysis(
         // check if we can process it
         if (config->check_date(date)) {
             // and store analysis results if we can
-            processed.push_back(process_commit(state, config));
+            processed.push_back(process_commit(oid, state, config));
         }
     }
 
     return processed;
 }
 
-void open_walker(walker_state& state, CR<analysis_config> main_conf) {
+void open_walker(
+    git_oid&            oid,
+    walker_state&       state,
+    CR<analysis_config> main_conf) {
     // Read HEAD on master
     Str head_filepath{main_conf.repo + main_conf.heads};
 
@@ -574,12 +576,12 @@ void open_walker(walker_state& state, CR<analysis_config> main_conf) {
 
     fclose(head_fileptr);
 
-    state.oid = oid_fromstr(head_rev);
+    oid = oid_fromstr(head_rev);
     // Initialize revision walker
     state.walker = revwalk_new(state.repo);
     // Iterate all commits in the topological order
     revwalk_sorting(state.walker, GIT_SORT_TOPOLOGICAL);
-    revwalk_push(state.walker, &state.oid);
+    revwalk_push(state.walker, &oid);
 }
 
 int main() {
@@ -593,7 +595,8 @@ int main() {
         // Open directory from the provided path - for now hardcoded
         .repo = repository_open_ext(main_conf.repo.c_str(), 0, nullptr)});
 
-    open_walker(*state, main_conf);
+    git_oid oid;
+    open_walker(oid, *state, main_conf);
 
     // Configure state of the sampling strategies
     allow_state allow{.days_period = 90, .start = {2020, 1, 1}};
@@ -616,7 +619,7 @@ int main() {
 
     state->push_bench_point("total");
 
-    auto processed = launch_analysis(config.get(), state.get());
+    auto processed = launch_analysis(oid, config.get(), state.get());
 
     // Initial data retrival
     struct period_spec {
