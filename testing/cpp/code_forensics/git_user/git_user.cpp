@@ -126,7 +126,7 @@ struct walker_config {
     /// Get integer index of the period for Date
     Func<int(const Date&)> get_period;
     /// Check whether commits at the specified date should be analysed
-    Func<bool(const Date&)> check_date;
+    Func<bool(const Date&)> allow_sample_at_date;
     /// Analyse commits via subprocess launches or via libgit blame
     /// execution
     bool use_subprocess = true;
@@ -136,6 +136,8 @@ struct walker_config {
 
 using TimePoint = stime::time_point<stime::system_clock>;
 
+#define MAX_PARALLEL 16
+
 /// Mutable state passed around walker configurations
 struct walker_state {
     git_revwalk* walker;
@@ -144,7 +146,7 @@ struct walker_state {
     git_repository* repo;
     /// Semaphore to cap maximum number of parallel subprocesses/threads
     /// (in case of libgit-based analysis)
-    std::counting_semaphore<16> semaphore{16};
+    std::counting_semaphore<MAX_PARALLEL> semaphore{MAX_PARALLEL};
 
     std::map<Str, TimePoint> bench_points;
 
@@ -222,6 +224,7 @@ void visited_line(
     analysis&         stats,
     CP<walker_config> config,
     CR<Date>          date) {
+
     // get period index and used it to update the analysis
     // information
     int period = config->get_period(date);
@@ -312,10 +315,11 @@ void stats_via_subprocess(
                 is >> time;
                 assert(time == "author-time");
                 is >> time;
-                visited_line(
-                    stats,
-                    config,
-                    posix_time::from_time_t(std::stol(time)).date());
+                auto date = posix_time::from_time_t(std::stol(time))
+                                .date();
+
+
+                visited_line(stats, config, date);
                 break;
             }
 
@@ -404,6 +408,7 @@ Opt<analysis> exec_walker(
     const git_tree_entry* entry,
     CP<walker_config>     config) {
     analysis stats;
+
     // We are looking for blobs
     if (tree_entry_type(entry) != GIT_OBJECT_BLOB) {
         return Opt<analysis>{};
@@ -412,10 +417,15 @@ Opt<analysis> exec_walker(
     Str path{tree_entry_name(entry)};
     // Create full relative path for the target object
     auto relpath = Str{root + path};
+    auto date    = posix_time::from_time_t(
+                    commit_time(commit_lookup(state->repo, &oid)))
+                    .date();
+
     // Check for provided predicate
     if (config->allow_path && !config->allow_path(relpath)) {
         return Opt<analysis>{};
     }
+
 
     if (config->use_subprocess) {
         stats_via_subprocess(oid, stats, config, relpath);
@@ -439,6 +449,7 @@ std::future<analysis> process_commit(
     git_oid           oid,
     walker_state*     state,
     CP<walker_config> config) {
+
     // Create task closure - NOTE maybe at some point git won't break with
     // threads and I could implement parallel processing.
     auto task = [oid, state, config]() {
@@ -457,6 +468,7 @@ std::future<analysis> process_commit(
         analysis stats{
             .check_date = posix_time::from_time_t(commit_time(commit))
                               .date()};
+
 
         // walk all entries in the tree
         tree_walk(
@@ -498,12 +510,15 @@ std::future<analysis> process_commit(
                 return GIT_OK;
             });
 
-
+        int count = 0;
         // For all futures provided in the subtask analysis - get result,
         // if it is non-empty, merge it with input data.
         for (auto& future : sub_futures) {
             auto res = future.get();
-            if (res) { stats = stats + res.value(); }
+            if (res) {
+                stats = stats + res.value();
+                ++count;
+            }
         }
 
         // commit information is no longer needed
@@ -518,7 +533,7 @@ std::future<analysis> process_commit(
 #define GIT_SUCCESS 0
 
 struct analysis_config {
-    Str repo  = "/tmp/nimskull";
+    Str repo  = "/tmp/Nim";
     Str heads = "/.git/refs/heads/devel";
 };
 
@@ -539,7 +554,7 @@ Vec<std::future<analysis>> launch_analysis(
         // commit is no longer needed in this scope
         commit_free(commit);
         // check if we can process it
-        if (config->check_date(date)) {
+        if (config->allow_sample_at_date(date)) {
             // and store analysis results if we can
             processed.push_back(process_commit(oid, state, config));
         }
@@ -605,14 +620,22 @@ int main() {
     auto config = UPtr<walker_config>(new walker_config{
         //
         .allow_path = [](CR<Str> path) -> bool {
-            return path.ends_with(".nim") &&
-                   path.find("compiler/") != Str::npos;
+            if (path.ends_with(".nim")) {
+                return path.find("compiler/") != Str::npos ||
+                       path.find("rod/") != Str::npos;
+            } else if (path.ends_with(".pas")) {
+                return path.find("nim/") != Str::npos;
+            } else {
+                return false;
+            }
         },
         .get_period = [&](const Date& date) -> int {
-            return allow.year_to_period(date);
+            auto result = allow.year_to_period(date);
+            return result;
         },
-        .check_date = [&](const Date& date) -> bool {
-            return allow.allow_once();
+        .allow_sample_at_date = [&](const Date& date) -> bool {
+            bool result = allow.allow_once_per_year(date);
+            return result;
         },
         .use_subprocess = true,
         .project_root   = main_conf.repo});
@@ -623,9 +646,9 @@ int main() {
 
     // Initial data retrival
     struct period_spec {
-        Date     start;
-        Date     end;
-        Vec<int> lines;
+        Date               start;
+        Date               end;
+        std::map<int, int> per_sample;
     };
     std::map<int, period_spec> period_burndown;
     Vec<Date>                  sample_points;
@@ -633,7 +656,8 @@ int main() {
         auto res = future.get();
         sample_points.push_back(res.check_date);
         for (auto& [period, stats] : res.per_period) {
-            period_burndown[period].lines.push_back(stats.line_count);
+            period_burndown[period]
+                .per_sample[sample_points.size() - 1] = stats.line_count;
             period_burndown[period].start = stats.start.value();
             period_burndown[period].end   = stats.end.value();
         }
@@ -649,30 +673,43 @@ int main() {
     revwalk_free(state->walker);
     repository_free(state->repo);
 
-    // Reverse commits (they were
-    // iterated from the last to first, we need from first to last)
-    for (auto& [period, spec] : period_burndown) {
-        std::reverse(spec.lines.begin(), spec.lines.end());
-    }
-
     std::reverse(sample_points.begin(), sample_points.end());
 
     fmt::print(
         "{:>32} {}\n", "sample taken", fmt::join(sample_points, " "));
+    Vec<int> total_per_sample(sample_points.size() - 1, 0);
     for (auto& [period, stats] : period_burndown) {
-        auto lines = stats.lines;
-        // for proper stacked barplot I need to equalize sizes of all data
-        // series, padding information about misssing dates with zeroes.
-        lines.insert(
-            lines.begin(), sample_points.size() - lines.size(), 0);
+        Vec<int> out_lines;
+        // Reverse iterate sample point indices commits (they were iterated
+        // from the last to first, we need from first to last).
+        // `std::reverse` for sample points above is also due to this.
+        //
+        // for proper stacked barplot I need to equalize sizes of
+        // all data series, padding information about misssing
+        // dates with zeroes.
+        for (int i = sample_points.size() - 1; 0 <= i; --i) {
+            int count = 0;
+            if (stats.per_sample.contains(i)) {
+                // It is possible the data was not present at all - for
+                // example, we might take a commit sample, but it would be
+                // without any interesteing files. This would not give any
+                // periods, so the data is completely empty.
+                count = stats.per_sample[i];
+            }
+            out_lines.push_back(count);
+            total_per_sample[i] += count;
+        }
+
         fmt::print(
             "({:^4}) [{}]-[{}] {:<10}\n",
             period,
             stats.start,
             stats.end,
-            fmt::join(lines, " "));
-        // store current period time into legend annotations
+            fmt::join(out_lines, " "));
     }
+
+    fmt::print(
+        "{:>32} {:<10}\n", "total", fmt::join(total_per_sample, " "));
 
     return 0;
 }
