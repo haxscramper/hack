@@ -1,5 +1,3 @@
-#pragma once
-
 void libgit2_version(int *major, int *minor, int *rev) {
     auto __result = git_libgit2_version(major, minor, rev);
     if (__result < 0) {
@@ -935,10 +933,13 @@ git_tree_entry *tree_entry_bypath(const git_tree *root, const char *path) {
 
 
 
-void tree_entry_dup(git_tree_entry **dest, const git_tree_entry *source) {
-    auto __result = git_tree_entry_dup(dest, source);
+git_tree_entry *tree_entry_dup(const git_tree_entry *source) {
+    git_tree_entry *dest;
+    auto __result = git_tree_entry_dup(&dest, source);
     if (__result < 0) {
         __GIT_THROW_EXCEPTION(__result, "git_tree_entry_dup");
+    } else {
+        return dest;
     }
 }
 

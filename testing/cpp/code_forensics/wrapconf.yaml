@@ -13,6 +13,9 @@
 - function: "git_tree_entry_to_object"
   out: object_out
   code: err
+- function: "git_tree_entry_dup"
+  out: dest
+  err: code
 - function: "git_revwalk_next"
   err: none
 - function: "git_commit_tree"

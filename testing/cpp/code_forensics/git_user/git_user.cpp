@@ -86,7 +86,7 @@ void tree_walk(
         allocated);
 }
 
-struct commit_analysis_result {
+struct analysis {
     int  filecount;  /// Number of files processed for the commit analysis
     Date check_date; /// Date when commit was made
     /// Per-year line count registered in the blame
@@ -94,8 +94,30 @@ struct commit_analysis_result {
         Opt<Date> start;
         Opt<Date> end;
         int       line_count;
+
+        period_description operator+(CR<period_description> other) {
+            period_description res = *this;
+            if (!res.end || res.end < other.end) { res.end = other.end; }
+
+            if (!res.start || other.start < res.start) {
+                res.start = other.start;
+            }
+
+            res.line_count += other.line_count;
+            return res;
+        }
     };
     std::map<int, period_description> per_period;
+
+
+    analysis operator+(CR<analysis> other) {
+        analysis res = *this;
+        for (auto& [period, stats] : other.per_period) {
+            res.per_period[period] = res.per_period[period] + stats;
+        }
+
+        return res;
+    }
 };
 
 struct walker_config {
@@ -173,9 +195,9 @@ Str oid_tostr(git_oid oid) {
 }
 
 void visited_line(
-    commit_analysis_result& stats,
-    CP<walker_config>       config,
-    CR<Date>                date) {
+    analysis&         stats,
+    CP<walker_config> config,
+    CR<Date>          date) {
     // get period index and used it to update the analysis
     // information
     int period = config->get_period(date);
@@ -191,10 +213,10 @@ void visited_line(
 
 
 void stats_via_subprocess(
-    git_oid                 oid,
-    commit_analysis_result& stats,
-    CP<walker_config>       config,
-    CR<Str>                 relpath) {
+    git_oid           oid,
+    analysis&         stats,
+    CP<walker_config> config,
+    CR<Str>           relpath) {
 
     Str str_oid{oid_tostr(oid)};
 
@@ -282,12 +304,12 @@ void stats_via_subprocess(
 }
 
 void stats_via_libgit(
-    walker_state*           state,
-    git_oid                 oid,
-    commit_analysis_result& stats,
-    const git_tree_entry*   entry,
-    CP<walker_config>       config,
-    CR<Str>                 relpath) {
+    walker_state*         state,
+    git_oid               oid,
+    analysis&             stats,
+    const git_tree_entry* entry,
+    CP<walker_config>     config,
+    CR<Str>               relpath) {
 
     // Init default blame creation options
     git_blame_options blameopts = GIT_BLAME_OPTIONS_INIT;
@@ -345,22 +367,24 @@ void stats_via_libgit(
     blame_free(blame);
 }
 
-int exec_walker(
-    walker_state*           state,
-    git_oid                 oid,
-    commit_analysis_result& stats,
-    const char*             root,
-    const git_tree_entry*   entry,
-    CP<walker_config>       config) {
+Opt<analysis> exec_walker(
+    walker_state*         state,
+    git_oid               oid,
+    const char*           root,
+    const git_tree_entry* entry,
+    CP<walker_config>     config) {
+    analysis stats;
     // We are looking for blobs
-    if (tree_entry_type(entry) != GIT_OBJECT_BLOB) { return GIT_OK; }
+    if (tree_entry_type(entry) != GIT_OBJECT_BLOB) {
+        return Opt<analysis>{};
+    }
     // get entry name relative to `root`
     Str path{tree_entry_name(entry)};
     // Create full relative path for the target object
     auto relpath = Str{root + path};
     // Check for provided predicate
     if (config->allow_path && !config->allow_path(relpath)) {
-        return GIT_OK;
+        return Opt<analysis>{};
     }
 
     if (config->use_subprocess) {
@@ -374,7 +398,7 @@ int exec_walker(
     {
         std::unique_lock print_lock{done};
         fmt::print(
-            "DONE ({:<5}) for [{}] {} {}\n",
+            "DONE ({:<5}) {} {}\n",
             total_done++,
             stats.check_date,
             oid_tostr(oid),
@@ -382,10 +406,10 @@ int exec_walker(
     }
     // Increase file count (for statistics)
     ++stats.filecount;
-    return GIT_OK;
+    return stats;
 }
 
-std::future<commit_analysis_result> process_commit(
+std::future<analysis> process_commit(
     walker_state*     state,
     git_oid           oid,
     CP<walker_config> config) {
@@ -396,38 +420,51 @@ std::future<commit_analysis_result> process_commit(
         // Get tree for a commit
         auto tree = commit_tree(commit);
         // Create object with c
-        commit_analysis_result stats{
+
+        Vec<std::future<Opt<analysis>>> sub_futures;
+
+        analysis stats{
             .check_date = posix_time::from_time_t(commit_time(commit))
                               .date()};
+
         // walk all entries in the tree
         tree_walk(
             tree,
             // order is not particularly important, doing preorder
             // traversal here
             GIT_TREEWALK_PRE,
-            [state, oid, &stats, config](
+            [state, oid, config, &sub_futures](
                 const char* root, const git_tree_entry* entry) {
-                state->semaphore.acquire();
-                auto result = exec_walker(
-                    state, oid, stats, root, entry, config);
+                git_tree_entry* user_dup = tree_entry_dup(entry);
+                SPtr<Str>       user_str = std::make_shared<Str>(root);
+                auto            sub_task =
+                    [&, user_str, user_dup]() -> Opt<analysis> {
+                    state->semaphore.acquire();
+                    auto result = exec_walker(
+                        state, oid, user_str->c_str(), user_dup, config);
+                    state->semaphore.release();
 
-                state->semaphore.release();
+                    tree_entry_free(user_dup);
 
-                return result;
+                    return result;
+                };
+
+                sub_futures.push_back(std::async(sub_task));
+                return GIT_OK;
             });
+
+
+        for (auto& future : sub_futures) {
+            auto res = future.get();
+            if (res) { stats = stats + res.value(); }
+        }
 
         // commit information is no longer needed
         commit_free(commit);
         return stats;
     };
 
-    // return task();
-
-    if (config->use_subprocess) {
-        return std::async(std::launch::async, task);
-    } else {
-        return std::async(std::launch::async, task);
-    }
+    return std::async(std::launch::async, task);
 }
 
 
@@ -480,7 +517,7 @@ int main() {
     revwalk_push(walker, &oid);
 
     // All constructed information
-    Vec<std::future<commit_analysis_result>> processed;
+    Vec<std::future<analysis>> processed;
 
     // Configure state of the sampling strategies
     allow_state allow{.days_period = 90, .start = {2020, 1, 1}};
