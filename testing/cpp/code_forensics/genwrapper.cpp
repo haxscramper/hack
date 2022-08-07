@@ -25,6 +25,7 @@
 
 #include <range/v3/all.hpp>
 
+#include "common.hpp"
 
 #define BOOST_STACKTRACE_USE_ADDR2LINE
 #define BOOST_STACKTRACE_ADDR2LINE_LOCATION "/bin/addr2line"
@@ -80,15 +81,6 @@ using namespace clang::ast_matchers::dynamic;
 
 namespace rv = ranges::views;
 
-template <typename T>
-using Vec = std::vector<T>;
-using Str = std::string;
-
-template <typename T>
-using Opt = std::optional<T>;
-
-template <typename T>
-using UPtr = std::unique_ptr<T>;
 
 /// User-provided customization for handing of different procedure kinds
 struct UserWrapRule {

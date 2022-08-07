@@ -20,8 +20,9 @@ function try_build() {
         -std=c++2a \
         -o git_user.bin \
         -O3 \
-        -ferror-limit=8 \
-        -lmatplot \
+        -ferror-limit=4 \
+        -lboost_system \
+        -lboost_filesystem \
         git_user/git_user.cpp \
         @conanbuildinfo.gcc
 
