@@ -121,26 +121,38 @@ struct analysis {
 };
 
 struct walker_config {
-    Func<bool(CR<Str>)>     allow_path;
-    Func<int(const Date&)>  get_period;
+    /// Allow processing of a specific path in the repository
+    Func<bool(CR<Str>)> allow_path;
+    /// Get integer index of the period for Date
+    Func<int(const Date&)> get_period;
+    /// Check whether commits at the specified date should be analysed
     Func<bool(const Date&)> check_date;
-    bool                    use_subprocess = true;
-    Str                     project_root;
+    /// Analyse commits via subprocess launches or via libgit blame
+    /// execution
+    bool use_subprocess = true;
+    /// Current project root path (absolute path)
+    Str project_root;
 };
 
 using TimePoint = stime::time_point<stime::system_clock>;
 
 /// Mutable state passed around walker configurations
 struct walker_state {
-    git_repository*             repo;
+    /// Current git repository
+    git_repository* repo;
+    /// Semaphore to cap maximum number of parallel subprocesses/threads
+    /// (in case of libgit-based analysis)
     std::counting_semaphore<16> semaphore{16};
 
     std::map<Str, TimePoint> bench_points;
 
+    /// Create new benchmark point with provided \arg name
     void push_bench_point(CR<Str> name) {
         bench_points[name] = stime::system_clock::now();
     }
 
+    /// Return time elapsed since the start of the benchmark point \arg
+    /// name
     stime::milliseconds pop_bench_point(CR<Str> name) {
         return stime::duration_cast<stime::milliseconds>(
             stime::system_clock::now() - bench_points[name]);
@@ -159,6 +171,16 @@ struct allow_state {
     std::set<int> visited_years;
     /// Index of the previous period
     int prev_period = -1;
+
+    /// Only analyze single commit - whichever one will be tried first
+    bool allow_once() {
+        if (prev_period == -1) {
+            prev_period = 0;
+            return true;
+        } else {
+            return false;
+        }
+    }
 
     bool allow_once_per_year(CR<Date> date) {
         if (!visited_years.contains(date.year())) {
@@ -220,17 +242,22 @@ void stats_via_subprocess(
 
     Str str_oid{oid_tostr(oid)};
 
-    Vec<Str> args{process::search_path("git").string(),
-                  "blame",
-                  "--line-porcelain",
-                  str_oid,
-                  "--",
-                  relpath};
+    /// Start git blame subprocess
+    Vec<Str> args{
+        process::search_path("git").string(),
+        "blame",
+        "--line-porcelain",
+        str_oid,
+        "--",
+        relpath};
 
+    /// Read it's standard output
     process::ipstream out;
-    process::child    blame{args,
-                         process::std_out > out,
-                         process::start_dir(config->project_root)};
+    /// Proces is started in the specified project directory
+    process::child blame{
+        args,
+        process::std_out > out,
+        process::start_dir(config->project_root)};
 
     Str line;
     // --line-porcelain generates chunks with twelve consecutive elements -
@@ -276,6 +303,7 @@ void stats_via_subprocess(
 
 
         switch (state) {
+            /// For now we are only looking into the authoring time
             case LK::AuthorTime: {
                 std::stringstream is{line};
                 Str               time;
@@ -398,11 +426,7 @@ Opt<analysis> exec_walker(
     {
         std::unique_lock print_lock{done};
         fmt::print(
-            "DONE ({:<5}) {} {}\n",
-            total_done++,
-            stats.check_date,
-            oid_tostr(oid),
-            relpath);
+            "DONE ({:<5}) {} {}\n", total_done++, oid_tostr(oid), relpath);
     }
     // Increase file count (for statistics)
     ++stats.filecount;
@@ -423,6 +447,11 @@ std::future<analysis> process_commit(
 
         Vec<std::future<Opt<analysis>>> sub_futures;
 
+        // NOTE Current implementation is a bit hacky, but in the future it
+        // should be extended into direction that would allow to select
+        // whether per-file paralelization is enabled or not (right now we
+        // can paralleize over file and commit, capping total execution
+        // time via semaphores)
         analysis stats{
             .check_date = posix_time::from_time_t(commit_time(commit))
                               .date()};
@@ -435,15 +464,29 @@ std::future<analysis> process_commit(
             GIT_TREEWALK_PRE,
             [state, oid, config, &sub_futures](
                 const char* root, const git_tree_entry* entry) {
+                // Duplicate all data passed to the callback - it is not
+                // owned by the user code and might disappear by the time
+                // we get to the actual walker execution
                 git_tree_entry* user_dup = tree_entry_dup(entry);
-                SPtr<Str>       user_str = std::make_shared<Str>(root);
-                auto            sub_task =
+                // Shared pointer to the string is captured by copy in the
+                // lambda, will be deallocated automatically
+                SPtr<Str> user_str = std::make_shared<Str>(root);
+
+                auto sub_task =
                     [&, user_str, user_dup]() -> Opt<analysis> {
+                    // cap maximum number of actively executed walkers -
+                    // their implementation does not have any overlapping
+                    // critical sections, but performance limitations are
+                    // present (large projects might have thousands of
+                    // calls)
                     state->semaphore.acquire();
+                    // Walker returns optional analysis result
                     auto result = exec_walker(
                         state, oid, user_str->c_str(), user_dup, config);
                     state->semaphore.release();
 
+                    // tree entry must be freed manually, FIXME work around
+                    // exceptions in the walker executor
                     tree_entry_free(user_dup);
 
                     return result;
@@ -454,6 +497,8 @@ std::future<analysis> process_commit(
             });
 
 
+        // For all futures provided in the subtask analysis - get result,
+        // if it is non-empty, merge it with input data.
         for (auto& future : sub_futures) {
             auto res = future.get();
             if (res) { stats = stats + res.value(); }
@@ -533,18 +578,7 @@ int main() {
             return allow.year_to_period(date);
         },
         .check_date = [&](const Date& date) -> bool {
-            if (allow.allow_once_per_year(date)) {
-                static int max = 0;
-                auto       res = ++max < 2;
-                if (!res) {
-                    std::cout << "SKIP " << max << "\n";
-                } else {
-                    std::cout << "RUN " << max << "\n";
-                };
-                return res;
-            } else {
-                return false;
-            }
+            return allow.allow_once();
         },
         .use_subprocess = true,
         .project_root   = main_conf.repo});
