@@ -93,7 +93,8 @@ struct walker_config {
     /// Analyse commits via subprocess launches or via libgit blame
     /// execution
     bool use_subprocess = true;
-    bool use_threading  = true;
+    enum threading_mode { async, defer, sequential };
+    threading_mode use_threading = threading_mode::async;
     /// Current project root path (absolute path)
     Str repo;
     Str heads;
@@ -105,6 +106,25 @@ struct walker_config {
     /// Check whether commits at the specified date should be analysed
     Func<bool(const Date&)> allow_sample_at_date;
 };
+
+template <typename T>
+std::future<T> async_task(
+    walker_config::threading_mode mode,
+    Func<T()>                     task) {
+    switch (mode) {
+        case walker_config::async: {
+            return std::async(std::launch::async, task);
+        }
+        case walker_config::defer: {
+            return std::async(std::launch::deferred, task);
+        }
+        case walker_config::sequential: {
+            auto tmp = task();
+            return std::async(
+                std::launch::deferred, [tmp]() { return tmp; });
+        }
+    }
+}
 
 using TimePoint = stime::time_point<stime::system_clock>;
 
@@ -456,7 +476,9 @@ void add_sub_task(
     // Duplicate all data passed to the callback - it is not owned by the
     // user code and might disappear by the time we get to the actual
     // walker execution
-    auto sub_task = [&,
+    auto sub_task = [oid,
+                     out_commit,
+                     state,
                      user_str = Str(root),
                      user_dup = tree_entry_dup(entry)]() -> ir::FileId {
         // cap maximum number of actively executed walkers - their
@@ -475,13 +497,8 @@ void add_sub_task(
         return result;
     };
 
-    if (state->config->use_threading) {
-        sub_futures.push_back(std::async(std::launch::async, sub_task));
-    } else {
-        auto res = sub_task();
-        sub_futures.push_back(
-            std::async(std::launch::deferred, [res]() { return res; }));
-    }
+    sub_futures.push_back(
+        async_task<ir::FileId>(state->config->use_threading, sub_task));
 }
 
 std::atomic<int> file_count;
@@ -507,10 +524,11 @@ ir::CommitId process_commit_impl(git_oid oid, walker_state* state) {
         GIT_TREEWALK_PRE,
         [oid, state, out_commit, &sub_futures](
             const char* root, const git_tree_entry* entry) {
-            // if (file_count.load() < 10) {
-            //     file_count.store(file_count.load() + 1);
-            add_sub_task(oid, state, out_commit, root, entry, sub_futures);
-            // }
+            if (file_count.load() < 4) {
+                file_count.store(file_count.load() + 1);
+                add_sub_task(
+                    oid, state, out_commit, root, entry, sub_futures);
+            }
 
             return GIT_OK;
         });
@@ -529,19 +547,10 @@ ir::CommitId process_commit_impl(git_oid oid, walker_state* state) {
 std::future<ir::CommitId> process_commit(
     git_oid       oid,
     walker_state* state) {
-
-    // Create task closure - NOTE maybe at some point git won't break with
-    // threads and I could implement parallel processing.
-    auto task = [oid, state]() -> ir::CommitId {
-        return process_commit_impl(oid, state);
-    };
-
-    if (state->config->use_threading) {
-        return std::async(std::launch::async, task);
-    } else {
-        auto tmp = task();
-        return std::async(std::launch::deferred, [tmp]() { return tmp; });
-    }
+    return async_task<ir::CommitId>(
+        state->config->use_threading, [oid, state]() -> ir::CommitId {
+            return process_commit_impl(oid, state);
+        });
 }
 
 
@@ -611,7 +620,7 @@ int main() {
     // Provide implementation callback strategies
     auto config = UPtr<walker_config>(new walker_config{
         .use_subprocess = true,
-        .use_threading  = true,
+        .use_threading  = walker_config::defer,
         .repo           = "/tmp/fusion",
         .heads          = "/.git/refs/heads/master",
         .allow_path     = [](CR<Str> path) -> bool {
