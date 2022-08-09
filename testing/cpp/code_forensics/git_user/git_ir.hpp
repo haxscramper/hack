@@ -195,32 +195,6 @@ DECL_ID_TYPE(dir, DirectoryId, int);
 DECL_ID_TYPE(string, StrId, int);
 DECL_ID_TYPE(author, AuthorId, int);
 
-// struct commit;
-// struct CommitId : dod::Id<int> {
-//     using value_type = commit;
-// };
-// struct file;
-// struct [[nodiscard]] FileId : dod::Id<int> {
-//     using value_type = file;
-// };
-// struct dir;
-// struct [[nodiscard]] DirectoryId : dod::Id<int> {
-//     using value_type = dir;
-// };
-// struct string;
-// struct [[nodiscard]] StrId : dod::Id<int> {
-//     using value_type = string;
-//     StrId(int a = 0) : dod::Id<int>(a) {}
-// };
-// struct line;
-// struct [[nodiscard]] LineId : dod::Id<int> {
-//     using value_type = line;
-// };
-// struct author;
-// struct [[nodiscard]] AuthorId : dod::Id<int> {
-//     using value_type = author;
-// };
-
 /// single commit by author, taken at some point in time
 struct commit {
     using id_type = CommitId;
