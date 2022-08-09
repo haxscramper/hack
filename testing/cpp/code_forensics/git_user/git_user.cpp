@@ -135,41 +135,12 @@ struct walker_state {
             stime::system_clock::now() - bench_points[name]);
     }
 
-    std::mutex content_mutex;
-
-    Vec<std::thread::id> already_locked;
-
-
-    void lock() {
-        // auto id = std::this_thread::get_id();
-        // std::cout << "locking on thread " << id << "\n";
-
-        // if (std::find(already_locked.begin(), already_locked.end(), id)
-        // !=
-        //     already_locked.end()) {
-        //     std::cout << "trying to lock on thread " << id
-        //               << " again - already locked\n";
-        //     for (const auto& it : already_locked) {
-        //         std::cout << " - " << it << "\n";
-        //     }
-        //     assert(false);
-        // }
-
-        content_mutex.lock();
-        // already_locked.push_back(id);
-    }
-
-    void unlock() {
-        // auto id = std::this_thread::get_id();
-        // std::cout << "unlocking on thread " << id << "\n";
-        content_mutex.unlock();
-        // auto point = std::find(
-        //     already_locked.begin(), already_locked.end(), id);
-        // already_locked.erase(point, point);
-    }
-
+    std::mutex           m;
     ir::content_manager* content;
 };
+
+template <typename T>
+using ULock = std::unique_lock<T>;
 
 /// Collection of different commit sampling strategies
 struct allow_state {
@@ -238,10 +209,11 @@ ir::FileId stats_via_subprocess(
 
     // Getting file id immediately at the start in order to use it for the
     // line construction.
-    walker->content_mutex.lock();
-    ir::FileId result = walker->content->add(file);
-    walker->content_mutex.unlock();
-
+    auto result = ir::FileId::Nil();
+    {
+        ULock lock{walker->m};
+        result = walker->content->add(file);
+    }
     /// Start git blame subprocess
     Vec<Str> args{
         process::search_path("git").string(),
@@ -322,7 +294,7 @@ ir::FileId stats_via_subprocess(
             }
 
             case LK::Content: {
-                walker->lock();
+                ULock lock{walker->m};
                 is >> text;
                 // Constructin a new line data using already parsed
                 // elements and the file ID. Adding new line into the store
@@ -333,7 +305,6 @@ ir::FileId stats_via_subprocess(
                         .file    = result,
                         .time    = std::stol(time),
                         .content = walker->content->add(text)}));
-                walker->unlock();
                 break;
             }
 
@@ -359,10 +330,11 @@ ir::FileId stats_via_libgit(
     CR<Str>               relpath,
     ir::file              file) {
 
-    state->content_mutex.lock();
-    ir::FileId result = state->content->add(file);
-    state->content_mutex.unlock();
-
+    auto result = ir::FileId::Nil();
+    {
+        ULock lock{state->m};
+        result = state->content->add(file);
+    }
     // Init default blame creation options
     git_blame_options blameopts = GIT_BLAME_OPTIONS_INIT;
     // We are only interested in blame information up until target commit
@@ -402,14 +374,13 @@ ir::FileId stats_via_libgit(
         if (hunk != nullptr && hunk->final_signature != nullptr) {
             break_on_null_hunk = true;
             // get date when hunk had been altered
-            state->lock();
+            ULock lock{state->m};
             state->content->multi.at(result).lines.push_back(
                 state->content->add(ir::line{
                     .author  = state->content->multi.add(ir::author{}),
                     .file    = result,
                     .time    = hunk->final_signature->when.time,
                     .content = state->content->add(Str{})}));
-            state->unlock();
         }
 
         // Advance over raw data
@@ -445,7 +416,11 @@ ir::FileId exec_walker(
     }
 
 
-    state->lock();
+    // IR has several fields that must be initialized at the start, so
+    // using a 'finally' RAII callback here
+    state->m.lock();
+    finally unlock{[state] { state->m.unlock(); }};
+
     ir::file init = ir::file{
         .commit_id = commit,
         .parent    = state->content->multi.add(ir::dir{
@@ -453,7 +428,6 @@ ir::FileId exec_walker(
                .name   = state->content->add(Str{root})}),
         .name      = state->content->add(path)};
 
-    state->unlock();
 
     ir::FileId result = state->config->use_subprocess
                             ? stats_via_subprocess(
@@ -463,10 +437,9 @@ ir::FileId exec_walker(
 
     static int total_done;
     {
-        state->lock();
+        ULock lock{state->m};
         fmt::print(
             "DONE ({:<5}) {} {}\n", total_done++, oid_tostr(oid), relpath);
-        state->unlock();
     }
 
     return result;
@@ -520,10 +493,11 @@ ir::CommitId process_commit_impl(git_oid oid, walker_state* state) {
     // commit information should be cleaned up when we exit the scope
     finally close{[&commit]() { commit_free(commit); }};
 
-    state->lock();
-    ir::CommitId out_commit = state->content->add(ir::commit{});
-    state->unlock();
-
+    auto out_commit = ir::CommitId::Nil();
+    {
+        ULock lock{state->m};
+        out_commit = state->content->add(ir::commit{});
+    }
     Vec<std::future<ir::FileId>> sub_futures;
     // walk all entries in the tree
     tree_walk(
@@ -545,9 +519,8 @@ ir::CommitId process_commit_impl(git_oid oid, walker_state* state) {
     // For all futures provided in the subtask analysis - get result,
     // if it is non-empty, merge it with input data.
     for (auto& future : sub_futures) {
-        state->lock();
+        ULock lock{state->m};
         state->content->at(out_commit).files.push_back(future.get());
-        state->unlock();
     }
 
     return out_commit;
