@@ -1,5 +1,6 @@
 #include <sqlite_orm/sqlite_orm.h>
 #include <concepts>
+#include <unordered_map>
 #include <experimental/type_traits>
 
 #include "../common.hpp"
@@ -46,7 +47,8 @@ template <std::integral IdType>
 struct Id {
     using value_type = IdType;
     IdType value;
-    Id(IdType in) : value(in) {}
+    Id(IdType in = IdType{}) : value(in) {}
+    bool isNil() const { return value == IdType{}; }
 };
 
 template <typename D>
@@ -57,6 +59,12 @@ struct Store {
     Store(int startIdOffset = 0) : start_id_offset(startIdOffset) {}
 
     /// Add value to the storage and return newly created ID
+    [[nodiscard]] Id add(const T& value) {
+        int index = content.size();
+        content.push_back(value);
+        return Id{index};
+    }
+
     [[nodiscard]] Id add(const T&& value) {
         int index = content.size();
         content.push_back(value);
@@ -67,8 +75,6 @@ struct Store {
     const int start_id_offset = 0;
     Vec<T>    content;
 };
-
-
 }; // namespace dod
 
 namespace sqlite_orm {
@@ -111,57 +117,96 @@ struct AuthorId : dod::Id<int> {};
 
 /// single commit by author, taken at some point in time
 struct commit {
+    int author;   /// references unique author id
+    int time;     /// posix time
+    int timezone; /// timezone where commit was taken
+};
+
+struct orm_commit : commit {
     CommitId id;
-    int      author;   /// references unique author id
-    int      time;     /// posix time
-    int      timezone; /// timezone where commit was taken
 };
 
 /// single version of the file that appeared in some commit
 struct file {
-    FileId   id;
     CommitId commit_id; /// Id of the commit this version of the file was
                         /// recorded in
     DirectoryId parent; /// parent directory
     StrId       name;   /// file name
 };
 
+struct orm_file : file {
+    FileId id;
+};
+
 /// Single directory path part, without specification at which point in
 /// time it existed. Used for the representation of the repository
 /// structure.
 struct dir {
-    DirectoryId id;
     DirectoryId parent; /// Parent directory ID
     StrId       name;   /// Id of the string
 };
 
+struct orm_dir : dir {
+    DirectoryId id;
+};
 
 /// Table of interned stirngs for different purposes
 struct string {
+    Str text; /// Textual content of the line
+};
+
+struct orm_string : string {
     StrId id;
-    Str   text; /// Textual content of the line
 };
 
 struct author {
+    Str name;
+    Str email;
+};
+
+struct orm_author : author {
     AuthorId id;
-    Str      name;
-    Str      email;
 };
 
 /// Single line in a file with all the information that can be relevang for
 /// the further analysis
 struct line {
-    LineId   id;      /// unique id of the line
     AuthorId author;  /// Line author ID
     int      idx;     /// Index of the line in the file
     FileId   file;    /// Parent file ID
-    int      time;    /// Time line was written
+    i64      time;    /// Time line was written
     StrId    content; /// Content of the line
 };
 
 
+class intern_table {
+    std::unordered_map<Str, StrId> id_map;
+    dod::Store<StrId, Str>         content;
+
+  public:
+    [[nodiscard]] StrId add(CR<Str> in) {
+        auto found = id_map.find(in);
+        if (found != id_map.end()) {
+            return found->second;
+        } else {
+            return content.add(in);
+        }
+    }
+};
+
 class content_manager {
     dod::Store<AuthorId, author> authors;
+    intern_table                 strings;
+    dod::Store<LineId, line>     lines;
+
+  public:
+    [[nodiscard]] StrId add(CR<Str> str) { return strings.add(str); }
+
+    [[nodiscard]] AuthorId add(CR<author> author) {
+        return authors.add(author);
+    }
+
+    [[nodiscard]] LineId add(CR<line> line) { return lines.add(line); }
 };
 
 auto create_db() {
@@ -169,26 +214,26 @@ auto create_db() {
         "/tmp/db.sqlite",
         make_table(
             "commits",
-            make_column("id", &commit::id, primary_key()),
-            make_column("author", &commit::author),
-            make_column("time", &commit::time),
-            make_column("timezone", &commit::timezone)),
+            make_column("id", &orm_commit::id, primary_key()),
+            make_column("author", &orm_commit::author),
+            make_column("time", &orm_commit::time),
+            make_column("timezone", &orm_commit::timezone)),
         make_table(
             "file",
-            make_column("id", &file::id, primary_key()),
-            make_column("commit_id", &file::commit_id),
-            make_column("name", &file::name),
-            foreign_key(&file::name).references(&string::id),
-            foreign_key(&file::commit_id).references(&commit::id)),
+            make_column("id", &orm_file::id, primary_key()),
+            make_column("commit_id", &orm_file::commit_id),
+            make_column("name", &orm_file::name),
+            foreign_key(&orm_file::name).references(&orm_string::id),
+            foreign_key(&orm_file::commit_id).references(&orm_commit::id)),
         make_table(
             "dir",
-            make_column("id", &dir::id, primary_key()),
-            make_column("parent", &dir::parent),
-            foreign_key(&dir::parent).references(&dir::parent)),
+            make_column("id", &orm_dir::id, primary_key()),
+            make_column("parent", &orm_dir::parent),
+            foreign_key(&orm_dir::parent).references(&orm_dir::parent)),
         make_table(
             "strings",
-            make_column("id", &string::id),
-            make_column("text", &string::text)));
+            make_column("id", &orm_string::id),
+            make_column("text", &orm_string::text)));
 
     return storage;
 }

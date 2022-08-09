@@ -145,7 +145,6 @@ using TimePoint = stime::time_point<stime::system_clock>;
 /// Mutable state passed around walker configurations
 struct walker_state {
     git_revwalk* walker;
-
     /// Current git repository
     git_repository* repo;
     /// Semaphore to cap maximum number of parallel subprocesses/threads
@@ -164,6 +163,13 @@ struct walker_state {
     stime::milliseconds pop_bench_point(CR<Str> name) {
         return stime::duration_cast<stime::milliseconds>(
             stime::system_clock::now() - bench_points[name]);
+    }
+
+    std::mutex           content_mutex;
+    ir::content_manager* content;
+
+    std::unique_lock<std::mutex> lock_content() {
+        return std::unique_lock<std::mutex>{};
     }
 };
 
@@ -224,28 +230,9 @@ Str oid_tostr(git_oid oid) {
     return result;
 }
 
-void visited_line(
-    analysis&         stats,
-    CP<walker_config> config,
-    CR<Date>          date) {
-
-    // get period index and used it to update the analysis
-    // information
-    int period = config->get_period(date);
-
-    auto& per = stats.per_period[period];
-
-    ++per.line_count;
-    // if this is a first time we've seen this period, store the
-    // current 'date' for latter plotting.
-    if (!per.end || per.end < date) { per.end = date; }
-    if (!per.start || date < per.start) { per.start = date; }
-}
-
-
 void stats_via_subprocess(
     git_oid           oid,
-    analysis&         stats,
+    walker_state*     walker,
     CP<walker_config> config,
     CR<Str>           relpath) {
 
@@ -290,7 +277,9 @@ void stats_via_subprocess(
         Content       = 13
     };
 
-    LK state = LK::Commit;
+    LK       state = LK::Commit;
+    ir::line out_line;
+
     while (blame.running() && std::getline(out, line) && !line.empty()) {
         // even for 'machine reading' output is not consistent - some parts
         // are optional and can be missing in the output, requiring extra
@@ -318,11 +307,14 @@ void stats_via_subprocess(
                 is >> time;
                 assert(time == "author-time");
                 is >> time;
-                auto date = posix_time::from_time_t(std::stol(time))
-                                .date();
+                out_line.time = std::stol(time);
+                break;
+            }
 
-
-                visited_line(stats, config, date);
+            case LK::Content: {
+                auto lock        = walker->lock_content();
+                out_line.content = walker->content->add(line);
+                ir::LineId line  = walker->content->add(out_line);
                 break;
             }
 
@@ -330,7 +322,6 @@ void stats_via_subprocess(
                 // Ignore everything else
                 break;
         }
-
 
         // (ab)use decaying of the enum to integer
         state = static_cast<LK>((state + 1) % (LK::Content + 1));
@@ -343,7 +334,6 @@ void stats_via_subprocess(
 void stats_via_libgit(
     walker_state*         state,
     git_oid               oid,
-    analysis&             stats,
     const git_tree_entry* entry,
     CP<walker_config>     config,
     CR<Str>               relpath) {
@@ -387,11 +377,9 @@ void stats_via_libgit(
         if (hunk != nullptr && hunk->final_signature != nullptr) {
             break_on_null_hunk = true;
             // get date when hunk had been altered
-            visited_line(
-                stats,
-                config,
-                posix_time::from_time_t(hunk->final_signature->when.time)
-                    .date());
+            auto       lock = state->lock_content();
+            ir::LineId id   = state->content->add(ir::line{
+                  .idx = line, .time = hunk->final_signature->when.time});
         }
 
         // Advance over raw data
@@ -420,20 +408,15 @@ Opt<analysis> exec_walker(
     Str path{tree_entry_name(entry)};
     // Create full relative path for the target object
     auto relpath = Str{root + path};
-    auto date    = posix_time::from_time_t(
-                    commit_time(commit_lookup(state->repo, &oid)))
-                    .date();
-
     // Check for provided predicate
     if (config->allow_path && !config->allow_path(relpath)) {
         return Opt<analysis>{};
     }
 
-
     if (config->use_subprocess) {
-        stats_via_subprocess(oid, stats, config, relpath);
+        stats_via_subprocess(oid, state, config, relpath);
     } else {
-        stats_via_libgit(state, oid, stats, entry, config, relpath);
+        stats_via_libgit(state, oid, entry, config, relpath);
     }
 
     static std::mutex done;
@@ -443,8 +426,7 @@ Opt<analysis> exec_walker(
         fmt::print(
             "DONE ({:<5}) {} {}\n", total_done++, oid_tostr(oid), relpath);
     }
-    // Increase file count (for statistics)
-    ++stats.filecount;
+
     return stats;
 }
 
@@ -601,9 +583,12 @@ int main() {
     // Check whether threads can be enabled
     assert(libgit2_features() & GIT_FEATURE_THREADS);
 
+    ir::content_manager content;
+
     auto state = UPtr<walker_state>(new walker_state{
         // Open directory from the provided path - for now hardcoded
-        .repo = repository_open_ext(main_conf.repo.c_str(), 0, nullptr)});
+        .repo    = repository_open_ext(main_conf.repo.c_str(), 0, nullptr),
+        .content = &content});
 
     git_oid oid;
     open_walker(oid, *state, main_conf);

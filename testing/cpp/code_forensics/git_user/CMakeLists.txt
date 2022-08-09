@@ -13,6 +13,7 @@ find_package(
 include(${CMAKE_SOURCE_DIR}/../conanbuildinfo.cmake)
 conan_basic_setup()
 
+add_compile_options(-fmax-errors=2)
 add_executable(git_user git_user.cpp)
 
 target_link_libraries(git_user matplot)

@@ -10,4 +10,4 @@ CONFIG -= app_bundle
 LIBS *= -lboost_system -lboost_filesystem
 QMAKE_CXXFLAGS *= -fpermissive
 SOURCES += git_user.cpp
-HEADERS *= ../gitwrap.hpp
+HEADERS *= ../gitwrap.hpp git_ir.hpp
