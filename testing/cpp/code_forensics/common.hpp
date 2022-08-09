@@ -29,3 +29,9 @@ template <typename T> using SPtr = std::shared_ptr<T>;
 template <typename T> using Func = std::function<T>;
 
 // clang-format on
+
+struct finally {
+    Func<void(void)> action;
+    explicit finally(Func<void(void)> _action) : action(_action) {}
+    ~finally() { action(); }
+};
