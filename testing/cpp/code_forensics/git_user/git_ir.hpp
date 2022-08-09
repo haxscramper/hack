@@ -47,7 +47,8 @@ template <std::integral IdType>
 struct Id {
     using value_type = IdType;
     IdType value;
-    Id(IdType in = IdType{}) : value(in) {}
+    Id() {}
+    Id(IdType in) : value(in) {}
     bool isNil() const { return value == IdType{}; }
 };
 
@@ -62,19 +63,62 @@ struct Store {
     [[nodiscard]] Id add(const T& value) {
         int index = content.size();
         content.push_back(value);
-        return Id{index};
+        return Id(index);
     }
 
     [[nodiscard]] Id add(const T&& value) {
         int index = content.size();
         content.push_back(value);
-        return Id{index};
+        return Id(index);
     }
+
+    T&    at(Id id) { return content.at(id.value); }
+    CR<T> at(Id id) const { return content.at(id.value); }
+
 
   private:
     const int start_id_offset = 0;
     Vec<T>    content;
 };
+
+template <typename T, typename... Pack>
+struct is_in_pack;
+
+template <typename V, typename T0, typename... T>
+struct is_in_pack<V, T0, T...> {
+    static const bool value = is_in_pack<V, T...>::value;
+};
+
+template <typename V, typename... T>
+struct is_in_pack<V, V, T...> {
+    static const bool value = true;
+};
+
+template <typename V>
+struct is_in_pack<V> {
+    static const bool value = false;
+};
+
+template <typename... Args>
+struct MultiStore {
+
+    template <typename T>
+    requires is_in_pack<Store<typename T::id_type, T>, Args...>::value auto add(
+        const T& t) -> typename T::id_type {
+        return std::get<Store<typename T::id_type, T>>(stores).add(t);
+    }
+
+    template <typename T>
+    requires is_in_pack<Store<typename T::id_type, T>, Args...>::value auto at(
+        const T id) -> typename T::value_type& {
+        return std::get<Store<T, typename T::value_type>>(stores).at(id);
+    }
+
+
+  private:
+    std::tuple<Args...> stores;
+};
+
 }; // namespace dod
 
 namespace sqlite_orm {
@@ -108,30 +152,52 @@ struct row_extractor<T> {
 
 
 namespace ir {
-struct CommitId : dod::Id<int> {};
-struct FileId : dod::Id<int> {};
-struct DirectoryId : dod::Id<int> {};
-struct StrId : dod::Id<int> {};
-struct LineId : dod::Id<int> {};
-struct AuthorId : dod::Id<int> {};
+struct commit;
+struct CommitId : dod::Id<int> {
+    using value_type = commit;
+};
+struct file;
+struct FileId : dod::Id<int> {
+    using value_type = file;
+};
+struct dir;
+struct DirectoryId : dod::Id<int> {
+    using value_type = dir;
+};
+struct string;
+struct StrId : dod::Id<int> {
+    using value_type = string;
+};
+struct line;
+struct LineId : dod::Id<int> {
+    using value_type = line;
+};
+struct author;
+struct AuthorId : dod::Id<int> {
+    using value_type = author;
+};
 
 /// single commit by author, taken at some point in time
 struct commit {
+    using id_type = CommitId;
     int author;   /// references unique author id
     int time;     /// posix time
     int timezone; /// timezone where commit was taken
 };
 
 struct orm_commit : commit {
-    CommitId id;
+    CommitId    id;
+    Vec<FileId> files;
 };
 
 /// single version of the file that appeared in some commit
 struct file {
+    using id_type = FileId;
     CommitId commit_id; /// Id of the commit this version of the file was
                         /// recorded in
     DirectoryId parent; /// parent directory
     StrId       name;   /// file name
+    Vec<LineId> lines;
 };
 
 struct orm_file : file {
@@ -142,6 +208,7 @@ struct orm_file : file {
 /// time it existed. Used for the representation of the repository
 /// structure.
 struct dir {
+    using id_type = DirectoryId;
     DirectoryId parent; /// Parent directory ID
     StrId       name;   /// Id of the string
 };
@@ -152,6 +219,7 @@ struct orm_dir : dir {
 
 /// Table of interned stirngs for different purposes
 struct string {
+    using id_type = StrId;
     Str text; /// Textual content of the line
 };
 
@@ -160,6 +228,7 @@ struct orm_string : string {
 };
 
 struct author {
+    using id_type = AuthorId;
     Str name;
     Str email;
 };
@@ -171,6 +240,7 @@ struct orm_author : author {
 /// Single line in a file with all the information that can be relevang for
 /// the further analysis
 struct line {
+    using id_type = LineId;
     AuthorId author;  /// Line author ID
     int      idx;     /// Index of the line in the file
     FileId   file;    /// Parent file ID
@@ -195,18 +265,22 @@ class intern_table {
 };
 
 class content_manager {
-    dod::Store<AuthorId, author> authors;
-    intern_table                 strings;
-    dod::Store<LineId, line>     lines;
+    dod::MultiStore<
+        dod::Store<AuthorId, author>, // Full list of authors
+        dod::Store<LineId, line>,     // found lines
+        dod::Store<FileId, file>      //
+        >
+        multi;
+
+    intern_table strings;
 
   public:
     [[nodiscard]] StrId add(CR<Str> str) { return strings.add(str); }
 
-    [[nodiscard]] AuthorId add(CR<author> author) {
-        return authors.add(author);
+    template <typename T>
+    [[nodiscard]] auto add(CR<T> it) {
+        return multi.add(it);
     }
-
-    [[nodiscard]] LineId add(CR<line> line) { return lines.add(line); }
 };
 
 auto create_db() {

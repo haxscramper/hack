@@ -294,12 +294,14 @@ void stats_via_subprocess(
     blame.wait();
 }
 
-void stats_via_libgit(
+ir::FileId stats_via_libgit(
     walker_state*         state,
     git_oid               oid,
     const git_tree_entry* entry,
     CP<walker_config>     config,
     CR<Str>               relpath) {
+
+    ir::file result;
 
     // Init default blame creation options
     git_blame_options blameopts = GIT_BLAME_OPTIONS_INIT;
@@ -341,8 +343,8 @@ void stats_via_libgit(
             break_on_null_hunk = true;
             // get date when hunk had been altered
             std::unique_lock lock{state->content_mutex};
-            ir::LineId       id = state->content->add(ir::line{
-                      .idx = line, .time = hunk->final_signature->when.time});
+            result.lines.push_back(state->content->add(ir::line{
+                .idx = line, .time = hunk->final_signature->when.time}));
         }
 
         // Advance over raw data
@@ -353,6 +355,9 @@ void stats_via_libgit(
 
     // Blame information is no longer needed
     blame_free(blame);
+
+    std::unique_lock lock{state->content_mutex};
+    return state->content->add(result);
 }
 
 void exec_walker(
