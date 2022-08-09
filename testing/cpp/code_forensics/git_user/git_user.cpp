@@ -136,10 +136,6 @@ struct walker_state {
 
     std::mutex           content_mutex;
     ir::content_manager* content;
-
-    std::unique_lock<std::mutex> lock_content() {
-        return std::unique_lock<std::mutex>{};
-    }
 };
 
 /// Collection of different commit sampling strategies
@@ -265,12 +261,12 @@ void stats_via_subprocess(
             default: break;
         }
 
+        std::stringstream is{line};
+        Str               time;
 
         switch (state) {
             /// For now we are only looking into the authoring time
             case LK::AuthorTime: {
-                std::stringstream is{line};
-                Str               time;
                 is >> time;
                 assert(time == "author-time");
                 is >> time;
@@ -279,7 +275,7 @@ void stats_via_subprocess(
             }
 
             case LK::Content: {
-                auto lock        = walker->lock_content();
+                std::unique_lock lock{walker->content_mutex};
                 out_line.content = walker->content->add(line);
                 ir::LineId line  = walker->content->add(out_line);
                 break;
@@ -344,9 +340,9 @@ void stats_via_libgit(
         if (hunk != nullptr && hunk->final_signature != nullptr) {
             break_on_null_hunk = true;
             // get date when hunk had been altered
-            auto       lock = state->lock_content();
-            ir::LineId id   = state->content->add(ir::line{
-                  .idx = line, .time = hunk->final_signature->when.time});
+            std::unique_lock lock{state->content_mutex};
+            ir::LineId       id = state->content->add(ir::line{
+                      .idx = line, .time = hunk->final_signature->when.time});
         }
 
         // Advance over raw data
@@ -527,7 +523,7 @@ int main() {
     // Provide implementation callback strategies
     auto config = UPtr<walker_config>(new walker_config{
         .use_subprocess = true,
-        .use_threading  = false,
+        .use_threading  = true,
         .repo           = "/tmp/fusion",
         .heads          = "/.git/refs/heads/master",
         .allow_path     = [](CR<Str> path) -> bool {
