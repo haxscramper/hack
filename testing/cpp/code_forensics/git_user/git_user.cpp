@@ -6,6 +6,7 @@
 #include <git2.h>
 #include <fmt/core.h>
 #include <fmt/ranges.h>
+#include <fmt/color.h>
 #include <map>
 #include <fstream>
 #include <thread>
@@ -140,30 +141,31 @@ struct walker_state {
 
 
     void lock() {
-        auto id = std::this_thread::get_id();
-        std::cout << "locking on thread " << id << "\n";
+        // auto id = std::this_thread::get_id();
+        // std::cout << "locking on thread " << id << "\n";
 
-        if (std::find(already_locked.begin(), already_locked.end(), id) !=
-            already_locked.end()) {
-            std::cout << "trying to lock on thread " << id
-                      << " again - already locked\n";
-            for (const auto& it : already_locked) {
-                std::cout << " - " << it << "\n";
-            }
-            assert(false);
-        }
+        // if (std::find(already_locked.begin(), already_locked.end(), id)
+        // !=
+        //     already_locked.end()) {
+        //     std::cout << "trying to lock on thread " << id
+        //               << " again - already locked\n";
+        //     for (const auto& it : already_locked) {
+        //         std::cout << " - " << it << "\n";
+        //     }
+        //     assert(false);
+        // }
 
         content_mutex.lock();
-        already_locked.push_back(id);
+        // already_locked.push_back(id);
     }
 
     void unlock() {
-        auto id = std::this_thread::get_id();
-        std::cout << "unlocking on thread " << id << "\n";
+        // auto id = std::this_thread::get_id();
+        // std::cout << "unlocking on thread " << id << "\n";
         content_mutex.unlock();
-        auto point = std::find(
-            already_locked.begin(), already_locked.end(), id);
-        already_locked.erase(point, point);
+        // auto point = std::find(
+        //     already_locked.begin(), already_locked.end(), id);
+        // already_locked.erase(point, point);
     }
 
     ir::content_manager* content;
@@ -279,7 +281,10 @@ ir::FileId stats_via_subprocess(
         Content       = 13
     };
 
-    LK state = LK::Commit;
+    LK         state = LK::Commit;
+    Str        time;
+    ir::author author;
+    Str        text;
 
     while (blame.running() && std::getline(out, line) && !line.empty()) {
         // even for 'machine reading' output is not consistent - some parts
@@ -300,9 +305,6 @@ ir::FileId stats_via_subprocess(
         }
 
         std::stringstream is{line};
-        Str               time;
-        ir::author        author;
-        Str               text;
 
         switch (state) {
             /// For now we are only looking into the authoring time
@@ -505,9 +507,11 @@ void add_sub_task(
     } else {
         auto res = sub_task();
         sub_futures.push_back(
-            std::async(std::launch::async, [res]() { return res; }));
+            std::async(std::launch::deferred, [res]() { return res; }));
     }
 }
+
+std::atomic<int> file_count;
 
 ir::CommitId process_commit_impl(git_oid oid, walker_state* state) {
     git_commit* commit = commit_lookup(state->repo, &oid);
@@ -529,7 +533,11 @@ ir::CommitId process_commit_impl(git_oid oid, walker_state* state) {
         GIT_TREEWALK_PRE,
         [oid, state, out_commit, &sub_futures](
             const char* root, const git_tree_entry* entry) {
+            // if (file_count.load() < 10) {
+            //     file_count.store(file_count.load() + 1);
             add_sub_task(oid, state, out_commit, root, entry, sub_futures);
+            // }
+
             return GIT_OK;
         });
 
@@ -559,7 +567,7 @@ std::future<ir::CommitId> process_commit(
         return std::async(std::launch::async, task);
     } else {
         auto tmp = task();
-        return std::async(std::launch::async, [tmp]() { return tmp; });
+        return std::async(std::launch::deferred, [tmp]() { return tmp; });
     }
 }
 
@@ -671,8 +679,10 @@ int main() {
 
     Vec<ir::CommitId> commits;
     for (auto& future : processed) {
-        if (future.valid()) { commits.push_back(future.get()); }
+        commits.push_back(future.get());
     }
+
+    return 0;
 
     auto storage = ir::create_db();
     storage.sync_schema();
