@@ -1,4 +1,5 @@
 #include "../common.hpp"
+#include "git_ir.hpp"
 
 #include <exception>
 #include <string>
@@ -86,6 +87,8 @@ void tree_walk(
         allocated);
 }
 
+
+/// information about single commit analysis
 struct analysis {
     int  filecount;  /// Number of files processed for the commit analysis
     Date check_date; /// Date when commit was made
@@ -107,11 +110,12 @@ struct analysis {
             return res;
         }
     };
-    std::map<int, period_description> per_period;
 
+    std::map<int, period_description> per_period;
 
     analysis operator+(CR<analysis> other) {
         analysis res = *this;
+        res.filecount += other.filecount;
         for (auto& [period, stats] : other.per_period) {
             res.per_period[period] = res.per_period[period] + stats;
         }
@@ -269,8 +273,7 @@ void stats_via_subprocess(
     // I'm only interested in the AuthorTime, everything else can be
     // skipped for now. Code below implements a simple state machine with
     // states encoded in the `LK` enum
-    enum LK
-    {
+    enum LK {
         Commit        = 0,
         Author        = 1,
         AuthorMail    = 2,
@@ -481,13 +484,10 @@ std::future<analysis> process_commit(
                 // Duplicate all data passed to the callback - it is not
                 // owned by the user code and might disappear by the time
                 // we get to the actual walker execution
-                git_tree_entry* user_dup = tree_entry_dup(entry);
-                // Shared pointer to the string is captured by copy in the
-                // lambda, will be deallocated automatically
-                SPtr<Str> user_str = std::make_shared<Str>(root);
-
                 auto sub_task =
-                    [&, user_str, user_dup]() -> Opt<analysis> {
+                    [&,
+                     user_str = Str(root),
+                     user_dup = tree_entry_dup(entry)]() -> Opt<analysis> {
                     // cap maximum number of actively executed walkers -
                     // their implementation does not have any overlapping
                     // critical sections, but performance limitations are
@@ -496,13 +496,11 @@ std::future<analysis> process_commit(
                     state->semaphore.acquire();
                     // Walker returns optional analysis result
                     auto result = exec_walker(
-                        oid, state, user_str->c_str(), user_dup, config);
+                        oid, state, user_str.c_str(), user_dup, config);
                     state->semaphore.release();
-
                     // tree entry must be freed manually, FIXME work around
                     // exceptions in the walker executor
                     tree_entry_free(user_dup);
-
                     return result;
                 };
 
@@ -510,15 +508,11 @@ std::future<analysis> process_commit(
                 return GIT_OK;
             });
 
-        int count = 0;
         // For all futures provided in the subtask analysis - get result,
         // if it is non-empty, merge it with input data.
         for (auto& future : sub_futures) {
             auto res = future.get();
-            if (res) {
-                stats = stats + res.value();
-                ++count;
-            }
+            if (res) { stats = stats + res.value(); }
         }
 
         // commit information is no longer needed
@@ -533,8 +527,8 @@ std::future<analysis> process_commit(
 #define GIT_SUCCESS 0
 
 struct analysis_config {
-    Str repo  = "/tmp/Nim";
-    Str heads = "/.git/refs/heads/devel";
+    Str repo  = "/tmp/fusion";
+    Str heads = "/.git/refs/heads/master";
 };
 
 Vec<std::future<analysis>> launch_analysis(
@@ -601,6 +595,7 @@ void open_walker(
 
 int main() {
     analysis_config main_conf;
+    ir::create_db();
 
     libgit2_init();
     // Check whether threads can be enabled
@@ -621,8 +616,9 @@ int main() {
         //
         .allow_path = [](CR<Str> path) -> bool {
             if (path.ends_with(".nim")) {
-                return path.find("compiler/") != Str::npos ||
-                       path.find("rod/") != Str::npos;
+                return true;
+                // return path.find("compiler/") != Str::npos ||
+                //        path.find("rod/") != Str::npos;
             } else if (path.ends_with(".pas")) {
                 return path.find("nim/") != Str::npos;
             } else {
@@ -677,7 +673,7 @@ int main() {
 
     fmt::print(
         "{:>32} {}\n", "sample taken", fmt::join(sample_points, " "));
-    Vec<int> total_per_sample(sample_points.size() - 1, 0);
+    Vec<int> total_per_sample(sample_points.size(), 0);
     for (auto& [period, stats] : period_burndown) {
         Vec<int> out_lines;
         // Reverse iterate sample point indices commits (they were iterated
@@ -696,8 +692,8 @@ int main() {
                 // periods, so the data is completely empty.
                 count = stats.per_sample[i];
             }
+            total_per_sample.at(out_lines.size()) += count;
             out_lines.push_back(count);
-            total_per_sample[i] += count;
         }
 
         fmt::print(

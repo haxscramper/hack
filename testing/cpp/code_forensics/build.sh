@@ -15,19 +15,23 @@ function py_plotter() {
 }
 
 function try_build() {
-    clang++ \
-        -fuse-ld=mold \
-        -std=c++2a \
-        -o git_user.bin \
-        -O3 \
-        -ferror-limit=4 \
-        -lboost_system \
-        -lboost_filesystem \
-        git_user/git_user.cpp \
-        @conanbuildinfo.gcc
+    cd git_user
+    cmake .
+    make -j12
+
+    # clang++ \
+    #     -fuse-ld=mold \
+    #     -std=c++2a \
+    #     -o git_user.bin \
+    #     -O3 \
+    #     -ferror-limit=4 \
+    #     -lboost_system \
+    #     -lboost_filesystem \
+    #     git_user/git_user.cpp \
+    #     @conanbuildinfo.gcc
 
     echo "git user compile ok"
-    ./git_user.bin
+    ./git_user
     echo "git user run ok"
 }
 
