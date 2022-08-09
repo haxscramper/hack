@@ -3,6 +3,7 @@
 #include <vector>
 #include <optional>
 #include <functional>
+#include <variant>
 #include <memory>
 #include <string>
 #include <cstdint>
@@ -18,6 +19,8 @@ using u32 = std::uint32_t;
 using i64 = std::int64_t;
 using u64 = std::uint64_t;
 // clang-format off
+
+template <typename ...Args> using Var = std::vector<Args...>;
 
 template <typename T> using Vec  = std::vector<T>;
 template <typename T> using CR   = const T&;

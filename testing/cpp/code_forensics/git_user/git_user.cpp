@@ -89,17 +89,20 @@ void tree_walk(
 
 
 struct walker_config {
+    /// Analyse commits via subprocess launches or via libgit blame
+    /// execution
+    bool use_subprocess = true;
+    bool use_threading  = true;
+    /// Current project root path (absolute path)
+    Str repo;
+    Str heads;
+
     /// Allow processing of a specific path in the repository
     Func<bool(CR<Str>)> allow_path;
     /// Get integer index of the period for Date
     Func<int(const Date&)> get_period;
     /// Check whether commits at the specified date should be analysed
     Func<bool(const Date&)> allow_sample_at_date;
-    /// Analyse commits via subprocess launches or via libgit blame
-    /// execution
-    bool use_subprocess = true;
-    /// Current project root path (absolute path)
-    Str project_root;
 };
 
 using TimePoint = stime::time_point<stime::system_clock>;
@@ -108,6 +111,8 @@ using TimePoint = stime::time_point<stime::system_clock>;
 
 /// Mutable state passed around walker configurations
 struct walker_state {
+    CP<walker_config> config;
+
     git_revwalk* walker;
     /// Current git repository
     git_repository* repo;
@@ -215,9 +220,7 @@ void stats_via_subprocess(
     process::ipstream out;
     /// Proces is started in the specified project directory
     process::child blame{
-        args,
-        process::std_out > out,
-        process::start_dir(config->project_root)};
+        args, process::std_out > out, process::start_dir(config->repo)};
 
     Str line;
     // --line-porcelain generates chunks with twelve consecutive elements -
@@ -432,7 +435,12 @@ std::future<void> process_commit(
                     tree_entry_free(user_dup);
                 };
 
-                sub_futures.push_back(std::async(sub_task));
+                if (config->use_threading) {
+                    sub_futures.push_back(std::async(sub_task));
+                } else {
+                    sub_task();
+                }
+
                 return GIT_OK;
             });
 
@@ -443,16 +451,16 @@ std::future<void> process_commit(
         }
     };
 
-    return std::async(std::launch::async, task);
+    if (config->use_threading) {
+        return std::async(std::launch::async, task);
+    } else {
+        task();
+        return std::future<void>{};
+    }
 }
 
 
 #define GIT_SUCCESS 0
-
-struct analysis_config {
-    Str repo  = "/tmp/fusion";
-    Str heads = "/.git/refs/heads/master";
-};
 
 Vec<std::future<void>> launch_analysis(
     git_oid&       oid,
@@ -480,13 +488,9 @@ Vec<std::future<void>> launch_analysis(
     return processed;
 }
 
-void open_walker(
-    git_oid&            oid,
-    walker_state&       state,
-    CR<analysis_config> main_conf) {
+void open_walker(git_oid& oid, walker_state& state) {
     // Read HEAD on master
-    Str head_filepath{main_conf.repo + main_conf.heads};
-
+    Str head_filepath{state.config->repo + state.config->heads};
     // REFACTOR this part was copied from the SO example and I'm pretty
     // sure it can be implemented in a cleaner manner, but I haven't
     // touched this part yet.
@@ -517,30 +521,16 @@ void open_walker(
 }
 
 int main() {
-    analysis_config main_conf;
-    ir::create_db();
-
-    libgit2_init();
-    // Check whether threads can be enabled
-    assert(libgit2_features() & GIT_FEATURE_THREADS);
-
-    ir::content_manager content;
-
-    auto state = UPtr<walker_state>(new walker_state{
-        // Open directory from the provided path - for now hardcoded
-        .repo    = repository_open_ext(main_conf.repo.c_str(), 0, nullptr),
-        .content = &content});
-
-    git_oid oid;
-    open_walker(oid, *state, main_conf);
-
     // Configure state of the sampling strategies
     allow_state allow{.days_period = 90, .start = {2020, 1, 1}};
 
     // Provide implementation callback strategies
     auto config = UPtr<walker_config>(new walker_config{
-        //
-        .allow_path = [](CR<Str> path) -> bool {
+        .use_subprocess = true,
+        .use_threading  = false,
+        .repo           = "/tmp/fusion",
+        .heads          = "/.git/refs/heads/master",
+        .allow_path     = [](CR<Str> path) -> bool {
             if (path.ends_with(".nim")) {
                 return true;
                 // return path.find("compiler/") != Str::npos ||
@@ -558,16 +548,27 @@ int main() {
         .allow_sample_at_date = [&](const Date& date) -> bool {
             bool result = allow.allow_once_per_year(date);
             return result;
-        },
-        .use_subprocess = true,
-        .project_root   = main_conf.repo});
+        }});
 
-    state->push_bench_point("total");
+    ir::create_db();
 
+    libgit2_init();
+    // Check whether threads can be enabled
+    assert(libgit2_features() & GIT_FEATURE_THREADS);
+
+    ir::content_manager content;
+
+    auto state = UPtr<walker_state>(new walker_state{
+        .config  = config.get(),
+        .repo    = repository_open_ext(config->repo.c_str(), 0, nullptr),
+        .content = &content});
+
+    git_oid oid;
+    open_walker(oid, *state);
     auto processed = launch_analysis(oid, config.get(), state.get());
 
     for (auto& future : processed) {
-        future.get();
+        if (future.valid()) { future.get(); }
     }
 
     return 0;
