@@ -1,5 +1,6 @@
 #include <sqlite_orm/sqlite_orm.h>
 #include <concepts>
+#include <iostream>
 #include <unordered_map>
 #include <experimental/type_traits>
 
@@ -46,18 +47,19 @@ namespace dod {
 template <std::integral IdType>
 struct [[nodiscard]] Id {
     using id_base_type = IdType;
-    Id() {}
-    Id(IdType in) : value(in + 1) {}
+    Id(IdType in) : value(in + 1) { // std::cout << " >> " << in << "\n";
+    }
     static Id FromValue(IdType in) {
-        Id res;
+        Id res{IdType{}};
         res.value = in;
         return res;
     }
     bool   isNil() const { return value == IdType{}; }
     IdType getValue() const { return value; }
+    void   setValue(IdType arg) { value = arg; }
     IdType getIndex() const { return value - 1; }
 
-  private:
+  protected:
     IdType value;
 };
 
@@ -129,9 +131,9 @@ struct MultiStore {
         return std::get<Store<typename T::id_type, T>>(stores).add(t);
     }
 
-    template <typename T>
-    requires is_in_pack<Store<typename T::id_type, T>, Args...>::value auto at(
-        const T id) -> typename T::value_type& {
+    template <dod::IsIdType T>
+    requires is_in_pack<Store<T, typename T::value_type>, Args...>::value auto at(
+        T id) -> typename T::value_type& {
         return std::get<Store<T, typename T::value_type>>(stores).at(id);
     }
 
@@ -146,6 +148,16 @@ struct MultiStore {
 
 }; // namespace dod
 
+template <dod::IsIdType T>
+std::ostream& operator<<(std::ostream& stream, T id) {
+    if (id.isNil()) {
+        stream << "NULL";
+    } else {
+        stream << id.getValue();
+    }
+    return stream;
+}
+
 namespace sqlite_orm {
 template <dod::IsIdType T>
 struct type_printer<T> : public integer_printer {};
@@ -153,15 +165,24 @@ struct type_printer<T> : public integer_printer {};
 template <dod::IsIdType T>
 struct statement_binder<T> {
     int bind(sqlite3_stmt* stmt, int index, T value) {
-        return statement_binder<typename T::id_base_type>().bind(
-            stmt, index, value.getValue());
+        if (value.isNil()) {
+            return sqlite3_bind_null(stmt, index);
+
+        } else {
+            return statement_binder<typename T::id_base_type>().bind(
+                stmt, index, value.getValue());
+        }
     }
 };
 
 template <dod::IsIdType T>
 struct field_printer<T> {
     std::string operator()(T t) const {
-        return field_printer<typename T::id_base_type>()(t.getValue());
+        if (t.isNil()) {
+            return "NULL";
+        } else {
+            return field_printer<typename T::id_base_type>()(t.getValue());
+        }
     }
 };
 
@@ -184,7 +205,13 @@ namespace ir {
     struct __value;                                                       \
     struct [[nodiscard]] __name : dod::Id<__type> {                       \
         using value_type = __value;                                       \
-        __name(__type arg = __type{}) : dod::Id<__type>() {}              \
+        static __name Nil() { return FromValue(0); };                     \
+        static __name FromValue(__type arg) {                             \
+            __name res{__type{}};                                         \
+            res.setValue(arg);                                            \
+            return res;                                                   \
+        }                                                                 \
+        __name(__type arg) : dod::Id<__type>(arg) {}                      \
     };
 
 
@@ -246,40 +273,37 @@ struct author {
 struct line {
     using id_type = LineId;
     AuthorId author;  /// Line author ID
-    int      idx;     /// Index of the line in the file
     FileId   file;    /// Parent file ID
     i64      time;    /// Time line was written
     StrId    content; /// Content of the line
 };
 
 
-class intern_table {
+struct intern_table {
     std::unordered_map<Str, StrId> id_map;
     dod::Store<StrId, Str>         content;
 
-  public:
     [[nodiscard]] StrId add(CR<Str> in) {
         auto found = id_map.find(in);
-        if (found != id_map.end()) {
-            return found->second;
-        } else {
-            return content.add(in);
-        }
+        return found == id_map.end() ? content.add(in) : found->second;
     }
 };
 
-class content_manager {
+struct content_manager {
     intern_table strings;
-
-  public:
     dod::MultiStore<
         dod::Store<AuthorId, author>, // Full list of authors
         dod::Store<LineId, line>,     // found lines
         dod::Store<FileId, file>,     //
-        dod::Store<CommitId, commit>  //
+        dod::Store<CommitId, commit>, //
+        dod::Store<DirectoryId, dir>  //
         >
         multi;
 
+    template <dod::IsIdType Id>
+    auto at(Id id) {
+        return multi.at(id);
+    }
 
     [[nodiscard]] StrId add(CR<Str> str) { return strings.add(str); }
 
@@ -325,16 +349,20 @@ auto create_db() {
             make_column("id", &orm_file::id, primary_key()),
             make_column("commit_id", &orm_file::commit_id),
             make_column("name", &orm_file::name),
+            // make_column("lines", &)
             foreign_key(column<orm_file>(&orm_file::name))
                 .references(column<orm_string>(&orm_string::id)),
             foreign_key(column<orm_file>(&orm_file::commit_id))
                 .references(column<orm_commit>(&orm_commit::id))),
-        make_table<orm_author>("author"),
+        make_table<orm_author>(
+            "author",
+            make_column("id", &orm_author::id, primary_key()),
+            make_column("name", &orm_author::name),
+            make_column("email", &orm_author::email)),
         make_table<orm_line>(
             "line",
             make_column("id", &orm_line::id, primary_key()),
             make_column("author", &orm_line::author),
-            make_column("idx", &orm_line::idx),
             make_column("time", &orm_line::time),
             make_column("content", &orm_line::content),
             foreign_key(column<orm_line>(&orm_line::author))
@@ -351,7 +379,7 @@ auto create_db() {
                 .references(column<orm_dir>(&orm_dir::parent))),
         make_table<orm_string>(
             "strings",
-            make_column("id", &orm_string::id),
+            make_column("id", &orm_string::id, primary_key()),
             make_column("text", &orm_string::text)));
 
     return storage;

@@ -196,14 +196,18 @@ Str oid_tostr(git_oid oid) {
 }
 
 ir::FileId stats_via_subprocess(
-    git_oid           oid,
-    walker_state*     walker,
-    CP<walker_config> config,
-    CR<Str>           relpath) {
+    git_oid       oid,
+    walker_state* walker,
+    ir::file      file,
+    CR<Str>       relpath) {
 
     Str str_oid{oid_tostr(oid)};
 
-    ir::file file;
+    // Getting file id immediately at the start in order to use it for the
+    // line construction.
+    walker->content_mutex.lock();
+    ir::FileId result = walker->content->add(file);
+    walker->content_mutex.unlock();
 
     /// Start git blame subprocess
     Vec<Str> args{
@@ -218,7 +222,9 @@ ir::FileId stats_via_subprocess(
     process::ipstream out;
     /// Proces is started in the specified project directory
     process::child blame{
-        args, process::std_out > out, process::start_dir(config->repo)};
+        args,
+        process::std_out > out,
+        process::start_dir(walker->config->repo)};
 
     Str line;
     // --line-porcelain generates chunks with twelve consecutive elements -
@@ -242,8 +248,7 @@ ir::FileId stats_via_subprocess(
         Content       = 13
     };
 
-    LK       state = LK::Commit;
-    ir::line out_line;
+    LK state = LK::Commit;
 
     while (blame.running() && std::getline(out, line) && !line.empty()) {
         // even for 'machine reading' output is not consistent - some parts
@@ -265,6 +270,8 @@ ir::FileId stats_via_subprocess(
 
         std::stringstream is{line};
         Str               time;
+        ir::author        author;
+        Str               text;
 
         switch (state) {
             /// For now we are only looking into the authoring time
@@ -272,14 +279,27 @@ ir::FileId stats_via_subprocess(
                 is >> time;
                 assert(time == "author-time");
                 is >> time;
-                out_line.time = std::stol(time);
+                break;
+            }
+
+            case LK::Author: {
+                is >> author.name;
+                is >> author.name;
                 break;
             }
 
             case LK::Content: {
                 std::unique_lock lock{walker->content_mutex};
-                // out_line.content = walker->content->add(line);
-                ir::LineId line = walker->content->add(out_line);
+                is >> text;
+                // Constructin a new line data using already parsed
+                // elements and the file ID. Adding new line into the store
+                // and immediately appending the content to the file.
+                walker->content->at(result).lines.push_back(
+                    walker->content->add(ir::line{
+                        .author  = walker->content->add(author),
+                        .file    = result,
+                        .time    = std::stol(time),
+                        .content = walker->content->add(text)}));
                 break;
             }
 
@@ -295,18 +315,19 @@ ir::FileId stats_via_subprocess(
     // Wait until the whole process is finished
     blame.wait();
 
-    std::unique_lock lock{walker->content_mutex};
-    return walker->content->add(file);
+    return result;
 }
 
 ir::FileId stats_via_libgit(
     walker_state*         state,
     git_oid               oid,
     const git_tree_entry* entry,
-    CP<walker_config>     config,
-    CR<Str>               relpath) {
+    CR<Str>               relpath,
+    ir::file              file) {
 
-    ir::file result;
+    state->content_mutex.lock();
+    ir::FileId result = state->content->add(file);
+    state->content_mutex.unlock();
 
     // Init default blame creation options
     git_blame_options blameopts = GIT_BLAME_OPTIONS_INIT;
@@ -348,8 +369,12 @@ ir::FileId stats_via_libgit(
             break_on_null_hunk = true;
             // get date when hunk had been altered
             std::unique_lock lock{state->content_mutex};
-            result.lines.push_back(state->content->add(ir::line{
-                .idx = line, .time = hunk->final_signature->when.time}));
+            state->content->multi.at(result).lines.push_back(
+                state->content->add(ir::line{
+                    .author  = state->content->multi.add(ir::author{}),
+                    .file    = result,
+                    .time    = hunk->final_signature->when.time,
+                    .content = state->content->add(Str{})}));
         }
 
         // Advance over raw data
@@ -361,34 +386,45 @@ ir::FileId stats_via_libgit(
     // Blame information is no longer needed
     blame_free(blame);
 
-    std::unique_lock lock{state->content_mutex};
-    return state->content->add(result);
+    return result;
 }
 
 ir::FileId exec_walker(
     git_oid               oid,
     walker_state*         state,
+    ir::CommitId          commit,
     const char*           root,
-    const git_tree_entry* entry,
-    CP<walker_config>     config) {
+    const git_tree_entry* entry) {
 
     // We are looking for blobs
-    if (tree_entry_type(entry) != GIT_OBJECT_BLOB) { return ir::FileId{}; }
+    if (tree_entry_type(entry) != GIT_OBJECT_BLOB) {
+        return ir::FileId::Nil();
+    }
     // get entry name relative to `root`
     Str path{tree_entry_name(entry)};
     // Create full relative path for the target object
     auto relpath = Str{root + path};
     // Check for provided predicate
-    if (config->allow_path && !config->allow_path(relpath)) {
-        return ir::FileId{};
+    if (state->config->allow_path && !state->config->allow_path(relpath)) {
+        return ir::FileId::Nil();
     }
 
-    ir::FileId result;
-    if (config->use_subprocess) {
-        result = stats_via_subprocess(oid, state, config, relpath);
-    } else {
-        result = stats_via_libgit(state, oid, entry, config, relpath);
-    }
+
+    state->content_mutex.lock();
+    ir::file init = ir::file{
+        .commit_id = commit,
+        .parent    = state->content->multi.add(ir::dir{
+               .parent = ir::DirectoryId::Nil(),
+               .name   = state->content->add(Str{root})}),
+        .name      = state->content->add(path)};
+
+    state->content_mutex.unlock();
+
+    ir::FileId result = state->config->use_subprocess
+                            ? stats_via_subprocess(
+                                  oid, state, init, relpath)
+                            : stats_via_libgit(
+                                  state, oid, entry, relpath, init);
 
     static std::mutex done;
     static int        total_done;
@@ -402,18 +438,21 @@ ir::FileId exec_walker(
 }
 
 std::future<ir::CommitId> process_commit(
-    git_oid           oid,
-    walker_state*     state,
-    CP<walker_config> config) {
+    git_oid       oid,
+    walker_state* state) {
 
     // Create task closure - NOTE maybe at some point git won't break with
     // threads and I could implement parallel processing.
-    auto task = [oid, state, config]() -> ir::CommitId {
+    auto task = [oid, state]() -> ir::CommitId {
         git_commit* commit = commit_lookup(state->repo, &oid);
         // Get tree for a commit
         auto tree = commit_tree(commit);
         // commit information should be cleaned up when we exit the scope
         finally close{[&commit]() { commit_free(commit); }};
+
+        state->content_mutex.lock();
+        ir::CommitId out_commit = state->content->add(ir::commit{});
+        state->content_mutex.unlock();
 
         Vec<std::future<ir::FileId>> sub_futures;
         // walk all entries in the tree
@@ -422,7 +461,7 @@ std::future<ir::CommitId> process_commit(
             // order is not particularly important, doing preorder
             // traversal here
             GIT_TREEWALK_PRE,
-            [oid, state, config, &sub_futures](
+            [oid, state, out_commit, &sub_futures](
                 const char* root, const git_tree_entry* entry) {
                 // Duplicate all data passed to the callback - it is not
                 // owned by the user code and might disappear by the time
@@ -439,7 +478,11 @@ std::future<ir::CommitId> process_commit(
                     state->semaphore.acquire();
                     // Walker returns optional analysis result
                     auto result = exec_walker(
-                        oid, state, user_str.c_str(), user_dup, config);
+                        oid,
+                        state,
+                        out_commit,
+                        user_str.c_str(),
+                        user_dup);
                     state->semaphore.release();
                     // tree entry must be freed manually, FIXME work around
                     // exceptions in the walker executor
@@ -448,7 +491,7 @@ std::future<ir::CommitId> process_commit(
                     return result;
                 };
 
-                if (config->use_threading) {
+                if (state->config->use_threading) {
                     sub_futures.push_back(std::async(sub_task));
                 } else {
                     auto res = sub_task();
@@ -460,18 +503,20 @@ std::future<ir::CommitId> process_commit(
             });
 
 
-        ir::commit result;
         // For all futures provided in the subtask analysis - get result,
         // if it is non-empty, merge it with input data.
         for (auto& future : sub_futures) {
             auto id = future.get();
-            if (!id.isNil()) { result.files.push_back(id); }
+            if (!id.isNil()) {
+                std::unique_lock lock{state->content_mutex};
+                state->content->at(out_commit).files.push_back(id);
+            }
         }
 
-        return state->content->add(result);
+        return out_commit;
     };
 
-    if (config->use_threading) {
+    if (state->config->use_threading) {
         return std::async(std::launch::async, task);
     } else {
         auto tmp = task();
@@ -483,9 +528,8 @@ std::future<ir::CommitId> process_commit(
 #define GIT_SUCCESS 0
 
 Vec<std::future<ir::CommitId>> launch_analysis(
-    git_oid&       oid,
-    walker_config* config,
-    walker_state*  state) {
+    git_oid&      oid,
+    walker_state* state) {
     // All constructed information
     Vec<std::future<ir::CommitId>> processed;
 
@@ -499,9 +543,9 @@ Vec<std::future<ir::CommitId>> launch_analysis(
         // commit is no longer needed in this scope
         commit_free(commit);
         // check if we can process it
-        if (config->allow_sample_at_date(date)) {
+        if (state->config->allow_sample_at_date(date)) {
             // and store analysis results if we can
-            processed.push_back(process_commit(oid, state, config));
+            processed.push_back(process_commit(oid, state));
         }
     }
 
@@ -584,10 +628,11 @@ int main() {
 
     git_oid oid;
     open_walker(oid, *state);
-    auto processed = launch_analysis(oid, config.get(), state.get());
+    auto processed = launch_analysis(oid, state.get());
 
+    Vec<ir::CommitId> commits;
     for (auto& future : processed) {
-        if (future.valid()) { future.get(); }
+        if (future.valid()) { commits.push_back(future.get()); }
     }
 
     auto storage = ir::create_db();
@@ -595,9 +640,34 @@ int main() {
 
     storage.begin_transaction();
 
+    for (const auto& [id, string] : content.strings.content.pairs()) {
+        storage.insert(ir::orm_string{*string, id});
+    }
+
     for (const auto& [id, line] :
          content.multi.store<ir::line>().pairs()) {
-        storage.insert(ir::orm_line{*line, id});
+        auto orm = ir::orm_line{*line, id};
+        std::cout << storage.dump(orm) << std::endl;
+        storage.insert(orm);
+    }
+
+    for (const auto& [id, author] :
+         content.multi.store<ir::author>().pairs()) {
+        storage.insert(ir::orm_author{*author, id});
+    }
+
+    for (const auto& [id, commit] :
+         content.multi.store<ir::commit>().pairs()) {
+        storage.insert(ir::orm_commit{*commit, id});
+    }
+
+    for (const auto& [id, dir] : content.multi.store<ir::dir>().pairs()) {
+        storage.insert(ir::orm_dir{*dir, id});
+    }
+
+    for (const auto& [id, file] :
+         content.multi.store<ir::file>().pairs()) {
+        storage.insert(ir::orm_file{*file, id});
     }
 
     storage.commit();

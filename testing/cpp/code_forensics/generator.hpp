@@ -1,10 +1,11 @@
 #include <coroutine>
 #include <type_traits>
+#include <optional>
 
 template <typename T>
 struct generator {
     struct promise_type {
-        T                   current_value;
+        std::optional<T>    current_value;
         std::suspend_always yield_value(T value) {
             this->current_value = value;
             return {};
@@ -30,8 +31,10 @@ struct generator {
         bool operator!=(iterator const& _right) const {
             return !(*this == _right);
         }
-        T const& operator*() const { return coro.promise().current_value; }
-        T&       operator*() { return coro.promise().current_value; }
+        T const& operator*() const {
+            return coro.promise().current_value.value();
+        }
+        T& operator*() { return coro.promise().current_value.value(); }
 
         iterator& operator++() {
             coro.resume();
