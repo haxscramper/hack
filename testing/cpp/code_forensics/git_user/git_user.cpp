@@ -107,7 +107,7 @@ struct walker_config {
 
 using TimePoint = stime::time_point<stime::system_clock>;
 
-#define MAX_PARALLEL 16
+#define MAX_PARALLEL 1
 
 /// Mutable state passed around walker configurations
 struct walker_state {
@@ -134,7 +134,38 @@ struct walker_state {
             stime::system_clock::now() - bench_points[name]);
     }
 
-    std::mutex           content_mutex;
+    std::mutex content_mutex;
+
+    Vec<std::thread::id> already_locked;
+
+
+    void lock() {
+        auto id = std::this_thread::get_id();
+        std::cout << "locking on thread " << id << "\n";
+
+        if (std::find(already_locked.begin(), already_locked.end(), id) !=
+            already_locked.end()) {
+            std::cout << "trying to lock on thread " << id
+                      << " again - already locked\n";
+            for (const auto& it : already_locked) {
+                std::cout << " - " << it << "\n";
+            }
+            assert(false);
+        }
+
+        content_mutex.lock();
+        already_locked.push_back(id);
+    }
+
+    void unlock() {
+        auto id = std::this_thread::get_id();
+        std::cout << "unlocking on thread " << id << "\n";
+        content_mutex.unlock();
+        auto point = std::find(
+            already_locked.begin(), already_locked.end(), id);
+        already_locked.erase(point, point);
+    }
+
     ir::content_manager* content;
 };
 
@@ -289,7 +320,7 @@ ir::FileId stats_via_subprocess(
             }
 
             case LK::Content: {
-                std::unique_lock lock{walker->content_mutex};
+                walker->lock();
                 is >> text;
                 // Constructin a new line data using already parsed
                 // elements and the file ID. Adding new line into the store
@@ -300,6 +331,7 @@ ir::FileId stats_via_subprocess(
                         .file    = result,
                         .time    = std::stol(time),
                         .content = walker->content->add(text)}));
+                walker->unlock();
                 break;
             }
 
@@ -368,13 +400,14 @@ ir::FileId stats_via_libgit(
         if (hunk != nullptr && hunk->final_signature != nullptr) {
             break_on_null_hunk = true;
             // get date when hunk had been altered
-            std::unique_lock lock{state->content_mutex};
+            state->lock();
             state->content->multi.at(result).lines.push_back(
                 state->content->add(ir::line{
                     .author  = state->content->multi.add(ir::author{}),
                     .file    = result,
                     .time    = hunk->final_signature->when.time,
                     .content = state->content->add(Str{})}));
+            state->unlock();
         }
 
         // Advance over raw data
@@ -410,7 +443,7 @@ ir::FileId exec_walker(
     }
 
 
-    state->content_mutex.lock();
+    state->lock();
     ir::file init = ir::file{
         .commit_id = commit,
         .parent    = state->content->multi.add(ir::dir{
@@ -418,7 +451,7 @@ ir::FileId exec_walker(
                .name   = state->content->add(Str{root})}),
         .name      = state->content->add(path)};
 
-    state->content_mutex.unlock();
+    state->unlock();
 
     ir::FileId result = state->config->use_subprocess
                             ? stats_via_subprocess(
@@ -426,15 +459,90 @@ ir::FileId exec_walker(
                             : stats_via_libgit(
                                   state, oid, entry, relpath, init);
 
-    static std::mutex done;
-    static int        total_done;
+    static int total_done;
     {
-        std::unique_lock print_lock{done};
+        state->lock();
         fmt::print(
             "DONE ({:<5}) {} {}\n", total_done++, oid_tostr(oid), relpath);
+        state->unlock();
     }
 
     return result;
+    // return ir::FileId::Nil();
+}
+
+void add_sub_task(
+    git_oid                       oid,
+    walker_state*                 state,
+    ir::CommitId                  out_commit,
+    const char*                   root,
+    const git_tree_entry*         entry,
+    Vec<std::future<ir::FileId>>& sub_futures) {
+    // Duplicate all data passed to the callback - it is not owned by the
+    // user code and might disappear by the time we get to the actual
+    // walker execution
+    auto sub_task = [&,
+                     user_str = Str(root),
+                     user_dup = tree_entry_dup(entry)]() -> ir::FileId {
+        // cap maximum number of actively executed walkers - their
+        // implementation does not have any overlapping critical sections,
+        // but performance limitations are present (large projects might
+        // have thousands of calls)
+        state->semaphore.acquire();
+        // Walker returns optional analysis result
+        auto result = exec_walker(
+            oid, state, out_commit, user_str.c_str(), user_dup);
+        state->semaphore.release();
+        // tree entry must be freed manually, FIXME work around
+        // exceptions in the walker executor
+        tree_entry_free(user_dup);
+
+        return result;
+    };
+
+    if (state->config->use_threading) {
+        sub_futures.push_back(std::async(std::launch::async, sub_task));
+    } else {
+        auto res = sub_task();
+        sub_futures.push_back(
+            std::async(std::launch::async, [res]() { return res; }));
+    }
+}
+
+ir::CommitId process_commit_impl(git_oid oid, walker_state* state) {
+    git_commit* commit = commit_lookup(state->repo, &oid);
+    // Get tree for a commit
+    auto tree = commit_tree(commit);
+    // commit information should be cleaned up when we exit the scope
+    finally close{[&commit]() { commit_free(commit); }};
+
+    state->lock();
+    ir::CommitId out_commit = state->content->add(ir::commit{});
+    state->unlock();
+
+    Vec<std::future<ir::FileId>> sub_futures;
+    // walk all entries in the tree
+    tree_walk(
+        tree,
+        // order is not particularly important, doing preorder
+        // traversal here
+        GIT_TREEWALK_PRE,
+        [oid, state, out_commit, &sub_futures](
+            const char* root, const git_tree_entry* entry) {
+            add_sub_task(oid, state, out_commit, root, entry, sub_futures);
+            return GIT_OK;
+        });
+
+
+    // For all futures provided in the subtask analysis - get result,
+    // if it is non-empty, merge it with input data.
+    for (auto& future : sub_futures) {
+        state->lock();
+        state->content->at(out_commit).files.push_back(future.get());
+        state->unlock();
+    }
+
+    return out_commit;
 }
 
 std::future<ir::CommitId> process_commit(
@@ -444,83 +552,14 @@ std::future<ir::CommitId> process_commit(
     // Create task closure - NOTE maybe at some point git won't break with
     // threads and I could implement parallel processing.
     auto task = [oid, state]() -> ir::CommitId {
-        git_commit* commit = commit_lookup(state->repo, &oid);
-        // Get tree for a commit
-        auto tree = commit_tree(commit);
-        // commit information should be cleaned up when we exit the scope
-        finally close{[&commit]() { commit_free(commit); }};
-
-        state->content_mutex.lock();
-        ir::CommitId out_commit = state->content->add(ir::commit{});
-        state->content_mutex.unlock();
-
-        Vec<std::future<ir::FileId>> sub_futures;
-        // walk all entries in the tree
-        tree_walk(
-            tree,
-            // order is not particularly important, doing preorder
-            // traversal here
-            GIT_TREEWALK_PRE,
-            [oid, state, out_commit, &sub_futures](
-                const char* root, const git_tree_entry* entry) {
-                // Duplicate all data passed to the callback - it is not
-                // owned by the user code and might disappear by the time
-                // we get to the actual walker execution
-                auto sub_task =
-                    [&,
-                     user_str = Str(root),
-                     user_dup = tree_entry_dup(entry)]() -> ir::FileId {
-                    // cap maximum number of actively executed walkers -
-                    // their implementation does not have any overlapping
-                    // critical sections, but performance limitations are
-                    // present (large projects might have thousands of
-                    // calls)
-                    state->semaphore.acquire();
-                    // Walker returns optional analysis result
-                    auto result = exec_walker(
-                        oid,
-                        state,
-                        out_commit,
-                        user_str.c_str(),
-                        user_dup);
-                    state->semaphore.release();
-                    // tree entry must be freed manually, FIXME work around
-                    // exceptions in the walker executor
-                    tree_entry_free(user_dup);
-
-                    return result;
-                };
-
-                if (state->config->use_threading) {
-                    sub_futures.push_back(std::async(sub_task));
-                } else {
-                    auto res = sub_task();
-                    sub_futures.push_back(
-                        std::async([res]() { return res; }));
-                }
-
-                return GIT_OK;
-            });
-
-
-        // For all futures provided in the subtask analysis - get result,
-        // if it is non-empty, merge it with input data.
-        for (auto& future : sub_futures) {
-            auto id = future.get();
-            if (!id.isNil()) {
-                std::unique_lock lock{state->content_mutex};
-                state->content->at(out_commit).files.push_back(id);
-            }
-        }
-
-        return out_commit;
+        return process_commit_impl(oid, state);
     };
 
     if (state->config->use_threading) {
         return std::async(std::launch::async, task);
     } else {
         auto tmp = task();
-        return std::async([tmp]() { return tmp; });
+        return std::async(std::launch::async, [tmp]() { return tmp; });
     }
 }
 
