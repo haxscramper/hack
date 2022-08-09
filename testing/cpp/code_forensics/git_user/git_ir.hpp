@@ -4,7 +4,7 @@
 #include <experimental/type_traits>
 
 #include "../common.hpp"
-
+#include "../generator.hpp"
 
 /// Helper implementation to pass multiple types around in a 'pack'
 template <typename... Args>
@@ -44,12 +44,21 @@ using namespace sqlite_orm;
 
 namespace dod {
 template <std::integral IdType>
-struct Id {
-    using value_type = IdType;
-    IdType value;
+struct [[nodiscard]] Id {
+    using id_base_type = IdType;
     Id() {}
-    Id(IdType in) : value(in) {}
-    bool isNil() const { return value == IdType{}; }
+    Id(IdType in) : value(in + 1) {}
+    static Id FromValue(IdType in) {
+        Id res;
+        res.value = in;
+        return res;
+    }
+    bool   isNil() const { return value == IdType{}; }
+    IdType getValue() const { return value; }
+    IdType getIndex() const { return value - 1; }
+
+  private:
+    IdType value;
 };
 
 template <typename D>
@@ -72,9 +81,21 @@ struct Store {
         return Id(index);
     }
 
-    T&    at(Id id) { return content.at(id.value); }
-    CR<T> at(Id id) const { return content.at(id.value); }
+    T&    at(Id id) { return content.at(id.getIndex()); }
+    CR<T> at(Id id) const { return content.at(id.getIndex()); }
 
+    generator<std::pair<Id, CP<T>>> pairs() const {
+        const int size = content.size();
+        for (int i = 0; i < size; ++i) {
+            co_yield {Id(i), &content.at(i)};
+        }
+    }
+
+    generator<CP<T>> items() const {
+        for (const auto& it : content) {
+            co_yield &it;
+        }
+    }
 
   private:
     const int start_id_offset = 0;
@@ -114,6 +135,10 @@ struct MultiStore {
         return std::get<Store<T, typename T::value_type>>(stores).at(id);
     }
 
+    template <typename Value>
+    auto store() -> Store<typename Value::id_type, Value>& {
+        return std::get<Store<typename Value::id_type, Value>>(stores);
+    }
 
   private:
     std::tuple<Args...> stores;
@@ -128,21 +153,23 @@ struct type_printer<T> : public integer_printer {};
 template <dod::IsIdType T>
 struct statement_binder<T> {
     int bind(sqlite3_stmt* stmt, int index, T value) {
-        return statement_binder<typename T::value_type>().bind(
-            stmt, index, value.value);
+        return statement_binder<typename T::id_base_type>().bind(
+            stmt, index, value.getValue());
     }
 };
 
 template <dod::IsIdType T>
 struct field_printer<T> {
     std::string operator()(T t) const {
-        return field_printer<typename T::value_type>()(t.value);
+        return field_printer<typename T::id_base_type>()(t.getValue());
     }
 };
 
 template <dod::IsIdType T>
 struct row_extractor<T> {
-    T extract(const char* row_value) { return T{std::stoi(row_value)}; }
+    T extract(const char* row_value) {
+        return T::FromValue(std::stoi(row_value));
+    }
 
     T extract(sqlite3_stmt* stmt, int columnIndex) {
         return T{sqlite3_column_int(stmt, columnIndex)};
@@ -152,42 +179,59 @@ struct row_extractor<T> {
 
 
 namespace ir {
-struct commit;
-struct CommitId : dod::Id<int> {
-    using value_type = commit;
-};
-struct file;
-struct FileId : dod::Id<int> {
-    using value_type = file;
-};
-struct dir;
-struct DirectoryId : dod::Id<int> {
-    using value_type = dir;
-};
-struct string;
-struct StrId : dod::Id<int> {
-    using value_type = string;
-};
-struct line;
-struct LineId : dod::Id<int> {
-    using value_type = line;
-};
-struct author;
-struct AuthorId : dod::Id<int> {
-    using value_type = author;
-};
+
+#define DECL_ID_TYPE(__value, __name, __type)                             \
+    struct __value;                                                       \
+    struct [[nodiscard]] __name : dod::Id<__type> {                       \
+        using value_type = __value;                                       \
+        __name(__type arg = __type{}) : dod::Id<__type>() {}              \
+    };
+
+
+DECL_ID_TYPE(line, LineId, int);
+DECL_ID_TYPE(commit, CommitId, int);
+DECL_ID_TYPE(file, FileId, int);
+DECL_ID_TYPE(dir, DirectoryId, int);
+DECL_ID_TYPE(string, StrId, int);
+DECL_ID_TYPE(author, AuthorId, int);
+
+// struct commit;
+// struct CommitId : dod::Id<int> {
+//     using value_type = commit;
+// };
+// struct file;
+// struct [[nodiscard]] FileId : dod::Id<int> {
+//     using value_type = file;
+// };
+// struct dir;
+// struct [[nodiscard]] DirectoryId : dod::Id<int> {
+//     using value_type = dir;
+// };
+// struct string;
+// struct [[nodiscard]] StrId : dod::Id<int> {
+//     using value_type = string;
+//     StrId(int a = 0) : dod::Id<int>(a) {}
+// };
+// struct line;
+// struct [[nodiscard]] LineId : dod::Id<int> {
+//     using value_type = line;
+// };
+// struct author;
+// struct [[nodiscard]] AuthorId : dod::Id<int> {
+//     using value_type = author;
+// };
 
 /// single commit by author, taken at some point in time
 struct commit {
     using id_type = CommitId;
-    int author;   /// references unique author id
-    int time;     /// posix time
-    int timezone; /// timezone where commit was taken
+    int         author;   /// references unique author id
+    int         time;     /// posix time
+    int         timezone; /// timezone where commit was taken
+    Vec<FileId> files;
 };
 
 struct orm_commit : commit {
-    CommitId    id;
-    Vec<FileId> files;
+    CommitId id;
 };
 
 /// single version of the file that appeared in some commit
@@ -200,10 +244,6 @@ struct file {
     Vec<LineId> lines;
 };
 
-struct orm_file : file {
-    FileId id;
-};
-
 /// Single directory path part, without specification at which point in
 /// time it existed. Used for the representation of the repository
 /// structure.
@@ -213,19 +253,12 @@ struct dir {
     StrId       name;   /// Id of the string
 };
 
-struct orm_dir : dir {
-    DirectoryId id;
-};
-
 /// Table of interned stirngs for different purposes
 struct string {
     using id_type = StrId;
     Str text; /// Textual content of the line
 };
 
-struct orm_string : string {
-    StrId id;
-};
 
 struct author {
     using id_type = AuthorId;
@@ -233,9 +266,6 @@ struct author {
     Str email;
 };
 
-struct orm_author : author {
-    AuthorId id;
-};
 
 /// Single line in a file with all the information that can be relevang for
 /// the further analysis
@@ -265,16 +295,18 @@ class intern_table {
 };
 
 class content_manager {
-    dod::MultiStore<
-        dod::Store<AuthorId, author>, // Full list of authors
-        dod::Store<LineId, line>,     // found lines
-        dod::Store<FileId, file>      //
-        >
-        multi;
-
     intern_table strings;
 
   public:
+    dod::MultiStore<
+        dod::Store<AuthorId, author>, // Full list of authors
+        dod::Store<LineId, line>,     // found lines
+        dod::Store<FileId, file>,     //
+        dod::Store<CommitId, commit>  //
+        >
+        multi;
+
+
     [[nodiscard]] StrId add(CR<Str> str) { return strings.add(str); }
 
     template <typename T>
@@ -283,28 +315,67 @@ class content_manager {
     }
 };
 
+struct orm_file : file {
+    FileId id;
+};
+
+
+struct orm_dir : dir {
+    DirectoryId id;
+};
+
+
+struct orm_string : string {
+    StrId id;
+};
+
+struct orm_author : author {
+    AuthorId id;
+};
+
+struct orm_line : line {
+    LineId id;
+};
+
 auto create_db() {
     auto storage = make_storage(
         "/tmp/db.sqlite",
-        make_table(
+        make_table<orm_commit>(
             "commits",
             make_column("id", &orm_commit::id, primary_key()),
             make_column("author", &orm_commit::author),
             make_column("time", &orm_commit::time),
             make_column("timezone", &orm_commit::timezone)),
-        make_table(
+        make_table<orm_file>(
             "file",
             make_column("id", &orm_file::id, primary_key()),
             make_column("commit_id", &orm_file::commit_id),
             make_column("name", &orm_file::name),
-            foreign_key(&orm_file::name).references(&orm_string::id),
-            foreign_key(&orm_file::commit_id).references(&orm_commit::id)),
-        make_table(
+            foreign_key(column<orm_file>(&orm_file::name))
+                .references(column<orm_string>(&orm_string::id)),
+            foreign_key(column<orm_file>(&orm_file::commit_id))
+                .references(column<orm_commit>(&orm_commit::id))),
+        make_table<orm_author>("author"),
+        make_table<orm_line>(
+            "line",
+            make_column("id", &orm_line::id, primary_key()),
+            make_column("author", &orm_line::author),
+            make_column("idx", &orm_line::idx),
+            make_column("time", &orm_line::time),
+            make_column("content", &orm_line::content),
+            foreign_key(column<orm_line>(&orm_line::author))
+                .references(column<orm_author>(&orm_author::id)),
+            foreign_key(column<orm_line>(&orm_line::file))
+                .references(column<orm_file>(&orm_file::id)),
+            foreign_key(column<orm_line>(&orm_line::content))
+                .references(column<orm_string>(&orm_string::id))),
+        make_table<orm_dir>(
             "dir",
             make_column("id", &orm_dir::id, primary_key()),
             make_column("parent", &orm_dir::parent),
-            foreign_key(&orm_dir::parent).references(&orm_dir::parent)),
-        make_table(
+            foreign_key(column<orm_dir>(&orm_dir::parent))
+                .references(column<orm_dir>(&orm_dir::parent))),
+        make_table<orm_string>(
             "strings",
             make_column("id", &orm_string::id),
             make_column("text", &orm_string::text)));

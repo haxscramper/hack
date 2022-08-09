@@ -195,13 +195,15 @@ Str oid_tostr(git_oid oid) {
     return result;
 }
 
-void stats_via_subprocess(
+ir::FileId stats_via_subprocess(
     git_oid           oid,
     walker_state*     walker,
     CP<walker_config> config,
     CR<Str>           relpath) {
 
     Str str_oid{oid_tostr(oid)};
+
+    ir::file file;
 
     /// Start git blame subprocess
     Vec<Str> args{
@@ -276,8 +278,8 @@ void stats_via_subprocess(
 
             case LK::Content: {
                 std::unique_lock lock{walker->content_mutex};
-                out_line.content = walker->content->add(line);
-                ir::LineId line  = walker->content->add(out_line);
+                // out_line.content = walker->content->add(line);
+                ir::LineId line = walker->content->add(out_line);
                 break;
             }
 
@@ -292,6 +294,9 @@ void stats_via_subprocess(
 
     // Wait until the whole process is finished
     blame.wait();
+
+    std::unique_lock lock{walker->content_mutex};
+    return walker->content->add(file);
 }
 
 ir::FileId stats_via_libgit(
@@ -360,7 +365,7 @@ ir::FileId stats_via_libgit(
     return state->content->add(result);
 }
 
-void exec_walker(
+ir::FileId exec_walker(
     git_oid               oid,
     walker_state*         state,
     const char*           root,
@@ -368,18 +373,21 @@ void exec_walker(
     CP<walker_config>     config) {
 
     // We are looking for blobs
-    if (tree_entry_type(entry) != GIT_OBJECT_BLOB) { return; }
+    if (tree_entry_type(entry) != GIT_OBJECT_BLOB) { return ir::FileId{}; }
     // get entry name relative to `root`
     Str path{tree_entry_name(entry)};
     // Create full relative path for the target object
     auto relpath = Str{root + path};
     // Check for provided predicate
-    if (config->allow_path && !config->allow_path(relpath)) { return; }
+    if (config->allow_path && !config->allow_path(relpath)) {
+        return ir::FileId{};
+    }
 
+    ir::FileId result;
     if (config->use_subprocess) {
-        stats_via_subprocess(oid, state, config, relpath);
+        result = stats_via_subprocess(oid, state, config, relpath);
     } else {
-        stats_via_libgit(state, oid, entry, config, relpath);
+        result = stats_via_libgit(state, oid, entry, config, relpath);
     }
 
     static std::mutex done;
@@ -389,23 +397,25 @@ void exec_walker(
         fmt::print(
             "DONE ({:<5}) {} {}\n", total_done++, oid_tostr(oid), relpath);
     }
+
+    return result;
 }
 
-std::future<void> process_commit(
+std::future<ir::CommitId> process_commit(
     git_oid           oid,
     walker_state*     state,
     CP<walker_config> config) {
 
     // Create task closure - NOTE maybe at some point git won't break with
     // threads and I could implement parallel processing.
-    auto task = [oid, state, config]() {
+    auto task = [oid, state, config]() -> ir::CommitId {
         git_commit* commit = commit_lookup(state->repo, &oid);
         // Get tree for a commit
         auto tree = commit_tree(commit);
         // commit information should be cleaned up when we exit the scope
         finally close{[&commit]() { commit_free(commit); }};
 
-        Vec<std::future<void>> sub_futures;
+        Vec<std::future<ir::FileId>> sub_futures;
         // walk all entries in the tree
         tree_walk(
             tree,
@@ -420,7 +430,7 @@ std::future<void> process_commit(
                 auto sub_task =
                     [&,
                      user_str = Str(root),
-                     user_dup = tree_entry_dup(entry)]() -> void {
+                     user_dup = tree_entry_dup(entry)]() -> ir::FileId {
                     // cap maximum number of actively executed walkers -
                     // their implementation does not have any overlapping
                     // critical sections, but performance limitations are
@@ -428,47 +438,56 @@ std::future<void> process_commit(
                     // calls)
                     state->semaphore.acquire();
                     // Walker returns optional analysis result
-                    exec_walker(
+                    auto result = exec_walker(
                         oid, state, user_str.c_str(), user_dup, config);
                     state->semaphore.release();
                     // tree entry must be freed manually, FIXME work around
                     // exceptions in the walker executor
                     tree_entry_free(user_dup);
+
+                    return result;
                 };
 
                 if (config->use_threading) {
                     sub_futures.push_back(std::async(sub_task));
                 } else {
-                    sub_task();
+                    auto res = sub_task();
+                    sub_futures.push_back(
+                        std::async([res]() { return res; }));
                 }
 
                 return GIT_OK;
             });
 
+
+        ir::commit result;
         // For all futures provided in the subtask analysis - get result,
         // if it is non-empty, merge it with input data.
         for (auto& future : sub_futures) {
-            future.get();
+            auto id = future.get();
+            if (!id.isNil()) { result.files.push_back(id); }
         }
+
+        return state->content->add(result);
     };
 
     if (config->use_threading) {
         return std::async(std::launch::async, task);
     } else {
-        task();
-        return std::future<void>{};
+        auto tmp = task();
+        return std::async([tmp]() { return tmp; });
     }
 }
 
 
 #define GIT_SUCCESS 0
 
-Vec<std::future<void>> launch_analysis(
+Vec<std::future<ir::CommitId>> launch_analysis(
     git_oid&       oid,
     walker_config* config,
     walker_state*  state) {
     // All constructed information
-    Vec<std::future<void>> processed;
+    Vec<std::future<ir::CommitId>> processed;
 
     // Walk over every commit in the history
     while (revwalk_next(&oid, state->walker) == GIT_SUCCESS) {
@@ -551,7 +570,6 @@ int main() {
             return result;
         }});
 
-    ir::create_db();
 
     libgit2_init();
     // Check whether threads can be enabled
@@ -571,6 +589,18 @@ int main() {
     for (auto& future : processed) {
         if (future.valid()) { future.get(); }
     }
+
+    auto storage = ir::create_db();
+    storage.sync_schema();
+
+    storage.begin_transaction();
+
+    for (const auto& [id, line] :
+         content.multi.store<ir::line>().pairs()) {
+        storage.insert(ir::orm_line{*line, id});
+    }
+
+    storage.commit();
 
     return 0;
 }
