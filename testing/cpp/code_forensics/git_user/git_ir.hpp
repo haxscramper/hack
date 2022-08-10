@@ -200,6 +200,16 @@ struct MultiStore {
 };
 
 }; // namespace dod
+   //
+   //
+namespace std {
+template <dod::IsIdType Id>
+struct hash<Id> {
+    std::size_t operator()(Id it) const {
+        return std::hash<typename Id::id_value_type>()(it.getValue());
+    }
+};
+}; // namespace std
 
 template <dod::IsIdType T>
 std::ostream& operator<<(std::ostream& stream, T id) {
@@ -264,15 +274,18 @@ namespace ir {
             res.setValue(arg);                                            \
             return res;                                                   \
         }                                                                 \
+        bool operator==(__name other) const {                             \
+            return getValue() == other.getValue();                        \
+        }                                                                 \
         __name(__type arg) : dod::Id<__type>(arg) {}                      \
     };
 
 
-DECL_ID_TYPE(line, LineId, int);
-DECL_ID_TYPE(commit, CommitId, int);
-DECL_ID_TYPE(file, FileId, int);
-DECL_ID_TYPE(dir, DirectoryId, int);
-DECL_ID_TYPE(string, StrId, int);
+DECL_ID_TYPE(LineData, LineId, int);
+DECL_ID_TYPE(Commit, CommitId, int);
+DECL_ID_TYPE(File, FileId, int);
+DECL_ID_TYPE(Dir, DirectoryId, int);
+DECL_ID_TYPE(String, StrId, int);
 
 } // namespace ir
 
@@ -286,10 +299,10 @@ struct id_type<Str> {
 
 namespace ir {
 
-DECL_ID_TYPE(author, AuthorId, int);
+DECL_ID_TYPE(Author, AuthorId, int);
 
 /// single commit by author, taken at some point in time
-struct commit {
+struct Commit {
     using id_type = CommitId;
     int         author;   /// references unique author id
     int         time;     /// posix time
@@ -297,12 +310,12 @@ struct commit {
     Vec<FileId> files;
 };
 
-struct orm_commit : commit {
+struct orm_commit : Commit {
     CommitId id;
 };
 
 /// single version of the file that appeared in some commit
-struct file {
+struct File {
     using id_type = FileId;
     CommitId commit_id; /// Id of the commit this version of the file was
                         /// recorded in
@@ -314,25 +327,25 @@ struct file {
 /// Single directory path part, without specification at which point in
 /// time it existed. Used for the representation of the repository
 /// structure.
-struct dir {
+struct Dir {
     using id_type = DirectoryId;
     Opt<DirectoryId> parent; /// Parent directory ID
     StrId            name;   /// Id of the string
 };
 
 /// Table of interned stirngs for different purposes
-struct string {
+struct String {
     using id_type = StrId;
     Str text; /// Textual content of the line
 };
 
 
-struct author {
+struct Author {
     using id_type = AuthorId;
     Str name;
     Str email;
 
-    bool operator==(CR<author> other) const {
+    bool operator==(CR<Author> other) const {
         return name == other.name && email == other.email;
     }
 };
@@ -340,12 +353,17 @@ struct author {
 
 /// Single line in a file with all the information that can be relevang for
 /// the further analysis
-struct line {
+struct LineData {
     using id_type = LineId;
-    AuthorId author;  /// Line author ID
-    FileId   file;    /// Parent file ID
+    AuthorId author; /// Line author ID
+    int      index;
     i64      time;    /// Time line was written
     StrId    content; /// Content of the line
+
+    bool operator==(CR<LineData> other) const {
+        return author == other.author && index == other.index &&
+               time == other.time && content == other.content;
+    }
 };
 
 
@@ -368,8 +386,8 @@ struct line {
 
 namespace std {
 template <>
-struct hash<ir::author> {
-    std::size_t operator()(CR<ir::author> it) const {
+struct hash<ir::Author> {
+    std::size_t operator()(CR<ir::Author> it) const {
         return std::hash<Str>()(it.name) ^ std::hash<Str>()(it.email);
     }
 };
@@ -378,11 +396,11 @@ struct hash<ir::author> {
 namespace ir {
 struct content_manager {
     dod::MultiStore<
-        dod::InternStore<AuthorId, author>, // Full list of authors
-        dod::Store<LineId, line>,           // found lines
-        dod::Store<FileId, file>,           //
-        dod::Store<CommitId, commit>,       //
-        dod::Store<DirectoryId, dir>,       //
+        dod::InternStore<AuthorId, Author>, // Full list of authors
+        dod::Store<LineId, LineData>,       // found lines
+        dod::Store<FileId, File>,           //
+        dod::Store<CommitId, Commit>,       //
+        dod::Store<DirectoryId, Dir>,       //
         dod::InternStore<StrId, Str>>
         multi;
 
@@ -397,25 +415,25 @@ struct content_manager {
     }
 };
 
-struct orm_file : file {
+struct orm_file : File {
     FileId id;
 };
 
 
-struct orm_dir : dir {
+struct orm_dir : Dir {
     DirectoryId id;
 };
 
 
-struct orm_string : string {
+struct orm_string : String {
     StrId id;
 };
 
-struct orm_author : author {
+struct orm_author : Author {
     AuthorId id;
 };
 
-struct orm_line : line {
+struct orm_line : LineData {
     LineId id;
 };
 
@@ -447,14 +465,14 @@ auto create_db() {
             "line",
             make_column("id", &orm_line::id, primary_key()),
             make_column("author", &orm_line::author),
+            make_column("index", &orm_line::index),
             make_column("time", &orm_line::time),
-            make_column("content", &orm_line::content),
-            foreign_key(column<orm_line>(&orm_line::author))
-                .references(column<orm_author>(&orm_author::id)),
-            foreign_key(column<orm_line>(&orm_line::file))
-                .references(column<orm_file>(&orm_file::id)),
-            foreign_key(column<orm_line>(&orm_line::content))
-                .references(column<orm_string>(&orm_string::id))),
+            make_column("content", &orm_line::content) // ,
+            // foreign_key(column<orm_line>(&orm_line::author))
+            //     .references(column<orm_author>(&orm_author::id)),
+            // foreign_key(column<orm_line>(&orm_line::content))
+            //     .references(column<orm_string>(&orm_string::id))
+            ),
         make_table<orm_dir>(
             "dir",
             make_column("id", &orm_dir::id, primary_key()),

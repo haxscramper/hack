@@ -221,7 +221,7 @@ Str oid_tostr(git_oid oid) {
 ir::FileId stats_via_subprocess(
     git_oid       oid,
     walker_state* walker,
-    ir::file      file,
+    ir::File      file,
     CR<Str>       relpath) {
 
     Str str_oid{oid_tostr(oid)};
@@ -274,8 +274,9 @@ ir::FileId stats_via_subprocess(
 
     LK         state = LK::Commit;
     Str        time;
-    ir::author author;
+    ir::Author author;
     Str        text;
+    int        index = 0;
 
     while (blame.running() && std::getline(out, line) && !line.empty()) {
         // even for 'machine reading' output is not consistent - some parts
@@ -319,11 +320,12 @@ ir::FileId stats_via_subprocess(
                 // elements and the file ID. Adding new line into the store
                 // and immediately appending the content to the file.
                 walker->content->at(result).lines.push_back(
-                    walker->content->add(ir::line{
+                    walker->content->add(ir::LineData{
                         .author  = walker->content->add(author),
-                        .file    = result,
+                        .index   = index,
                         .time    = std::stol(time),
                         .content = walker->content->add(text)}));
+                ++index;
                 break;
             }
 
@@ -347,7 +349,7 @@ ir::FileId stats_via_libgit(
     git_oid               oid,
     const git_tree_entry* entry,
     CR<Str>               relpath,
-    ir::file              file) {
+    ir::File              file) {
 
     auto result = ir::FileId::Nil();
     {
@@ -395,9 +397,9 @@ ir::FileId stats_via_libgit(
             // get date when hunk had been altered
             SLock lock{state->m};
             state->content->multi.at(result).lines.push_back(
-                state->content->add(ir::line{
-                    .author  = state->content->multi.add(ir::author{}),
-                    .file    = result,
+                state->content->add(ir::LineData{
+                    .author  = state->content->multi.add(ir::Author{}),
+                    .index   = line,
                     .time    = hunk->final_signature->when.time,
                     .content = state->content->add(Str{})}));
         }
@@ -438,13 +440,13 @@ ir::FileId exec_walker(
     // IR has several fields that must be initialized at the start, so
     // using an optional for the file and calling init in the
     // RAII-lock-guarded section.
-    Opt<ir::file> init;
+    Opt<ir::File> init;
 
     {
         SLock lock{state->m};
-        init = ir::file{
+        init = ir::File{
             .commit_id = commit,
-            .parent    = state->content->multi.add(ir::dir{
+            .parent    = state->content->multi.add(ir::Dir{
                    .parent = ir::DirectoryId::Nil(),
                    .name   = state->content->add(Str{root})}),
             .name      = state->content->add(path)};
@@ -519,7 +521,7 @@ ir::CommitId process_commit_impl(git_oid oid, walker_state* state) {
     auto out_commit = ir::CommitId::Nil();
     {
         SLock lock{state->m};
-        out_commit = state->content->add(ir::commit{});
+        out_commit = state->content->add(ir::Commit{});
     }
     Vec<std::future<ir::FileId>> sub_futures;
     // walk all entries in the tree
@@ -670,40 +672,43 @@ int main() {
     auto storage = ir::create_db();
     storage.sync_schema();
 
+    storage.begin_transaction();
+
+    // NOTE due to foreign key constraints on the database the order is
+    // very important, otherwise deletion fails with `FOREIGN KEY
+    // constraint failed` error
     storage.remove_all<ir::orm_line>();
-    storage.remove_all<ir::orm_string>();
+    storage.remove_all<ir::orm_file>();
     storage.remove_all<ir::orm_commit>();
     storage.remove_all<ir::orm_dir>();
     storage.remove_all<ir::orm_author>();
-    storage.remove_all<ir::orm_file>();
-
-    storage.begin_transaction();
+    storage.remove_all<ir::orm_string>();
 
     for (const auto& [id, string] : content.multi.store<Str>().pairs()) {
         storage.insert(ir::orm_string{*string, id});
     }
 
     for (const auto& [id, line] :
-         content.multi.store<ir::line>().pairs()) {
+         content.multi.store<ir::LineData>().pairs()) {
         storage.insert(ir::orm_line{*line, id});
     }
 
     for (const auto& [id, author] :
-         content.multi.store<ir::author>().pairs()) {
+         content.multi.store<ir::Author>().pairs()) {
         storage.insert(ir::orm_author{*author, id});
     }
 
     for (const auto& [id, commit] :
-         content.multi.store<ir::commit>().pairs()) {
+         content.multi.store<ir::Commit>().pairs()) {
         storage.insert(ir::orm_commit{*commit, id});
     }
 
-    for (const auto& [id, dir] : content.multi.store<ir::dir>().pairs()) {
+    for (const auto& [id, dir] : content.multi.store<ir::Dir>().pairs()) {
         storage.insert(ir::orm_dir{*dir, id});
     }
 
     for (const auto& [id, file] :
-         content.multi.store<ir::file>().pairs()) {
+         content.multi.store<ir::File>().pairs()) {
         storage.insert(ir::orm_file{*file, id});
     }
 

@@ -15,6 +15,7 @@ include(${CMAKE_SOURCE_DIR}/../conanbuildinfo.cmake)
 conan_basic_setup()
 
 # add_compile_options(-fmax-errors=1) add_compile_options(-fcoroutines)
+add_compile_options(-Wno-format-security)
 add_compile_options(-ferror-limit=1)
 add_compile_options(-fcoroutines-ts)
 add_executable(git_user git_user.cpp)
