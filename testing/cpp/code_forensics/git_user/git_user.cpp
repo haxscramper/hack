@@ -736,6 +736,10 @@ int main() {
     for (const auto& [id, file] :
          content.multi.store<ir::File>().pairs()) {
         storage.insert(ir::orm_file{*file, id});
+        for (int idx = 0; idx < file->lines.size(); ++idx) {
+            storage.insert(ir::orm_lines_table{
+                .file = id, .index = idx, .line = file->lines[idx]});
+        }
     }
 
     storage.commit();

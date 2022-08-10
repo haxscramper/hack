@@ -527,6 +527,12 @@ struct orm_line : LineData {
     LineId id;
 };
 
+struct orm_lines_table {
+    FileId file;
+    int    index;
+    LineId line;
+};
+
 auto create_db() {
     auto storage = make_storage(
         "/tmp/db.sqlite",
@@ -541,7 +547,6 @@ auto create_db() {
             make_column("id", &orm_file::id, primary_key()),
             make_column("commit_id", &orm_file::commit_id),
             make_column("name", &orm_file::name),
-            // make_column("lines", &)
             foreign_key(column<orm_file>(&orm_file::name))
                 .references(column<orm_string>(&orm_string::id)),
             foreign_key(column<orm_file>(&orm_file::commit_id))
@@ -561,6 +566,11 @@ auto create_db() {
                 .references(column<orm_author>(&orm_author::id)),
             foreign_key(column<orm_line>(&orm_line::content))
                 .references(column<orm_string>(&orm_string::id))),
+        make_table<orm_lines_table>(
+            "file_lines",
+            make_column("file", &orm_lines_table::file),
+            make_column("index", &orm_lines_table::index),
+            make_column("line", &orm_lines_table::line)),
         make_table<orm_dir>(
             "dir",
             make_column("id", &orm_dir::id, primary_key()),
