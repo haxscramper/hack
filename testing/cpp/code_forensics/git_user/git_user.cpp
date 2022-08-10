@@ -159,8 +159,7 @@ struct walker_state {
     ir::content_manager* content;
 };
 
-template <typename T>
-using SLock = std::scoped_lock<T>;
+using SLock = std::scoped_lock<std::mutex>;
 
 /// Collection of different commit sampling strategies
 struct allow_state {
@@ -451,7 +450,6 @@ ir::FileId exec_walker(
             .name      = state->content->add(path)};
     }
 
-
     ir::FileId result = state->config->use_subprocess
                             ? stats_via_subprocess(
                                   oid, state, init.value(), relpath)
@@ -680,7 +678,7 @@ int main() {
 
     storage.begin_transaction();
 
-    for (const auto& [id, string] : content.strings.content.pairs()) {
+    for (const auto& [id, string] : content.multi.store<Str>().pairs()) {
         storage.insert(ir::orm_string{*string, id});
     }
 

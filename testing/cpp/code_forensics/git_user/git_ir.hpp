@@ -66,6 +66,22 @@ struct [[nodiscard]] Id {
 template <typename D>
 concept IsIdType = is_base_of_template_v<Id, D>;
 
+template <typename T>
+struct value_type {
+    using type = typename T::value_type;
+};
+
+template <typename T>
+using value_type_t = typename value_type<T>::type;
+
+template <typename T>
+struct id_type {
+    using type = typename T::id_type;
+};
+
+template <typename T>
+using id_type_t = typename id_type<T>::type;
+
 template <IsIdType Id, typename T>
 struct Store {
     Store(int startIdOffset = 0) : start_id_offset(startIdOffset) {}
@@ -104,6 +120,29 @@ struct Store {
     Vec<T>    content;
 };
 
+template <IsIdType Id, typename Value>
+struct InternStore {
+    std::unordered_map<Value, Id> id_map;
+    dod::Store<Id, Value>         content;
+
+    [[nodiscard]] Id add(CR<Value> in) {
+        auto found = id_map.find(in);
+        if (found != id_map.end()) {
+            return found->second;
+        } else {
+            auto result = content.add(in);
+            id_map.insert({in, result});
+            return result;
+        }
+    }
+
+    generator<std::pair<Id, CP<Value>>> pairs() const {
+        return content.pairs();
+    }
+
+    generator<CP<Value>> items() const { return content.items(); }
+};
+
 template <typename T, typename... Pack>
 struct is_in_pack;
 
@@ -122,25 +161,34 @@ struct is_in_pack<V> {
     static const bool value = false;
 };
 
+
+template <typename T, typename... Pack>
+inline constexpr bool is_in_pack_v = is_in_pack<T, Pack...>::value;
+
 template <typename... Args>
 struct MultiStore {
-
-    template <typename T>
-    requires is_in_pack<Store<typename T::id_type, T>, Args...>::value auto add(
-        const T& t) -> typename T::id_type {
-        return std::get<Store<typename T::id_type, T>>(stores).add(t);
+    template <typename Val>
+    requires is_in_pack_v<Store<id_type_t<Val>, Val>, Args...>
+    auto store() -> Store<id_type_t<Val>, Val>& {
+        return std::get<Store<id_type_t<Val>, Val>>(stores);
     }
 
-    template <dod::IsIdType T>
-    requires is_in_pack<Store<T, typename T::value_type>, Args...>::value auto at(
-        T id) -> typename T::value_type& {
-        return std::get<Store<T, typename T::value_type>>(stores).at(id);
+    template <typename Val>
+    requires is_in_pack_v<InternStore<id_type_t<Val>, Val>, Args...>
+    auto store() -> InternStore<id_type_t<Val>, Val>& {
+        return std::get<InternStore<id_type_t<Val>, Val>>(stores);
     }
 
-    template <typename Value>
-    auto store() -> Store<typename Value::id_type, Value>& {
-        return std::get<Store<typename Value::id_type, Value>>(stores);
+    template <typename Val>
+    auto add(CR<Val> t) -> id_type_t<Val> {
+        return store<Val>().add(t);
     }
+
+    template <dod::IsIdType Id>
+    auto at(Id id) -> value_type_t<Id>& {
+        return store<value_type_t<Id>>().at(id);
+    }
+
 
   private:
     std::tuple<Args...> stores;
@@ -220,6 +268,18 @@ DECL_ID_TYPE(commit, CommitId, int);
 DECL_ID_TYPE(file, FileId, int);
 DECL_ID_TYPE(dir, DirectoryId, int);
 DECL_ID_TYPE(string, StrId, int);
+
+} // namespace ir
+
+namespace dod {
+template <>
+struct id_type<Str> {
+    using type = ir::StrId;
+};
+} // namespace dod
+
+namespace ir {
+
 DECL_ID_TYPE(author, AuthorId, int);
 
 /// single commit by author, taken at some point in time
@@ -279,43 +339,40 @@ struct line {
 };
 
 
-struct intern_table {
-    std::unordered_map<Str, StrId> id_map;
-    dod::Store<StrId, Str>         content;
+// struct intern_table {
+//     std::unordered_map<Str, StrId> id_map;
+//     dod::Store<StrId, Str>         content;
 
-    [[nodiscard]] StrId add(CR<Str> in) {
-        auto found = id_map.find(in);
-        if (found != id_map.end()) {
-            return found->second;
-        } else {
-            auto result = content.add(in);
-            id_map.insert({in, result});
-            return result;
-        }
-    }
-};
+//     [[nodiscard]] StrId add(CR<Str> in) {
+//         auto found = id_map.find(in);
+//         if (found != id_map.end()) {
+//             return found->second;
+//         } else {
+//             auto result = content.add(in);
+//             id_map.insert({in, result});
+//             return result;
+//         }
+//     }
+// };
 
 struct content_manager {
-    intern_table strings;
     dod::MultiStore<
         dod::Store<AuthorId, author>, // Full list of authors
         dod::Store<LineId, line>,     // found lines
         dod::Store<FileId, file>,     //
         dod::Store<CommitId, commit>, //
-        dod::Store<DirectoryId, dir>  //
-        >
+        dod::Store<DirectoryId, dir>, //
+        dod::InternStore<StrId, Str>>
         multi;
 
     template <dod::IsIdType Id>
-    auto at(Id id) {
-        return multi.at(id);
+    typename dod::value_type_t<Id>& at(Id id) {
+        return multi.at<Id>(id);
     }
 
-    [[nodiscard]] StrId add(CR<Str> str) { return strings.add(str); }
-
     template <typename T>
-    [[nodiscard]] auto add(CR<T> it) {
-        return multi.add(it);
+    [[nodiscard]] dod::id_type_t<T> add(CR<T> it) {
+        return multi.add<T>(it);
     }
 };
 
@@ -354,12 +411,12 @@ auto create_db() {
             "file",
             make_column("id", &orm_file::id, primary_key()),
             make_column("commit_id", &orm_file::commit_id),
-            make_column("name", &orm_file::name)/*,
+            make_column("name", &orm_file::name),
             // make_column("lines", &)
             foreign_key(column<orm_file>(&orm_file::name))
                 .references(column<orm_string>(&orm_string::id)),
             foreign_key(column<orm_file>(&orm_file::commit_id))
-                .references(column<orm_commit>(&orm_commit::id))*/),
+                .references(column<orm_commit>(&orm_commit::id))),
         make_table<orm_author>(
             "author",
             make_column("id", &orm_author::id, primary_key()),
@@ -370,19 +427,19 @@ auto create_db() {
             make_column("id", &orm_line::id, primary_key()),
             make_column("author", &orm_line::author),
             make_column("time", &orm_line::time),
-            make_column("content", &orm_line::content)/*,
+            make_column("content", &orm_line::content),
             foreign_key(column<orm_line>(&orm_line::author))
                 .references(column<orm_author>(&orm_author::id)),
             foreign_key(column<orm_line>(&orm_line::file))
                 .references(column<orm_file>(&orm_file::id)),
             foreign_key(column<orm_line>(&orm_line::content))
-                .references(column<orm_string>(&orm_string::id))*/),
+                .references(column<orm_string>(&orm_string::id))),
         make_table<orm_dir>(
             "dir",
             make_column("id", &orm_dir::id, primary_key()),
-            make_column("parent", &orm_dir::parent)/*,
+            make_column("parent", &orm_dir::parent),
             foreign_key(column<orm_dir>(&orm_dir::parent))
-                .references(column<orm_dir>(&orm_dir::id))*/),
+                .references(column<orm_dir>(&orm_dir::id))),
         make_table<orm_string>(
             "strings",
             make_column("id", &orm_string::id, primary_key()),
