@@ -84,7 +84,7 @@ using id_type_t = typename id_type<T>::type;
 
 template <IsIdType Id, typename T>
 struct Store {
-    Store(int startIdOffset = 0) : start_id_offset(startIdOffset) {}
+    Store() = default;
 
     /// Add value to the storage and return newly created ID
     [[nodiscard]] Id add(const T& value) {
@@ -116,16 +116,17 @@ struct Store {
     }
 
   private:
-    const int start_id_offset = 0;
-    Vec<T>    content;
+    Vec<T> content;
 };
 
-template <IsIdType Id, typename Value>
+template <IsIdType Id, typename Val>
 struct InternStore {
-    std::unordered_map<Value, Id> id_map;
-    dod::Store<Id, Value>         content;
+    InternStore() = default;
 
-    [[nodiscard]] Id add(CR<Value> in) {
+    std::unordered_map<Val, Id> id_map;
+    dod::Store<Id, Val>         content;
+
+    [[nodiscard]] Id add(CR<Val> in) {
         auto found = id_map.find(in);
         if (found != id_map.end()) {
             return found->second;
@@ -136,11 +137,14 @@ struct InternStore {
         }
     }
 
-    generator<std::pair<Id, CP<Value>>> pairs() const {
+    Val&    at(Id id) { return content.at(id); }
+    CR<Val> at(Id id) const { return content.at(id); }
+
+    generator<std::pair<Id, CP<Val>>> pairs() const {
         return content.pairs();
     }
 
-    generator<CP<Value>> items() const { return content.items(); }
+    generator<CP<Val>> items() const { return content.items(); }
 };
 
 template <typename T, typename... Pack>
@@ -167,6 +171,8 @@ inline constexpr bool is_in_pack_v = is_in_pack<T, Pack...>::value;
 
 template <typename... Args>
 struct MultiStore {
+    inline MultiStore() {}
+
     template <typename Val>
     requires is_in_pack_v<Store<id_type_t<Val>, Val>, Args...>
     auto store() -> Store<id_type_t<Val>, Val>& {
@@ -188,7 +194,6 @@ struct MultiStore {
     auto at(Id id) -> value_type_t<Id>& {
         return store<value_type_t<Id>>().at(id);
     }
-
 
   private:
     std::tuple<Args...> stores;
@@ -271,6 +276,7 @@ DECL_ID_TYPE(string, StrId, int);
 
 } // namespace ir
 
+
 namespace dod {
 template <>
 struct id_type<Str> {
@@ -325,6 +331,10 @@ struct author {
     using id_type = AuthorId;
     Str name;
     Str email;
+
+    bool operator==(CR<author> other) const {
+        return name == other.name && email == other.email;
+    }
 };
 
 
@@ -354,14 +364,25 @@ struct line {
 //         }
 //     }
 // };
+} // namespace ir
 
+namespace std {
+template <>
+struct hash<ir::author> {
+    std::size_t operator()(CR<ir::author> it) const {
+        return std::hash<Str>()(it.name) ^ std::hash<Str>()(it.email);
+    }
+};
+}; // namespace std
+
+namespace ir {
 struct content_manager {
     dod::MultiStore<
-        dod::Store<AuthorId, author>, // Full list of authors
-        dod::Store<LineId, line>,     // found lines
-        dod::Store<FileId, file>,     //
-        dod::Store<CommitId, commit>, //
-        dod::Store<DirectoryId, dir>, //
+        dod::InternStore<AuthorId, author>, // Full list of authors
+        dod::Store<LineId, line>,           // found lines
+        dod::Store<FileId, file>,           //
+        dod::Store<CommitId, commit>,       //
+        dod::Store<DirectoryId, dir>,       //
         dod::InternStore<StrId, Str>>
         multi;
 

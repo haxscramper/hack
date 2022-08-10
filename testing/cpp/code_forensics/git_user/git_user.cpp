@@ -674,6 +674,7 @@ int main() {
     storage.remove_all<ir::orm_string>();
     storage.remove_all<ir::orm_commit>();
     storage.remove_all<ir::orm_dir>();
+    storage.remove_all<ir::orm_author>();
     storage.remove_all<ir::orm_file>();
 
     storage.begin_transaction();
