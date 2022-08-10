@@ -206,7 +206,9 @@ namespace std {
 template <dod::IsIdType Id>
 struct hash<Id> {
     std::size_t operator()(Id it) const {
-        return std::hash<typename Id::id_value_type>()(it.getValue());
+        // Id uniquely identifies any entry it points to, by defintion, so
+        // it can be used as a perfect hash
+        return it.getValue();
     }
 };
 }; // namespace std
@@ -384,20 +386,35 @@ struct LineData {
 // };
 } // namespace ir
 
-namespace std {
-template <>
-struct hash<ir::Author> {
-    std::size_t operator()(CR<ir::Author> it) const {
-        return std::hash<Str>()(it.name) ^ std::hash<Str>()(it.email);
+inline void hash_combine(std::size_t& seed) {}
+
+template <typename T, typename... Rest>
+inline void hash_combine(std::size_t& seed, const T& v, Rest... rest) {
+    std::hash<T> hasher;
+    seed ^= hasher(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+    hash_combine(seed, rest...);
+}
+
+#define MAKE_HASHABLE(__type, __varname, ...)                             \
+    namespace std {                                                       \
+        template <>                                                       \
+        struct hash<__type> {                                             \
+            std::size_t operator()(const __type& __varname) const {       \
+                std::size_t ret = 0;                                      \
+                hash_combine(ret, __VA_ARGS__);                           \
+                return ret;                                               \
+            }                                                             \
+        };                                                                \
     }
-};
-}; // namespace std
+
+MAKE_HASHABLE(ir::Author, it, it.name, it.email);
+MAKE_HASHABLE(ir::LineData, it, it.author, it.index, it.time, it.content);
 
 namespace ir {
 struct content_manager {
     dod::MultiStore<
         dod::InternStore<AuthorId, Author>, // Full list of authors
-        dod::Store<LineId, LineData>,       // found lines
+        dod::InternStore<LineId, LineData>, // found lines
         dod::Store<FileId, File>,           //
         dod::Store<CommitId, Commit>,       //
         dod::Store<DirectoryId, Dir>,       //
