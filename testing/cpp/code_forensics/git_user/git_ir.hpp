@@ -250,8 +250,8 @@ struct file {
 /// structure.
 struct dir {
     using id_type = DirectoryId;
-    DirectoryId parent; /// Parent directory ID
-    StrId       name;   /// Id of the string
+    Opt<DirectoryId> parent; /// Parent directory ID
+    StrId            name;   /// Id of the string
 };
 
 /// Table of interned stirngs for different purposes
@@ -285,7 +285,13 @@ struct intern_table {
 
     [[nodiscard]] StrId add(CR<Str> in) {
         auto found = id_map.find(in);
-        return found == id_map.end() ? content.add(in) : found->second;
+        if (found != id_map.end()) {
+            return found->second;
+        } else {
+            auto result = content.add(in);
+            id_map.insert({in, result});
+            return result;
+        }
     }
 };
 
@@ -348,12 +354,12 @@ auto create_db() {
             "file",
             make_column("id", &orm_file::id, primary_key()),
             make_column("commit_id", &orm_file::commit_id),
-            make_column("name", &orm_file::name),
+            make_column("name", &orm_file::name)/*,
             // make_column("lines", &)
             foreign_key(column<orm_file>(&orm_file::name))
                 .references(column<orm_string>(&orm_string::id)),
             foreign_key(column<orm_file>(&orm_file::commit_id))
-                .references(column<orm_commit>(&orm_commit::id))),
+                .references(column<orm_commit>(&orm_commit::id))*/),
         make_table<orm_author>(
             "author",
             make_column("id", &orm_author::id, primary_key()),
@@ -364,19 +370,19 @@ auto create_db() {
             make_column("id", &orm_line::id, primary_key()),
             make_column("author", &orm_line::author),
             make_column("time", &orm_line::time),
-            make_column("content", &orm_line::content),
+            make_column("content", &orm_line::content)/*,
             foreign_key(column<orm_line>(&orm_line::author))
                 .references(column<orm_author>(&orm_author::id)),
             foreign_key(column<orm_line>(&orm_line::file))
                 .references(column<orm_file>(&orm_file::id)),
             foreign_key(column<orm_line>(&orm_line::content))
-                .references(column<orm_string>(&orm_string::id))),
+                .references(column<orm_string>(&orm_string::id))*/),
         make_table<orm_dir>(
             "dir",
             make_column("id", &orm_dir::id, primary_key()),
-            make_column("parent", &orm_dir::parent),
+            make_column("parent", &orm_dir::parent)/*,
             foreign_key(column<orm_dir>(&orm_dir::parent))
-                .references(column<orm_dir>(&orm_dir::parent))),
+                .references(column<orm_dir>(&orm_dir::id))*/),
         make_table<orm_string>(
             "strings",
             make_column("id", &orm_string::id, primary_key()),

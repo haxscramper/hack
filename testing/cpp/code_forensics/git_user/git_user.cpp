@@ -128,7 +128,7 @@ std::future<T> async_task(
 
 using TimePoint = stime::time_point<stime::system_clock>;
 
-#define MAX_PARALLEL 1
+#define MAX_PARALLEL 16
 
 /// Mutable state passed around walker configurations
 struct walker_state {
@@ -139,7 +139,7 @@ struct walker_state {
     git_repository* repo;
     /// Semaphore to cap maximum number of parallel subprocesses/threads
     /// (in case of libgit-based analysis)
-    std::counting_semaphore<MAX_PARALLEL> semaphore{MAX_PARALLEL};
+    std::counting_semaphore<MAX_PARALLEL> semaphore{16};
 
     std::map<Str, TimePoint> bench_points;
 
@@ -160,7 +160,7 @@ struct walker_state {
 };
 
 template <typename T>
-using ULock = std::unique_lock<T>;
+using SLock = std::scoped_lock<T>;
 
 /// Collection of different commit sampling strategies
 struct allow_state {
@@ -231,7 +231,7 @@ ir::FileId stats_via_subprocess(
     // line construction.
     auto result = ir::FileId::Nil();
     {
-        ULock lock{walker->m};
+        SLock lock{walker->m};
         result = walker->content->add(file);
     }
     /// Start git blame subprocess
@@ -314,7 +314,7 @@ ir::FileId stats_via_subprocess(
             }
 
             case LK::Content: {
-                ULock lock{walker->m};
+                SLock lock{walker->m};
                 is >> text;
                 // Constructin a new line data using already parsed
                 // elements and the file ID. Adding new line into the store
@@ -352,7 +352,7 @@ ir::FileId stats_via_libgit(
 
     auto result = ir::FileId::Nil();
     {
-        ULock lock{state->m};
+        SLock lock{state->m};
         result = state->content->add(file);
     }
     // Init default blame creation options
@@ -394,7 +394,7 @@ ir::FileId stats_via_libgit(
         if (hunk != nullptr && hunk->final_signature != nullptr) {
             break_on_null_hunk = true;
             // get date when hunk had been altered
-            ULock lock{state->m};
+            SLock lock{state->m};
             state->content->multi.at(result).lines.push_back(
                 state->content->add(ir::line{
                     .author  = state->content->multi.add(ir::author{}),
@@ -437,33 +437,39 @@ ir::FileId exec_walker(
 
 
     // IR has several fields that must be initialized at the start, so
-    // using a 'finally' RAII callback here
-    state->m.lock();
-    finally unlock{[state] { state->m.unlock(); }};
+    // using an optional for the file and calling init in the
+    // RAII-lock-guarded section.
+    Opt<ir::file> init;
 
-    ir::file init = ir::file{
-        .commit_id = commit,
-        .parent    = state->content->multi.add(ir::dir{
-               .parent = ir::DirectoryId::Nil(),
-               .name   = state->content->add(Str{root})}),
-        .name      = state->content->add(path)};
+    {
+        SLock lock{state->m};
+        init = ir::file{
+            .commit_id = commit,
+            .parent    = state->content->multi.add(ir::dir{
+                   .parent = ir::DirectoryId::Nil(),
+                   .name   = state->content->add(Str{root})}),
+            .name      = state->content->add(path)};
+    }
 
 
     ir::FileId result = state->config->use_subprocess
                             ? stats_via_subprocess(
-                                  oid, state, init, relpath)
+                                  oid, state, init.value(), relpath)
                             : stats_via_libgit(
-                                  state, oid, entry, relpath, init);
+                                  state,
+                                  oid,
+                                  entry,
+                                  relpath,
+                                  init.value());
 
     static int total_done;
     {
-        ULock lock{state->m};
+        SLock lock{state->m};
         fmt::print(
             "DONE ({:<5}) {} {}\n", total_done++, oid_tostr(oid), relpath);
     }
 
     return result;
-    // return ir::FileId::Nil();
 }
 
 void add_sub_task(
@@ -485,11 +491,13 @@ void add_sub_task(
         // implementation does not have any overlapping critical sections,
         // but performance limitations are present (large projects might
         // have thousands of calls)
+
         state->semaphore.acquire();
+        finally lock{[state] { state->semaphore.release(); }};
         // Walker returns optional analysis result
         auto result = exec_walker(
             oid, state, out_commit, user_str.c_str(), user_dup);
-        state->semaphore.release();
+
         // tree entry must be freed manually, FIXME work around
         // exceptions in the walker executor
         tree_entry_free(user_dup);
@@ -512,7 +520,7 @@ ir::CommitId process_commit_impl(git_oid oid, walker_state* state) {
 
     auto out_commit = ir::CommitId::Nil();
     {
-        ULock lock{state->m};
+        SLock lock{state->m};
         out_commit = state->content->add(ir::commit{});
     }
     Vec<std::future<ir::FileId>> sub_futures;
@@ -524,11 +532,7 @@ ir::CommitId process_commit_impl(git_oid oid, walker_state* state) {
         GIT_TREEWALK_PRE,
         [oid, state, out_commit, &sub_futures](
             const char* root, const git_tree_entry* entry) {
-            if (file_count.load() < 4) {
-                file_count.store(file_count.load() + 1);
-                add_sub_task(
-                    oid, state, out_commit, root, entry, sub_futures);
-            }
+            add_sub_task(oid, state, out_commit, root, entry, sub_futures);
 
             return GIT_OK;
         });
@@ -537,8 +541,9 @@ ir::CommitId process_commit_impl(git_oid oid, walker_state* state) {
     // For all futures provided in the subtask analysis - get result,
     // if it is non-empty, merge it with input data.
     for (auto& future : sub_futures) {
-        ULock lock{state->m};
-        state->content->at(out_commit).files.push_back(future.get());
+        auto  result = future.get();
+        SLock lock{state->m};
+        state->content->at(out_commit).files.push_back(result);
     }
 
     return out_commit;
@@ -620,7 +625,7 @@ int main() {
     // Provide implementation callback strategies
     auto config = UPtr<walker_config>(new walker_config{
         .use_subprocess = true,
-        .use_threading  = walker_config::defer,
+        .use_threading  = walker_config::async,
         .repo           = "/tmp/fusion",
         .heads          = "/.git/refs/heads/master",
         .allow_path     = [](CR<Str> path) -> bool {
@@ -664,10 +669,14 @@ int main() {
         commits.push_back(future.get());
     }
 
-    return 0;
-
     auto storage = ir::create_db();
     storage.sync_schema();
+
+    storage.remove_all<ir::orm_line>();
+    storage.remove_all<ir::orm_string>();
+    storage.remove_all<ir::orm_commit>();
+    storage.remove_all<ir::orm_dir>();
+    storage.remove_all<ir::orm_file>();
 
     storage.begin_transaction();
 
@@ -677,9 +686,7 @@ int main() {
 
     for (const auto& [id, line] :
          content.multi.store<ir::line>().pairs()) {
-        auto orm = ir::orm_line{*line, id};
-        std::cout << storage.dump(orm) << std::endl;
-        storage.insert(orm);
+        storage.insert(ir::orm_line{*line, id});
     }
 
     for (const auto& [id, author] :
