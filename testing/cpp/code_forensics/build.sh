@@ -58,7 +58,7 @@ function wrap_git() {
 
 # try_build
 # build_git_wrapper
-# wrap_git
+wrap_git
 try_build
 # py_plotter
 # cmake .

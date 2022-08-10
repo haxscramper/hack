@@ -3892,11 +3892,9 @@ git_time_t commit_time(const git_commit *commit) {
 
 
 
-void commit_time_offset(const git_commit *commit) {
+int commit_time_offset(const git_commit *commit) {
     auto __result = git_commit_time_offset(commit);
-    if (__result < 0) {
-        __GIT_THROW_EXCEPTION(__result, "git_commit_time_offset");
-    }
+    return __result;
 }
 
 

@@ -4,6 +4,8 @@
 - function: "git_revparse"
   err: code
   out: revspec
+- function: "git_commit_time_offset"
+  err: none
 - function: "git_commit_lookup"
   err: code
   out: commit

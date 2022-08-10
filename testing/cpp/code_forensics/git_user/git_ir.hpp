@@ -393,8 +393,8 @@ DECL_ID_TYPE(Author, AuthorId, int);
 /// single commit by author, taken at some point in time
 struct Commit {
     using id_type = CommitId;
-    int         author;   /// references unique author id
-    int         time;     /// posix time
+    AuthorId    author;   /// references unique author id
+    i64         time;     /// posix time
     int         timezone; /// timezone where commit was taken
     Vec<FileId> files;
 };
@@ -490,12 +490,10 @@ MAKE_HASHABLE(ir::Author, it, it.name, it.email);
 MAKE_HASHABLE(ir::LineData, it, it.author, it.time, it.content);
 MAKE_HASHABLE(ir::Dir, it, it.name, it.parent);
 
-
 using Path = std::filesystem::path;
 
 namespace ir {
 struct content_manager {
-
     dod::MultiStore<
         dod::InternStore<AuthorId, Author>, // Full list of authors
         dod::InternStore<LineId, LineData>, // found lines

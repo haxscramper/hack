@@ -170,7 +170,7 @@ struct allow_state {
     const Date start = {2020, 1, 1};
 
     /// For yearly sampling - visited years
-    std::set<int> visited_years;
+    std::set<int> visited_periods;
     /// Index of the previous period
     int prev_period = -1;
 
@@ -184,13 +184,21 @@ struct allow_state {
         }
     }
 
-    bool allow_once_per_year(CR<Date> date) {
-        if (!visited_years.contains(date.year())) {
-            visited_years.insert(date.year());
+    bool can_visit_period(int period) {
+        if (!visited_periods.contains(period)) {
+            visited_periods.insert(period);
             return true;
         } else {
             return false;
         }
+    }
+
+    bool allow_once_per_month(CR<Date> date) {
+        return can_visit_period(month_to_period(date));
+    }
+
+    bool allow_once_per_year(CR<Date> date) {
+        return can_visit_period(year_to_period(date));
     }
 
     bool allow_once_per_period(CR<Date> date) {
@@ -206,6 +214,10 @@ struct allow_state {
     }
 
     int year_to_period(CR<Date> date) { return date.year(); }
+
+    int month_to_period(CR<Date> date) {
+        return date.year() * 1000 + date.month();
+    }
 
     int range_to_period(CR<Date> date) {
         return (date - start).days() / days_period;
@@ -395,7 +407,7 @@ ir::FileId stats_via_libgit(
             SLock lock{state->m};
             state->content->multi.at(result).lines.push_back(
                 state->content->add(ir::LineData{
-                    .author  = state->content->multi.add(ir::Author{}),
+                    .author  = state->content->add(ir::Author{}),
                     .time    = hunk->final_signature->when.time,
                     .content = state->content->add(Str{})}));
         }
@@ -523,8 +535,17 @@ ir::CommitId process_commit_impl(git_oid oid, walker_state* state) {
     // shared, this piece of code might be executed in parallel.
     auto out_commit = ir::CommitId::Nil();
     {
-        SLock lock{state->m};
-        out_commit = state->content->add(ir::Commit{});
+        git_signature* signature = const_cast<git_signature*>(
+            commit_author(commit));
+
+        finally close{[signature]() { signature_free(signature); }};
+        SLock   lock{state->m};
+        out_commit = state->content->add(ir::Commit{
+            .author   = state->content->add(ir::Author{
+                  .name  = Str{signature->name},
+                  .email = Str{signature->email}}),
+            .time     = commit_time(commit),
+            .timezone = commit_time_offset(commit)});
     }
 
     // List of subtasks that need to be executed for each specific file.
@@ -651,11 +672,11 @@ int main() {
             }
         },
         .get_period = [&](const Date& date) -> int {
-            auto result = allow.year_to_period(date);
+            auto result = allow.month_to_period(date);
             return result;
         },
         .allow_sample_at_date = [&](const Date& date) -> bool {
-            bool result = allow.allow_once_per_year(date);
+            bool result = allow.allow_once_per_month(date);
             return result;
         }});
 
