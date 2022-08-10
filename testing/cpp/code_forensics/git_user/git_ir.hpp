@@ -1,6 +1,7 @@
 #include <sqlite_orm/sqlite_orm.h>
 #include <concepts>
 #include <iostream>
+#include <filesystem>
 #include <unordered_map>
 #include <experimental/type_traits>
 
@@ -215,6 +216,10 @@ struct InternStore {
         }
     }
 
+    bool contains(CR<Val> in) const {
+        return id_map.find(in) != id_map.end();
+    }
+
     /// Get mutable reference at the content pointed at by the ID
     Val& at(Id id) { return content.at(id); }
     /// Get immutable references at the content pointed at by the ID
@@ -415,6 +420,10 @@ struct Dir {
     using id_type = DirectoryId;
     Opt<DirectoryId> parent; /// Parent directory ID
     StrId            name;   /// Id of the string
+
+    bool operator==(CR<Dir> other) const {
+        return name == other.name && parent == other.parent;
+    }
 };
 
 /// Table of interned stirngs for different purposes
@@ -479,9 +488,14 @@ inline void hash_combine(std::size_t& seed, const T& v, Rest... rest) {
 // interned. `std::string` already has the hash structure.
 MAKE_HASHABLE(ir::Author, it, it.name, it.email);
 MAKE_HASHABLE(ir::LineData, it, it.author, it.time, it.content);
+MAKE_HASHABLE(ir::Dir, it, it.name, it.parent);
+
+
+using Path = std::filesystem::path;
 
 namespace ir {
 struct content_manager {
+
     dod::MultiStore<
         dod::InternStore<AuthorId, Author>, // Full list of authors
         dod::InternStore<LineId, LineData>, // found lines
@@ -491,6 +505,30 @@ struct content_manager {
         dod::InternStore<StrId, Str>        // all interned strings
         >
         multi;
+
+    std::unordered_map<Str, DirectoryId> prefixes;
+
+    Opt<DirectoryId> parentDir(CR<Path> dir) {
+        if (dir.has_parent_path()) {
+            auto parent = dir.parent_path();
+            auto native = parent.native();
+            if (prefixes.contains(native)) {
+                return prefixes.at(native);
+            } else {
+                auto result = getDir(parent);
+                prefixes.insert({parent, result});
+                return result;
+            }
+        } else {
+            return Opt<DirectoryId>{};
+        }
+    }
+
+    DirectoryId getDir(CR<Path> dir) {
+        return add(ir::Dir{
+            .parent = parentDir(dir),
+            .name   = add(dir.filename().native())});
+    }
 
     /// Get reference to value pointed to by the ID
     template <dod::IsIdType Id>
@@ -575,6 +613,7 @@ auto create_db() {
             "dir",
             make_column("id", &orm_dir::id, primary_key()),
             make_column("parent", &orm_dir::parent),
+            make_column("name", &orm_dir::name),
             foreign_key(column<orm_dir>(&orm_dir::parent))
                 .references(column<orm_dir>(&orm_dir::id))),
         make_table<orm_string>(

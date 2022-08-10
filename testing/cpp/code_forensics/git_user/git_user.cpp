@@ -442,9 +442,7 @@ ir::FileId exec_walker(
         SLock lock{state->m};
         init = ir::File{
             .commit_id = commit,
-            .parent    = state->content->multi.add(ir::Dir{
-                   .parent = ir::DirectoryId::Nil(),
-                   .name   = state->content->add(Str{root})}),
+            .parent    = state->content->getDir(Str{root}),
             .name      = state->content->add(path)};
     }
 
