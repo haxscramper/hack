@@ -11,6 +11,9 @@
 template <typename... Args>
 struct arg_pack {};
 
+/// Helper type trait to check whether type \param Derived is derived from
+/// the \param Base class - including cases when \param Base is an
+/// partially specialized type name.
 template <template <typename...> class Base, typename Derived>
 struct is_base_of_template {
     // A function which can only be called by something convertible to a
@@ -37,48 +40,114 @@ template <template <typename...> class Base, typename Derived>
 using is_base_of_template_t = typename is_base_of_template<Base, Derived>::
     type;
 
+/// Convenience helper trait for getting `::value` of the trait check
 template <template <typename...> class Base, typename Derived>
 inline constexpr bool
     is_base_of_template_v = is_base_of_template<Base, Derived>::value;
 
 using namespace sqlite_orm;
 
+
+/// This namespace provides implementation of the Data-orited design
+/// primitives such as stores and ID type. The implementation is largely
+/// based on my understanding of the DOD practices and as such might
+/// contain some things that could be implemented differently or ones that
+/// are not necessary at all.
 namespace dod {
+/// DOD Id type
+///
+/// \note It does not have a default constructor, if you need co construct
+/// a an empyt/nil value (not recommended) for some field/argument you can
+/// use the static `::Nil` method defined in the derivations produced in
+/// the `DECL_ID_TYPE` macro
+///
+/// \note ID types can be thought of as a pointers or indices into some
+/// 'memory' container and as such should only be parametrized using
+/// unsigned data types. They *do not* provide any sort of pointer-like
+/// arithmentics or any other operations that might fail due to the
+/// overflow. Container indices can be freely converted to the pointers.
 template <std::integral IdType>
 struct [[nodiscard]] Id {
     using id_base_type = IdType;
-    Id(IdType in) : value(in + 1) { // std::cout << " >> " << in << "\n";
-    }
+    /// Create new ID value from the stored ID index.
+    Id(IdType in) : value(in + 1) {}
+
+
+    /// Create new ID object from value, without preemptively incrementing
+    /// it
     static Id FromValue(IdType in) {
         Id res{IdType{}};
         res.value = in;
         return res;
     }
-    bool   isNil() const { return value == IdType{}; }
+
+    /// Check whether provided value is nil or not
+    bool isNil() const { return value == IdType{}; }
+    /// Get value stored in the ID  - this one should be used in cases
+    /// where ID is converted in some different format (for example printed
+    /// out or stored in the database)
     IdType getValue() const { return value; }
-    void   setValue(IdType arg) { value = arg; }
+    /// Set value of the ID. This should be used for deserialization.
+    ///
+    /// \note This function allows setting ID to state with zero value,
+    /// making it 'nil'
+    void setValue(IdType arg) { value = arg; }
+    /// Get index of the ID, for accessing the store.
+    ///
+    /// \warning in case of a 'nil' type this might return an invalid index
+    /// (`<0`)
     IdType getIndex() const { return value - 1; }
 
   protected:
     IdType value;
 };
 
+/// Declare new ID type, derived from the `dod::Id` with specified \arg
+/// __type as a template parameter. Newly declared type will have a name
+/// \arg __name and associated value type `__value`. All three parameters
+/// must be specified in order for the definition to be sound.
+///
+/// Defined type provides implementation of the `::FromValue` and `::Nil`
+/// static functions that can be used as an alternative construction
+/// methods in various cases.
+#define DECL_ID_TYPE(__value, __name, __type)                             \
+    struct __value;                                                       \
+    struct [[nodiscard]] __name : dod::Id<__type> {                       \
+        using value_type = __value;                                       \
+        static __name Nil() { return FromValue(0); };                     \
+        static __name FromValue(__type arg) {                             \
+            __name res{__type{}};                                         \
+            res.setValue(arg);                                            \
+            return res;                                                   \
+        }                                                                 \
+        bool operator==(__name other) const {                             \
+            return getValue() == other.getValue();                        \
+        }                                                                 \
+        __name(__type arg) : dod::Id<__type>(arg) {}                      \
+    };
+
+
+/// Concent for base ID type and all it's publcily derived types
 template <typename D>
 concept IsIdType = is_base_of_template_v<Id, D>;
 
+/// Type trait for accessing value type of the ID type
 template <typename T>
 struct value_type {
     using type = typename T::value_type;
 };
 
+/// Helper alias for accessing value type of the type
 template <typename T>
 using value_type_t = typename value_type<T>::type;
 
+/// Type trait tructure for inferring id type of the stored type
 template <typename T>
 struct id_type {
     using type = typename T::id_type;
 };
 
+/// Helper alias for accessing id type of the type
 template <typename T>
 using id_type_t = typename id_type<T>::type;
 
@@ -93,6 +162,7 @@ struct Store {
         return Id(index);
     }
 
+    /// Add new item to the store and return newly created ID
     [[nodiscard]] Id add(const T&& value) {
         int index = content.size();
         content.push_back(value);
@@ -102,6 +172,7 @@ struct Store {
     T&    at(Id id) { return content.at(id.getIndex()); }
     CR<T> at(Id id) const { return content.at(id.getIndex()); }
 
+    /// Get genetator for all stored indices and pairs
     generator<std::pair<Id, CP<T>>> pairs() const {
         const int size = content.size();
         for (int i = 0; i < size; ++i) {
@@ -109,6 +180,7 @@ struct Store {
         }
     }
 
+    /// Return generator for stored values
     generator<CP<T>> items() const {
         for (const auto& it : content) {
             co_yield &it;
@@ -119,6 +191,10 @@ struct Store {
     Vec<T> content;
 };
 
+
+/// Interned data store - for values that can be hashed for deduplication.
+/// Provided type must be usable as a key for unordered associative
+/// continer.
 template <IsIdType Id, typename Val>
 struct InternStore {
     InternStore() = default;
@@ -126,6 +202,8 @@ struct InternStore {
     std::unordered_map<Val, Id> id_map;
     dod::Store<Id, Val>         content;
 
+    /// Add value to the store - if the value is already contained can
+    /// return previous ID
     [[nodiscard]] Id add(CR<Val> in) {
         auto found = id_map.find(in);
         if (found != id_map.end()) {
@@ -137,16 +215,23 @@ struct InternStore {
         }
     }
 
-    Val&    at(Id id) { return content.at(id); }
+    /// Get mutable reference at the content pointed at by the ID
+    Val& at(Id id) { return content.at(id); }
+    /// Get immutable references at the content pointed at by the ID
     CR<Val> at(Id id) const { return content.at(id); }
 
+    /// Return generator of the stored indices and values
     generator<std::pair<Id, CP<Val>>> pairs() const {
         return content.pairs();
     }
 
+    /// Return generator of the stored values
     generator<CP<Val>> items() const { return content.items(); }
 };
 
+
+/// Type trait to check whether provided \param T type is in the \param
+/// Pack
 template <typename T, typename... Pack>
 struct is_in_pack;
 
@@ -166,42 +251,54 @@ struct is_in_pack<V> {
 };
 
 
+/// `::value` accessor for the 'is in pack' type trait
 template <typename T, typename... Pack>
 inline constexpr bool is_in_pack_v = is_in_pack<T, Pack...>::value;
 
+/// Collecting of several different storage types, used as a boilerplate
+/// reduction helper - instead of wrapping around multiple `Store<Id, Val>`
+/// fields in the class, adding helper methods to access them via add/at
+/// you can write a `MultiStore<>` and list all the required data in the
+/// template parameter list. Supports both interned and non-interned
+/// storage solutions.
 template <typename... Args>
 struct MultiStore {
     inline MultiStore() {}
 
+    //// Get reference to the store that is associated with \param Val
     template <typename Val>
     requires is_in_pack_v<Store<id_type_t<Val>, Val>, Args...>
     auto store() -> Store<id_type_t<Val>, Val>& {
         return std::get<Store<id_type_t<Val>, Val>>(stores);
     }
 
+    /// An overload for the interned store case
     template <typename Val>
     requires is_in_pack_v<InternStore<id_type_t<Val>, Val>, Args...>
     auto store() -> InternStore<id_type_t<Val>, Val>& {
         return std::get<InternStore<id_type_t<Val>, Val>>(stores);
     }
 
+    /// Push value on one of the stores, inferring which one based on the
+    /// ID
     template <typename Val>
-    auto add(CR<Val> t) -> id_type_t<Val> {
+    [[nodiscard]] auto add(CR<Val> t) -> id_type_t<Val> {
         return store<Val>().add(t);
     }
 
+    /// Get value at one of the associated stores, inferring which one
+    /// based on the value type of the ID
     template <dod::IsIdType Id>
     auto at(Id id) -> value_type_t<Id>& {
         return store<value_type_t<Id>>().at(id);
     }
 
   private:
-    std::tuple<Args...> stores;
+    std::tuple<Args...> stores; /// List of associated storage contianers
 };
 
 }; // namespace dod
-   //
-   //
+
 namespace std {
 template <dod::IsIdType Id>
 struct hash<Id> {
@@ -266,33 +363,18 @@ struct row_extractor<T> {
 
 namespace ir {
 
-#define DECL_ID_TYPE(__value, __name, __type)                             \
-    struct __value;                                                       \
-    struct [[nodiscard]] __name : dod::Id<__type> {                       \
-        using value_type = __value;                                       \
-        static __name Nil() { return FromValue(0); };                     \
-        static __name FromValue(__type arg) {                             \
-            __name res{__type{}};                                         \
-            res.setValue(arg);                                            \
-            return res;                                                   \
-        }                                                                 \
-        bool operator==(__name other) const {                             \
-            return getValue() == other.getValue();                        \
-        }                                                                 \
-        __name(__type arg) : dod::Id<__type>(arg) {}                      \
-    };
-
-
-DECL_ID_TYPE(LineData, LineId, int);
-DECL_ID_TYPE(Commit, CommitId, int);
-DECL_ID_TYPE(File, FileId, int);
-DECL_ID_TYPE(Dir, DirectoryId, int);
-DECL_ID_TYPE(String, StrId, int);
+DECL_ID_TYPE(LineData, LineId, std::size_t);
+DECL_ID_TYPE(Commit, CommitId, std::size_t);
+DECL_ID_TYPE(File, FileId, std::size_t);
+DECL_ID_TYPE(Dir, DirectoryId, std::size_t);
+DECL_ID_TYPE(String, StrId, std::size_t);
 
 } // namespace ir
 
 
 namespace dod {
+/// Provide struct specialization for string to be able to get it's id
+/// type.
 template <>
 struct id_type<Str> {
     using type = ir::StrId;
@@ -323,7 +405,7 @@ struct File {
                         /// recorded in
     DirectoryId parent; /// parent directory
     StrId       name;   /// file name
-    Vec<LineId> lines;
+    Vec<LineId> lines;  /// List of all lines found in the file
 };
 
 /// Single directory path part, without specification at which point in
@@ -341,7 +423,7 @@ struct String {
     Str text; /// Textual content of the line
 };
 
-
+/// Author - name and email found during the source code analysis.
 struct Author {
     using id_type = AuthorId;
     Str name;
@@ -354,38 +436,24 @@ struct Author {
 
 
 /// Single line in a file with all the information that can be relevang for
-/// the further analysis
+/// the further analysis. Provides information about the /content/ found at
+/// some line. Interned in the main storage.
 struct LineData {
     using id_type = LineId;
-    AuthorId author; /// Line author ID
-    int      index;
+    AuthorId author;  /// Line author ID
     i64      time;    /// Time line was written
     StrId    content; /// Content of the line
 
     bool operator==(CR<LineData> other) const {
-        return author == other.author && index == other.index &&
-               time == other.time && content == other.content;
+        return author == other.author && time == other.time &&
+               content == other.content;
     }
 };
-
-
-// struct intern_table {
-//     std::unordered_map<Str, StrId> id_map;
-//     dod::Store<StrId, Str>         content;
-
-//     [[nodiscard]] StrId add(CR<Str> in) {
-//         auto found = id_map.find(in);
-//         if (found != id_map.end()) {
-//             return found->second;
-//         } else {
-//             auto result = content.add(in);
-//             id_map.insert({in, result});
-//             return result;
-//         }
-//     }
-// };
 } // namespace ir
 
+
+// Taken from the SO answer
+// https://stackoverflow.com/questions/2590677/how-do-i-combine-hash-values-in-c0x
 inline void hash_combine(std::size_t& seed) {}
 
 template <typename T, typename... Rest>
@@ -407,25 +475,30 @@ inline void hash_combine(std::size_t& seed, const T& v, Rest... rest) {
         };                                                                \
     }
 
+// Add hashing declarations for the author and line data - they will be
+// interned. `std::string` already has the hash structure.
 MAKE_HASHABLE(ir::Author, it, it.name, it.email);
-MAKE_HASHABLE(ir::LineData, it, it.author, it.index, it.time, it.content);
+MAKE_HASHABLE(ir::LineData, it, it.author, it.time, it.content);
 
 namespace ir {
 struct content_manager {
     dod::MultiStore<
         dod::InternStore<AuthorId, Author>, // Full list of authors
         dod::InternStore<LineId, LineData>, // found lines
-        dod::Store<FileId, File>,           //
-        dod::Store<CommitId, Commit>,       //
-        dod::Store<DirectoryId, Dir>,       //
-        dod::InternStore<StrId, Str>>
+        dod::Store<FileId, File>,           // files
+        dod::Store<CommitId, Commit>,       // all commits
+        dod::Store<DirectoryId, Dir>,       // all directories
+        dod::InternStore<StrId, Str>        // all interned strings
+        >
         multi;
 
+    /// Get reference to value pointed to by the ID
     template <dod::IsIdType Id>
     typename dod::value_type_t<Id>& at(Id id) {
         return multi.at<Id>(id);
     }
 
+    /// Push in a value, return newly generated ID
     template <typename T>
     [[nodiscard]] dod::id_type_t<T> add(CR<T> it) {
         return multi.add<T>(it);
@@ -482,14 +555,12 @@ auto create_db() {
             "line",
             make_column("id", &orm_line::id, primary_key()),
             make_column("author", &orm_line::author),
-            make_column("index", &orm_line::index),
             make_column("time", &orm_line::time),
-            make_column("content", &orm_line::content) // ,
-            // foreign_key(column<orm_line>(&orm_line::author))
-            //     .references(column<orm_author>(&orm_author::id)),
-            // foreign_key(column<orm_line>(&orm_line::content))
-            //     .references(column<orm_string>(&orm_string::id))
-            ),
+            make_column("content", &orm_line::content),
+            foreign_key(column<orm_line>(&orm_line::author))
+                .references(column<orm_author>(&orm_author::id)),
+            foreign_key(column<orm_line>(&orm_line::content))
+                .references(column<orm_string>(&orm_string::id))),
         make_table<orm_dir>(
             "dir",
             make_column("id", &orm_dir::id, primary_key()),

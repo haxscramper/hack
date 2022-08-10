@@ -276,7 +276,6 @@ ir::FileId stats_via_subprocess(
     Str        time;
     ir::Author author;
     Str        text;
-    int        index = 0;
 
     while (blame.running() && std::getline(out, line) && !line.empty()) {
         // even for 'machine reading' output is not consistent - some parts
@@ -322,10 +321,8 @@ ir::FileId stats_via_subprocess(
                 walker->content->at(result).lines.push_back(
                     walker->content->add(ir::LineData{
                         .author  = walker->content->add(author),
-                        .index   = index,
                         .time    = std::stol(time),
                         .content = walker->content->add(text)}));
-                ++index;
                 break;
             }
 
@@ -399,7 +396,6 @@ ir::FileId stats_via_libgit(
             state->content->multi.at(result).lines.push_back(
                 state->content->add(ir::LineData{
                     .author  = state->content->multi.add(ir::Author{}),
-                    .index   = line,
                     .time    = hunk->final_signature->when.time,
                     .content = state->content->add(Str{})}));
         }
@@ -452,6 +448,7 @@ ir::FileId exec_walker(
             .name      = state->content->add(path)};
     }
 
+    // Choose between different modes of data processing and call into one.
     ir::FileId result = state->config->use_subprocess
                             ? stats_via_subprocess(
                                   oid, state, init.value(), relpath)
@@ -462,6 +459,8 @@ ir::FileId exec_walker(
                                   relpath,
                                   init.value());
 
+    // REFACTOR use a proper logging solution instead of the stdout
+    // printing
     static int total_done;
     {
         SLock lock{state->m};
@@ -492,7 +491,9 @@ void add_sub_task(
         // but performance limitations are present (large projects might
         // have thousands of calls)
 
-        state->semaphore.acquire();
+        state->semaphore.acquire(); // cap maximum number of the parallel
+                                    // processing calls
+        // RAII helper in case file processing causes an exception.
         finally lock{[state] { state->semaphore.release(); }};
         // Walker returns optional analysis result
         auto result = exec_walker(
@@ -509,8 +510,10 @@ void add_sub_task(
         async_task<ir::FileId>(state->config->use_threading, sub_task));
 }
 
-std::atomic<int> file_count;
 
+/// Implementaiton of the commit processing function. Walks files that were
+/// available in the repository at the time and process each file
+/// individually, filling data into the content store.
 ir::CommitId process_commit_impl(git_oid oid, walker_state* state) {
     git_commit* commit = commit_lookup(state->repo, &oid);
     // Get tree for a commit
@@ -518,11 +521,15 @@ ir::CommitId process_commit_impl(git_oid oid, walker_state* state) {
     // commit information should be cleaned up when we exit the scope
     finally close{[&commit]() { commit_free(commit); }};
 
+    // Work around possible exceptions in the commit addition - content is
+    // shared, this piece of code might be executed in parallel.
     auto out_commit = ir::CommitId::Nil();
     {
         SLock lock{state->m};
         out_commit = state->content->add(ir::Commit{});
     }
+
+    // List of subtasks that need to be executed for each specific file.
     Vec<std::future<ir::FileId>> sub_futures;
     // walk all entries in the tree
     tree_walk(
@@ -530,10 +537,11 @@ ir::CommitId process_commit_impl(git_oid oid, walker_state* state) {
         // order is not particularly important, doing preorder
         // traversal here
         GIT_TREEWALK_PRE,
+        // Capture all necessary data for execution and delegate the
+        // implementation to the actual function.
         [oid, state, out_commit, &sub_futures](
             const char* root, const git_tree_entry* entry) {
             add_sub_task(oid, state, out_commit, root, entry, sub_futures);
-
             return GIT_OK;
         });
 
@@ -549,11 +557,15 @@ ir::CommitId process_commit_impl(git_oid oid, walker_state* state) {
     return out_commit;
 }
 
+/// Launch single commit processing task
 std::future<ir::CommitId> process_commit(
     git_oid       oid,
     walker_state* state) {
     return async_task<ir::CommitId>(
         state->config->use_threading, [oid, state]() -> ir::CommitId {
+            // `process_commmit` is largely a helper function that is used
+            // to create closure with necessary captures and then delegate
+            // everything to the reguar implementation
             return process_commit_impl(oid, state);
         });
 }
@@ -625,10 +637,11 @@ int main() {
     // Provide implementation callback strategies
     auto config = UPtr<walker_config>(new walker_config{
         .use_subprocess = true,
-        .use_threading  = walker_config::async,
-        .repo           = "/tmp/fusion",
-        .heads          = "/.git/refs/heads/master",
-        .allow_path     = [](CR<Str> path) -> bool {
+        // Full process parallelization
+        .use_threading = walker_config::async,
+        .repo          = "/tmp/fusion",
+        .heads         = "/.git/refs/heads/master",
+        .allow_path    = [](CR<Str> path) -> bool {
             if (path.ends_with(".nim")) {
                 return true;
                 // return path.find("compiler/") != Str::npos ||
@@ -655,25 +668,37 @@ int main() {
 
     ir::content_manager content;
 
+    // Create main walker state used in the whole commit analysis state
     auto state = UPtr<walker_state>(new walker_state{
         .config  = config.get(),
         .repo    = repository_open_ext(config->repo.c_str(), 0, nullptr),
         .content = &content});
 
     git_oid oid;
+    // Initialize state of the commit walker
     open_walker(oid, *state);
+    // Start pararallel processing of the input data
     auto processed = launch_analysis(oid, state.get());
 
+    // Store finalized commit IDs from executed tasks
     Vec<ir::CommitId> commits;
     for (auto& future : processed) {
         commits.push_back(future.get());
     }
 
+    // Create storage connection
     auto storage = ir::create_db();
+    // Sync with stored data
     storage.sync_schema();
-
+    // Start the transaction - all data is inserted in bulk
     storage.begin_transaction();
 
+    // Remove all previously stored data
+    //
+    // TODO implement an incremental commit analysis. If it is supported
+    // storage sync should happen at the very start and `orm_*` types
+    // should be loaded into the store.
+    //
     // NOTE due to foreign key constraints on the database the order is
     // very important, otherwise deletion fails with `FOREIGN KEY
     // constraint failed` error
@@ -688,14 +713,15 @@ int main() {
         storage.insert(ir::orm_string{*string, id});
     }
 
-    for (const auto& [id, line] :
-         content.multi.store<ir::LineData>().pairs()) {
-        storage.insert(ir::orm_line{*line, id});
-    }
 
     for (const auto& [id, author] :
          content.multi.store<ir::Author>().pairs()) {
         storage.insert(ir::orm_author{*author, id});
+    }
+
+    for (const auto& [id, line] :
+         content.multi.store<ir::LineData>().pairs()) {
+        storage.insert(ir::orm_line{*line, id});
     }
 
     for (const auto& [id, commit] :
