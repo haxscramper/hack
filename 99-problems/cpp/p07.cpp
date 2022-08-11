@@ -1,4 +1,5 @@
 #include "common.hpp"
+#include <cassert>
 
 template <typename T, typename Out>
 void insertFlattened(
@@ -29,4 +30,5 @@ int main() {
         std::back_inserter(out));
 
     std::cout << out << "\n";
+    assert((out == V<int>{2, 3, 4, 0, 3, 4, 4, 5, 6, 10, 20}));
 }
