@@ -85,8 +85,7 @@ namespace rv = ranges::views;
 /// User-provided customization for handing of different procedure kinds
 struct UserWrapRule {
     Str pattern;
-    enum class ErrorHandling
-    {
+    enum class ErrorHandling {
         NoErrors,   ///< Function does not produce errors during execution
         ReturnCode, ///< Function might return error code as a part of the
                     ///< result
@@ -118,8 +117,7 @@ Str clangToString(const QualType& t) {
 /// Class declares collection of constructor methods and structures - one
 /// for each clang node kind. Structures allow using named parameters via
 /// designated initializers (`.Cond = <expr>`)
-class ASTBuilder
-{
+class ASTBuilder {
     ASTContext*     context;
     IdentifierTable idents;
 
@@ -277,8 +275,7 @@ class ASTBuilder
             p.Else.empty() ? nullptr : CompoundStmt({p.Else}));
     }
 
-    class IfStmt* IfStmt(const ArrayRef<IfStmtParams>& p)
-    {
+    class IfStmt* IfStmt(const ArrayRef<IfStmtParams>& p) {
         if (p.size() == 1) {
             return IfStmt(p[0]);
         } else {
@@ -301,8 +298,7 @@ class ASTBuilder
         FPOptionsOverride      FPFeatures;
     };
 
-    class BinaryOperator* BinaryOperator(const BinaryOperatorParams& p)
-    {
+    class BinaryOperator* BinaryOperator(const BinaryOperatorParams& p) {
         return BinaryOperator::Create(
             ctx(),
             p.lhs,
@@ -317,8 +313,7 @@ class ASTBuilder
 
     class BinaryOperator* XCall(
         const BinaryOperator::Opcode& opc,
-        Vec<Expr*>                    args)
-    {
+        Vec<Expr*>                    args) {
         return BinaryOperator(
             {.opc = opc, .lhs = args[0], .rhs = args[1]});
     }
@@ -331,8 +326,7 @@ class ASTBuilder
         FPOptionsOverride     FPFeatures;
     };
 
-    class UnaryOperator* UnaryOperator(const UnaryOperatorParams& p)
-    {
+    class UnaryOperator* UnaryOperator(const UnaryOperatorParams& p) {
         return clang::UnaryOperator::Create(
             ctx(),
             p.Expr,
@@ -345,8 +339,9 @@ class ASTBuilder
             p.FPFeatures);
     }
 
-    class UnaryOperator* XCall(const UnaryOperator::Opcode opc, Expr* expr)
-    {
+    class UnaryOperator* XCall(
+        const UnaryOperator::Opcode opc,
+        Expr*                       expr) {
         return UnaryOperator({.opc = opc, .Expr = expr});
     }
 
@@ -379,8 +374,7 @@ class ASTBuilder
         Vec<Expr*> Args = {};
     };
 
-    class CallExpr* CallExpr(const CallExprParams& p)
-    {
+    class CallExpr* CallExpr(const CallExprParams& p) {
         return CallExpr::Create(
             ctx(),
             p.Fn,
@@ -391,15 +385,13 @@ class ASTBuilder
             FPOptionsOverride());
     }
 
-    class CallExpr* XCall(const Str& name, Vec<Expr*> Args = {})
-    {
+    class CallExpr* XCall(const Str& name, Vec<Expr*> Args = {}) {
         return CallExpr({Ref(name), Args});
     }
 
     class CallExpr* XCall(
         const class FunctionDecl* decl,
-        Vec<Expr*>                Args = {})
-    {
+        Vec<Expr*>                Args = {}) {
         return CallExpr({Ref(decl), Args});
     }
 
@@ -427,8 +419,7 @@ class ASTBuilder
         return ReturnStmt::Create(ctx(), sl(), expr, nullptr);
     }
 
-    class Expr* Expr(Expr* expr)
-    {
+    class Expr* Expr(Expr* expr) {
         return expr;
     }
 };
@@ -525,8 +516,7 @@ struct SubFinder : public MatchFinder {
 /// Execute conversion logic for each matching declaration. REFACTOR in the
 /// future IR should be introduces and written to the output - codegen
 /// could be handled by external tools.
-class ConvertPusher : public MatchFinder::MatchCallback
-{
+class ConvertPusher : public MatchFinder::MatchCallback {
     Vec<Str>       wrapped; /// Wrapped node results
     Vec<SubFinder> finder;  /// Finder for customizer rules. Patterns are
                             /// tried in order, from the first to the last.
@@ -613,7 +603,6 @@ class ConvertPusher : public MatchFinder::MatchCallback
         auto call      = b.XCall(func, Pass);
         bool hasResult = false;
 
-
         if (func->getCallResultType()->isVoidType()) {
             // If no result is expected simply append call to the body
             Body.push_back(call);
@@ -639,8 +628,6 @@ class ConvertPusher : public MatchFinder::MatchCallback
                     Body.push_back(b.Return(b.Ref("__result")));
                     DeclParams.ResultTy = func->getCallResultType();
                 }
-                //                outs() << "No errors for " <<
-                //                func->getName() << "\n";
                 break;
             }
             case UserWrapRule::ErrorHandling::ReturnCode: {
@@ -661,9 +648,7 @@ class ConvertPusher : public MatchFinder::MatchCallback
                         // 'else' branch
                         IfParams.Else = {
                             b.Return(b.Ref(rule.outArg.value()))};
-                    } /* else if (!func->getCallResultType()->isVoidType())
-                     { IfParams.Else = {b.Return(b.Ref("__result"))};
-                     }*/
+                    }
                     Body.push_back(b.IfStmt(IfParams));
                 }
                 break;
