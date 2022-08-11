@@ -5,5 +5,5 @@ set -o errexit
 
 file=p08
 
-clang++ $file.cpp -o $file.bin
+clang++ $file.cpp -std=c++20 -lgtest -o $file.bin
 ./$file.bin

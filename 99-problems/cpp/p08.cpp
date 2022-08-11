@@ -12,10 +12,24 @@ void deduplicate(IterIn begin, IterIn end, IterOut out) {
     }
 }
 
-int main() {
-    std::vector<int> in{
-        1, 2, 2, 3, 3, 4, 4, 5, 5, 5, 5, 6, 6, 3, 2, 324, 23, 423, 423};
-    std::vector<int> out;
+template <typename T>
+Vec<T> deduplicate(CR<Vec<T>> in) {
+    Vec<T> out;
     deduplicate(in.begin(), in.end(), std::back_inserter(out));
-    std::cout << out << "\n";
+    return out;
+}
+
+TEST(dedup_empty, dedup) {
+    ASSERT_EQ(deduplicate(Vec<int>{}), Vec<int>{})
+        << "empty deduplication failed";
+}
+
+TEST(dedup_one, dedup) {
+    ASSERT_EQ(deduplicate(Vec<int>{1}), Vec<int>{1})
+        << "deduplication of one element failed";
+}
+
+int main(int argc, char* argv[]) {
+    ::testing::InitGoogleTest(&argc, argv);
+    return RUN_ALL_TESTS();
 }
