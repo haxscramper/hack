@@ -229,14 +229,18 @@ contains the logical variables enumerated in List.
 An n-bit Gray code is a sequence of n-bit strings constructed
 according to certain rules. For example,
 
+#+begin_example
 n = 1: C(1) = ['0','1'].
 n = 2: C(2) = ['00','01','11','10'].
 n = 3: C(3) = ['000','001','011','010',´110´,´111´,´101´,´100´].
+#+end_example
 
 Find out the construction rules and write a predicate with the
 following specification:
 
+#+begin_src
 % gray(N,C) :- C is the N-bit Gray code
+#+end_src
 
 Can you apply the method of "result caching" in order to make the
 predicate more efficient, when it is to be used repeatedly?

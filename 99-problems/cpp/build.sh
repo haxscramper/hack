@@ -3,7 +3,7 @@
 set -o nounset
 set -o errexit
 
-file=p08
+file=p49
 
 clang++ $file.cpp -std=c++20 -lgtest -o $file.bin
 ./$file.bin
