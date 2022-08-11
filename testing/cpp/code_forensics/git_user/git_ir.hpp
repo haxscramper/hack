@@ -173,6 +173,8 @@ struct Store {
     T&    at(Id id) { return content.at(id.getIndex()); }
     CR<T> at(Id id) const { return content.at(id.getIndex()); }
 
+    std::size_t size() const { return content.size(); }
+
     /// Get genetator for all stored indices and pairs
     generator<std::pair<Id, CP<T>>> pairs() const {
         const int size = content.size();
@@ -185,6 +187,19 @@ struct Store {
     generator<CP<T>> items() const {
         for (const auto& it : content) {
             co_yield &it;
+        }
+    }
+
+    /// Insert value into the store at position, either appending to the
+    /// internal list or replacing an existing value.
+    void insert(Id id, CR<T> value) {
+        if (id.getIndex() == content.size()) {
+            content.push_back(value);
+        } else if (id.getIndex() < content.size()) {
+            content[id.getIndex()] = value;
+        } else {
+            // IMPLEMENT either raise exception or come up with some other
+            // way of handing
         }
     }
 
@@ -220,10 +235,18 @@ struct InternStore {
         return id_map.find(in) != id_map.end();
     }
 
+    std::size_t size() const { return content.size(); }
     /// Get mutable reference at the content pointed at by the ID
     Val& at(Id id) { return content.at(id); }
     /// Get immutable references at the content pointed at by the ID
     CR<Val> at(Id id) const { return content.at(id); }
+
+    void insert(Id id, CR<Val> value) {
+        if (!contains(value)) {
+            content.insert(id, value);
+            id_map.insert({value, id});
+        }
+    }
 
     /// Return generator of the stored indices and values
     generator<std::pair<Id, CP<Val>>> pairs() const {
@@ -284,6 +307,20 @@ struct MultiStore {
         return std::get<InternStore<id_type_t<Val>, Val>>(stores);
     }
 
+    //// Get reference to the store that is associated with \param Val
+    template <typename Val>
+    requires is_in_pack_v<Store<id_type_t<Val>, Val>, Args...>
+    auto store() const -> const Store<id_type_t<Val>, Val>& {
+        return std::get<Store<id_type_t<Val>, Val>>(stores);
+    }
+
+    /// An overload for the interned store case
+    template <typename Val>
+    requires is_in_pack_v<InternStore<id_type_t<Val>, Val>, Args...>
+    auto store() const -> const InternStore<id_type_t<Val>, Val>& {
+        return std::get<InternStore<id_type_t<Val>, Val>>(stores);
+    }
+
     /// Push value on one of the stores, inferring which one based on the
     /// ID
     template <typename Val>
@@ -296,6 +333,11 @@ struct MultiStore {
     template <dod::IsIdType Id>
     auto at(Id id) -> value_type_t<Id>& {
         return store<value_type_t<Id>>().at(id);
+    }
+
+    template <typename Id, typename Val>
+    void insert(Id id, CR<Val> val) {
+        return store<Val>().insert(id, val);
     }
 
   private:
@@ -360,7 +402,7 @@ struct row_extractor<T> {
     }
 
     T extract(sqlite3_stmt* stmt, int columnIndex) {
-        return T{sqlite3_column_int(stmt, columnIndex)};
+        return T::FromValue(sqlite3_column_int(stmt, columnIndex));
     }
 };
 }; // namespace sqlite_orm
@@ -371,8 +413,8 @@ namespace ir {
 DECL_ID_TYPE(LineData, LineId, std::size_t);
 DECL_ID_TYPE(Commit, CommitId, std::size_t);
 DECL_ID_TYPE(File, FileId, std::size_t);
-DECL_ID_TYPE(Dir, DirectoryId, std::size_t);
-DECL_ID_TYPE(String, StrId, std::size_t);
+DECL_ID_TYPE(Directory, DirectoryId, std::size_t);
+DECL_ID_TYPE(String, StringId, std::size_t);
 
 } // namespace ir
 
@@ -382,7 +424,7 @@ namespace dod {
 /// type.
 template <>
 struct id_type<Str> {
-    using type = ir::StrId;
+    using type = ir::StringId;
 };
 } // namespace dod
 
@@ -396,11 +438,8 @@ struct Commit {
     AuthorId    author;   /// references unique author id
     i64         time;     /// posix time
     int         timezone; /// timezone where commit was taken
+    Str         hash;     /// git hash of the commit
     Vec<FileId> files;
-};
-
-struct orm_commit : Commit {
-    CommitId id;
 };
 
 /// single version of the file that appeared in some commit
@@ -409,27 +448,28 @@ struct File {
     CommitId commit_id; /// Id of the commit this version of the file was
                         /// recorded in
     DirectoryId parent; /// parent directory
-    StrId       name;   /// file name
+    StringId    name;   /// file name
     Vec<LineId> lines;  /// List of all lines found in the file
 };
 
 /// Single directory path part, without specification at which point in
 /// time it existed. Used for the representation of the repository
 /// structure.
-struct Dir {
+struct Directory {
     using id_type = DirectoryId;
     Opt<DirectoryId> parent; /// Parent directory ID
-    StrId            name;   /// Id of the string
+    StringId         name;   /// Id of the string
 
-    bool operator==(CR<Dir> other) const {
+    bool operator==(CR<Directory> other) const {
         return name == other.name && parent == other.parent;
     }
 };
 
 /// Table of interned stirngs for different purposes
 struct String {
-    using id_type = StrId;
-    Str text; /// Textual content of the line
+    using id_type = StringId;
+    Str  text; /// Textual content of the line
+    bool operator==(CR<String> other) const { return text == other.text; }
 };
 
 /// Author - name and email found during the source code analysis.
@@ -451,7 +491,7 @@ struct LineData {
     using id_type = LineId;
     AuthorId author;  /// Line author ID
     i64      time;    /// Time line was written
-    StrId    content; /// Content of the line
+    StringId content; /// Content of the line
 
     bool operator==(CR<LineData> other) const {
         return author == other.author && time == other.time &&
@@ -488,7 +528,8 @@ inline void hash_combine(std::size_t& seed, const T& v, Rest... rest) {
 // interned. `std::string` already has the hash structure.
 MAKE_HASHABLE(ir::Author, it, it.name, it.email);
 MAKE_HASHABLE(ir::LineData, it, it.author, it.time, it.content);
-MAKE_HASHABLE(ir::Dir, it, it.name, it.parent);
+MAKE_HASHABLE(ir::Directory, it, it.name, it.parent);
+MAKE_HASHABLE(ir::String, it, it.text);
 
 using Path = std::filesystem::path;
 
@@ -499,21 +540,21 @@ struct content_manager {
         dod::InternStore<LineId, LineData>, // found lines
         dod::Store<FileId, File>,           // files
         dod::Store<CommitId, Commit>,       // all commits
-        dod::Store<DirectoryId, Dir>,       // all directories
-        dod::InternStore<StrId, Str>        // all interned strings
+        dod::Store<DirectoryId, Directory>, // all directories
+        dod::InternStore<StringId, String>  // all interned strings
         >
         multi;
 
     std::unordered_map<Str, DirectoryId> prefixes;
 
-    Opt<DirectoryId> parentDir(CR<Path> dir) {
+    Opt<DirectoryId> parentDirectory(CR<Path> dir) {
         if (dir.has_parent_path()) {
             auto parent = dir.parent_path();
             auto native = parent.native();
             if (prefixes.contains(native)) {
                 return prefixes.at(native);
             } else {
-                auto result = getDir(parent);
+                auto result = getDirectory(parent);
                 prefixes.insert({parent, result});
                 return result;
             }
@@ -522,10 +563,10 @@ struct content_manager {
         }
     }
 
-    DirectoryId getDir(CR<Path> dir) {
-        return add(ir::Dir{
-            .parent = parentDir(dir),
-            .name   = add(dir.filename().native())});
+    DirectoryId getDirectory(CR<Path> dir) {
+        return add(ir::Directory{
+            .parent = parentDirectory(dir),
+            .name   = add(String{dir.filename().native()})});
     }
 
     /// Get reference to value pointed to by the ID
@@ -541,26 +582,58 @@ struct content_manager {
     }
 };
 
+
+/// Intermediate types for the ORM storage - they are used in order to
+/// provide interfacing - `id` field and default constructors (for the
+/// `iterate<>()` method in the storage)
+
 struct orm_file : File {
     FileId id;
+    orm_file()
+        : File{.commit_id = CommitId::Nil(), .parent = DirectoryId::Nil(), .name = StringId::Nil()}
+        , id(FileId::Nil()) {}
+    orm_file(FileId _id, CR<File> base) : File(base), id(_id) {}
 };
 
+struct orm_commit : Commit {
+    CommitId id;
 
-struct orm_dir : Dir {
+    orm_commit()
+        : Commit{.author = AuthorId::Nil()}, id(CommitId::Nil()) {}
+    orm_commit(CommitId _id, CR<Commit> base) : Commit(base), id(_id) {}
+};
+
+struct orm_dir : Directory {
     DirectoryId id;
-};
 
+    orm_dir()
+        : Directory{.name = StringId::Nil()}, id(DirectoryId::Nil()) {}
+    orm_dir(DirectoryId _id, CR<Directory> base)
+        : Directory(base), id(_id) {}
+};
 
 struct orm_string : String {
-    StrId id;
+    StringId id;
+
+    orm_string() : String{}, id(StringId::Nil()) {}
+    orm_string(StringId _id, CR<String> base) : String(base), id(_id) {}
 };
 
 struct orm_author : Author {
     AuthorId id;
+
+
+    orm_author() : Author{}, id(AuthorId::Nil()) {}
+    orm_author(AuthorId _id, CR<Author> base) : Author(base), id(_id) {}
 };
 
 struct orm_line : LineData {
     LineId id;
+    orm_line()
+        : LineData{.author = AuthorId::Nil(), .content = StringId::Nil()}
+        , id(LineId::Nil()) {}
+
+    orm_line(LineId _id, CR<LineData> base) : LineData(base), id(_id) {}
 };
 
 struct orm_lines_table {
@@ -569,14 +642,15 @@ struct orm_lines_table {
     LineId line;
 };
 
-auto create_db() {
+auto create_db(CR<Str> storagePath) {
     auto storage = make_storage(
-        "/tmp/db.sqlite",
+        storagePath,
         make_table<orm_commit>(
             "commits",
             make_column("id", &orm_commit::id, primary_key()),
             make_column("author", &orm_commit::author),
             make_column("time", &orm_commit::time),
+            make_column("hash", &orm_commit::hash),
             make_column("timezone", &orm_commit::timezone)),
         make_table<orm_file>(
             "file",
@@ -622,6 +696,6 @@ auto create_db() {
     return storage;
 }
 
-using DbConnection = decltype(create_db());
+using DbConnection = decltype(create_db(""));
 
 } // namespace ir

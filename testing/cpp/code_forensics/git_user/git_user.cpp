@@ -99,6 +99,9 @@ struct walker_config {
     Str repo;
     Str heads;
 
+    Str  db_path;
+    bool try_incremental;
+
     /// Allow processing of a specific path in the repository
     Func<bool(CR<Str>)> allow_path;
     /// Get integer index of the period for Date
@@ -334,7 +337,8 @@ ir::FileId stats_via_subprocess(
                     walker->content->add(ir::LineData{
                         .author  = walker->content->add(author),
                         .time    = std::stol(time),
-                        .content = walker->content->add(text)}));
+                        .content = walker->content->add(
+                            ir::String{text})}));
                 break;
             }
 
@@ -407,9 +411,10 @@ ir::FileId stats_via_libgit(
             SLock lock{state->m};
             state->content->multi.at(result).lines.push_back(
                 state->content->add(ir::LineData{
-                    .author  = state->content->add(ir::Author{}),
-                    .time    = hunk->final_signature->when.time,
-                    .content = state->content->add(Str{})}));
+                    .author = state->content->add(ir::Author{}),
+                    .time   = hunk->final_signature->when.time,
+                    // FIXME get slice of the string for the content
+                    .content = state->content->add(ir::String{})}));
         }
 
         // Advance over raw data
@@ -454,8 +459,8 @@ ir::FileId exec_walker(
         SLock lock{state->m};
         init = ir::File{
             .commit_id = commit,
-            .parent    = state->content->getDir(Str{root}),
-            .name      = state->content->add(path)};
+            .parent    = state->content->getDirectory(Str{root}),
+            .name      = state->content->add(ir::String{path})};
     }
 
     // Choose between different modes of data processing and call into one.
@@ -469,14 +474,15 @@ ir::FileId exec_walker(
                                   relpath,
                                   init.value());
 
-    // REFACTOR use a proper logging solution instead of the stdout
-    // printing
-    static int total_done;
-    {
-        SLock lock{state->m};
-        fmt::print(
-            "DONE ({:<5}) {} {}\n", total_done++, oid_tostr(oid), relpath);
-    }
+    // // REFACTOR use a proper logging solution instead of the stdout
+    // // printing
+    // static int total_done;
+    // {
+    //     SLock lock{state->m};
+    //     fmt::print(
+    //         "DONE ({:<5}) {} {}\n", total_done++, oid_tostr(oid),
+    //         relpath);
+    // }
 
     return result;
 }
@@ -531,6 +537,15 @@ ir::CommitId process_commit_impl(git_oid oid, walker_state* state) {
     // commit information should be cleaned up when we exit the scope
     finally close{[&commit]() { commit_free(commit); }};
 
+    auto hash = oid_tostr(*git_commit_id(commit));
+
+    if (state->config->try_incremental) {
+        for (auto& [id, commit] :
+             state->content->multi.store<ir::Commit>().pairs()) {
+            if (commit->hash == hash) { return id; }
+        }
+    }
+
     // Work around possible exceptions in the commit addition - content is
     // shared, this piece of code might be executed in parallel.
     auto out_commit = ir::CommitId::Nil();
@@ -545,7 +560,8 @@ ir::CommitId process_commit_impl(git_oid oid, walker_state* state) {
                   .name  = Str{signature->name},
                   .email = Str{signature->email}}),
             .time     = commit_time(commit),
-            .timezone = commit_time_offset(commit)});
+            .timezone = commit_time_offset(commit),
+            .hash     = hash});
     }
 
     // List of subtasks that need to be executed for each specific file.
@@ -649,6 +665,98 @@ void open_walker(git_oid& oid, walker_state& state) {
     revwalk_push(state.walker, &oid);
 }
 
+void load_content(walker_config* config, ir::content_manager& content) {
+    auto storage = ir::create_db(config->db_path);
+    storage.sync_schema();
+    for (CR<ir::orm_line> line : storage.iterate<ir::orm_line>()) {
+        // Explicitly specifying template parameters to use slicing for the
+        // second argument.
+        content.multi.insert<ir::LineId, ir::LineData>(line.id, line);
+    }
+
+    for (CR<ir::orm_commit> commit : storage.iterate<ir::orm_commit>()) {
+        content.multi.insert<ir::CommitId, ir::Commit>(commit.id, commit);
+    }
+
+    for (CR<ir::orm_file> file : storage.iterate<ir::orm_file>()) {
+        content.multi.insert<ir::FileId, ir::File>(file.id, file);
+    }
+
+    for (CR<ir::orm_dir> dir : storage.iterate<ir::orm_dir>()) {
+        content.multi.insert<ir::DirectoryId, ir::Directory>(dir.id, dir);
+    }
+
+    for (CR<ir::orm_string> str : storage.iterate<ir::orm_string>()) {
+        content.multi.insert<ir::StringId, ir::String>(str.id, str);
+    }
+}
+
+void store_content(
+    walker_config*          config,
+    CR<ir::content_manager> content) {
+    // Create storage connection
+    auto storage = ir::create_db(config->db_path);
+    // Sync with stored data
+    storage.sync_schema();
+    // Start the transaction - all data is inserted in bulk
+    storage.begin_transaction();
+
+    // Remove all previously stored data
+    //
+    // TODO implement an incremental commit analysis. If it is supported
+    // storage sync should happen at the very start and `orm_*` types
+    // should be loaded into the store.
+    //
+    // NOTE due to foreign key constraints on the database the order is
+    // very important, otherwise deletion fails with `FOREIGN KEY
+    // constraint failed` error
+    if (!config->try_incremental) {
+        storage.remove_all<ir::orm_line>();
+        storage.remove_all<ir::orm_file>();
+        storage.remove_all<ir::orm_commit>();
+        storage.remove_all<ir::orm_dir>();
+        storage.remove_all<ir::orm_author>();
+        storage.remove_all<ir::orm_string>();
+    }
+
+    for (const auto& [id, string] :
+         content.multi.store<ir::String>().pairs()) {
+        storage.insert(ir::orm_string(id, ir::String{*string}));
+    }
+
+
+    for (const auto& [id, author] :
+         content.multi.store<ir::Author>().pairs()) {
+        storage.insert(ir::orm_author(id, *author));
+    }
+
+    for (const auto& [id, line] :
+         content.multi.store<ir::LineData>().pairs()) {
+        storage.insert(ir::orm_line(id, *line));
+    }
+
+    for (const auto& [id, commit] :
+         content.multi.store<ir::Commit>().pairs()) {
+        storage.insert(ir::orm_commit(id, *commit));
+    }
+
+    for (const auto& [id, dir] :
+         content.multi.store<ir::Directory>().pairs()) {
+        storage.insert(ir::orm_dir(id, *dir));
+    }
+
+    for (const auto& [id, file] :
+         content.multi.store<ir::File>().pairs()) {
+        storage.insert(ir::orm_file(id, *file));
+        for (int idx = 0; idx < file->lines.size(); ++idx) {
+            storage.insert(ir::orm_lines_table{
+                .file = id, .index = idx, .line = file->lines[idx]});
+        }
+    }
+
+    storage.commit();
+}
+
 int main() {
     // Configure state of the sampling strategies
     allow_state allow{.days_period = 90, .start = {2020, 1, 1}};
@@ -657,10 +765,12 @@ int main() {
     auto config = UPtr<walker_config>(new walker_config{
         .use_subprocess = true,
         // Full process parallelization
-        .use_threading = walker_config::async,
-        .repo          = "/tmp/fusion",
-        .heads         = "/.git/refs/heads/master",
-        .allow_path    = [](CR<Str> path) -> bool {
+        .use_threading   = walker_config::async,
+        .repo            = "/tmp/fusion",
+        .heads           = "/.git/refs/heads/master",
+        .db_path         = "/tmp/db.sqlite",
+        .try_incremental = true,
+        .allow_path      = [](CR<Str> path) -> bool {
             if (path.ends_with(".nim")) {
                 return true;
                 // return path.find("compiler/") != Str::npos ||
@@ -672,11 +782,11 @@ int main() {
             }
         },
         .get_period = [&](const Date& date) -> int {
-            auto result = allow.month_to_period(date);
+            auto result = allow.year_to_period(date);
             return result;
         },
         .allow_sample_at_date = [&](const Date& date) -> bool {
-            bool result = allow.allow_once_per_month(date);
+            bool result = allow.allow_once_per_year(date);
             return result;
         }});
 
@@ -686,6 +796,15 @@ int main() {
     assert(libgit2_features() & GIT_FEATURE_THREADS);
 
     ir::content_manager content;
+
+    if (config->try_incremental) {
+        if (std::filesystem::exists(config->db_path)) {
+            load_content(config.get(), content);
+        } else {
+            fmt::print(
+                "cannot load incremental from {}\n", config->db_path);
+        }
+    }
 
     // Create main walker state used in the whole commit analysis state
     auto state = UPtr<walker_state>(new walker_state{
@@ -705,63 +824,7 @@ int main() {
         commits.push_back(future.get());
     }
 
-    // Create storage connection
-    auto storage = ir::create_db();
-    // Sync with stored data
-    storage.sync_schema();
-    // Start the transaction - all data is inserted in bulk
-    storage.begin_transaction();
-
-    // Remove all previously stored data
-    //
-    // TODO implement an incremental commit analysis. If it is supported
-    // storage sync should happen at the very start and `orm_*` types
-    // should be loaded into the store.
-    //
-    // NOTE due to foreign key constraints on the database the order is
-    // very important, otherwise deletion fails with `FOREIGN KEY
-    // constraint failed` error
-    storage.remove_all<ir::orm_line>();
-    storage.remove_all<ir::orm_file>();
-    storage.remove_all<ir::orm_commit>();
-    storage.remove_all<ir::orm_dir>();
-    storage.remove_all<ir::orm_author>();
-    storage.remove_all<ir::orm_string>();
-
-    for (const auto& [id, string] : content.multi.store<Str>().pairs()) {
-        storage.insert(ir::orm_string{*string, id});
-    }
-
-
-    for (const auto& [id, author] :
-         content.multi.store<ir::Author>().pairs()) {
-        storage.insert(ir::orm_author{*author, id});
-    }
-
-    for (const auto& [id, line] :
-         content.multi.store<ir::LineData>().pairs()) {
-        storage.insert(ir::orm_line{*line, id});
-    }
-
-    for (const auto& [id, commit] :
-         content.multi.store<ir::Commit>().pairs()) {
-        storage.insert(ir::orm_commit{*commit, id});
-    }
-
-    for (const auto& [id, dir] : content.multi.store<ir::Dir>().pairs()) {
-        storage.insert(ir::orm_dir{*dir, id});
-    }
-
-    for (const auto& [id, file] :
-         content.multi.store<ir::File>().pairs()) {
-        storage.insert(ir::orm_file{*file, id});
-        for (int idx = 0; idx < file->lines.size(); ++idx) {
-            storage.insert(ir::orm_lines_table{
-                .file = id, .index = idx, .line = file->lines[idx]});
-        }
-    }
-
-    storage.commit();
+    store_content(config.get(), content);
 
     return 0;
 }
