@@ -14,6 +14,17 @@ function py_plotter() {
     echo "py plotter ok"
 }
 
+function gdb_cmd {
+    gdb \
+        -batch \
+        -ex "set print address off" \
+        -ex "set print frame-arguments presence" \
+        -ex "set print frame-info source-and-location" \
+        -ex "run" \
+        -ex "bt" \
+        --args $@
+}
+
 function try_build() {
     cd git_user
     cmake .
@@ -31,7 +42,7 @@ function try_build() {
     #     @conanbuildinfo.gcc
 
     echo "git user compile ok"
-    ./git_user
+    ./bin/git_user
     echo "git user run ok"
 }
 

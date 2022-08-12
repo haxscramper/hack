@@ -17,6 +17,8 @@
 #include <sstream>
 #include <optional>
 #include <semaphore>
+#include <unordered_map>
+#include <unordered_set>
 #include <set>
 
 #include <boost/date_time/gregorian/gregorian.hpp>
@@ -133,6 +135,21 @@ using TimePoint = stime::time_point<stime::system_clock>;
 
 #define MAX_PARALLEL 16
 
+
+namespace std {
+template <>
+struct hash<git_oid> {
+    std::size_t operator()(const git_oid& it) const {
+        return std::hash<Str>()(
+            Str((const char*)(&it.id[0]), sizeof(it.id)));
+    }
+};
+} // namespace std
+
+bool operator==(CR<git_oid> lhs, CR<git_oid> rhs) {
+    return oid_cmp(&lhs, &rhs) == 0;
+}
+
 /// Mutable state passed around walker configurations
 struct walker_state {
     CP<walker_config> config;
@@ -145,6 +162,63 @@ struct walker_state {
     std::counting_semaphore<MAX_PARALLEL> semaphore{16};
 
     std::map<Str, TimePoint> bench_points;
+
+    /// Ordered list of commits that were considered for the processing run
+    Vec<git_oid>                     full_commits;
+    std::unordered_map<git_oid, int> rev_index;
+
+    void add_full_commit(CR<git_oid> oid) {
+        rev_index[oid] = full_commits.size();
+        full_commits.push_back(oid);
+    }
+
+    /// Whether to consider \arg commit as changed in the current
+    /// processing run
+    bool consider_changed(
+        CR<git_oid> commit_id,
+        CR<git_oid> line_change_id) const {
+        // IMPLEMENT a more detailed analysis of the 'changed' line state
+        // implies 'changed since the last sampled commit', which would in
+        // turn require getting the whole list of commits, wrapping curret
+        // walker state into an object and provind some kind of 'is
+        // considered new?' predicate that would check whether line fails
+        // into the range of the skipped commits
+        //
+        // So 'changed since the last sampled' in `_______|` would look for
+        // both `_` sections and the last '|', whereas the current apporach
+        // only considers '|'
+
+        // find index of the commit where the line had changed
+        int idx_changed = rev_index.at(line_change_id);
+
+        // find index of the currently analyzed commit
+        int idx_commit = rev_index.at(commit_id);
+
+        // The line was changed before the target commit
+        if (idx_changed < idx_commit) {
+            return false;
+        }
+        // First commit is always considered changed
+        else if (idx_changed == 0) {
+            return true;
+        }
+        // If we are running dense commit sampling, without gaps, and the
+        // line had changed in this exact commit
+        else if (idx_changed == idx_commit) {
+            return true;
+        }
+        // If the previous (in the full list) is not in the revese index
+        else if (
+            rev_index.find(full_commits.at(idx_changed - 1)) ==
+            rev_index.end()) {
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    /// List of commits that were selected for the processing run
+    std::unordered_set<git_oid> sampled_commits;
 
     /// Create new benchmark point with provided \arg name
     void push_bench_point(CR<Str> name) {
@@ -232,6 +306,13 @@ Str oid_tostr(git_oid oid) {
     git_oid_tostr(result, sizeof(result), &oid);
     return result;
 }
+
+template <>
+struct fmt::formatter<git_oid> : fmt::formatter<Str> {
+    auto format(CR<git_oid> date, fmt::format_context& ctx) const {
+        return fmt::formatter<Str>::format(oid_tostr(date), ctx);
+    }
+};
 
 int get_nesting(CR<Str> line) {
     int result = 0;
@@ -376,7 +457,12 @@ ir::FileId stats_via_subprocess(
                 // Constructin a new line data using already parsed
                 // elements and the file ID. Adding new line into the store
                 // and immediately appending the content to the file.
-                SLock lock{walker->m};
+                SLock   lock{walker->m};
+                git_oid line_changed;
+                std::memcpy(
+                    line_changed.id,
+                    changedAt.c_str(),
+                    sizeof(line_changed.id));
                 push_line(
                     result,
                     walker,
@@ -385,18 +471,7 @@ ir::FileId stats_via_subprocess(
                         .time    = std::stol(time),
                         .content = walker->content->add(ir::String{text}),
                         .nesting = get_nesting(text)},
-                    // IMPLEMENT a more detailed analysis of the 'changed'
-                    // line state implies 'changed since the last sampled
-                    // commit', which would in turn require getting the
-                    // whole list of commits, wrapping curret walker state
-                    // into an object and provind some kind of 'is
-                    // considered new?' predicate that would check whether
-                    // line fails into the range of the skipped commits
-                    //
-                    // So 'changed since the last sampled' in `_______|`
-                    // would look for both `_` sections and the last '|',
-                    // whereas the current apporach only considers '|'
-                    changedAt == str_oid);
+                    walker->consider_changed(commit_oid, line_changed));
                 break;
             }
 
@@ -483,7 +558,8 @@ ir::FileId stats_via_libgit(
                     // FIXME get slice of the string for the content
                     .content = state->content->add(ir::String{str}),
                     .nesting = get_nesting(str)},
-                oid_cmp(&hunk->final_commit_id, &commit_oid) == 0);
+                state->consider_changed(
+                    commit_oid, hunk->final_commit_id));
         }
 
         // Advance over raw data
@@ -596,7 +672,13 @@ ir::CommitId process_commit_impl(git_oid commit_oid, walker_state* state) {
     // Get tree for a commit
     auto tree = commit_tree(commit);
     // commit information should be cleaned up when we exit the scope
-    finally close{[&commit]() { commit_free(commit); }};
+    finally close{[commit]() {
+        // FIXME freeing the commit causes segmentation fault and I have no
+        // idea what is causing this - the issue occurs even in the
+        // sequential, non-parallelized mode
+        //
+        // commit_free(commit);
+    }};
 
     auto hash = oid_tostr(*git_commit_id(commit));
 
@@ -663,6 +745,9 @@ std::future<ir::CommitId> process_commit(
             // `process_commmit` is largely a helper function that is used
             // to create closure with necessary captures and then delegate
             // everything to the reguar implementation
+            std::cout << "processing commit with id " << oid_tostr(oid)
+                      << std::endl;
+            // return ir::CommitId::Nil();
             return process_commit_impl(oid, state);
         });
 }
@@ -675,7 +760,6 @@ Vec<std::future<ir::CommitId>> launch_analysis(
     walker_state* state) {
     // All constructed information
     Vec<std::future<ir::CommitId>> processed;
-
     // Walk over every commit in the history
     while (revwalk_next(&oid, state->walker) == GIT_SUCCESS) {
         // Get commit from the provided oid
@@ -685,12 +769,20 @@ Vec<std::future<ir::CommitId>> launch_analysis(
 
         // commit is no longer needed in this scope
         commit_free(commit);
+        state->add_full_commit(oid);
         // check if we can process it
         if (state->config->allow_sample_at_date(date)) {
-            // and store analysis results if we can
-            processed.push_back(process_commit(oid, state));
+            // Store in the list of commits for sampling
+            state->sampled_commits.insert(oid);
         }
     }
+
+    std::cout << std::endl;
+
+    for (const auto& oid : state->sampled_commits) {
+        processed.push_back(process_commit(oid, state));
+    }
+
 
     return processed;
 }
