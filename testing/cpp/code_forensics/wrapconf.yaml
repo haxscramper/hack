@@ -15,6 +15,8 @@
 - function: "git_tree_entry_to_object"
   out: object_out
   code: err
+- function: git_oid_cmp
+  err: none
 - function: "git_tree_entry_dup"
   out: dest
   err: code

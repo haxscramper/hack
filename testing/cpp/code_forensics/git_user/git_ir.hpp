@@ -447,9 +447,12 @@ struct File {
     using id_type = FileId;
     CommitId commit_id; /// Id of the commit this version of the file was
                         /// recorded in
-    DirectoryId parent; /// parent directory
-    StringId    name;   /// file name
-    Vec<LineId> lines;  /// List of all lines found in the file
+    DirectoryId              parent; /// parent directory
+    StringId                 name;   /// file name
+    int                      total_complexity;
+    int                      line_count;
+    Vec<std::pair<int, int>> changed_ranges;
+    Vec<LineId>              lines; /// List of all lines found in the file
 };
 
 /// Single directory path part, without specification at which point in
@@ -492,6 +495,7 @@ struct LineData {
     AuthorId author;  /// Line author ID
     i64      time;    /// Time line was written
     StringId content; /// Content of the line
+    int      nesting; /// Line indentation depth
 
     bool operator==(CR<LineData> other) const {
         return author == other.author && time == other.time &&
@@ -642,6 +646,13 @@ struct orm_lines_table {
     LineId line;
 };
 
+struct orm_changed_range {
+    FileId file;
+    int    index;
+    int    begin;
+    int    end;
+};
+
 auto create_db(CR<Str> storagePath) {
     auto storage = make_storage(
         storagePath,
@@ -657,6 +668,8 @@ auto create_db(CR<Str> storagePath) {
             make_column("id", &orm_file::id, primary_key()),
             make_column("commit_id", &orm_file::commit_id),
             make_column("name", &orm_file::name),
+            make_column("line_count", &orm_file::line_count),
+            make_column("total_complexity", &orm_file::total_complexity),
             foreign_key(column<orm_file>(&orm_file::name))
                 .references(column<orm_string>(&orm_string::id)),
             foreign_key(column<orm_file>(&orm_file::commit_id))
@@ -672,6 +685,7 @@ auto create_db(CR<Str> storagePath) {
             make_column("author", &orm_line::author),
             make_column("time", &orm_line::time),
             make_column("content", &orm_line::content),
+            make_column("nesting", &orm_line::nesting),
             foreign_key(column<orm_line>(&orm_line::author))
                 .references(column<orm_author>(&orm_author::id)),
             foreign_key(column<orm_line>(&orm_line::content))
@@ -681,6 +695,12 @@ auto create_db(CR<Str> storagePath) {
             make_column("file", &orm_lines_table::file),
             make_column("index", &orm_lines_table::index),
             make_column("line", &orm_lines_table::line)),
+        make_table<orm_changed_range>(
+            "changed_ranges",
+            make_column("file", &orm_changed_range::file),
+            make_column("index", &orm_changed_range::index),
+            make_column("begin", &orm_changed_range::begin),
+            make_column("end", &orm_changed_range::end)),
         make_table<orm_dir>(
             "dir",
             make_column("id", &orm_dir::id, primary_key()),

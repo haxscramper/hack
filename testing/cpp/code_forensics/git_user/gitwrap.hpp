@@ -147,11 +147,9 @@ git_oid oid_cpy(const git_oid *src) {
 
 
 
-void oid_cmp(const git_oid *a, const git_oid *b) {
+int oid_cmp(const git_oid *a, const git_oid *b) {
     auto __result = git_oid_cmp(a, b);
-    if (__result < 0) {
-        __GIT_THROW_EXCEPTION(__result, "git_oid_cmp");
-    }
+    return __result;
 }
 
 

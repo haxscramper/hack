@@ -233,13 +233,51 @@ Str oid_tostr(git_oid oid) {
     return result;
 }
 
+int get_nesting(CR<Str> line) {
+    int result = 0;
+    while (result < line.size()) {
+        char c = line[result];
+        if (c != ' ' && c != '\n') { break; }
+
+        ++result;
+    }
+
+    return result;
+}
+
+void push_line(
+    ir::FileId       id,
+    walker_state*    walker,
+    CR<ir::LineData> line,
+    bool             changed) {
+    auto& file      = walker->content->at(id);
+    int   new_index = file.lines.size();
+    auto& ranges    = file.changed_ranges;
+
+    if (changed) {
+        if (ranges.empty()) {
+            ranges.push_back({new_index, new_index});
+        } else {
+            if (ranges.back().second + 1 == new_index) {
+                ranges.back().second = new_index;
+            } else {
+                ranges.push_back({new_index, new_index});
+            }
+        }
+    }
+
+    file.lines.push_back(walker->content->add(line));
+    file.total_complexity += line.nesting;
+    file.line_count += 1;
+}
+
 ir::FileId stats_via_subprocess(
-    git_oid       oid,
+    git_oid       commit_oid,
     walker_state* walker,
     ir::File      file,
     CR<Str>       relpath) {
 
-    Str str_oid{oid_tostr(oid)};
+    Str str_oid{oid_tostr(commit_oid)};
 
     // Getting file id immediately at the start in order to use it for the
     // line construction.
@@ -291,6 +329,7 @@ ir::FileId stats_via_subprocess(
     Str        time;
     ir::Author author;
     Str        text;
+    Str        changedAt;
 
     while (blame.running() && std::getline(out, line) && !line.empty()) {
         // even for 'machine reading' output is not consistent - some parts
@@ -313,6 +352,11 @@ ir::FileId stats_via_subprocess(
         std::stringstream is{line};
 
         switch (state) {
+            case LK::Commit: {
+                is >> changedAt;
+                break;
+            }
+
             /// For now we are only looking into the authoring time
             case LK::AuthorTime: {
                 is >> time;
@@ -328,17 +372,31 @@ ir::FileId stats_via_subprocess(
             }
 
             case LK::Content: {
-                SLock lock{walker->m};
                 is >> text;
                 // Constructin a new line data using already parsed
                 // elements and the file ID. Adding new line into the store
                 // and immediately appending the content to the file.
-                walker->content->at(result).lines.push_back(
-                    walker->content->add(ir::LineData{
+                SLock lock{walker->m};
+                push_line(
+                    result,
+                    walker,
+                    ir::LineData{
                         .author  = walker->content->add(author),
                         .time    = std::stol(time),
-                        .content = walker->content->add(
-                            ir::String{text})}));
+                        .content = walker->content->add(ir::String{text}),
+                        .nesting = get_nesting(text)},
+                    // IMPLEMENT a more detailed analysis of the 'changed'
+                    // line state implies 'changed since the last sampled
+                    // commit', which would in turn require getting the
+                    // whole list of commits, wrapping curret walker state
+                    // into an object and provind some kind of 'is
+                    // considered new?' predicate that would check whether
+                    // line fails into the range of the skipped commits
+                    //
+                    // So 'changed since the last sampled' in `_______|`
+                    // would look for both `_` sections and the last '|',
+                    // whereas the current apporach only considers '|'
+                    changedAt == str_oid);
                 break;
             }
 
@@ -359,7 +417,7 @@ ir::FileId stats_via_subprocess(
 
 ir::FileId stats_via_libgit(
     walker_state*         state,
-    git_oid               oid,
+    git_oid               commit_oid,
     const git_tree_entry* entry,
     CR<Str>               relpath,
     ir::File              file) {
@@ -372,7 +430,7 @@ ir::FileId stats_via_libgit(
     // Init default blame creation options
     git_blame_options blameopts = GIT_BLAME_OPTIONS_INIT;
     // We are only interested in blame information up until target commit
-    blameopts.newest_commit = oid;
+    blameopts.newest_commit = commit_oid;
     // Extract git blob object
     git_object* object = tree_entry_to_object(state->repo, entry);
     // get blame information
@@ -399,6 +457,8 @@ ir::FileId stats_via_libgit(
         // Search for the next end of line
         const char* eol = (const char*)memchr(
             rawdata + i, '\n', (size_t)(rawsize - i));
+        // Find input end index
+        const int endpos = (int)(eol - rawdata + 1);
         // get information for the current line
         const git_blame_hunk* hunk = blame_get_hunk_byline(blame, line);
 
@@ -408,17 +468,26 @@ ir::FileId stats_via_libgit(
         if (hunk != nullptr && hunk->final_signature != nullptr) {
             break_on_null_hunk = true;
             // get date when hunk had been altered
+            auto ptr = (eol == nullptr) ? (rawdata + rawsize) : (eol);
+            const auto size = static_cast<Str::size_type>(
+                std::distance(rawdata + i, ptr));
+
+            Str   str{rawdata + i, size};
             SLock lock{state->m};
-            state->content->multi.at(result).lines.push_back(
-                state->content->add(ir::LineData{
+            push_line(
+                result,
+                state,
+                ir::LineData{
                     .author = state->content->add(ir::Author{}),
                     .time   = hunk->final_signature->when.time,
                     // FIXME get slice of the string for the content
-                    .content = state->content->add(ir::String{})}));
+                    .content = state->content->add(ir::String{str}),
+                    .nesting = get_nesting(str)},
+                oid_cmp(&hunk->final_commit_id, &commit_oid) == 0);
         }
 
         // Advance over raw data
-        i = (int)(eol - rawdata + 1);
+        i = endpos;
         // Increment line
         line++;
     }
@@ -430,7 +499,7 @@ ir::FileId stats_via_libgit(
 }
 
 ir::FileId exec_walker(
-    git_oid               oid,
+    git_oid               commit_oid,
     walker_state*         state,
     ir::CommitId          commit,
     const char*           root,
@@ -466,29 +535,21 @@ ir::FileId exec_walker(
     // Choose between different modes of data processing and call into one.
     ir::FileId result = state->config->use_subprocess
                             ? stats_via_subprocess(
-                                  oid, state, init.value(), relpath)
+                                  commit_oid, state, init.value(), relpath)
                             : stats_via_libgit(
                                   state,
-                                  oid,
+                                  commit_oid,
                                   entry,
                                   relpath,
                                   init.value());
 
-    // // REFACTOR use a proper logging solution instead of the stdout
-    // // printing
-    // static int total_done;
-    // {
-    //     SLock lock{state->m};
-    //     fmt::print(
-    //         "DONE ({:<5}) {} {}\n", total_done++, oid_tostr(oid),
-    //         relpath);
-    // }
+    int total_complexity = 0;
 
     return result;
 }
 
 void add_sub_task(
-    git_oid                       oid,
+    git_oid                       commit_oid,
     walker_state*                 state,
     ir::CommitId                  out_commit,
     const char*                   root,
@@ -497,7 +558,7 @@ void add_sub_task(
     // Duplicate all data passed to the callback - it is not owned by the
     // user code and might disappear by the time we get to the actual
     // walker execution
-    auto sub_task = [oid,
+    auto sub_task = [commit_oid,
                      out_commit,
                      state,
                      user_str = Str(root),
@@ -513,7 +574,7 @@ void add_sub_task(
         finally lock{[state] { state->semaphore.release(); }};
         // Walker returns optional analysis result
         auto result = exec_walker(
-            oid, state, out_commit, user_str.c_str(), user_dup);
+            commit_oid, state, out_commit, user_str.c_str(), user_dup);
 
         // tree entry must be freed manually, FIXME work around
         // exceptions in the walker executor
@@ -530,8 +591,8 @@ void add_sub_task(
 /// Implementaiton of the commit processing function. Walks files that were
 /// available in the repository at the time and process each file
 /// individually, filling data into the content store.
-ir::CommitId process_commit_impl(git_oid oid, walker_state* state) {
-    git_commit* commit = commit_lookup(state->repo, &oid);
+ir::CommitId process_commit_impl(git_oid commit_oid, walker_state* state) {
+    git_commit* commit = commit_lookup(state->repo, &commit_oid);
     // Get tree for a commit
     auto tree = commit_tree(commit);
     // commit information should be cleaned up when we exit the scope
@@ -574,9 +635,10 @@ ir::CommitId process_commit_impl(git_oid oid, walker_state* state) {
         GIT_TREEWALK_PRE,
         // Capture all necessary data for execution and delegate the
         // implementation to the actual function.
-        [oid, state, out_commit, &sub_futures](
+        [commit_oid, state, out_commit, &sub_futures](
             const char* root, const git_tree_entry* entry) {
-            add_sub_task(oid, state, out_commit, root, entry, sub_futures);
+            add_sub_task(
+                commit_oid, state, out_commit, root, entry, sub_futures);
             return GIT_OK;
         });
 
@@ -752,6 +814,14 @@ void store_content(
             storage.insert(ir::orm_lines_table{
                 .file = id, .index = idx, .line = file->lines[idx]});
         }
+
+        for (int idx = 0; idx < file->changed_ranges.size(); ++idx) {
+            storage.insert(ir::orm_changed_range{
+                .file  = id,
+                .index = idx,
+                .begin = file->changed_ranges[idx].first,
+                .end   = file->changed_ranges[idx].second});
+        }
     }
 
     storage.commit();
@@ -763,13 +833,13 @@ int main() {
 
     // Provide implementation callback strategies
     auto config = UPtr<walker_config>(new walker_config{
-        .use_subprocess = true,
+        .use_subprocess = false,
         // Full process parallelization
-        .use_threading   = walker_config::async,
+        .use_threading   = walker_config::sequential,
         .repo            = "/tmp/fusion",
         .heads           = "/.git/refs/heads/master",
         .db_path         = "/tmp/db.sqlite",
-        .try_incremental = true,
+        .try_incremental = false,
         .allow_path      = [](CR<Str> path) -> bool {
             if (path.ends_with(".nim")) {
                 return true;
