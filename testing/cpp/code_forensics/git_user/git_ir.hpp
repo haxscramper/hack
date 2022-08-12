@@ -83,21 +83,23 @@ struct [[nodiscard]] Id {
     }
 
     /// Check whether provided value is nil or not
-    bool isNil() const { return value == IdType{}; }
+    bool isNil() const noexcept { return value == IdType{}; }
     /// Get value stored in the ID  - this one should be used in cases
     /// where ID is converted in some different format (for example printed
     /// out or stored in the database)
-    IdType getValue() const { return value; }
+    IdType getValue() const noexcept { return value; }
     /// Set value of the ID. This should be used for deserialization.
     ///
     /// \note This function allows setting ID to state with zero value,
     /// making it 'nil'
-    void setValue(IdType arg) { value = arg; }
+    void setValue(IdType arg) noexcept { value = arg; }
     /// Get index of the ID, for accessing the store.
     ///
     /// \warning in case of a 'nil' type this might return an invalid index
     /// (`<0`)
-    IdType getIndex() const { return value - 1; }
+    IdType getIndex() const noexcept { return value - 1; }
+    /// Get string representation of the ID value
+    Str getStr() const { return std::to_string(value); }
 
   protected:
     IdType value;

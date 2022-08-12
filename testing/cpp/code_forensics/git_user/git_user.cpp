@@ -194,12 +194,8 @@ struct walker_state {
         // find index of the currently analyzed commit
         int idx_commit = rev_index.at(commit_id);
 
-        // The line was changed before the target commit
-        if (idx_changed < idx_commit) {
-            return false;
-        }
         // First commit is always considered changed
-        else if (idx_changed == 0) {
+        if (idx_changed == 0) {
             return true;
         }
         // If we are running dense commit sampling, without gaps, and the
@@ -208,12 +204,21 @@ struct walker_state {
             return true;
         }
         // If the previous (in the full list) is not in the revese index
-        else if (
-            rev_index.find(full_commits.at(idx_changed - 1)) ==
-            rev_index.end()) {
+        // or the line was changed more than one sample commit ago
+        else {
+            // Iterate all known commits starting from the line's original
+            // one, going through to the current one. If any of the
+            // encountered commits is also sampled, it means the line is
+            // too old to be considered as 'changed' now.
+            for (int past_changed = idx_changed + 1;
+                 past_changed < idx_commit;
+                 ++past_changed) {
+                if (sampled_commits.find(full_commits.at(past_changed)) !=
+                    sampled_commits.end()) {
+                    return false;
+                }
+            }
             return true;
-        } else {
-            return false;
         }
     }
 
@@ -619,6 +624,15 @@ ir::FileId exec_walker(
                                   relpath,
                                   init.value());
 
+    {
+        SLock lock{state->m};
+        fmt::print("DONE {:<30} / {}\n", root, path);
+        // fmt::print(
+        //     "CHANGED: {} {}\n",
+        //     result.getStr(),
+        //     state->content->at(result).changed_ranges);
+    }
+
     int total_complexity = 0;
 
     return result;
@@ -675,7 +689,8 @@ ir::CommitId process_commit_impl(git_oid commit_oid, walker_state* state) {
     finally close{[commit]() {
         // FIXME freeing the commit causes segmentation fault and I have no
         // idea what is causing this - the issue occurs even in the
-        // sequential, non-parallelized mode
+        // sequential, non-parallelized mode. The issue was introduces in
+        // the commit '4e0bda9'
         //
         // commit_free(commit);
     }};
@@ -745,9 +760,6 @@ std::future<ir::CommitId> process_commit(
             // `process_commmit` is largely a helper function that is used
             // to create closure with necessary captures and then delegate
             // everything to the reguar implementation
-            std::cout << "processing commit with id " << oid_tostr(oid)
-                      << std::endl;
-            // return ir::CommitId::Nil();
             return process_commit_impl(oid, state);
         });
 }
@@ -761,6 +773,7 @@ Vec<std::future<ir::CommitId>> launch_analysis(
     // All constructed information
     Vec<std::future<ir::CommitId>> processed;
     // Walk over every commit in the history
+    Vec<git_oid> full_commits;
     while (revwalk_next(&oid, state->walker) == GIT_SUCCESS) {
         // Get commit from the provided oid
         git_commit* commit = commit_lookup(state->repo, &oid);
@@ -769,7 +782,7 @@ Vec<std::future<ir::CommitId>> launch_analysis(
 
         // commit is no longer needed in this scope
         commit_free(commit);
-        state->add_full_commit(oid);
+        full_commits.push_back(oid);
         // check if we can process it
         if (state->config->allow_sample_at_date(date)) {
             // Store in the list of commits for sampling
@@ -777,7 +790,10 @@ Vec<std::future<ir::CommitId>> launch_analysis(
         }
     }
 
-    std::cout << std::endl;
+    std::reverse(full_commits.begin(), full_commits.end());
+    for (const auto& commit : full_commits) {
+        state->add_full_commit(commit);
+    }
 
     for (const auto& oid : state->sampled_commits) {
         processed.push_back(process_commit(oid, state));
@@ -907,6 +923,8 @@ void store_content(
                 .file = id, .index = idx, .line = file->lines[idx]});
         }
 
+        // fmt::print(
+        //     "OUT CHANGE: {} {}\n", id.getStr(), file->changed_ranges);
         for (int idx = 0; idx < file->changed_ranges.size(); ++idx) {
             storage.insert(ir::orm_changed_range{
                 .file  = id,
