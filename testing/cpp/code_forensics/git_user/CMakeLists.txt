@@ -24,6 +24,7 @@ add_compile_options(-ferror-limit=1)
 add_compile_options(-fcoroutines-ts)
 
 add_compile_options(-Wno-format-security)
+add_compile_options(-Wno-c99-designator)
 add_executable(git_user git_user.cpp)
 
 target_link_libraries(git_user matplot)

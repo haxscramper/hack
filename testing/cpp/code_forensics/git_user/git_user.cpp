@@ -62,6 +62,17 @@ struct fmt::formatter<Id> : fmt::formatter<Str> {
     }
 };
 
+template <typename T>
+struct fmt::formatter<Opt<T>> : fmt::formatter<Str> {
+    auto format(CR<Opt<T>> date, fmt::format_context& ctx) const {
+        if (date) {
+            return fmt::formatter<T>().format(date.value(), ctx);
+        } else {
+            return fmt::formatter<Str>().format("none()", ctx);
+        }
+    }
+};
+
 namespace git {
 struct exception : public std::exception {
     Str message;
@@ -79,6 +90,7 @@ struct exception : public std::exception {
 };
 } // namespace git
 
+
 #include <iostream>
 // NOLINTNEXTLINE
 #define __GIT_THROW_EXCEPTION(code, function)                             \
@@ -87,6 +99,20 @@ struct exception : public std::exception {
 namespace git {
 #include "gitwrap.hpp"
 }
+
+auto oid_tostr(git_oid oid) -> Str {
+    std::array<char, GIT_OID_HEXSZ + 1> result;
+    git_oid_tostr(result.data(), sizeof(result), &oid);
+    return Str{result.data(), result.size() - 1};
+}
+
+template <>
+struct fmt::formatter<git_oid> : fmt::formatter<Str> {
+    auto format(CR<git_oid> date, fmt::format_context& ctx) const {
+        return fmt::formatter<Str>::format(oid_tostr(date), ctx);
+    }
+};
+
 
 using namespace git;
 namespace stime = std::chrono;
@@ -186,58 +212,54 @@ struct walker_state {
     std::map<Str, TimePoint> bench_points;
 
     /// Ordered list of commits that were considered for the processing run
-    Vec<git_oid>                     full_commits;
+    Vec<git_oid> full_commits;
+    /// Mapping from the commit id to it's position in the whole list of
+    /// considered commits
     std::unordered_map<git_oid, int> rev_index;
+    /// Mapping from the commits to the analysis periods they are in
+    std::unordered_map<git_oid, int> rev_periods;
+    std::atomic<int>                 completed_commits;
 
-    void add_full_commit(CR<git_oid> oid) {
-        rev_index[oid] = full_commits.size();
+    void add_full_commit(CR<git_oid> oid, int period) {
+        rev_index.insert({oid, full_commits.size()});
+        rev_periods.insert({oid, period});
         full_commits.push_back(oid);
     }
 
-    /// Whether to consider \arg commit as changed in the current
-    /// processing run
+    /// Get period that commit is attributed to. May return 'none' option
+    /// for commits that were not registered in the revese period index -
+    /// ones that come from a different branch that we didn't iterate over.
+    auto get_period(CR<git_oid> commit) const noexcept -> Opt<int> {
+        // NOTE dynamically patching table of missing commits each time an
+        // unknown is encountered is possible, but undesirable.
+        auto found = rev_periods.find(commit);
+        if (found != rev_periods.end()) {
+            return Opt<int>{found->second};
+        } else {
+            return Opt<int>{};
+        }
+    }
+
+    auto get_period(CR<git_oid> commit, CR<git_oid> line) const noexcept
+        -> int {
+        auto lp = get_period(line);
+        auto cp = get_period(commit);
+        return lp.value_or(cp.value());
+    }
+
+    /// Whether to consider commit referred to by \arg commit_id has
+    /// changed in the same period as the line (\arg line_changed_id).
+    ///
+    /// If line comes from an unknow commit (different branch for example)
+    /// it is considered changed.
     auto consider_changed(
         CR<git_oid> commit_id,
         CR<git_oid> line_change_id) const -> bool {
-        // A more detailed analysis of the 'changed' line state implies
-        // 'changed since the last sampled commit', which would in turn
-        // require getting the whole list of commits, wrapping curret
-        // walker state into an object and provind some kind of 'is
-        // considered new?' predicate that would check whether line fails
-        // into the range of the skipped commits
-        //
-        // So 'changed since the last sampled' in `_______|` would look for
-        // both `_` sections and the last '|', whereas the current apporach
-        // only considers '|'
-
-        // find index of the commit where the line had changed
-        int idx_changed = rev_index.at(line_change_id);
-
-        // find index of the currently analyzed commit
-        int idx_commit = rev_index.at(commit_id);
-
-        // First commit is always considered changed
-        //
-        // If we are running dense commit sampling, without gaps, and the
-        // line had changed in this exact commit
-        if (idx_changed == 0 || idx_changed == idx_commit) {
-            return true;
-        }
-        // If the previous (in the full list) is not in the revese index
-        // or the line was changed more than one sample commit ago
-        else {
-            // Iterate all known commits starting from the line's original
-            // one, going through to the current one. If any of the
-            // encountered commits is also sampled, it means the line is
-            // too old to be considered as 'changed' now.
-            for (int past_changed = idx_changed + 1;
-                 past_changed < idx_commit;
-                 ++past_changed) {
-                if (sampled_commits.find(full_commits.at(past_changed)) !=
-                    sampled_commits.end()) {
-                    return false;
-                }
-            }
+        auto commit = get_period(commit_id);
+        auto line   = get_period(line_change_id);
+        if (line) {
+            return line.value() == commit.value();
+        } else {
             return true;
         }
     }
@@ -359,19 +381,6 @@ struct allow_state {
     }
 };
 
-auto oid_tostr(git_oid oid) -> Str {
-    std::array<char, GIT_OID_HEXSZ + 1> result;
-    git_oid_tostr(result.data(), sizeof(result), &oid);
-    return Str{result.data(), result.size() - 1};
-}
-
-template <>
-struct fmt::formatter<git_oid> : fmt::formatter<Str> {
-    auto format(CR<git_oid> date, fmt::format_context& ctx) const {
-        return fmt::formatter<Str>::format(oid_tostr(date), ctx);
-    }
-};
-
 auto get_nesting(CR<Str> line) -> int {
     int result = 0;
     while (result < line.size()) {
@@ -384,22 +393,30 @@ auto get_nesting(CR<Str> line) -> int {
     return result;
 }
 
+/// Append new line to the file and update related counteres (total
+/// complexity, line count and so on)
 void push_line(
     ir::FileId       id,
     walker_state*    walker,
     CR<ir::LineData> line,
-    bool             changed) {
+    bool             changed,
+    int              period) {
     auto& file      = walker->content->at(id);
     int   new_index = file.lines.size();
     auto& ranges    = file.changed_ranges;
 
-    if (changed) {
-        file.had_changes = true;
-        if (!ranges.empty() && ranges.back().second + 1 == new_index) {
-            ranges.back().second = new_index;
-        } else {
-            ranges.push_back({new_index, new_index});
-        }
+    if (changed) { file.had_changes = true; }
+
+
+    if (!ranges.empty() && (ranges.back().end + 1 == new_index) &&
+        (ranges.back().period == period)) {
+        ranges.back().end = new_index;
+    } else {
+        ranges.push_back(
+            {.begin   = new_index,
+             .end     = new_index,
+             .period  = period,
+             .changed = changed});
     }
 
     file.lines.push_back(walker->content->add(line));
@@ -465,7 +482,7 @@ auto stats_via_subprocess(
     Str        time;
     ir::Author author;
     Str        text;
-    Str        changedAt;
+    Str        changed_at;
 
     while (blame.running() && std::getline(out, line) && !line.empty()) {
         // even for 'machine reading' output is not consistent - some parts
@@ -485,7 +502,7 @@ auto stats_via_subprocess(
 
         switch (state) {
             case LK::Commit: {
-                is >> changedAt;
+                is >> changed_at;
                 break;
             }
 
@@ -509,11 +526,7 @@ auto stats_via_subprocess(
                 // elements and the file ID. Adding new line into the store
                 // and immediately appending the content to the file.
                 SLock   lock{walker->m};
-                git_oid line_changed;
-                std::memcpy(
-                    line_changed.id,
-                    changedAt.c_str(),
-                    sizeof(line_changed.id));
+                git_oid line_changed = oid_fromstr(changed_at.c_str());
                 push_line(
                     result,
                     walker,
@@ -522,7 +535,8 @@ auto stats_via_subprocess(
                         .time    = std::stol(time),
                         .content = walker->content->add(ir::String{text}),
                         .nesting = get_nesting(text)},
-                    walker->consider_changed(commit_oid, line_changed));
+                    walker->consider_changed(commit_oid, line_changed),
+                    walker->get_period(commit_oid, line_changed));
                 break;
             }
 
@@ -610,8 +624,8 @@ auto stats_via_libgit(
                     // FIXME get slice of the string for the content
                     .content = state->content->add(ir::String{str}),
                     .nesting = get_nesting(str)},
-                state->consider_changed(
-                    commit_oid, hunk->final_commit_id));
+                state->consider_changed(commit_oid, hunk->final_commit_id),
+                state->get_period(commit_oid, hunk->final_commit_id));
         }
 
         // Advance over raw data
@@ -642,10 +656,6 @@ auto exec_walker(
     // Create full relative path for the target object
     auto relpath = Str{root + path};
     // Check for provided predicate
-    if (state->config->allow_path && !state->config->allow_path(relpath)) {
-        return ir::FileId::Nil();
-    }
-
 
     // IR has several fields that must be initialized at the start, so
     // using an optional for the file and calling init in the
@@ -671,27 +681,21 @@ auto exec_walker(
                                   relpath,
                                   init.value());
 
-    LOG_I(state) << fmt::format(
-        "Processed file {} at {} as id:{}", relpath, commit_oid, result);
 
     return result;
 }
 
-void add_sub_task(
-    git_oid                       commit_oid,
-    walker_state*                 state,
-    ir::CommitId                  out_commit,
-    const char*                   root,
-    const git_tree_entry*         entry,
-    Vec<std::future<ir::FileId>>& sub_futures) {
+auto add_sub_task(
+    git_oid               commit_oid,
+    walker_state*         state,
+    ir::CommitId          out_commit,
+    CR<Str>               root,
+    const git_tree_entry* entry) -> std::future<ir::FileId> {
     // Duplicate all data passed to the callback - it is not owned by the
     // user code and might disappear by the time we get to the actual
     // walker execution
-    auto sub_task = [commit_oid,
-                     out_commit,
-                     state,
-                     user_str = Str(root),
-                     user_dup = tree_entry_dup(entry)]() -> ir::FileId {
+    auto sub_task =
+        [commit_oid, out_commit, state, root, entry]() -> ir::FileId {
         // cap maximum number of actively executed walkers - their
         // implementation does not have any overlapping critical sections,
         // but performance limitations are present (large projects might
@@ -703,17 +707,12 @@ void add_sub_task(
         finally lock{[state] { state->semaphore.release(); }};
         // Walker returns optional analysis result
         auto result = exec_walker(
-            commit_oid, state, out_commit, user_str.c_str(), user_dup);
-
-        // tree entry must be freed manually, FIXME work around
-        // exceptions in the walker executor
-        tree_entry_free(user_dup);
+            commit_oid, state, out_commit, root.c_str(), entry);
 
         return result;
     };
 
-    sub_futures.push_back(
-        async_task<ir::FileId>(state->config->use_threading, sub_task));
+    return async_task<ir::FileId>(state->config->use_threading, sub_task);
 }
 
 
@@ -765,8 +764,10 @@ auto process_commit_impl(git_oid commit_oid, walker_state* state)
     }
 
     // List of subtasks that need to be executed for each specific file.
-    Vec<std::future<ir::FileId>> sub_futures{};
-    // walk all entries in the tree
+    Vec<std::tuple<Str, git_tree_entry*, std::future<ir::FileId>>>
+        treewalk;
+    // walk all entries in the tree and collect them for further
+    // processing.
     tree_walk(
         tree,
         // order is not particularly important, doing preorder
@@ -774,21 +775,55 @@ auto process_commit_impl(git_oid commit_oid, walker_state* state)
         GIT_TREEWALK_PRE,
         // Capture all necessary data for execution and delegate the
         // implementation to the actual function.
-        [commit_oid, state, out_commit, &sub_futures](
-            const char* root, const git_tree_entry* entry) {
-            add_sub_task(
-                commit_oid, state, out_commit, root, entry, sub_futures);
+        [&treewalk, state](const char* root, const git_tree_entry* entry) {
+            auto relpath = Str{Str{root} + Str{tree_entry_name(entry)}};
+            if (!state->config->allow_path ||
+                state->config->allow_path(relpath)) {
+                treewalk.push_back(
+                    {Str{root},
+                     tree_entry_dup(entry),
+                     std::future<ir::FileId>{}});
+            }
             return GIT_OK;
         });
 
 
+    for (auto& [root, entry, task] : treewalk) {
+        task = add_sub_task(commit_oid, state, out_commit, root, entry);
+    }
+
+
     // For all futures provided in the subtask analysis - get result,
     // if it is non-empty, merge it with input data.
-    for (auto& future : sub_futures) {
-        auto  result = future.get();
-        SLock lock{state->m};
-        state->content->at(out_commit).files.push_back(result);
+    int count = 0;
+    for (auto& [root, entry, task] : treewalk) {
+        auto result = task.get();
+        if (!result.isNil()) {
+            ++count;
+            LOG_I(state) << fmt::format(
+                "Processed file {}{} ({}/{} of {}) as id:{} with {} "
+                "ranges",
+                root,
+                tree_entry_name(entry),
+                count,
+                treewalk.size(),
+                hash,
+                result,
+                state->content->at(result).changed_ranges.size());
+
+            SLock lock{state->m};
+            state->content->at(out_commit).files.push_back(result);
+        }
+        tree_entry_free(entry);
     }
+
+
+    ++state->completed_commits;
+    LOG_I(state) << fmt::format(
+        "Finished commit {} ({}/{})",
+        hash,
+        state->completed_commits.load(),
+        state->sampled_commits.size());
 
     return out_commit;
 }
@@ -813,7 +848,7 @@ auto launch_analysis(git_oid& oid, walker_state* state)
     // All constructed information
     Vec<std::future<ir::CommitId>> processed{};
     // Walk over every commit in the history
-    Vec<git_oid> full_commits{};
+    Vec<std::pair<git_oid, Date>> full_commits{};
     while (revwalk_next(&oid, state->walker) == GIT_SUCCESS) {
         // Get commit from the provided oid
         git_commit* commit = commit_lookup(state->repo, &oid);
@@ -822,22 +857,23 @@ auto launch_analysis(git_oid& oid, walker_state* state)
 
         // commit is no longer needed in this scope
         commit_free(commit);
-        full_commits.push_back(oid);
+        full_commits.push_back({oid, date});
         // check if we can process it
         if (state->config->allow_sample_at_date(date)) {
+            int period = state->config->get_period(date);
             // Store in the list of commits for sampling
             state->sampled_commits.insert(oid);
             LOG_I(state) << fmt::format(
-                "Processing commit {} at {}", oid, date);
-        } else {
-            LOG_I(state) << fmt::format(
-                "Ignoring commit {} at {}", oid, date);
+                "Processing commit {} at {} into period {}",
+                oid,
+                date,
+                period);
         }
     }
 
     std::reverse(full_commits.begin(), full_commits.end());
-    for (const auto& commit : full_commits) {
-        state->add_full_commit(commit);
+    for (const auto& [commit, date] : full_commits) {
+        state->add_full_commit(commit, state->config->get_period(date));
     }
 
     for (const auto& oid : state->sampled_commits) {
@@ -970,14 +1006,9 @@ void store_content(
                 .file = id, .index = idx, .line = file->lines[idx]});
         }
 
-        // fmt::print(
-        //     "OUT CHANGE: {} {}\n", id.getStr(), file->changed_ranges);
         for (int idx = 0; idx < file->changed_ranges.size(); ++idx) {
             storage.insert(ir::orm_changed_range{
-                .file  = id,
-                .index = idx,
-                .begin = file->changed_ranges[idx].first,
-                .end   = file->changed_ranges[idx].second});
+                file->changed_ranges[idx], .file = id, .index = idx});
         }
     }
 
@@ -997,19 +1028,25 @@ void log_formatter(
 
     std::filesystem::path file{log::extract<Str>("File", rec).get()};
 
-    strm << log::extract<boost::posix_time::ptime>("TimeStamp", rec)    //
-         << " at " << file.filename().native()                          //
-         << ":" << log::extract<int>("Line", rec)                       //
-         << std::setw(4) << log::extract<unsigned int>("RecordID", rec) //
+    strm << log::extract<boost::posix_time::ptime>("TimeStamp", rec);
+
+    // strm    << " at " << file.filename().native()
+    //     << ":" << log::extract<int>("Line", rec);
+
+    strm << std::setw(4) << log::extract<unsigned int>("RecordID", rec) //
          << ": " << std::setw(7) << rec[log::trivial::severity]         //
          << " " << rec[log::expr::smessage];
 }
 
 auto create_file_sink(CR<Str> outfile) -> boost::shared_ptr<sink_t> {
     boost::shared_ptr<std::ostream> log_stream{new std::ofstream(outfile)};
-
+    auto backend = boost::make_shared<backend_t>();
+    // Flush log file after each record is written - this is done in a
+    // separate thread, so won't block the processing for too long
+    // (supposedly) and creates a much nicer-looking `trail -f` run
+    backend->auto_flush(true);
     boost::shared_ptr<sink_t> sink(new sink_t(
-        boost::make_shared<backend_t>(),
+        backend,
         // We'll apply record ordering to ensure that records from
         // different threads go sequentially in the file
         log::keywords::order = log ::make_attr_ordering<unsigned int>(
@@ -1039,20 +1076,26 @@ auto main() -> int {
     // Configure state of the sampling strategies
     allow_state allow{.days_period = 90, .start = {2020, 1, 1}};
 
+    const bool use_fusion = true;
+
     // Provide implementation callback strategies
     auto config = UPtr<walker_config>(new walker_config{
-        .use_subprocess = false,
+        .use_subprocess = true,
         // Full process parallelization
         .use_threading   = walker_config::async,
-        .repo            = "/tmp/fusion",
-        .heads           = "/.git/refs/heads/master",
+        .repo            = use_fusion ? "/tmp/fusion" : "/tmp/Nim",
+        .heads           = use_fusion ? "/.git/refs/heads/master"
+                                      : "/.git/refs/heads/devel",
         .db_path         = "/tmp/db.sqlite",
         .try_incremental = false,
-        .allow_path      = [](CR<Str> path) -> bool {
+        .allow_path      = [use_fusion](CR<Str> path) -> bool {
             if (path.ends_with(".nim")) {
-                return true;
-                // return path.find("compiler/") != Str::npos ||
-                //        path.find("rod/") != Str::npos;
+                if (use_fusion) {
+                    return true;
+                } else {
+                    return path.find("compiler/") != Str::npos ||
+                           path.find("rod/") != Str::npos;
+                }
             } else if (path.ends_with(".pas")) {
                 return path.find("nim/") != Str::npos;
             } else {
@@ -1090,23 +1133,35 @@ auto main() -> int {
         }
     }
 
-    git_oid oid;
-    // Initialize state of the commit walker
-    open_walker(oid, *state);
-    // Start pararallel processing of the input data
-    auto processed = launch_analysis(oid, state.get());
+    try {
+        git_oid oid;
+        // Initialize state of the commit walker
+        open_walker(oid, *state);
+        // Start pararallel processing of the input data
+        auto processed = launch_analysis(oid, state.get());
 
-    // Store finalized commit IDs from executed tasks
-    Vec<ir::CommitId> commits{};
-    for (auto& future : processed) {
-        commits.push_back(future.get());
+        // Store finalized commit IDs from executed tasks
+        Vec<ir::CommitId> commits{};
+        for (auto& future : processed) {
+            commits.push_back(future.get());
+        }
+
+        LOG_I(state) << "Finished analysis, writing database";
+        store_content(config.get(), content);
+
+    } catch (...) {
+        // Flush all buffered records
+        sink->stop();
+        sink->flush();
+        throw;
     }
 
-    store_content(config.get(), content);
+    LOG_I(state) << "Finished execution, DB written successfully";
 
     // Flush all buffered records
     sink->stop();
     sink->flush();
+
 
     return 0;
 }

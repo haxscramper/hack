@@ -445,6 +445,13 @@ struct Commit {
     Vec<FileId> files;
 };
 
+struct LinePeriods {
+    int  begin;
+    int  end;
+    int  period;
+    bool changed;
+};
+
 /// single version of the file that appeared in some commit
 struct File {
     using id_type = FileId;
@@ -455,8 +462,8 @@ struct File {
     int         total_complexity; /// Total file complexity
     int         line_count;       /// Total line count for the commit
     bool        had_changes; /// Whether file had any changes in the commit
-    Vec<std::pair<int, int>> changed_ranges; ///
-    Vec<LineId>              lines; /// List of all lines found in the file
+    Vec<LinePeriods> changed_ranges; ///
+    Vec<LineId>      lines; /// List of all lines found in the file
 };
 
 /// Single directory path part, without specification at which point in
@@ -653,11 +660,9 @@ struct orm_lines_table {
     LineId line;
 };
 
-struct orm_changed_range {
+struct orm_changed_range : LinePeriods {
     FileId file;
     int    index;
-    int    begin;
-    int    end;
 };
 
 auto create_db(CR<Str> storagePath) {
@@ -702,7 +707,9 @@ auto create_db(CR<Str> storagePath) {
             make_column("file", &orm_changed_range::file),
             make_column("index", &orm_changed_range::index),
             make_column("begin", &orm_changed_range::begin),
-            make_column("end", &orm_changed_range::end)),
+            make_column("end", &orm_changed_range::end),
+            make_column("period", &orm_changed_range::period),
+            make_column("changed", &orm_changed_range::changed)),
         make_table<orm_dir>(
             "dir",
             make_column("id", &orm_dir::id, primary_key()),

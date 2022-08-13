@@ -30,7 +30,7 @@ function gdb_cmd {
 
 function try_build() {
     cd git_user
-    clang-tidy git_user.cpp git_ir.hpp || true
+    # clang-tidy git_user.cpp git_ir.hpp || true
     cmake .
     make -j12
 
