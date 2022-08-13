@@ -261,8 +261,16 @@ using severity = log::trivial::severity_level;
 #define CUSTOM_LOG(logger, sev)                                           \
     set_get_attrib("File", Str{__FILE__});                                \
     set_get_attrib("Line", __LINE__);                                     \
+    set_get_attrib("Func", Str{__PRETTY_FUNCTION__});                     \
     BOOST_LOG_SEV(logger, sev)
 
+
+/// Set value of the attribute and return a reference to it, for further
+/// modifications.
+///
+/// \note The type of the value must match *exactly* with the original
+/// attribute declaration - using `const char*` instead of the
+/// `std::string` will result in the exception
 template <typename ValueType>
 ValueType set_get_attrib(const char* name, ValueType value) {
     auto attr = log::attribute_cast<
@@ -380,6 +388,7 @@ void push_line(
     auto& ranges    = file.changed_ranges;
 
     if (changed) {
+        file.had_changes = true;
         if (ranges.empty()) {
             ranges.push_back({new_index, new_index});
         } else {
@@ -663,7 +672,8 @@ ir::FileId exec_walker(
                                   relpath,
                                   init.value());
 
-    LOG_I(state) << fmt::format("Processed file {}", relpath);
+    LOG_I(state) << fmt::format(
+        "Processed file {} at {}", relpath, commit_oid);
 
     int total_complexity = 0;
 
@@ -752,7 +762,9 @@ ir::CommitId process_commit_impl(git_oid commit_oid, walker_state* state) {
             .time     = commit_time(commit),
             .timezone = commit_time_offset(commit),
             .hash     = hash,
-            .message  = Str{commit_message(commit)}});
+            .period   = state->config->get_period(
+                posix_time::from_time_t(commit_time(commit)).date()),
+            .message = Str{commit_message(commit)}});
     }
 
     // List of subtasks that need to be executed for each specific file.
@@ -820,6 +832,11 @@ Vec<std::future<ir::CommitId>> launch_analysis(
         if (state->config->allow_sample_at_date(date)) {
             // Store in the list of commits for sampling
             state->sampled_commits.insert(oid);
+            LOG_I(state) << fmt::format(
+                "Processing commit {} at {}", oid, date);
+        } else {
+            LOG_I(state) << fmt::format(
+                "Ignoring commit {} at {}", oid, date);
         }
     }
 
@@ -1021,8 +1038,9 @@ int main() {
     log::core::get()->add_thread_attribute(
         "File", log::attrs::mutable_constant<Str>(""));
     log::core::get()->add_thread_attribute(
+        "Func", log::attrs::mutable_constant<Str>(""));
+    log::core::get()->add_thread_attribute(
         "Line", log::attrs::mutable_constant<int>(0));
-
 
     // Configure state of the sampling strategies
     allow_state allow{.days_period = 90, .start = {2020, 1, 1}};

@@ -437,11 +437,12 @@ DECL_ID_TYPE(Author, AuthorId, int);
 /// single commit by author, taken at some point in time
 struct Commit {
     using id_type = CommitId;
-    AuthorId    author;   /// references unique author id
-    i64         time;     /// posix time
-    int         timezone; /// timezone where commit was taken
-    Str         hash;     /// git hash of the commit
-    Str         message;  /// Commit message
+    AuthorId author;   /// references unique author id
+    i64      time;     /// posix time
+    int      timezone; /// timezone where commit was taken
+    Str      hash;     /// git hash of the commit
+    int      period; /// Number of the period that commit was attributed to
+    Str      message; /// Commit message
     Vec<FileId> files;
 };
 
@@ -450,11 +451,12 @@ struct File {
     using id_type = FileId;
     CommitId commit_id; /// Id of the commit this version of the file was
                         /// recorded in
-    DirectoryId              parent; /// parent directory
-    StringId                 name;   /// file name
-    int                      total_complexity;
-    int                      line_count;
-    Vec<std::pair<int, int>> changed_ranges;
+    DirectoryId parent; /// parent directory
+    StringId    name;   /// file name
+    int         total_complexity; /// Total file complexity
+    int         line_count;       /// Total line count for the commit
+    bool        had_changes; /// Whether file had any changes in the commit
+    Vec<std::pair<int, int>> changed_ranges; ///
     Vec<LineId>              lines; /// List of all lines found in the file
 };
 
@@ -665,6 +667,7 @@ auto create_db(CR<Str> storagePath) {
             make_column("author", &orm_commit::author),
             make_column("time", &orm_commit::time),
             make_column("hash", &orm_commit::hash),
+            make_column("period", &orm_commit::period),
             make_column("timezone", &orm_commit::timezone),
             make_column("message", &orm_commit::message)),
         make_table<orm_file>(
@@ -673,7 +676,8 @@ auto create_db(CR<Str> storagePath) {
             make_column("commit_id", &orm_file::commit_id),
             make_column("name", &orm_file::name),
             make_column("line_count", &orm_file::line_count),
-            make_column("total_complexity", &orm_file::total_complexity)),
+            make_column("total_complexity", &orm_file::total_complexity),
+            make_column("had_changes", &orm_file::had_changes)),
         make_table<orm_author>(
             "author",
             make_column("id", &orm_author::id, primary_key()),
