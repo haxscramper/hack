@@ -20,7 +20,7 @@ struct is_base_of_template {
     // A function which can only be called by something convertible to a
     // Base<Ts...>*
     template <typename... Ts>
-    static constexpr arg_pack<Ts...> is_callable(Base<Ts...>*);
+    static auto constexpr is_callable(Base<Ts...>*) -> arg_pack<Ts...>;
 
     // Detector, will return type of calling is_callable, or it won't
     // compile if that can't be done
@@ -71,23 +71,22 @@ template <std::integral IdType>
 struct [[nodiscard]] Id {
     using id_base_type = IdType;
     /// Create new ID value from the stored ID index.
-    Id(IdType in) : value(in + 1) {}
-
+    explicit Id(IdType in) : value(in + 1) {}
 
     /// Create new ID object from value, without preemptively incrementing
     /// it
-    static Id FromValue(IdType in) {
+    static auto FromValue(IdType in) -> Id {
         Id res{IdType{}};
         res.value = in;
         return res;
     }
 
     /// Check whether provided value is nil or not
-    bool isNil() const noexcept { return value == IdType{}; }
+    auto isNil() const noexcept -> bool { return value == IdType{}; }
     /// Get value stored in the ID  - this one should be used in cases
     /// where ID is converted in some different format (for example printed
     /// out or stored in the database)
-    IdType getValue() const noexcept { return value; }
+    auto getValue() const noexcept -> IdType { return value; }
     /// Set value of the ID. This should be used for deserialization.
     ///
     /// \note This function allows setting ID to state with zero value,
@@ -97,9 +96,9 @@ struct [[nodiscard]] Id {
     ///
     /// \warning in case of a 'nil' type this might return an invalid index
     /// (`<0`)
-    IdType getIndex() const noexcept { return value - 1; }
+    auto getIndex() const noexcept -> IdType { return value - 1; }
     /// Get string representation of the ID value
-    Str getStr() const { return std::to_string(value); }
+    auto getStr() const -> Str { return std::to_string(value); }
 
   protected:
     IdType value;
@@ -117,16 +116,16 @@ struct [[nodiscard]] Id {
     struct __value;                                                       \
     struct [[nodiscard]] __name : dod::Id<__type> {                       \
         using value_type = __value;                                       \
-        static __name Nil() { return FromValue(0); };                     \
-        static __name FromValue(__type arg) {                             \
+        static auto Nil() -> __name { return FromValue(0); };             \
+        static auto FromValue(__type arg) -> __name {                     \
             __name res{__type{}};                                         \
             res.setValue(arg);                                            \
             return res;                                                   \
         }                                                                 \
-        bool operator==(__name other) const {                             \
+        auto operator==(__name other) const -> bool {                     \
             return getValue() == other.getValue();                        \
         }                                                                 \
-        __name(__type arg) : dod::Id<__type>(arg) {}                      \
+        explicit __name(__type arg) : dod::Id<__type>(arg) {}             \
     };
 
 
@@ -159,26 +158,26 @@ struct Store {
     Store() = default;
 
     /// Add value to the storage and return newly created ID
-    [[nodiscard]] Id add(const T& value) {
+    [[nodiscard]] auto add(const T& value) -> Id {
         int index = content.size();
         content.push_back(value);
         return Id(index);
     }
 
     /// Add new item to the store and return newly created ID
-    [[nodiscard]] Id add(const T&& value) {
+    [[nodiscard]] auto add(const T&& value) -> Id {
         int index = content.size();
         content.push_back(value);
         return Id(index);
     }
 
-    T&    at(Id id) { return content.at(id.getIndex()); }
-    CR<T> at(Id id) const { return content.at(id.getIndex()); }
+    auto at(Id id) -> T& { return content.at(id.getIndex()); }
+    auto at(Id id) const -> CR<T> { return content.at(id.getIndex()); }
 
-    std::size_t size() const { return content.size(); }
+    auto size() const -> std::size_t { return content.size(); }
 
     /// Get genetator for all stored indices and pairs
-    generator<std::pair<Id, CP<T>>> pairs() const {
+    auto pairs() const -> generator<std::pair<Id, CP<T>>> {
         const int size = content.size();
         for (int i = 0; i < size; ++i) {
             co_yield {Id(i), &content.at(i)};
@@ -186,7 +185,7 @@ struct Store {
     }
 
     /// Return generator for stored values
-    generator<CP<T>> items() const {
+    auto items() const -> generator<CP<T>> {
         for (const auto& it : content) {
             co_yield &it;
         }
@@ -222,7 +221,7 @@ struct InternStore {
 
     /// Add value to the store - if the value is already contained can
     /// return previous ID
-    [[nodiscard]] Id add(CR<Val> in) {
+    [[nodiscard]] auto add(CR<Val> in) -> Id {
         auto found = id_map.find(in);
         if (found != id_map.end()) {
             return found->second;
@@ -233,15 +232,15 @@ struct InternStore {
         }
     }
 
-    bool contains(CR<Val> in) const {
+    auto contains(CR<Val> in) const -> bool {
         return id_map.find(in) != id_map.end();
     }
 
-    std::size_t size() const { return content.size(); }
+    auto size() const -> std::size_t { return content.size(); }
     /// Get mutable reference at the content pointed at by the ID
-    Val& at(Id id) { return content.at(id); }
+    auto at(Id id) -> Val& { return content.at(id); }
     /// Get immutable references at the content pointed at by the ID
-    CR<Val> at(Id id) const { return content.at(id); }
+    auto at(Id id) const -> CR<Val> { return content.at(id); }
 
     void insert(Id id, CR<Val> value) {
         if (!contains(value)) {
@@ -251,12 +250,12 @@ struct InternStore {
     }
 
     /// Return generator of the stored indices and values
-    generator<std::pair<Id, CP<Val>>> pairs() const {
+    auto pairs() const -> generator<std::pair<Id, CP<Val>>> {
         return content.pairs();
     }
 
     /// Return generator of the stored values
-    generator<CP<Val>> items() const { return content.items(); }
+    auto items() const -> generator<CP<Val>> { return content.items(); }
 };
 
 
@@ -351,7 +350,7 @@ struct MultiStore {
 namespace std {
 template <dod::IsIdType Id>
 struct hash<Id> {
-    std::size_t operator()(Id it) const {
+    auto operator()(Id it) const -> std::size_t {
         // Id uniquely identifies any entry it points to, by defintion, so
         // it can be used as a perfect hash
         return it.getValue();
@@ -360,7 +359,7 @@ struct hash<Id> {
 }; // namespace std
 
 template <dod::IsIdType T>
-std::ostream& operator<<(std::ostream& stream, T id) {
+auto operator<<(std::ostream& stream, T id) -> std::ostream& {
     if (id.isNil()) {
         stream << "NULL";
     } else {
@@ -375,7 +374,7 @@ struct type_printer<T> : public integer_printer {};
 
 template <dod::IsIdType T>
 struct statement_binder<T> {
-    int bind(sqlite3_stmt* stmt, int index, T value) {
+    auto bind(sqlite3_stmt* stmt, int index, T value) -> int {
         if (value.isNil()) {
             return sqlite3_bind_null(stmt, index);
 
@@ -388,7 +387,7 @@ struct statement_binder<T> {
 
 template <dod::IsIdType T>
 struct field_printer<T> {
-    std::string operator()(T t) const {
+    auto operator()(T t) const -> std::string {
         if (t.isNil()) {
             return "NULL";
         } else {
@@ -399,11 +398,11 @@ struct field_printer<T> {
 
 template <dod::IsIdType T>
 struct row_extractor<T> {
-    T extract(const char* row_value) {
+    auto extract(const char* row_value) -> T {
         return T::FromValue(std::stoi(row_value));
     }
 
-    T extract(sqlite3_stmt* stmt, int columnIndex) {
+    auto extract(sqlite3_stmt* stmt, int columnIndex) -> T {
         return T::FromValue(sqlite3_column_int(stmt, columnIndex));
     }
 };
@@ -468,7 +467,7 @@ struct Directory {
     Opt<DirectoryId> parent; /// Parent directory ID
     StringId         name;   /// Id of the string
 
-    bool operator==(CR<Directory> other) const {
+    auto operator==(CR<Directory> other) const -> bool {
         return name == other.name && parent == other.parent;
     }
 };
@@ -477,7 +476,9 @@ struct Directory {
 struct String {
     using id_type = StringId;
     Str  text; /// Textual content of the line
-    bool operator==(CR<String> other) const { return text == other.text; }
+    auto operator==(CR<String> other) const -> bool {
+        return text == other.text;
+    }
 };
 
 /// Author - name and email found during the source code analysis.
@@ -486,7 +487,7 @@ struct Author {
     Str name;
     Str email;
 
-    bool operator==(CR<Author> other) const {
+    auto operator==(CR<Author> other) const -> bool {
         return name == other.name && email == other.email;
     }
 };
@@ -502,7 +503,7 @@ struct LineData {
     StringId content; /// Content of the line
     int      nesting; /// Line indentation depth
 
-    bool operator==(CR<LineData> other) const {
+    auto operator==(CR<LineData> other) const -> bool {
         return author == other.author && time == other.time &&
                content == other.content;
     }
@@ -525,7 +526,8 @@ inline void hash_combine(std::size_t& seed, const T& v, Rest... rest) {
     namespace std {                                                       \
         template <>                                                       \
         struct hash<__type> {                                             \
-            std::size_t operator()(const __type& __varname) const {       \
+            auto operator()(const __type& __varname) const                \
+                -> std::size_t {                                          \
                 std::size_t ret = 0;                                      \
                 hash_combine(ret, __VA_ARGS__);                           \
                 return ret;                                               \
@@ -556,7 +558,7 @@ struct content_manager {
 
     std::unordered_map<Str, DirectoryId> prefixes;
 
-    Opt<DirectoryId> parentDirectory(CR<Path> dir) {
+    auto parentDirectory(CR<Path> dir) -> Opt<DirectoryId> {
         if (dir.has_parent_path()) {
             auto parent = dir.parent_path();
             auto native = parent.native();
@@ -572,7 +574,7 @@ struct content_manager {
         }
     }
 
-    DirectoryId getDirectory(CR<Path> dir) {
+    auto getDirectory(CR<Path> dir) -> DirectoryId {
         return add(ir::Directory{
             .parent = parentDirectory(dir),
             .name   = add(String{dir.filename().native()})});
@@ -580,13 +582,13 @@ struct content_manager {
 
     /// Get reference to value pointed to by the ID
     template <dod::IsIdType Id>
-    typename dod::value_type_t<Id>& at(Id id) {
+    auto at(Id id) -> typename dod::value_type_t<Id>& {
         return multi.at<Id>(id);
     }
 
     /// Push in a value, return newly generated ID
     template <typename T>
-    [[nodiscard]] dod::id_type_t<T> add(CR<T> it) {
+    [[nodiscard]] auto add(CR<T> it) -> dod::id_type_t<T> {
         return multi.add<T>(it);
     }
 };

@@ -11,6 +11,7 @@
 #include <fstream>
 #include <thread>
 #include <mutex>
+#include <shared_mutex>
 #include <algorithm>
 #include <tuple>
 #include <future>
@@ -24,6 +25,9 @@
 #include <boost/date_time/gregorian/gregorian.hpp>
 #include <boost/date_time/posix_time/posix_time.hpp>
 #include <boost/process.hpp>
+
+#include <boost/thread/mutex.hpp>
+#include <boost/thread/lock_guard.hpp>
 
 #include <boost/log/trivial.hpp>
 #include <boost/log/common.hpp>
@@ -51,6 +55,13 @@ struct fmt::formatter<Date> : fmt::formatter<Str> {
     }
 };
 
+template <dod::IsIdType Id>
+struct fmt::formatter<Id> : fmt::formatter<Str> {
+    auto format(CR<Id> date, fmt::format_context& ctx) const {
+        return fmt::formatter<Str>::format(date.getStr(), ctx);
+    }
+};
+
 namespace git {
 struct exception : public std::exception {
     Str message;
@@ -64,13 +75,12 @@ struct exception : public std::exception {
             e->message);
     }
 
-    virtual const char* what() const noexcept override {
-        return message.c_str();
-    }
+    const char* what() const noexcept override { return message.c_str(); }
 };
 } // namespace git
 
 #include <iostream>
+// NOLINTNEXTLINE
 #define __GIT_THROW_EXCEPTION(code, function)                             \
     throw git::exception(code, function);
 
@@ -126,9 +136,8 @@ struct walker_config {
 };
 
 template <typename T>
-std::future<T> async_task(
-    walker_config::threading_mode mode,
-    Func<T()>                     task) {
+auto async_task(walker_config::threading_mode mode, Func<T()> task)
+    -> std::future<T> {
     switch (mode) {
         case walker_config::async: {
             return std::async(std::launch::async, task);
@@ -152,14 +161,14 @@ using TimePoint = stime::time_point<stime::system_clock>;
 namespace std {
 template <>
 struct hash<git_oid> {
-    std::size_t operator()(const git_oid& it) const {
+    auto operator()(const git_oid& it) const -> std::size_t {
         return std::hash<Str>()(
-            Str((const char*)(&it.id[0]), sizeof(it.id)));
+            Str(reinterpret_cast<const char*>(&it.id[0]), sizeof(it.id)));
     }
 };
 } // namespace std
 
-bool operator==(CR<git_oid> lhs, CR<git_oid> rhs) {
+auto operator==(CR<git_oid> lhs, CR<git_oid> rhs) -> bool {
     return oid_cmp(&lhs, &rhs) == 0;
 }
 
@@ -187,12 +196,12 @@ struct walker_state {
 
     /// Whether to consider \arg commit as changed in the current
     /// processing run
-    bool consider_changed(
+    auto consider_changed(
         CR<git_oid> commit_id,
-        CR<git_oid> line_change_id) const {
-        // IMPLEMENT a more detailed analysis of the 'changed' line state
-        // implies 'changed since the last sampled commit', which would in
-        // turn require getting the whole list of commits, wrapping curret
+        CR<git_oid> line_change_id) const -> bool {
+        // A more detailed analysis of the 'changed' line state implies
+        // 'changed since the last sampled commit', which would in turn
+        // require getting the whole list of commits, wrapping curret
         // walker state into an object and provind some kind of 'is
         // considered new?' predicate that would check whether line fails
         // into the range of the skipped commits
@@ -208,12 +217,10 @@ struct walker_state {
         int idx_commit = rev_index.at(commit_id);
 
         // First commit is always considered changed
-        if (idx_changed == 0) {
-            return true;
-        }
+        //
         // If we are running dense commit sampling, without gaps, and the
         // line had changed in this exact commit
-        else if (idx_changed == idx_commit) {
+        if (idx_changed == 0 || idx_changed == idx_commit) {
             return true;
         }
         // If the previous (in the full list) is not in the revese index
@@ -245,7 +252,7 @@ struct walker_state {
 
     /// Return time elapsed since the start of the benchmark point \arg
     /// name
-    stime::milliseconds pop_bench_point(CR<Str> name) {
+    auto pop_bench_point(CR<Str> name) -> stime::milliseconds {
         return stime::duration_cast<stime::milliseconds>(
             stime::system_clock::now() - bench_points[name]);
     }
@@ -256,14 +263,25 @@ struct walker_state {
         logger;
 };
 
+/// \defgroup all_logging logging macros
+/// Shorthand macros to write an output to the logger
+/// @{
 using severity = log::trivial::severity_level;
 
+/// Wrapper around the logger call for setting the 'File', 'Line', and
+/// 'Func' attributes.
 #define CUSTOM_LOG(logger, sev)                                           \
     set_get_attrib("File", Str{__FILE__});                                \
     set_get_attrib("Line", __LINE__);                                     \
     set_get_attrib("Func", Str{__PRETTY_FUNCTION__});                     \
     BOOST_LOG_SEV(logger, sev)
 
+
+/// Type alias for mutable constant template used in the logging. The
+/// application *might* run in the multithreaded mode, so shared mutex is
+/// used for guarding access to the data.
+template <typename T>
+using MutLog = log::attrs::mutable_constant<T, std::shared_mutex>;
 
 /// Set value of the attribute and return a reference to it, for further
 /// modifications.
@@ -272,21 +290,20 @@ using severity = log::trivial::severity_level;
 /// attribute declaration - using `const char*` instead of the
 /// `std::string` will result in the exception
 template <typename ValueType>
-ValueType set_get_attrib(const char* name, ValueType value) {
-    auto attr = log::attribute_cast<
-        log::attrs::mutable_constant<ValueType>>(
-        log::core::get()->get_thread_attributes()[name]);
+auto set_get_attrib(const char* name, ValueType value) -> ValueType {
+    auto attr = log::attribute_cast<MutLog<ValueType>>(
+        log::core::get()->get_global_attributes()[name]);
     attr.set(value);
     return attr.get();
 }
 
-
-#define LOG_T(state) CUSTOM_LOG(*(state->logger), severity::trace)
-#define LOG_D(state) CUSTOM_LOG(*(state->logger), severity::debug)
-#define LOG_I(state) CUSTOM_LOG(*(state->logger), severity::info)
-#define LOG_W(state) CUSTOM_LOG(*(state->logger), severity::warning)
-#define LOG_E(state) CUSTOM_LOG(*(state->logger), severity::error)
-#define LOG_F(state) CUSTOM_LOG(*(state->logger), severity::fatal)
+#define LOG_T(state) CUSTOM_LOG((*((state)->logger)), severity::trace)
+#define LOG_D(state) CUSTOM_LOG((*((state)->logger)), severity::debug)
+#define LOG_I(state) CUSTOM_LOG((*((state)->logger)), severity::info)
+#define LOG_W(state) CUSTOM_LOG((*((state)->logger)), severity::warning)
+#define LOG_E(state) CUSTOM_LOG((*((state)->logger)), severity::error)
+#define LOG_F(state) CUSTOM_LOG((*((state)->logger)), severity::fatal)
+/// @}
 
 using SLock = std::scoped_lock<std::mutex>;
 
@@ -304,59 +321,48 @@ struct allow_state {
     int prev_period = -1;
 
     /// Only analyze single commit - whichever one will be tried first
-    bool allow_once() {
-        if (prev_period == -1) {
-            prev_period = 0;
-            return true;
-        } else {
-            return false;
-        }
+    auto allow_once() -> bool {
+        bool is_first = prev_period == -1;
+        if (is_first) { prev_period = 0; }
+        return is_first;
     }
 
-    bool can_visit_period(int period) {
-        if (!visited_periods.contains(period)) {
-            visited_periods.insert(period);
-            return true;
-        } else {
-            return false;
-        }
+    auto can_visit_period(int period) -> bool {
+        auto missing = !visited_periods.contains(period);
+        if (missing) { visited_periods.insert(period); }
+        return missing;
     }
 
-    bool allow_once_per_month(CR<Date> date) {
+    auto allow_once_per_month(CR<Date> date) -> bool {
         return can_visit_period(month_to_period(date));
     }
 
-    bool allow_once_per_year(CR<Date> date) {
+    auto allow_once_per_year(CR<Date> date) -> bool {
         return can_visit_period(year_to_period(date));
     }
 
-    bool allow_once_per_period(CR<Date> date) {
-        int period = (date - start).days() / days_period;
-        if (period != prev_period) {
-            // HACK to ignore multiple commits that happened on the same
-            // day
-            prev_period = period;
-            return true;
-        } else {
-            return false;
-        }
+    auto allow_once_per_period(CR<Date> date) -> bool {
+        int  period = (date - start).days() / days_period;
+        bool is_new = period != prev_period;
+        if (is_new) { prev_period = period; }
+        return is_new;
     }
 
-    int year_to_period(CR<Date> date) { return date.year(); }
+    auto year_to_period(CR<Date> date) -> int { return date.year(); }
 
-    int month_to_period(CR<Date> date) {
+    auto month_to_period(CR<Date> date) -> int {
         return date.year() * 1000 + date.month();
     }
 
-    int range_to_period(CR<Date> date) {
+    auto range_to_period(CR<Date> date) -> int {
         return (date - start).days() / days_period;
     }
 };
 
-Str oid_tostr(git_oid oid) {
-    char result[GIT_OID_HEXSZ + 1];
-    git_oid_tostr(result, sizeof(result), &oid);
-    return result;
+auto oid_tostr(git_oid oid) -> Str {
+    std::array<char, GIT_OID_HEXSZ + 1> result;
+    git_oid_tostr(result.data(), sizeof(result), &oid);
+    return Str{result.data(), result.size() - 1};
 }
 
 template <>
@@ -366,7 +372,7 @@ struct fmt::formatter<git_oid> : fmt::formatter<Str> {
     }
 };
 
-int get_nesting(CR<Str> line) {
+auto get_nesting(CR<Str> line) -> int {
     int result = 0;
     while (result < line.size()) {
         char c = line[result];
@@ -389,14 +395,10 @@ void push_line(
 
     if (changed) {
         file.had_changes = true;
-        if (ranges.empty()) {
-            ranges.push_back({new_index, new_index});
+        if (!ranges.empty() && ranges.back().second + 1 == new_index) {
+            ranges.back().second = new_index;
         } else {
-            if (ranges.back().second + 1 == new_index) {
-                ranges.back().second = new_index;
-            } else {
-                ranges.push_back({new_index, new_index});
-            }
+            ranges.push_back({new_index, new_index});
         }
     }
 
@@ -405,11 +407,11 @@ void push_line(
     file.line_count += 1;
 }
 
-ir::FileId stats_via_subprocess(
+auto stats_via_subprocess(
     git_oid       commit_oid,
     walker_state* walker,
     ir::File      file,
-    CR<Str>       relpath) {
+    CR<Str>       relpath) -> ir::FileId {
 
     Str str_oid{oid_tostr(commit_oid)};
 
@@ -470,11 +472,7 @@ ir::FileId stats_via_subprocess(
         // are optional and can be missing in the output, requiring extra
         // hacks for processing.
         switch (state) {
-            case LK::Previous: {
-                if (line.starts_with("filename")) { state = LK::Filename; }
-                break;
-            }
-
+            case LK::Previous:
             case LK::Boundary: {
                 if (line.starts_with("filename")) { state = LK::Filename; }
                 break;
@@ -543,12 +541,12 @@ ir::FileId stats_via_subprocess(
     return result;
 }
 
-ir::FileId stats_via_libgit(
+auto stats_via_libgit(
     walker_state*         state,
     git_oid               commit_oid,
     const git_tree_entry* entry,
     CR<Str>               relpath,
-    ir::File              file) {
+    ir::File              file) -> ir::FileId {
 
     auto result = ir::FileId::Nil();
     {
@@ -566,8 +564,8 @@ ir::FileId stats_via_libgit(
         state->repo, relpath.c_str(), &blameopts);
     assert(object_type(object) == GIT_OBJECT_BLOB);
     // `git_object` can be freely cast to the blob, provided we checked the
-    // type first
-    git_blob* blob = (git_blob*)object;
+    // type first.
+    auto blob = reinterpret_cast<git_blob*>(object);
     // Byte position in the blob content
     int i = 0;
     // Counter for file line iteration
@@ -577,21 +575,22 @@ ir::FileId stats_via_libgit(
     // Get full size (in bytes) of the target blob
     git_object_size_t rawsize = blob_rawsize(blob);
     // Get raw content of the git blob
-    const char* rawdata = (const char*)git_blob_rawcontent(blob);
+    const char* rawdata = static_cast<const char*>(
+        git_blob_rawcontent(blob));
 
     // Process blob bytes - this is the only explicit delimiter we get when
     // working with blobs
     while (i < rawsize) {
         // Search for the next end of line
-        const char* eol = (const char*)memchr(
-            rawdata + i, '\n', (size_t)(rawsize - i));
+        const char* eol = static_cast<const char*>(
+            memchr(rawdata + i, '\n', static_cast<size_t>(rawsize - i)));
         // Find input end index
-        const int endpos = (int)(eol - rawdata + 1);
+        const int endpos = static_cast<int>(eol - rawdata + 1);
         // get information for the current line
         const git_blame_hunk* hunk = blame_get_hunk_byline(blame, line);
 
         // if hunk is empty stop processing
-        if (break_on_null_hunk && !hunk) { break; }
+        if (break_on_null_hunk && hunk == nullptr) { break; }
 
         if (hunk != nullptr && hunk->final_signature != nullptr) {
             break_on_null_hunk = true;
@@ -627,12 +626,12 @@ ir::FileId stats_via_libgit(
     return result;
 }
 
-ir::FileId exec_walker(
+auto exec_walker(
     git_oid               commit_oid,
     walker_state*         state,
     ir::CommitId          commit,
     const char*           root,
-    const git_tree_entry* entry) {
+    const git_tree_entry* entry) -> ir::FileId {
 
     // We are looking for blobs
     if (tree_entry_type(entry) != GIT_OBJECT_BLOB) {
@@ -673,9 +672,7 @@ ir::FileId exec_walker(
                                   init.value());
 
     LOG_I(state) << fmt::format(
-        "Processed file {} at {}", relpath, commit_oid);
-
-    int total_complexity = 0;
+        "Processed file {} at {} as id:{}", relpath, commit_oid, result);
 
     return result;
 }
@@ -723,7 +720,8 @@ void add_sub_task(
 /// Implementaiton of the commit processing function. Walks files that were
 /// available in the repository at the time and process each file
 /// individually, filling data into the content store.
-ir::CommitId process_commit_impl(git_oid commit_oid, walker_state* state) {
+auto process_commit_impl(git_oid commit_oid, walker_state* state)
+    -> ir::CommitId {
     git_commit* commit = commit_lookup(state->repo, &commit_oid);
     // Get tree for a commit
     auto tree = commit_tree(commit);
@@ -750,8 +748,7 @@ ir::CommitId process_commit_impl(git_oid commit_oid, walker_state* state) {
     // shared, this piece of code might be executed in parallel.
     auto out_commit = ir::CommitId::Nil();
     {
-        git_signature* signature = const_cast<git_signature*>(
-            commit_author(commit));
+        auto signature = const_cast<git_signature*>(commit_author(commit));
 
         finally close{[signature]() { signature_free(signature); }};
         SLock   lock{state->m};
@@ -768,7 +765,7 @@ ir::CommitId process_commit_impl(git_oid commit_oid, walker_state* state) {
     }
 
     // List of subtasks that need to be executed for each specific file.
-    Vec<std::future<ir::FileId>> sub_futures;
+    Vec<std::future<ir::FileId>> sub_futures{};
     // walk all entries in the tree
     tree_walk(
         tree,
@@ -797,9 +794,8 @@ ir::CommitId process_commit_impl(git_oid commit_oid, walker_state* state) {
 }
 
 /// Launch single commit processing task
-std::future<ir::CommitId> process_commit(
-    git_oid       oid,
-    walker_state* state) {
+auto process_commit(git_oid oid, walker_state* state)
+    -> std::future<ir::CommitId> {
     return async_task<ir::CommitId>(
         state->config->use_threading, [oid, state]() -> ir::CommitId {
             // `process_commmit` is largely a helper function that is used
@@ -812,13 +808,12 @@ std::future<ir::CommitId> process_commit(
 
 #define GIT_SUCCESS 0
 
-Vec<std::future<ir::CommitId>> launch_analysis(
-    git_oid&      oid,
-    walker_state* state) {
+auto launch_analysis(git_oid& oid, walker_state* state)
+    -> Vec<std::future<ir::CommitId>> {
     // All constructed information
-    Vec<std::future<ir::CommitId>> processed;
+    Vec<std::future<ir::CommitId>> processed{};
     // Walk over every commit in the history
-    Vec<git_oid> full_commits;
+    Vec<git_oid> full_commits{};
     while (revwalk_next(&oid, state->walker) == GIT_SUCCESS) {
         // Get commit from the provided oid
         git_commit* commit = commit_lookup(state->repo, &oid);
@@ -859,16 +854,16 @@ void open_walker(git_oid& oid, walker_state& state) {
     // REFACTOR this part was copied from the SO example and I'm pretty
     // sure it can be implemented in a cleaner manner, but I haven't
     // touched this part yet.
-    FILE* head_fileptr;
-    char  head_rev[41];
+    FILE*                head_fileptr = nullptr;
+    std::array<char, 41> head_rev;
 
-    if ((head_fileptr = fopen(head_filepath.c_str(), "r")) == NULL) {
+    if ((head_fileptr = fopen(head_filepath.c_str(), "r")) == nullptr) {
         throw std::system_error{
             std::error_code{},
             fmt::format("Error opening {}", head_filepath)};
     }
 
-    if (fread(head_rev, 40, 1, head_fileptr) != 1) {
+    if (fread(head_rev.data(), 40, 1, head_fileptr) != 1) {
         throw std::system_error{
             std::error_code{},
             fmt::format("Error reading from {}", head_filepath)};
@@ -877,7 +872,7 @@ void open_walker(git_oid& oid, walker_state& state) {
 
     fclose(head_fileptr);
 
-    oid = oid_fromstr(head_rev);
+    oid = oid_fromstr(head_rev.data());
     // Initialize revision walker
     state.walker = revwalk_new(state.repo);
     // Iterate all commits in the topological order
@@ -1010,7 +1005,7 @@ void log_formatter(
          << " " << rec[log::expr::smessage];
 }
 
-boost::shared_ptr<sink_t> create_file_sink(CR<Str> outfile) {
+auto create_file_sink(CR<Str> outfile) -> boost::shared_ptr<sink_t> {
     boost::shared_ptr<std::ostream> log_stream{new std::ofstream(outfile)};
 
     boost::shared_ptr<sink_t> sink(new sink_t(
@@ -1026,7 +1021,7 @@ boost::shared_ptr<sink_t> create_file_sink(CR<Str> outfile) {
     return sink;
 }
 
-int main() {
+auto main() -> int {
     auto sink = create_file_sink("/tmp/git_user.log");
     log::core::get()->add_sink(sink);
 
@@ -1035,12 +1030,11 @@ int main() {
         "TimeStamp", log::attrs::local_clock());
     log::core::get()->add_global_attribute(
         "RecordID", log::attrs::counter<unsigned int>());
-    log::core::get()->add_thread_attribute(
-        "File", log::attrs::mutable_constant<Str>(""));
-    log::core::get()->add_thread_attribute(
-        "Func", log::attrs::mutable_constant<Str>(""));
-    log::core::get()->add_thread_attribute(
-        "Line", log::attrs::mutable_constant<int>(0));
+
+
+    log::core::get()->add_global_attribute("File", MutLog<Str>(""));
+    log::core::get()->add_global_attribute("Func", MutLog<Str>(""));
+    log::core::get()->add_global_attribute("Line", MutLog<int>(0));
 
     // Configure state of the sampling strategies
     allow_state allow{.days_period = 90, .start = {2020, 1, 1}};
@@ -1049,7 +1043,7 @@ int main() {
     auto config = UPtr<walker_config>(new walker_config{
         .use_subprocess = false,
         // Full process parallelization
-        .use_threading   = walker_config::sequential,
+        .use_threading   = walker_config::async,
         .repo            = "/tmp/fusion",
         .heads           = "/.git/refs/heads/master",
         .db_path         = "/tmp/db.sqlite",
@@ -1103,7 +1097,7 @@ int main() {
     auto processed = launch_analysis(oid, state.get());
 
     // Store finalized commit IDs from executed tasks
-    Vec<ir::CommitId> commits;
+    Vec<ir::CommitId> commits{};
     for (auto& future : processed) {
         commits.push_back(future.get());
     }

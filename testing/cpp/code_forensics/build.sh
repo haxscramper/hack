@@ -30,6 +30,7 @@ function gdb_cmd {
 
 function try_build() {
     cd git_user
+    clang-tidy git_user.cpp git_ir.hpp || true
     cmake .
     make -j12
 
@@ -72,7 +73,7 @@ function wrap_git() {
 
 # try_build
 # build_git_wrapper
-wrap_git
+# wrap_git
 try_build
 # py_plotter
 # cmake .

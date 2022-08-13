@@ -1,0 +1,11 @@
+
+* SQL queries
+
+Select every instance of the file, find it's relative complexity and order by it.
+
+#+begin_src sql
+select strings.`text`, file.total_complexity / cast(file.line_count as real) as result
+from file, strings
+where file.name == strings.id
+order by result;
+#+end_src

@@ -1,0 +1,6 @@
+**/.cmake
+**/.qtc_clangd
+**/qtcsettings*
+**/CMakeCache*
+docs
+!Doxyfile

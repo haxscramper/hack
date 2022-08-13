@@ -1,0 +1,14 @@
+Checks:
+  "google-*,bugprone-*,boost-*,readability-*,-readability-magic-numbers,-readability-qualified-auto,-readability-identifier-length,-readability-convert-member-functions-to-static,-bugprone-branch-clone,-bugprone-easily-swappable-parameters,-readability-else-after-return,-google-build-using-namespace,-bugprone-macro-parentheses,-bugprone-exception-escape"
+  # boost-*,
+  # misc-*,
+  # readability-*,
+  # performance-*,
+  # portability-*,
+  # cppcoreguidelines-*,
+  # ,
+  # google-*,
+  # -misc-unused-parameters,
+  # -modernize-use-equals-default,
+  # ,
+  #

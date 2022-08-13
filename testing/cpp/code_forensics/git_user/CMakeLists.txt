@@ -9,7 +9,6 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/lib)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/lib)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
 set(CMAKE_CXX_COMPILER clang++)
-# set(CMAKE_CXX_COMPILER g++)
 
 find_package(
   Boost
@@ -38,5 +37,5 @@ target_link_directories(git_user PRIVATE ${Boost_LIBRARY_DIRS})
 target_include_directories(git_user PRIVATE ${Boost_INCLUDE_DIRS})
 target_include_directories(git_user PRIVATE ${CONAN_INCLUDE_DIRS})
 
-set_target_properties(git_user PROPERTIES RUNTIME_OUTPUT_DIRECTORY
-                                          "${CMAKE_SOURCE_DIR}")
+# set_target_properties(git_user PROPERTIES RUNTIME_OUTPUT_DIRECTORY
+# "${CMAKE_SOURCE_DIR}")
