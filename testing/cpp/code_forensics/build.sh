@@ -18,11 +18,14 @@ function gdb_cmd {
     gdb \
         -batch \
         -ex "set print address off" \
-        -ex "set print frame-arguments presence" \
+        -ex "set print frame-arguments scalar" \
         -ex "set print frame-info source-and-location" \
+        -ex "set filename-display basename" \
         -ex "run" \
         -ex "bt" \
         --args $@
+
+    # -ex "set print frame-arguments presence" \
 }
 
 function try_build() {
@@ -42,7 +45,7 @@ function try_build() {
     #     @conanbuildinfo.gcc
 
     echo "git user compile ok"
-    ./bin/git_user
+    ./bin/git_user || gdb_cmd ./bin/git_user
     echo "git user run ok"
 }
 

@@ -441,6 +441,7 @@ struct Commit {
     i64         time;     /// posix time
     int         timezone; /// timezone where commit was taken
     Str         hash;     /// git hash of the commit
+    Str         message;  /// Commit message
     Vec<FileId> files;
 };
 
@@ -664,18 +665,15 @@ auto create_db(CR<Str> storagePath) {
             make_column("author", &orm_commit::author),
             make_column("time", &orm_commit::time),
             make_column("hash", &orm_commit::hash),
-            make_column("timezone", &orm_commit::timezone)),
+            make_column("timezone", &orm_commit::timezone),
+            make_column("message", &orm_commit::message)),
         make_table<orm_file>(
             "file",
             make_column("id", &orm_file::id, primary_key()),
             make_column("commit_id", &orm_file::commit_id),
             make_column("name", &orm_file::name),
             make_column("line_count", &orm_file::line_count),
-            make_column("total_complexity", &orm_file::total_complexity),
-            foreign_key(column<orm_file>(&orm_file::name))
-                .references(column<orm_string>(&orm_string::id)),
-            foreign_key(column<orm_file>(&orm_file::commit_id))
-                .references(column<orm_commit>(&orm_commit::id))),
+            make_column("total_complexity", &orm_file::total_complexity)),
         make_table<orm_author>(
             "author",
             make_column("id", &orm_author::id, primary_key()),
@@ -687,11 +685,7 @@ auto create_db(CR<Str> storagePath) {
             make_column("author", &orm_line::author),
             make_column("time", &orm_line::time),
             make_column("content", &orm_line::content),
-            make_column("nesting", &orm_line::nesting),
-            foreign_key(column<orm_line>(&orm_line::author))
-                .references(column<orm_author>(&orm_author::id)),
-            foreign_key(column<orm_line>(&orm_line::content))
-                .references(column<orm_string>(&orm_string::id))),
+            make_column("nesting", &orm_line::nesting)),
         make_table<orm_lines_table>(
             "file_lines",
             make_column("file", &orm_lines_table::file),
@@ -707,9 +701,7 @@ auto create_db(CR<Str> storagePath) {
             "dir",
             make_column("id", &orm_dir::id, primary_key()),
             make_column("parent", &orm_dir::parent),
-            make_column("name", &orm_dir::name),
-            foreign_key(column<orm_dir>(&orm_dir::parent))
-                .references(column<orm_dir>(&orm_dir::id))),
+            make_column("name", &orm_dir::name)),
         make_table<orm_string>(
             "strings",
             make_column("id", &orm_string::id, primary_key()),

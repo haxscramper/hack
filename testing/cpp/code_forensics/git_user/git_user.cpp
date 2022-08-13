@@ -24,9 +24,22 @@
 #include <boost/date_time/gregorian/gregorian.hpp>
 #include <boost/date_time/posix_time/posix_time.hpp>
 #include <boost/process.hpp>
+
 #include <boost/log/trivial.hpp>
+#include <boost/log/common.hpp>
+#include <boost/log/expressions.hpp>
+#include <boost/log/attributes.hpp>
+#include <boost/log/sinks.hpp>
+#include <boost/log/sources/logger.hpp>
+#include <boost/log/utility/record_ordering.hpp>
+
 
 using namespace boost;
+
+namespace boost::log {
+namespace expr  = boost::log::expressions;
+namespace attrs = boost::log::attributes;
+}; // namespace boost::log
 
 using Date = gregorian::date;
 
@@ -239,7 +252,33 @@ struct walker_state {
 
     std::mutex           m;
     ir::content_manager* content;
+    SPtr<log::sources::severity_logger<log::trivial::severity_level>>
+        logger;
 };
+
+using severity = log::trivial::severity_level;
+
+#define CUSTOM_LOG(logger, sev)                                           \
+    set_get_attrib("File", Str{__FILE__});                                \
+    set_get_attrib("Line", __LINE__);                                     \
+    BOOST_LOG_SEV(logger, sev)
+
+template <typename ValueType>
+ValueType set_get_attrib(const char* name, ValueType value) {
+    auto attr = log::attribute_cast<
+        log::attrs::mutable_constant<ValueType>>(
+        log::core::get()->get_thread_attributes()[name]);
+    attr.set(value);
+    return attr.get();
+}
+
+
+#define LOG_T(state) CUSTOM_LOG(*(state->logger), severity::trace)
+#define LOG_D(state) CUSTOM_LOG(*(state->logger), severity::debug)
+#define LOG_I(state) CUSTOM_LOG(*(state->logger), severity::info)
+#define LOG_W(state) CUSTOM_LOG(*(state->logger), severity::warning)
+#define LOG_E(state) CUSTOM_LOG(*(state->logger), severity::error)
+#define LOG_F(state) CUSTOM_LOG(*(state->logger), severity::fatal)
 
 using SLock = std::scoped_lock<std::mutex>;
 
@@ -624,14 +663,7 @@ ir::FileId exec_walker(
                                   relpath,
                                   init.value());
 
-    {
-        SLock lock{state->m};
-        fmt::print("DONE {:<30} / {}\n", root, path);
-        // fmt::print(
-        //     "CHANGED: {} {}\n",
-        //     result.getStr(),
-        //     state->content->at(result).changed_ranges);
-    }
+    LOG_I(state) << fmt::format("Processed file {}", relpath);
 
     int total_complexity = 0;
 
@@ -719,7 +751,8 @@ ir::CommitId process_commit_impl(git_oid commit_oid, walker_state* state) {
                   .email = Str{signature->email}}),
             .time     = commit_time(commit),
             .timezone = commit_time_offset(commit),
-            .hash     = hash});
+            .hash     = hash,
+            .message  = Str{commit_message(commit)}});
     }
 
     // List of subtasks that need to be executed for each specific file.
@@ -873,13 +906,15 @@ void store_content(
 
     // Remove all previously stored data
     //
-    // TODO implement an incremental commit analysis. If it is supported
-    // storage sync should happen at the very start and `orm_*` types
-    // should be loaded into the store.
-    //
     // NOTE due to foreign key constraints on the database the order is
     // very important, otherwise deletion fails with `FOREIGN KEY
     // constraint failed` error
+    //
+    // HACK I temporarily removed all the foreign key constraints from the
+    // ORM description, because it continued to randomly fail, even though
+    // object ordering worked as expected. Maybe in the future I will fix
+    // it back, but for now this piece of garbage can be ordered in any
+    // way.
     if (!config->try_incremental) {
         storage.remove_all<ir::orm_line>();
         storage.remove_all<ir::orm_file>();
@@ -937,7 +972,58 @@ void store_content(
     storage.commit();
 }
 
+using backend_t = log::sinks::text_ostream_backend;
+using sink_t    = log::sinks::asynchronous_sink<
+    backend_t,
+    log::sinks::unbounded_ordering_queue<log::attribute_value_ordering<
+        unsigned int,
+        std::less<unsigned int>>>>;
+
+void log_formatter(
+    log::record_view const&  rec,
+    log::formatting_ostream& strm) {
+
+    std::filesystem::path file{log::extract<Str>("File", rec).get()};
+
+    strm << log::extract<boost::posix_time::ptime>("TimeStamp", rec)    //
+         << " at " << file.filename().native()                          //
+         << ":" << log::extract<int>("Line", rec)                       //
+         << std::setw(4) << log::extract<unsigned int>("RecordID", rec) //
+         << ": " << std::setw(7) << rec[log::trivial::severity]         //
+         << " " << rec[log::expr::smessage];
+}
+
+boost::shared_ptr<sink_t> create_file_sink(CR<Str> outfile) {
+    boost::shared_ptr<std::ostream> log_stream{new std::ofstream(outfile)};
+
+    boost::shared_ptr<sink_t> sink(new sink_t(
+        boost::make_shared<backend_t>(),
+        // We'll apply record ordering to ensure that records from
+        // different threads go sequentially in the file
+        log::keywords::order = log ::make_attr_ordering<unsigned int>(
+            "RecordID", std::less<unsigned int>())));
+
+    sink->locked_backend()->add_stream(log_stream);
+    sink->set_formatter(&log_formatter);
+
+    return sink;
+}
+
 int main() {
+    auto sink = create_file_sink("/tmp/git_user.log");
+    log::core::get()->add_sink(sink);
+
+    // Add some attributes too
+    log::core::get()->add_global_attribute(
+        "TimeStamp", log::attrs::local_clock());
+    log::core::get()->add_global_attribute(
+        "RecordID", log::attrs::counter<unsigned int>());
+    log::core::get()->add_thread_attribute(
+        "File", log::attrs::mutable_constant<Str>(""));
+    log::core::get()->add_thread_attribute(
+        "Line", log::attrs::mutable_constant<int>(0));
+
+
     // Configure state of the sampling strategies
     allow_state allow{.days_period = 90, .start = {2020, 1, 1}};
 
@@ -970,27 +1056,27 @@ int main() {
             return result;
         }});
 
-
     libgit2_init();
     // Check whether threads can be enabled
     assert(libgit2_features() & GIT_FEATURE_THREADS);
 
     ir::content_manager content;
+    // Create main walker state used in the whole commit analysis state
+    auto state = UPtr<walker_state>(new walker_state{
+        .config  = config.get(),
+        .repo    = repository_open_ext(config->repo.c_str(), 0, nullptr),
+        .content = &content,
+        .logger  = std::make_shared<log::sources::severity_logger<
+            log::trivial::severity_level>>()});
 
     if (config->try_incremental) {
         if (std::filesystem::exists(config->db_path)) {
             load_content(config.get(), content);
         } else {
-            fmt::print(
-                "cannot load incremental from {}\n", config->db_path);
+            LOG_W(state) << "cannot load incremental from"
+                         << config->db_path;
         }
     }
-
-    // Create main walker state used in the whole commit analysis state
-    auto state = UPtr<walker_state>(new walker_state{
-        .config  = config.get(),
-        .repo    = repository_open_ext(config->repo.c_str(), 0, nullptr),
-        .content = &content});
 
     git_oid oid;
     // Initialize state of the commit walker
@@ -1005,6 +1091,10 @@ int main() {
     }
 
     store_content(config.get(), content);
+
+    // Flush all buffered records
+    sink->stop();
+    sink->flush();
 
     return 0;
 }

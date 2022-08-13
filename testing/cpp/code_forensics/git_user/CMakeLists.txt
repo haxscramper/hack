@@ -13,7 +13,7 @@ set(CMAKE_CXX_COMPILER clang++)
 
 find_package(
   Boost
-  COMPONENTS system filesystem
+  COMPONENTS system filesystem thread log
   REQUIRED)
 include(${CMAKE_SOURCE_DIR}/../conanbuildinfo.cmake)
 conan_basic_setup()
