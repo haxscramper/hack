@@ -1078,7 +1078,7 @@ auto main() -> int {
     // Configure state of the sampling strategies
     allow_state allow{.days_period = 90, .start = {2020, 1, 1}};
 
-    const bool use_fusion = true;
+    const bool use_fusion = false;
 
     // Provide implementation callback strategies
     auto config = UPtr<walker_config>(new walker_config{
