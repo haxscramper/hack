@@ -1077,7 +1077,7 @@ auto main() -> int {
             return result;
         },
         .allow_sample_at_date = [&](const Date& date) -> bool {
-            // if (2009 < date.year()) { return false; }
+            if (date.year() < 2011) { return false; }
             bool result = allow.allow_once_per_year(date);
             return result;
         }});

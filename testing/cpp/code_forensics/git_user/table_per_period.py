@@ -1,9 +1,14 @@
 #!/usr/bin/env python
 
+from matplotlib import rcParams
+
+rcParams["font.family"] = "consolas"
+
 import sqlite3
 import pprint
 import itertools
 import matplotlib.pyplot as plt
+import matplotlib.gridspec as gridspec
 import numpy as np
 
 con = sqlite3.connect("/tmp/db.sqlite")
@@ -64,62 +69,55 @@ rows = [f"{commit}" for commit in sorted(commit_table.keys())]
 print("  period> ", "".join([f"{count:<6}" for count in columns]), sep="")
 for idx, commit in enumerate(data):
     print(
-        f"{idx:<2} {rows[idx]:<6} ",
+        f"{idx:<2} {columns[idx]:<6} ",
         "".join([f"{count:<6}" for count in commit]),
         sep="",
     )
 
 
-values = np.arange(0, max_per_commit, 500)
+fig = plt.figure(figsize=(10, 12), constrained_layout=True)
+spec = gridspec.GridSpec(ncols=1, nrows=2, figure=fig)
+barplot = fig.add_subplot(spec[0, 0])
+heatmap = fig.add_subplot(spec[1, 0], sharex=barplot)
+heatmap.imshow(data, cmap="plasma", aspect="auto")
+# We want to show all ticks...
+heatmap.set_xticks(np.arange(len(rows)))
+heatmap.set_yticks(np.arange(len(columns)))
+# ... and label them with the respective list entries
+heatmap.set_xticklabels(rows)
+heatmap.set_yticklabels(columns)
+
+heatmap.set_xlabel("Sampling period")
+heatmap.set_ylabel("Code origin")
+barplot.set_ylabel("SLOC total")
+
+# Loop over data dimensions and create text annotations.
+for i in range(len(columns)):
+    for j in range(len(rows)):
+        text = heatmap.text(j, i, data[i][j], ha="center", va="center", color="w")
+
 
 # Get some pastel shades for the colors
-colors = plt.cm.rainbow(np.linspace(0, 0.8, len(rows)))
-plt.figure(figsize=(14, 11), dpi=120)
+colors = plt.cm.rainbow(np.linspace(0, 0.8, len(columns)))[::-1]
 
-index = np.arange(len(columns))
-bar_width = 1.0
+index = np.arange(len(rows))
 
 # Initialize the vertical-offset for the stacked bar chart.
-y_offset = np.zeros(len(columns))
+y_offset = np.zeros(len(rows))
 
 # Plot bars and create text labels for the table
 cell_text = []
 
-# normalized = [np.array(samples) for samples in data]
-# norm_sum = itertools.reduce(normalized, lambda a, x: a + x)
-# normalized = [samples / norm_sum * 100 for samples in normalized]
-plt.margins(x=0)
+barplot.margins(x=0)
 for commit_idx, samples in enumerate(data):
-    plt.bar(
+    barplot.bar(
         index,
         samples,
-        bar_width,
+        width=1.0,
         bottom=y_offset,
         color=colors[commit_idx],
         edgecolor="black",
     )
     y_offset = y_offset + samples
-    cell_text.append([f"{int(x)}" for x in samples])
 
-# Add a table at the bottom of the axes
-the_table = plt.table(
-    cellText=list(reversed(cell_text)),
-    rowLabels=[
-        hash_table[rows[idx]][0:8] + ".. " + row
-        for (idx, row) in reversed(list(enumerate(rows)))
-    ],
-    rowColours=list(reversed(colors)),
-    colLabels=columns,
-    loc="bottom",
-)
-
-the_table.set_fontsize(12)
-the_table.scale(1, 2)
-
-# Adjust layout to make room for the table:
-# plt.subplots_adjust(left=0.2, bottom=0.2)
-
-plt.ylabel("Lines by origin period")
-plt.xticks([])
-plt.title("Commit year")
 plt.savefig("/tmp/db.png", bbox_inches="tight")
