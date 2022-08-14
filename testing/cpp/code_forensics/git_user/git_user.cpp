@@ -784,12 +784,13 @@ auto launch_analysis(git_oid& oid, walker_state* state)
         ++index;
     }
 
-    constexpr int                         max_parallel = 16;
+    constexpr int                         max_parallel = 32;
     std::counting_semaphore<max_parallel> counting{max_parallel};
-
+    using clock = std::chrono::high_resolution_clock;
+    auto                         start = clock::now();
     Vec<std::future<ir::FileId>> walked{};
     for (const auto& param : params) {
-        auto sub_task = [state, param, &counting]() -> ir::FileId {
+        auto sub_task = [state, param, &counting, &start]() -> ir::FileId {
             finally finish{[&counting]() { counting.release(); }};
             // Walker returns optional analysis result
             auto result = exec_walker(
@@ -800,10 +801,12 @@ auto launch_analysis(git_oid& oid, walker_state* state)
                 param.entry);
 
             if (!result.isNil()) {
+                std::chrono::duration<double> diff = clock::now() - start;
                 LOG_I(state) << fmt::format(
-                    "FILE {:>5}/{:<5} {:07.4f}% {} {}",
+                    "FILE {:>5}/{:<5} (avg: {:1.4f}s) {:07.4f}% {} {}",
                     param.index,
                     param.max_count,
+                    (diff / param.index).count(),
                     float(param.index) / param.max_count * 100.0,
                     oid_tostr(param.commit_oid),
                     param.root + tree_entry_name(param.entry));
@@ -816,15 +819,18 @@ auto launch_analysis(git_oid& oid, walker_state* state)
         switch (state->config->use_threading) {
             case walker_config::async: {
                 walked.push_back(std::async(std::launch::async, sub_task));
+                break;
             }
             case walker_config::defer: {
                 walked.push_back(
                     std::async(std::launch::deferred, sub_task));
+                break;
             }
             case walker_config::sequential: {
                 auto tmp = sub_task();
                 walked.push_back(std::async(
                     std::launch::deferred, [tmp]() { return tmp; }));
+                break;
             }
         }
     }
@@ -832,6 +838,8 @@ auto launch_analysis(git_oid& oid, walker_state* state)
     for (auto& future : walked) {
         future.get();
     }
+
+    LOG_I(state) << "All commits finished";
 
     for (auto& param : params) {
         tree_entry_free(param.entry);
@@ -1102,7 +1110,8 @@ auto main() -> int {
         open_walker(oid, *state);
         // Store finalized commit IDs from executed tasks
         Vec<ir::CommitId> commits{};
-        for (auto& commit : launch_analysis(oid, state.get())) {
+        auto              result = launch_analysis(oid, state.get());
+        for (auto& commit : result) {
             commits.push_back(commit);
         }
 
