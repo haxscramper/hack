@@ -14,10 +14,13 @@ commit_table = {}
 min_change = None
 max_change = None
 
+hash_table = {}
+
 for row in cur.execute(open("table_per_period.sql").read()):
     commit = row[0]
     change = row[1]
     count = row[2]
+    hash_table[f"{commit}"] = row[3]
     if commit not in commit_table:
         commit_table[commit] = {}
 
@@ -101,7 +104,10 @@ for commit_idx, samples in enumerate(data):
 # Add a table at the bottom of the axes
 the_table = plt.table(
     cellText=list(reversed(cell_text)),
-    rowLabels=list(reversed(rows)),
+    rowLabels=[
+        hash_table[rows[idx]][0:8] + ".. " + row
+        for (idx, row) in reversed(list(enumerate(rows)))
+    ],
     rowColours=list(reversed(colors)),
     colLabels=columns,
     loc="bottom",
@@ -113,7 +119,7 @@ the_table.scale(1, 2)
 # Adjust layout to make room for the table:
 # plt.subplots_adjust(left=0.2, bottom=0.2)
 
-plt.ylabel("Line changes")
+plt.ylabel("Lines by origin period")
 plt.xticks([])
 plt.title("Commit year")
 plt.savefig("/tmp/db.png", bbox_inches="tight")

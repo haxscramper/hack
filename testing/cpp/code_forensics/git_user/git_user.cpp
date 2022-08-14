@@ -161,15 +161,37 @@ struct walker_config {
     Func<bool(const Date&)> allow_sample_at_date;
 };
 
+std::atomic<int>        parallel_tasks;
+std::condition_variable finished;
+std::mutex              finished_mtx;
+#define MAX_PARALLEL 16
+
 template <typename T>
 auto async_task(walker_config::threading_mode mode, Func<T()> task)
     -> std::future<T> {
+    {
+        std::unique_lock<std::mutex> finished_lock{finished_mtx};
+        finished.wait(finished_lock, []() {
+            return parallel_tasks.load() < MAX_PARALLEL;
+        });
+    }
+
+    auto wrapper = [task]() -> T {
+        finally finish{[]() {
+            --parallel_tasks;
+            finished.notify_all();
+        }};
+
+        return task();
+    };
+
+    ++parallel_tasks;
     switch (mode) {
         case walker_config::async: {
-            return std::async(std::launch::async, task);
+            return std::async(std::launch::async, wrapper);
         }
         case walker_config::defer: {
-            return std::async(std::launch::deferred, task);
+            return std::async(std::launch::deferred, wrapper);
         }
         case walker_config::sequential: {
             auto tmp = task();
@@ -180,8 +202,6 @@ auto async_task(walker_config::threading_mode mode, Func<T()> task)
 }
 
 using TimePoint = stime::time_point<stime::system_clock>;
-
-#define MAX_PARALLEL 16
 
 
 namespace std {
@@ -481,10 +501,10 @@ auto stats_via_subprocess(
     LK         state = LK::Commit;
     Str        time;
     ir::Author author;
-    Str        text;
     Str        changed_at;
 
-    while (blame.running() && std::getline(out, line) && !line.empty()) {
+    int line_counter = 0;
+    while (std::getline(out, line) && !line.empty()) {
         // even for 'machine reading' output is not consistent - some parts
         // are optional and can be missing in the output, requiring extra
         // hacks for processing.
@@ -521,7 +541,6 @@ auto stats_via_subprocess(
             }
 
             case LK::Content: {
-                is >> text;
                 // Constructin a new line data using already parsed
                 // elements and the file ID. Adding new line into the store
                 // and immediately appending the content to the file.
@@ -533,10 +552,11 @@ auto stats_via_subprocess(
                     ir::LineData{
                         .author  = walker->content->add(author),
                         .time    = std::stol(time),
-                        .content = walker->content->add(ir::String{text}),
-                        .nesting = get_nesting(text)},
+                        .content = walker->content->add(ir::String{line}),
+                        .nesting = get_nesting(line)},
                     walker->consider_changed(commit_oid, line_changed),
                     walker->get_period(commit_oid, line_changed));
+                ++line_counter;
                 break;
             }
 
@@ -551,7 +571,6 @@ auto stats_via_subprocess(
 
     // Wait until the whole process is finished
     blame.wait();
-
     return result;
 }
 
@@ -685,29 +704,44 @@ auto exec_walker(
     return result;
 }
 
-auto add_sub_task(
-    git_oid               commit_oid,
-    walker_state*         state,
-    ir::CommitId          out_commit,
-    CR<Str>               root,
-    const git_tree_entry* entry) -> std::future<ir::FileId> {
+struct SubTaskParams {
+    git_oid         commit_oid;
+    ir::CommitId    out_commit;
+    Str             root;
+    git_tree_entry* entry;
+    int             index;
+    int             max_count;
+};
+
+auto add_sub_task(walker_state* state, SubTaskParams params)
+    -> std::future<ir::FileId> {
     // Duplicate all data passed to the callback - it is not owned by the
     // user code and might disappear by the time we get to the actual
     // walker execution
-    auto sub_task =
-        [commit_oid, out_commit, state, root, entry]() -> ir::FileId {
+    auto sub_task = [state, params]() -> ir::FileId {
         // cap maximum number of actively executed walkers - their
         // implementation does not have any overlapping critical sections,
         // but performance limitations are present (large projects might
         // have thousands of calls)
 
-        state->semaphore.acquire(); // cap maximum number of the parallel
-                                    // processing calls
-        // RAII helper in case file processing causes an exception.
-        finally lock{[state] { state->semaphore.release(); }};
         // Walker returns optional analysis result
         auto result = exec_walker(
-            commit_oid, state, out_commit, root.c_str(), entry);
+            params.commit_oid,
+            state,
+            params.out_commit,
+            params.root.c_str(),
+            params.entry);
+
+        if (!result.isNil()) {
+            LOG_I(state) << fmt::format(
+                "FILE ({:<4}/{:<4} of {}) as id:{:<4} {}",
+                params.index,
+                params.max_count,
+                oid_tostr(params.commit_oid),
+                result,
+                params.root + tree_entry_name(params.entry));
+        }
+
 
         return result;
     };
@@ -764,8 +798,7 @@ auto process_commit_impl(git_oid commit_oid, walker_state* state)
     }
 
     // List of subtasks that need to be executed for each specific file.
-    Vec<std::tuple<Str, git_tree_entry*, std::future<ir::FileId>>>
-        treewalk;
+    Vec<std::tuple<SubTaskParams, std::future<ir::FileId>>> treewalk;
     // walk all entries in the tree and collect them for further
     // processing.
     tree_walk(
@@ -775,46 +808,41 @@ auto process_commit_impl(git_oid commit_oid, walker_state* state)
         GIT_TREEWALK_PRE,
         // Capture all necessary data for execution and delegate the
         // implementation to the actual function.
-        [&treewalk, state](const char* root, const git_tree_entry* entry) {
+        [&treewalk, state, out_commit, commit_oid](
+            const char* root, const git_tree_entry* entry) {
             auto relpath = Str{Str{root} + Str{tree_entry_name(entry)}};
             if (!state->config->allow_path ||
                 state->config->allow_path(relpath)) {
                 treewalk.push_back(
-                    {Str{root},
-                     tree_entry_dup(entry),
+                    {SubTaskParams{
+                         .commit_oid = commit_oid,
+                         .out_commit = out_commit,
+                         .root       = Str{root},
+                         .entry      = tree_entry_dup(entry)},
                      std::future<ir::FileId>{}});
             }
             return GIT_OK;
         });
 
 
-    for (auto& [root, entry, task] : treewalk) {
-        task = add_sub_task(commit_oid, state, out_commit, root, entry);
+    int index = 0;
+    for (auto& [params, task] : treewalk) {
+        params.index     = index;
+        params.max_count = treewalk.size();
+        task             = add_sub_task(state, params);
+        ++index;
     }
 
 
     // For all futures provided in the subtask analysis - get result,
     // if it is non-empty, merge it with input data.
-    int count = 0;
-    for (auto& [root, entry, task] : treewalk) {
+    for (auto& [params, task] : treewalk) {
         auto result = task.get();
         if (!result.isNil()) {
-            ++count;
-            LOG_I(state) << fmt::format(
-                "Processed file {}{} ({}/{} of {}) as id:{} with {} "
-                "ranges",
-                root,
-                tree_entry_name(entry),
-                count,
-                treewalk.size(),
-                hash,
-                result,
-                state->content->at(result).changed_ranges.size());
-
             SLock lock{state->m};
             state->content->at(out_commit).files.push_back(result);
         }
-        tree_entry_free(entry);
+        tree_entry_free(params.entry);
     }
 
 
@@ -1091,12 +1119,15 @@ auto main() -> int {
         .db_path         = "/tmp/db.sqlite",
         .try_incremental = false,
         .allow_path      = [use_fusion](CR<Str> path) -> bool {
+            // if (path.find("ccgexprs.nim") == Str::npos) { return false;
+            // }
+
+            return path.ends_with(".nim");
             if (path.ends_with(".nim")) {
                 if (use_fusion) {
                     return true;
                 } else {
-                    return path.find("compiler/") != Str::npos ||
-                           path.find("rod/") != Str::npos;
+                    return path.find("compiler/") != Str::npos;
                 }
             } else if (path.ends_with(".pas")) {
                 return path.find("nim/") != Str::npos;
@@ -1109,6 +1140,7 @@ auto main() -> int {
             return result;
         },
         .allow_sample_at_date = [&](const Date& date) -> bool {
+            // if (2009 < date.year()) { return false; }
             bool result = allow.allow_once_per_year(date);
             return result;
         }});
