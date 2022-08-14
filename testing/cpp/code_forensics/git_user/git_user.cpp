@@ -47,6 +47,9 @@ namespace attrs = boost::log::attributes;
 
 using Date = gregorian::date;
 
+template <typename A, typename B>
+using Pair = std::tuple<A, B>;
+
 template <>
 struct fmt::formatter<Date> : fmt::formatter<Str> {
     auto format(CR<Date> date, fmt::format_context& ctx) const {
@@ -161,48 +164,8 @@ struct walker_config {
     Func<bool(const Date&)> allow_sample_at_date;
 };
 
-std::atomic<int>        parallel_tasks;
-std::condition_variable finished;
-std::mutex              finished_mtx;
-#define MAX_PARALLEL 16
-
-template <typename T>
-auto async_task(walker_config::threading_mode mode, Func<T()> task)
-    -> std::future<T> {
-    {
-        std::unique_lock<std::mutex> finished_lock{finished_mtx};
-        finished.wait(finished_lock, []() {
-            return parallel_tasks.load() < MAX_PARALLEL;
-        });
-    }
-
-    auto wrapper = [task]() -> T {
-        finally finish{[]() {
-            --parallel_tasks;
-            finished.notify_all();
-        }};
-
-        return task();
-    };
-
-    ++parallel_tasks;
-    switch (mode) {
-        case walker_config::async: {
-            return std::async(std::launch::async, wrapper);
-        }
-        case walker_config::defer: {
-            return std::async(std::launch::deferred, wrapper);
-        }
-        case walker_config::sequential: {
-            auto tmp = task();
-            return std::async(
-                std::launch::deferred, [tmp]() { return tmp; });
-        }
-    }
-}
 
 using TimePoint = stime::time_point<stime::system_clock>;
-
 
 namespace std {
 template <>
@@ -225,11 +188,6 @@ struct walker_state {
     git_revwalk* walker;
     /// Current git repository
     git_repository* repo;
-    /// Semaphore to cap maximum number of parallel subprocesses/threads
-    /// (in case of libgit-based analysis)
-    std::counting_semaphore<MAX_PARALLEL> semaphore{16};
-
-    std::map<Str, TimePoint> bench_points;
 
     /// Ordered list of commits that were considered for the processing run
     Vec<git_oid> full_commits;
@@ -286,18 +244,6 @@ struct walker_state {
 
     /// List of commits that were selected for the processing run
     std::unordered_set<git_oid> sampled_commits;
-
-    /// Create new benchmark point with provided \arg name
-    void push_bench_point(CR<Str> name) {
-        bench_points[name] = stime::system_clock::now();
-    }
-
-    /// Return time elapsed since the start of the benchmark point \arg
-    /// name
-    auto pop_bench_point(CR<Str> name) -> stime::milliseconds {
-        return stime::duration_cast<stime::milliseconds>(
-            stime::system_clock::now() - bench_points[name]);
-    }
 
     std::mutex           m;
     ir::content_manager* content;
@@ -713,51 +659,12 @@ struct SubTaskParams {
     int             max_count;
 };
 
-auto add_sub_task(walker_state* state, SubTaskParams params)
-    -> std::future<ir::FileId> {
-    // Duplicate all data passed to the callback - it is not owned by the
-    // user code and might disappear by the time we get to the actual
-    // walker execution
-    auto sub_task = [state, params]() -> ir::FileId {
-        // cap maximum number of actively executed walkers - their
-        // implementation does not have any overlapping critical sections,
-        // but performance limitations are present (large projects might
-        // have thousands of calls)
-
-        // Walker returns optional analysis result
-        auto result = exec_walker(
-            params.commit_oid,
-            state,
-            params.out_commit,
-            params.root.c_str(),
-            params.entry);
-
-        if (!result.isNil()) {
-            LOG_I(state) << fmt::format(
-                "FILE ({:<4}/{:<4} of {}) as id:{:<4} {}",
-                params.index,
-                params.max_count,
-                oid_tostr(params.commit_oid),
-                result,
-                params.root + tree_entry_name(params.entry));
-        }
-
-
-        return result;
-    };
-
-    return async_task<ir::FileId>(state->config->use_threading, sub_task);
-}
-
-
 /// Implementaiton of the commit processing function. Walks files that were
 /// available in the repository at the time and process each file
 /// individually, filling data into the content store.
-auto process_commit_impl(git_oid commit_oid, walker_state* state)
+auto process_commit(git_oid commit_oid, walker_state* state)
     -> ir::CommitId {
     git_commit* commit = commit_lookup(state->repo, &commit_oid);
-    // Get tree for a commit
-    auto tree = commit_tree(commit);
     // commit information should be cleaned up when we exit the scope
     finally close{[commit]() {
         // FIXME freeing the commit causes segmentation fault and I have no
@@ -777,15 +684,10 @@ auto process_commit_impl(git_oid commit_oid, walker_state* state)
         }
     }
 
-    // Work around possible exceptions in the commit addition - content is
-    // shared, this piece of code might be executed in parallel.
-    auto out_commit = ir::CommitId::Nil();
     {
         auto signature = const_cast<git_signature*>(commit_author(commit));
-
         finally close{[signature]() { signature_free(signature); }};
-        SLock   lock{state->m};
-        out_commit = state->content->add(ir::Commit{
+        return state->content->add(ir::Commit{
             .author   = state->content->add(ir::Author{
                   .name  = Str{signature->name},
                   .email = Str{signature->email}}),
@@ -796,9 +698,19 @@ auto process_commit_impl(git_oid commit_oid, walker_state* state)
                 posix_time::from_time_t(commit_time(commit)).date()),
             .message = Str{commit_message(commit)}});
     }
+}
 
-    // List of subtasks that need to be executed for each specific file.
-    Vec<std::tuple<SubTaskParams, std::future<ir::FileId>>> treewalk;
+auto file_tasks(
+    Vec<SubTaskParams>& treewalk, /// List of subtasks that need to be
+                                  /// executed for each specific file.
+    walker_state* state,
+    git_oid       commit_oid,
+    ir::CommitId  out_commit) {
+    git_commit* commit = commit_lookup(state->repo, &commit_oid);
+    // Get tree for a commit
+    auto tree = commit_tree(commit);
+    commit_free(commit);
+
     // walk all entries in the tree and collect them for further
     // processing.
     tree_walk(
@@ -813,58 +725,13 @@ auto process_commit_impl(git_oid commit_oid, walker_state* state)
             auto relpath = Str{Str{root} + Str{tree_entry_name(entry)}};
             if (!state->config->allow_path ||
                 state->config->allow_path(relpath)) {
-                treewalk.push_back(
-                    {SubTaskParams{
-                         .commit_oid = commit_oid,
-                         .out_commit = out_commit,
-                         .root       = Str{root},
-                         .entry      = tree_entry_dup(entry)},
-                     std::future<ir::FileId>{}});
+                treewalk.push_back(SubTaskParams{
+                    .commit_oid = commit_oid,
+                    .out_commit = out_commit,
+                    .root       = Str{root},
+                    .entry      = tree_entry_dup(entry)});
             }
             return GIT_OK;
-        });
-
-
-    int index = 0;
-    for (auto& [params, task] : treewalk) {
-        params.index     = index;
-        params.max_count = treewalk.size();
-        task             = add_sub_task(state, params);
-        ++index;
-    }
-
-
-    // For all futures provided in the subtask analysis - get result,
-    // if it is non-empty, merge it with input data.
-    for (auto& [params, task] : treewalk) {
-        auto result = task.get();
-        if (!result.isNil()) {
-            SLock lock{state->m};
-            state->content->at(out_commit).files.push_back(result);
-        }
-        tree_entry_free(params.entry);
-    }
-
-
-    ++state->completed_commits;
-    LOG_I(state) << fmt::format(
-        "Finished commit {} ({}/{})",
-        hash,
-        state->completed_commits.load(),
-        state->sampled_commits.size());
-
-    return out_commit;
-}
-
-/// Launch single commit processing task
-auto process_commit(git_oid oid, walker_state* state)
-    -> std::future<ir::CommitId> {
-    return async_task<ir::CommitId>(
-        state->config->use_threading, [oid, state]() -> ir::CommitId {
-            // `process_commmit` is largely a helper function that is used
-            // to create closure with necessary captures and then delegate
-            // everything to the reguar implementation
-            return process_commit_impl(oid, state);
         });
 }
 
@@ -872,9 +739,9 @@ auto process_commit(git_oid oid, walker_state* state)
 #define GIT_SUCCESS 0
 
 auto launch_analysis(git_oid& oid, walker_state* state)
-    -> Vec<std::future<ir::CommitId>> {
+    -> Vec<ir::CommitId> {
     // All constructed information
-    Vec<std::future<ir::CommitId>> processed{};
+    Vec<ir::CommitId> processed{};
     // Walk over every commit in the history
     Vec<std::pair<git_oid, Date>> full_commits{};
     while (revwalk_next(&oid, state->walker) == GIT_SUCCESS) {
@@ -904,8 +771,70 @@ auto launch_analysis(git_oid& oid, walker_state* state)
         state->add_full_commit(commit, state->config->get_period(date));
     }
 
+
+    Vec<SubTaskParams> params;
     for (const auto& oid : state->sampled_commits) {
-        processed.push_back(process_commit(oid, state));
+        file_tasks(params, state, oid, process_commit(oid, state));
+    }
+
+    int index = 0;
+    for (auto& param : params) {
+        param.index     = index;
+        param.max_count = params.size();
+        ++index;
+    }
+
+    constexpr int                         max_parallel = 16;
+    std::counting_semaphore<max_parallel> counting{max_parallel};
+
+    Vec<std::future<ir::FileId>> walked{};
+    for (const auto& param : params) {
+        auto sub_task = [state, param, &counting]() -> ir::FileId {
+            finally finish{[&counting]() { counting.release(); }};
+            // Walker returns optional analysis result
+            auto result = exec_walker(
+                param.commit_oid,
+                state,
+                param.out_commit,
+                param.root.c_str(),
+                param.entry);
+
+            if (!result.isNil()) {
+                LOG_I(state) << fmt::format(
+                    "FILE {:>5}/{:<5} {:07.4f}% {} {}",
+                    param.index,
+                    param.max_count,
+                    float(param.index) / param.max_count * 100.0,
+                    oid_tostr(param.commit_oid),
+                    param.root + tree_entry_name(param.entry));
+            }
+
+            return result;
+        };
+        counting.acquire();
+
+        switch (state->config->use_threading) {
+            case walker_config::async: {
+                walked.push_back(std::async(std::launch::async, sub_task));
+            }
+            case walker_config::defer: {
+                walked.push_back(
+                    std::async(std::launch::deferred, sub_task));
+            }
+            case walker_config::sequential: {
+                auto tmp = sub_task();
+                walked.push_back(std::async(
+                    std::launch::deferred, [tmp]() { return tmp; }));
+            }
+        }
+    }
+
+    for (auto& future : walked) {
+        future.get();
+    }
+
+    for (auto& param : params) {
+        tree_entry_free(param.entry);
     }
 
 
@@ -1120,9 +1049,9 @@ auto main() -> int {
         .try_incremental = false,
         .allow_path      = [use_fusion](CR<Str> path) -> bool {
             // if (path.find("ccgexprs.nim") == Str::npos) { return false;
-            // }
+            // // }
 
-            return path.ends_with(".nim");
+            // return path.ends_with(".nim");
             if (path.ends_with(".nim")) {
                 if (use_fusion) {
                     return true;
@@ -1171,13 +1100,10 @@ auto main() -> int {
         git_oid oid;
         // Initialize state of the commit walker
         open_walker(oid, *state);
-        // Start pararallel processing of the input data
-        auto processed = launch_analysis(oid, state.get());
-
         // Store finalized commit IDs from executed tasks
         Vec<ir::CommitId> commits{};
-        for (auto& future : processed) {
-            commits.push_back(future.get());
+        for (auto& commit : launch_analysis(oid, state.get())) {
+            commits.push_back(commit);
         }
 
         LOG_I(state) << "Finished analysis, writing database";
