@@ -967,6 +967,8 @@ void store_content(
         storage.remove_all<ir::orm_line>();
         storage.remove_all<ir::orm_file>();
         storage.remove_all<ir::orm_commit>();
+        storage.remove_all<ir::orm_lines_table>();
+        storage.remove_all<ir::orm_changed_range>();
         storage.remove_all<ir::orm_dir>();
         storage.remove_all<ir::orm_author>();
         storage.remove_all<ir::orm_string>();
@@ -1076,7 +1078,7 @@ auto main() -> int {
     // Configure state of the sampling strategies
     allow_state allow{.days_period = 90, .start = {2020, 1, 1}};
 
-    const bool use_fusion = false;
+    const bool use_fusion = true;
 
     // Provide implementation callback strategies
     auto config = UPtr<walker_config>(new walker_config{

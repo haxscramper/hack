@@ -472,7 +472,7 @@ struct File {
 struct Directory {
     using id_type = DirectoryId;
     Opt<DirectoryId> parent; /// Parent directory ID
-    StringId         name;   /// Id of the string
+    Str              name;   /// Id of the string
 
     auto operator==(CR<Directory> other) const -> bool {
         return name == other.name && parent == other.parent;
@@ -583,8 +583,7 @@ struct content_manager {
 
     auto getDirectory(CR<Path> dir) -> DirectoryId {
         return add(ir::Directory{
-            .parent = parentDirectory(dir),
-            .name   = add(String{dir.filename().native()})});
+            .parent = parentDirectory(dir), .name = dir.native()});
     }
 
     /// Get reference to value pointed to by the ID
@@ -624,8 +623,7 @@ struct orm_commit : Commit {
 struct orm_dir : Directory {
     DirectoryId id;
 
-    orm_dir()
-        : Directory{.name = StringId::Nil()}, id(DirectoryId::Nil()) {}
+    orm_dir() : Directory{}, id(DirectoryId::Nil()) {}
     orm_dir(DirectoryId _id, CR<Directory> base)
         : Directory(base), id(_id) {}
 };
