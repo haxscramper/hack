@@ -4,6 +4,7 @@ from matplotlib import rcParams
 
 rcParams["font.family"] = "consolas"
 
+from copy import deepcopy
 import sqlite3
 import pprint
 import itertools
@@ -50,7 +51,7 @@ commit_count: int = len(commit_table)
 changes = set()
 max_per_commit = 0
 
-data = [[[] for _ in range(commit_count)] for _ in range(change_count)]
+data = np.zeros([change_count, commit_count]).astype(int)
 
 for commit_idx, commit in enumerate(sorted(commit_table.keys())):
     per_commit = 0
@@ -74,41 +75,22 @@ for idx, commit in enumerate(data):
         sep="",
     )
 
+    # Get some pastel shades for the colors
+colors = plt.cm.rainbow(np.linspace(0, 0.8, len(columns)))
+index = np.arange(len(rows))
 
 fig = plt.figure(figsize=(10, 12), constrained_layout=True)
 spec = gridspec.GridSpec(ncols=1, nrows=2, figure=fig)
 barplot = fig.add_subplot(spec[0, 0])
-heatmap = fig.add_subplot(spec[1, 0], sharex=barplot)
-heatmap.imshow(data, cmap="plasma", aspect="auto")
-# We want to show all ticks...
-heatmap.set_xticks(np.arange(len(rows)))
-heatmap.set_yticks(np.arange(len(columns)))
-# ... and label them with the respective list entries
-heatmap.set_xticklabels(rows)
-heatmap.set_yticklabels(columns)
-
-heatmap.set_xlabel("Sampling period")
-heatmap.set_ylabel("Code origin")
+heatmap = fig.add_subplot(spec[1, 0])
 barplot.set_ylabel("SLOC total")
-
-# Loop over data dimensions and create text annotations.
-for i in range(len(columns)):
-    for j in range(len(rows)):
-        text = heatmap.text(j, i, data[i][j], ha="center", va="center", color="w")
-
-
-# Get some pastel shades for the colors
-colors = plt.cm.rainbow(np.linspace(0, 0.8, len(columns)))[::-1]
-
-index = np.arange(len(rows))
-
+barplot.margins(x=0)
 # Initialize the vertical-offset for the stacked bar chart.
 y_offset = np.zeros(len(rows))
 
 # Plot bars and create text labels for the table
 cell_text = []
-
-barplot.margins(x=0)
+cellColours = []
 for commit_idx, samples in enumerate(data):
     barplot.bar(
         index,
@@ -119,5 +101,43 @@ for commit_idx, samples in enumerate(data):
         edgecolor="black",
     )
     y_offset = y_offset + samples
+    cell_text.append([f"{int(x)}" for x in samples])
+    res_colors = []
+    count_max = samples.max()
+    print("max=", count_max)
+    for entry in samples:
+        if entry == 0:
+            res_colors.append("white")
+
+        else:
+            avg = entry / count_max
+            color = deepcopy(colors[commit_idx])
+            color[0] = (color[0] - 1.0) * avg + 1.0
+            color[1] = (color[1] - 1.0) * avg + 1.0
+            color[2] = (color[2] - 1.0) * avg + 1.0
+            res_colors.append(color)
+
+    cellColours.append(res_colors)
+
+heatmap.axis("off")
+heatmap.axis("tight")
+table = heatmap.table(
+    cellText=cell_text,
+    rowLabels=columns,
+    cellColours=cellColours,
+    rowColours=colors,
+    colLabels=rows,
+    loc="top",
+)
+
+
+heatmap.table(
+    cellText=[[str(it) for it in data.sum(axis=0)]], rowLabels=["Total"], loc="bottom"
+)
+
+heatmap.set_yticks([])
+heatmap.set_xticks([])
+# heatmap.set_xlabel("Sampling period")
+# heatmap.set_ylabel("Code origin")
 
 plt.savefig("/tmp/db.png", bbox_inches="tight")
