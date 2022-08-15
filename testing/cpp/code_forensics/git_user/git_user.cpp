@@ -1045,22 +1045,63 @@ auto create_file_sink(CR<Str> outfile) -> boost::shared_ptr<sink_t> {
 using namespace boost::program_options;
 namespace py = boost::python;
 
-struct PyForensics {
-    void set_path_predicate() {}
+class PyForensics {
+    py::object path_predicate;
+    py::object period_mapping;
+    py::object sample_predicate;
 
-    bool allow_path(CR<Str> path) const { return true; }
+  public:
+    void set_path_predicate(py::object predicate) {
+        path_predicate = predicate;
+    }
 
-    bool get_period(CR<Date> date) const { return false; }
+    void set_period_mapping(py::object mapping) {
+        period_mapping = mapping;
+    }
 
-    bool allow_sample_at_date(CR<Date> date) const { return false; }
+    void set_sample_predicate(py::object predicate) {
+        sample_predicate = predicate;
+    }
+
+    bool allow_path(CR<Str> path) const {
+        if (path_predicate) {
+            return py::extract<bool>(path_predicate(path));
+        } else {
+            return true;
+        }
+    }
+
+    int get_period(CR<Date> date) const {
+        if (period_mapping) {
+            return py::extract<int>(period_mapping(date));
+        } else {
+            return 0;
+        }
+    }
+
+    bool allow_sample_at_date(CR<Date> date) const {
+        if (sample_predicate) {
+            return py::extract<bool>(sample_predicate(date));
+        } else {
+            return true;
+        }
+    }
 };
 
 BOOST_PYTHON_MODULE(forensics) {
-    py::class_<PyForensics>("Forensics") //
-        .def(
-            "set_path_predicate",
-            &PyForensics::set_path_predicate,
-            py::args("predicate"));
+    fmt::print("Creating python module\n");
+    py::object class_creator = py::class_<PyForensics>("Forensics") //
+                                   .def(
+                                       "set_path_predicate",
+                                       &PyForensics::set_path_predicate,
+                                       py::args("predicate"))
+                                   .def(
+                                       "set_sample_predicate",
+                                       &PyForensics::set_sample_predicate,
+                                       py::args("predicate"));
+
+    py::object module_level_object = class_creator();
+    py::scope().attr("config")     = module_level_object;
 }
 
 
@@ -1242,12 +1283,11 @@ auto main(int argc, const char** argv) -> int {
     LOG_I(logger) << fmt::format(
         "Use blame subprocess for file analysis: {}", in_blame_subprocess);
 
-    PyForensics forensics;
-    auto        in_script = vm.count("filter-script")
-                                ? vm["filter-script"].as<Str>()
-                                : "";
+    auto in_script = vm.count("filter-script")
+                         ? vm["filter-script"].as<Str>()
+                         : "";
 
-
+    PyForensics* forensics;
     // Register user-defined module in python - this would allow importing
     // `forensics` module in the C++ side of the application
     PyImport_AppendInittab("forensics", &PyInit_forensics);
@@ -1269,10 +1309,34 @@ auto main(int argc, const char** argv) -> int {
                 auto result = py::exec_file(
                     py::str(abs.c_str()), name_space, name_space);
 
+
+                // Get the configuration module object
+                py::object forensics_module = py::import("forensics");
+                // Retrieve config pointer object from it
+                py::object config_object = forensics_module.attr(
+                    "__dict__")["config"];
+                // Extract everything to a pointer
+                forensics = py::extract<PyForensics*>(config_object);
+                if (forensics == nullptr) {
+                    LOG_F(logger) << "Could not extract pointer for "
+                                     "forensics configuration object";
+                    return 1;
+                }
+
+                LOG_D(logger) << "Execution of the configuration script "
+                                 "was successfull";
+
             } catch (py::error_already_set& err) {
-                auto exception = parse_python_exception();
-                LOG_E(logger) << "Error during python code execution";
-                LOG_E(logger) << exception;
+
+#define LOG_PY_ERROR(logger)                                              \
+    {                                                                     \
+        auto exception = parse_python_exception();                        \
+        LOG_F(logger) << "Error during python code execution";            \
+        LOG_F(logger) << exception;                                       \
+    }
+
+                LOG_PY_ERROR(logger);
+
                 return 1;
             }
 
@@ -1283,7 +1347,6 @@ auto main(int argc, const char** argv) -> int {
         }
     }
 
-
     // Provide implementation callback strategies
     auto config = UPtr<walker_config>(new walker_config{
         .use_subprocess = in_blame_subprocess,
@@ -1293,14 +1356,30 @@ auto main(int argc, const char** argv) -> int {
         .heads           = fmt::format("/.git/refs/heads/{}", in_branch),
         .db_path         = in_outfile,
         .try_incremental = 0 < vm.count("incremental"),
-        .allow_path      = [&forensics](CR<Str> path) -> bool {
-            return forensics.allow_path(path);
+        .allow_path      = [&logger, forensics](CR<Str> path) -> bool {
+            try {
+                return forensics->allow_path(path);
+            } catch (py::error_already_set& err) {
+                LOG_PY_ERROR(logger);
+                return false;
+            }
         },
-        .get_period = [&](const Date& date) -> int {
-            return forensics.get_period(date);
+        .get_period = [&logger, forensics](const Date& date) -> int {
+            try {
+                return forensics->get_period(date);
+            } catch (py::error_already_set& err) {
+                LOG_PY_ERROR(logger);
+                return 0;
+            }
         },
-        .allow_sample_at_date = [&](const Date& date) -> bool {
-            return forensics.allow_sample_at_date(date);
+        .allow_sample_at_date = [&logger,
+                                 forensics](const Date& date) -> bool {
+            try {
+                return forensics->allow_sample_at_date(date);
+            } catch (py::error_already_set& err) {
+                LOG_PY_ERROR(logger);
+                return false;
+            }
         }});
 
     libgit2_init();
