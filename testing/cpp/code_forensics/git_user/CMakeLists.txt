@@ -12,8 +12,13 @@ set(CMAKE_CXX_COMPILER clang++)
 
 find_package(
   Boost
-  COMPONENTS system filesystem thread log
+  COMPONENTS system filesystem thread log program_options python
   REQUIRED)
+find_package(
+  Python
+  COMPONENTS Interpreter Development
+  REQUIRED)
+
 include(${CMAKE_SOURCE_DIR}/../conanbuildinfo.cmake)
 conan_basic_setup()
 
@@ -31,12 +36,15 @@ target_link_libraries(git_user matplot)
 
 target_link_libraries(git_user ${Boost_LIBRARIES})
 target_link_libraries(git_user ${CONAN_LIBS})
+target_link_libraries(git_user ${Python_LIBRARIES})
 
 target_link_directories(git_user PRIVATE ${CONAN_LIB_DIRS})
 target_link_directories(git_user PRIVATE ${Boost_LIBRARY_DIRS})
+target_link_directories(git_user PRIVATE ${Python_LIBRARY_DIRS})
 
 target_include_directories(git_user PRIVATE ${Boost_INCLUDE_DIRS})
 target_include_directories(git_user PRIVATE ${CONAN_INCLUDE_DIRS})
+target_include_directories(git_user PRIVATE ${Python_INCLUDE_DIRS})
 
 # set_target_properties(git_user PROPERTIES RUNTIME_OUTPUT_DIRECTORY
 # "${CMAKE_SOURCE_DIR}")

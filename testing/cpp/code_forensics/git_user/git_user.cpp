@@ -29,6 +29,7 @@
 #include <boost/thread/mutex.hpp>
 #include <boost/thread/lock_guard.hpp>
 
+#include <boost/program_options.hpp>
 #include <boost/log/trivial.hpp>
 #include <boost/log/common.hpp>
 #include <boost/log/expressions.hpp>
@@ -36,6 +37,7 @@
 #include <boost/log/sinks.hpp>
 #include <boost/log/sources/logger.hpp>
 #include <boost/log/utility/record_ordering.hpp>
+#include <boost/python.hpp>
 
 
 using namespace boost;
@@ -44,6 +46,9 @@ namespace boost::log {
 namespace expr  = boost::log::expressions;
 namespace attrs = boost::log::attributes;
 }; // namespace boost::log
+
+
+namespace fs = std::filesystem;
 
 using Date = gregorian::date;
 
@@ -181,6 +186,8 @@ auto operator==(CR<git_oid> lhs, CR<git_oid> rhs) -> bool {
     return oid_cmp(&lhs, &rhs) == 0;
 }
 
+using Logger = log::sources::severity_logger<log::trivial::severity_level>;
+
 /// Mutable state passed around walker configurations
 struct walker_state {
     CP<walker_config> config;
@@ -247,8 +254,7 @@ struct walker_state {
 
     std::mutex           m;
     ir::content_manager* content;
-    SPtr<log::sources::severity_logger<log::trivial::severity_level>>
-        logger;
+    SPtr<Logger>         logger;
 };
 
 /// \defgroup all_logging logging macros
@@ -285,12 +291,22 @@ auto set_get_attrib(const char* name, ValueType value) -> ValueType {
     return attr.get();
 }
 
-#define LOG_T(state) CUSTOM_LOG((*((state)->logger)), severity::trace)
-#define LOG_D(state) CUSTOM_LOG((*((state)->logger)), severity::debug)
-#define LOG_I(state) CUSTOM_LOG((*((state)->logger)), severity::info)
-#define LOG_W(state) CUSTOM_LOG((*((state)->logger)), severity::warning)
-#define LOG_E(state) CUSTOM_LOG((*((state)->logger)), severity::error)
-#define LOG_F(state) CUSTOM_LOG((*((state)->logger)), severity::fatal)
+auto get_logger(walker_state* state) -> Logger& {
+    return *(state->logger);
+}
+
+auto get_logger(UPtr<walker_state>& state) -> Logger& {
+    return *(state->logger);
+}
+
+auto get_logger(SPtr<Logger>& in) -> Logger& { return *in; }
+
+#define LOG_T(state) CUSTOM_LOG((get_logger(state)), severity::trace)
+#define LOG_D(state) CUSTOM_LOG((get_logger(state)), severity::debug)
+#define LOG_I(state) CUSTOM_LOG((get_logger(state)), severity::info)
+#define LOG_W(state) CUSTOM_LOG((get_logger(state)), severity::warning)
+#define LOG_E(state) CUSTOM_LOG((get_logger(state)), severity::error)
+#define LOG_F(state) CUSTOM_LOG((get_logger(state)), severity::fatal)
 /// @}
 
 using SLock = std::scoped_lock<std::mutex>;
@@ -907,11 +923,9 @@ void load_content(walker_config* config, ir::content_manager& content) {
     }
 }
 
-void store_content(
-    walker_config*          config,
-    CR<ir::content_manager> content) {
+void store_content(walker_state* state, CR<ir::content_manager> content) {
     // Create storage connection
-    auto storage = ir::create_db(config->db_path);
+    auto storage = ir::create_db(state->config->db_path);
     // Sync with stored data
     storage.sync_schema();
     // Start the transaction - all data is inserted in bulk
@@ -928,7 +942,8 @@ void store_content(
     // object ordering worked as expected. Maybe in the future I will fix
     // it back, but for now this piece of garbage can be ordered in any
     // way.
-    if (!config->try_incremental) {
+    if (!state->config->try_incremental) {
+        LOG_I(state) << "Non-incremental update, cleaning up the database";
         storage.remove_all<ir::orm_line>();
         storage.remove_all<ir::orm_file>();
         storage.remove_all<ir::orm_commit>();
@@ -937,6 +952,8 @@ void store_content(
         storage.remove_all<ir::orm_dir>();
         storage.remove_all<ir::orm_author>();
         storage.remove_all<ir::orm_string>();
+    } else {
+        LOG_I(state) << "Incremental update, reusing the database";
     }
 
     for (const auto& [id, string] :
@@ -1025,10 +1042,108 @@ auto create_file_sink(CR<Str> outfile) -> boost::shared_ptr<sink_t> {
     return sink;
 }
 
-auto main() -> int {
-    auto sink = create_file_sink("/tmp/git_user.log");
-    log::core::get()->add_sink(sink);
+using namespace boost::program_options;
+namespace py = boost::python;
 
+struct PyForensics {
+    void set_path_predicate() {}
+
+    bool allow_path(CR<Str> path) const { return true; }
+
+    bool get_period(CR<Date> date) const { return false; }
+
+    bool allow_sample_at_date(CR<Date> date) const { return false; }
+};
+
+BOOST_PYTHON_MODULE(forensics) {
+    py::class_<PyForensics>("Forensics") //
+        .def(
+            "set_path_predicate",
+            &PyForensics::set_path_predicate,
+            py::args("predicate"));
+}
+
+
+auto parse_cmdline(int argc, const char** argv) -> variables_map {
+    variables_map                  vm;
+    options_description            desc{"Options"};
+    positional_options_description pos{};
+
+    desc.add_options()
+        //
+        ("help,h", "Help screen") //
+        ("logfile",
+         value<Str>()->default_value("/tmp/git_user.log"),
+         "Log file location") //
+        ("branch",
+         value<Str>()->default_value("master"),
+         "Repository branch to analyse") //
+        ("incremental",
+         "Load previosly created database and only process commits that "
+         "were not registered previously") //
+        ("outfile",
+         value<Str>(),
+         "Output file location. If not supplied output will be "
+         "generated based on the input repo location")(
+            "allowed",
+            value<Vec<Str>>(),
+            "List of globs for allowed paths") //
+        ("config",
+         value<Vec<Str>>(),
+         "Config file where options may be specified (can be specified "
+         "more than once)") //
+        ("blame-subprocess",
+         bool_switch()->default_value(true),
+         "Use blame for subprocess")                    //
+        ("repo", value<Str>(), "Input repository path") //
+        ("filter-script",
+         value<Str>(),
+         "User-provided python script that configures code forensics "
+         "filter")
+        //
+        ;
+
+    pos.add("repo", 1);
+
+    try {
+        store(
+            command_line_parser(argc, argv)
+                .options(desc)
+                .positional(pos)
+                .run(),
+            vm);
+
+        if (vm.count("help")) {
+            std::cout << desc << "\n";
+            exit(0);
+        }
+
+        if (vm.count("config") > 0) {
+            for (const auto& config : vm["config"].as<Vec<Str>>()) {
+                std::ifstream ifs{config};
+
+                if (ifs.fail()) {
+                    std::cerr << "Error opening config file: " << config
+                              << std::endl;
+                    exit(1);
+                }
+
+                store(parse_config_file(ifs, desc), vm);
+            }
+        }
+
+        notify(vm);
+
+    } catch (const error& ex) {
+        std::cerr << ex.what() << "\n";
+        exit(1);
+    }
+
+
+    return vm;
+}
+
+void init_logger_properties() {
     // Add some attributes too
     log::core::get()->add_global_attribute(
         "TimeStamp", log::attrs::local_clock());
@@ -1039,47 +1154,153 @@ auto main() -> int {
     log::core::get()->add_global_attribute("File", MutLog<Str>(""));
     log::core::get()->add_global_attribute("Func", MutLog<Str>(""));
     log::core::get()->add_global_attribute("Line", MutLog<int>(0));
+}
+
+/// Parses the value of the active python exception
+/// NOTE SHOULD NOT BE CALLED IF NO EXCEPTION
+std::string parse_python_exception() {
+    PyObject *type_ptr = NULL, *value_ptr = NULL, *traceback_ptr = NULL;
+    // Fetch the exception info from the Python C API
+    PyErr_Fetch(&type_ptr, &value_ptr, &traceback_ptr);
+
+    // Fallback error
+    std::string ret("Unfetchable Python error");
+    // If the fetch got a type pointer, parse the type into the exception
+    // string
+    if (type_ptr != NULL) {
+        py::handle<> h_type(type_ptr);
+        py::str      type_pstr(h_type);
+        // Extract the string from the boost::python object
+        py::extract<std::string> e_type_pstr(type_pstr);
+        // If a valid string extraction is available, use it
+        //  otherwise use fallback
+        if (e_type_pstr.check()) {
+            ret = e_type_pstr();
+        } else {
+            ret = "Unknown exception type";
+        }
+    }
+    // Do the same for the exception value (the stringification of the
+    // exception)
+    if (value_ptr != NULL) {
+        py::handle<>             h_val(value_ptr);
+        py::str                  a(h_val);
+        py::extract<std::string> returned(a);
+        if (returned.check()) {
+            ret += ": " + returned();
+        } else {
+            ret += std::string(": Unparseable Python error: ");
+        }
+    }
+    // Parse lines from the traceback using the Python traceback module
+    if (traceback_ptr != NULL) {
+        py::handle<> h_tb(traceback_ptr);
+        // Load the traceback module and the format_tb function
+        py::object tb(py::import("traceback"));
+        py::object fmt_tb(tb.attr("format_tb"));
+        // Call format_tb to get a list of traceback strings
+        py::object tb_list(fmt_tb(h_tb));
+        // Join the traceback strings into a single string
+        py::object tb_str(py::str("\n").join(tb_list));
+        // Extract the string, check the extraction, and fallback in
+        // necessary
+        py::extract<std::string> returned(tb_str);
+        if (returned.check()) {
+            ret += ": " + returned();
+        } else {
+            ret += std::string(": Unparseable Python traceback");
+        }
+    }
+    return ret;
+}
+
+auto main(int argc, const char** argv) -> int {
+    auto vm   = parse_cmdline(argc, argv);
+    auto sink = create_file_sink(vm["logfile"].as<Str>());
+
+    finally close_sink{[&sink]() {
+        sink->stop();
+        sink->flush();
+    }};
+
+    auto logger = std::make_shared<Logger>();
+
+    Str in_repo    = vm["repo"].as<Str>();
+    Str in_branch  = vm["branch"].as<Str>();
+    Str in_outfile = vm.count("outfile") ? vm["outfile"].as<Str>()
+                                         : "/tmp/db.sqlite";
+
+    log::core::get()->add_sink(sink);
+    init_logger_properties();
 
     // Configure state of the sampling strategies
     allow_state allow{.days_period = 90, .start = {2020, 1, 1}};
 
     const bool use_fusion = false;
 
+    auto in_blame_subprocess = vm["blame-subprocess"].as<bool>();
+    LOG_I(logger) << fmt::format(
+        "Use blame subprocess for file analysis: {}", in_blame_subprocess);
+
+    PyForensics forensics;
+    auto        in_script = vm.count("filter-script")
+                                ? vm["filter-script"].as<Str>()
+                                : "";
+
+
+    // Register user-defined module in python - this would allow importing
+    // `forensics` module in the C++ side of the application
+    PyImport_AppendInittab("forensics", &PyInit_forensics);
+    // Initialize main python library part
+    Py_Initialize();
+    if (!in_script.empty()) {
+        LOG_I(logger) << "User-defined filter configuration was provided, "
+                         "evaluating ...";
+        Path path{in_script};
+        if (fs::exists(path)) {
+            py::object main_module = py::import("__main__");
+            py::object name_space  = main_module.attr("__dict__");
+
+            try {
+                auto abs = fs::absolute(path);
+                LOG_T(logger) << "Python file, executing as expected, "
+                                 "absolute path is "
+                              << abs.c_str();
+                auto result = py::exec_file(
+                    py::str(abs.c_str()), name_space, name_space);
+
+            } catch (py::error_already_set& err) {
+                auto exception = parse_python_exception();
+                LOG_E(logger) << "Error during python code execution";
+                LOG_E(logger) << exception;
+                return 1;
+            }
+
+        } else {
+            LOG_E(logger)
+                << "User configuration file script does not exist "
+                << path.native() << " no such file or directory";
+        }
+    }
+
+
     // Provide implementation callback strategies
     auto config = UPtr<walker_config>(new walker_config{
-        .use_subprocess = true,
+        .use_subprocess = in_blame_subprocess,
         // Full process parallelization
         .use_threading   = walker_config::async,
-        .repo            = use_fusion ? "/tmp/fusion" : "/tmp/Nim",
-        .heads           = use_fusion ? "/.git/refs/heads/master"
-                                      : "/.git/refs/heads/devel",
-        .db_path         = "/tmp/db.sqlite",
-        .try_incremental = false,
-        .allow_path      = [use_fusion](CR<Str> path) -> bool {
-            // if (path.find("ccgexprs.nim") == Str::npos) { return false;
-            // // }
-
-            // return path.ends_with(".nim");
-            if (path.ends_with(".nim")) {
-                if (use_fusion) {
-                    return true;
-                } else {
-                    return path.find("compiler/") != Str::npos;
-                }
-            } else if (path.ends_with(".pas")) {
-                return path.find("nim/") != Str::npos;
-            } else {
-                return false;
-            }
+        .repo            = in_repo,
+        .heads           = fmt::format("/.git/refs/heads/{}", in_branch),
+        .db_path         = in_outfile,
+        .try_incremental = 0 < vm.count("incremental"),
+        .allow_path      = [&forensics](CR<Str> path) -> bool {
+            return forensics.allow_path(path);
         },
         .get_period = [&](const Date& date) -> int {
-            auto result = allow.year_to_period(date);
-            return result;
+            return forensics.get_period(date);
         },
         .allow_sample_at_date = [&](const Date& date) -> bool {
-            if (date.year() < 2011) { return false; }
-            bool result = allow.allow_once_per_year(date);
-            return result;
+            return forensics.allow_sample_at_date(date);
         }});
 
     libgit2_init();
@@ -1092,8 +1313,7 @@ auto main() -> int {
         .config  = config.get(),
         .repo    = repository_open_ext(config->repo.c_str(), 0, nullptr),
         .content = &content,
-        .logger  = std::make_shared<log::sources::severity_logger<
-            log::trivial::severity_level>>()});
+        .logger  = logger});
 
     if (config->try_incremental) {
         if (std::filesystem::exists(config->db_path)) {
@@ -1104,33 +1324,21 @@ auto main() -> int {
         }
     }
 
-    try {
-        git_oid oid;
-        // Initialize state of the commit walker
-        open_walker(oid, *state);
-        // Store finalized commit IDs from executed tasks
-        Vec<ir::CommitId> commits{};
-        auto              result = launch_analysis(oid, state.get());
-        for (auto& commit : result) {
-            commits.push_back(commit);
-        }
-
-        LOG_I(state) << "Finished analysis, writing database";
-        store_content(config.get(), content);
-
-    } catch (...) {
-        // Flush all buffered records
-        sink->stop();
-        sink->flush();
-        throw;
+    git_oid oid;
+    // Initialize state of the commit walker
+    open_walker(oid, *state);
+    // Store finalized commit IDs from executed tasks
+    Vec<ir::CommitId> commits{};
+    auto              result = launch_analysis(oid, state.get());
+    for (auto& commit : result) {
+        commits.push_back(commit);
     }
+
+    LOG_I(state) << "Finished analysis, writing database";
+    store_content(state.get(), content);
 
     LOG_I(state) << "Finished execution, DB written successfully";
 
-    // Flush all buffered records
-    sink->stop();
-    sink->flush();
-
-
+    Py_Finalize();
     return 0;
 }

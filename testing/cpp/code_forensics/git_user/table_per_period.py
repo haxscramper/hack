@@ -104,7 +104,6 @@ for commit_idx, samples in enumerate(data):
     cell_text.append([f"{int(x)}" for x in samples])
     res_colors = []
     count_max = samples.max()
-    print("max=", count_max)
     for entry in samples:
         if entry == 0:
             res_colors.append("white")

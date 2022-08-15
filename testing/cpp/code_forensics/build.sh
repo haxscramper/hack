@@ -46,7 +46,10 @@ function try_build() {
     #     @conanbuildinfo.gcc
 
     echo "git user compile ok"
-    ./bin/git_user || gdb_cmd ./bin/git_user
+    # ./bin/git_user --help
+    OPTS="/tmp/nimskull --branch=devel --filter-script=code_filter.py"
+    ./bin/git_user --help
+    ./bin/git_user $OPTS || gdb_cmd ./bin/git_user $OPTS
     echo "git user run ok"
 }
 
