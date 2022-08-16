@@ -1585,6 +1585,12 @@ auto main(int argc, const char** argv) -> int {
     // Check whether threads can be enabled
     assert(libgit2_features() & GIT_FEATURE_THREADS);
 
+    if (!fs::exists(config->repo)) {
+        LOG_F(logger) << "Input directory '" << config->repo
+                      << "' does not exist, aborting analysis";
+        return 1;
+    }
+
     ir::content_manager content;
     // Create main walker state used in the whole commit analysis state
     auto state = UPtr<walker_state>(new walker_state{
