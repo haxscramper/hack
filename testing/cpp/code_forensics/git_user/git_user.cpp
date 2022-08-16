@@ -37,6 +37,7 @@
 #include <boost/log/sinks.hpp>
 #include <boost/log/sources/logger.hpp>
 #include <boost/log/utility/record_ordering.hpp>
+#include <boost/core/null_deleter.hpp>
 #include <boost/python.hpp>
 
 #include <datetime.h>
@@ -275,7 +276,9 @@ struct walker_state {
 /// \defgroup all_logging logging macros
 /// Shorthand macros to write an output to the logger
 /// @{
-using severity = log::trivial::severity_level;
+namespace boost::log {
+using severity = boost::log::trivial::severity_level;
+}
 
 /// Wrapper around the logger call for setting the 'File', 'Line', and
 /// 'Func' attributes.
@@ -316,12 +319,13 @@ auto get_logger(UPtr<walker_state>& state) -> Logger& {
 
 auto get_logger(SPtr<Logger>& in) -> Logger& { return *in; }
 
-#define LOG_T(state) CUSTOM_LOG((get_logger(state)), severity::trace)
-#define LOG_D(state) CUSTOM_LOG((get_logger(state)), severity::debug)
-#define LOG_I(state) CUSTOM_LOG((get_logger(state)), severity::info)
-#define LOG_W(state) CUSTOM_LOG((get_logger(state)), severity::warning)
-#define LOG_E(state) CUSTOM_LOG((get_logger(state)), severity::error)
-#define LOG_F(state) CUSTOM_LOG((get_logger(state)), severity::fatal)
+#define LOG_T(state) CUSTOM_LOG((get_logger(state)), log::severity::trace)
+#define LOG_D(state) CUSTOM_LOG((get_logger(state)), log::severity::debug)
+#define LOG_I(state) CUSTOM_LOG((get_logger(state)), log::severity::info)
+#define LOG_W(state)                                                      \
+    CUSTOM_LOG((get_logger(state)), log::severity::warning)
+#define LOG_E(state) CUSTOM_LOG((get_logger(state)), log::severity::error)
+#define LOG_F(state) CUSTOM_LOG((get_logger(state)), log::severity::fatal)
 /// @}
 
 using SLock = std::scoped_lock<std::mutex>;
@@ -742,7 +746,7 @@ auto launch_analysis(git_oid& oid, walker_state* state)
             int period = state->config->get_period(date);
             // Store in the list of commits for sampling
             state->sampled_commits.insert(oid);
-            LOG_I(state) << fmt::format(
+            LOG_T(state) << fmt::format(
                 "Processing commit {} at {} into period {}",
                 oid,
                 date,
@@ -766,8 +770,10 @@ auto launch_analysis(git_oid& oid, walker_state* state)
             option::MaxProgress{state->sampled_commits.size()}};
 
         int count = 0;
-        fmt::print(
-            "Getting the list of files and commits to analyse ...\n");
+        LOG_I(state)
+            << "Getting the list of files and commits to analyse ...";
+        // Avoid verlap of the progress bar and the stdout logging.
+        log::core::get()->flush();
         for (const auto& oid : state->sampled_commits) {
             file_tasks(params, state, oid, process_commit(oid, state));
             get_files.set_option(option::PostfixText{fmt::format(
@@ -775,7 +781,7 @@ auto launch_analysis(git_oid& oid, walker_state* state)
             get_files.tick();
         }
         get_files.mark_as_completed();
-        fmt::print("Done. Total number of files: {}\n", params.size());
+        LOG_I(state) << "Done. Total number of files: " << params.size();
     }
 
     int index = 0;
@@ -798,6 +804,7 @@ auto launch_analysis(git_oid& oid, walker_state* state)
             option::FontStyles{std::vector<FontStyle>{FontStyle::bold}},
             option::MaxProgress{params.size()}};
 
+        log::core::get()->flush();
         int count = 0;
         for (const auto& param : params) {
             ++count;
@@ -823,7 +830,14 @@ auto launch_analysis(git_oid& oid, walker_state* state)
                 if (!result.isNil()) {
                     std::chrono::duration<double> diff = clock::now() -
                                                          start;
-                    LOG_I(state) << fmt::format(
+                    // FIXME This sink is placed inside of the
+                    // `process_filter` tick range, so increasing debugging
+                    // level would invariably mess up the stdout. It might
+                    // be possible to introduce a HACK via CLI
+                    // configuration  - disable progres bar if stdout sink
+                    // shows trace records (after all these two items
+                    // perform the same task)
+                    LOG_T(state) << fmt::format(
                         "FILE {:>5}/{:<5} (avg: {:1.4f}s) {:07.4f}% {} {}",
                         param.index,
                         param.max_count,
@@ -1016,6 +1030,11 @@ using sink_t    = log::sinks::asynchronous_sink<
         unsigned int,
         std::less<unsigned int>>>>;
 
+BOOST_LOG_ATTRIBUTE_KEYWORD(
+    severity,
+    "Severity",
+    log::trivial::severity_level)
+
 void log_formatter(
     log::record_view const&  rec,
     log::formatting_ostream& strm) {
@@ -1032,6 +1051,31 @@ void log_formatter(
          << " " << rec[log::expr::smessage];
 }
 
+Pair<char, fmt::text_style> format_style(log::severity level) {
+    switch (level) {
+        case log::severity::warning:
+            return {'W', fmt::fg(fmt::color::yellow)};
+        case log::severity::info: return {'I', fmt::fg(fmt::color::cyan)};
+        case log::severity::error:
+            return {
+                'E',
+                fmt::emphasis::bold | fmt::emphasis::blink |
+                    fmt::fg(fmt::color::red)};
+        case log::severity::trace:
+            return {'T', fmt::fg(fmt::color::white)};
+        case log::severity::debug:
+            return {'D', fmt::fg(fmt::color::white)};
+        default: return {'?', fmt::fg(fmt::color::white)};
+    }
+}
+
+void out_formatter(
+    log::record_view const&  rec,
+    log::formatting_ostream& strm) {
+    auto [color, style] = format_style(rec[log::trivial::severity].get());
+    strm << fmt::format("[{}] ", fmt::styled(color, style));
+    strm << rec[log::expr::smessage];
+}
 auto create_file_sink(CR<Str> outfile) -> boost::shared_ptr<sink_t> {
     boost::shared_ptr<std::ostream> log_stream{new std::ofstream(outfile)};
     auto backend = boost::make_shared<backend_t>();
@@ -1049,6 +1093,19 @@ auto create_file_sink(CR<Str> outfile) -> boost::shared_ptr<sink_t> {
     sink->locked_backend()->add_stream(log_stream);
     sink->set_formatter(&log_formatter);
 
+    return sink;
+}
+
+auto create_std_sink() -> boost::shared_ptr<sink_t> {
+    auto backend = boost::make_shared<backend_t>();
+    backend->auto_flush(true);
+    boost::shared_ptr<std::ostream> log_stream{&std::cout, null_deleter()};
+    boost::shared_ptr<sink_t>       sink(new sink_t(
+        backend,
+        log::keywords::order = log ::make_attr_ordering<unsigned int>(
+            "RecordID", std::less<unsigned int>())));
+    sink->locked_backend()->add_stream(log_stream);
+    sink->set_formatter(&out_formatter);
     return sink;
 }
 
@@ -1299,7 +1356,6 @@ void init_logger_properties() {
     log::core::get()->add_global_attribute(
         "RecordID", log::attrs::counter<unsigned int>());
 
-
     log::core::get()->add_global_attribute("File", MutLog<Str>(""));
     log::core::get()->add_global_attribute("Func", MutLog<Str>(""));
     log::core::get()->add_global_attribute("Line", MutLog<int>(0));
@@ -1364,12 +1420,20 @@ std::string parse_python_exception() {
 }
 
 auto main(int argc, const char** argv) -> int {
-    auto vm   = parse_cmdline(argc, argv);
-    auto sink = create_file_sink(vm["logfile"].as<Str>());
+    auto vm        = parse_cmdline(argc, argv);
+    auto file_sink = create_file_sink(vm["logfile"].as<Str>());
+    auto out_sink  = create_std_sink();
 
-    finally close_sink{[&sink]() {
-        sink->stop();
-        sink->flush();
+    out_sink->set_filter(severity >= log::severity::info);
+
+    finally close_out_sink{[&out_sink]() {
+        out_sink->stop();
+        out_sink->flush();
+    }};
+
+    finally close_file_sink{[&file_sink]() {
+        file_sink->stop();
+        file_sink->flush();
     }};
 
     auto logger = std::make_shared<Logger>();
@@ -1379,9 +1443,9 @@ auto main(int argc, const char** argv) -> int {
     Str in_outfile = vm.count("outfile") ? vm["outfile"].as<Str>()
                                          : "/tmp/db.sqlite";
 
-    log::core::get()->add_sink(sink);
+    log::core::get()->add_sink(file_sink);
+    log::core::get()->add_sink(out_sink);
     init_logger_properties();
-
 
     const bool use_fusion = false;
 
@@ -1401,7 +1465,8 @@ auto main(int argc, const char** argv) -> int {
     Py_Initialize();
     if (!in_script.empty()) {
         LOG_I(logger) << "User-defined filter configuration was provided, "
-                         "evaluating ...";
+                         "evaluating "
+                      << in_script;
         Path path{in_script};
         if (fs::exists(path)) {
             py::object main_module = py::import("__main__");
@@ -1450,6 +1515,7 @@ auto main(int argc, const char** argv) -> int {
             LOG_E(logger)
                 << "User configuration file script does not exist "
                 << path.native() << " no such file or directory";
+            return 1;
         }
     }
 
