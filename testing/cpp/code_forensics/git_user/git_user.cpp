@@ -72,6 +72,13 @@ struct fmt::formatter<Date> : fmt::formatter<Str> {
 };
 
 template <>
+struct fmt::formatter<Path> : fmt::formatter<Str> {
+    auto format(CR<Path> date, fmt::format_context& ctx) const {
+        return fmt::formatter<Str>::format(date.native(), ctx);
+    }
+};
+
+template <>
 struct fmt::formatter<PTime> : fmt::formatter<Str> {
     auto format(CR<PTime> time, fmt::format_context& ctx) const {
         return fmt::formatter<Str>::format(
@@ -891,7 +898,8 @@ auto launch_analysis(git_oid& oid, walker_state* state)
 
 void open_walker(git_oid& oid, walker_state& state) {
     // Read HEAD on master
-    Str head_filepath{state.config->repo + state.config->heads};
+    Path head_filepath = Path{state.config->repo} /
+                         Path{state.config->heads};
     // REFACTOR this part was copied from the SO example and I'm pretty
     // sure it can be implemented in a cleaner manner, but I haven't
     // touched this part yet.
@@ -1041,7 +1049,8 @@ void log_formatter(
 
     std::filesystem::path file{log::extract<Str>("File", rec).get()};
 
-    strm << log::extract<boost::posix_time::ptime>("TimeStamp", rec);
+    strm << fmt::format(
+        "[{}]", log::extract<PTime>("TimeStamp", rec).get());
 
     // strm    << " at " << file.filename().native()
     //     << ":" << log::extract<int>("Line", rec);
@@ -1551,7 +1560,7 @@ auto main(int argc, const char** argv) -> int {
         // Full process parallelization
         .use_threading   = walker_config::async,
         .repo            = in_repo,
-        .heads           = fmt::format("/.git/refs/heads/{}", in_branch),
+        .heads           = fmt::format(".git/refs/heads/{}", in_branch),
         .db_path         = in_outfile,
         .try_incremental = 0 < vm.count("incremental"),
         .allow_path      = [&logger, forensics](CR<Str> path) -> bool {
@@ -1585,9 +1594,16 @@ auto main(int argc, const char** argv) -> int {
     // Check whether threads can be enabled
     assert(libgit2_features() & GIT_FEATURE_THREADS);
 
+    auto heads_path = Path{config->repo} / config->heads;
     if (!fs::exists(config->repo)) {
         LOG_F(logger) << "Input directory '" << config->repo
                       << "' does not exist, aborting analysis";
+        return 1;
+    } else if (!fs::exists(heads_path)) {
+        LOG_F(logger) << "The branch '" << in_branch
+                      << "' does not exist in the repository at path "
+                      << config->repo << " the full path " << heads_path
+                      << " does not exist";
         return 1;
     }
 
@@ -1603,7 +1619,7 @@ auto main(int argc, const char** argv) -> int {
         if (std::filesystem::exists(config->db_path)) {
             load_content(config.get(), content);
         } else {
-            LOG_W(state) << "cannot load incremental from"
+            LOG_W(state) << "cannot load incremental from the path "
                          << config->db_path;
         }
     }
