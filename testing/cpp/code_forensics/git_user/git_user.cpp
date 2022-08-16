@@ -66,6 +66,14 @@ struct fmt::formatter<Date> : fmt::formatter<Str> {
     }
 };
 
+template <>
+struct fmt::formatter<PTime> : fmt::formatter<Str> {
+    auto format(CR<PTime> time, fmt::format_context& ctx) const {
+        return fmt::formatter<Str>::format(
+            posix_time::to_iso_extended_string(time), ctx);
+    }
+};
+
 template <dod::IsIdType Id>
 struct fmt::formatter<Id> : fmt::formatter<Str> {
     auto format(CR<Id> date, fmt::format_context& ctx) const {
@@ -167,9 +175,9 @@ struct walker_config {
     /// Allow processing of a specific path in the repository
     Func<bool(CR<Str>)> allow_path;
     /// Get integer index of the period for Date
-    Func<int(const Date&)> get_period;
+    Func<int(CR<PTime>)> get_period;
     /// Check whether commits at the specified date should be analysed
-    Func<bool(const Date&)> allow_sample_at_date;
+    Func<bool(CR<PTime>)> allow_sample_at_date;
 };
 
 
@@ -313,58 +321,6 @@ auto get_logger(SPtr<Logger>& in) -> Logger& { return *in; }
 /// @}
 
 using SLock = std::scoped_lock<std::mutex>;
-
-/// Collection of different commit sampling strategies
-struct allow_state {
-    // Equally spaced commit samples
-    const int days_period = 10;
-    /// Analyse commits starting from this date (for equally spaced
-    /// samples)
-    const Date start = {2020, 1, 1};
-
-    /// For yearly sampling - visited years
-    std::set<int> visited_periods;
-    /// Index of the previous period
-    int prev_period = -1;
-
-    /// Only analyze single commit - whichever one will be tried first
-    auto allow_once() -> bool {
-        bool is_first = prev_period == -1;
-        if (is_first) { prev_period = 0; }
-        return is_first;
-    }
-
-    auto can_visit_period(int period) -> bool {
-        auto missing = !visited_periods.contains(period);
-        if (missing) { visited_periods.insert(period); }
-        return missing;
-    }
-
-    auto allow_once_per_month(CR<Date> date) -> bool {
-        return can_visit_period(month_to_period(date));
-    }
-
-    auto allow_once_per_year(CR<Date> date) -> bool {
-        return can_visit_period(year_to_period(date));
-    }
-
-    auto allow_once_per_period(CR<Date> date) -> bool {
-        int  period = (date - start).days() / days_period;
-        bool is_new = period != prev_period;
-        if (is_new) { prev_period = period; }
-        return is_new;
-    }
-
-    auto year_to_period(CR<Date> date) -> int { return date.year(); }
-
-    auto month_to_period(CR<Date> date) -> int {
-        return date.year() * 1000 + date.month();
-    }
-
-    auto range_to_period(CR<Date> date) -> int {
-        return (date - start).days() / days_period;
-    }
-};
 
 auto get_nesting(CR<Str> line) -> int {
     int result = 0;
@@ -714,7 +670,7 @@ auto process_commit(git_oid commit_oid, walker_state* state)
             .timezone = commit_time_offset(commit),
             .hash     = hash,
             .period   = state->config->get_period(
-                posix_time::from_time_t(commit_time(commit)).date()),
+                posix_time::from_time_t(commit_time(commit))),
             .message = Str{commit_message(commit)}});
     }
 }
@@ -762,12 +718,12 @@ auto launch_analysis(git_oid& oid, walker_state* state)
     // All constructed information
     Vec<ir::CommitId> processed{};
     // Walk over every commit in the history
-    Vec<std::pair<git_oid, Date>> full_commits{};
+    Vec<std::pair<git_oid, PTime>> full_commits{};
     while (revwalk_next(&oid, state->walker) == GIT_SUCCESS) {
         // Get commit from the provided oid
         git_commit* commit = commit_lookup(state->repo, &oid);
         // Convert from unix timestamp used by git to humane format
-        Date date = posix_time::from_time_t(commit_time(commit)).date();
+        PTime date = posix_time::from_time_t(commit_time(commit));
 
         // commit is no longer needed in this scope
         commit_free(commit);
@@ -1074,7 +1030,7 @@ class PyForensics {
         }
     }
 
-    int get_period(CR<Date> date) const {
+    int get_period(CR<PTime> date) const {
         if (period_mapping) {
             return py::extract<int>(period_mapping(date));
         } else {
@@ -1082,7 +1038,7 @@ class PyForensics {
         }
     }
 
-    bool allow_sample_at_date(CR<Date> date) const {
+    bool allow_sample_at_date(CR<PTime> date) const {
         if (sample_predicate) {
             return py::extract<bool>(sample_predicate(date));
         } else {
@@ -1191,6 +1147,10 @@ BOOST_PYTHON_MODULE(forensics) {
                                        "set_path_predicate",
                                        &PyForensics::set_path_predicate,
                                        py::args("predicate"))
+                                   .def(
+                                       "set_period_mapping",
+                                       &PyForensics::set_period_mapping,
+                                       py::args("mapping"))
                                    .def(
                                        "set_sample_predicate",
                                        &PyForensics::set_sample_predicate,
@@ -1370,8 +1330,6 @@ auto main(int argc, const char** argv) -> int {
     log::core::get()->add_sink(sink);
     init_logger_properties();
 
-    // Configure state of the sampling strategies
-    allow_state allow{.days_period = 90, .start = {2020, 1, 1}};
 
     const bool use_fusion = false;
 
@@ -1460,7 +1418,7 @@ auto main(int argc, const char** argv) -> int {
                 return false;
             }
         },
-        .get_period = [&logger, forensics](const Date& date) -> int {
+        .get_period = [&logger, forensics](CR<PTime> date) -> int {
             try {
                 return forensics->get_period(date);
             } catch (py::error_already_set& err) {
@@ -1469,7 +1427,7 @@ auto main(int argc, const char** argv) -> int {
             }
         },
         .allow_sample_at_date = [&logger,
-                                 forensics](const Date& date) -> bool {
+                                 forensics](CR<PTime> date) -> bool {
             try {
                 return forensics->allow_sample_at_date(date);
             } catch (py::error_already_set& err) {
