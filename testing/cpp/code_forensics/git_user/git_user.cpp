@@ -41,6 +41,10 @@
 
 #include <datetime.h>
 
+#include <indicators/progress_bar.hpp>
+#include <indicators/block_progress_bar.hpp>
+#include <indicators/cursor_control.hpp>
+
 using namespace boost;
 
 namespace boost::log {
@@ -177,7 +181,7 @@ struct walker_config {
     /// Get integer index of the period for Date
     Func<int(CR<PTime>)> get_period;
     /// Check whether commits at the specified date should be analysed
-    Func<bool(CR<PTime>)> allow_sample_at_date;
+    Func<bool(CR<PTime>, CR<Str>, CR<Str>)> allow_sample;
 };
 
 
@@ -729,7 +733,12 @@ auto launch_analysis(git_oid& oid, walker_state* state)
         commit_free(commit);
         full_commits.push_back({oid, date});
         // check if we can process it
-        if (state->config->allow_sample_at_date(date)) {
+        //
+        // FIXME `commit_author` returns invalid signature here that causes
+        // a segfault during conversion to a string. Otherwise
+        // `commit_author(commit)->name` is the correct way (according to
+        // the documentation least).
+        if (state->config->allow_sample(date, "", oid_tostr(oid))) {
             int period = state->config->get_period(date);
             // Store in the list of commits for sampling
             state->sampled_commits.insert(oid);
@@ -742,14 +751,31 @@ auto launch_analysis(git_oid& oid, walker_state* state)
     }
 
     std::reverse(full_commits.begin(), full_commits.end());
+
     for (const auto& [commit, date] : full_commits) {
         state->add_full_commit(commit, state->config->get_period(date));
     }
 
-
+    using namespace indicators;
     Vec<SubTaskParams> params;
-    for (const auto& oid : state->sampled_commits) {
-        file_tasks(params, state, oid, process_commit(oid, state));
+    {
+        BlockProgressBar get_files{
+            option::BarWidth{60},
+            option::ForegroundColor{Color::white},
+            option::FontStyles{std::vector<FontStyle>{FontStyle::bold}},
+            option::MaxProgress{state->sampled_commits.size()}};
+
+        int count = 0;
+        fmt::print(
+            "Getting the list of files and commits to analyse ...\n");
+        for (const auto& oid : state->sampled_commits) {
+            file_tasks(params, state, oid, process_commit(oid, state));
+            get_files.set_option(option::PostfixText{fmt::format(
+                "{}/{}", ++count, state->sampled_commits.size())});
+            get_files.tick();
+        }
+        get_files.mark_as_completed();
+        fmt::print("Done. Total number of files: {}\n", params.size());
     }
 
     int index = 0;
@@ -764,52 +790,77 @@ auto launch_analysis(git_oid& oid, walker_state* state)
     using clock = std::chrono::high_resolution_clock;
     auto                         start = clock::now();
     Vec<std::future<ir::FileId>> walked{};
-    for (const auto& param : params) {
-        auto sub_task = [state, param, &counting, &start]() -> ir::FileId {
-            finally finish{[&counting]() { counting.release(); }};
-            // Walker returns optional analysis result
-            auto result = exec_walker(
-                param.commit_oid,
-                state,
-                param.out_commit,
-                param.root.c_str(),
-                param.entry);
+    {
 
-            if (!result.isNil()) {
-                std::chrono::duration<double> diff = clock::now() - start;
-                LOG_I(state) << fmt::format(
-                    "FILE {:>5}/{:<5} (avg: {:1.4f}s) {:07.4f}% {} {}",
-                    param.index,
-                    param.max_count,
-                    (diff / param.index).count(),
-                    float(param.index) / param.max_count * 100.0,
-                    oid_tostr(param.commit_oid),
-                    param.root + tree_entry_name(param.entry));
-            }
+        BlockProgressBar process_files{
+            option::BarWidth{60},
+            option::ForegroundColor{Color::white},
+            option::FontStyles{std::vector<FontStyle>{FontStyle::bold}},
+            option::MaxProgress{params.size()}};
 
-            return result;
-        };
-        counting.acquire();
+        int count = 0;
+        for (const auto& param : params) {
+            ++count;
+            std::chrono::duration<double> diff = clock::now() - start;
+            process_files.set_option(option::PostfixText{fmt::format(
+                "{}/{} (avg {:1.4f}s/file)",
+                count,
+                params.size(),
+                (diff / count).count())});
 
-        switch (state->config->use_threading) {
-            case walker_config::async: {
-                walked.push_back(std::async(std::launch::async, sub_task));
-                break;
-            }
-            case walker_config::defer: {
-                walked.push_back(
-                    std::async(std::launch::deferred, sub_task));
-                break;
-            }
-            case walker_config::sequential: {
-                auto tmp = sub_task();
-                walked.push_back(std::async(
-                    std::launch::deferred, [tmp]() { return tmp; }));
-                break;
+            process_files.tick();
+            auto sub_task =
+                [state, param, &counting, &start]() -> ir::FileId {
+                finally finish{[&counting]() { counting.release(); }};
+                // Walker returns optional analysis result
+                auto result = exec_walker(
+                    param.commit_oid,
+                    state,
+                    param.out_commit,
+                    param.root.c_str(),
+                    param.entry);
+
+                if (!result.isNil()) {
+                    std::chrono::duration<double> diff = clock::now() -
+                                                         start;
+                    LOG_I(state) << fmt::format(
+                        "FILE {:>5}/{:<5} (avg: {:1.4f}s) {:07.4f}% {} {}",
+                        param.index,
+                        param.max_count,
+                        (diff / param.index).count(),
+                        float(param.index) / param.max_count * 100.0,
+                        oid_tostr(param.commit_oid),
+                        param.root + tree_entry_name(param.entry));
+                }
+
+                return result;
+            };
+
+            counting.acquire();
+
+            switch (state->config->use_threading) {
+                case walker_config::async: {
+                    walked.push_back(
+                        std::async(std::launch::async, sub_task));
+                    break;
+                }
+                case walker_config::defer: {
+                    walked.push_back(
+                        std::async(std::launch::deferred, sub_task));
+                    break;
+                }
+                case walker_config::sequential: {
+                    auto tmp = sub_task();
+                    walked.push_back(std::async(
+                        std::launch::deferred, [tmp]() { return tmp; }));
+                    break;
+                }
             }
         }
-    }
 
+
+        process_files.mark_as_completed();
+    }
     for (auto& future : walked) {
         future.get();
     }
@@ -1038,9 +1089,10 @@ class PyForensics {
         }
     }
 
-    bool allow_sample_at_date(CR<PTime> date) const {
+    bool allow_sample_at_date(CR<PTime> date, CR<Str> author, CR<Str> id)
+        const {
         if (sample_predicate) {
-            return py::extract<bool>(sample_predicate(date));
+            return py::extract<bool>(sample_predicate(date, author, id));
         } else {
             return true;
         }
@@ -1426,10 +1478,11 @@ auto main(int argc, const char** argv) -> int {
                 return 0;
             }
         },
-        .allow_sample_at_date = [&logger,
-                                 forensics](CR<PTime> date) -> bool {
+        .allow_sample =
+            [&logger, forensics](
+                CR<PTime> date, CR<Str> author, CR<Str> id) -> bool {
             try {
-                return forensics->allow_sample_at_date(date);
+                return forensics->allow_sample_at_date(date, author, id);
             } catch (py::error_already_set& err) {
                 LOG_PY_ERROR(logger);
                 return false;
