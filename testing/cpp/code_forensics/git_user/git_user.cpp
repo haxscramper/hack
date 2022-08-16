@@ -1056,6 +1056,9 @@ Pair<char, fmt::text_style> format_style(log::severity level) {
         case log::severity::warning:
             return {'W', fmt::fg(fmt::color::yellow)};
         case log::severity::info: return {'I', fmt::fg(fmt::color::cyan)};
+        case log::severity::fatal:
+            return {
+                'F', fmt::emphasis::bold | fmt::fg(fmt::color::magenta)};
         case log::severity::error:
             return {
                 'E',
@@ -1113,11 +1116,21 @@ using namespace boost::program_options;
 namespace py = boost::python;
 
 class PyForensics {
-    py::object path_predicate;
-    py::object period_mapping;
-    py::object sample_predicate;
+    py::object   path_predicate;
+    py::object   period_mapping;
+    py::object   sample_predicate;
+    SPtr<Logger> logger;
 
   public:
+    void set_logger(SPtr<Logger> log) { logger = log; }
+
+    void log_info(CR<Str> text) { LOG_I(logger) << text; }
+    void log_warning(CR<Str> text) { LOG_W(logger) << text; }
+    void log_trace(CR<Str> text) { LOG_T(logger) << text; }
+    void log_debug(CR<Str> text) { LOG_D(logger) << text; }
+    void log_error(CR<Str> text) { LOG_E(logger) << text; }
+    void log_fatal(CR<Str> text) { LOG_F(logger) << text; }
+
     void set_path_predicate(py::object predicate) {
         path_predicate = predicate;
     }
@@ -1251,19 +1264,28 @@ BOOST_PYTHON_MODULE(forensics) {
     py::to_python_converter<Date, type_into_python<Date>>();
     type_from_python<Date>();
 
-    py::object class_creator = py::class_<PyForensics>("Forensics") //
-                                   .def(
-                                       "set_path_predicate",
-                                       &PyForensics::set_path_predicate,
-                                       py::args("predicate"))
-                                   .def(
-                                       "set_period_mapping",
-                                       &PyForensics::set_period_mapping,
-                                       py::args("mapping"))
-                                   .def(
-                                       "set_sample_predicate",
-                                       &PyForensics::set_sample_predicate,
-                                       py::args("predicate"));
+    py::object class_creator =
+        //
+        py::class_<PyForensics>("Forensics") //
+            .def("log_info", &PyForensics::log_info, py::args("text"))
+            .def(
+                "log_warning", &PyForensics::log_warning, py::args("text"))
+            .def("log_trace", &PyForensics::log_trace, py::args("text"))
+            .def("log_debug", &PyForensics::log_debug, py::args("text"))
+            .def("log_error", &PyForensics::log_error, py::args("text"))
+            .def("log_fatal", &PyForensics::log_fatal, py::args("text"))
+            .def(
+                "set_path_predicate",
+                &PyForensics::set_path_predicate,
+                py::args("predicate"))
+            .def(
+                "set_period_mapping",
+                &PyForensics::set_period_mapping,
+                py::args("mapping"))
+            .def(
+                "set_sample_predicate",
+                &PyForensics::set_sample_predicate,
+                py::args("predicate"));
 
     py::object module_level_object = class_creator();
     py::scope().attr("config")     = module_level_object;
@@ -1473,14 +1495,6 @@ auto main(int argc, const char** argv) -> int {
             py::object name_space  = main_module.attr("__dict__");
 
             try {
-                auto abs = fs::absolute(path);
-                LOG_T(logger) << "Python file, executing as expected, "
-                                 "absolute path is "
-                              << abs.c_str();
-                auto result = py::exec_file(
-                    py::str(abs.c_str()), name_space, name_space);
-
-
                 // Get the configuration module object
                 py::object forensics_module = py::import("forensics");
                 // Retrieve config pointer object from it
@@ -1494,6 +1508,18 @@ auto main(int argc, const char** argv) -> int {
                     return 1;
                 }
 
+                forensics->set_logger(logger);
+
+                auto abs = fs::absolute(path);
+                LOG_T(logger) << "Python file, executing as expected, "
+                                 "absolute path is "
+                              << abs.c_str();
+
+
+                auto result = py::exec_file(
+                    py::str(abs.c_str()), name_space, name_space);
+
+
                 LOG_D(logger) << "Execution of the configuration script "
                                  "was successfull";
 
@@ -1502,8 +1528,8 @@ auto main(int argc, const char** argv) -> int {
 #define LOG_PY_ERROR(logger)                                              \
     {                                                                     \
         auto exception = parse_python_exception();                        \
-        LOG_F(logger) << "Error during python code execution";            \
-        LOG_F(logger) << exception;                                       \
+        LOG_E(logger) << "Error during python code execution";            \
+        LOG_E(logger) << exception;                                       \
     }
 
                 LOG_PY_ERROR(logger);
