@@ -39,6 +39,7 @@
 #include <boost/log/utility/record_ordering.hpp>
 #include <boost/python.hpp>
 
+#include <datetime.h>
 
 using namespace boost;
 
@@ -50,7 +51,9 @@ namespace attrs = boost::log::attributes;
 
 namespace fs = std::filesystem;
 
-using Date = gregorian::date;
+using Date         = gregorian::date;
+using PTime        = posix_time::ptime;
+using TimeDuration = posix_time::time_duration;
 
 template <typename A, typename B>
 using Pair = std::tuple<A, B>;
@@ -1088,8 +1091,101 @@ class PyForensics {
     }
 };
 
+template <typename T>
+struct type_into_python {
+    static PyObject* convert(T const&);
+};
+
+template <typename T>
+struct type_from_python {
+    type_from_python() {
+        py::converter::registry::push_back(
+            convertible, construct, py::type_id<T>());
+    }
+
+    static void* convertible(PyObject* obj);
+
+    static void construct(
+        PyObject*                                      obj,
+        py::converter::rvalue_from_python_stage1_data* data);
+};
+
+template <>
+PyObject* type_into_python<PTime>::convert(CR<PTime> t) {
+    auto d    = t.date();
+    auto tod  = t.time_of_day();
+    auto usec = tod.total_microseconds() % 1000000;
+    return PyDateTime_FromDateAndTime(
+        d.year(),
+        d.month(),
+        d.day(),
+        tod.hours(),
+        tod.minutes(),
+        tod.seconds(),
+        usec);
+}
+
+template <>
+void* type_from_python<PTime>::convertible(PyObject* obj) {
+    return PyDateTime_Check(obj) ? obj : nullptr;
+}
+
+template <>
+void type_from_python<PTime>::construct(
+    PyObject*                                      obj,
+    py::converter::rvalue_from_python_stage1_data* data) {
+    auto storage = reinterpret_cast<
+                       py::converter::rvalue_from_python_storage<PTime>*>(
+                       data)
+                       ->storage.bytes;
+    Date date_only(
+        PyDateTime_GET_YEAR(obj),
+        PyDateTime_GET_MONTH(obj),
+        PyDateTime_GET_DAY(obj));
+    TimeDuration time_of_day(
+        PyDateTime_DATE_GET_HOUR(obj),
+        PyDateTime_DATE_GET_MINUTE(obj),
+        PyDateTime_DATE_GET_SECOND(obj));
+    time_of_day += posix_time::microsec(
+        PyDateTime_DATE_GET_MICROSECOND(obj));
+    new (storage) PTime(date_only, time_of_day);
+    data->convertible = storage;
+}
+
+template <>
+PyObject* type_into_python<Date>::convert(Date const& d) {
+    return PyDate_FromDate(d.year(), d.month(), d.day());
+}
+
+template <>
+void* type_from_python<Date>::convertible(PyObject* obj) {
+    return PyDate_Check(obj) ? obj : nullptr;
+}
+
+template <>
+void type_from_python<Date>::construct(
+    PyObject*                                      obj,
+    py::converter::rvalue_from_python_stage1_data* data) {
+    auto storage = reinterpret_cast<
+                       py::converter::rvalue_from_python_storage<Date>*>(
+                       data)
+                       ->storage.bytes;
+    new (storage) Date(
+        PyDateTime_GET_YEAR(obj),
+        PyDateTime_GET_MONTH(obj),
+        PyDateTime_GET_DAY(obj));
+    data->convertible = storage;
+}
+
 BOOST_PYTHON_MODULE(forensics) {
-    fmt::print("Creating python module\n");
+    PyDateTime_IMPORT;
+
+    py::to_python_converter<PTime, type_into_python<PTime>>();
+    type_from_python<PTime>();
+
+    py::to_python_converter<Date, type_into_python<Date>>();
+    type_from_python<Date>();
+
     py::object class_creator = py::class_<PyForensics>("Forensics") //
                                    .def(
                                        "set_path_predicate",
