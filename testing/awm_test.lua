@@ -1,5 +1,6 @@
 for _, c in ipairs(client.get()) do
-  if c.class == "Chromium" then
+  debug_notify(c.class)
+  if c.class == "TelegramDesktop" then
     local geo = c:geometry()
     debug_notify(dump(geo))
     geo.width = 1200
