@@ -107,7 +107,7 @@ int main(int argc, char* argv[]) {
 
     std::map<VDesc, VDesc> base_map;
 
-    auto rec_parents = [&](VDesc       current,
+    auto rec_parents = [&](vdesc       current,
                            git_commit* commit,
                            git_oid     now) {
         for (int i = 0; i < git_commit_parentcount(commit); ++i) {
