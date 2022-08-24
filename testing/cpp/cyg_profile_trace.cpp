@@ -25,7 +25,7 @@ int add_static(int Q) {
     return N + Q;
 }
 
-void void_has_q() { printf("'q' found in string"); }
+void void_has_q() { printf("'q' found in string\n"); }
 
 void rec_value(const char* param, int& depth) {
     bool res = false;
@@ -50,5 +50,5 @@ int main(int argc, char** argv) {
     rec_value(parameter, depth);
 
     fclose(trace_out);
-    printf("Execution done");
+    printf("Execution done\n");
 }
