@@ -1,0 +1,16 @@
+===
+Example test
+===
+12 + 12 * 10
+---
+    (main
+      (expr
+        (binaryExpr
+          (expr
+            (binaryExpr
+              (expr
+                (literal))
+              (expr
+                (literal))))
+          (expr
+            (literal)))))
