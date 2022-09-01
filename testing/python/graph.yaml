@@ -24,7 +24,7 @@
     Document all involved compiler parts in approachable manner
   deps:
     - name: doc_annotation
-    - name: dod_ast
+    - name: dod_parser_ast
       reason: |
         New-style IR is instrumental part of the refactoring and further
         improvements
@@ -95,16 +95,13 @@
   label: DOD refactor https://github.com/nim-works/nimskull/discussions/139
   items:
     - name: dod_tokens
+      todo: wip
       text: "Dod refactor for lexer"
-    - name: dod_ast
+    - name: dod_parser_ast
       text: "Dod refactor for parser"
+      todo: wip
       deps:
         - name: dod_tokens
-        - name: different_vm_data
-          reason: |
-            Untying VM data from AST would allow for easier refactors, as
-            well speed up the VM by not using 40-byte heap-allocated
-            objects for every basic operation
 
 - group: errormsg
   label: Error message improvements
@@ -153,7 +150,7 @@
         Annotation must be positioned precisely in the code, otherwise it
         looses most of it's meaning
       deps:
-        - name: dod_ast
+        - name: dod_parser_ast
         - name: dod_tokens
           reason: |
             Annotation must be positioned precisely in the code, otherwise
@@ -185,19 +182,29 @@
             In order to format source code all the tokens must be available
             - without proprely storing them nimpretty would require ugly
             hacks that are built into the parser
+        - name: dod_parser_ast
+          reason: |
+            A full source code structure is required in order to properly
+            write out formatted code.
+
         - name: formatter
+          reason: |
+            Manually writing all the heuristics for the formatting is going
+            to be error-prone and prodce subpar results. Instead
+            optimization-based layout algorithm should be used, as it is
+            done in almost every single formatter right now.
+
 - group: debugging
   label: Debugging
   items:
     - name: exec_trace
       text: Execution traces
       deps:
-        - name: dod_ast
-          deps: Generated trace should refer to AST nodes in the file
-    - name: sem_define
-      text: |
-        {.debug.} define Special define for configuration of the compiler
-        debugging functionality to avoid misusing regular .define.
+        - name: backend_rework_main
+    # - name: sem_define
+    #   text: |
+    #     {.debug.} define Special define for configuration of the compiler
+    #     debugging functionality to avoid misusing regular .define.
 
     - name: sem_trace
       todo: done
@@ -260,3 +267,35 @@
       text: Read and write .cfg files
       deps:
         - name: spec_conf
+- group: sem
+  label: Semantic analysis
+  items:
+    - name: dod_general
+      todo: wip
+      text: "General semantic analsys refactoring"
+    - name: dod_for_sem
+      text: |
+        Data-oriented design for the semantic analysis layer
+      deps:
+        - name: dod_general
+        - name: dod_parser_ast
+          reason: |
+            Data used by the semantic analys and by the parser is different
+            and conflating those two only leads to an increased maintenance
+            burden
+
+        - name: different_vm_data
+          reason: |
+            Similarly to the parser dependency - it is hardly possible to
+            conduct a complicated refactoring and maintenance if semantic
+            analsis data structure is deeply interwined with the embedded
+            interpreter.
+- group: backend
+  label: Backend rework
+  items:
+    - name: backend_rework_main
+      todo: wip
+      text: |
+        Main backend rework
+
+        https://github.com/nim-works/nimskull/pull/424

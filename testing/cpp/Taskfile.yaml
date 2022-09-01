@@ -1,0 +1,22 @@
+version: 3
+
+tasks:
+  gcc_instrumentation:
+    summary: "Create GCC instrumentation log for a file"
+    cmds:
+      - >
+        clang++
+        -g
+        -ldl
+        -Wl,--export-dynamic
+        -finstrument-functions
+        {{.NAME}}.cpp
+        -o {{.NAME}}.bin
+
+      - clang++ {{.NAME}}_analyze.cpp -std=c++20 -o {{.NAME}}_analyze.bin
+      - ./{{.NAME}}.bin cyg_profile_trace1.log no_special_sym || true
+      - ./{{.NAME}}.bin cyg_profile_trace2.log inputqqq || true
+      - ./{{.NAME}}_analyze.bin cyg_profile_trace1.log cyg_profile_trace2.log {{.PWD}}/{{.NAME}}.bin
+
+    vars:
+      NAME: cyg_profile_trace

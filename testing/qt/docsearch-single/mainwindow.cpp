@@ -52,8 +52,8 @@ std::string getSearchName(NimProc proc) {
     res += proc.name.toStdString();
     res += "(";
     for (auto& arg : proc.args) {
-        res += arg.name.toStdString() + ": " + arg.type.toStdString()
-               + ", ";
+        res += arg.name.toStdString() + ": " + arg.type.toStdString() +
+               ", ";
     }
     res += "): " + proc.rettype.toStdString();
 
@@ -77,8 +77,7 @@ ColoredStrings getDisplayName(NimProc data) {
 }
 
 std::vector<std::pair<NimProc, std::string>> procs;
-class ProcDraw : public QStyledItemDelegate
-{
+class ProcDraw : public QStyledItemDelegate {
 
     // QAbstractItemDelegate interface
     QFont topFont;
@@ -172,7 +171,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     centralWidget()->setLayout(lyt);
 
     auto db     = QSqlDatabase::addDatabase("QSQLITE");
-    auto dbpath = PROJECT_PATH "database.tmp.db";
+    auto dbpath = "/tmp/db.sqlite"; // PROJECT_PATH "database.tmp.db";
     qDebug() << "Reading db from" << dbpath;
     db.setDatabaseName(dbpath);
 
@@ -198,9 +197,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
         res.docstring = query.value(2).toString();
         res.rettype   = query.value(3).toString();
 
-        if (res.docstring.length() < 2) {
-            ++nodocCnt;
-        }
+        if (res.docstring.length() < 2) { ++nodocCnt; }
 
         QSqlQuery argquery(
             QString("SELECT arg, type FROM arguments WHERE procid == %1")
@@ -224,9 +221,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     dict.reserve(procs.size());
     for (let& proc : procs) {
         let qname = QString::fromStdString(proc.second);
-        if (qname.contains("exec")) {
-            qDebug() << qname;
-        }
+        if (qname.contains("exec")) { qDebug() << qname; }
         ofile << proc.second << "\n";
         dict.push_back(proc.second);
     }

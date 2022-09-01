@@ -22,9 +22,12 @@ def format_text(text: str, width: int = 40) -> str:
 def to_graph(item) -> (str, List[str]):
     label = format_text(item["text"])
     name = item["name"]
-    style = "style=filled,color="
+    style = "style=filled,fillcolor="
     if "todo" in item and item["todo"] == "done":
         style += "green"
+    elif "todo" in item and item["todo"] == "wip":
+        style += "orange"
+
     else:
         style += "yellow"
 
@@ -82,11 +85,12 @@ l = indent(";\n".join(all_links), 4)
 
 result = f"""
 digraph G {{
-    node[shape=rect, fontname=consolas];
-    edge[fontname=consolas];
+    node[shape=rect, fontname=consolas,color=black,penwidth=2];
+    edge[fontname=consolas,penwidth=2];
     graph[fontname=consolas];
     nodesep=0.8;
     rankdir=LR;
+    splines=polyline;
 {indent(body, 4)}
 {l};
 }}
