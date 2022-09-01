@@ -1,14 +1,8 @@
-QT += quick qml
+QT += quick qml sql
 CONFIG += qml_debug
 
-SOURCES += \
-        main.cpp \
-        qmllogger.cpp \
-        shellrunner.cpp
-
-HEADERS += \
-    qmllogger.h \
-    shellrunner.hpp
+SOURCES *= *.cpp
+HEADERS *= *.hpp
 
 
 RESOURCES += qml.qrc

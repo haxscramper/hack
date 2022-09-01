@@ -1,4 +1,4 @@
-#include "qmllogger.h"
+#include "qmllogger.hpp"
 #include <QDebug>
 #include <iostream>
 

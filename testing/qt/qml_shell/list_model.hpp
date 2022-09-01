@@ -1,47 +1,86 @@
-#ifndef FUZZYSEARCHWIDGET_HPP
-#define FUZZYSEARCHWIDGET_HPP
+#ifndef LIST_MODEL_HPP
+#define LIST_MODEL_HPP
 
-#include <QAbstractListModel>
-#include <QLabel>
-#include <QListView>
+#include <QString>
 #include <QModelIndex>
-#include <QPainter>
+#include <QAbstractListModel>
 #include <QSortFilterProxyModel>
-#include <QStyledItemDelegate>
-#include <QWidget>
+#include <QDebug>
+#include <QFont>
+#include <QColor>
 
-#include "common.hpp"
 #include "fuzzy_match.hpp"
+#include "../../../cpp_common.hpp"
 
+using ScoreVec = Vec<std::pair<Str, int>>;
 
-// TODO rename
-struct ModelData {
+class ModelData {
+    Q_GADGET
+    Q_PROPERTY(
+        QString qdata READ getQdata WRITE setQdata NOTIFY qdataChanged);
+    Q_PROPERTY(int score READ getScore WRITE setScore NOTIFY scoreChanged);
+
+  public:
     QString     qdata;
     std::string original;
     int         score;
     QModelIndex proxyIndex;
     int         dataIndex;
+
+    void    setQdata(CR<QString> _qdata) { qdata = _qdata; }
+    QString getQdata() const { return qdata; }
+    void    setScore(int _score) { score = _score; }
+    int     getScore() const { return score; }
 };
 
 Q_DECLARE_METATYPE(ModelData);
 
+struct NimProcArg {
+    QString name;
+    QString type;
+};
+
+Q_DECLARE_METATYPE(NimProcArg);
+
+struct NimProc {
+    int                 id;
+    QString             name;
+    QString             rettype;
+    QVector<NimProcArg> args;
+    QString             docstring;
+
+    inline QString getSearchName() {
+        QString res;
+        res += name;
+        res += "(";
+        for (auto& arg : args) {
+            res += arg.name + ": " + arg.type + ", ";
+        }
+        res += "): " + rettype;
+
+        return res;
+    }
+};
+
+Q_DECLARE_METATYPE(NimProc);
+
 class ListItemModel : public QAbstractListModel {
-    score_vec_t items;
+    ScoreVec items;
 
   public:
-    void setItems(const strvec& _items) {
+    void setItems(CR<Vec<Str>> _items) {
         beginResetModel();
 
         items.clear();
         items.reserve(_items.size());
-        for (let& it : _items) {
+        for (const auto& it : _items) {
             items.push_back({it, -1});
         }
 
         endResetModel();
     }
 
-    score_vec_t* getScores() { return &items; }
+    ScoreVec* getScores() { return &items; }
 
     void updateScores(const std::string& pattern) {
         for (size_t i = 0; i < items.size(); ++i) {
@@ -66,7 +105,7 @@ class ListItemModel : public QAbstractListModel {
 };
 
 class FuzzySearchProxyModel : public QSortFilterProxyModel {
-    score_vec_t*   scores;
+    ScoreVec*      scores;
     ListItemModel* list;
     int            maxItemShowed = 50;
     bool           initDone      = false;
@@ -82,6 +121,11 @@ class FuzzySearchProxyModel : public QSortFilterProxyModel {
         initDone = true;
     }
 
+    Q_INVOKABLE void sortOnPattern(CR<QString> _patt) {
+        updateScores(_patt.toStdString());
+        sort(0);
+    }
+
     void setMaxItemShowed(int value);
 
   protected:
@@ -93,17 +137,18 @@ class FuzzySearchProxyModel : public QSortFilterProxyModel {
                scores->at(source_right.row()).second;
     }
 
-    bool filterAcceptsRow(
+    inline bool filterAcceptsRow(
         int                source_row,
         const QModelIndex& source_parent [[maybe_unused]]) const override {
         if (initDone) {
-            let sc = scores->at(source_row).second;
+            auto sc = scores->at(source_row).second;
 
-            let proxyRow = mapFromSource(sourceModel()->index(
-                                             source_row, 0, source_parent))
-                               .row();
+            auto proxyRow = mapFromSource(
+                                sourceModel()->index(
+                                    source_row, 0, source_parent))
+                                .row();
 
-            let res = sc > 0 && proxyRow < maxItemShowed;
+            auto res = sc > 0 && proxyRow < maxItemShowed;
             if (!res && scores->at(source_row).first.find("exec") !=
                             std::string::npos) {
                 qDebug() << "discarding line with 'exec'"
@@ -136,7 +181,7 @@ class FuzzySearchProxyModel : public QSortFilterProxyModel {
                     "`update_scores` at least once to fix this error");
             }
 
-            let sourceIdx = mapToSource(index);
+            auto sourceIdx = mapToSource(index);
 
             QVariant result;
             auto     data   = ModelData();
@@ -154,8 +199,8 @@ class FuzzySearchProxyModel : public QSortFilterProxyModel {
             font.setFamily("JetBrains Mono");
             return font;
         } else if (role == Qt::DecorationRole) {
-            let sourceIdx = mapToSource(index);
-            let score     = scores->at(sourceIdx.row()).second;
+            auto sourceIdx = mapToSource(index);
+            auto score     = scores->at(sourceIdx.row()).second;
             return QColor(
                 255, 0, 0, score * 1.5 > 255 ? 255 : score * 1.5);
         } else {
@@ -164,78 +209,4 @@ class FuzzySearchProxyModel : public QSortFilterProxyModel {
     }
 };
 
-class FuzzySearchWidget : public QWidget {
-    Q_OBJECT
-  public:
-    FuzzySearchWidget(QWidget* parent = nullptr);
-
-    void setPattern(std::string patt);
-    void setDictionary(const strvec& dict);
-    void setAutoSortThreshold(int threshold = 12000);
-    void setItemDelegate(QStyledItemDelegate* delegate);
-    int  size() const;
-
-    void setMaxItemShowed(int value);
-
-  public slots:
-    void setPattern(const QString& _patt);
-    void sortOnPattern(const QString& _patt);
-
-  private:
-    int                    maxDictSize = 120000;
-    FuzzySearchProxyModel* proxy;
-    ListItemModel*         list;
-    QLabel*                warnlbl;
-    QListView*             view;
-};
-
-struct DraculaColors {
-    static QColor background;
-    static QColor currentLine;
-    static QColor selection;
-    static QColor foreground;
-    static QColor comment;
-    static QColor cyan;
-    static QColor green;
-    static QColor orange;
-    static QColor pink;
-    static QColor purple;
-    static QColor red;
-    static QColor yellow;
-};
-
-class ListItemDelegate : public QStyledItemDelegate {
-    Q_OBJECT
-
-    // QAbstractItemDelegate interface
-  public:
-    void paint(
-        QPainter*                   painter,
-        const QStyleOptionViewItem& option,
-        const QModelIndex&          index) const override {
-
-        if (index.data().canConvert<ModelData>()) {
-            let data = qvariant_cast<ModelData>(index.data());
-
-            painter->fillRect(
-                option.rect, QBrush(DraculaColors::background));
-
-            painter->fillRect(
-                option.rect.marginsRemoved(QMargins(1, 1, 1, 1)),
-                QBrush(DraculaColors::comment));
-            painter->setBrush(QBrush(DraculaColors::orange));
-            painter->setFont(QFont("JetBrains Mono"));
-            painter->drawText(
-                option.rect.marginsRemoved(QMargins(10, 0, 0, 0)),
-                Qt::AlignVCenter,
-                QString("(%1) %2").arg(data.score).arg(data.qdata));
-        } else {
-            painter->drawText(
-                option.rect,
-                QString::fromStdString("ERROR converting data") +
-                    index.data().typeName());
-        }
-    }
-};
-
-#endif // FUZZYSEARCHWIDGET_HPP
+#endif // LIST_MODEL_HPP
