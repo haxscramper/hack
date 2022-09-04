@@ -9,20 +9,20 @@
 #include <QString>
 
 namespace fts {
-bool fuzzy_match(char const* pattern, char const* str, int& outScore);
+bool fuzzy_match(QChar* pattern, QChar* str, int& outScore);
 bool fuzzy_match(
-    char const* pattern,
-    char const* str,
-    int&        outScore,
-    uint8_t*    matches,
-    int         maxMatches);
+    QChar*   pattern,
+    QChar*   str,
+    int&     outScore,
+    uint8_t* matches,
+    int      maxMatches);
 // Forward declarations for "private" implementation
 namespace fuzzy_internal {
     static bool fuzzy_match_recursive(
-        const char*    pattern,
-        const char*    str,
+        QChar*         pattern,
+        QChar*         str,
         int&           outScore,
-        const char*    strBegin,
+        QChar*         strBegin,
         uint8_t const* srcMatches,
         uint8_t*       newMatches,
         int            maxMatches,
@@ -31,21 +31,17 @@ namespace fuzzy_internal {
         int            recursionLimit);
 }
 
-inline bool fuzzy_match(
-    char const* pattern,
-    char const* str,
-    int&        outScore) {
-
+inline bool fuzzy_match(QChar* pattern, QChar* str, int& outScore) {
     uint8_t matches[256];
     return fuzzy_match(pattern, str, outScore, matches, sizeof(matches));
 }
 
 inline bool fuzzy_match(
-    char const* pattern,
-    char const* str,
-    int&        outScore,
-    uint8_t*    matches,
-    int         maxMatches) {
+    QChar*   pattern,
+    QChar*   str,
+    int&     outScore,
+    uint8_t* matches,
+    int      maxMatches) {
     int recursionCount = 0;
     int recursionLimit = 10;
 
@@ -64,10 +60,10 @@ inline bool fuzzy_match(
 
 // Private implementation
 inline bool fuzzy_internal::fuzzy_match_recursive(
-    const char*    pattern,
-    const char*    str,
+    QChar*         pattern,
+    QChar*         str,
     int&           outScore,
-    const char*    strBegin,
+    QChar*         strBegin,
     uint8_t const* srcMatches,
     uint8_t*       matches,
     int            maxMatches,
@@ -88,10 +84,10 @@ inline bool fuzzy_internal::fuzzy_match_recursive(
 
     // Loop through pattern and str looking for a match
     bool first_match = true;
-    while (*pattern != '\0' && *str != '\0') {
+    while (!pattern->isNull() && !str->isNull()) {
 
         // Found match
-        if (tolower(*pattern) == tolower(*str)) {
+        if (pattern->toLower() == str->toLower()) {
 
             // Supplied matches buffer was too short
             if (nextMatch >= maxMatches) { return false; }
@@ -189,9 +185,9 @@ inline bool fuzzy_internal::fuzzy_match_recursive(
             // Check for bonuses based on neighbor character value
             if (currIdx > 0) {
                 // Camel case
-                char neighbor = strBegin[currIdx - 1];
-                char curr     = strBegin[currIdx];
-                if (::islower(neighbor) && ::isupper(curr)) {
+                QChar neighbor = strBegin[currIdx - 1];
+                QChar curr     = strBegin[currIdx];
+                if (neighbor.isLower() && curr.isLower()) {
                     outScore += camel_bonus;
                 }
 
@@ -221,9 +217,9 @@ inline bool fuzzy_internal::fuzzy_match_recursive(
     }
 }
 
-inline int get_score(const std::string& item, const std::string& pattern) {
+inline int get_score(QChar* item, QChar* pattern) {
     int score;
-    if (fuzzy_match(pattern.c_str(), item.c_str(), score)) {
+    if (fuzzy_match(pattern, item, score)) {
         return score;
     } else {
         return -1;

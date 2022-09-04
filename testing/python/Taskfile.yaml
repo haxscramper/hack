@@ -1,0 +1,9 @@
+version: 3
+
+tasks:
+  node_usage_stats:
+    desc: "Serve information about usage database stats"
+    vars:
+      DATABASE_PATH: '{{default "/tmp/trace.sqlite" .DATABASE_PATH}}'
+    cmds:
+      - ./serve_node_usage_stats.py {{.DATABASE_PATH}}

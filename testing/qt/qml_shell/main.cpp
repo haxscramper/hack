@@ -3,6 +3,7 @@
 #include <QSqlDatabase>
 #include <QSqlQuery>
 #include <QSqlError>
+#include <QDebug>
 #include <QQmlContext>
 
 #include "../../../cpp_common.hpp"
@@ -18,7 +19,6 @@ int main(int argc, char* argv[]) {
 
     QQmlApplicationEngine engine;
     const QUrl            url(QStringLiteral("qrc:/main.qml"));
-
     QObject::connect(
         &engine,
         &QQmlApplicationEngine::objectCreated,
@@ -47,8 +47,8 @@ int main(int argc, char* argv[]) {
         exit(1);
     }
 
-    int                                          nodocCnt = 0;
-    std::vector<std::pair<NimProc, std::string>> procs;
+    int                                      nodocCnt = 0;
+    std::vector<std::pair<NimProc, QString>> procs;
     while (query.next()) {
         NimProc res;
         res.id        = query.value(0).toInt();
@@ -69,19 +69,35 @@ int main(int argc, char* argv[]) {
             res.args.push_back(arg);
         }
 
-        procs.push_back({res, res.getSearchName().toStdString()});
+        procs.push_back({res, res.getSearchName()});
     }
+
 
     Q_ASSERT(qmlRegisterType<QmlLogger>("QmlLogger", 1, 0, "Logger"));
     Q_ASSERT(qmlRegisterType<FuzzySearchProxyModel>(
         "Model", 1, 0, "ProxyModel"));
+    qmlRegisterUncreatableType<ModelData>(
+        "Model", 1, 0, "ModelData", "interface");
+    qRegisterMetaType<ModelData*>();
 
-    ListItemModel         model;
-    FuzzySearchProxyModel proxy;
-    proxy.setSourceModel(&model);
-    proxy.setDynamicSortFilter(false);
+    ListItemModel model;
+    auto          proxy = new FuzzySearchProxyModel();
+    proxy->setSourceModel(&model);
+    proxy->setDynamicSortFilter(false);
     engine.rootContext()->setContextProperty(
-        "model", QVariant::fromValue(&proxy));
+        "procs_model", QVariant::fromValue(proxy));
+
+
+    Vec<QString> dict;
+    dict.reserve(procs.size());
+
+    for (const auto& proc : procs) {
+        dict.push_back(proc.second);
+    }
+
+    model.setItems(dict);
+    proxy->updateScores("load");
+
 
     engine.load(url);
 
