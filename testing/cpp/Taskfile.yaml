@@ -1,8 +1,16 @@
 version: 3
 
 tasks:
+  clang_ast_diff:
+    desc: "Build and execute clang AST diff port"
+    vars:
+      NAME: clang_ast_diff_port
+    cmds:
+      - clang++ -std=c++2a -g -o {{.NAME}}.bin {{.NAME}}.cpp
+      - ./{{.NAME}}.bin
+
   gcc_instrumentation:
-    summary: "Create GCC instrumentation log for a file"
+    desc: "Create GCC instrumentation log for a file"
     cmds:
       - >
         clang++
