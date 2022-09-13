@@ -7,25 +7,27 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <variant>
 #include <vector>
 
 /// \brief Within a tree, this identifies a node by its preorder offset.
 template <typename IdT>
 struct NodeId {
   private:
-    static constexpr IdT InvalidNodeId = -1;
+    static constexpr int InvalidNodeOffset = -1;
 
   public:
-    IdT Id;
-    inline NodeId() : Id(InvalidNodeId) {}
-    inline NodeId(IdT Id) : Id(Id) {}
-                   operator IdT() const { return Id; }
-    inline NodeId& operator++() { return ++Id, *this; }
-    inline NodeId& operator--() { return --Id, *this; }
+    int Offset; /// Offset in the postorder iteratio
+    inline NodeId() : Offset(InvalidNodeOffset) {}
+    inline NodeId(int Offset) : Offset(Offset) {}
+
+    inline         operator int() const { return Offset; }
+    inline NodeId& operator++() { return ++Offset, *this; }
+    inline NodeId& operator--() { return --Offset, *this; }
     // Support defining iterators on NodeId.
     inline NodeId& operator*() { return *this; }
-    inline bool    isValid() const { return Id != InvalidNodeId; }
-    inline bool    isInvalid() const { return Id == InvalidNodeId; }
+    inline bool    isValid() const { return Offset != InvalidNodeOffset; }
+    inline bool isInvalid() const { return Offset == InvalidNodeOffset; }
 };
 
 template <typename IdT>
@@ -59,80 +61,17 @@ enum class ChangeKind {
     UpdateMove // Same as Move plus Update.
 };
 
-template <typename IdT>
 struct ASTNodeKind {
-    IdT  value;
+    int value;
+    ASTNodeKind(int kind) : value(kind) {}
     bool operator==(ASTNodeKind const& other) const {
         return value == other.value;
     }
 };
 
-template <typename IdT, typename ValT>
-struct DynTypedNodeImpl {
-    ValT                                                      value;
-    ASTNodeKind<IdT>                                          kind;
-    std::vector<std::shared_ptr<DynTypedNodeImpl<IdT, ValT>>> subnodes;
-
-    ValT             getName() { return value; }
-    ASTNodeKind<IdT> getNodeKind() { return kind; }
-};
-
 
 template <typename IdT, typename ValT>
-using DynTypedNode = std::shared_ptr<DynTypedNodeImpl<IdT, ValT>>;
-
-template <typename IdT, typename ValT>
-inline DynTypedNode<IdT, ValT> ast(
-    ValT const&                                 value,
-    IdT                                         id,
-    std::vector<DynTypedNode<IdT, ValT>> const& subnodes = {}) {
-
-    return std::make_shared<DynTypedNodeImpl<IdT, ValT>>(
-        DynTypedNodeImpl<IdT, ValT>{
-            value, ASTNodeKind<IdT>{id}, subnodes});
-}
-
-/// \brief Represents a Clang AST node, alongside some additional
-/// information.
-template <typename IdT, typename ValT>
-struct Node {
-    NodeId<IdT> Parent, LeftMostDescendant, RightMostDescendant;
-    int         Depth, Height, Shift = 0;
-    /// Reference to the original AST node
-    DynTypedNode<IdT, ValT>  ASTNode;
-    std::vector<NodeId<IdT>> Children;
-    ChangeKind               Change = ChangeKind::None;
-    ASTNodeKind<IdT>         getType() const;
-    ValT                     getTypeLabel() const;
-    bool                     isLeaf() const { return Children.empty(); }
-};
-
-/// SyntaxTree objects represent subtrees of the AST.
-/// They can be constructed from any Decl or Stmt.
-template <typename IdT, typename ValT>
-class SyntaxTree {
-  public:
-    /// Constructs a tree from any AST node.
-    SyntaxTree(DynTypedNode<IdT, ValT> Node)
-        : TreeImpl(std::make_unique<Impl>(this, Node)) {}
-    SyntaxTree(SyntaxTree<IdT, ValT>&& Other) = default;
-    ~SyntaxTree();
-    int         getSize() const;
-    NodeId<IdT> getRootId() const;
-    using PreorderIterator = NodeId<IdT>;
-    PreorderIterator       begin() const;
-    PreorderIterator       end() const;
-    const Node<IdT, ValT>& getNode(NodeId<IdT> Id) const;
-    int                    findPositionInParent(NodeId<IdT> Id) const;
-    /// Serialize the node attributes to a string representation. This
-    /// should uniquely distinguish nodes of the same kind. Note that this
-    /// function just returns a representation of the node value, not
-    /// considering descendants.
-    ValT getNodeValue(NodeId<IdT> Id) const;
-    ValT getNodeValue(const Node<IdT, ValT>& Node) const;
-    class Impl;
-    std::unique_ptr<Impl> TreeImpl;
-};
+struct Node;
 
 template <typename IdT, typename ValT>
 struct ComparisonOptions {
@@ -151,8 +90,105 @@ struct ComparisonOptions {
     bool isMatchingAllowed(
         const Node<IdT, ValT>& N1,
         const Node<IdT, ValT>& N2) const {
-        return N1.getType() == N2.getType();
+        // IMPLEMENT customization for this comparison - sometimes
+        // different node kinds can also be matched together (for example
+        // two integer literal nodes)
+        return N1.getNodeKind(*this) == N2.getNodeKind(*this);
     }
+
+    std::function<ValT(IdT)> getNodeValueImpl;
+    std::function<int(IdT)>  getNodeKindImpl;
+
+    ValT getNodeValue(IdT id) const { return getNodeValueImpl(id); }
+    int  getNodeKind(IdT id) const { return getNodeKindImpl(id); }
+};
+
+
+template <typename IdT, typename ValT>
+struct DynTypedNodeImpl {
+    IdT                                                       id;
+    std::vector<std::shared_ptr<DynTypedNodeImpl<IdT, ValT>>> subnodes;
+
+    ValT getNodeValue(ComparisonOptions<IdT, ValT> const& opts) {
+        return opts.getNodeValue(id);
+    }
+
+    ASTNodeKind getNodeKind(ComparisonOptions<IdT, ValT> const& opts) {
+        return opts.getNodeKind(id);
+    }
+};
+
+
+template <typename IdT, typename ValT>
+using DynTypedNode = std::shared_ptr<DynTypedNodeImpl<IdT, ValT>>;
+
+template <typename IdT, typename ValT>
+inline DynTypedNode<IdT, ValT> ast(
+    IdT                                         id,
+    std::vector<DynTypedNode<IdT, ValT>> const& subnodes = {}) {
+
+    return std::make_shared<DynTypedNodeImpl<IdT, ValT>>(
+        DynTypedNodeImpl<IdT, ValT>{id, subnodes});
+}
+
+/// \brief Represents an AST node, alongside some additional information.
+template <typename IdT, typename ValT>
+struct Node {
+    NodeId<IdT> Parent, LeftMostDescendant, RightMostDescendant;
+    int         Depth, Height, Shift = 0;
+    /// Reference to the original AST node
+    DynTypedNode<IdT, ValT>  ASTNode;
+    std::vector<NodeId<IdT>> Children;
+    ChangeKind               Change = ChangeKind::None;
+
+    ASTNodeKind getNodeKind(
+        ComparisonOptions<IdT, ValT> const& _opts) const {
+        return ASTNode->getNodeKind(_opts);
+    }
+
+    bool isLeaf() const { return Children.empty(); }
+};
+
+/// SyntaxTree objects represent subtrees of the AST.
+/// They can be constructed from any Decl or Stmt.
+template <typename IdT, typename ValT>
+class SyntaxTree {
+  public:
+    /// Constructs a tree from any AST node.
+    SyntaxTree(
+        ComparisonOptions<IdT, ValT> const& _opts,
+        DynTypedNode<IdT, ValT>             Node)
+        : TreeImpl(std::make_unique<Impl>(_opts, this, Node)) {}
+    SyntaxTree(SyntaxTree<IdT, ValT>&& Other) = default;
+    ~SyntaxTree()                             = default;
+    int         getSize() const { return TreeImpl->getSize(); }
+    NodeId<IdT> getRootId() const { return TreeImpl->getRootId(); }
+    using PreorderIterator = NodeId<IdT>;
+    PreorderIterator       begin() const { return TreeImpl->begin(); }
+    PreorderIterator       end() const { return TreeImpl->end(); }
+    const Node<IdT, ValT>& getNode(NodeId<IdT> Id) const {
+        return TreeImpl->getNode(Id);
+    }
+
+    ComparisonOptions<IdT, ValT> const& getOpts() const {
+        return TreeImpl->opts;
+    }
+
+    int findPositionInParent(NodeId<IdT> Id) const {
+        return TreeImpl->findPositionInParent(Id);
+    }
+    /// Serialize the node attributes to a string representation. This
+    /// should uniquely distinguish nodes of the same kind. Note that this
+    /// function just returns a representation of the node value, not
+    /// considering descendants.
+    ValT getNodeValue(NodeId<IdT> Id) const {
+        return TreeImpl->getNodeValue(Id);
+    }
+    ValT getNodeValue(const Node<IdT, ValT>& Node) const {
+        return TreeImpl->getNodeValue(Node);
+    }
+    class Impl;
+    std::unique_ptr<Impl> TreeImpl;
 };
 
 
@@ -162,13 +198,20 @@ class ASTDiff {
     ASTDiff(
         SyntaxTree<IdT, ValT>&              Src,
         SyntaxTree<IdT, ValT>&              Dst,
-        const ComparisonOptions<IdT, ValT>& Options);
-    ~ASTDiff();
+        const ComparisonOptions<IdT, ValT>& Options)
+        : DiffImpl(std::make_unique<Impl>(
+              *Src.TreeImpl,
+              *Dst.TreeImpl,
+              Options)) {}
+
+    ~ASTDiff() = default;
     // Returns the ID of the node that is mapped to the given node in
     // SourceTree.
     NodeId<IdT> getMapped(
         const SyntaxTree<IdT, ValT>& SourceTree,
-        NodeId<IdT>                  Id) const;
+        NodeId<IdT>                  Id) const {
+        return DiffImpl->getMapped(SourceTree.TreeImpl, Id);
+    }
     class Impl;
 
   private:
@@ -183,9 +226,17 @@ class ASTDiff<IdT, ValT>::Impl {
     Impl(
         typename SyntaxTree<IdT, ValT>::Impl& T1,
         typename SyntaxTree<IdT, ValT>::Impl& T2,
-        const ComparisonOptions<IdT, ValT>&   Options);
+        const ComparisonOptions<IdT, ValT>&   Options)
+        : T1(T1), T2(T2), Options(Options) {
+        computeMapping();
+        computeChangeKinds(TheMapping);
+    }
     /// Matches nodes one-by-one based on their similarity.
-    void computeMapping();
+    void computeMapping() {
+        TheMapping = matchTopDown();
+        if (Options.StopAfterTopDown) { return; }
+        matchBottomUp(TheMapping);
+    }
     // Compute Change for each node based on similarity.
     void        computeChangeKinds(Mapping<IdT>& M);
     NodeId<IdT> getMapped(
@@ -197,18 +248,25 @@ class ASTDiff<IdT, ValT>::Impl {
     }
 
   private:
-    // Returns true if the two subtrees are isomorphic to each other.
+    /// Returns true if the two subtrees are isomorphic to each other.
     bool identical(NodeId<IdT> Id1, NodeId<IdT> Id2) const;
-    // Returns false if the nodes must not be mached.
-    bool isMatchingPossible(NodeId<IdT> Id1, NodeId<IdT> Id2) const;
-    // Returns true if the nodes' parents are matched.
+    /// Returns false if the nodes must not be mached.
+    bool isMatchingPossible(NodeId<IdT> Id1, NodeId<IdT> Id2) const {
+        return Options.isMatchingAllowed(T1.getNode(Id1), T2.getNode(Id2));
+    }
+    /// Returns true if the nodes' parents are matched.
     bool haveSameParents(
         const Mapping<IdT>& M,
         NodeId<IdT>         Id1,
-        NodeId<IdT>         Id2) const;
-    // Uses an optimal albeit slow algorithm to compute a mapping<IdT>
-    // between two subtrees, but only if both have fewer nodes than
-    // MaxSize.
+        NodeId<IdT>         Id2) const {
+        NodeId<IdT> P1 = T1.getNode(Id1).Parent;
+        NodeId<IdT> P2 = T2.getNode(Id2).Parent;
+        return (P1.isInvalid() && P2.isInvalid()) ||
+               (P1.isValid() && P2.isValid() && M.getDst(P1) == P2);
+    }
+    /// Uses an optimal albeit slow algorithm to compute a mapping<IdT>
+    /// between two subtrees, but only if both have fewer nodes than
+    /// MaxSize.
     void addOptimalMapping(
         Mapping<IdT>& M,
         NodeId<IdT>   Id1,
@@ -236,37 +294,100 @@ class ASTDiff<IdT, ValT>::Impl {
 template <typename IdT, typename ValT>
 class SyntaxTree<IdT, ValT>::Impl {
   public:
-    Impl(SyntaxTree<IdT, ValT>* Parent);
+    Impl(
+        ComparisonOptions<IdT, ValT> const& opts,
+        SyntaxTree<IdT, ValT>*              Parent);
     /// Constructs a tree from an AST node.
-    Impl(SyntaxTree<IdT, ValT>* Parent, DynTypedNode<IdT, ValT> N);
+    Impl(
+        ComparisonOptions<IdT, ValT> const& opts,
+        SyntaxTree<IdT, ValT>*              Parent,
+        DynTypedNode<IdT, ValT>             N);
     SyntaxTree<IdT, ValT>* Parent;
     /// Nodes in preorder.
     std::vector<Node<IdT, ValT>> Nodes;
     std::vector<NodeId<IdT>>     Leaves;
     // Maps preorder indices to postorder ones.
-    std::vector<int>         PostorderIds;
-    std::vector<NodeId<IdT>> NodesBfs;
-    int                      getSize() const { return Nodes.size(); }
-    NodeId<IdT>              getRootId() const { return 0; }
-    PreorderIterator         begin() const { return getRootId(); }
-    PreorderIterator         end() const { return getSize(); }
-    const Node<IdT, ValT>&   getNode(NodeId<IdT> Id) const {
-          return Nodes[Id];
+    std::vector<int>             PostorderIds;
+    std::vector<NodeId<IdT>>     NodesBfs;
+    int                          getSize() const { return Nodes.size(); }
+    NodeId<IdT>                  getRootId() const { return 0; }
+    PreorderIterator             begin() const { return getRootId(); }
+    PreorderIterator             end() const { return getSize(); }
+    ComparisonOptions<IdT, ValT> opts;
+
+    const Node<IdT, ValT>& getNode(NodeId<IdT> Id) const {
+        return Nodes[Id];
     }
+
     Node<IdT, ValT>& getMutableNode(NodeId<IdT> Id) { return Nodes[Id]; }
-    bool             isValidNodeId(NodeId<IdT> Id) const {
-                    return Id >= 0 && Id < getSize();
+
+    bool isValidNodeId(NodeId<IdT> Id) const {
+        return 0 <= Id && Id < getSize();
     }
+
     void addNode(Node<IdT, ValT>& N) { Nodes.push_back(N); }
-    int  getNumberOfDescendants(NodeId<IdT> Id) const;
-    bool isInSubtree(NodeId<IdT> Id, NodeId<IdT> SubtreeRoot) const;
-    int  findPositionInParent(NodeId<IdT> Id, bool Shifted = false) const;
-    ValT getNodeValue(NodeId<IdT> Id) const;
-    ValT getNodeValue(const Node<IdT, ValT>& Node) const;
+
+    int getNumberOfDescendants(NodeId<IdT> Id) const {
+        return getNode(Id).RightMostDescendant - Id + 1;
+    }
+
+    bool isInSubtree(NodeId<IdT> Id, NodeId<IdT> SubtreeRoot) const {
+        return Id >= SubtreeRoot &&
+               Id <= getNode(SubtreeRoot).RightMostDescendant;
+    }
+
+    int findPositionInParent(NodeId<IdT> Id, bool Shifted = false) const {
+        NodeId<IdT> Parent = getNode(Id).Parent;
+        if (Parent.isInvalid()) { return 0; }
+        const auto& Siblings = getNode(Parent).Children;
+        int         Position = 0;
+        for (size_t I = 0, E = Siblings.size(); I < E; ++I) {
+            if (Shifted) { Position += getNode(Siblings[I]).Shift; }
+            if (Siblings[I] == Id) {
+                Position += I;
+                return Position;
+            }
+        }
+
+        assert(false && "Node not found in parent's children.");
+    }
+
+    ValT getNodeValue(NodeId<IdT> Id) const {
+        return getNodeValue(getNode(Id));
+    }
+
+    ValT getNodeValue(const Node<IdT, ValT>& Node) const {
+        return Node.ASTNode->getNodeValue(opts);
+    }
 
   private:
-    void initTree();
-    void setLeftMostDescendants();
+    void initTree() {
+        setLeftMostDescendants();
+        int PostorderId = 0;
+        PostorderIds.resize(getSize());
+        std::function<void(NodeId<IdT>)> PostorderTraverse =
+            [&](NodeId<IdT> Id) {
+                for (NodeId<IdT> Child : getNode(Id).Children) {
+                    PostorderTraverse(Child);
+                }
+                PostorderIds[Id] = PostorderId;
+                ++PostorderId;
+            };
+        PostorderTraverse(getRootId());
+        NodesBfs = getSubtreeBfs<IdT, ValT>(*this, getRootId());
+    }
+
+    void setLeftMostDescendants() {
+        for (NodeId<IdT> Leaf : Leaves) {
+            getMutableNode(Leaf).LeftMostDescendant = Leaf;
+            NodeId<IdT> Parent, Cur = Leaf;
+            while ((Parent = getNode(Cur).Parent).isValid() &&
+                   getNode(Parent).Children[0] == Cur) {
+                Cur                                    = Parent;
+                getMutableNode(Cur).LeftMostDescendant = Leaf;
+            }
+        }
+    }
 };
 
 /// \brief Check whether a specific node should be ignored
@@ -337,14 +458,17 @@ struct PreorderVisitor {
 };
 
 template <typename IdT, typename ValT>
-SyntaxTree<IdT, ValT>::Impl::Impl(SyntaxTree<IdT, ValT>* Parent)
-    : Parent(Parent) {}
+SyntaxTree<IdT, ValT>::Impl::Impl(
+    ComparisonOptions<IdT, ValT> const& _opts,
+    SyntaxTree<IdT, ValT>*              Parent)
+    : Parent(Parent), opts(_opts) {}
 
 template <typename IdT, typename ValT>
 SyntaxTree<IdT, ValT>::Impl::Impl(
-    SyntaxTree<IdT, ValT>*  Parent,
-    DynTypedNode<IdT, ValT> N)
-    : Impl(Parent) {
+    ComparisonOptions<IdT, ValT> const& _opts,
+    SyntaxTree<IdT, ValT>*              Parent,
+    DynTypedNode<IdT, ValT>             N)
+    : Impl(_opts, Parent) {
     PreorderVisitor<IdT, ValT> PreorderWalker{*this};
     PreorderWalker.Traverse(N);
     initTree();
@@ -372,89 +496,17 @@ static std::vector<NodeId<IdT>> getSubtreeBfs(
     std::vector<NodeId<IdT>> Ids;
     size_t                   Expanded = 0;
     Ids.push_back(Root);
-    while (Expanded < Ids.size())
-        for (NodeId<IdT> Child : Tree.getNode(Ids[Expanded++]).Children)
+    while (Expanded < Ids.size()) {
+        for (NodeId<IdT> Child : Tree.getNode(Ids[Expanded++]).Children) {
             Ids.push_back(Child);
+        }
+    }
     return Ids;
 }
 
-template <typename IdT, typename ValT>
-void SyntaxTree<IdT, ValT>::Impl::initTree() {
-    setLeftMostDescendants();
-    int PostorderId = 0;
-    PostorderIds.resize(getSize());
-    std::function<void(NodeId<IdT>)> PostorderTraverse =
-        [&](NodeId<IdT> Id) {
-            for (NodeId<IdT> Child : getNode(Id).Children)
-                PostorderTraverse(Child);
-            PostorderIds[Id] = PostorderId;
-            ++PostorderId;
-        };
-    PostorderTraverse(getRootId());
-    NodesBfs = getSubtreeBfs<IdT, ValT>(*this, getRootId());
-}
 
-template <typename IdT, typename ValT>
-void SyntaxTree<IdT, ValT>::Impl::setLeftMostDescendants() {
-    for (NodeId<IdT> Leaf : Leaves) {
-        getMutableNode(Leaf).LeftMostDescendant = Leaf;
-        NodeId<IdT> Parent, Cur = Leaf;
-        while ((Parent = getNode(Cur).Parent).isValid() &&
-               getNode(Parent).Children[0] == Cur) {
-            Cur                                    = Parent;
-            getMutableNode(Cur).LeftMostDescendant = Leaf;
-        }
-    }
-}
-
-template <typename IdT, typename ValT>
-int SyntaxTree<IdT, ValT>::Impl::getNumberOfDescendants(
-    NodeId<IdT> Id) const {
-    return getNode(Id).RightMostDescendant - Id + 1;
-}
-
-template <typename IdT, typename ValT>
-bool SyntaxTree<IdT, ValT>::Impl::isInSubtree(
-    NodeId<IdT> Id,
-    NodeId<IdT> SubtreeRoot) const {
-    return Id >= SubtreeRoot &&
-           Id <= getNode(SubtreeRoot).RightMostDescendant;
-}
-
-template <typename IdT, typename ValT>
-int SyntaxTree<IdT, ValT>::Impl::findPositionInParent(
-    NodeId<IdT> Id,
-    bool        Shifted) const {
-    NodeId<IdT> Parent = getNode(Id).Parent;
-    if (Parent.isInvalid()) return 0;
-    const auto& Siblings = getNode(Parent).Children;
-    int         Position = 0;
-    for (size_t I = 0, E = Siblings.size(); I < E; ++I) {
-        if (Shifted) { Position += getNode(Siblings[I]).Shift; }
-        if (Siblings[I] == Id) {
-            Position += I;
-            return Position;
-        }
-    }
-
-    assert(false && "Node not found in parent's children.");
-}
-
-template <typename IdT, typename ValT>
-ValT SyntaxTree<IdT, ValT>::Impl::getNodeValue(NodeId<IdT> Id) const {
-    return getNodeValue(getNode(Id));
-}
-
-template <typename IdT, typename ValT>
-ValT SyntaxTree<IdT, ValT>::Impl::getNodeValue(
-    const Node<IdT, ValT>& node) const {
-    // NOTE this function was mostly added in order to provide
-    // clang-specific AST handling and is not applicable in the general
-    // case
-    return node.ASTNode->getName();
-}
-
-/// Identifies a node in a subtree by its postorder offset, starting at 1.
+/// \brief Identifies a node in a subtree by its postorder offset, starting
+/// at 1.
 template <typename IdT>
 struct SNodeId {
     int Id = 0;
@@ -490,14 +542,18 @@ class Subtree {
         int NumLeaves = setLeftMostDescendants();
         computeKeyRoots(NumLeaves);
     }
-    int         getSize() const { return RootIds.size(); }
+
+    int getSize() const { return RootIds.size(); }
+
     NodeId<IdT> getIdInRoot(SNodeId<IdT> Id) const {
         assert(Id > 0 && Id <= getSize() && "Invalid subtree node index.");
         return RootIds[Id - 1];
     }
+
     const Node<IdT, ValT>& getNode(SNodeId<IdT> Id) const {
         return Tree.getNode(getIdInRoot(Id));
     }
+
     SNodeId<IdT> getLeftMostDescendant(SNodeId<IdT> Id) const {
         assert(Id > 0 && Id <= getSize() && "Invalid subtree node index.");
         return LeftMostDescendants[Id - 1];
@@ -507,7 +563,8 @@ class Subtree {
     NodeId<IdT> getPostorderOffset() const {
         return Tree.PostorderIds[getIdInRoot(SNodeId<IdT>(1))];
     }
-    std::string getNodeValue(SNodeId<IdT> Id) const {
+
+    ValT getNodeValue(SNodeId<IdT> Id) const {
         return Tree.getNodeValue(getIdInRoot(Id));
     }
 
@@ -524,14 +581,14 @@ class Subtree {
                 I == Tree.PostorderIds[getIdInRoot(SI)] -
                          getPostorderOffset() &&
                 "Postorder traversal in subtree should correspond to "
-                "traversal in "
-                "the root tree by a constant offset.");
+                "traversal in the root tree by a constant offset.");
             LeftMostDescendants[I] = SNodeId<IdT>(
                 Tree.PostorderIds[N.LeftMostDescendant] -
                 getPostorderOffset());
         }
         return NumLeaves;
     }
+
     void computeKeyRoots(int Leaves) {
         KeyRoots.resize(Leaves);
         std::unordered_set<int> Visited;
@@ -576,6 +633,7 @@ class ZhangShashaMatcher {
                 size_t(S2.getSize()) + 1);
         }
     }
+
     std::vector<std::pair<NodeId<IdT>, NodeId<IdT>>> getMatchingNodes() {
         std::vector<std::pair<NodeId<IdT>, NodeId<IdT>>>   Matches;
         std::vector<std::pair<SNodeId<IdT>, SNodeId<IdT>>> TreePairs;
@@ -583,6 +641,7 @@ class ZhangShashaMatcher {
         bool RootNodePair = true;
         TreePairs.emplace_back(
             SNodeId<IdT>(S1.getSize()), SNodeId<IdT>(S2.getSize()));
+
         while (!TreePairs.empty()) {
             SNodeId<IdT> LastRow, LastCol, FirstRow, FirstCol, Row, Col;
             std::tie(LastRow, LastCol) = TreePairs.back();
@@ -635,15 +694,21 @@ class ZhangShashaMatcher {
     static constexpr double InsertionCost = 1;
     double getUpdateCost(SNodeId<IdT> Id1, SNodeId<IdT> Id2) {
         if (!DiffImpl.isMatchingPossible(
-                S1.getIdInRoot(Id1), S2.getIdInRoot(Id2)))
+                S1.getIdInRoot(Id1), S2.getIdInRoot(Id2))) {
             return std::numeric_limits<double>::max();
-        return S1.getNodeValue(Id1) != S2.getNodeValue(Id2);
+        } else {
+            return S1.getNodeValue(Id1) != S2.getNodeValue(Id2);
+        }
     }
+
     void computeTreeDist() {
-        for (SNodeId<IdT> Id1 : S1.KeyRoots)
-            for (SNodeId<IdT> Id2 : S2.KeyRoots)
+        for (SNodeId<IdT> Id1 : S1.KeyRoots) {
+            for (SNodeId<IdT> Id2 : S2.KeyRoots) {
                 computeForestDist(Id1, Id2);
+            }
+        }
     }
+
     void computeForestDist(SNodeId<IdT> Id1, SNodeId<IdT> Id2) {
         assert(Id1 > 0 && Id2 > 0 && "Expecting offsets greater than 0.");
         SNodeId<IdT> LMD1      = S1.getLeftMostDescendant(Id1);
@@ -673,17 +738,6 @@ class ZhangShashaMatcher {
         }
     }
 };
-
-
-template <typename IdT, typename ValT>
-ASTNodeKind<IdT> Node<IdT, ValT>::getType() const {
-    return ASTNode->getNodeKind();
-}
-
-template <typename IdT, typename ValT>
-ValT Node<IdT, ValT>::getTypeLabel() const {
-    return std::to_string(ASTNode->getNodeKind().value);
-}
 
 // Compares nodes by their depth.
 template <typename IdT, typename ValT>
@@ -754,26 +808,6 @@ bool ASTDiff<IdT, ValT>::Impl::identical(NodeId<IdT> Id1, NodeId<IdT> Id2)
         if (!identical(N1.Children[Id], N2.Children[Id])) { return false; }
     }
     return true;
-}
-
-
-template <typename IdT, typename ValT>
-bool ASTDiff<IdT, ValT>::Impl::isMatchingPossible(
-    NodeId<IdT> Id1,
-    NodeId<IdT> Id2) const {
-    return Options.isMatchingAllowed(T1.getNode(Id1), T2.getNode(Id2));
-}
-
-
-template <typename IdT, typename ValT>
-bool ASTDiff<IdT, ValT>::Impl::haveSameParents(
-    const Mapping<IdT>& M,
-    NodeId<IdT>         Id1,
-    NodeId<IdT>         Id2) const {
-    NodeId<IdT> P1 = T1.getNode(Id1).Parent;
-    NodeId<IdT> P2 = T2.getNode(Id2).Parent;
-    return (P1.isInvalid() && P2.isInvalid()) ||
-           (P1.isValid() && P2.isValid() && M.getDst(P1) == P2);
 }
 
 
@@ -940,25 +974,6 @@ Mapping<IdT> ASTDiff<IdT, ValT>::Impl::matchTopDown() const {
 
 
 template <typename IdT, typename ValT>
-ASTDiff<IdT, ValT>::Impl::Impl(
-    typename SyntaxTree<IdT, ValT>::Impl& T1,
-    typename SyntaxTree<IdT, ValT>::Impl& T2,
-    const ComparisonOptions<IdT, ValT>&   Options)
-    : T1(T1), T2(T2), Options(Options) {
-    computeMapping();
-    computeChangeKinds(TheMapping);
-}
-
-
-template <typename IdT, typename ValT>
-void ASTDiff<IdT, ValT>::Impl::computeMapping() {
-    TheMapping = matchTopDown();
-    if (Options.StopAfterTopDown) { return; }
-    matchBottomUp(TheMapping);
-}
-
-
-template <typename IdT, typename ValT>
 void ASTDiff<IdT, ValT>::Impl::computeChangeKinds(Mapping<IdT>& M) {
     for (NodeId<IdT> Id1 : T1) {
         if (!M.hasSrc(Id1)) {
@@ -993,85 +1008,12 @@ void ASTDiff<IdT, ValT>::Impl::computeChangeKinds(Mapping<IdT>& M) {
                 T2.findPositionInParent(Id2, true)) {
             N1.Change = N2.Change = ChangeKind::Move;
         }
+
         if (T1.getNodeValue(Id1) != T2.getNodeValue(Id2)) {
             N2.Change = (N1.Change == ChangeKind::Move ? ChangeKind::UpdateMove : ChangeKind::Update);
             N1.Change = N2.Change;
         }
     }
-}
-
-
-template <typename IdT, typename ValT>
-ASTDiff<IdT, ValT>::ASTDiff(
-    SyntaxTree<IdT, ValT>&              T1,
-    SyntaxTree<IdT, ValT>&              T2,
-    const ComparisonOptions<IdT, ValT>& Options)
-    : DiffImpl(
-          std::make_unique<Impl>(*T1.TreeImpl, *T2.TreeImpl, Options)) {}
-
-template <typename IdT, typename ValT>
-ASTDiff<IdT, ValT>::~ASTDiff() = default;
-
-
-template <typename IdT, typename ValT>
-NodeId<IdT> ASTDiff<IdT, ValT>::getMapped(
-    const SyntaxTree<IdT, ValT>& SourceTree,
-    NodeId<IdT>                  Id) const {
-    return DiffImpl->getMapped(SourceTree.TreeImpl, Id);
-}
-
-template <typename IdT, typename ValT>
-SyntaxTree<IdT, ValT>::~SyntaxTree<IdT, ValT>() = default;
-
-
-template <typename IdT, typename ValT>
-const Node<IdT, ValT>& SyntaxTree<IdT, ValT>::getNode(
-    NodeId<IdT> Id) const {
-    return TreeImpl->getNode(Id);
-}
-
-
-template <typename IdT, typename ValT>
-int SyntaxTree<IdT, ValT>::getSize() const {
-    return TreeImpl->getSize();
-}
-
-
-template <typename IdT, typename ValT>
-NodeId<IdT> SyntaxTree<IdT, ValT>::getRootId() const {
-    return TreeImpl->getRootId();
-}
-
-
-template <typename IdT, typename ValT>
-typename SyntaxTree<IdT, ValT>::PreorderIterator SyntaxTree<IdT, ValT>::
-    begin() const {
-    return TreeImpl->begin();
-}
-
-
-template <typename IdT, typename ValT>
-typename SyntaxTree<IdT, ValT>::PreorderIterator SyntaxTree<IdT, ValT>::
-    end() const {
-    return TreeImpl->end();
-}
-
-
-template <typename IdT, typename ValT>
-int SyntaxTree<IdT, ValT>::findPositionInParent(NodeId<IdT> Id) const {
-    return TreeImpl->findPositionInParent(Id);
-}
-
-
-template <typename IdT, typename ValT>
-ValT SyntaxTree<IdT, ValT>::getNodeValue(NodeId<IdT> Id) const {
-    return TreeImpl->getNodeValue(Id);
-}
-
-
-template <typename IdT, typename ValT>
-ValT SyntaxTree<IdT, ValT>::getNodeValue(const Node<IdT, ValT>& N) const {
-    return TreeImpl->getNodeValue(N);
 }
 
 template <typename IdT, typename ValT>
@@ -1083,7 +1025,7 @@ static void printNode(
         OS << "None";
         return;
     }
-    OS << Tree.getNode(Id).getTypeLabel();
+    OS << Tree.getNode(Id).getNodeKind(Tree.getOpts()).value;
     std::string Value = Tree.getNodeValue(Id);
     if (!Value.empty()) { OS << ": " << Value; }
     OS << "(" << Id << ")";
@@ -1100,17 +1042,21 @@ static void printDstChange(
     const Node<IdT, ValT>& DstNode = DstTree.getNode(Dst);
     NodeId<IdT>            Src     = Diff.getMapped(DstTree, Dst);
     switch (DstNode.Change) {
-        case ChangeKind::None: break;
-        case ChangeKind::Delete:
+        case ChangeKind::None: {
+            break;
+        }
+        case ChangeKind::Delete: {
             assert(false && "The destination tree can't have deletions.");
-        case ChangeKind::Update:
+        }
+        case ChangeKind::Update: {
             OS << "Update ";
             OS << SrcTree.getNodeValue(Src);
             OS << " to " << DstTree.getNodeValue(Dst) << "\n";
             break;
+        }
         case ChangeKind::Insert:
         case ChangeKind::Move:
-        case ChangeKind::UpdateMove:
+        case ChangeKind::UpdateMove: {
             if (DstNode.Change == ChangeKind::Insert) {
                 OS << "Insert";
             } else if (DstNode.Change == ChangeKind::Move) {
@@ -1124,42 +1070,129 @@ static void printDstChange(
             OS << DstTree.getNodeValue(DstNode.Parent);
             OS << " at " << DstTree.findPositionInParent(Dst) << "\n";
             break;
+        }
     }
 }
 
-int main() {
-    using IdT  = int;
-    using ValT = std::string;
-
-
-    auto Src = ast<IdT, ValT>(
-        "main",
-        0,
-        {ast<IdT, ValT>("sub-1", 1), ast<IdT, ValT>("sub-2", 1)});
-    auto Dst = ast<IdT, ValT>(
-        "main",
-        0,
-        {ast<IdT, ValT>("sub-1", 1),
-         ast<IdT, ValT>("sub-2'", 1),
-         ast<IdT, ValT>("sub-3", 1)});
-
-    ComparisonOptions<IdT, ValT> Options{};
-    SyntaxTree<IdT, ValT>        SrcTree{Src};
-    SyntaxTree<IdT, ValT>        DstTree{Dst};
-    ASTDiff<IdT, ValT>           Diff{SrcTree, DstTree, Options};
-
-    for (NodeId<IdT> Dst : DstTree) {
-        NodeId<IdT> Src = Diff.getMapped(DstTree, Dst);
-        if (Src.isValid()) {
-            std::cout << "Match ";
-            printNode(std::cout, SrcTree, Src);
-            std::cout << " to ";
-            printNode(std::cout, DstTree, Dst);
-            std::cout << "\n";
-        }
-
-        printDstChange(std::cout, Diff, SrcTree, DstTree, Dst);
+template <typename T>
+std::ostream& operator<<(std::ostream& os, std::vector<T> const& vec) {
+    os << "[";
+    for (int i = 0; i < vec.size(); ++i) {
+        if (0 < i) { os << ", "; }
+        os << vec[i];
     }
+    os << "]";
+    return os;
+}
+
+
+int main() {
+    {
+        struct RealNode {
+            std::string           value;
+            int                   kind;
+            std::vector<RealNode> sub;
+        };
+
+        using IdT  = RealNode*;
+        using ValT = std::string;
+
+        auto src = RealNode{
+            "main",
+            0,
+            {RealNode{"sub-1", 1},
+             RealNode{"sub-2", 2},
+             RealNode{"subnode"}}};
+
+        auto dst = RealNode{
+            "main",
+            0,
+            {RealNode{"sub-1", 1},
+             RealNode{"sub-2'", 2},
+             RealNode{"sub-3", 3}}};
+
+        auto Src = ast<IdT, ValT>(
+            &src,
+            {ast<IdT, ValT>(&src.sub[0]), ast<IdT, ValT>(&src.sub[1])});
+
+        auto Dst = ast<IdT, ValT>(
+            &dst,
+            {ast<IdT, ValT>(&dst.sub[0]),
+             ast<IdT, ValT>(&dst.sub[1]),
+             ast<IdT, ValT>(&dst.sub[2])});
+
+        ComparisonOptions<IdT, ValT> Options{
+            .getNodeValueImpl = [](IdT id) { return id->value; },
+            .getNodeKindImpl  = [](IdT id) { return id->kind; }};
+
+        SyntaxTree<IdT, ValT> SrcTree{Options, Src};
+        SyntaxTree<IdT, ValT> DstTree{Options, Dst};
+        ASTDiff<IdT, ValT>    Diff{SrcTree, DstTree, Options};
+
+        std::cout << SrcTree.TreeImpl->PostorderIds << "\n";
+        std::cout << DstTree.TreeImpl->PostorderIds << "\n";
+
+        for (NodeId<IdT> Dst : DstTree) {
+            NodeId<IdT> Src = Diff.getMapped(DstTree, Dst);
+            if (Src.isValid()) {
+                std::cout << "Match ";
+                printNode(std::cout, SrcTree, Src);
+                std::cout << " to ";
+                printNode(std::cout, DstTree, Dst);
+                std::cout << "\n";
+            }
+
+            printDstChange(std::cout, Diff, SrcTree, DstTree, Dst);
+        }
+    }
+
+    // {
+    //     struct RealNode {
+    //         std::variant<int, double, std::string> value;
+    //         std::vector<RealNode>                  sub;
+    //     };
+
+    //     auto src = RealNode{
+    //         "toplevel", {RealNode{1}, RealNode{1.2},
+    //         RealNode{"subnode"}}};
+
+    //     auto dst = RealNode{
+    //         "toplevel",
+    //         {RealNode{22}, RealNode{1.2}, RealNode{"subnode'"}}};
+
+    //     using IdT  = RealNode*;
+    //     using ValT = decltype(src.value);
+
+    //     auto Src = ast<IdT, ValT>(
+    //         "main",
+    //         0,
+    //         {ast<IdT, ValT>("sub-1", 1), ast<IdT, ValT>("sub-2", 1)});
+
+    //     auto Dst = ast<IdT, ValT>(
+    //         "main",
+    //         0,
+    //         {ast<IdT, ValT>("sub-1", 1),
+    //          ast<IdT, ValT>("sub-2'", 1),
+    //          ast<IdT, ValT>("sub-3", 1)});
+
+    //     ComparisonOptions<IdT, ValT> Options{};
+    //     SyntaxTree<IdT, ValT>        SrcTree{Src};
+    //     SyntaxTree<IdT, ValT>        DstTree{Dst};
+    //     ASTDiff<IdT, ValT>           Diff{SrcTree, DstTree, Options};
+
+    //     for (NodeId<IdT> Dst : DstTree) {
+    //         NodeId<IdT> Src = Diff.getMapped(DstTree, Dst);
+    //         if (Src.isValid()) {
+    //             std::cout << "Match ";
+    //             printNode(std::cout, SrcTree, Src);
+    //             std::cout << " to ";
+    //             printNode(std::cout, DstTree, Dst);
+    //             std::cout << "\n";
+    //         }
+
+    //         printDstChange(std::cout, Diff, SrcTree, DstTree, Dst);
+    //     }
+    // }
 
 
     std::cout << "diff done\n";
