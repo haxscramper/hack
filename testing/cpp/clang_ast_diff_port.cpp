@@ -418,14 +418,14 @@ static std::vector<NodeId> getSubtreeBfs(
 
 /// \brief Identifies a node in a subtree by its postorder offset, starting
 /// at 1.
-struct SNodeId {
+struct SubNodeId {
     int Id = 0;
-    explicit SNodeId(int Id) : Id(Id) {}
-    explicit SNodeId() = default;
-             operator int() const { return Id; }
-    SNodeId& operator++() { return ++Id, *this; }
-    SNodeId& operator--() { return --Id, *this; }
-    SNodeId  operator+(int Other) const { return SNodeId(Id + Other); }
+    explicit SubNodeId(int Id) : Id(Id) {}
+    explicit SubNodeId() = default;
+               operator int() const { return Id; }
+    SubNodeId& operator++() { return ++Id, *this; }
+    SubNodeId& operator--() { return --Id, *this; }
+    SubNodeId  operator+(int Other) const { return SubNodeId(Id + Other); }
 };
 
 
@@ -434,14 +434,14 @@ class Subtree {
   private:
     /// The parent tree.
     const SyntaxTree<IdT, ValT>& Tree;
-    /// Maps SNodeIds to original ids.
+    /// Maps SubNodeIds to original ids.
     std::vector<NodeId> RootIds;
     /// Maps subtree nodes to their leftmost descendants wtihin the
     /// subtree.
-    std::vector<SNodeId> LeftMostDescendants;
+    std::vector<SubNodeId> LeftMostDescendants;
 
   public:
-    std::vector<SNodeId> KeyRoots;
+    std::vector<SubNodeId> KeyRoots;
     Subtree(const SyntaxTree<IdT, ValT>& Tree, NodeId SubtreeRoot)
         : Tree(Tree) {
         RootIds       = getSubtreePostorder<IdT, ValT>(Tree, SubtreeRoot);
@@ -451,26 +451,26 @@ class Subtree {
 
     int getSize() const { return RootIds.size(); }
 
-    NodeId getIdInRoot(SNodeId Id) const {
+    NodeId getIdInRoot(SubNodeId Id) const {
         assert(Id > 0 && Id <= getSize() && "Invalid subtree node index.");
         return RootIds[Id - 1];
     }
 
-    const Node<IdT, ValT>& getNode(SNodeId Id) const {
+    const Node<IdT, ValT>& getNode(SubNodeId Id) const {
         return Tree.getNode(getIdInRoot(Id));
     }
 
-    SNodeId getLeftMostDescendant(SNodeId Id) const {
+    SubNodeId getLeftMostDescendant(SubNodeId Id) const {
         assert(Id > 0 && Id <= getSize() && "Invalid subtree node index.");
         return LeftMostDescendants[Id - 1];
     }
     /// Returns the postorder index of the leftmost descendant in the
     /// subtree.
     NodeId getPostorderOffset() const {
-        return Tree.PostorderIds[getIdInRoot(SNodeId(1))];
+        return Tree.PostorderIds[getIdInRoot(SubNodeId(1))];
     }
 
-    ValT getNodeValue(SNodeId Id) const {
+    ValT getNodeValue(SubNodeId Id) const {
         return Tree.getNodeValue(getIdInRoot(Id));
     }
 
@@ -480,7 +480,7 @@ class Subtree {
         int NumLeaves = 0;
         LeftMostDescendants.resize(getSize());
         for (int I = 0; I < getSize(); ++I) {
-            SNodeId                SI(I + 1);
+            SubNodeId              SI(I + 1);
             const Node<IdT, ValT>& N = getNode(SI);
             NumLeaves += N.isLeaf();
             assert(
@@ -488,7 +488,7 @@ class Subtree {
                          getPostorderOffset() &&
                 "Postorder traversal in subtree should correspond to "
                 "traversal in the root tree by a constant offset.");
-            LeftMostDescendants[I] = SNodeId(
+            LeftMostDescendants[I] = SubNodeId(
                 Tree.PostorderIds[N.LeftMostDescendant] -
                 getPostorderOffset());
         }
@@ -499,8 +499,8 @@ class Subtree {
         KeyRoots.resize(Leaves);
         std::unordered_set<int> Visited;
         int                     K = Leaves - 1;
-        for (SNodeId I(getSize()); I > 0; --I) {
-            SNodeId LeftDesc = getLeftMostDescendant(I);
+        for (SubNodeId I(getSize()); I > 0; --I) {
+            SubNodeId LeftDesc = getLeftMostDescendant(I);
             if (Visited.count(LeftDesc)) continue;
             assert(K >= 0 && "K should be non-negative");
             KeyRoots[K] = I;
@@ -509,6 +509,7 @@ class Subtree {
         }
     }
 };
+
 /// Implementation of Zhang and Shasha's Algorithm for tree edit distance.
 /// Computes an optimal mapping between two trees using only
 /// insertion, deletion and update as edit actions (similar to the
@@ -528,10 +529,13 @@ class ZhangShashaMatcher {
         NodeId                       Id1,
         NodeId                       Id2)
         : DiffImpl(DiffImpl), S1(T1, Id1), S2(T2, Id2) {
+
         TreeDist = std::make_unique<std::unique_ptr<double[]>[]>(
             size_t(S1.getSize()) + 1);
+
         ForestDist = std::make_unique<std::unique_ptr<double[]>[]>(
             size_t(S1.getSize()) + 1);
+
         for (int I = 0, E = S1.getSize() + 1; I < E; ++I) {
             TreeDist[I] = std::make_unique<double[]>(
                 size_t(S2.getSize()) + 1);
@@ -541,15 +545,15 @@ class ZhangShashaMatcher {
     }
 
     std::vector<std::pair<NodeId, NodeId>> getMatchingNodes() {
-        std::vector<std::pair<NodeId, NodeId>>   Matches;
-        std::vector<std::pair<SNodeId, SNodeId>> TreePairs;
+        std::vector<std::pair<NodeId, NodeId>>       Matches;
+        std::vector<std::pair<SubNodeId, SubNodeId>> TreePairs;
         computeTreeDist();
         bool RootNodePair = true;
         TreePairs.emplace_back(
-            SNodeId(S1.getSize()), SNodeId(S2.getSize()));
+            SubNodeId(S1.getSize()), SubNodeId(S2.getSize()));
 
         while (!TreePairs.empty()) {
-            SNodeId LastRow, LastCol, FirstRow, FirstCol, Row, Col;
+            SubNodeId LastRow, LastCol, FirstRow, FirstCol, Row, Col;
             std::tie(LastRow, LastCol) = TreePairs.back();
             TreePairs.pop_back();
             if (!RootNodePair) { computeForestDist(LastRow, LastCol); }
@@ -567,8 +571,8 @@ class ZhangShashaMatcher {
                     ForestDist[Row][Col - 1] + 1 == ForestDist[Row][Col]) {
                     --Col;
                 } else {
-                    SNodeId LMD1 = S1.getLeftMostDescendant(Row);
-                    SNodeId LMD2 = S2.getLeftMostDescendant(Col);
+                    SubNodeId LMD1 = S1.getLeftMostDescendant(Row);
+                    SubNodeId LMD2 = S2.getLeftMostDescendant(Col);
                     if (LMD1 == S1.getLeftMostDescendant(LastRow) &&
                         LMD2 == S2.getLeftMostDescendant(LastCol)) {
                         NodeId Id1 = S1.getIdInRoot(Row);
@@ -598,35 +602,43 @@ class ZhangShashaMatcher {
     /// avoided.
     static constexpr double DeletionCost  = 1;
     static constexpr double InsertionCost = 1;
-    double                  getUpdateCost(SNodeId Id1, SNodeId Id2) {
-                         if (!DiffImpl.isMatchingPossible(
+    static constexpr double UpdateCost    = 1;
+
+    double getUpdateCost(SubNodeId Id1, SubNodeId Id2) {
+        if (!DiffImpl.isMatchingPossible(
                 S1.getIdInRoot(Id1), S2.getIdInRoot(Id2))) {
-                             return std::numeric_limits<double>::max();
+            return std::numeric_limits<double>::max();
         } else {
-                             return S1.getNodeValue(Id1) != S2.getNodeValue(Id2);
+            if (S1.getNodeValue(Id1) == S2.getNodeValue(Id2)) {
+                return 0;
+            } else {
+                /// IMPLEMENT weighted node update cost that accounts for
+                /// the value similarity
+                return UpdateCost;
+            }
         }
     }
 
     void computeTreeDist() {
-        for (SNodeId Id1 : S1.KeyRoots) {
-            for (SNodeId Id2 : S2.KeyRoots) {
+        for (SubNodeId Id1 : S1.KeyRoots) {
+            for (SubNodeId Id2 : S2.KeyRoots) {
                 computeForestDist(Id1, Id2);
             }
         }
     }
 
-    void computeForestDist(SNodeId Id1, SNodeId Id2) {
+    void computeForestDist(SubNodeId Id1, SubNodeId Id2) {
         assert(Id1 > 0 && Id2 > 0 && "Expecting offsets greater than 0.");
-        SNodeId LMD1           = S1.getLeftMostDescendant(Id1);
-        SNodeId LMD2           = S2.getLeftMostDescendant(Id2);
+        SubNodeId LMD1         = S1.getLeftMostDescendant(Id1);
+        SubNodeId LMD2         = S2.getLeftMostDescendant(Id2);
         ForestDist[LMD1][LMD2] = 0;
-        for (SNodeId D1 = LMD1 + 1; D1 <= Id1; ++D1) {
+        for (SubNodeId D1 = LMD1 + 1; D1 <= Id1; ++D1) {
             ForestDist[D1][LMD2] = ForestDist[D1 - 1][LMD2] + DeletionCost;
-            for (SNodeId D2 = LMD2 + 1; D2 <= Id2; ++D2) {
+            for (SubNodeId D2 = LMD2 + 1; D2 <= Id2; ++D2) {
                 ForestDist[LMD1][D2] = ForestDist[LMD1][D2 - 1] +
                                        InsertionCost;
-                SNodeId DLMD1 = S1.getLeftMostDescendant(D1);
-                SNodeId DLMD2 = S2.getLeftMostDescendant(D2);
+                SubNodeId DLMD1 = S1.getLeftMostDescendant(D1);
+                SubNodeId DLMD2 = S2.getLeftMostDescendant(D2);
                 if (DLMD1 == LMD1 && DLMD2 == LMD2) {
                     double UpdateCost  = getUpdateCost(D1, D2);
                     ForestDist[D1][D2] = std::min(
