@@ -761,7 +761,7 @@ NodeId ASTDiff<IdT, ValT>::findCandidate(const Mapping& M, NodeId Id1)
     const {
     NodeId Candidate;
     double HighestSimilarity = 0.0;
-    for (NodeId Id2 : T2) {
+    for (NodeId const& Id2 : T2) {
         if (!isMatchingPossible(Id1, Id2)) { continue; }
         if (M.hasDst(Id2)) { continue; }
         double Similarity = getJaccardSimilarity(M, Id1, Id2);
@@ -781,7 +781,7 @@ void ASTDiff<IdT, ValT>::matchBottomUp(Mapping& M) const {
         T1, T1.getRootId());
     // for all nodes in left, if node itself is not matched, but
     // has any children matched
-    for (NodeId Id1 : Postorder) {
+    for (NodeId const& Id1 : Postorder) {
         if (Id1 == T1.getRootId() && !M.hasSrc(T1.getRootId()) &&
             !M.hasDst(T2.getRootId())) {
             if (isMatchingPossible(T1.getRootId(), T2.getRootId())) {
@@ -827,11 +827,11 @@ Mapping ASTDiff<IdT, ValT>::matchTopDown() const {
         // if two top subtrees don't have equal height
         if (Max1 > Max2) {
             // insert all nodes from tallest subforest
-            for (NodeId Id : L1.pop()) {
+            for (NodeId const& Id : L1.pop()) {
                 L1.open(Id);
             }
         } else if (Max2 > Max1) {
-            for (NodeId Id : L2.pop()) {
+            for (NodeId const& Id : L2.pop()) {
                 L2.open(Id);
             }
         } else {
@@ -840,8 +840,8 @@ Mapping ASTDiff<IdT, ValT>::matchTopDown() const {
             H1 = L1.pop();
             H2 = L2.pop();
             // for each combination of Therese is these forests
-            for (NodeId Id1 : H1) {
-                for (NodeId Id2 : H2) {
+            for (NodeId const& Id1 : H1) {
+                for (NodeId const& Id2 : H2) {
                     // if pair of trees is isomorphic
                     if (identical(Id1, Id2) && !M.hasSrc(Id1) &&
                         !M.hasDst(Id2)) {
@@ -858,14 +858,14 @@ Mapping ASTDiff<IdT, ValT>::matchTopDown() const {
             // or (2) root and subnodes of a root in other tree
 
 
-            for (NodeId Id1 : H1) {
+            for (NodeId const& Id1 : H1) {
                 // if there is unmatched forest root in first forest
                 if (!M.hasSrc(Id1)) {
                     // insert it's subnodes
                     L1.open(Id1);
                 }
             }
-            for (NodeId Id2 : H2) {
+            for (NodeId const& Id2 : H2) {
                 // do the same for other forest
                 if (!M.hasDst(Id2)) { L2.open(Id2); }
             }
@@ -877,19 +877,19 @@ Mapping ASTDiff<IdT, ValT>::matchTopDown() const {
 
 template <typename IdT, typename ValT>
 void ASTDiff<IdT, ValT>::computeChangeKinds(Mapping& M) {
-    for (NodeId Id1 : T1) {
+    for (NodeId const& Id1 : T1) {
         if (!M.hasSrc(Id1)) {
             T1.getMutableNode(Id1).Change = ChangeKind::Delete;
             T1.getMutableNode(Id1).Shift -= 1;
         }
     }
-    for (NodeId Id2 : T2) {
+    for (NodeId const& Id2 : T2) {
         if (!M.hasDst(Id2)) {
             T2.getMutableNode(Id2).Change = ChangeKind::Insert;
             T2.getMutableNode(Id2).Shift -= 1;
         }
     }
-    for (NodeId Id1 : T1.NodesBfs) {
+    for (NodeId const& Id1 : T1.NodesBfs) {
         NodeId Id2 = M.getDst(Id1);
         if (Id2.isInvalid()) { continue; }
         if (!haveSameParents(M, Id1, Id2) ||
@@ -899,7 +899,7 @@ void ASTDiff<IdT, ValT>::computeChangeKinds(Mapping& M) {
             T2.getMutableNode(Id2).Shift -= 1;
         }
     }
-    for (NodeId Id2 : T2.NodesBfs) {
+    for (NodeId const& Id2 : T2.NodesBfs) {
         NodeId Id1 = M.getSrc(Id2);
         if (Id1.isInvalid()) { continue; }
         Node<IdT, ValT>& N1 = T1.getMutableNode(Id1);
