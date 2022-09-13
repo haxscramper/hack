@@ -88,60 +88,49 @@ struct ComparisonOptions {
     bool isMatchingAllowed(
         const Node<IdT, ValT>& N1,
         const Node<IdT, ValT>& N2) const {
-        // IMPLEMENT customization for this comparison - sometimes
-        // different node kinds can also be matched together (for example
-        // two integer literal nodes)
-        return N1.getNodeKind(*this) == N2.getNodeKind(*this);
+        if (isMatchingAllowedImpl && isMatchingAllowed(N1, N2)) {
+            return true;
+        } else {
+            return N1.getNodeKind(*this) == N2.getNodeKind(*this);
+        }
     }
 
-    std::function<ValT(IdT)> getNodeValueImpl;
-    std::function<int(IdT)>  getNodeKindImpl;
+    std::function<ValT(IdT)>      getNodeValueImpl;
+    std::function<int(IdT)>       getNodeKindImpl;
+    std::function<bool(IdT, IdT)> isMatchingAllowedImpl;
 
     ValT getNodeValue(IdT id) const { return getNodeValueImpl(id); }
     int  getNodeKind(IdT id) const { return getNodeKindImpl(id); }
 };
 
 
+/// \brief Temporary container for transitioning the original AST structure
+/// to the SyntaxTree form.
 template <typename IdT, typename ValT>
-struct DynTypedNodeImpl {
-    IdT                                                       id;
-    std::vector<std::shared_ptr<DynTypedNodeImpl<IdT, ValT>>> subnodes;
+struct TreeMirror {
+    IdT id; /// Identifier value that can be used to get back the original
+            /// node information
 
-    ValT getNodeValue(ComparisonOptions<IdT, ValT> const& opts) {
-        return opts.getNodeValue(id);
-    }
-
-    ASTNodeKind getNodeKind(ComparisonOptions<IdT, ValT> const& opts) {
-        return opts.getNodeKind(id);
-    }
+    std::vector<TreeMirror<IdT, ValT>> subnodes; /// List of the subnodes
 };
 
 
-template <typename IdT, typename ValT>
-using DynTypedNode = std::shared_ptr<DynTypedNodeImpl<IdT, ValT>>;
-
-template <typename IdT, typename ValT>
-inline DynTypedNode<IdT, ValT> ast(
-    IdT                                         id,
-    std::vector<DynTypedNode<IdT, ValT>> const& subnodes = {}) {
-
-    return std::make_shared<DynTypedNodeImpl<IdT, ValT>>(
-        DynTypedNodeImpl<IdT, ValT>{id, subnodes});
-}
-
 /// \brief Represents an AST node, alongside some additional information.
+///
+/// Single node of the original AST
 template <typename IdT, typename ValT>
 struct Node {
     NodeId Parent, LeftMostDescendant, RightMostDescendant;
     int    Depth, Height, Shift = 0;
     /// Reference to the original AST node
-    DynTypedNode<IdT, ValT> ASTNode;
-    std::vector<NodeId>     Subnodes;
-    ChangeKind              Change = ChangeKind::None;
+    IdT ASTNode;                  /// Original AST node Id, used to get the
+                                  /// kind/value information
+    std::vector<NodeId> Subnodes; /// Explicit list of the subnode IDS
+    ChangeKind          Change = ChangeKind::None;
 
     ASTNodeKind getNodeKind(
         ComparisonOptions<IdT, ValT> const& _opts) const {
-        return ASTNode->getNodeKind(_opts);
+        return _opts.getNodeKind(ASTNode);
     }
 
     bool isLeaf() const { return Subnodes.empty(); }
@@ -167,7 +156,7 @@ class SyntaxTree {
     /// Constructs a tree from an AST node.
     SyntaxTree(
         ComparisonOptions<IdT, ValT> const& opts,
-        DynTypedNode<IdT, ValT>             N);
+        TreeMirror<IdT, ValT> const&        N);
     /// Nodes in preorder.
     std::vector<Node<IdT, ValT>> Nodes;
     std::vector<NodeId>          Leaves;
@@ -224,7 +213,7 @@ class SyntaxTree {
     }
 
     ValT getNodeValue(const Node<IdT, ValT>& Node) const {
-        return Node.ASTNode->getNodeValue(opts);
+        return opts.getNodeValue(Node.ASTNode);
     }
 
   private:
@@ -323,16 +312,6 @@ class ASTDiff {
     friend class ZhangShashaMatcher;
 };
 
-/// \brief Check whether a specific node should be ignored
-template <typename IdT, typename ValT>
-static bool isNodeExcluded(DynTypedNode<IdT, ValT>* node) {
-    // HACK don't ignore anything for the purposes of testing - clang
-    // implementation skips macros, things outside of the main file and
-    // implicit nodes. Later on this should be turned into user-provided
-    // callback.
-    return false;
-}
-
 // Sets Height, Parent and Subnodes for each node.
 template <typename IdT, typename ValT>
 struct PreorderVisitor {
@@ -340,13 +319,14 @@ struct PreorderVisitor {
     NodeId                 Parent;
     SyntaxTree<IdT, ValT>& Tree;
     PreorderVisitor(SyntaxTree<IdT, ValT>& Tree) : Tree(Tree) {}
-    std::tuple<NodeId, NodeId> PreTraverse(DynTypedNode<IdT, ValT> node) {
+    std::tuple<NodeId, NodeId> PreTraverse(
+        TreeMirror<IdT, ValT> const& node) {
         NodeId MyId = Id;
         Tree.Nodes.emplace_back();
         Node<IdT, ValT>& N = Tree.getMutableNode(MyId);
         N.Parent           = Parent;
         N.Depth            = Depth;
-        N.ASTNode          = node;
+        N.ASTNode          = node.id;
 
         if (Parent.isValid()) {
             Node<IdT, ValT>& P = Tree.getMutableNode(Parent);
@@ -380,9 +360,9 @@ struct PreorderVisitor {
         }
     }
 
-    void Traverse(DynTypedNode<IdT, ValT> node) {
+    void Traverse(TreeMirror<IdT, ValT> const& node) {
         auto SavedState = PreTraverse(node);
-        for (auto sub : node->subnodes) {
+        for (auto sub : node.subnodes) {
             Traverse(sub);
         }
         PostTraverse(SavedState);
@@ -397,7 +377,7 @@ SyntaxTree<IdT, ValT>::SyntaxTree(
 template <typename IdT, typename ValT>
 SyntaxTree<IdT, ValT>::SyntaxTree(
     ComparisonOptions<IdT, ValT> const& _opts,
-    DynTypedNode<IdT, ValT>             N)
+    TreeMirror<IdT, ValT> const&        N)
     : SyntaxTree(_opts) {
     PreorderVisitor<IdT, ValT> PreorderWalker{*this};
     PreorderWalker.Traverse(N);
@@ -411,8 +391,9 @@ static std::vector<NodeId> getSubtreePostorder(
     std::vector<NodeId>         Postorder;
     std::function<void(NodeId)> Traverse = [&](NodeId Id) {
         const Node<IdT, ValT>& N = Tree.getNode(Id);
-        for (NodeId Subnode : N.Subnodes)
+        for (NodeId Subnode : N.Subnodes) {
             Traverse(Subnode);
+        }
         Postorder.push_back(Id);
     };
     Traverse(Root);
@@ -1052,15 +1033,16 @@ int main() {
              RealNode{"sub-2'", 2},
              RealNode{"sub-3", 3}}};
 
-        auto Src = ast<IdT, ValT>(
+        auto Src = TreeMirror<IdT, ValT>{
             &src,
-            {ast<IdT, ValT>(&src.sub[0]), ast<IdT, ValT>(&src.sub[1])});
+            {TreeMirror<IdT, ValT>{&src.sub[0]},
+             TreeMirror<IdT, ValT>{&src.sub[1]}}};
 
-        auto Dst = ast<IdT, ValT>(
+        auto Dst = TreeMirror<IdT, ValT>{
             &dst,
-            {ast<IdT, ValT>(&dst.sub[0]),
-             ast<IdT, ValT>(&dst.sub[1]),
-             ast<IdT, ValT>(&dst.sub[2])});
+            {TreeMirror<IdT, ValT>{&dst.sub[0]},
+             TreeMirror<IdT, ValT>{&dst.sub[1]},
+             TreeMirror<IdT, ValT>{&dst.sub[2]}}};
 
         ComparisonOptions<IdT, ValT> Options{
             .getNodeValueImpl = [](IdT id) { return id->value; },
@@ -1105,15 +1087,16 @@ int main() {
         using ValT = decltype(src.value);
 
 
-        auto Src = ast<IdT, ValT>(
+        auto Src = TreeMirror<IdT, ValT>{
             &src,
-            {ast<IdT, ValT>(&src.sub[0]), ast<IdT, ValT>(&src.sub[1])});
+            {TreeMirror<IdT, ValT>{&src.sub[0]},
+             TreeMirror<IdT, ValT>{&src.sub[1]}}};
 
-        auto Dst = ast<IdT, ValT>(
+        auto Dst = TreeMirror<IdT, ValT>{
             &dst,
-            {ast<IdT, ValT>(&dst.sub[0]),
-             ast<IdT, ValT>(&dst.sub[1]),
-             ast<IdT, ValT>(&dst.sub[2])});
+            {TreeMirror<IdT, ValT>{&dst.sub[0]},
+             TreeMirror<IdT, ValT>{&dst.sub[1]},
+             TreeMirror<IdT, ValT>{&dst.sub[2]}}};
 
         ComparisonOptions<IdT, ValT> Options{
             .getNodeValueImpl = [](IdT id) { return id->value; },
