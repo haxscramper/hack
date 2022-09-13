@@ -254,8 +254,6 @@ class SyntaxTree {
             }
         }
     }
-    // };
-    // std::unique_ptr<Impl> TreeImpl;
 };
 
 
@@ -939,6 +937,39 @@ void ASTDiff<IdT, ValT>::computeChangeKinds(Mapping& M) {
     }
 }
 
+template <typename T>
+std::ostream& operator<<(std::ostream& os, std::vector<T> const& vec) {
+    os << "[";
+    for (int i = 0; i < vec.size(); ++i) {
+        if (0 < i) { os << ", "; }
+        os << vec[i];
+    }
+    os << "]";
+    return os;
+}
+
+template <int Idx, typename... Args>
+void writeIfIndex(std::ostream& os, std::variant<Args...> const& var) {
+    if constexpr (Idx == 0) {
+        os << Idx << " " << std::get<Idx>(var);
+    } else {
+        if (var.index() == Idx) {
+            os << Idx << " " << std::get<Idx>(var);
+        } else {
+            writeIfIndex<Idx - 1>(os, var);
+        }
+    }
+}
+
+template <typename... Args>
+std::ostream& operator<<(
+    std::ostream&                os,
+    std::variant<Args...> const& var) {
+    writeIfIndex<sizeof...(Args) - 1>(os, var);
+    return os;
+}
+
+
 template <typename IdT, typename ValT>
 static void printNode(
     std::ostream&          OS,
@@ -949,8 +980,7 @@ static void printNode(
         return;
     }
     OS << Tree.getNode(Id).getNodeKind(Tree.getOpts()).value;
-    std::string Value = Tree.getNodeValue(Id);
-    if (!Value.empty()) { OS << ": " << Value; }
+    OS << ": " << Tree.getNodeValue(Id);
     OS << "(" << Id << ")";
 }
 
@@ -996,18 +1026,6 @@ static void printDstChange(
         }
     }
 }
-
-template <typename T>
-std::ostream& operator<<(std::ostream& os, std::vector<T> const& vec) {
-    os << "[";
-    for (int i = 0; i < vec.size(); ++i) {
-        if (0 < i) { os << ", "; }
-        os << vec[i];
-    }
-    os << "]";
-    return os;
-}
-
 
 int main() {
     {
@@ -1069,53 +1087,55 @@ int main() {
         }
     }
 
-    // {
-    //     struct RealNode {
-    //         std::variant<int, double, std::string> value;
-    //         std::vector<RealNode>                  sub;
-    //     };
+    std::cout << "-----------------\n";
+    {
+        struct RealNode {
+            std::variant<int, double, std::string> value;
+            std::vector<RealNode>                  sub;
+        };
 
-    //     auto src = RealNode{
-    //         "toplevel", {RealNode{1}, RealNode{1.2},
-    //         RealNode{"subnode"}}};
+        auto src = RealNode{
+            "toplevel", {RealNode{1}, RealNode{1.2}, RealNode{"subnode"}}};
 
-    //     auto dst = RealNode{
-    //         "toplevel",
-    //         {RealNode{22}, RealNode{1.2}, RealNode{"subnode'"}}};
+        auto dst = RealNode{
+            "toplevel",
+            {RealNode{22}, RealNode{1.2}, RealNode{"subnode'"}}};
 
-    //     using IdT  = RealNode*;
-    //     using ValT = decltype(src.value);
+        using IdT  = RealNode*;
+        using ValT = decltype(src.value);
 
-    //     auto Src = ast<IdT, ValT>(
-    //         "main",
-    //         0,
-    //         {ast<IdT, ValT>("sub-1", 1), ast<IdT, ValT>("sub-2", 1)});
 
-    //     auto Dst = ast<IdT, ValT>(
-    //         "main",
-    //         0,
-    //         {ast<IdT, ValT>("sub-1", 1),
-    //          ast<IdT, ValT>("sub-2'", 1),
-    //          ast<IdT, ValT>("sub-3", 1)});
+        auto Src = ast<IdT, ValT>(
+            &src,
+            {ast<IdT, ValT>(&src.sub[0]), ast<IdT, ValT>(&src.sub[1])});
 
-    //     ComparisonOptions<IdT, ValT> Options{};
-    //     SyntaxTree<IdT, ValT>        SrcTree{Src};
-    //     SyntaxTree<IdT, ValT>        DstTree{Dst};
-    //     ASTDiff<IdT, ValT>           Diff{SrcTree, DstTree, Options};
+        auto Dst = ast<IdT, ValT>(
+            &dst,
+            {ast<IdT, ValT>(&dst.sub[0]),
+             ast<IdT, ValT>(&dst.sub[1]),
+             ast<IdT, ValT>(&dst.sub[2])});
 
-    //     for (NodeId Dst : DstTree) {
-    //         NodeId Src = Diff.getMapped(DstTree, Dst);
-    //         if (Src.isValid()) {
-    //             std::cout << "Match ";
-    //             printNode(std::cout, SrcTree, Src);
-    //             std::cout << " to ";
-    //             printNode(std::cout, DstTree, Dst);
-    //             std::cout << "\n";
-    //         }
+        ComparisonOptions<IdT, ValT> Options{
+            .getNodeValueImpl = [](IdT id) { return id->value; },
+            .getNodeKindImpl  = [](IdT id) { return 0; }};
 
-    //         printDstChange(std::cout, Diff, SrcTree, DstTree, Dst);
-    //     }
-    // }
+        SyntaxTree<IdT, ValT> SrcTree{Options, Src};
+        SyntaxTree<IdT, ValT> DstTree{Options, Dst};
+        ASTDiff<IdT, ValT>    Diff{SrcTree, DstTree, Options};
+
+        for (NodeId Dst : DstTree) {
+            NodeId Src = Diff.getMapped(DstTree, Dst);
+            if (Src.isValid()) {
+                std::cout << "Match ";
+                printNode(std::cout, SrcTree, Src);
+                std::cout << " to ";
+                printNode(std::cout, DstTree, Dst);
+                std::cout << "\n";
+            }
+
+            printDstChange(std::cout, Diff, SrcTree, DstTree, Dst);
+        }
+    }
 
 
     std::cout << "diff done\n";
