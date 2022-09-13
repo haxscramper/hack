@@ -87,8 +87,9 @@ inline DynTypedNode<IdT, ValT> ast(
     IdT                                         id,
     std::vector<DynTypedNode<IdT, ValT>> const& subnodes = {}) {
 
-    return std::make_shared<DynTypedNodeImpl>(
-        DynTypedNodeImpl{value, {id}, subnodes});
+    return std::make_shared<DynTypedNodeImpl<IdT, ValT>>(
+        DynTypedNodeImpl<IdT, ValT>{
+            value, ASTNodeKind<IdT>{id}, subnodes});
 }
 
 /// \brief Represents a Clang AST node, alongside some additional
@@ -344,7 +345,7 @@ SyntaxTree<IdT, ValT>::Impl::Impl(
     SyntaxTree<IdT, ValT>*  Parent,
     DynTypedNode<IdT, ValT> N)
     : Impl(Parent) {
-    PreorderVisitor PreorderWalker(*this);
+    PreorderVisitor<IdT, ValT> PreorderWalker{*this};
     PreorderWalker.Traverse(N);
     initTree();
 }
@@ -390,7 +391,7 @@ void SyntaxTree<IdT, ValT>::Impl::initTree() {
             ++PostorderId;
         };
     PostorderTraverse(getRootId());
-    NodesBfs = getSubtreeBfs(*this, getRootId());
+    NodesBfs = getSubtreeBfs<IdT, ValT>(*this, getRootId());
 }
 
 template <typename IdT, typename ValT>
@@ -485,7 +486,7 @@ class Subtree {
         const typename SyntaxTree<IdT, ValT>::Impl& Tree,
         NodeId<IdT>                                 SubtreeRoot)
         : Tree(Tree) {
-        RootIds       = getSubtreePostorder(Tree, SubtreeRoot);
+        RootIds       = getSubtreePostorder<IdT, ValT>(Tree, SubtreeRoot);
         int NumLeaves = setLeftMostDescendants();
         computeKeyRoots(NumLeaves);
     }
@@ -786,7 +787,7 @@ void ASTDiff<IdT, ValT>::Impl::addOptimalMapping(
             T2.getNumberOfDescendants(Id2)) > Options.MaxSize) {
         return;
     }
-    ZhangShashaMatcher Matcher(*this, T1, T2, Id1, Id2);
+    ZhangShashaMatcher<IdT, ValT> Matcher(*this, T1, T2, Id1, Id2);
     std::vector<std::pair<NodeId<IdT>, NodeId<IdT>>>
         R = Matcher.getMatchingNodes();
     for (const auto& Tuple : R) {
@@ -843,7 +844,7 @@ NodeId<IdT> ASTDiff<IdT, ValT>::Impl::findCandidate(
 
 template <typename IdT, typename ValT>
 void ASTDiff<IdT, ValT>::Impl::matchBottomUp(Mapping<IdT>& M) const {
-    std::vector<NodeId<IdT>> Postorder = getSubtreePostorder(
+    std::vector<NodeId<IdT>> Postorder = getSubtreePostorder<IdT, ValT>(
         T1, T1.getRootId());
     // for all nodes in left, if node itself is not matched, but
     // has any children matched
@@ -852,7 +853,7 @@ void ASTDiff<IdT, ValT>::Impl::matchBottomUp(Mapping<IdT>& M) const {
             !M.hasDst(T2.getRootId())) {
             if (isMatchingPossible(T1.getRootId(), T2.getRootId())) {
                 M.link(T1.getRootId(), T2.getRootId());
-                addOptimalMapping<IdT>(M, T1.getRootId(), T2.getRootId());
+                addOptimalMapping(M, T1.getRootId(), T2.getRootId());
             }
             break;
         }
@@ -870,7 +871,7 @@ void ASTDiff<IdT, ValT>::Impl::matchBottomUp(Mapping<IdT>& M) const {
             // add node to mapping<IdT>
             M.link(Id1, Id2);
             // if max of number of subnodes does not exceed threshold
-            addOptimalMapping<IdT>(M, Id1, Id2);
+            addOptimalMapping(M, Id1, Id2);
         }
     }
 }
@@ -878,9 +879,9 @@ void ASTDiff<IdT, ValT>::Impl::matchBottomUp(Mapping<IdT>& M) const {
 
 template <typename IdT, typename ValT>
 Mapping<IdT> ASTDiff<IdT, ValT>::Impl::matchTopDown() const {
-    PriorityList L1(T1);
-    PriorityList L2(T2);
-    Mapping<IdT> M(T1.getSize() + T2.getSize());
+    PriorityList<IdT, ValT> L1(T1);
+    PriorityList<IdT, ValT> L2(T2);
+    Mapping<IdT>            M(T1.getSize() + T2.getSize());
     L1.push(T1.getRootId());
     L2.push(T2.getRootId());
     int Max1, Max2;
@@ -1092,7 +1093,7 @@ static void printNode(
 template <typename IdT, typename ValT>
 static void printDstChange(
     std::ostream&          OS,
-    ASTDiff&               Diff,
+    ASTDiff<IdT, ValT>&    Diff,
     SyntaxTree<IdT, ValT>& SrcTree,
     SyntaxTree<IdT, ValT>& DstTree,
     NodeId<IdT>            Dst) {
@@ -1130,11 +1131,17 @@ int main() {
     using IdT  = int;
     using ValT = std::string;
 
-    using a = ast<IdT, ValT>;
 
-    auto Src = a("main", 0, {a("sub-1", 1), a("sub-2", 1)});
-    auto Dst = a(
-        "main", 0, {a("sub-1", 1), a("sub-2'", 1), a("sub-3", 1)});
+    auto Src = ast<IdT, ValT>(
+        "main",
+        0,
+        {ast<IdT, ValT>("sub-1", 1), ast<IdT, ValT>("sub-2", 1)});
+    auto Dst = ast<IdT, ValT>(
+        "main",
+        0,
+        {ast<IdT, ValT>("sub-1", 1),
+         ast<IdT, ValT>("sub-2'", 1),
+         ast<IdT, ValT>("sub-3", 1)});
 
     ComparisonOptions<IdT, ValT> Options{};
     SyntaxTree<IdT, ValT>        SrcTree{Src};

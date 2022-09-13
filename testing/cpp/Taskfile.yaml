@@ -10,8 +10,8 @@ tasks:
         clang++
         -std=c++2a
         -g
-        -o
         -ferror-limit=2
+        -o
         {{.NAME}}.bin
         {{.NAME}}.cpp
 
