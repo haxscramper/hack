@@ -1,6 +1,13 @@
 version: 3
 
 tasks:
+  nim_ast_diff:
+    desc: "Build ad execute nim AST diff port"
+    vars:
+      NAME: nim_ast_diff_port
+    cmds:
+      - nim r {{.NAME}}.nim
+
   clang_ast_diff:
     desc: "Build and execute clang AST diff port"
     vars:
