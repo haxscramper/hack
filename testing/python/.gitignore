@@ -5,3 +5,4 @@
 *.png
 *.svg
 loader.py
+stanford-corenlp*

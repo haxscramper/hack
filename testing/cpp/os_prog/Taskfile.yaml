@@ -1,0 +1,8 @@
+version: 3
+
+tasks:
+  shell:
+    desc: "Build and test shell interpreter"
+    cmds:
+      - clang++ -o shell.bin shell.cpp
+      - echo "/bin/ls" | ./shell.bin

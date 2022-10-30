@@ -8,6 +8,25 @@ tasks:
     cmds:
       - nim r {{.NAME}}.nim
 
+  linking_different_sections:
+    desc: "Synthetic example for linking things in different manner"
+    dir: /tmp/linking_sections
+    cmds:
+      - mkdir -p rel
+      - >
+        for target in T1 T2 T3 D1 D2 D3; do
+            perl -E "print('$target' x 16)" > rel/_$target
+        done
+
+      - cp {{.PWD}}/*.ld .
+
+      - ld -Tsections_bin_1.ld -L$PWD/rel -r -o bin1
+      - ld -Tsections_bin_2.ld -L$PWD/rel -r -o bin2
+      - ld -Tsections_bin_3.ld -L$PWD/rel -r -o bin3
+      - ld -Tsections_all.ld bin1 bin2 bin3 -o bin_all
+
+
+
   clang_ast_diff:
     desc: "Build and execute clang AST diff port"
     vars:
