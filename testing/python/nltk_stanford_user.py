@@ -3,11 +3,16 @@
 
 
 from nltk.parse.corenlp import CoreNLPParser
+from nltk.corpus import wordnet as wn
 import nltk
+
 from typing import List
+
+import rich
 from rich.table import Table
 from rich.console import Console
-import rich
+from rich import box
+
 
 
 def print_to_table(
@@ -17,6 +22,7 @@ def print_to_table(
 ) -> int:
 
     fill[-1][-tree.height()] = tree.label()
+
     def rec(
         tree: nltk.tree.Tree,
         level: int,
@@ -32,7 +38,7 @@ def print_to_table(
                 row = -sub.height()
             else:
                 offset += 1
-                text = f"[green]{sub}[/]"
+                text = sub
 
             fill[offset - 1][row] = text
 
@@ -67,15 +73,15 @@ flat = [str(it) for it in parse.flatten()]
 for row in range(len(fill)):
     fill[row][-1] = flat[row]
 
-table = Table()
-console = Console()
-
 print_to_table(parse, 0, fill)
 
+table = Table(box=box.ASCII2)
+console = Console()
 for col in range(len(fill[0])):
     table.add_column(str(col))
 
 table.add_column("long names")
+table.add_column("synonyms")
 
 pos_names = {
     "S": "sentence",
@@ -86,15 +92,37 @@ pos_names = {
     "IN": "subordinating",
     ".": "punct",
     "RP": "particle",
-    "RB": "averb"
+    "RB": "averb",
 }
 
 for row in fill:
+    word = row[-1]
+    synsets = wn.synsets(word)
+    syns = []
+    meanings = {}
+
+    for syn in synsets:
+        (name, pos, idx) = syn.name().split(".")
+        if name not in meanings:
+            meanings[name] = []
+
+        meanings[name].append([pos, idx, syn.definition()])
+        # syns.append(f"[magenta]{name}[/]({pos}) [yellow]{syn.definition()}[/]")
+
+    for name, meanings in meanings.items():
+        syns.append(f"[magenta]{name}[/]")
+        for (pos, idx, meaning) in meanings:
+            syns.append(f"  ({pos}.{idx}) [yellow]{meaning}[/]")
+
+    print(word, " ", synsets)
+
     table.add_row(
         *row[0:-1],
-        "[green]\"" + row[-1] + "\"[/]",
-        "[yellow]" + pos_names[row[-2]] + "[/]"
+        '[green]"' + row[-1] + '"[/]',
+        "[yellow]" + pos_names[row[-2]] + "[/]",
+        "\n".join(syns)
     )
+
 
 
 console.print(table, markup=True)
