@@ -31,7 +31,7 @@ def flatten(dom) -> List[str]:
     if dom.tag in ["span", "p", "sup", "b", "i", "h1", "h2", "h3", "h4"]:
         flat = flatparagraph(dom)
         if 0 < len(flat):
-            result.append(flat)
+            result.append(flat.replace("\u2019", "'"))
 
     elif dom.tag in ["body", "div", "blockquote", "a", "ul", "li"]:
         for item in dom:
@@ -94,6 +94,7 @@ for infile in glob("books/*.epub"):
         os.mkdir(outdir)
 
     book = epub.read_epub(infile)
+    fullres[name] = []
     for doc in book.get_items_of_type(ebooklib.ITEM_DOCUMENT):
         if type(doc) == epub.EpubHtml:
             bookres = {}
@@ -106,35 +107,20 @@ for infile in glob("books/*.epub"):
                     has_def = True
 
             if has_def:
-                data = {"title": flat[0], "content": split_content(flat[1:-1])}
-                outfile = os.path.join(
-                    outdir, flat[0].replace("/", "_") + ".json"
-                )
-                bookres[flat[0]] = data
-                with open(outfile, "w") as file:
-                    file.write(json.dumps(data, indent=4))
-
-            else:
-                if 0 == len(flat):
-                    outfile = os.path.join(
-                        outdir, doc.get_name().replace("/", "_") + ".html"
-                    )
-
+                content = split_content(flat[1:-1])
+                data = {"title": flat[0], "content": content}
+                res = flat[0].replace("/", "_")
+                outfile = os.path.join(outdir, res + ".json")
+                if 0 < len(content):
+                    bookres[flat[0]] = data
                     with open(outfile, "w") as file:
-                        file.write(
-                            etree.tostring(body, pretty_print=True).decode(
-                                "utf-8"
-                            )
-                        )
+                        file.write(json.dumps(data, indent=4))
 
-                else:
-                    outfile = os.path.join(
-                        outdir, doc.get_name().replace("/", "_") + ".txt"
-                    )
-                    with open(outfile, "w") as file:
-                        file.write("\n".join(flat))
+            if 0 < len(bookres):
+                fullres[name].append(bookres)
 
-            fullres[name] = bookres
+    if len(fullres[name]) == 0:
+        del fullres[name]
 
 with open("/tmp/full.json", "w") as file:
     file.write(json.dumps(fullres, indent=4))
