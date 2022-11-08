@@ -62,7 +62,7 @@ def count_words(tree: nltk.tree.Tree):
 parser = CoreNLPParser()
 parse = next(
     parser.raw_parse(
-        "I put the book in the box on the table. It fell down immediately."
+        "This is a small sentence."
     )
 )
 parse.pretty_print()
@@ -75,7 +75,7 @@ for row in range(len(fill)):
 
 print_to_table(parse, 0, fill)
 
-table = Table(box=box.ASCII2)
+table = Table(box=box.ASCII2, show_lines=True)
 console = Console()
 for col in range(len(fill[0])):
     table.add_column(str(col))
@@ -93,6 +93,8 @@ pos_names = {
     ".": "punct",
     "RP": "particle",
     "RB": "averb",
+    "VBZ": "present tense",
+    "JJ": "adjective"
 }
 
 for row in fill:

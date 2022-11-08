@@ -6,3 +6,5 @@
 *.svg
 loader.py
 stanford-corenlp*
+test.epub
+books
