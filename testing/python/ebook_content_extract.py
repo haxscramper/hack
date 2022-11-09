@@ -12,7 +12,9 @@ from lxml import etree
 import json
 from typing import List
 from glob import glob
+import re
 import os
+import shutil
 
 
 def flatparagraph(dom) -> str:
@@ -31,7 +33,7 @@ def flatten(dom) -> List[str]:
     if dom.tag in ["span", "p", "sup", "b", "i", "h1", "h2", "h3", "h4"]:
         flat = flatparagraph(dom)
         if 0 < len(flat):
-            result.append(flat.replace("\u2019", "'"))
+            result.append(flat)
 
     elif dom.tag in ["body", "div", "blockquote", "a", "ul", "li"]:
         for item in dom:
@@ -46,6 +48,22 @@ def flatten(dom) -> List[str]:
     return result
 
 
+def match_check(item: str) -> bool:
+    return len(item) < 60 and (
+        re.match(r"([A-Z]{2,})|(\d+\.)|(\d+\s+)", item)
+        or " in Alphabetical Order" in item
+    )
+
+
+def maybe_split(item: str) -> List[str]:
+    split = item.split(";")
+    if 2 < len(split):
+        return [it.strip() for it in split]
+
+    else:
+        return [item]
+
+
 def split_content(items: List[str]):
     current_name = None
     current_items = []
@@ -54,12 +72,7 @@ def split_content(items: List[str]):
         if 0 == len(item):
             continue
 
-        split = item.split()
-        first = split[0]
-        if 1 < len(split) and first in ["A", "I"]:
-            first = split[1]
-
-        if all(it.isupper() or not it.isalnum() for it in first):
+        if match_check(item):
             if current_name:
                 pairs[current_name] = current_items
 
@@ -80,7 +93,10 @@ def split_content(items: List[str]):
                 current_name = item
 
         elif current_name:
-            current_items.append(item)
+            current_items += maybe_split(item)
+
+    if current_name and 0 < len(current_items):
+        pairs[current_name] = current_items
 
     return pairs
 
@@ -90,31 +106,40 @@ fullres = {}
 for infile in glob("books/*.epub"):
     name = os.path.basename(infile)
     outdir = f"/tmp/{name}"
-    if not os.path.exists(outdir):
-        os.mkdir(outdir)
+    if os.path.exists(outdir):
+        shutil.rmtree(outdir)
+
+    os.mkdir(outdir)
 
     book = epub.read_epub(infile)
     fullres[name] = []
     for doc in book.get_items_of_type(ebooklib.ITEM_DOCUMENT):
         if type(doc) == epub.EpubHtml:
-            bookres = {}
+            bookres = []
             dom = etree.HTML(doc.get_content())
             body = dom[1]
             flat = flatten(body)
-            has_def = 1 < len(flat)
-            for item in flat:
-                if item.startswith("DEFINITION"):
-                    has_def = True
+            if len(flat) == 0:
+                continue
 
-            if has_def:
-                content = split_content(flat[1:-1])
-                data = {"title": flat[0], "content": content}
-                res = flat[0].replace("/", "_")
-                outfile = os.path.join(outdir, res + ".json")
-                if 0 < len(content):
-                    bookres[flat[0]] = data
-                    with open(outfile, "w") as file:
-                        file.write(json.dumps(data, indent=4))
+            skip_index = 1
+            while skip_index < len(flat) and not match_check(
+                flat[skip_index - 1]
+            ):
+
+                skip_index += 1
+
+            if skip_index == len(flat):
+                continue
+
+            content = split_content(flat[skip_index:-1])
+            data = {"title": flat[skip_index - 1], "content": content}
+            res = data["title"].replace("/", "_")
+            outfile = os.path.join(outdir, res + ".json")
+            if 0 < len(content):
+                bookres.append(data)
+                with open(outfile, "w") as file:
+                    file.write(json.dumps(data, indent=4, ensure_ascii=False))
 
             if 0 < len(bookres):
                 fullres[name].append(bookres)
@@ -123,4 +148,4 @@ for infile in glob("books/*.epub"):
         del fullres[name]
 
 with open("/tmp/full.json", "w") as file:
-    file.write(json.dumps(fullres, indent=4))
+    file.write(json.dumps(fullres, indent=4, ensure_ascii=False))
