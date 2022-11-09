@@ -4,7 +4,8 @@ CONFIG += c++11
 DEFINES += PROJECT_PATH=\"\\\"$$PWD/\\\"\"
 
 SOURCES += *.cpp
-HEADERS += *.hpp \
-    list_model.hpp
+HEADERS += *.hpp
+
+
 
 DISTFILES += nim.cfg parseast.nim readme.rst

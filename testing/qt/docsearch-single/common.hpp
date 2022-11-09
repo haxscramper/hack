@@ -3,15 +3,16 @@
 
 #include <QDebug>
 #include <QElapsedTimer>
+#include <QPair>
 
 #include <string>
 #include <vector>
 
 #define let const auto
 
-using strvec = std::vector<std::string>;
-using str = std::string;
-using score_vec_t = std::vector<std::pair<const std::string, int>>;
+using strvec = QVector<QString>;
+using str = QString;
+using score_vec_t = QVector<QPair<const QString, int>>;
 
 inline QElapsedTimer make_timer() {
   QElapsedTimer res;

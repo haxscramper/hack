@@ -12,12 +12,14 @@
 
 #define let const auto
 
-struct NimProcArg {
+struct NimProcArg
+{
     QString name;
     QString type;
 };
 
-struct NimProc {
+struct NimProc
+{
     int                     id;
     QString                 name;
     QString                 rettype;
@@ -47,15 +49,14 @@ void drawColored(
     }
 }
 
-std::string getSearchName(NimProc proc) {
-    std::string res;
-    res += proc.name.toStdString();
+QString getSearchName(NimProc proc) {
+    QString res;
+    res += proc.name;
     res += "(";
     for (auto& arg : proc.args) {
-        res += arg.name.toStdString() + ": " + arg.type.toStdString() +
-               ", ";
+        res += arg.name + ": " + arg.type + ", ";
     }
-    res += "): " + proc.rettype.toStdString();
+    res += "): " + proc.rettype;
 
     return res;
 }
@@ -76,8 +77,9 @@ ColoredStrings getDisplayName(NimProc data) {
     return proc;
 }
 
-std::vector<std::pair<NimProc, std::string>> procs;
-class ProcDraw : public QStyledItemDelegate {
+std::vector<std::pair<NimProc, QString>> procs;
+class ProcDraw : public QStyledItemDelegate
+{
 
     // QAbstractItemDelegate interface
     QFont topFont;
@@ -170,6 +172,15 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     setCentralWidget(new QWidget);
     centralWidget()->setLayout(lyt);
 
+    auto install_fallback = [&]() {
+        procs.push_back(
+            {NimProc{0, "test", "RETT", {}, "docstring"}, "test"});
+        procs.push_back(
+            {NimProc{0, "on_failure", "RETSDt", {}, "docstring"},
+             "on_failure"});
+        fuzzy->setDictionary({"test", "on_failure"});
+    };
+
     auto db     = QSqlDatabase::addDatabase("QSQLITE");
     auto dbpath = "/tmp/db.sqlite"; // PROJECT_PATH "database.tmp.db";
     qDebug() << "Reading db from" << dbpath;
@@ -177,6 +188,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
 
     if (!db.open()) {
         qDebug() << "Open failed" << db.lastError().text();
+        install_fallback();
         return;
     }
 
@@ -186,6 +198,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     if (!query.exec(
             "SELECT procid, procname, docstring, rettype FROM procs")) {
         qDebug() << "Query failed" << query.lastError().text();
+        install_fallback();
         return;
     }
 
@@ -197,7 +210,9 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
         res.docstring = query.value(2).toString();
         res.rettype   = query.value(3).toString();
 
-        if (res.docstring.length() < 2) { ++nodocCnt; }
+        if (res.docstring.length() < 2) {
+            ++nodocCnt;
+        }
 
         QSqlQuery argquery(
             QString("SELECT arg, type FROM arguments WHERE procid == %1")
@@ -217,12 +232,14 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
 
     std::ofstream ofile("/tmp/thefile.txt");
 
-    std::vector<std::string> dict;
+    QVector<QString> dict;
     dict.reserve(procs.size());
     for (let& proc : procs) {
-        let qname = QString::fromStdString(proc.second);
-        if (qname.contains("exec")) { qDebug() << qname; }
-        ofile << proc.second << "\n";
+        let qname = proc.second;
+        if (qname.contains("exec")) {
+            qDebug() << qname;
+        }
+        ofile << proc.second.toStdString() << "\n";
         dict.push_back(proc.second);
     }
 
@@ -231,6 +248,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
             .arg(procs.size())
             .arg(nodocCnt)
             .arg(100.0 * nodocCnt / procs.size()));
+
 
     fuzzy->setDictionary(dict);
     fuzzy->setItemDelegate(new ProcDraw());

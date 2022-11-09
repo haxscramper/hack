@@ -63,11 +63,6 @@ FuzzySearchWidget::FuzzySearchWidget(QWidget* parent) : QWidget(parent) {
     setLayout(lyt);
 }
 
-void FuzzySearchWidget::setPattern(std::string patt) {
-    proxy->updateScores(patt);
-    proxy->sort(0);
-}
-
 void FuzzySearchWidget::setDictionary(const strvec& dict) {
     list->setItems(dict);
 }
@@ -96,7 +91,7 @@ void FuzzySearchWidget::setPattern(const QString& _patt) {
 
 void FuzzySearchWidget::sortOnPattern(const QString& _patt) {
     auto timer = make_timer();
-    proxy->updateScores(_patt.toStdString());
+    proxy->updateScores(_patt);
     let score_time = timer.nsecsElapsed();
     timer.restart();
     proxy->sort(0);

@@ -15,9 +15,10 @@
 
 
 // TODO rename
-struct ModelData {
+struct ModelData
+{
     QString     qdata;
-    std::string original;
+    QString     original;
     int         score;
     QModelIndex proxyIndex;
     int         dataIndex;
@@ -25,7 +26,8 @@ struct ModelData {
 
 Q_DECLARE_METATYPE(ModelData);
 
-class ListItemModel : public QAbstractListModel {
+class ListItemModel : public QAbstractListModel
+{
     score_vec_t items;
 
   public:
@@ -37,15 +39,17 @@ class ListItemModel : public QAbstractListModel {
         for (let& it : _items) {
             items.push_back({it, -1});
         }
+        qDebug() << "Updated list with " << _items.size() << " elements";
 
         endResetModel();
     }
 
     score_vec_t* getScores() { return &items; }
 
-    void updateScores(const std::string& pattern) {
-        for (size_t i = 0; i < items.size(); ++i) {
-            items[i].second = fts::get_score(items[i].first, pattern);
+    void updateScores(const QString& pattern) {
+        for (int i = 0; i < items.size(); ++i) {
+            items[i].second = fts::get_score(
+                items[i].first.data(), pattern.data());
         }
     }
 
@@ -58,21 +62,22 @@ class ListItemModel : public QAbstractListModel {
     QVariant data(const QModelIndex& index, int role [[maybe_unused]])
         const override {
         if (role == Qt::DisplayRole) {
-            return QString::fromStdString(items[index.row()].first);
+            return items[index.row()].first;
         } else {
             return QVariant();
         }
     }
 };
 
-class FuzzySearchProxyModel : public QSortFilterProxyModel {
+class FuzzySearchProxyModel : public QSortFilterProxyModel
+{
     score_vec_t*   scores;
     ListItemModel* list;
     int            maxItemShowed = 50;
     bool           initDone      = false;
 
   public:
-    void updateScores(std::string pattern) {
+    void updateScores(const QString& pattern) {
         list   = dynamic_cast<ListItemModel*>(sourceModel());
         scores = list->getScores();
 
@@ -89,8 +94,8 @@ class FuzzySearchProxyModel : public QSortFilterProxyModel {
         const QModelIndex& source_left,
         const QModelIndex& source_right) const override {
 
-        return scores->at(source_left.row()).second >
-               scores->at(source_right.row()).second;
+        return scores->at(source_left.row()).second
+               > scores->at(source_right.row()).second;
     }
 
     bool filterAcceptsRow(
@@ -104,11 +109,9 @@ class FuzzySearchProxyModel : public QSortFilterProxyModel {
                                .row();
 
             let res = sc > 0 && proxyRow < maxItemShowed;
-            if (!res && scores->at(source_row).first.find("exec") !=
-                            std::string::npos) {
+            if (!res && scores->at(source_row).first.contains("exec")) {
                 qDebug() << "discarding line with 'exec'"
-                         << QString::fromStdString(
-                                scores->at(source_row).first)
+                         << scores->at(source_row).first
                          << "it has score of" << sc << "and row number is"
                          << proxyRow;
             }
@@ -122,8 +125,7 @@ class FuzzySearchProxyModel : public QSortFilterProxyModel {
     QVariant data(const QModelIndex& index, int role) const override {
         if (!initDone) {
             if (role == Qt::DisplayRole && scores != nullptr) {
-                return QString::fromStdString(
-                    scores->at(index.row()).first);
+                return scores->at(index.row()).first;
             } else {
                 return QVariant();
             }
@@ -144,8 +146,7 @@ class FuzzySearchProxyModel : public QSortFilterProxyModel {
             data.score      = scores->at(sourceIdx.row()).second;
             data.proxyIndex = index;
             data.dataIndex  = sourceIdx.row();
-            data.qdata      = QString::fromStdString(
-                scores->at(sourceIdx.row()).first);
+            data.qdata      = scores->at(sourceIdx.row()).first;
             result.setValue(data);
 
             return result;
@@ -164,12 +165,12 @@ class FuzzySearchProxyModel : public QSortFilterProxyModel {
     }
 };
 
-class FuzzySearchWidget : public QWidget {
+class FuzzySearchWidget : public QWidget
+{
     Q_OBJECT
   public:
     FuzzySearchWidget(QWidget* parent = nullptr);
 
-    void setPattern(std::string patt);
     void setDictionary(const strvec& dict);
     void setAutoSortThreshold(int threshold = 12000);
     void setItemDelegate(QStyledItemDelegate* delegate);
@@ -178,7 +179,7 @@ class FuzzySearchWidget : public QWidget {
     void setMaxItemShowed(int value);
 
   public slots:
-    void setPattern(const QString& _patt);
+    void setPattern(const QString& patt);
     void sortOnPattern(const QString& _patt);
 
   private:
@@ -189,7 +190,8 @@ class FuzzySearchWidget : public QWidget {
     QListView*             view;
 };
 
-struct DraculaColors {
+struct DraculaColors
+{
     static QColor background;
     static QColor currentLine;
     static QColor selection;
@@ -204,7 +206,8 @@ struct DraculaColors {
     static QColor yellow;
 };
 
-class ListItemDelegate : public QStyledItemDelegate {
+class ListItemDelegate : public QStyledItemDelegate
+{
     Q_OBJECT
 
     // QAbstractItemDelegate interface
@@ -232,8 +235,8 @@ class ListItemDelegate : public QStyledItemDelegate {
         } else {
             painter->drawText(
                 option.rect,
-                QString::fromStdString("ERROR converting data") +
-                    index.data().typeName());
+                QString::fromStdString("ERROR converting data")
+                    + index.data().typeName());
         }
     }
 };
