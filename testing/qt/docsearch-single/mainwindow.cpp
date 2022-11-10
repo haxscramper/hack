@@ -18,11 +18,11 @@ struct NimProcArg
 
 struct NimProc
 {
-    int                     id;
-    QString                 name;
-    QString                 rettype;
-    std::vector<NimProcArg> args;
-    QString                 docstring;
+    int                 id;
+    QString             name;
+    QString             rettype;
+    QVector<NimProcArg> args;
+    QString             docstring;
 };
 
 using ColoredStrings = std::vector<std::pair<QString, QColor>>;
@@ -75,7 +75,7 @@ ColoredStrings getDisplayName(NimProc data) {
     return proc;
 }
 
-std::vector<std::pair<NimProc, QString>> procs;
+QVector<QPair<NimProc, QString>> procs;
 class ProcDraw : public QStyledItemDelegate
 {
 
@@ -227,7 +227,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
             QString("SELECT arg, type FROM arguments WHERE procid == %1")
                 .arg(res.id));
 
-        std::vector<NimProcArg> args;
+        QVector<NimProcArg> args;
         while (argquery.next()) {
             NimProcArg res;
             res.name = argquery.value(0).toString();

@@ -28,10 +28,10 @@ Q_DECLARE_METATYPE(ModelData);
 
 class ListItemModel : public QAbstractListModel
 {
-    score_vec_t items;
+    QVector<QPair<const QString, int>> items;
 
   public:
-    void setItems(const strvec& _items) {
+    void setItems(const QVector<QString>& _items) {
         beginResetModel();
 
         items.clear();
@@ -44,7 +44,7 @@ class ListItemModel : public QAbstractListModel
         endResetModel();
     }
 
-    score_vec_t* getScores() { return &items; }
+    QVector<QPair<const QString, int>>* getScores() { return &items; }
 
     void updateScores(const QString& pattern) {
         for (int i = 0; i < items.size(); ++i) {
@@ -71,10 +71,10 @@ class ListItemModel : public QAbstractListModel
 
 class FuzzySearchProxyModel : public QSortFilterProxyModel
 {
-    score_vec_t*   scores;
-    ListItemModel* list;
-    int            maxItemShowed = 50;
-    bool           initDone      = false;
+    QVector<QPair<const QString, int>>* scores;
+    ListItemModel*                      list;
+    int                                 maxItemShowed = 50;
+    bool                                initDone      = false;
 
   public:
     void updateScores(const QString& pattern) {
@@ -172,7 +172,7 @@ class FuzzySearchWidget : public QWidget
   public:
     FuzzySearchWidget(QWidget* parent = nullptr);
 
-    void setDictionary(const strvec& dict);
+    void setDictionary(const QVector<QString>& dict);
     void setAutoSortThreshold(int threshold = 12000);
     void setItemDelegate(QStyledItemDelegate* delegate);
     int  size() const;

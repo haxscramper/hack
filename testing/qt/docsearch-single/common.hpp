@@ -8,9 +8,9 @@
 #include <string>
 #include <vector>
 
-using strvec = QVector<QString>;
-using str = QString;
-using score_vec_t = QVector<QPair<const QString, int>>;
+//using strvec = QVector<QString>;
+//using str = QString;
+//using score_vec_t = QVector<QPair<const QString, int>>;
 
 inline QElapsedTimer make_timer() {
   QElapsedTimer res;

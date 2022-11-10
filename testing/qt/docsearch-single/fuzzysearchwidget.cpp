@@ -63,7 +63,7 @@ FuzzySearchWidget::FuzzySearchWidget(QWidget* parent) : QWidget(parent) {
     setLayout(lyt);
 }
 
-void FuzzySearchWidget::setDictionary(const strvec& dict) {
+void FuzzySearchWidget::setDictionary(const QVector<QString> &dict) {
     list->setItems(dict);
 }
 
