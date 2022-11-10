@@ -36,7 +36,7 @@ class ListItemModel : public QAbstractListModel
 
         items.clear();
         items.reserve(_items.size());
-        for (let& it : _items) {
+        for (const auto& it : _items) {
             items.push_back({it, -1});
         }
         qDebug() << "Updated list with " << _items.size() << " elements";
@@ -102,13 +102,14 @@ class FuzzySearchProxyModel : public QSortFilterProxyModel
         int                source_row,
         const QModelIndex& source_parent [[maybe_unused]]) const override {
         if (initDone) {
-            let sc = scores->at(source_row).second;
+            const auto sc = scores->at(source_row).second;
 
-            let proxyRow = mapFromSource(sourceModel()->index(
-                                             source_row, 0, source_parent))
-                               .row();
+            const auto proxyRow = mapFromSource(
+                                      sourceModel()->index(
+                                          source_row, 0, source_parent))
+                                      .row();
 
-            let res = sc > 0 && proxyRow < maxItemShowed;
+            const auto res = sc > 0 && proxyRow < maxItemShowed;
             if (!res && scores->at(source_row).first.contains("exec")) {
                 qDebug() << "discarding line with 'exec'"
                          << scores->at(source_row).first
@@ -138,7 +139,7 @@ class FuzzySearchProxyModel : public QSortFilterProxyModel
                     "`update_scores` at least once to fix this error");
             }
 
-            let sourceIdx = mapToSource(index);
+            const auto sourceIdx = mapToSource(index);
 
             QVariant result;
             auto     data   = ModelData();
@@ -155,8 +156,8 @@ class FuzzySearchProxyModel : public QSortFilterProxyModel
             font.setFamily("JetBrains Mono");
             return font;
         } else if (role == Qt::DecorationRole) {
-            let sourceIdx = mapToSource(index);
-            let score     = scores->at(sourceIdx.row()).second;
+            const auto sourceIdx = mapToSource(index);
+            const auto score     = scores->at(sourceIdx.row()).second;
             return QColor(
                 255, 0, 0, score * 1.5 > 255 ? 255 : score * 1.5);
         } else {
@@ -218,7 +219,7 @@ class ListItemDelegate : public QStyledItemDelegate
         const QModelIndex&          index) const override {
 
         if (index.data().canConvert<ModelData>()) {
-            let data = qvariant_cast<ModelData>(index.data());
+            const auto data = qvariant_cast<ModelData>(index.data());
 
             painter->fillRect(
                 option.rect, QBrush(DraculaColors::background));

@@ -92,11 +92,11 @@ void FuzzySearchWidget::setPattern(const QString& _patt) {
 void FuzzySearchWidget::sortOnPattern(const QString& _patt) {
     auto timer = make_timer();
     proxy->updateScores(_patt);
-    let score_time = timer.nsecsElapsed();
+    const auto score_time = timer.nsecsElapsed();
     timer.restart();
     proxy->sort(0);
 
-    let sort_time = timer.nsecsElapsed();
+    const auto sort_time = timer.nsecsElapsed();
 
     warnlbl->setText(QString("Sorted list of %1 items in %2 msec. "
                              "Score update in %3 msec")

@@ -8,8 +8,6 @@
 #include <string>
 #include <vector>
 
-#define let const auto
-
 using strvec = QVector<QString>;
 using str = QString;
 using score_vec_t = QVector<QPair<const QString, int>>;

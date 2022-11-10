@@ -10,8 +10,6 @@
 #include <fstream>
 #include <vector>
 
-#define let const auto
-
 struct NimProcArg
 {
     QString name;
@@ -90,8 +88,8 @@ class ProcDraw : public QStyledItemDelegate
 
   public:
     ProcDraw() {
-        topFont       = QFont("JetBrains Mono", 12);
-        docFont       = QFont("JetBrains Mono", 9);
+        topFont       = QFont("consolas", 12);
+        docFont       = QFont("consolas", 9);
         topFontHeight = QFontMetrics(topFont).height();
         docFontHeight = QFontMetrics(docFont).height();
     }
@@ -101,8 +99,8 @@ class ProcDraw : public QStyledItemDelegate
         const QStyleOptionViewItem& option,
         const QModelIndex&          index) const override {
         if (index.data().canConvert<ModelData>()) {
-            let data = qvariant_cast<ModelData>(index.data());
-            let proc = procs.at(data.dataIndex);
+            const auto data = qvariant_cast<ModelData>(index.data());
+            const auto proc = procs.at(data.dataIndex);
 
             painter->setFont(topFont);
             painter->drawText(option.rect, Qt::AlignVCenter, "Test");
@@ -126,7 +124,7 @@ class ProcDraw : public QStyledItemDelegate
 
             painter->setFont(docFont);
             painter->setPen(QPen(Colors::getYellow()));
-            let lines = proc.first.docstring.split('\n');
+            const auto lines = proc.first.docstring.split('\n');
 
             QString doc;
             for (int i = 0; i < std::min(lines.length(), 3); ++i) {
@@ -139,13 +137,13 @@ class ProcDraw : public QStyledItemDelegate
         }
     }
 
-    QSize sizeHint(
-        const QStyleOptionViewItem& option,
-        const QModelIndex&          index) const override {
+    QSize sizeHint(const QStyleOptionViewItem&, const QModelIndex& index)
+        const override {
         if (index.data().canConvert<ModelData>()) {
-            let data  = qvariant_cast<ModelData>(index.data());
-            let proc  = procs.at(data.dataIndex);
-            let lines = std::min(4, proc.first.docstring.count('\n') + 1);
+            const auto data  = qvariant_cast<ModelData>(index.data());
+            const auto proc  = procs.at(data.dataIndex);
+            const auto lines = std::min(
+                4, proc.first.docstring.count('\n') + 1);
             return QSize(120, 10 + lines * docFontHeight + topFontHeight);
         } else {
             return QSize(120, 80);
@@ -154,9 +152,9 @@ class ProcDraw : public QStyledItemDelegate
 };
 
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
-    let fuzzy = new FuzzySearchWidget();
-    let lyt   = new QVBoxLayout();
-    let warn  = new QLabel();
+    const auto fuzzy = new FuzzySearchWidget();
+    const auto lyt   = new QVBoxLayout();
+    const auto warn  = new QLabel();
 
     QFont font;
     font.setFamily("JetBrains Mono");
@@ -171,6 +169,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
 
     setCentralWidget(new QWidget);
     centralWidget()->setLayout(lyt);
+    fuzzy->setItemDelegate(new ProcDraw());
 
     auto install_fallback = [&]() {
         procs.push_back(
@@ -178,7 +177,17 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
         procs.push_back(
             {NimProc{0, "on_failure", "RETSDt", {}, "docstring"},
              "on_failure"});
-        fuzzy->setDictionary({"test", "on_failure"});
+        procs.push_back(
+            {NimProc{0, "test2", "RETSDt", {}, "docstring"}, "test2"});
+
+        QVector<QString> dict;
+
+
+        for (const auto& it : procs) {
+            dict.push_back(it.second);
+        }
+
+        fuzzy->setDictionary(dict);
     };
 
     auto db     = QSqlDatabase::addDatabase("QSQLITE");
@@ -234,8 +243,8 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
 
     QVector<QString> dict;
     dict.reserve(procs.size());
-    for (let& proc : procs) {
-        let qname = proc.second;
+    for (const auto& proc : procs) {
+        const auto qname = proc.second;
         if (qname.contains("exec")) {
             qDebug() << qname;
         }
@@ -251,5 +260,4 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
 
 
     fuzzy->setDictionary(dict);
-    fuzzy->setItemDelegate(new ProcDraw());
 }
