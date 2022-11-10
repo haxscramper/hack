@@ -2,6 +2,7 @@
 #include "textinputfield.hpp"
 
 #include <QVBoxLayout>
+#include <QElapsedTimer>
 
 QColor DraculaColors::background  = QColor(40, 42, 54);
 QColor DraculaColors::currentLine = QColor(68, 71, 90);
@@ -38,16 +39,6 @@ FuzzySearchWidget::FuzzySearchWidget(QWidget* parent) : QWidget(parent) {
 
     proxy->setDynamicSortFilter(false);
 
-    warnlbl = new QLabel();
-    QFont font;
-    font.setFamily("JetBrains Mono");
-    warnlbl->setFont(font);
-    warnlbl->setStyleSheet(
-        "QLabel { background-color : rgba(100%, 0%, 0%, 60%); }");
-    warnlbl->setAlignment(Qt::AlignCenter);
-    warnlbl->setMinimumHeight(36);
-
-    lyt->addWidget(warnlbl);
     lyt->addWidget(view);
 
     connect(input, &QLineEdit::textChanged, [this](const QString& text) {
@@ -63,7 +54,7 @@ FuzzySearchWidget::FuzzySearchWidget(QWidget* parent) : QWidget(parent) {
     setLayout(lyt);
 }
 
-void FuzzySearchWidget::setDictionary(const QVector<QString> &dict) {
+void FuzzySearchWidget::setDictionary(const QVector<QString>& dict) {
     list->setItems(dict);
 }
 
@@ -80,29 +71,29 @@ int FuzzySearchWidget::size() const {
 }
 
 void FuzzySearchWidget::setPattern(const QString& _patt) {
-    if (size() > maxDictSize) {
-        warnlbl->setText(QString("Searching in list of %1 items - "
-                                 "press ctrl+enter to update")
-                             .arg(size()));
-    } else {
-        sortOnPattern(_patt);
+    pattern = _patt;
+    if (size() < maxDictSize) {
+        sortOnPattern();
     }
 }
 
-void FuzzySearchWidget::sortOnPattern(const QString& _patt) {
+inline QElapsedTimer make_timer() {
+    QElapsedTimer res;
+    res.start();
+    return res;
+}
+
+
+void FuzzySearchWidget::sortOnPattern() {
     auto timer = make_timer();
-    proxy->updateScores(_patt);
+    proxy->updateScores(pattern);
     const auto score_time = timer.nsecsElapsed();
+    emit       scoreUpdateCompleted(score_time);
     timer.restart();
     proxy->sort(0);
 
     const auto sort_time = timer.nsecsElapsed();
-
-    warnlbl->setText(QString("Sorted list of %1 items in %2 msec. "
-                             "Score update in %3 msec")
-                         .arg(this->size())
-                         .arg(sort_time / 1000000.0)
-                         .arg(score_time / 1000000.0));
+    emit       sortCompleted(sort_time);
 }
 
 void FuzzySearchWidget::setMaxItemShowed(int value) {

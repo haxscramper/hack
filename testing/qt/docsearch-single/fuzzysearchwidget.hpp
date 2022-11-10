@@ -10,7 +10,6 @@
 #include <QStyledItemDelegate>
 #include <QWidget>
 
-#include "common.hpp"
 #include "fuzzy_match.hpp"
 
 
@@ -39,7 +38,6 @@ class ListItemModel : public QAbstractListModel
         for (const auto& it : _items) {
             items.push_back({it, -1});
         }
-        qDebug() << "Updated list with " << _items.size() << " elements";
 
         endResetModel();
     }
@@ -110,12 +108,6 @@ class FuzzySearchProxyModel : public QSortFilterProxyModel
                                       .row();
 
             const auto res = sc > 0 && proxyRow < maxItemShowed;
-            if (!res && scores->at(source_row).first.contains("exec")) {
-                qDebug() << "discarding line with 'exec'"
-                         << scores->at(source_row).first
-                         << "it has score of" << sc << "and row number is"
-                         << proxyRow;
-            }
             return res;
         } else {
             return source_row < maxItemShowed;
@@ -181,13 +173,18 @@ class FuzzySearchWidget : public QWidget
 
   public slots:
     void setPattern(const QString& patt);
-    void sortOnPattern(const QString& _patt);
+    void sortOnPattern();
+
+
+  signals:
+    void scoreUpdateCompleted(float time);
+    void sortCompleted(float time);
 
   private:
     int                    maxDictSize = 120000;
     FuzzySearchProxyModel* proxy;
     ListItemModel*         list;
-    QLabel*                warnlbl;
+    QString                pattern;
     QListView*             view;
 };
 
@@ -205,41 +202,6 @@ struct DraculaColors
     static QColor purple;
     static QColor red;
     static QColor yellow;
-};
-
-class ListItemDelegate : public QStyledItemDelegate
-{
-    Q_OBJECT
-
-    // QAbstractItemDelegate interface
-  public:
-    void paint(
-        QPainter*                   painter,
-        const QStyleOptionViewItem& option,
-        const QModelIndex&          index) const override {
-
-        if (index.data().canConvert<ModelData>()) {
-            const auto data = qvariant_cast<ModelData>(index.data());
-
-            painter->fillRect(
-                option.rect, QBrush(DraculaColors::background));
-
-            painter->fillRect(
-                option.rect.marginsRemoved(QMargins(1, 1, 1, 1)),
-                QBrush(DraculaColors::comment));
-            painter->setBrush(QBrush(DraculaColors::orange));
-            painter->setFont(QFont("JetBrains Mono"));
-            painter->drawText(
-                option.rect.marginsRemoved(QMargins(10, 0, 0, 0)),
-                Qt::AlignVCenter,
-                QString("(%1) %2").arg(data.score).arg(data.qdata));
-        } else {
-            painter->drawText(
-                option.rect,
-                QString::fromStdString("ERROR converting data")
-                    + index.data().typeName());
-        }
-    }
 };
 
 #endif // FUZZYSEARCHWIDGET_HPP

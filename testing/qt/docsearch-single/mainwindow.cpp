@@ -156,6 +156,29 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     const auto lyt   = new QVBoxLayout();
     const auto warn  = new QLabel();
 
+    {
+        warnlbl = new QLabel();
+        QFont font;
+        font.setFamily("JetBrains Mono");
+        warnlbl->setFont(font);
+        warnlbl->setStyleSheet(
+            "QLabel { background-color : rgba(100%, 0%, 0%, 60%); }");
+        warnlbl->setAlignment(Qt::AlignCenter);
+        warnlbl->setMinimumHeight(36);
+
+        lyt->addWidget(warnlbl);
+
+        connect(
+            fuzzy,
+            &FuzzySearchWidget::sortCompleted,
+            [fuzzy, this](float time) {
+                warnlbl->setText(
+                    QString("Sorted list of %1 items in %3 msec")
+                        .arg(fuzzy->size())
+                        .arg(time / 1000000.0));
+            });
+    }
+
     QFont font;
     font.setFamily("JetBrains Mono");
     warn->setFont(font);
