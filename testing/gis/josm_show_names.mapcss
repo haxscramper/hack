@@ -1,0 +1,193 @@
+meta {
+    title: "fixme and name";
+    version: "1.0.2_2020-08-17";
+    description: "Displays fixme=* and name=* coloured.";
+    icon: "presets/misc/fixme.svg";
+    author: "Klumbumbus";
+    link: "https://josm.openstreetmap.de/wiki/Styles/FixmeAndName";
+    /* min-josm-version: "????"; all except very old JOSM versions */
+}
+
+meta[lang=de] {
+    title: "fixme und name";
+    description: "Zeigt fixme=* und name=* farbig an.";
+    link: "https://josm.openstreetmap.de/wiki/Styles/FixmeAndName";
+}
+
+/* Create mappaint user settings. */
+
+setting::fixme_on_nodes {
+    type: boolean;
+    label: tr("Display fixme on nodes");
+    default: true;
+}
+setting::fixme_on_ways {
+    type: boolean;
+    label: tr("Display fixme on ways");
+    default: true;
+}
+setting::fixme_on_areas {
+    type: boolean;
+    label: tr("Display fixme on areas");
+    default: true;
+}
+
+setting::name_on_nodes {
+    type: boolean;
+    label: tr("Display name on nodes");
+    default: true;
+}
+setting::name_on_ways {
+    type: boolean;
+    label: tr("Display name on ways");
+    default: true;
+}
+setting::name_on_areas {
+    type: boolean;
+    label: tr("Display name on areas");
+    default: true;
+}
+
+
+/* name */
+
+node[name][setting("name_on_nodes")]::fixme_and_name_layer {
+    text: name;
+    font-size: 17;
+    text-color: name_text#000000;
+    text-halo-radius: 2;
+    text-halo-color: name#FFFFFF;
+    text-anchor-vertical: center;
+    text-offset-y: 6;
+    symbol-shape: circle;
+    symbol-fill-color: name#FFFFFF;
+    symbol-size: 10;
+    symbol-stroke-color: name_text#000000;
+    z-index: -1;
+}
+
+way!:closed[name][setting("name_on_ways")]::fixme_and_name_layer {
+    width: 8;
+    color: name#FFFFFF;
+    major-z-index: -1;
+}
+
+way!:closed[name][setting("name_on_ways")] {
+    text: name;
+    text-color: name_text#000000;
+    text-halo-radius: 2;
+    text-halo-color: name#FFFFFF;
+    font-size: 17;
+}
+
+area:closed[name][setting("name_on_areas")] > way::fixme_and_name_layer,
+way:closed[name][setting("name_on_areas")]::fixme_and_name_layer {
+    width: 8;
+    color: name#FFFFFF;
+     major-z-index: -1;
+}
+
+area:closed[name][setting("name_on_areas")],
+way:closed[name][setting("name_on_areas")] {
+    text: name;
+    text-position: inside;
+    text-color: name_text#000000;
+    text-halo-radius: 2;
+    text-halo-color: name#FFFFFF;
+    font-size: 17;
+}
+
+
+/* fixme */
+
+node[FIXME][setting("fixme_on_nodes")]::fixme_and_name_layer {
+    text: tag("FIXME");
+    font-size: 17;
+    text-color: fixme_text#000000;
+    text-halo-radius: 2;
+    text-halo-color: fixme#FF0000;
+    text-anchor-vertical: center;
+    text-offset-y: 6;
+    symbol-shape: circle;
+    symbol-fill-color: fixme#FF0000;
+    symbol-size: 10;
+    symbol-stroke-color: fixme_text#000000;
+    z-index: -1;
+}
+node[fixme][setting("fixme_on_nodes")]::fixme_and_name_layer {
+    text: fixme;
+    font-size: 17;
+    text-color: fixme_text#000000;
+    text-halo-radius: 2;
+    text-halo-color: fixme#FF0000;
+    text-anchor-vertical: center;
+    text-offset-y: 6;
+    symbol-shape: circle;
+    symbol-fill-color: fixme#FF0000;
+    symbol-size: 10;
+    symbol-stroke-color: fixme_text#000000;
+    z-index: -1;
+}
+
+way!:closed[FIXME][setting("fixme_on_ways")]::fixme_and_name_layer,
+way!:closed[fixme][setting("fixme_on_ways")]::fixme_and_name_layer {
+    width: 8;
+    color: fixme#FF0000;
+    major-z-index: -1;
+}
+
+way!:closed[FIXME][setting("fixme_on_ways")] {
+    text: tag("FIXME");
+    text-color: fixme_text#000000;
+    text-halo-radius: 2;
+    text-halo-color: fixme#FF0000;
+    font-size: 17;
+}
+way!:closed[fixme][setting("fixme_on_ways")] {
+    text: fixme;
+    text-color: fixme_text#000000;
+    text-halo-radius: 2;
+    text-halo-color: fixme#FF0000;
+    font-size: 17;
+}
+
+area:closed[FIXME][setting("fixme_on_areas")] > way::fixme_and_name_layer,
+way:closed[FIXME][setting("fixme_on_areas")]::fixme_and_name_layer,
+area:closed[fixme][setting("fixme_on_areas")] > way::fixme_and_name_layer,
+way:closed[fixme][setting("fixme_on_areas")]::fixme_and_name_layer {
+    width: 8;
+    color: fixme#FF0000;
+     major-z-index: -1;
+}
+
+area:closed[FIXME][setting("fixme_on_areas")],
+way:closed[FIXME][setting("fixme_on_areas")] {
+    text: tag("FIXME");
+    text-position: inside;
+    text-color: fixme_text#000000;
+    text-halo-radius: 2;
+    text-halo-color: fixme#FF0000;
+    font-size: 17;
+}
+area:closed[fixme][setting("fixme_on_areas")],
+way:closed[fixme][setting("fixme_on_areas")] {
+    text: fixme;
+    text-position: inside;
+    text-color: fixme_text#000000;
+    text-halo-radius: 2;
+    text-halo-color: fixme#FF0000;
+    font-size: 17;
+}
+
+/* fixme is more important than name, so if both are tagged the style and text of fixme is used. */
+
+/* icon text position correction, should harmonize fine with the default JOSM internal style and its icon style setting */
+
+node[is_prop_set(icon-image, core_name_fixme)]::fixme_and_name_layer {
+    text-offset-x: 4;
+}
+
+node[name][FIXME][is_prop_set(icon-image, core_name_fixme)]::fixme_and_name_layer,
+node[name][fixme][is_prop_set(icon-image, core_name_fixme)]::fixme_and_name_layer {
+    text-offset-x: 10;
+}

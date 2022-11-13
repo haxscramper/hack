@@ -1,0 +1,7 @@
+<presets author="learnOSM.org" version="1.0" shortdescription="Event Area preset" description="Event area preset">
+    <item name="Event Area" type="node,closedway">
+        <label text="event Form"/>
+        <key key="event" value="yes"/>
+        <text key="name" text="Name of event" default="" delete_if_empty="true"/>
+    </item>
+</presets>
