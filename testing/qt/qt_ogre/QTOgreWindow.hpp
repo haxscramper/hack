@@ -59,11 +59,9 @@ class QTOgreWindow
     virtual bool eventFilter(QObject* target, QEvent* event);
 
   signals:
-    /*
-     * Event for clicking on an entity.
-     */
+    /// Event for clicking on an entity.
     void entitySelected(Ogre::Entity* entity);
-
+    /// After initialization event is complete and scene is fully created
     void initializationComplete();
 
   protected:
