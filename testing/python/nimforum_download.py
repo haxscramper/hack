@@ -16,7 +16,10 @@ import requests
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException, NoSuchElementException
+from selenium.common.exceptions import (
+    TimeoutException,
+    NoSuchElementException,
+)
 import pickle
 from sqlalchemy import Column, Integer, Text
 import sqlalchemy as sqa
@@ -37,9 +40,11 @@ def IdColumn():
     return Column(Integer, primary_key=True, autoincrement=True)
 
 
+# Single data table with all posts
 class Post(SQLBase):
     __tablename__ = "post"
     id = IdColumn()
+    post_id = IntColumn()
     thread = IntColumn()
     text = StrColumn()
     author = StrColumn()
@@ -48,15 +53,21 @@ class Post(SQLBase):
     modified = IntColumn(nullable=True)
 
 
+# To save on requests and networking, cache each page and each post content
+# here. This speeds up processing by several orders of magnitude.
 cache_dir = os.path.expandvars("$HOME/.cache/nim_forum_fetch")
 
 if not os.path.exists(cache_dir):
     os.mkdir(cache_dir)
 
+# Selenium-based operations should complete in 20 seconds or less,
+# otherwise threat it ias a timeout.
 timeout = 20
 
 
 def get_content(driver, thread_id):
+    # Get content of the thread specified by the thread id and return the
+    # HTML of the page. Content is cached in the separate file
     thread_file = os.path.join(cache_dir, f"thread-{thread_id}")
     if os.path.exists(thread_file):
         content = ""
@@ -67,6 +78,7 @@ def get_content(driver, thread_id):
         return content
 
     else:
+        print(f"Getting content for thread {thread_id} using driver")
         driver.get(f"https://forum.nim-lang.org/t/{thread_id}")
 
         element = WebDriverWait(driver, timeout).until(
@@ -85,12 +97,17 @@ def get_content(driver, thread_id):
                     return None
 
             class no_load_more(object):
+                # Custom selenium wait predicate -- used to wait for "load
+                # more posts" to complete. The button itself disappears
+                # immediately, so we need to wait
                 def __init__(self, starting_posts):
                     self.posts = starting_posts
 
+                # Custom predicate is repeatedly called for validation
                 def __call__(self, driver):
                     soup = BeautifulSoup(driver.page_source, "html.parser")
                     now = len(soup.select('div[class="post"]'))
+                    # Wait until there are more
                     return self.posts < now
 
             load_more = get_moreload(driver)
@@ -128,20 +145,24 @@ def get_post(post_id):
 
     else:
         url = f"https://forum.nim-lang.org/post.rst?id={post_id}"
-        response = requests.get(url)
+        try:
+            response = requests.get(url, timeout=timeout)
 
-        if response.status_code == 200:
-            with open(post_file, "w") as file:
-                file.write(response.content.decode("utf-8"))
+            if response.status_code == 200:
+                with open(post_file, "w") as file:
+                    file.write(response.content.decode("utf-8"))
 
-            print(f"Wrote content of post {post_id} to {post_file}")
+                print(f"Wrote content of post {post_id} to {post_file}")
 
-        else:
-            print(
-                f"Fetch of post {post_id} failed with code {response.status_code}"
-            )
+            else:
+                print(
+                    f"Fetch of post {post_id} failed with code {response.status_code}"
+                )
 
-        return response.content
+            return response.content
+
+        except requests.exceptions.TimeoutError:
+            return "READ TIMEOUT"
 
 
 def get_posts(content, thread_id, session):
@@ -153,7 +174,8 @@ def get_posts(content, thread_id, session):
 
         modified = (
             datetime.strptime(
-                modified[0]["title"].replace("Last modified ", ""), date_format
+                modified[0]["title"].replace("Last modified ", ""),
+                date_format,
             )
             if 0 < len(modified)
             else None
@@ -165,7 +187,7 @@ def get_posts(content, thread_id, session):
         author = post.select('div[class="post-username"]')[0].text
         session.add(
             Post(
-                id=post_id,
+                post_id=post_id,
                 thread=thread_id,
                 created=created.timestamp(),
                 modified=modified.timestamp() if modified else None,
@@ -197,19 +219,26 @@ if os.path.exists(bad_threads_file):
     with open(bad_threads_file, "rb") as file:
         bad_threads = pickle.load(file)
 
-for thread in range(9617, 1, -1):
+
+def fetch_thread(thread):
     if thread in bad_threads:
         print(f"Skipping bad thread {thread}")
-        continue
+        return
 
     try:
         content = get_content(driver, thread)
-        if not content:
+        fail_count = 0
+        while not content and fail_count < 5:
+            content = get_content(driver, thread)
+            print(f"No content for thread {thread}, retrying")
+            fail_count += 1
+
+        if not content and 5 <= fail_count:
             print(
-                f"No content for thread {thread}, adding to list of bad threads"
+                f"No content for thread {thread} after {fail_count} attempts, adding to bad list)"
             )
             bad_threads.add(thread)
-            continue
+            return
 
         get_posts(content, thread, session)
         session.flush()
@@ -219,9 +248,21 @@ for thread in range(9617, 1, -1):
         bad_threads.add(thread)
         print(f"Thread {thread} failed to load in time, adding to bad list")
 
+    # Dump list of bad threads to make quick interruption
+    # to the looping less painful.
+    with open(bad_threads_file, "wb+") as file:
+        print("Updated bad thread list")
+        pickle.dump(bad_threads, file)
+
+    return
+
+
+fetch_thread(9572)
+
+for thread in range(9617, 1, -1):
+    fetch_thread(thread)
+
 session.close()
 
-with open(bad_threads_file, "rb") as file:
-    pickle.dump(bad_threads, file)
 
 driver.quit()

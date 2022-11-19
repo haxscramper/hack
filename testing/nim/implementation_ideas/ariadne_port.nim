@@ -162,3 +162,107 @@ type
     src_id: S
     span: Slice[int]
     labels: seq[LabelInfo[S]]
+
+  Line = object
+    ## A type representing a single line of a souce
+    offset: int
+    len: int
+    chars: string
+
+  Source = object
+    lines: seq[Line] ## A type representing a single source that may be
+                     ## referred to by [`Span`]s.
+    len: int ## In most cases, a source is a single input file.
+
+  Cache[Id] = object
+    fetch: proc(self: var Cache[Id], id: Id) =
+
+proc `from`(str: string): Source =
+  ## Generate a [`Source`] from the given [`str`].
+  ##
+  ## Note that this function can be expensive for long strings. Use an
+  ## implementor of [`Cache`] where possible.
+  var offset = 0
+  for line in str.splitLines():
+    result.lines.add Line(
+      offset: offset,
+      len: line.len() + 1,
+      chars: line.strip()
+    )
+
+    offset += line.len
+
+  result.len = offset
+
+
+iterator chars(self: Source): char =
+  ## Iterate over all characters in the source
+  for line in self.lines:
+    for ch in line.chars:
+      yield ch
+
+proc line(self: Source, index: int): Line =
+  ## Get access to a specific, zero-indexed [`Line`].
+  return self.lines[index]
+
+proc getOffsetLine(self: Source, offset: int): Option[(Line, int, int)] =
+  if offset <= self.len:
+      # if offset <= self.len {
+      #     let idx = self.lines
+      #         .binary_search_by_key(&offset, |line| line.offset)
+      #         .unwrap_or_else(|idx| idx.saturating_sub(1));
+      #     let line = &self.lines[idx];
+      #     assert!(offset >= line.offset, "offset = {}, line.offset = {}", offset, line.offset);
+      #     Some((line, idx, offset - line.offset))
+      # } else {
+      #     None
+      # }
+
+
+proc getLineRange[S](self: Source, span: S): Slice[int] =
+  ## Get the range of lines that this span runs across.
+  ##
+  ## The resulting range is guaranteed to contain valid line indices (i.e:
+  ## those that can be used for [`Source::line`]).
+
+  # let start = self.getOffsetLine(span.start()).map_or(0, |(_, l, _)| l);
+  # let end = self.get_offset_line(span.end().saturating_sub(1).max(span.start())).map_or(self.lines.len(), |(_, l, _)| l + 1);
+  #   start..end
+
+func span(l: Line) = l.offset ..< l.offset + l.len
+
+proc getSourceGroups[S](
+      self: Report[S], cache: var Cache[S]): seq[SourceGroup[S]] =
+
+  for label in self.labels:
+    let srcDisplay = cache.display(label.span.source())
+    let tmp = cache.fetch(label.span.source())
+    let src =
+      if tmp.isOk():
+        tmp.get()
+      else:
+        echo("Unable to fetch source '{srcDisplay}'")
+        continue
+
+    let startLine = src.getOffsetLine(label.span.start()).mapIt(it[1])
+    let end_line = src.getOffsetLine(
+      label.span.end().saturatingSub(1).max(label.span.start())).mapIt(it[1])
+
+    let label_info = LabelInfo(
+      kind: if start_line == end_line: Inline else: Multiline,
+      label: label
+    )
+
+
+    let idx = result.findIt(it.srcId == label.span.source())
+    if idx != -1:
+      group.span.start = group.span.start.min(label.span.start())
+      group.span.end = group.span.end.max(label.span.end())
+      group.labels.push(label_info)
+
+    else:
+      result.add(SourceGroup(
+        src_id: label.span.source(),
+        span: label.span.start()..label.span.end(),
+        labels: vec![label_info],
+      ));
