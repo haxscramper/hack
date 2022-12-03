@@ -1,0 +1,133 @@
+@startuml
+!theme blueprint
+skinparam defaultFontName Iosevka
+
+start
+
+:Open backend>
+
+partition "Prepare test files and specs" {
+    partition "Prepare test files" {
+    note
+        Populates [[code:Execution.testFiles]]
+    endnote
+    switch (Type of the input file filter)
+        case (Category)
+            if (Is special category?) then (yes)
+                :Set up special actions
+                (dispatch into dedicated procs)|
+                ' TODO only adds specal actions to execute or
+                ' something more elaborate?
+            else (no)
+                :Recursively add all files in ""tests/<category>""<
+            endif
+
+        case (Single)
+            :Add standalone file to list]
+        case (All)
+            :Recursively add all files in ""tests/""<
+
+    endswitch
+    }
+
+    partition "Populate test specs" {
+    note
+        Populates [[code:Execution.testsSpecs]]
+    endnote
+    while (For each test file)
+        :Parse test specification]
+        note left
+            Creates [[code:TSpec]]
+        endnote
+        if (Has additional tests matrix for the test?) then (yes)
+            :Add test matrix parameters]
+        endif
+    endwhile
+    }
+}
+
+partition "Prepare test runs" {
+    note
+        Populates [[code:Execution.testRuns]]
+    endnote
+
+    while (For each test spec)
+        while (For each target to run)
+            if (No matrix parameters) then (yes)
+                :Create test using empty matrix entry]
+            else (no)
+                while (For each matrix entry)
+                    :Create test using specified matrix]
+                endwhile
+            endif
+        endwhile
+    endwhile
+}
+
+partition "Prepare test actions" {
+    note
+        Populates [[code:Execution.actions]]
+    endnote
+
+    while (For each test run)
+        switch (Type of the test action)
+            case (Reject or compile)
+                :Add reject/compile action]
+
+            case (Run)
+                :Add compile test action]
+                :Add execute test action]
+        endswitch
+    endwhile
+}
+
+partition "Run tests" {
+    :Partition run actions into batches of size N]
+    note left
+        Populates [[code:TestBatches]]
+    endnote
+
+
+
+    while (For each batch)
+        :Exec processes for batch commands
+        [[code:runTestBatch()]|
+        note left
+            Updates run information in the batches
+        endnote
+    endwhile
+
+    partition "Report run information [[code:reportTestRunResults()]]" {
+        while (For each batch)
+            :Update total run statistics|
+            switch (Reported action kind)
+                case (Compile)
+                    :Compare compiler output|
+                case (Compile as a part of run)
+                    switch (Compile result kind)
+                        case (Success)
+
+                        case (Exe not found)
+                            :Add executable name to report<
+
+                        case (Other)
+                            :Compare run output failures<
+                    endswitch
+
+                case (Run)
+                    switch (Run failure type)
+                        case (Exit codes differ)
+                            :Add exit code information to report<
+                        case (Outputs differ)
+                            :Format output differences<
+                    endswitch
+            endswitch
+        endwhile
+    }
+
+}
+
+:Close backend>
+
+end
+@enduml

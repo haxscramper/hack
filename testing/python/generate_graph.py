@@ -19,8 +19,48 @@ def format_text(text: str, width: int = 40) -> str:
     )
 
 
+def to_org(item, level):
+    label = item["text"]
+    name = item["name"]
+    ing = "*" * level
+
+    todo = "TODO"
+    if "todo" in item and item["todo"] == "done":
+        todo = "DONE"
+    elif "todo" in item and item["todo"] == "wip":
+        todo = "WIP"
+
+    deps = []
+    if "deps" in item:
+        for dep in item["deps"]:
+            other = dep["name"]
+            reason = ""
+            if "reason" in dep:
+                reason = dep["reason"]
+
+            deps.append(f"""
+**{ing} [[id:{other}]]
+  :properties:
+  :blocker: t
+  :end:
+
+{reason}
+""")
+
+
+    deps = "\n".join(deps)
+    return f"""
+*{ing} {todo} {label}
+  :properties:
+  :id: {name}
+  :end:
+
+{deps}
+"""
+
+
 def to_graph(item) -> (str, List[str]):
-    label = format_text(item["text"])
+    label = item["text"]
     name = item["name"]
     style = "style=filled,fillcolor="
     if "todo" in item and item["todo"] == "done":
@@ -39,7 +79,7 @@ def to_graph(item) -> (str, List[str]):
             other = dep["name"]
             item = f"\n{other} -> {name}"
             if "reason" in dep:
-                reason = format_text(dep["reason"])
+                reason = dep["reason"]
                 item += f'[label="{reason}"]'
 
             deps.append(item)
@@ -73,9 +113,35 @@ def rec_write(body: str, item, level: int) -> (str, List[str]):
     return (result, links)
 
 
+def rec_write_org(body: str, item, level: int) -> (str, List[str]):
+    result = ""
+    if "group" in item:
+        group = item["group"]
+        label = item["label"]
+        result += f"""
+* {label}
+  :properties:
+  :id: {group}
+  :end:
+
+"""
+        if "items" in item:
+            for nested in item["items"]:
+                result += rec_write_org(body, nested, level + 1)
+
+    else:
+        result += to_org(item, level)
+
+    return result
+
 body = ""
 doc = yaml.load(open("graph.yaml").read(), Loader=yaml.Loader)
 all_links = []
+
+with open("/tmp/res.org", "w") as file:
+  for it in doc:
+      file.write(rec_write_org(body, it, 0))
+
 for it in doc:
     (chunk, links) = rec_write(body, it, 0)
     body += chunk
