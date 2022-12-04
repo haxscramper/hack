@@ -1,0 +1,13 @@
+@startuml
+'https://online.visual-paradigm.com/knowledge/sdl-diagram/what-is-sdl-diagram/
+start
+    :Regular step;
+    :Function call|
+    :Data assignment]
+    :Output>
+    :Input<
+    :Save message\
+    :Send saved message//
+    :Continious}
+end
+@enduml

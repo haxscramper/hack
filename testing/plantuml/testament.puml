@@ -35,7 +35,7 @@ partition "Prepare test files and specs" {
         Populates [[code:Execution.testsSpecs]]
     endnote
     while (For each test file)
-        :Parse test specification]
+        :Parse test specification<
         note left
             Creates [[code:TSpec]]
         endnote
@@ -87,47 +87,41 @@ partition "Run tests" {
         Populates [[code:TestBatches]]
     endnote
 
-
-
     while (For each batch)
         :Exec processes for batch commands
         [[code:runTestBatch()]|
         note left
             Updates run information in the batches
         endnote
+        :Create test run results from batches|
+        note left
+            Construct [[code:TestRunReport]] from batch info
+        endnote
+        :Log to console>
+        note left
+            Apparently this makes "run batch" do two
+            things: //execute the batch// but also compare
+            the results. This is necessary so logging to
+            the terminal can be done in a semi-real-time
+            manner.
+        endnote
     endwhile
 
-    partition "Report run information [[code:reportTestRunResults()]]" {
-        while (For each batch)
-            :Update total run statistics|
-            switch (Reported action kind)
-                case (Compile)
-                    :Compare compiler output|
-                case (Compile as a part of run)
-                    switch (Compile result kind)
-                        case (Success)
-
-                        case (Exe not found)
-                            :Add executable name to report<
-
-                        case (Other)
-                            :Compare run output failures<
-                    endswitch
-
-                case (Run)
-                    switch (Run failure type)
-                        case (Exit codes differ)
-                            :Add exit code information to report<
-                        case (Outputs differ)
-                            :Format output differences<
-                    endswitch
-            endswitch
-        endwhile
-    }
-
+    while (For each batch)
+        :Update total run statistics|
+        :Write out test runs to cache>
+        note left
+            For ""--retry"" option
+        endnote
+        :Report final test suite pass/failure>
+        note left
+            Ultimate consumer of the [[code:TestRunReport]] data -
+            gives the final verdict on the global test suite
+            (tests passed/failed), shows teardown on the failed
+            tests
+        endnote
+    endwhile
 }
-
-:Close backend>
-
+:Present final test breakdown>
 end
 @enduml
