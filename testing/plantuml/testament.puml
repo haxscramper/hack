@@ -49,6 +49,8 @@ partition "Prepare test files and specs" {
 partition "Prepare test runs" {
     note
         Populates [[code:Execution.testRuns]]
+        with run configuration for each test
+        that needs to be executed.
     endnote
 
     while (For each test spec)
@@ -67,6 +69,9 @@ partition "Prepare test runs" {
 partition "Prepare test actions" {
     note
         Populates [[code:Execution.actions]]
+        with unitary actions (commands) that
+        need to be executed by the   process
+        runner.
     endnote
 
     while (For each test run)
@@ -81,46 +86,61 @@ partition "Prepare test actions" {
     endwhile
 }
 
-partition "Run tests" {
-    :Partition run actions into batches of size N]
-    note left
-        Populates [[code:TestBatches]]
-    endnote
-
-    while (For each batch)
-        :Exec processes for batch commands
-        [[code:runTestBatch()]|
+partition "Run tests [[code:runTests()]]" {
+    while (Has actions to process)
+        :Create an empty batch object|
         note left
-            Updates run information in the batches
+            Batch entry that will be
+            populated and executed
+        endnote
+        while (Batch not full and has more actions to process)
+            if (Action prerequisites failed) then (yes)
+                :Add to set of failed actions|
+            else (no)
+                :Add action to batch|
+            endif
+        endwhile
+        :Exec processes for batch commands
+        [[code:runTestBatch()]]|
+        note left
+            Updates run information in the runs
+            using callbacks associated with batch.
+            * Info for run/compile/check time in
+              [[code:Execution.runTimes]]
+            * Sets processing results in
+              [[code:Execution.runActuals]]
         endnote
         :Create test run results from batches|
         note left
             Construct [[code:TestRunReport]] from batch info
         endnote
-        :Log to console>
-        note left
-            Apparently this makes "run batch" do two
-            things: //execute the batch// but also compare
-            the results. This is necessary so logging to
-            the terminal can be done in a semi-real-time
-            manner.
-        endnote
+        while (For completed action)
+            :Run action debugging/tracing>
+        endwhile
+        while (For run that completed just now)
+            :Print run result to console>
+            note left
+                Apparently this makes "run batch" do two
+                things: //execute the batch// but also compare
+                the results. This is necessary so logging to
+                the terminal can be done in a semi-real-time
+                manner.
+            endnote
+        endwhile
     endwhile
 
-    while (For each batch)
-        :Update total run statistics|
-        :Write out test runs to cache>
-        note left
-            For ""--retry"" option
-        endnote
-        :Report final test suite pass/failure>
-        note left
-            Ultimate consumer of the [[code:TestRunReport]] data -
-            gives the final verdict on the global test suite
-            (tests passed/failed), shows teardown on the failed
-            tests
-        endnote
-    endwhile
+    :Update total run statistics|
+    :Write out test runs to cache>
+    note left
+        For ""--retry"" option
+    endnote
+    :Report final test suite pass/failure>
+    note left
+        Ultimate consumer of the [[code:TestRunReport]] data -
+        gives the final verdict on the global test suite
+        (tests passed/failed), shows teardown on the failed
+        tests
+    endnote
 }
 :Present final test breakdown>
 end
