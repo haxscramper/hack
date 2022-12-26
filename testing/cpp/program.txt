@@ -1,0 +1,9 @@
+movR1 0
+movR2 255
+movR3 7
+movPTR 0
+movMaxR1 @PTR
+movMinR2 @PTR
+incReg PTR 
+isLessThanR3 PTR 
+jumpIf 2

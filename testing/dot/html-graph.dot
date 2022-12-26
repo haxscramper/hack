@@ -1,0 +1,10 @@
+    digraph G {
+        node[shape=rect,fontname=iosevka,penwidth=2];
+        edge[fontname=iosevka,penwidth=2];
+        graph[fontname=iosevka];
+        nodesep=0.8;
+        rankdir=LR;
+        splines=polyline;
+    Mind_map_nodes_are_made_from_subtrees[label="", color=red];
+SSS[label=<<table><tr><td>X</td></tr></table>>];
+    }
