@@ -1,4 +1,4 @@
-import compiler/[ast, parser, idents, options]
+import compiler/[ast, parser, idents, options, renderer]
 import hmisc/core/all
 import std/[strutils, sequtils]
 startHax()
@@ -29,6 +29,11 @@ func `of`(s: State, k: CodeContextKind | set[CodeContextKind]): bool =
 iterator items(n: PNode): PNode =
   for s in n.sons:
     yield s
+
+iterator pairs(n: PNode): tuple[idx: int, sub: PNode] =
+  for idx, s in n.sons:
+    yield (idx, s)
+
 
 func `[]`(n: PNode, s: HSlice[int, BackwardsIndex]): seq[PNode] =
   n.sons[s]
@@ -92,10 +97,30 @@ func escapeCxxStr(s: string): string =
   result.add ")\""
 
 
+iterator flatIdentDefs(
+    node: PNode, initIdx: int = 0): tuple[id, typ, expr: PNode, idx: int] =
+  var idx = initIdx
+  for name in node[0..^3]:
+    yield (name, node[^2], node[^1], idx)
+    inc idx
+
+iterator flatIdentDefs(
+    nodes: seq[PNode]): tuple[id, typ, expr: PNode, idx: int] =
+
+  var idx = 0
+  for node in nodes:
+    for (id, typ, expr, resIdx) in flatIdentDefs(node, idx):
+      yield (id, typ, expr, resIdx)
+      idx = resIdx
+    inc idx
+
 proc toCpp(node: PNode, s: State): string =
   proc die(n: PNode) =
     raise newUnexpectedKindError(
-      n, $s.context & "\n" & node.treeRepr())
+      n,
+      $s.context & "\n" &
+        node.treeRepr() & "\n" &
+        $node)
 
   case node.kind:
     of nkStmtList, nkTypeSection:
@@ -103,26 +128,99 @@ proc toCpp(node: PNode, s: State): string =
         result.add "\n"
         result.add it.toCpp(s + ccStandaloneStmt)
 
-    of nkIfStmt:
+    of nkStmtListExpr:
+      result.add "/* FIXME STMT LIST EXPR */"
+      for it in node:
+        result.add "\n"
+        result.add it.toCpp(s + ccStandaloneStmt)
+
+    of nkIfStmt, nkWhenStmt, nkIfExpr:
+      let note = tern(node of nkIfExpr, "/* FIXME expression */", "")
       for idx, branch in node:
         if branch of nkElifBranch:
-          result.add "$# if ($#) { $# }" % [
-            tern(idx == 0, "", "else"),
-            toCpp(branch[0], s),
-            toCpp(branch[1], s)
-          ]
+          result.add "$else $const if ($expr) { $body $note }" % {
+            "else": tern(idx == 0, "", "else"),
+            "const": tern(node of nkWhenStmt, "constexpr", ""),
+            "expr": toCpp(branch[0], s),
+            "body": toCpp(branch[1], s),
+            "note": note
+          }
 
         else:
           result.add "else { $# }" % [
             toCpp(branch[0], s),
           ]
 
+    of nkBreakStmt:
+      result = "break;"
+
+    of nkVarTuple:
+      result = "auto [$#] $#" % [
+        node[0..^2].mapIt(it.toCpp(s)).join(", "),
+        toCpp(node[^1], s)
+      ]
 
     of nkIntLit:
       result = $node.intVal
 
-    of nkStrLit:
+    of nkFloatLit:
+      result = $node.floatVal
+
+    of nkCallStrLit:
+      result = "$#$#" % [
+        node[1].strVal.escapeCxxStr(),
+        node[0].toCpp(s)
+      ]
+
+    of nkPragmaBlock:
+      result = "/* PRAGMA BLOCK $# */\n$#" % [
+        $node[0],
+        node[1].toCpp(s)
+      ]
+
+    of nkTryStmt:
+      result = "try {"
+      result.add node[0].toCpp(s)
+      result.add "}"
+      for branch in node[1..^1]:
+        if branch of nkExceptBranch:
+          let body = branch[^1].toCpp(s)
+          var name: string
+          var varname: string
+          if branch[0] of nkIdent:
+            name = branch[0].toCpp(s)
+
+          elif len(branch) == 1:
+            name = "..."
+
+          else:
+            name = branch[0][1].toCpp(s)
+            varname = branch[0][2].toCpp(s)
+
+          name = case name:
+            of "Exception": "std::exception"
+            else: name
+
+          result.add "except($name $varname) {$body}" % {
+            "name": name,
+            "varname": varname,
+            "body": body
+          }
+
+        else:
+          result.add "/* UNCONVERTIBLE $# */" % [
+            $branch
+          ]
+
+
+    of nkStrLit, nkTripleStrLit, nkRStrLit:
       result = "$#" % node.strVal.escapeCxxStr()
+
+    of nkIncludeStmt:
+      result = "/* INCLUDE $# */" % $node
+
+    of nkCharLit:
+      result = "'$#'" % $node.intVal.char()
 
     of nkPrefix:
       result = "$#$#" % [
@@ -164,8 +262,28 @@ proc toCpp(node: PNode, s: State): string =
         node.mapIt(it.toCpp(s + ccType)).join(", ")
       ]
 
+    of nkBindStmt:
+      result = "/* BIND STMT */"
+
     of nkRefTy:
-      result = "$#*" % toCpp(node[0], s)
+      if len(node) == 0:
+        result = "/* REF TYPECLASS */"
+
+      else:
+        result = "std::shared_ptr<$#>" % toCpp(node[0], s)
+
+    of nkPtrTy:
+      if len(node) == 0:
+          result = "/* PTR TYPECLASS */"
+
+      else:
+        result = "$#*" % toCpp(node[0], s)
+
+    of nkEnumTy:
+      result = "/* ENUM TY */"
+
+    of nkVarTy:
+      result = "$#&" % toCpp(node[0], s)
 
     of nkRecCase:
       result = "/* TODO REC CASE */"
@@ -176,36 +294,94 @@ proc toCpp(node: PNode, s: State): string =
     of nkConstSection:
       result = "/* TODO CONST SECTION */"
 
+    of nkCast:
+      result = "std::static_cast<$#>($#)" % [
+        toCpp(node[0], s + ccType),
+        toCpp(node[1], s)
+      ]
+
+    of nkNilLit:
+      result = "/* NIL LIT */"
+
+    of nkDistinctTy:
+      if len(node) == 0:
+        result = "/* DISTINCT TYPECLASS */"
+
+      else:
+        result = "/* distinct */ $#" % [
+          toCpp(node[0], s)
+        ]
+
     of nkTypeDef:
+      result.add "/* TYPE DEF $# */" % $node
       case node[2].kind:
-        of nkIdent, nkTupleTy:
-          result = "$template using $old = $new" % {
+        of nkRefTy:
+          if node[2][0] of nkObjectTy:
+            result.add "/* FIXME REF OBJ */$template struct $name {$body};" % {
+              "template": node[1].toCpp(s),
+              "name": node[0].toCpp(s + ccType),
+              "body": node[2][0][2].toCpp(s)
+            }
+
+          else:
+            result.add "/* REF TYPEDEF */ $template using $old = $new" % {
+              "template": node[1].toCpp(s),
+              "old": node[0].toCpp(s + ccType),
+              "new": node[2].toCpp(s + ccType)
+            }
+
+        of nkIdent, nkTupleTy, nkProcTy, nkPtrTy,
+           nkIteratorTy, nkBracketExpr, nkDistinctTy:
+          result.add "$template using $old = $new" % {
             "template": node[1].toCpp(s),
-            "old": node[0].toCpp(s),
-            "new": node[2].toCpp(s)
+            "old": node[0].toCpp(s + ccType),
+            "new": node[2].toCpp(s + ccType)
           }
+
+        of nkCall:
+          result.add "$template using $old = decltype($new)" % {
+            "template": node[1].toCpp(s),
+            "old": node[0].toCpp(s + ccType),
+            "new": node[2].toCpp(s + ccType)
+          }
+
+        of nkInfix:
+          result.add "/* FIXME INFIX $# */" % $node
 
         of nkEnumTy:
           var fields: string
           for field in node[2][1..^1]:
+            var fieldf = ""
+            case field.kind:
+              of nkIdent: fieldf = toCpp(field, s)
+              of nkEnumFieldDef: fieldf = "$# = $#" % [
+                toCpp(field[0], s),
+                toCpp(field[1], s)
+              ]
+              else: die(field)
+
             fields.add "$name $value, $doc" % {
-              "name": field.toCpp(s),
+              "name": fieldf,
               "value": "",
               "doc": field.doc()
             }
 
-          result = "enum $name $doc {$body};" % {
+          result.add "enum $name $doc {$body};" % {
             "doc": node.doc(),
-            "name": node[0].toCpp(s),
+            "name": node[0].toCpp(s + ccType),
             "body": fields
           }
 
+
         of nkObjectTy:
-          result = "$template struct $name {$body};" % {
+          result.add "$template struct $name {$body};" % {
             "template": node[1].toCpp(s),
             "name": node[0].toCpp(s + ccType),
             "body": node[2][2].toCpp(s)
           }
+
+        of nkTypeClassTy:
+          discard
 
         else:
           die(node[2])
@@ -216,12 +392,14 @@ proc toCpp(node: PNode, s: State): string =
       if s of ccType:
         case node.ident.s:
           of "seq": result = "std::vector"
+          of "Table": result = "std::unordered_map"
+          of "HashSet": result = "std::unordered_set"
 
     of nkIdentDefs:
       let typ = node[^2].toCpp(s + ccType)
       let expr = node[^1].toCpp(s + ccExpression)
       for idx, def in node[0..^3]:
-        result.add "$const $type $name $expr $sep" % {
+        result.add "$const $type $name = $expr $sep" % {
           "const": tern(s of ccLet, "const", ""),
           "name": def.toCpp(s),
           "type": typ,
@@ -238,6 +416,23 @@ proc toCpp(node: PNode, s: State): string =
     of nkDiscardStmt:
       result = node[0].toCpp(s)
 
+    of nkMixinStmt:
+      result = "/* MIXIN $# */" % $node
+
+    of nkCurlyExpr:
+      result = "/* TODO CURLY $# */" % $node
+
+    of nkPragmaExpr:
+      case s.top():
+        of ccType:
+          result = toCpp(node[1], s)
+
+        else:
+          result = "/* PRAGMA $# */ $#" % [
+            $node[1],
+            toCpp(node[0], s)
+          ]
+
     of nkPostfix:
       result = node[1].toCpp(s)
 
@@ -247,11 +442,8 @@ proc toCpp(node: PNode, s: State): string =
         id.add it.toCpp(s)
 
       case s.top():
-        of ccFunctionName:
-          result = "operator $#" % id
-
-        else:
-          die(node)
+        of ccFunctionName: result = "operator $#" % id
+        else: result = "/* ACC QUOTED */ $#" % id
 
     of nkAsgn:
       result = "$# = $#;" % [ toCpp(node[0], s), toCpp(node[1], s) ]
@@ -283,13 +475,53 @@ proc toCpp(node: PNode, s: State): string =
     of nkYieldStmt:
       result = "result.push_back($#)" % toCpp(node[0], s)
 
-    of nkTemplateDef:
-      result = "/* TEMPLATE */"
+    of nkTemplateDef: result = "/* FIXME TEMPLATE */ /* \n\n$#\n*/" % $node
+    of nkMacroDef: result = "/* FIXME MACRO */ /* \n\n$#\n*/" % $node
+    of nkPragma: result = "/* FIXME PRAGMA */ /* \n\n$#\n*/" % $node
+
+    of nkBlockStmt:
+      result = "//$#\n{$#}" % [ toCpp(node[0], s), toCpp(node[1], s) ]
+
+    of nkTupleConstr:
+      result.add "{"
+      if node[0] of nkExprColonExpr:
+        for arg in node:
+          result.add ".$# = $#," % [ toCpp(arg[0], s), toCpp(arg[1], s) ]
+
+      else:
+        for arg in node:
+          result.add "$#," % toCpp(arg, s)
+
+      result.add "}"
+
+    of nkPar:
+      assert node.len() == 1, node.treeRepr()
+      result = "($#)" % toCpp(node[0], s)
+
+    of nkStaticStmt:
+      result = "/* FIXME STATIC */ /* $# */" % $node
+
+    of nkIteratorTy:
+      result = "generator<$#>" % node[0][0].toCpp(s + ccType)
+
+    of nkExportExceptStmt:
+      result = "/* EXPORT EXCEPT $# */" % $node
+
+    of nkProcTy:
+      if len(node) == 0:
+        result = "/* PROC TYPECLASS */"
+
+      else:
+        result = "std::function<$#(" % node[0][0].toCpp(s + ccType)
+        for (id, typ, expr, idx) in flatIdentDefs(node[0][1..^1]):
+          if 0 < idx: result.add ", "
+          result.add toCpp(typ, s + ccType)
 
     of nkObjConstr:
-      result.add "$#()" % toCpp(node[0], s)
+      result.add "$#{" % toCpp(node[0], s)
       for arg in node[1..^1]:
-        result.add ".$#($#)" % [ toCpp(arg[0], s), toCpp(arg[1], s) ]
+        result.add ".$# = $#," % [ toCpp(arg[0], s), toCpp(arg[1], s) ]
+      result.add "}"
 
     of nkVarSection, nkLetSection:
       for sub in node:
@@ -297,7 +529,14 @@ proc toCpp(node: PNode, s: State): string =
         result.add sub.toCpp(s + tern(node of nkVarSection, ccVar, ccLet))
         result.add ";"
 
-    of nkProcDef, nkFuncDef, nkIteratorDef:
+    of nkLambda, nkDo:
+      result = "[]($args){$body}" % {
+        "args": node[3][1..^1].mapIt(it.toCpp(s + ccFunctionArg)).join(", "),
+        "body": node[6].toCpp(s)
+      }
+
+    of nkProcDef, nkFuncDef, nkIteratorDef,
+       nkMethodDef, nkConverterDef:
       var body = node[6].toCpp(s)
       var ret = node[3][0].toCpp(s + ccType)
       if node of nkIteratorDef:
@@ -307,7 +546,8 @@ proc toCpp(node: PNode, s: State): string =
       else:
         body = "$# result; $# return result;" % [ret, body]
 
-      result = "$template\n$returnType $name($args) {$body}" % {
+      result.add "/* ORIG:\n\n$#\n\n*/" % $node
+      result.add "$template\n$returnType $name($args) {$body}" % {
         "name": node[0].toCpp(s + ccFunctionName),
         "template": toCpp(node[2], s + ccGeneric),
         "returnType": ret,
@@ -316,17 +556,45 @@ proc toCpp(node: PNode, s: State): string =
       }
 
     of nkImportStmt:
-      discard
+      result = "/* IMPORT $# */" % $node
 
     of nkDotExpr:
       result = "$#.$#" % [ toCpp(node[0], s), toCpp(node[1], s) ]
 
+    of nkGenericParams:
+      result = "template<"
+      var idx = 0
+      for par in node:
+        for id in par[0..^3]:
+          if 0 < idx: result.add ", "
+          inc idx
+          result.add "typename $#" % id.toCpp(s)
+
+      result.add ">"
+
     of nkInfix:
-      result = "$# $# $#" % [
-        toCpp(node[1], s + ccExpression),
-        toCpp(node[0], s + ccExpression),
-        toCpp(node[2], s + ccExpression),
-      ]
+      let op = toCpp(node[0], s + ccExpression)
+      let reop = case op:
+        of "..": "range"
+        else: op
+
+
+      if op == reop:
+        result = "$# $# $#" % [
+          toCpp(node[1], s + ccExpression),
+          reop,
+          toCpp(node[2], s + ccExpression),
+        ]
+
+      else:
+        result = "$#($#, $#)" % [
+          reop,
+          toCpp(node[1], s + ccExpression),
+          toCpp(node[2], s + ccExpression),
+        ]
+
+    of nkObjectTy:
+      result = "/* OBJECT TYPECLASS */"
 
     of nkCall, nkCommand:
       let name = node[0].toCpp(s + ccExpression)
@@ -348,10 +616,20 @@ proc toCpp(node: PNode, s: State): string =
 
     of nkTableConstr:
       result = "{"
+      var prev: seq[string]
       for item in node:
-        let rhs = toCpp(item[^1], s + ccExpression)
-        for lhs in item[0..^2]:
-          result.add "{$#, $#}," % [ lhs.toCpp(s + ccExpression), rhs ]
+        if safeLen(item) == 0:
+          prev.add toCpp(item, s)
+
+        else:
+          let rhs = toCpp(item[^1], s + ccExpression)
+          for item in prev:
+            result.add "{$#, $#}," % [ item, rhs ]
+
+          prev = @[]
+
+          for lhs in item[0..^2]:
+            result.add "{$#, $#}," % [ lhs.toCpp(s + ccExpression), rhs ]
 
       result.add "}"
 
@@ -366,16 +644,55 @@ proc toCpp(node: PNode, s: State): string =
     of nkCommentStmt:
       result = doc(node)
 
+    of nkExprEqExpr:
+      result = "$# = $#" % [ toCpp(node[0], s), toCpp(node[1], s) ]
+
+    of nkWhileStmt:
+      result = "while($#){$#}" % [ toCpp(node[0], s), toCpp(node[1], s) ]
+
+    of nkContinueStmt:
+      result = "continue;"
+
+    of nkFromStmt:
+      result = "/* FROM $# */" % $node
+
+    of nkTupleClassTy:
+      result = "/* TUPLE CLASS TY */"
+
+    of nkImportExceptStmt:
+      result = "/* IMPORT EXCEPT $# */" % $node
+
+    of nkDefer:
+      result = "finally _defer{[](){$#}}" % toCpp(node[0], s)
+
     else:
       die(node)
+
+import compiler/lineinfos
 
 proc parse(s: string): PNode =
   var id = newIdentCache()
   var conf = newConfigRef()
+  conf.structuredErrorHook = proc(
+    config: ConfigRef, info: TLineInfo, msg: string, severity: Severity) =
+    discard
+
   return parseString(s, id, conf)
 
-let start = State(context: @[ccToplevel])
-writeFile(
-  "/tmp/res.cpp",
-  parse(readFile(
-    "/mnt/workspace/repos/hmisc/src/hmisc/algo/hlex_base.nim")).toCpp(start))
+import hmisc/other/oswrap
+
+let root = AbsDir"/mnt/workspace/repos"
+let res = AbsDir"/tmp"
+
+for file in walkDir(
+    root,
+    RelFile,
+    exts = @["nim"],
+    recurse = true
+  ):
+  echov "reading", file
+  let start = State(context: @[ccToplevel])
+  let outf = withExt(res / file, "cpp")
+  echov "writing", outf
+  mkDir outf.dir()
+  writeFile(outf, parse(readFile(root / file)).toCpp(start))
