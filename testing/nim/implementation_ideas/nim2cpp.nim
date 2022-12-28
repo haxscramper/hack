@@ -90,11 +90,12 @@ proc treeRepr(node: PNode): string =
 
 func top(s: State): auto = s.context.top()
 
-func escapeCxxStr(s: string): string =
-  result = "R\"("
+func escapeCxxStr(s: string, multi: bool = false): string =
   for c in s:
-    result.add c
-  result.add ")\""
+    result.add case c:
+      of '\\': "\\\\"
+      of '\n': (if multi: $c else: "\\n")
+      else: $c
 
 
 iterator flatIdentDefs(
@@ -163,6 +164,20 @@ proc toCpp(node: PNode, s: State): string =
     of nkIntLit:
       result = $node.intVal
 
+    of nkInt16Lit: result = "I16($#)" % $node.intVal
+    of nkUInt16Lit: result = "U16($#)" % $node.intVal
+    of nkUInt8Lit: result = "U8($#)" % $node.intVal
+    of nkInt8Lit: result = "I8($#)" % $node.intVal
+    of nkInt32Lit: result = "I32($#)" % $node.intVal
+    of nkUInt32Lit: result = "U32($#)" % $node.intVal
+    of nkInt64Lit: result = "I64($#)" % $node.intVal
+    of nkUInt64Lit: result = "U64($#)" % $node.intVal
+    of nkFloat64Lit: result = $node.floatVal
+    of nkFloat32Lit: result = $node.floatVal
+
+    of nkUIntLit:
+      result = "UI($#)" % $node.intVal
+
     of nkFloatLit:
       result = $node.floatVal
 
@@ -214,19 +229,27 @@ proc toCpp(node: PNode, s: State): string =
 
 
     of nkStrLit, nkTripleStrLit, nkRStrLit:
-      result = "$#" % node.strVal.escapeCxxStr()
+      result = "R(\"$#\")" % node.strVal.escapeCxxStr(
+        node of nkTripleStrLit)
 
     of nkIncludeStmt:
       result = "/* INCLUDE $# */" % $node
 
     of nkCharLit:
-      result = "'$#'" % $node.intVal.char()
+      result = "'$#'" % escapeCxxStr($node.intVal.char())
 
     of nkPrefix:
-      result = "$#$#" % [
-        toCpp(node[0], s),
-        toCpp(node[1], s)
-      ]
+      let op = toCpp(node[0], s)
+      let reop = case op:
+        of "?": "notEmpty"
+        of "$": "toStr"
+        else: op
+
+      if op == reop:
+        result = "$#$#" % [reop, toCpp(node[1], s)]
+
+      else:
+        result = "$#($#)" % [reop, toCpp(node[1], s)]
 
     of nkCaseStmt:
       result.add "switch ($#) {" % node[0].toCpp(s)
@@ -286,7 +309,14 @@ proc toCpp(node: PNode, s: State): string =
       result = "$#&" % toCpp(node[0], s)
 
     of nkRecCase:
-      result = "/* TODO REC CASE */"
+      result.add node[0].toCpp(s)
+      result.add "union {"
+      for branch in node[1..^1]:
+        result.add "/* IF $# */" % branch[0..^2].mapIt($it).join(", ")
+        result.add "struct {"
+        result.add toCpp(branch[^1], s)
+        result.add "};"
+      result.add "};"
 
     of nkUsingStmt, nkExportStmt:
       discard
@@ -312,6 +342,12 @@ proc toCpp(node: PNode, s: State): string =
           toCpp(node[0], s)
         ]
 
+    of nkExprColonExpr:
+      result = ".$# = $#" % [
+        toCpp(node[0], s),
+        toCpp(node[1], s)
+      ]
+
     of nkTypeDef:
       result.add "/* TYPE DEF $# */" % $node
       case node[2].kind:
@@ -329,14 +365,6 @@ proc toCpp(node: PNode, s: State): string =
               "old": node[0].toCpp(s + ccType),
               "new": node[2].toCpp(s + ccType)
             }
-
-        of nkIdent, nkTupleTy, nkProcTy, nkPtrTy,
-           nkIteratorTy, nkBracketExpr, nkDistinctTy:
-          result.add "$template using $old = $new" % {
-            "template": node[1].toCpp(s),
-            "old": node[0].toCpp(s + ccType),
-            "new": node[2].toCpp(s + ccType)
-          }
 
         of nkCall:
           result.add "$template using $old = decltype($new)" % {
@@ -383,8 +411,21 @@ proc toCpp(node: PNode, s: State): string =
         of nkTypeClassTy:
           discard
 
+        of nkEmpty:
+          result = "/* MAGIC TYPE */"
+
         else:
-          die(node[2])
+          result.add "$template using $old = $new;" % {
+            "template": node[1].toCpp(s),
+            "old": node[0].toCpp(s + ccType),
+            "new": node[2].toCpp(s + ccType)
+          }
+
+    of nkRecWhen:
+      result = "/* REC WHEN */"
+      for branch in node:
+        result.add "/* BRANCH $# */" % $branch[0..^2].mapIt($it).join(" ")
+        result.add toCpp(branch[^1], s)
 
     of nkIdent:
       result = node.ident.s
@@ -393,16 +434,41 @@ proc toCpp(node: PNode, s: State): string =
         case node.ident.s:
           of "seq": result = "std::vector"
           of "Table": result = "std::unordered_map"
+          of "string": result = "std::string"
+          of "int8": result = "I8"
+          of "int16": result = "I16"
+          of "int32": result = "I32"
+          of "int64": result = "I64"
+          of "unt8": result = "U8"
+          of "unt16": result = "U16"
+          of "unt32": result = "U32"
+          of "unt64": result = "U64"
           of "HashSet": result = "std::unordered_set"
+
+      else:
+        case node.ident.s:
+          of "or": result = "||"
+          of "and": result = "&&"
+          of "xor": result = "^"
+          of "not": result = "!"
+
+
+    of nkAsmStmt:
+      result = "/* ASM $# */" % $node
 
     of nkIdentDefs:
       let typ = node[^2].toCpp(s + ccType)
-      let expr = node[^1].toCpp(s + ccExpression)
+      let expr = tern(
+        node[^1] of nkEmpty,
+        "",
+        " = " & node[^1].toCpp(s + ccExpression))
+
+
       for idx, def in node[0..^3]:
-        result.add "$const $type $name = $expr $sep" % {
+        result.add "$const $type $name $expr $sep" % {
           "const": tern(s of ccLet, "const", ""),
           "name": def.toCpp(s),
-          "type": typ,
+          "type": tern(s of ccFunctionArg, "const $#&" % typ, typ),
           "expr": expr,
           "sep": tern(0 < idx, ",", "")
         }
@@ -608,6 +674,14 @@ proc toCpp(node: PNode, s: State): string =
           "end": tern(s of ccStandaloneStmt, ";", "")
         }
 
+    of nkElse:
+      result = "else {$#}" % $node[0].toCpp(s)
+
+    of nkOfBranch:
+      result = "of ($#) { $# }" % [
+        node[0..^2].mapIt(it.toCpp(s)).join(", "),
+        node[^1].toCpp(s)
+      ]
 
     of nkCurly, nkBracket:
       result = "{$#}" % [
@@ -673,6 +747,7 @@ import compiler/lineinfos
 proc parse(s: string): PNode =
   var id = newIdentCache()
   var conf = newConfigRef()
+  conf.notes.excl hintLineTooLong
   conf.structuredErrorHook = proc(
     config: ConfigRef, info: TLineInfo, msg: string, severity: Severity) =
     discard
@@ -684,6 +759,17 @@ import hmisc/other/oswrap
 let root = AbsDir"/mnt/workspace/repos"
 let res = AbsDir"/tmp"
 
+
+func startswith(s: string, o: openarray[string]): bool =
+  for i in o:
+    if s.startsWith(i):
+      return true
+
+func contains(s: string, o: openarray[string]): bool =
+  for i in o:
+    if s.contains(i):
+      return true
+
 for file in walkDir(
     root,
     RelFile,
@@ -691,8 +777,25 @@ for file in walkDir(
     recurse = true
   ):
   echov "reading", file
+  if file.string.startsWith("Nim") or
+     file.string.contains([
+       "tests",
+       "compiler",
+       "i386",
+       "mysql",
+       "pubgrub",
+       "extract_cp1251_strings_from_dll",
+       "cursor_jump",
+       "direct_ast_matching",
+       "astrepr_positional_names"
+     ]):
+    continue
+
   let start = State(context: @[ccToplevel])
   let outf = withExt(res / file, "cpp")
   echov "writing", outf
   mkDir outf.dir()
   writeFile(outf, parse(readFile(root / file)).toCpp(start))
+
+
+echo "done"
