@@ -41,9 +41,7 @@ func `[]`(n: PNode, s: HSlice[int, BackwardsIndex]): seq[PNode] =
 proc doc(node: PNode): string =
   if 0 < node.comment.len():
     result = "/*!"
-    for line in node.comment.splitLines():
-      result.add "\n" & line
-
+    result.add node.comment
     result.add "\n*/"
 
 proc treeRepr(node: PNode): string =
@@ -243,10 +241,11 @@ proc toCpp(node: PNode, s: State): string =
       let reop = case op:
         of "?": "notEmpty"
         of "$": "toStr"
+        of "^": "backIdx"
         else: op
 
       if op == reop:
-        result = "$#$#" % [reop, toCpp(node[1], s)]
+        result = "($#($#))" % [reop, toCpp(node[1], s)]
 
       else:
         result = "$#($#)" % [reop, toCpp(node[1], s)]
@@ -276,9 +275,7 @@ proc toCpp(node: PNode, s: State): string =
 
     of nkRecList:
       for it in node:
-        result.add "\n"
         result.add it.toCpp(s + ccField)
-        result.add ";"
 
     of nkTupleTy:
       result = "std::tuple<$#>" % [
@@ -350,14 +347,25 @@ proc toCpp(node: PNode, s: State): string =
 
     of nkTypeDef:
       result.add "/* TYPE DEF $# */" % $node
+      proc body(body: PNode): string = result.add body[2].toCpp(s)
+      proc inh(body: PNode): string =
+        if not(body[1] of nkEmpty):
+          var base = body[1][0]
+          if base of nkRefTy:
+            base = base[0]
+
+          result = ": public $#" % toCpp(base, s + ccType)
+
       case node[2].kind:
         of nkRefTy:
           if node[2][0] of nkObjectTy:
-            result.add "/* FIXME REF OBJ */$template struct $name {$body};" % {
-              "template": node[1].toCpp(s),
-              "name": node[0].toCpp(s + ccType),
-              "body": node[2][0][2].toCpp(s)
-            }
+            result.add (
+              "/* FIXME REF OBJ */$template struct $name $base {$body};" % {
+                "template": node[1].toCpp(s),
+                "name": node[0].toCpp(s + ccType),
+                "body": node[2][0].body(),
+                "base": node[2][0].inh(),
+              })
 
           else:
             result.add "/* REF TYPEDEF */ $template using $old = $new" % {
@@ -402,10 +410,11 @@ proc toCpp(node: PNode, s: State): string =
 
 
         of nkObjectTy:
-          result.add "$template struct $name {$body};" % {
+          result.add "$template struct $name $base {$body};" % {
             "template": node[1].toCpp(s),
             "name": node[0].toCpp(s + ccType),
-            "body": node[2][2].toCpp(s)
+            "body": node[2].body(),
+            "base": node[2].inh(),
           }
 
         of nkTypeClassTy:
@@ -432,9 +441,8 @@ proc toCpp(node: PNode, s: State): string =
 
       if s of ccType:
         case node.ident.s:
-          of "seq": result = "std::vector"
-          of "Table": result = "std::unordered_map"
-          of "string": result = "std::string"
+          of "seq": result = "Vec"
+          of "string": result = "Str"
           of "int8": result = "I8"
           of "int16": result = "I16"
           of "int32": result = "I32"
@@ -443,7 +451,6 @@ proc toCpp(node: PNode, s: State): string =
           of "unt16": result = "U16"
           of "unt32": result = "U32"
           of "unt64": result = "U64"
-          of "HashSet": result = "std::unordered_set"
 
       else:
         case node.ident.s:
@@ -465,12 +472,15 @@ proc toCpp(node: PNode, s: State): string =
 
 
       for idx, def in node[0..^3]:
-        result.add "$const $type $name $expr $sep" % {
+        result.add "$const $type $name $expr $sep $doc" % {
           "const": tern(s of ccLet, "const", ""),
           "name": def.toCpp(s),
           "type": tern(s of ccFunctionArg, "const $#&" % typ, typ),
           "expr": expr,
-          "sep": tern(0 < idx, ",", "")
+          "sep": tern(
+            s of {ccFunctionArg, ccGeneric, ccType},
+            tern(0 < idx, ",", ""), ";"),
+          "doc": node.doc()
         }
 
     of nkEmpty:
@@ -606,13 +616,13 @@ proc toCpp(node: PNode, s: State): string =
       var body = node[6].toCpp(s)
       var ret = node[3][0].toCpp(s + ccType)
       if node of nkIteratorDef:
-        body = "std::vector<$#> result{}; $# return result;" % [ret, body]
-        ret = "std::vector<$#>" % ret
+        body = "Vec<$#> result{}; $# return result;" % [ret, body]
+        ret = "Vec<$#>" % ret
 
       else:
         body = "$# result; $# return result;" % [ret, body]
 
-      result.add "/* ORIG:\n\n$#\n\n*/" % $node
+      result.add "/* ORIG:\n\n$#\n$#\n\n*/" % [$node, $node.treeRepr()]
       result.add "$template\n$returnType $name($args) {$body}" % {
         "name": node[0].toCpp(s + ccFunctionName),
         "template": toCpp(node[2], s + ccGeneric),
@@ -641,12 +651,13 @@ proc toCpp(node: PNode, s: State): string =
     of nkInfix:
       let op = toCpp(node[0], s + ccExpression)
       let reop = case op:
-        of "..": "range"
+        of "..": "rangeIncl"
+        of "..<": "rangeExcl"
         else: op
 
 
       if op == reop:
-        result = "$# $# $#" % [
+        result = "(($#) $# ($#))" % [
           toCpp(node[1], s + ccExpression),
           reop,
           toCpp(node[2], s + ccExpression),
@@ -708,12 +719,16 @@ proc toCpp(node: PNode, s: State): string =
       result.add "}"
 
     of nkBracketExpr:
-      result = "${name}${op}${args}${cl}" % {
-        "name": node[0].toCpp(s),
-        "args": mapIt(node[1..^1], it.toCpp(s)).join(", "),
-        "op": tern(s of {ccGeneric, ccType}, "<", "["),
-        "cl": tern(s of {ccGeneric, ccType}, ">", "]"),
-      }
+      if len(node) == 1:
+        result = "(*($#))" % node[0].toCpp(s)
+
+      else:
+        result = "${name}${op}${args}${cl}" % {
+          "name": node[0].toCpp(s),
+          "args": mapIt(node[1..^1], it.toCpp(s)).join(", "),
+          "op": tern(s of {ccGeneric, ccType}, "<", "["),
+          "cl": tern(s of {ccGeneric, ccType}, ">", "]"),
+        }
 
     of nkCommentStmt:
       result = doc(node)
@@ -776,7 +791,6 @@ for file in walkDir(
     exts = @["nim"],
     recurse = true
   ):
-  echov "reading", file
   if file.string.startsWith("Nim") or
      file.string.contains([
        "tests",
@@ -790,6 +804,11 @@ for file in walkDir(
        "astrepr_positional_names"
      ]):
     continue
+
+  if "hlex_base" notin file.string:
+    continue
+
+  echov "reading", file
 
   let start = State(context: @[ccToplevel])
   let outf = withExt(res / file, "cpp")
