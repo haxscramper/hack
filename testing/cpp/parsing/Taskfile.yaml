@@ -1,0 +1,17 @@
+version: 3
+tasks:
+  test_grammar:
+    desc: "Run test grammar execution"
+    cmds:
+      - antlr4 -Dlanguage=Cpp -visitor -o test_grammar_build test_grammar.g4
+      - >
+        clang++
+        -std=c++20
+        -g
+        -l antlr4-runtime
+        -I/usr/include/antlr4-runtime/
+        -o test_grammar_build.bin
+        test_grammar_build/*.cpp
+        test_grammar_user.cpp
+
+      - ./test_grammar_build.bin test_grammar_input.txt

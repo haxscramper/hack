@@ -126,6 +126,7 @@ proc toCpp(node: PNode, s: State): string =
       for it in node:
         result.add "\n"
         result.add it.toCpp(s + ccStandaloneStmt)
+        result.add ";"
 
     of nkStmtListExpr:
       result.add "/* FIXME STMT LIST EXPR */"
@@ -475,7 +476,9 @@ proc toCpp(node: PNode, s: State): string =
         result.add "$const $type $name $expr $sep $doc" % {
           "const": tern(s of ccLet, "const", ""),
           "name": def.toCpp(s),
-          "type": tern(s of ccFunctionArg, "const $#&" % typ, typ),
+          "type": tern(
+            s of ccFunctionArg and not typ.endsWith("&"),
+            "const $#&" % typ, typ),
           "expr": expr,
           "sep": tern(
             s of {ccFunctionArg, ccGeneric, ccType},
@@ -614,13 +617,14 @@ proc toCpp(node: PNode, s: State): string =
     of nkProcDef, nkFuncDef, nkIteratorDef,
        nkMethodDef, nkConverterDef:
       var body = node[6].toCpp(s)
-      var ret = node[3][0].toCpp(s + ccType)
+      var ret = node[3][0].toCpp(s + ccFunctionArg)
       if node of nkIteratorDef:
         body = "Vec<$#> result{}; $# return result;" % [ret, body]
         ret = "Vec<$#>" % ret
 
       else:
-        body = "$# result; $# return result;" % [ret, body]
+        if ret != "void":
+          body = "$# result; $# return result;" % [ret, body]
 
       result.add "/* ORIG:\n\n$#\n$#\n\n*/" % [$node, $node.treeRepr()]
       result.add "$template\n$returnType $name($args) {$body}" % {
@@ -785,6 +789,16 @@ func contains(s: string, o: openarray[string]): bool =
     if s.contains(i):
       return true
 
+proc conv(ffrom, fto: AbsFile) =
+  if ffrom.exists():
+    echov "reading", ffrom
+    let start = State(context: @[ccToplevel])
+    mkDir ffrom.dir()
+    writeFile(fto, ffrom.readFile().parse().toCpp(start))
+    echov "wrote", fto
+
+conv(ffrom = AbsFile"/tmp/test.nim", fto = AbsFile"/tmp/test.cpp")
+
 for file in walkDir(
     root,
     RelFile,
@@ -808,13 +822,6 @@ for file in walkDir(
   if "hlex_base" notin file.string:
     continue
 
-  echov "reading", file
-
-  let start = State(context: @[ccToplevel])
-  let outf = withExt(res / file, "cpp")
-  echov "writing", outf
-  mkDir outf.dir()
-  writeFile(outf, parse(readFile(root / file)).toCpp(start))
-
+  conv(root / file, withExt(res / file, "cpp"))
 
 echo "done"
