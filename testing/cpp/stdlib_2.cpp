@@ -65,6 +65,7 @@ template <typename T>
 struct Slice : public HSlice<T, T> {
     using HSlice<T, T>::first;
     using HSlice<T, T>::last;
+    bool contains(T val) { return first <= val && val <= last; }
 
     class iterator {
       private:
@@ -176,6 +177,12 @@ class Vec : public std::vector<T> {
     using std::vector<T>::size;
     using std::vector<T>::at;
     using std::vector<T>::operator[];
+    using std::vector<T>::push_back;
+    using std::vector<T>::back;
+    using std::vector<T>::pop_back;
+    using std::vector<T>::begin;
+    using std::vector<T>::end;
+
 
     operator R<std::vector<T>>() {
         return static_cast<std::vector<T>>(*this);
@@ -185,6 +192,7 @@ class Vec : public std::vector<T> {
         return static_cast<std::vector<T>>(*this);
     }
 
+    bool has(int idx) const { return idx < size(); }
 
     template <typename A, typename B>
     std::span<T> at(CR<HSlice<A, B>> s, bool checkRange = true) {
@@ -208,34 +216,36 @@ class Vec : public std::vector<T> {
     std::span<const T> operator[](CR<HSlice<A, B>> s) {
         return at(s, false);
     }
-};
 
-
-struct Str : public std::string {
-    using std::string::string;
-    bool startsWith(const std::string& prefix) {
-        return find(prefix) == 0;
+    T& operator[](BackwardsIndex idx) {
+        return (*this)[this->size() - idx.value];
     }
 
-    bool endsWith(const std::string& suffix) {
-        return rfind(suffix) == length() - suffix.length();
+    T& at(BackwardsIndex idx) {
+        return this->at(this->size() - idx.value);
     }
 
-    bool contains(const std::string& sub) {
-        return find(sub) != std::string::npos;
+    void push_back(const Vec<T>& other) {
+        for (const auto& item : other) {
+            push_back(item);
+        }
     }
 
-    template <typename A, typename B>
-    std::string_view at(CR<HSlice<A, B>> s, bool checkRange = true) {
-        const auto [start, end] = getSpan(*this, s, checkRange);
-        return std::string_view(this->data() + start, end);
+    T pop_back_v() {
+        auto result = back();
+        pop_back();
+        return result;
     }
 
-    template <typename A, typename B>
-    const std::string_view at(CR<HSlice<A, B>> s, bool checkRange = true)
-        const {
-        const auto [start, end] = getSpan(*this, s, checkRange);
-        return std::string_view(this->data() + start, end);
+    int high() const { return size() - 1; }
+
+    int indexOf(CR<T> item) const {
+        auto pos = std::find(begin(), end(), item);
+        if (pos != end()) {
+            return std::distance(pos, begin());
+        } else {
+            return -1;
+        }
     }
 };
 
@@ -303,6 +313,26 @@ requires(sizeof(T) <= sizeof(unsigned short)) struct IntSet {
   private:
     static inline std::size_t toIdx(CR<T> value) { return ord(value); }
 
+    void buildSet(R<IntSet<T>> result) {}
+
+    template <typename ValueT>
+    void buildSet(R<IntSet<T>> result, CR<ValueT> value) requires
+        ConvertibleToSet<T, ValueT> {
+        result.incl(value);
+    }
+
+    // Helper method to recurse into constructor argument list
+    template <typename Value, typename... Args>
+    void buildSet(
+        R<IntSet<T>> result,
+        CR<Value>    value,
+        Args&&... tail) requires
+        AllConvertibleToSet<T, Args...> && ConvertibleToSet<T, Value> {
+        result.incl(value);
+        buildSet(result, tail...);
+    }
+
+
   public:
     using BitsetT = std::bitset<pow_v<2, 8 * sizeof(T)>::res>;
     BitsetT values;
@@ -340,25 +370,6 @@ requires(sizeof(T) <= sizeof(unsigned short)) struct IntSet {
 
     int size() const { return values.count(); }
 
-
-    void buildSet(R<IntSet<T>> result) {}
-
-
-    template <typename ValueT>
-    void buildSet(R<IntSet<T>> result, CR<ValueT> value) requires
-        ConvertibleToSet<T, ValueT> {
-        result.incl(value);
-    }
-
-    template <typename Value, typename... Args>
-    void buildSet(
-        R<IntSet<T>> result,
-        CR<Value>    value,
-        Args&&... tail) requires
-        AllConvertibleToSet<T, Args...> && ConvertibleToSet<T, Value> {
-        result.incl(value);
-        buildSet(result, tail...);
-    }
 
     /// Variadic constructor for the set type. It accepts only types that
     /// can be directly converted to the set
@@ -404,30 +415,6 @@ requires(sizeof(T) <= sizeof(unsigned short)) struct IntSet {
     iterator begin() { return iterator(0, &values); }
     iterator end() { return iterator(values.size(), &values); }
 };
-
-enum class SomeEnum : unsigned short
-{
-    FirstValue    = 0,
-    SecondValue   = 1,
-    RangeStart    = 2,
-    RangeElement1 = 3,
-    RangeElement2 = 4,
-    RangeEnd      = 5
-};
-
-struct PosStr {
-    Str* base;
-    int  pos;
-    int  line;
-    int  column;
-};
-
-struct ParseError : public std::exception {};
-struct LexerError : public ParseError {};
-struct UnexpectedCharError : public LexerError {};
-struct UnbalancedWrapError : public LexerError {};
-struct MalformedTokenError : public LexerError {};
-
 
 namespace charsets {
 /// All character values
@@ -495,7 +482,546 @@ C<IntSet<char>> TextLineChars = AllChars - ControlChars
                               + IntSet<char>{'\t'};
 } // namespace charsets
 
+
+enum AddfFragmentKind
+{
+    addfText,        /// Regular text fragment
+    addfPositional,  /// Positional fragment `$#`
+    addfIndexed,     /// Indexed fragment `$1`
+    addfDollar,      /// Dollar literal `$$`
+    addfBackIndexed, /// Negative indexed fragment `$-1`
+    addfVar,         /// Interpolated variable `$name`
+    addfExpr,        /// Expression in braces `${some expr}`
+};
+
+struct AddfFragment {
+    AddfFragmentKind kind;
+    std::string      text;
+    int              idx;
+};
+
+struct InvalidFormatString : public std::exception {};
+
+/*!Iterate over interpolation fragments of the `formatstr`
+ */
+Vec<AddfFragment> addfFragments(const std::string& formatstr) {
+    Vec<AddfFragment>  result{};
+    auto               i   = 0;
+    auto               num = 0;
+    const IntSet<char> PatternChars{
+        slice('a', 'z'),
+        slice('A', 'Z'),
+        slice('0', '9'),
+        slice('\xF0', '\xFF'),
+        '_'};
+
+
+    /* TODO CONST SECTION */;
+    while (i < formatstr.size()) {
+        AddfFragment frag;
+        if (((((formatstr[i]) == ('$')))
+             && (((((i) + (1))) < ((formatstr.size())))))) {
+            const auto c = formatstr[i + 1];
+            if (c == '#') {
+                frag = AddfFragment{
+                    .kind = addfIndexed,
+                    .idx  = num,
+                };
+                i += 2;
+                num += 1;
+            } else if (c == '$') {
+                i += 2;
+                frag = AddfFragment{
+                    .kind = addfDollar,
+                };
+
+            } else if (charsets::Digits.contains(c) || c == '|') {
+                auto j = 0;
+                i += 1;
+                const auto starti   = i;
+                auto       negative = ((formatstr[i]) == ('-'));
+                if (negative) {
+                    i += 1;
+                }
+                while (
+                    ((((i) < (formatstr.size())))
+                     && (((charsets::Digits.contains(formatstr[i])))))) {
+                    j = ((((((j) * (10))) + (ord(formatstr[i])))) - (ord('0')));
+                    i += 1;
+                }
+                if (negative) {
+                    frag = {.kind = addfBackIndexed, .idx = j};
+                } else {
+                    frag = AddfFragment{
+                        .kind = addfIndexed,
+                        .idx  = ((j) - (1)),
+                    };
+                }
+            } else if (c == '{') {
+                auto       j        = ((i) + (2));
+                auto       k        = 0;
+                auto       negative = ((formatstr[j]) == ('-'));
+                const auto starti   = j;
+                if (negative) {
+                    j += 1;
+                }
+                auto isNumber = 0;
+                while (
+                    ((((j) < (formatstr.size())))
+                     && ((!IntSet<char>({'\0', '}'})
+                               .contains(formatstr[j]))))) {
+                    if (((charsets::Digits.contains(formatstr[j])))) {
+                        k = ((((((k) * (10))) + (ord(formatstr[j])))) - (ord('0')));
+                        if (isNumber == 0) {
+                            isNumber = 1;
+                        }
+                    } else {
+                        isNumber = -1;
+                    }
+                    j += 1;
+                };
+                if (isNumber == 1) {
+                    if (negative) {
+                        frag = AddfFragment{
+                            .kind = addfBackIndexed,
+                            .idx  = k,
+                        };
+                    } else {
+                        frag = AddfFragment{
+                            .kind = addfIndexed,
+                            .idx  = ((k) - (1)),
+                        };
+                    };
+                } else {
+                    const auto first = i + 2;
+                    const auto last  = j - 1;
+
+                    frag = {
+                        .kind = addfExpr,
+                        .text = formatstr.substr(first, last - first + 1)};
+                };
+                i = ((j) + (1));
+                break;
+
+            } else if (
+                charsets::Letters.contains(c) || c == '_'
+                || IntSet<char>(slice('\xF0', '\xFF')).contains(c)) {
+                auto j = ((i) + (1));
+                while (
+                    ((((j) < (formatstr.size())))
+                     && (((PatternChars.contains(formatstr[j])))))) {
+                    j += 1;
+                };
+                const auto first = i + 1;
+                const auto last  = j - 1;
+
+                frag = {
+                    .kind = addfVar,
+                    .text = formatstr.substr(first, last - first + 1)};
+                i = j;
+            } else {
+                throw std::runtime_error(
+                    R"(unexpected char after $ - )"
+                    + std::string(1, formatstr[i + 1]));
+            }
+        } else {
+            auto trange = slice(i, i);
+            while (
+                ((((trange.last) < (formatstr.size())))
+                 && (((formatstr[trange.last]) != ('$'))))) {
+                trange.last += 1;
+            };
+            trange.last -= 1;
+            frag = {
+                .kind = addfText,
+                .text = formatstr.substr(
+                    trange.first, trange.last - trange.first + 1),
+            };
+            i = trange.last;
+            i += 1;
+        }
+        result.push_back(frag);
+    };
+    return result;
+}
+
+/*! The same as `add(s, formatstr % a)`, but more efficient. */
+void addf(
+    std::string&            s,
+    const std::string&      formatstr,
+    const Vec<std::string>& a) {
+    const auto fragments = addfFragments(formatstr);
+    for (const auto fr : fragments) {
+        switch (fr.kind) {
+            case addfDollar: {
+                s += '$';
+                break;
+            }
+            case addfPositional:
+            case addfIndexed:
+            case addfBackIndexed: {
+                int idx;
+                if ((fr.kind) == (addfBackIndexed)) {
+                    idx = a.size() - fr.idx;
+                } else {
+                    idx = fr.idx;
+                }
+                if (idx < 0 || a.size() <= idx) {
+                    throw std::runtime_error(
+                        "Argument index out of bounds. Accessed "
+                        + std::to_string(idx) + ", but only "
+                        + std::to_string(a.size())
+                        + " arguments were supplied");
+                }
+                s += a[idx];
+                break;
+            }
+            case addfText: {
+                s += fr.text;
+                break;
+            }
+            case addfVar:
+            case addfExpr: {
+                auto x = a.indexOf(fr.text);
+                if ((0 <= x) && (x < a.high())) {
+                    s += a[((x) + (1))];
+                } else {
+                    throw std::runtime_error(
+                        "No interpolation argument named " + fr.text);
+                };
+                break;
+            }
+        };
+    };
+}
+
+
+void addf(
+    std::string&                               s,
+    const std::string&                         formatstr,
+    const Vec<Pair<std::string, std::string>>& a) {
+    Vec<std::string> tmp;
+    for (const auto& [key, val] : a) {
+        tmp.push_back(key);
+        tmp.push_back(val);
+    }
+    addf(s, formatstr, tmp);
+}
+
+struct Str : public std::string {
+    using std::string::string;
+    bool startsWith(const std::string& prefix) {
+        return find(prefix) == 0;
+    }
+
+    bool endsWith(const std::string& suffix) {
+        return rfind(suffix) == length() - suffix.length();
+    }
+
+    bool contains(const std::string& sub) {
+        return find(sub) != std::string::npos;
+    }
+
+    template <typename A, typename B>
+    std::string_view at(CR<HSlice<A, B>> s, bool checkRange = true) {
+        const auto [start, end] = getSpan(*this, s, checkRange);
+        return std::string_view(this->data() + start, end);
+    }
+
+    template <typename A, typename B>
+    const std::string_view at(CR<HSlice<A, B>> s, bool checkRange = true)
+        const {
+        const auto [start, end] = getSpan(*this, s, checkRange);
+        return std::string_view(this->data() + start, end);
+    }
+
+    Str rightAligned(int n, char c = ' ') {
+        Str res;
+        if (size() < n) {
+            res.append(n - size(), c);
+        }
+        res.append(*this);
+        return res;
+    }
+
+    Str leftAligned(int n, char c = ' ') {
+        auto s = *this;
+        if (s.size() < n) {
+            s.append(n - s.size(), c);
+        }
+        return s;
+    }
+};
+
+
+enum class SomeEnum : unsigned short
+{
+    FirstValue    = 0,
+    SecondValue   = 1,
+    RangeStart    = 2,
+    RangeElement1 = 3,
+    RangeElement2 = 4,
+    RangeEnd      = 5
+};
+
+struct ParseError : public std::exception {
+    int line;
+    int column;
+};
+struct LexerError : public ParseError {
+    int pos;
+};
+struct UnexpectedCharError : public LexerError {};
+struct UnbalancedWrapError : public LexerError {};
+struct MalformedTokenError : public LexerError {};
+
+
+template <typename T>
+bool notNil(T* ptr) {
+    return ptr != nullptr;
+}
+
+template <typename T>
+bool isNil(T* ptr) {
+    return ptr == nullptr;
+}
+
+struct LineCol {
+    int line;
+    int column;
+};
+
+struct PosStrSlice {
+    int line;   /*! Slice start line */
+    int column; /*! Slice start column */
+    int start;  /*! Start byte */
+    int finish; /*! End byte */
+};
+
+struct PosStr {
+    PosStr() {}
+    ~PosStr() {}
+    PosStr(const PosStr& other) {}
+    const std::string* baseStr; /*!For non-slice string used as buffer.
+  Might contain full input data (in case of lexing over existing string).
+  For slice string contains reference to the original string (is not
+  modified)
+  */
+    bool isSlice;
+    union {
+        struct {
+            Vec<std::tuple<int, int, int>> ranges; /*!Sequence of
+                                         starting position for ranges. When
+                                         `popRange()` is called end
+                                         position of the string (with
+                                         offset) is used to determine end
+                                         point.
+                                         */
+        };
+        struct {
+            int sliceIdx;            /*!Currently active slice
+                                      */
+            Vec<PosStrSlice> slices; /*!List of slices in the base
+                                      * string
+                                      */
+            Vec<Vec<PosStrSlice>> fragmentedRanges; /*!Sequence
+                  of fragments for active ranges. When `popRange()` is
+                  called end position is used, identically to the
+                  [[code:.ranges]] case. When position is advanced in
+                  string, new fragments might be added to the ranges.
+                  */
+        };
+    };
+    int pos;    /*!Current absolute position in the base/buffer string.
+  Always points to the current valid character. Calling
+  [[code:advance()]] changes this position, potentially by
+  an unlimited amount in case of fragmented string.
+  */
+    int line;   /*!Current line index. Automatically tracked by
+  [[code:advance()]]
+  */
+    int column; /*!Current column number
+                 */
+    bool                  bufferActive;
+    Vec<Vec<PosStrSlice>> sliceBuffer; /*!Buffer for new
+  positional slices. Used by [[code:startSlice()]] and
+  [[code:finishSlice()]] to automatically collect new string slices
+  */
+};
+
+/*!Get current line and column as tuple
+ */
+LineCol lineCol(const PosStr& str) { return {str.line, str.column}; }
+
+/*!Get number of byte characters between end and start
+ */
+int len(const PosStrSlice& slice) {
+    return ((slice.finish) - (slice.start));
+}
+
+char atAbsolute(const PosStr& str, const int& pos) {
+    return (*(str.baseStr))[pos];
+}
+
+void decEnd(PosStr& str, const int& step = 1) {
+    str.slices[backIndex(1)].finish -= step;
+}
+
+void incEnd(PosStr&& str, const int& step = 1) {
+    ((str.slices[backIndex(1)].finish) += (step));
+}
+
+int absEnd(PosStr& str) { return str.slices[1_B].finish; }
+
+/*! Get absolute position of the @arg{offset} */
+int toAbsolute(const PosStrSlice& slice, const int& offset) {
+    return ((slice.start) + (offset));
+};
+
+/*! Create new string with full buffer and `nil` input stream */
+PosStr initPosStr(const Str& str, const LineCol& pos = {0, 0}) {
+    PosStr result;
+    result.baseStr = &str;
+    result.isSlice = false;
+    result.column  = pos.column;
+    result.line    = pos.line;
+    return result;
+}
+
+/*!Pop one layer of slices from slice buffer and create new sub-string
+lexer from it.
+*/
+PosStr initPosStr(
+    PosStr&     str,
+    const bool& allSlice = false,
+    const bool& popSlice = true) {
+    PosStr           result;
+    Vec<PosStrSlice> s;
+    if (allSlice) {
+        for (const auto slice : str.sliceBuffer) {
+            s.push_back(slice);
+        }
+        if (popSlice) {
+            str.sliceBuffer.clear();
+        }
+    } else {
+        if (popSlice) {
+            s.push_back(str.sliceBuffer.pop_back_v());
+        } else {
+            s.push_back(str.sliceBuffer.back());
+        }
+    };
+    result.isSlice = true;
+    result.baseStr = str.baseStr;
+    result.column  = s[0].column;
+    result.line    = s[0].line;
+    result.slices  = s;
+    result.pos     = result.slices[0].start;
+    return result;
+};
+
+/*!Initl slice positional string, using @arg{inStr} as base
+ */
+PosStr initPosStr(const Str& inStr, const Vec<Slice<int>>& slices) {
+    PosStr result;
+    result.isSlice = true;
+    result.baseStr = &inStr;
+    result.column  = 0;
+    result.line    = 0;
+    for (const auto slice : slices) {
+        result.slices.push_back(PosStrSlice{
+            .start  = slice.first,
+            .finish = slice.last,
+        });
+    }
+    result.pos = result.slices[0].start;
+    return result;
+}
+
+/*!Create substring with `0 .. high(int)` slice range
+ */
+PosStr initPosStrView(const auto& str) {
+    PosStr result;
+    result.isSlice = true;
+    result.baseStr = str.baseStr;
+    result.column  = str.column;
+    result.line    = str.line;
+    // result.slices  = Vec<PosStrSlice>{
+    //      PosStrSlice{.start = 0, .finish = INT_MAX}};
+    return result;
+}
+
+bool contains(const PosStrSlice& slice, const int& position) {
+    /*!Absolute position is within @arg{slice} start and end
+     */
+    return (
+        (((slice.start) <= (position)))
+        && (((position) <= (slice.finish))));
+}
+
+/*!Check if input string has at least @arg{idx} more characters left.
+ */
+bool hasNxt(const PosStr& input, const int& idx) {
+    bool result;
+
+    const auto pos = ((input.pos) + (idx));
+    if (input.isSlice) {
+        result
+            = ((((input.sliceIdx) < (input.slices.high())))
+               || ((
+                   ((((((((input.sliceIdx) < (input.slices.size())))
+                        && ((
+                            (pos)
+                            <= (input.slices[input.sliceIdx].finish)))))
+                      && (((0) <= (pos)))))
+                    && (((pos) < ((*(input.baseStr)).size())))))));
+        ;
+    } else {
+        return (
+            (((notNil(input.baseStr)) && (((0) <= (pos)))))
+            && (((pos) < ((*(input.baseStr)).size()))));
+        ;
+    };
+    return result;
+}
+
+/*!Check if string as no more input data
+ */
+bool finished(const PosStr& str) { return !(hasNxt(str, 0)); }
+
+/*!Current string position is end
+ */
+bool atStart(const PosStr& str) { return str.pos == 0; };
+
+/*!Has exactly one character to read
+ */
+bool beforeEnd(const PosStr& str) {
+    return ((hasNxt(str, 0)) && ((!(hasNxt(str, 1)))));
+}
+
+/*!Set positional information to lexer error from string
+ */
+void setLineInfo(ParseError& error, const PosStr& str) {
+    error.column = str.column;
+    error.line   = str.line;
+}
+
+/*!Set positional information to lexer error from string
+ */
+void setLineInfo(LexerError& error, const PosStr& str) {
+    error.column = str.column;
+    error.line   = str.line;
+    error.pos    = str.pos;
+}
+
+
 int main() {
+    {
+        std::string res;
+        addf(res, "[$1]??", {Str("value").leftAligned(20)});
+        std::cout << res << "\n";
+    }
+
     std::cout << sizeof(SomeEnum) << " " << ord('\0') << ' ' << ord('\xFF')
               << std::endl;
     {

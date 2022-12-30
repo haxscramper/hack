@@ -682,11 +682,16 @@ proc toCpp(node: PNode, s: State): string =
       if name == "sink":
         result = "const $#&" % node[1].toCpp(s)
 
+      elif name in ["inc", "dec"]:
+        result = "$name $value" % {
+          "name": tern(name == "inc", "+=", "-="),
+          "value": tern(node.len() == 1, "1", node[1].toCpp(s)),
+        }
+
       else:
-        result = "$name($args)$end" % {
+        result = "$name($args)" % {
           "name": name,
           "args": mapIt(node[1..^1], toCpp(it, s + ccExpression)).join(", "),
-          "end": tern(s of ccStandaloneStmt, ";", "")
         }
 
     of nkElse:
@@ -793,7 +798,7 @@ proc conv(ffrom, fto: AbsFile) =
   if ffrom.exists():
     echov "reading", ffrom
     let start = State(context: @[ccToplevel])
-    mkDir ffrom.dir()
+    mkDir fto.dir()
     writeFile(fto, ffrom.readFile().parse().toCpp(start))
     echov "wrote", fto
 

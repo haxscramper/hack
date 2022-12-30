@@ -7,8 +7,7 @@
 namespace hax {
 
 template <typename S, typename E>
-struct HSlice
-{
+struct HSlice {
     S start;
     E end;
 };
@@ -24,8 +23,7 @@ HSlice<S, E> slice(S start, E end) {
 
 using Str = std::string;
 
-struct BackwardsIndex
-{
+struct BackwardsIndex {
     int idx;
 };
 
@@ -33,8 +31,7 @@ BackwardsIndex backIdx(const int& idx) { return {idx}; }
 
 
 template <typename T>
-struct Vec : public std::vector<T>
-{
+struct Vec : public std::vector<T> {
     using std::vector<T>::operator[];
     using std::vector<T>::push_back;
     T& operator[](BackwardsIndex idx) {
@@ -71,14 +68,12 @@ bool isNil(T* ptr) {
     return ptr == nullptr;
 }
 
-struct LineCol
-{
+struct LineCol {
     int line;
     int column;
 };
 
-struct PosStrSlice
-{
+struct PosStrSlice {
     int line;   /*! Slice start line */
     int column; /*! Slice start column */
     int start;  /*! Start byte */
@@ -86,8 +81,7 @@ struct PosStrSlice
 };
 
 
-struct PosStr
-{
+struct PosStr {
     PosStr() {}
     ~PosStr() {}
     PosStr(const PosStr& other) {}
@@ -98,8 +92,7 @@ struct PosStr
   */
     bool isSlice;
     union {
-        struct
-        {
+        struct {
             Vec<std::tuple<int, int, int>> ranges; /*!Sequence of
                                          starting position for ranges. When
                                          `popRange()` is called end
@@ -108,8 +101,7 @@ struct PosStr
                                          point.
                                          */
         };
-        struct
-        {
+        struct {
             int sliceIdx;            /*!Currently active slice
                                       */
             Vec<PosStrSlice> slices; /*!List of slices in the base
@@ -140,26 +132,17 @@ struct PosStr
   */
 };
 
-struct ParseError : public std::exception
-{
-};
+struct ParseError : public std::exception {};
 
-struct HLexerError : public ParseError
-{
+struct HLexerError : public ParseError {
     int pos;
 };
 
-struct UnexpectedCharError : public HLexerError
-{
-};
+struct UnexpectedCharError : public HLexerError {};
 
-struct UnbalancedWrapError : public HLexerError
-{
-};
+struct UnbalancedWrapError : public HLexerError {};
 
-struct MalformedTokenError : public HLexerError
-{
-};
+struct MalformedTokenError : public HLexerError {};
 
 /*!Get current line and column as tuple
  */
