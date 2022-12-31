@@ -1,4 +1,5 @@
 #include <span>
+#include <variant>
 #include <iostream>
 #include <bitset>
 #include <vector>
@@ -203,6 +204,77 @@ Pair<A, A> getSpan(
     return {startPos, endPos};
 }
 
+template <typename T, typename Ref>
+struct EnumerateState {
+
+    class iterator {
+      private:
+        T*  iter;
+        int index = 0;
+
+      public:
+        typedef std::forward_iterator_tag iterator_category;
+
+        typedef Pair<int, Ref>  value_type;
+        typedef Pair<int, Ref>* pointer;
+        typedef Pair<int, Ref>& reference;
+        typedef std::ptrdiff_t  difference_type;
+
+        iterator(T* it) : iter(it) {}
+
+        Pair<int, Ref> operator*() { return {index, *(*iter)}; }
+
+        iterator& operator++() {
+            ++index;
+            ++(*iter);
+            return *this;
+        }
+
+        bool operator!=(const iterator& other) {
+            return (*iter) != (*other.iter);
+        }
+    };
+
+
+    iterator begin() { return iterator(&beginIterator); }
+    iterator end() { return iterator(&endIterator); }
+
+    EnumerateState(T begin, T end)
+        : beginIterator(begin), endIterator(end) {}
+
+  private:
+    T beginIterator;
+    T endIterator;
+};
+
+template <typename T>
+EnumerateState<typename T::iterator, typename T::iterator::value_type> enumerate(
+    R<T> value) {
+    return EnumerateState<
+        typename T::iterator,
+        typename T::iterator::value_type>(value.begin(), value.end());
+}
+
+
+template <typename T>
+EnumerateState<typename T::const_iterator, typename T::const_iterator::value_type> enumerate(
+    CR<T> value) {
+    return EnumerateState<
+        typename T::const_iterator,
+        typename T::const_iterator::value_type>(
+        value.cbegin(), value.cend());
+}
+
+template <typename T>
+int index_of(CR<std::vector<T>> vector, CR<T> item) {
+    auto pos = std::find(vector.begin(), vector.end(), item);
+    if (pos != vector.end()) {
+        return std::distance(pos, vector.begin());
+    } else {
+        return -1;
+    }
+}
+
 template <typename T>
 class Vec : public std::vector<T> {
   public:
@@ -274,14 +346,7 @@ class Vec : public std::vector<T> {
 
     int high() const { return size() - 1; }
 
-    int indexOf(CR<T> item) const {
-        auto pos = std::find(begin(), end(), item);
-        if (pos != end()) {
-            return std::distance(pos, begin());
-        } else {
-            return -1;
-        }
-    }
+    int indexOf(CR<T> item) const { return index_of(*this, item); }
 };
 
 template <int N, int M>
@@ -528,70 +593,94 @@ std::string to_string(CR<T> value) requires StringStreamable<T> {
     return os.str();
 }
 
+template <typename T>
+concept StringConvertible = requires(T value) {
+    { to_string(value) } -> std::same_as<std::string>;
+};
+
+
+void to_string_vec_impl(std::vector<std::string>& out) {}
+
+template <typename T, typename... Tail>
+void to_string_vec_impl(
+    std::vector<std::string>& out,
+    CR<T>&                    in,
+    Tail&&... tail) requires StringConvertible<T> {
+    out.push_back(to_string(in));
+    to_string_vec_impl(out, tail...);
+}
+
+template <typename... Args>
+std::vector<std::string> to_string_vec(Args&&... args) {
+    std::vector<std::string> result{};
+    result.reserve(sizeof...(Args));
+    to_string_vec_impl(result, args...);
+    return result;
+}
+
+
+using CharSet = IntSet<char>;
+
 namespace charsets {
 /// All character values
-C<IntSet<char>> AllChars{slice('\x00', '\xFF')};
+C<CharSet> AllChars{slice('\x00', '\xFF')};
 /// Arabic digits
-C<IntSet<char>> Digits{slice('0', '9')};
+C<CharSet> Digits{slice('0', '9')};
 /// Characters that can be used in C++-style identifiers
-C<IntSet<char>> IdentChars{
+C<CharSet> IdentChars{
     slice('a', 'z'),
     slice('A', 'Z'),
     slice('0', '9'),
     '_'};
 
 /// Characters that can be used as an identifier start
-C<IntSet<char>> IdentStartChars{slice('a', 'z'), slice('A', 'Z'), '_'};
+C<CharSet> IdentStartChars{slice('a', 'z'), slice('A', 'Z'), '_'};
 /// Lowercase and uppercase latin letters
-C<IntSet<char>> Letters{slice('A', 'Z'), slice('a', 'z')};
-C<IntSet<char>> Newlines{'\r', '\n'};
+C<CharSet> Letters{slice('A', 'Z'), slice('a', 'z')};
+C<CharSet> Newlines{'\r', '\n'};
 /// Any kind of horizontal or vertical whitespace
-C<IntSet<char>> Whitespace{' ', '\t', '\v', '\r', '\n', '\f'};
+C<CharSet> Whitespace{' ', '\t', '\v', '\r', '\n', '\f'};
 
 /// Any character that can be a part of UTF-8 encoded string
-C<IntSet<char>> Utf8Any{slice('\x80', '\xFF')};
+C<CharSet> Utf8Any{slice('\x80', '\xFF')};
 /// UTF8 continuation
-C<IntSet<char>> Utf8Continuations{
-    slice(char(0b10000000), char(0b10111111))};
+C<CharSet> Utf8Continuations{slice(char(0b10000000), char(0b10111111))};
 /// Start of the two-byte utf8 rune
-C<IntSet<char>> Utf8Starts2{slice(char(0b11000000), char(0b11011111))};
+C<CharSet> Utf8Starts2{slice(char(0b11000000), char(0b11011111))};
 /// Start of the three-byte utf8 rune
-C<IntSet<char>> Utf8Starts3{slice(char(0b11100000), char(0b11101111))};
+C<CharSet> Utf8Starts3{slice(char(0b11100000), char(0b11101111))};
 /// Start of the four-byte utf8 rune
-C<IntSet<char>> Utf8Starts4{slice(char(0b11110000), char(0b11110111))};
+C<CharSet> Utf8Starts4{slice(char(0b11110000), char(0b11110111))};
 /// Start of any utf8 rune
-C<IntSet<char>> Utf8Starts = Utf8Starts2 + Utf8Starts3 + Utf8Starts4;
+C<CharSet> Utf8Starts = Utf8Starts2 + Utf8Starts3 + Utf8Starts4;
 
-C<IntSet<char>> LowerAsciiLetters{slice('a', 'z')};
-C<IntSet<char>> HighAsciiLetters{slice('A', 'Z')};
-C<IntSet<char>> AsciiLetters    = LowerAsciiLetters + HighAsciiLetters;
-C<IntSet<char>> AnyRegularAscii = {slice('\x00', '\x7F')};
-C<IntSet<char>> ControlChars    = {slice('\x00', '\x1F'), '\x7F'};
-C<IntSet<char>> MaybeLetters    = AsciiLetters + Utf8Any;
-C<IntSet<char>> IntegerStartChars{slice('0', '9'), '-', '+'};
-C<IntSet<char>> HexDigitsLow = IntSet<char>{'a', 'b', 'c', 'd', 'e', 'f'}
-                             + Digits;
-C<IntSet<char>> HexDigitsHigh = IntSet<char>{'A', 'B', 'C', 'D', 'E', 'F'}
-                              + Digits;
-C<IntSet<char>> HexDigits = HexDigitsLow + HexDigitsHigh;
-C<IntSet<char>> PunctOpenChars{'(', '[', '{', '<'};
-C<IntSet<char>> PunctCloseChars{')', ']', '}', '>'};
-C<IntSet<char>> PunctSentenceChars{',', '.', '?', '!', ';', ':'};
-C<IntSet<char>> MathChars  = {'+', '/', '%', '*', '='};
-C<IntSet<char>> PunctChars = PunctOpenChars + PunctCloseChars
-                           + PunctSentenceChars;
-C<IntSet<char>> Newline{'\n'};
-C<IntSet<char>> AllSpace        = Whitespace;
-C<IntSet<char>> HorizontalSpace = AllSpace - Newline;
-C<IntSet<char>> DashIdentChars  = LowerAsciiLetters + HighAsciiLetters
-                               + IntSet<char>{'_', '-'};
-C<IntSet<char>> VeritcalSpace = Newline;
+C<CharSet> LowerAsciiLetters{slice('a', 'z')};
+C<CharSet> HighAsciiLetters{slice('A', 'Z')};
+C<CharSet> AsciiLetters    = LowerAsciiLetters + HighAsciiLetters;
+C<CharSet> AnyRegularAscii = {slice('\x00', '\x7F')};
+C<CharSet> ControlChars    = {slice('\x00', '\x1F'), '\x7F'};
+C<CharSet> MaybeLetters    = AsciiLetters + Utf8Any;
+C<CharSet> IntegerStartChars{slice('0', '9'), '-', '+'};
+C<CharSet> HexDigitsLow  = CharSet{'a', 'b', 'c', 'd', 'e', 'f'} + Digits;
+C<CharSet> HexDigitsHigh = CharSet{'A', 'B', 'C', 'D', 'E', 'F'} + Digits;
+C<CharSet> HexDigits     = HexDigitsLow + HexDigitsHigh;
+C<CharSet> PunctOpenChars{'(', '[', '{', '<'};
+C<CharSet> PunctCloseChars{')', ']', '}', '>'};
+C<CharSet> PunctSentenceChars{',', '.', '?', '!', ';', ':'};
+C<CharSet> MathChars  = {'+', '/', '%', '*', '='};
+C<CharSet> PunctChars = PunctOpenChars + PunctCloseChars
+                      + PunctSentenceChars;
+C<CharSet> Newline{'\n'};
+C<CharSet> AllSpace        = Whitespace;
+C<CharSet> HorizontalSpace = AllSpace - Newline;
+C<CharSet> DashIdentChars  = LowerAsciiLetters + HighAsciiLetters
+                          + CharSet{'_', '-'};
+C<CharSet> VeritcalSpace = Newline;
 
 // Character found in regular text line. All chars excluding special
 // controls (newline, line feed, carriage return etc.). This does include
 // tabulation, because it is not uncommon in regular text.
-C<IntSet<char>> TextLineChars = AllChars - ControlChars
-                              + IntSet<char>{'\t'};
+C<CharSet> TextLineChars = AllChars - ControlChars + CharSet{'\t'};
 } // namespace charsets
 
 
@@ -621,10 +710,10 @@ struct FormatStringError : public std::runtime_error {
 /*!Iterate over interpolation fragments of the `formatstr`
  */
 Vec<AddfFragment> addfFragments(const std::string& formatstr) {
-    Vec<AddfFragment>  result{};
-    auto               i   = 0;
-    auto               num = 0;
-    const IntSet<char> PatternChars{
+    Vec<AddfFragment> result{};
+    auto              i   = 0;
+    auto              num = 0;
+    const CharSet     PatternChars{
         slice('a', 'z'),
         slice('A', 'Z'),
         slice('0', '9'),
@@ -745,9 +834,9 @@ Vec<AddfFragment> addfFragments(const std::string& formatstr) {
 
 /*! The same as `add(s, formatstr % a)`, but more efficient. */
 void addf(
-    std::string&            s,
-    const std::string&      formatstr,
-    const Vec<std::string>& a) {
+    std::string&                    s,
+    const std::string&              formatstr,
+    const std::vector<std::string>& a) {
     const auto fragments = addfFragments(formatstr);
     for (const auto fr : fragments) {
         switch (fr.kind) {
@@ -780,9 +869,9 @@ void addf(
             }
             case addfVar:
             case addfExpr: {
-                auto x = a.indexOf(fr.text);
-                if ((0 <= x) && (x < a.high())) {
-                    s += a[((x) + (1))];
+                auto x = index_of(a, fr.text);
+                if ((0 <= x) && (x < (a.size() - 1))) {
+                    s += a[x + 1];
                 } else {
                     throw FormatStringError(
                         "No interpolation argument named '" + fr.text
@@ -795,17 +884,32 @@ void addf(
 }
 
 
-void addf(
-    std::string&                               s,
-    const std::string&                         formatstr,
-    const Vec<Pair<std::string, std::string>>& a) {
-    Vec<std::string> tmp;
-    for (const auto& [key, val] : a) {
+std::vector<std::string> fold_format_pairs(
+    CR<std::vector<Pair<std::string, std::string>>> values) {
+    std::vector<std::string> tmp;
+    for (const auto& [key, val] : values) {
         tmp.push_back(key);
         tmp.push_back(val);
     }
-    addf(s, formatstr, tmp);
+    return tmp;
 }
+
+std::string operator%(
+    CR<std::string>              format,
+    CR<std::vector<std::string>> values) {
+    std::string result;
+    addf(result, format, values);
+    return result;
+}
+
+std::string operator%(
+    CR<std::string>                                 format,
+    CR<std::vector<Pair<std::string, std::string>>> values) {
+    std::string result;
+    addf(result, format, fold_format_pairs(values));
+    return result;
+}
+
 
 struct Str : public std::string {
     using std::string::string;
@@ -866,29 +970,9 @@ struct Str : public std::string {
     }
 };
 
-using StrVec     = Vec<Str>;
+using StrVec     = std::vector<Str>;
 using StrPairVec = Vec<Pair<Str, Str>>;
 
-std::string operator%(CR<std::string> format, CR<Vec<Str>> values) {
-    std::string result;
-    addf(
-        result,
-        format,
-        *reinterpret_cast<const Vec<std::string>*>(&values));
-    return result;
-}
-
-std::string operator%(
-    CR<std::string>         format,
-    CR<Vec<Pair<Str, Str>>> values) {
-    std::string result;
-    addf(
-        result,
-        format,
-        *reinterpret_cast<const Vec<Pair<std::string, std::string>>*>(
-            &values));
-    return result;
-}
 
 enum class SomeEnum : unsigned short
 {
@@ -900,14 +984,30 @@ enum class SomeEnum : unsigned short
     RangeEnd      = 5
 };
 
-struct ParseError : public std::exception {
+
+struct LineCol {
     int line;
     int column;
 };
-struct LexerError : public ParseError {
-    int pos;
+
+
+struct ParseError : public std::runtime_error {
+    LineCol loc;
+    explicit ParseError(const std::string& message, LineCol _loc)
+        : std::runtime_error(message), loc(_loc) {}
 };
-struct UnexpectedCharError : public LexerError {};
+
+struct LexerError : public ParseError {
+    explicit LexerError(const std::string& message, LineCol _loc)
+        : ParseError(message, _loc) {}
+};
+
+struct UnexpectedCharError : public LexerError {
+    explicit UnexpectedCharError(const std::string& message, LineCol _loc)
+        : LexerError(message, _loc) {}
+};
+
+
 struct UnbalancedWrapError : public LexerError {};
 struct MalformedTokenError : public LexerError {};
 
@@ -922,42 +1022,31 @@ bool isNil(T* ptr) {
     return ptr == nullptr;
 }
 
-struct LineCol {
-    int line;
-    int column;
-};
-
-struct PosStrSlice {
-    int line;   /*! Slice start line */
-    int column; /*! Slice start column */
-    int start;  /*! Start byte */
-    int finish; /*! End byte */
-};
-
-struct PosStr {
-    PosStr() {}
-    ~PosStr() {}
-    PosStr(const PosStr& other) {}
-    const std::string* baseStr; /*!For non-slice string used as buffer.
-  Might contain full input data (in case of lexing over existing string).
-  For slice string contains reference to the original string (is not
-  modified)
-  */
-    bool isSlice;
-    int  pos; /*!Current absolute position in the base/buffer string.
-Always points to the current valid character. Calling
-[[code:advance()]] changes this position, potentially by
-an unlimited amount in case of fragmented string.
-*/
-    int line; /// Current line index. Automatically tracked by
-              /// [[code:advance()]]
-    int                   column; /// Current column number
-    bool                  bufferActive;
-    Vec<Vec<PosStrSlice>> sliceBuffer;
-    /// Buffer for new positional
-    /// slices. Used by [[code:startSlice()]] and [[code:finishSlice()]] to
-    /// automatically collect new string slices
-};
+// struct PosStr {
+//     PosStr() {}
+//     ~PosStr() {}
+//     PosStr(const PosStr& other) {}
+//     const std::string* baseStr; /*!For non-slice string used as buffer.
+//   Might contain full input data (in case of lexing over existing
+//   string). For slice string contains reference to the original string
+//   (is not modified)
+//   */
+//     bool isSlice;
+//     int  pos; /*!Current absolute position in the base/buffer string.
+// Always points to the current valid character. Calling
+// [[code:advance()]] changes this position, potentially by
+// an unlimited amount in case of fragmented string.
+// */
+//     int line; /// Current line index. Automatically tracked by
+//               /// [[code:advance()]]
+//     int                   column; /// Current column number
+//     bool                  bufferActive;
+//     Vec<Vec<PosStrSlice>> sliceBuffer;
+//     /// Buffer for new positional
+//     /// slices. Used by [[code:startSlice()]] and [[code:finishSlice()]]
+//     to
+//     /// automatically collect new string slices
+// };
 
 TEST_CASE("String operations", "[str]") {
     SECTION("Basic operations") {
@@ -994,9 +1083,182 @@ TEST_CASE("String operations", "[str]") {
     }
 }
 
+struct StringViewState {
+    /// Underlying string view
+    std::string_view view;
+    /// Line and column information for the current position in the string
+    /// string view
+    LineCol loc;
+    /// Absolute offset from the start of string view
+    int pos;
+
+    bool hasNext(int shift = 1) const { return pos < view.size(); }
+
+    void next() {
+        ++pos;
+        switch (get()) {
+            case '\n': {
+                ++loc.line;
+                loc.column = 0;
+                break;
+            }
+            default: {
+                ++loc.column;
+            }
+        }
+    }
+
+    char get() {
+        char result = '\0';
+        if (pos < view.size()) {
+            result = view[pos];
+        }
+        return result;
+    }
+};
+
+
+struct StringViewGroup {
+    /// List of underlying string spans that view group works over
+    Vec<StringViewState> states;
+    /// Current location
+    LineCol loc;
+    int     stateIndex;
+    int     posInState;
+
+    bool hasInState(int index, int shift) const {
+        return index < states.size() && shift < states[index].view.size();
+    }
+
+    bool hasNext(int shift = 1) const {
+#warning TODO implement check for next states
+        return hasInState(stateIndex, posInState + shift);
+    }
+
+    void next() {
+        if (stateIndex < states.size()) {
+            if (posInState + 1 < states[stateIndex].view.size()) {
+                ++posInState;
+                switch (get()) {
+                    case '\n': {
+                        ++loc.line;
+                        loc.column = 0;
+                        break;
+                    }
+                    default: {
+                        ++loc.column;
+                    }
+                }
+            } else {
+                ++stateIndex;
+                posInState = 0;
+                loc        = states[stateIndex].loc;
+            }
+        }
+    }
+
+    char get() {
+        char result = '\0';
+        if (stateIndex < states.size()
+            && posInState < states[stateIndex].view.size()) {
+            result = states[stateIndex].view[posInState];
+        }
+        return result;
+    }
+
+
+  private:
+    Pair<int, int> findStateIdx(int pos) const {
+        for (const auto& [idx, state] : enumerate(states)) {
+            if (state.pos <= pos
+                && pos <= (state.pos + state.view.size())) {
+                return {idx, pos - state.pos};
+            }
+        }
+        return {-1, 0};
+    }
+};
+
+struct PosStr {
+    std::variant<StringViewGroup, StringViewState> content;
+    Vec<std::string_view>                          slices;
+
+    bool hasNext(int shift) const {
+        return std::visit(
+            [shift](const auto& it) { return it.hasNext(shift); },
+            content);
+    }
+
+    void next() {
+        std::visit([](auto& it) { it.next(); }, content);
+    }
+
+    char get() {
+        return std::visit([](auto& it) { return it.get(); }, content);
+    }
+
+    LineCol loc() {
+        return std::visit([](const auto& it) { return it.loc; }, content);
+    }
+
+    bool finished() { return get() == '\0'; }
+
+    char pop() {
+        char result = get();
+        next();
+        return result;
+    }
+
+    void skip(char expected) {
+        if (get() == expected) {
+            next();
+        } else {
+            throw UnexpectedCharError(
+                "Unexpected character encountered during lexing: found "
+                "'$#' but expected '$#' on $#:$#"
+                    % to_string_vec(
+                        get(), expected, loc().line, loc().column),
+                loc());
+        }
+    }
+
+    void skip(CR<CharSet> expected) {
+        if (expected.contains(get())) {
+            next();
+        } else {
+            throw UnexpectedCharError(
+                "Unexpected character encountered during lexing: fonud "
+                "'$#' but expected any of '$#' on $#:$#"
+                    % to_string_vec(
+                        get(), expected, loc().line, loc().column),
+                loc());
+        }
+    }
+
+    /// Create new 'unexpected character' error at the current string
+    /// parsing position.
+    UnexpectedCharError makeUnexpected(
+        CR<std::string> expected, //< What we expected to find?
+        CR<std::string> parsing   //< Description of the thing we are
+                                  // parsing at the moment
+    ) {
+        return UnexpectedCharError(
+            "Unexpected character encountered during lexing: found '$#' "
+            "but expected $# while parsing on $#:$#"
+                % to_string_vec(
+                    get(), expected, parsing, loc().line, loc().column),
+            loc());
+    }
+};
+
 using Catch::Matchers::EndsWith;
 using Catch::Matchers::Message;
 using Catch::Matchers::StartsWith;
+
+TEST_CASE("Enumerate") {
+    std::string str{"01234"};
+    for (const auto& [idx, value] : enumerate(str)) {}
+}
 
 TEST_CASE("Vector") {
     SECTION("Slice and indexing operators") {
@@ -1059,10 +1321,7 @@ TEST_CASE("Vector") {
 }
 
 TEST_CASE("String formatting", "[str]") {
-    SECTION("Plaintext") {
-        REQUIRE("a" == "a");
-        REQUIRE("A" % StrVec{"a"} == "A");
-    }
+    SECTION("Plaintext") { REQUIRE("A" % to_string_vec("a") == "A"); }
 
     SECTION("Basic interpolation fragment parsing") {
         {
@@ -1096,18 +1355,19 @@ TEST_CASE("String formatting", "[str]") {
     }
 
     SECTION("Interpolate values by index") {
-        REQUIRE("$1" % StrVec{"#"} == "#");
-        REQUIRE("$1+$2" % StrVec{"@", "@"} == "@+@");
+        REQUIRE(to_string_vec("#") == std::vector<std::string>({"#"}));
+        REQUIRE("$1" % to_string_vec("#") == "#");
+        REQUIRE("$1+$2" % to_string_vec("@", "@") == "@+@");
         // If interpolation placeholder starts with integer value it won't
         // be treated as a name
-        REQUIRE("$1A" % StrVec{"@"} == "@A");
+        REQUIRE("$1A" % to_string_vec("@") == "@A");
         // If you want to make a name that starts with an integer use `${}`
-        REQUIRE("${1A}" % StrVec{"1A", "VALUE"} == "VALUE");
+        REQUIRE("${1A}" % to_string_vec("1A", "VALUE") == "VALUE");
         // If element at the required index is not found
         // `FormatStringError` exception is raised. Note that elements use
         // zero-based indexing.
         REQUIRE_THROWS_MATCHES(
-            "$1000" % StrVec{},
+            "$1000" % to_string_vec(),
             FormatStringError,
             Message(
                 "Argument index out of bounds. Accessed [999], but only "
@@ -1115,14 +1375,14 @@ TEST_CASE("String formatting", "[str]") {
     }
 
     SECTION("Interpolate values by names") {
-        REQUIRE("$name" % StrPairVec{{"name", "VALUE"}} == "VALUE");
-        REQUIRE("${name}" % StrPairVec{{"name", "VALUE"}} == "VALUE");
+        REQUIRE("$name" % to_string_vec("name", "VALUE") == "VALUE");
+        REQUIRE("${name}" % to_string_vec("name", "VALUE") == "VALUE");
         REQUIRE(
-            "${name}*${name}" % StrPairVec{{"name", "VALUE"}}
+            "${name}*${name}" % to_string_vec("name", "VALUE")
             == "VALUE*VALUE");
 
         REQUIRE_THROWS_MATCHES(
-            "${RANDOM}" % StrVec{},
+            "${RANDOM}" % to_string_vec(),
             FormatStringError,
             Message("No interpolation argument named 'RANDOM'"));
     }
