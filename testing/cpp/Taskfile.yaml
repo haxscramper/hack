@@ -26,6 +26,15 @@ tasks:
       - ld -Tsections_all.ld bin1 bin2 bin3 -o bin_all
 
 
+  stdlib_2:
+    desc: "Helper wrappers for stdlib"
+    dir: stdlib_2
+    cmds:
+      - mkdir -p build
+      - cmake -B build -DCMAKE_BUILD_TYPE=Debug  .
+      - cd build && make -j12
+      - ./stdlib2
+
 
   clang_ast_diff:
     desc: "Build and execute clang AST diff port"

@@ -7,6 +7,9 @@
 #include <memory>
 #include <functional>
 
+#include <catch2/catch_session.hpp>
+#include <catch2/catch_test_macros.hpp>
+
 /// Helper implementation to pass multiple types around in a 'pack'
 template <typename... Args>
 struct arg_pack {};
@@ -20,6 +23,11 @@ using u32 = std::uint32_t;
 using i64 = std::int64_t;
 using u64 = std::uint64_t;
 // clang-format off
+
+
+i8 operator"" _i8(unsigned long long int value) {
+    return static_cast<i8>(value);
+}
 
 template <typename A, typename B> using Pair = std::tuple<A, B>;
 
@@ -75,7 +83,7 @@ struct Slice : public HSlice<T, T> {
         // whole range of values dedicated 'pastLast' must be added to
         // avoid infinite looping on things such as `slice(char(0),
         // char(255))`
-        bool pastLast;
+        bool pastLast = false;
 
       public:
         typedef std::forward_iterator_tag iterator_category;
@@ -280,6 +288,11 @@ int ord(char c) {
     return static_cast<unsigned char>(c);
 }
 
+template <>
+int ord(i8 c) {
+    return static_cast<i8>(c);
+}
+
 
 template <typename T>
 int ord(T value) requires(std::is_enum<T>::value) {
@@ -338,6 +351,12 @@ requires(sizeof(T) <= sizeof(unsigned short)) struct IntSet {
     BitsetT values;
 
     bool contains(CR<T> value) const { return values.test(toIdx(value)); }
+    /// Check if one set is a proper subset of another -- \arg other
+    /// contains all the values.
+    bool contains(CR<IntSet<T>> other) const {
+        return ((values & other.values) == other.values);
+    }
+
 
     void incl(CR<IntSet<T>> other) { values |= other.values; }
     void excl(CR<IntSet<T>> other) { values &= ~other.values; }
@@ -356,6 +375,36 @@ requires(sizeof(T) <= sizeof(unsigned short)) struct IntSet {
     }
 
 
+    bool operator==(CR<IntSet<T>> other) const {
+        return values == other.values;
+    }
+
+    bool operator<(CR<IntSet<T>> other) const {
+        return other.contains(*this) && this->size() < other.size();
+    }
+
+    bool operator<=(CR<IntSet<T>> other) const {
+        return other.contains(*this);
+    }
+
+    IntSet<T> operator^(CR<IntSet<T>> other) const {
+        IntSet<T> result;
+        result.values = this->values ^ other.values;
+        return result;
+    }
+
+    IntSet<T> operator&(CR<IntSet<T>> other) const {
+        IntSet<T> result;
+        result.values = this->values & other.values;
+        return result;
+    }
+
+    IntSet<T> operator|(CR<IntSet<T>> other) const {
+        IntSet<T> result;
+        result.values = this->values | other.values;
+        return result;
+    }
+
     IntSet<T> operator-(CR<IntSet<T>> other) const {
         IntSet<T> result = *this;
         result.excl(other);
@@ -368,8 +417,8 @@ requires(sizeof(T) <= sizeof(unsigned short)) struct IntSet {
         return result;
     }
 
-    int size() const { return values.count(); }
-
+    int  size() const { return values.count(); }
+    bool empty() const { return size() == 0; }
 
     /// Variadic constructor for the set type. It accepts only types that
     /// can be directly converted to the set
@@ -380,8 +429,8 @@ requires(sizeof(T) <= sizeof(unsigned short)) struct IntSet {
 
     class iterator {
       private:
-        std::size_t index;
-        BitsetT*    base;
+        std::size_t    index;
+        BitsetT const* base;
 
       public:
         typedef std::forward_iterator_tag iterator_category;
@@ -390,8 +439,15 @@ requires(sizeof(T) <= sizeof(unsigned short)) struct IntSet {
         typedef T&                        reference;
         typedef std::ptrdiff_t            difference_type;
 
-        iterator(std::size_t _index, BitsetT* _base)
-            : index(_index), base(_base) {}
+
+        iterator(std::size_t _index, BitsetT const* _base)
+            : index(_index), base(_base) {
+            // If starting position is empty, move over to the required
+            // element.
+            if (index < base->size() && !base->test(index)) {
+                operator++();
+            }
+        }
 
         T operator*() { return static_cast<T>(index); }
 
@@ -414,7 +470,36 @@ requires(sizeof(T) <= sizeof(unsigned short)) struct IntSet {
 
     iterator begin() { return iterator(0, &values); }
     iterator end() { return iterator(values.size(), &values); }
+    iterator begin() const { return iterator(0, &values); }
+    iterator end() const { return iterator(values.size(), &values); }
 };
+
+template <typename T>
+std::ostream& operator<<(std::ostream& os, IntSet<T> const& value) {
+    bool first = true;
+    os << "{";
+    for (const auto val : value) {
+        if (!first) {
+            os << ", ";
+        }
+        first = false;
+        os << val;
+    }
+    os << "}";
+    return os;
+}
+
+template <typename T>
+concept StringStreamable = requires(T value, std::ostream& os) {
+    { os << value } -> std::same_as<std::ostream&>;
+};
+
+template <typename T>
+std::string to_string(CR<T> value) requires StringStreamable<T> {
+    std::stringstream os;
+    os << value;
+    return os.str();
+}
 
 namespace charsets {
 /// All character values
@@ -808,214 +893,123 @@ struct PosStr {
   modified)
   */
     bool isSlice;
-    union {
-        struct {
-            Vec<std::tuple<int, int, int>> ranges; /*!Sequence of
-                                         starting position for ranges. When
-                                         `popRange()` is called end
-                                         position of the string (with
-                                         offset) is used to determine end
-                                         point.
-                                         */
-        };
-        struct {
-            int sliceIdx;            /*!Currently active slice
-                                      */
-            Vec<PosStrSlice> slices; /*!List of slices in the base
-                                      * string
-                                      */
-            Vec<Vec<PosStrSlice>> fragmentedRanges; /*!Sequence
-                  of fragments for active ranges. When `popRange()` is
-                  called end position is used, identically to the
-                  [[code:.ranges]] case. When position is advanced in
-                  string, new fragments might be added to the ranges.
-                  */
-        };
-    };
-    int pos;    /*!Current absolute position in the base/buffer string.
-  Always points to the current valid character. Calling
-  [[code:advance()]] changes this position, potentially by
-  an unlimited amount in case of fragmented string.
-  */
-    int line;   /*!Current line index. Automatically tracked by
-  [[code:advance()]]
-  */
-    int column; /*!Current column number
-                 */
-    bool                  bufferActive;
-    Vec<Vec<PosStrSlice>> sliceBuffer; /*!Buffer for new
-  positional slices. Used by [[code:startSlice()]] and
-  [[code:finishSlice()]] to automatically collect new string slices
-  */
-};
-
-/*!Get current line and column as tuple
- */
-LineCol lineCol(const PosStr& str) { return {str.line, str.column}; }
-
-/*!Get number of byte characters between end and start
- */
-int len(const PosStrSlice& slice) {
-    return ((slice.finish) - (slice.start));
-}
-
-char atAbsolute(const PosStr& str, const int& pos) {
-    return (*(str.baseStr))[pos];
-}
-
-void decEnd(PosStr& str, const int& step = 1) {
-    str.slices[backIndex(1)].finish -= step;
-}
-
-void incEnd(PosStr&& str, const int& step = 1) {
-    ((str.slices[backIndex(1)].finish) += (step));
-}
-
-int absEnd(PosStr& str) { return str.slices[1_B].finish; }
-
-/*! Get absolute position of the @arg{offset} */
-int toAbsolute(const PosStrSlice& slice, const int& offset) {
-    return ((slice.start) + (offset));
-};
-
-/*! Create new string with full buffer and `nil` input stream */
-PosStr initPosStr(const Str& str, const LineCol& pos = {0, 0}) {
-    PosStr result;
-    result.baseStr = &str;
-    result.isSlice = false;
-    result.column  = pos.column;
-    result.line    = pos.line;
-    return result;
-}
-
-/*!Pop one layer of slices from slice buffer and create new sub-string
-lexer from it.
+    int  pos; /*!Current absolute position in the base/buffer string.
+Always points to the current valid character. Calling
+[[code:advance()]] changes this position, potentially by
+an unlimited amount in case of fragmented string.
 */
-PosStr initPosStr(
-    PosStr&     str,
-    const bool& allSlice = false,
-    const bool& popSlice = true) {
-    PosStr           result;
-    Vec<PosStrSlice> s;
-    if (allSlice) {
-        for (const auto slice : str.sliceBuffer) {
-            s.push_back(slice);
-        }
-        if (popSlice) {
-            str.sliceBuffer.clear();
-        }
-    } else {
-        if (popSlice) {
-            s.push_back(str.sliceBuffer.pop_back_v());
-        } else {
-            s.push_back(str.sliceBuffer.back());
-        }
-    };
-    result.isSlice = true;
-    result.baseStr = str.baseStr;
-    result.column  = s[0].column;
-    result.line    = s[0].line;
-    result.slices  = s;
-    result.pos     = result.slices[0].start;
-    return result;
+    int line; /// Current line index. Automatically tracked by
+              /// [[code:advance()]]
+    int                   column; /// Current column number
+    bool                  bufferActive;
+    Vec<Vec<PosStrSlice>> sliceBuffer;
+    /// Buffer for new positional
+    /// slices. Used by [[code:startSlice()]] and [[code:finishSlice()]] to
+    /// automatically collect new string slices
 };
 
-/*!Initl slice positional string, using @arg{inStr} as base
- */
-PosStr initPosStr(const Str& inStr, const Vec<Slice<int>>& slices) {
-    PosStr result;
-    result.isSlice = true;
-    result.baseStr = &inStr;
-    result.column  = 0;
-    result.line    = 0;
-    for (const auto slice : slices) {
-        result.slices.push_back(PosStrSlice{
-            .start  = slice.first,
-            .finish = slice.last,
-        });
+
+TEST_CASE("Test integral set operations", "[contains]") {
+    IntSet<char> s;
+    IntSet<char> other;
+    SECTION("Initial set content") {
+        // Default-initialized set does not contain any values and has
+        // `.size()` zero
+        REQUIRE(s.size() == 0);
+        // You can include values to the set using `.incl` method
+        s.incl('a');
+        // `.size()` shows the number of values included in the set
+        REQUIRE(s.size() == 1);
     }
-    result.pos = result.slices[0].start;
-    return result;
+
+    SECTION("Contains for a single item") {
+        // Presence of specific element can be tested using `.contains()`
+        // value
+        REQUIRE(!s.contains('c'));
+        // Elements can be added
+        s.incl('c');
+        // Tested again
+        REQUIRE(s.contains('c'));
+        // Then excluded
+        s.excl('c');
+        // And then tested again, now for absence
+        REQUIRE(!s.contains('c'));
+    }
+
+    SECTION("Contains for set operations") {
+        // You can check for subset relation as well. Default (empty)  sets
+        // are subset of each other
+        REQUIRE(s.contains(other));
+        REQUIRE(other.contains(s));
+        // Since they both have the same elements
+        REQUIRE(other.size() == 0);
+        REQUIRE(s.size() == 0);
+        // After adding element to the set  this no longer holds
+        s.incl('s');
+        REQUIRE(s.contains(other));
+        REQUIRE(!other.contains(s));
+        // You can test for subset relation using `<` operator: it tests
+        // for proper subset
+        REQUIRE(other < s);
+        // You can also test for a regular subset operation, using `<=`
+        // operator which is analogous to the `s.contains(other)`
+        REQUIRE(other <= s);
+        other.incl('s');
+        // After including the same element in the set `<` no longer holds
+        REQUIRE(!(other < s));
+        // But regular subset check is ok
+        REQUIRE(other <= s);
+        // And it now works in both directions again
+        REQUIRE(s <= other);
+    }
+
+
+    SECTION("Set operations") {
+        REQUIRE((s + other).size() == 0);
+        REQUIRE((s - other).size() == 0);
+        REQUIRE(s < (s + IntSet<char>{'1'}));
+        REQUIRE(s < (s | IntSet<char>{'1'}));
+        REQUIRE(s == (s & IntSet<char>{'1'}));
+    }
+
+    SECTION("Integer set operators") {
+        IntSet<i8> s1{1_i8, 2_i8, 3_i8};
+        IntSet<i8> s2{2_i8, 3_i8, 4_i8};
+        IntSet<i8> s3{4_i8, 5_i8, 6_i8};
+        IntSet<i8> empty;
+
+        // Check that the union of s1 and s2 is {1, 2, 3, 4}
+        REQUIRE((s1 + s2) == IntSet<i8>{1_i8, 2_i8, 3_i8, 4_i8});
+        // Check that the intersection of s1 and s2 is {2, 3}
+        REQUIRE((s1 & s2) == IntSet<i8>{2_i8, 3_i8});
+        // Check that the difference between s1 and s2 is {1}
+        REQUIRE((s1 - s2) == IntSet<i8>{1_i8});
+        // Check that the symmetric difference between s1 and s2 is {1, 4}
+        REQUIRE((s1 ^ s2) == IntSet<i8>{1_i8, 4_i8});
+        // Check that the union of s1 and s3 is {1, 2, 3, 4, 5, 6}
+        REQUIRE(
+            (s1 + s3) == IntSet<i8>{1_i8, 2_i8, 3_i8, 4_i8, 5_i8, 6_i8});
+        // Check that the intersection of s1 and s3 is empty
+        REQUIRE((s1 & s3).empty());
+        // Check that the difference between s1 and s3 is {1, 2, 3}
+        REQUIRE((s1 - s3) == s1);
+        // Check that the symmetric difference between s1 and s3 is {1, 2,
+        // 3, 4, 5, 6}
+        REQUIRE((s1 ^ s3) == (s1 + s3));
+        // Check that the union of empty and s1 is {1, 2, 3}
+        REQUIRE((empty + s1) == s1);
+        // Check that the intersection of empty and s1 is empty
+        REQUIRE((empty & s1).empty());
+        // Check that the difference between empty and s1 is empty
+        REQUIRE((empty - s1).empty());
+        // Check that the symmetric difference between empty and s1 is {1,
+        // 2, 3}
+        REQUIRE((empty ^ s1) == s1);
+    }
 }
 
-/*!Create substring with `0 .. high(int)` slice range
- */
-PosStr initPosStrView(const auto& str) {
-    PosStr result;
-    result.isSlice = true;
-    result.baseStr = str.baseStr;
-    result.column  = str.column;
-    result.line    = str.line;
-    // result.slices  = Vec<PosStrSlice>{
-    //      PosStrSlice{.start = 0, .finish = INT_MAX}};
-    return result;
-}
 
-bool contains(const PosStrSlice& slice, const int& position) {
-    /*!Absolute position is within @arg{slice} start and end
-     */
-    return (
-        (((slice.start) <= (position)))
-        && (((position) <= (slice.finish))));
-}
-
-/*!Check if input string has at least @arg{idx} more characters left.
- */
-bool hasNxt(const PosStr& input, const int& idx) {
-    bool result;
-
-    const auto pos = ((input.pos) + (idx));
-    if (input.isSlice) {
-        result
-            = ((((input.sliceIdx) < (input.slices.high())))
-               || ((
-                   ((((((((input.sliceIdx) < (input.slices.size())))
-                        && ((
-                            (pos)
-                            <= (input.slices[input.sliceIdx].finish)))))
-                      && (((0) <= (pos)))))
-                    && (((pos) < ((*(input.baseStr)).size())))))));
-        ;
-    } else {
-        return (
-            (((notNil(input.baseStr)) && (((0) <= (pos)))))
-            && (((pos) < ((*(input.baseStr)).size()))));
-        ;
-    };
-    return result;
-}
-
-/*!Check if string as no more input data
- */
-bool finished(const PosStr& str) { return !(hasNxt(str, 0)); }
-
-/*!Current string position is end
- */
-bool atStart(const PosStr& str) { return str.pos == 0; };
-
-/*!Has exactly one character to read
- */
-bool beforeEnd(const PosStr& str) {
-    return ((hasNxt(str, 0)) && ((!(hasNxt(str, 1)))));
-}
-
-/*!Set positional information to lexer error from string
- */
-void setLineInfo(ParseError& error, const PosStr& str) {
-    error.column = str.column;
-    error.line   = str.line;
-}
-
-/*!Set positional information to lexer error from string
- */
-void setLineInfo(LexerError& error, const PosStr& str) {
-    error.column = str.column;
-    error.line   = str.line;
-    error.pos    = str.pos;
-}
-
-
-int main() {
+int main(int argc, const char** argv) {
     {
         std::string res;
         addf(res, "[$1]??", {Str("value").leftAligned(20)});
@@ -1043,7 +1037,8 @@ int main() {
     Str              str  = "random test string";
     std::string_view view = str.at(slice(1, 2_B));
     for (const auto c : view) {
-        std::cout << "[" << c << "]\n";
+        std::cout << "[" << c << "] ";
     }
     std::cout << view.size() << "\n";
+    int result = Catch::Session().run(argc, argv);
 }
