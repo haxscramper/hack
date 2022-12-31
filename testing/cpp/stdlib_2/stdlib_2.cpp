@@ -9,6 +9,9 @@
 
 #include <catch2/catch_session.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
+#include <catch2/matchers/catch_matchers_exception.hpp>
 
 /// Helper implementation to pass multiple types around in a 'pack'
 template <typename... Args>
@@ -56,6 +59,28 @@ struct HSlice {
     A first;
     B last;
 };
+
+
+template <typename A, typename B>
+std::ostream& operator<<(std::ostream& os, HSlice<A, B> const& value) {
+    os << "[" << value.first << ".." << value.last << "]";
+    return os;
+}
+
+template <typename T>
+std::ostream& operator<<(std::ostream& os, std::span<T> const& value) {
+    bool first = true;
+    os << "@[";
+    for (const auto it : value) {
+        if (!first) {
+            os << ", ";
+        }
+        first = false;
+        os << it;
+    }
+    os << "]";
+    return os;
+}
 
 template <typename T>
 T succ(T);
@@ -157,7 +182,7 @@ Pair<A, A> getSpan(
     if constexpr (std::is_same_v<B, BackwardsIndex>) {
         endPos = size - s.last.value;
     } else {
-        endPos = s.last.value;
+        endPos = s.last;
     }
 
     if (checkRange && size <= startPos) {
@@ -205,24 +230,32 @@ class Vec : public std::vector<T> {
     template <typename A, typename B>
     std::span<T> at(CR<HSlice<A, B>> s, bool checkRange = true) {
         const auto [start, end] = getSpan(*this, s, checkRange);
-        return std::span(this->data() + start, end);
+        return std::span(this->data() + start, end - start + 1);
     }
 
     template <typename A, typename B>
     std::span<const T> at(CR<HSlice<A, B>> s, bool checkRange = true)
         const {
         const auto [start, end] = getSpan(*this, s, checkRange);
-        return std::span(this->data() + start, end);
+        return std::span(this->data() + start, end - start + 1);
     }
 
     template <typename A, typename B>
     std::span<T> operator[](CR<HSlice<A, B>> s) {
+#ifdef DEBUG
+        return at(s, true);
+#else
         return at(s, false);
+#endif
     }
 
     template <typename A, typename B>
-    std::span<const T> operator[](CR<HSlice<A, B>> s) {
+    std::span<const T> operator[](CR<HSlice<A, B>> s) const {
+#ifdef DEBUG
+        return at(s, true);
+#else
         return at(s, false);
+#endif
     }
 
     T& operator[](BackwardsIndex idx) {
@@ -231,12 +264,6 @@ class Vec : public std::vector<T> {
 
     T& at(BackwardsIndex idx) {
         return this->at(this->size() - idx.value);
-    }
-
-    void push_back(const Vec<T>& other) {
-        for (const auto& item : other) {
-            push_back(item);
-        }
     }
 
     T pop_back_v() {
@@ -585,7 +612,11 @@ struct AddfFragment {
     int              idx;
 };
 
-struct InvalidFormatString : public std::exception {};
+struct FormatStringError : public std::runtime_error {
+    explicit FormatStringError(const std::string& message)
+        : std::runtime_error(message) {}
+};
+
 
 /*!Iterate over interpolation fragments of the `formatstr`
  */
@@ -600,63 +631,51 @@ Vec<AddfFragment> addfFragments(const std::string& formatstr) {
         slice('\xF0', '\xFF'),
         '_'};
 
-
-    /* TODO CONST SECTION */;
     while (i < formatstr.size()) {
-        AddfFragment frag;
-        if (((((formatstr[i]) == ('$')))
-             && (((((i) + (1))) < ((formatstr.size())))))) {
+        if (((formatstr[i] == '$') && ((i + 1) < formatstr.size()))) {
             const auto c = formatstr[i + 1];
             if (c == '#') {
-                frag = AddfFragment{
-                    .kind = addfIndexed,
-                    .idx  = num,
-                };
+                result.push_back({.kind = addfIndexed, .idx = num});
                 i += 2;
                 num += 1;
             } else if (c == '$') {
                 i += 2;
-                frag = AddfFragment{
-                    .kind = addfDollar,
-                };
+                result.push_back({.kind = addfDollar});
 
             } else if (charsets::Digits.contains(c) || c == '|') {
                 auto j = 0;
                 i += 1;
                 const auto starti   = i;
-                auto       negative = ((formatstr[i]) == ('-'));
+                auto       negative = formatstr[i] == '-';
                 if (negative) {
                     i += 1;
                 }
                 while (
-                    ((((i) < (formatstr.size())))
-                     && (((charsets::Digits.contains(formatstr[i])))))) {
-                    j = ((((((j) * (10))) + (ord(formatstr[i])))) - (ord('0')));
+                    ((i < formatstr.size())
+                     && (charsets::Digits.contains(formatstr[i])))) {
+                    j = ((j * 10) + ord(formatstr[i])) - ord('0');
                     i += 1;
                 }
                 if (negative) {
-                    frag = {.kind = addfBackIndexed, .idx = j};
+                    result.push_back({.kind = addfBackIndexed, .idx = j});
                 } else {
-                    frag = AddfFragment{
-                        .kind = addfIndexed,
-                        .idx  = ((j) - (1)),
-                    };
+                    result.push_back({.kind = addfIndexed, .idx = j - 1});
                 }
             } else if (c == '{') {
-                auto       j        = ((i) + (2));
+                auto       j        = i + 2;
                 auto       k        = 0;
-                auto       negative = ((formatstr[j]) == ('-'));
+                auto       negative = formatstr[j] == '-';
                 const auto starti   = j;
                 if (negative) {
                     j += 1;
                 }
                 auto isNumber = 0;
                 while (
-                    ((((j) < (formatstr.size())))
-                     && ((!IntSet<char>({'\0', '}'})
-                               .contains(formatstr[j]))))) {
-                    if (((charsets::Digits.contains(formatstr[j])))) {
-                        k = ((((((k) * (10))) + (ord(formatstr[j])))) - (ord('0')));
+                    ((j < formatstr.size())
+                     && (!IntSet<char>({'\0', '}'})
+                              .contains(formatstr[j])))) {
+                    if (charsets::Digits.contains(formatstr[j])) {
+                        k = ((k * 10) + ord(formatstr[j])) - ord('0');
                         if (isNumber == 0) {
                             isNumber = 1;
                         }
@@ -667,66 +686,60 @@ Vec<AddfFragment> addfFragments(const std::string& formatstr) {
                 };
                 if (isNumber == 1) {
                     if (negative) {
-                        frag = AddfFragment{
-                            .kind = addfBackIndexed,
-                            .idx  = k,
-                        };
+                        result.push_back(
+                            {.kind = addfBackIndexed, .idx = k});
                     } else {
-                        frag = AddfFragment{
-                            .kind = addfIndexed,
-                            .idx  = ((k) - (1)),
-                        };
-                    };
+                        result.push_back(
+                            {.kind = addfIndexed, .idx = k - 1});
+                    }
                 } else {
                     const auto first = i + 2;
                     const auto last  = j - 1;
+                    const auto count = last - first + 1;
 
-                    frag = {
-                        .kind = addfExpr,
-                        .text = formatstr.substr(first, last - first + 1)};
-                };
-                i = ((j) + (1));
-                break;
+                    result.push_back(
+                        {.kind = addfExpr,
+                         .text = formatstr.substr(first, count)});
+                }
+                i = j + 1;
 
             } else if (
                 charsets::Letters.contains(c) || c == '_'
                 || IntSet<char>(slice('\xF0', '\xFF')).contains(c)) {
-                auto j = ((i) + (1));
+                auto j = i + 1;
                 while (
-                    ((((j) < (formatstr.size())))
-                     && (((PatternChars.contains(formatstr[j])))))) {
+                    ((j < formatstr.size())
+                     && (PatternChars.contains(formatstr[j])))) {
                     j += 1;
-                };
+                }
                 const auto first = i + 1;
                 const auto last  = j - 1;
 
-                frag = {
-                    .kind = addfVar,
-                    .text = formatstr.substr(first, last - first + 1)};
+                result.push_back(
+                    {.kind = addfVar,
+                     .text = formatstr.substr(first, last - first + 1)});
                 i = j;
             } else {
-                throw std::runtime_error(
+                throw FormatStringError(
                     R"(unexpected char after $ - )"
                     + std::string(1, formatstr[i + 1]));
             }
         } else {
             auto trange = slice(i, i);
             while (
-                ((((trange.last) < (formatstr.size())))
-                 && (((formatstr[trange.last]) != ('$'))))) {
+                ((trange.last < formatstr.size())
+                 && (formatstr[trange.last] != '$'))) {
                 trange.last += 1;
-            };
+            }
             trange.last -= 1;
-            frag = {
-                .kind = addfText,
-                .text = formatstr.substr(
-                    trange.first, trange.last - trange.first + 1),
-            };
+            result.push_back(
+                {.kind = addfText,
+                 .text = formatstr.substr(
+                     trange.first, trange.last - trange.first + 1)});
             i = trange.last;
             i += 1;
         }
-        result.push_back(frag);
-    };
+    }
     return result;
 }
 
@@ -752,9 +765,9 @@ void addf(
                     idx = fr.idx;
                 }
                 if (idx < 0 || a.size() <= idx) {
-                    throw std::runtime_error(
-                        "Argument index out of bounds. Accessed "
-                        + std::to_string(idx) + ", but only "
+                    throw FormatStringError(
+                        "Argument index out of bounds. Accessed ["
+                        + std::to_string(idx) + "], but only "
                         + std::to_string(a.size())
                         + " arguments were supplied");
                 }
@@ -771,8 +784,9 @@ void addf(
                 if ((0 <= x) && (x < a.high())) {
                     s += a[((x) + (1))];
                 } else {
-                    throw std::runtime_error(
-                        "No interpolation argument named " + fr.text);
+                    throw FormatStringError(
+                        "No interpolation argument named '" + fr.text
+                        + "'");
                 };
                 break;
             }
@@ -795,6 +809,9 @@ void addf(
 
 struct Str : public std::string {
     using std::string::string;
+    using std::string::operator[];
+    using std::string::at;
+
     bool startsWith(const std::string& prefix) {
         return find(prefix) == 0;
     }
@@ -820,6 +837,17 @@ struct Str : public std::string {
         return std::string_view(this->data() + start, end);
     }
 
+    template <typename A, typename B>
+    std::string_view operator[](CR<HSlice<A, B>> s) {
+        return at(s, false);
+    }
+
+    template <typename A, typename B>
+    const std::string_view operator[](CR<HSlice<A, B>> s) const {
+        return at(s, false);
+    }
+
+
     Str rightAligned(int n, char c = ' ') {
         Str res;
         if (size() < n) {
@@ -838,6 +866,29 @@ struct Str : public std::string {
     }
 };
 
+using StrVec     = Vec<Str>;
+using StrPairVec = Vec<Pair<Str, Str>>;
+
+std::string operator%(CR<std::string> format, CR<Vec<Str>> values) {
+    std::string result;
+    addf(
+        result,
+        format,
+        *reinterpret_cast<const Vec<std::string>*>(&values));
+    return result;
+}
+
+std::string operator%(
+    CR<std::string>         format,
+    CR<Vec<Pair<Str, Str>>> values) {
+    std::string result;
+    addf(
+        result,
+        format,
+        *reinterpret_cast<const Vec<Pair<std::string, std::string>>*>(
+            &values));
+    return result;
+}
 
 enum class SomeEnum : unsigned short
 {
@@ -908,6 +959,174 @@ an unlimited amount in case of fragmented string.
     /// automatically collect new string slices
 };
 
+TEST_CASE("String operations", "[str]") {
+    SECTION("Basic operations") {
+        Str s1{"Hello"};
+        Str s2{"World"};
+        Str empty;
+
+        REQUIRE(s1.startsWith("He"));
+        REQUIRE_FALSE(s1.startsWith("Wo"));
+        REQUIRE(s1.endsWith("lo"));
+        REQUIRE_FALSE(s1.endsWith("or"));
+        REQUIRE(s1.size() == 5);
+        REQUIRE_FALSE(s1.empty());
+        REQUIRE(empty.empty());
+        REQUIRE(s1[1] == 'e');
+        // String slices are inclusive
+        REQUIRE(s1[Slice<int>{1, 3}] == "ell");
+        REQUIRE((s1 + s2) == "HelloWorld");
+    }
+
+    SECTION("String mutations") {
+        Str s1{"01234"};
+        Str s2{"World"};
+        Str empty;
+
+        // Change the first character of s1 to 'J'
+        s1[0] = '!';
+        REQUIRE(s1 == "!1234");
+        // Try to change the first character of empty to 'X'
+        REQUIRE_THROWS_AS((empty.at(0) = 'X'), std::out_of_range);
+        // Try to change the last two characters of empty to "zz" using the
+        // slice operator
+        REQUIRE_THROWS_AS((empty.at(Slice<int>{1, 2})), std::out_of_range);
+    }
+}
+
+using Catch::Matchers::EndsWith;
+using Catch::Matchers::Message;
+using Catch::Matchers::StartsWith;
+
+TEST_CASE("Vector") {
+    SECTION("Slice and indexing operators") {
+        Vec<int> v{0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
+
+        // Test slice operator with positive indices
+        std::span<int> slice1 = v[slice(3, 5)];
+        REQUIRE(slice1.size() == 3);
+        for (int i = 0; i < 3; ++i) {
+            CHECK(slice1[i] == v[i + 3]);
+        }
+
+        // Test slice operator with backwards indices
+        std::span<int> slice2 = v[slice(3, 3_B)];
+        REQUIRE(slice2.size() == 5);
+        for (int i = 0; i < 3; ++i) {
+            CHECK(slice2[i] == v[i + 3]);
+        }
+
+        // Test slice operator with out-of-bounds indices, raise is
+        // guaranteed
+        REQUIRE_THROWS_AS(v.at(slice(0, 11)), std::out_of_range);
+        REQUIRE_THROWS_AS(v.at(slice(12, 14)), std::out_of_range);
+        REQUIRE_THROWS_AS(v.at(slice(1, 20_B)), std::out_of_range);
+
+        // Test indexing operator with positive index
+        REQUIRE(v[3] == 3);
+
+        REQUIRE(v[3_B] == 7);
+        REQUIRE(v[v.size() - 3] == 7);
+
+        REQUIRE_THROWS_AS(v.at(10), std::out_of_range);
+        REQUIRE_THROWS_AS(v.at(11_B), std::out_of_range);
+    }
+
+    SECTION("Edit data via span view") {
+        Vec<int> v(5, 0);
+
+        // Test modification using slice operator
+        std::span<int> span = v[slice(1, 3)];
+        for (int& x : span) {
+            x = 42;
+        }
+        REQUIRE(v[0] == 0);
+        REQUIRE(v[1] == 42);
+        REQUIRE(v[2] == 42);
+        REQUIRE(v[3] == 42);
+        REQUIRE(v[4] == 0);
+
+        // Test modification using indexing operator
+        v[1] = 0;
+        v[2] = 0;
+        v[3] = 0;
+        REQUIRE(v[0] == 0);
+        REQUIRE(v[1] == 0);
+        REQUIRE(v[2] == 0);
+        REQUIRE(v[3] == 0);
+        REQUIRE(v[4] == 0);
+    }
+}
+
+TEST_CASE("String formatting", "[str]") {
+    SECTION("Plaintext") {
+        REQUIRE("a" == "a");
+        REQUIRE("A" % StrVec{"a"} == "A");
+    }
+
+    SECTION("Basic interpolation fragment parsing") {
+        {
+            auto f = addfFragments("${A}+${B}");
+            REQUIRE(f.size() == 3);
+            REQUIRE(f[0].text == "A");
+            REQUIRE(f[0].kind == addfExpr);
+            REQUIRE(f[1].kind == addfText);
+            REQUIRE(f[1].text == "+");
+            REQUIRE(f[2].kind == addfExpr);
+            REQUIRE(f[2].text == "B");
+        }
+        {
+            auto f = addfFragments("A");
+            REQUIRE(f.size() == 1);
+            REQUIRE(f[0].kind == addfText);
+            REQUIRE(f[0].text == "A");
+        }
+        {
+            auto f = addfFragments("$A");
+            REQUIRE(f.size() == 1);
+            REQUIRE(f[0].kind == addfVar);
+            REQUIRE(f[0].text == "A");
+        }
+        {
+            auto f = addfFragments("${A}");
+            REQUIRE(f.size() == 1);
+            REQUIRE(f[0].kind == addfExpr);
+            REQUIRE(f[0].text == "A");
+        }
+    }
+
+    SECTION("Interpolate values by index") {
+        REQUIRE("$1" % StrVec{"#"} == "#");
+        REQUIRE("$1+$2" % StrVec{"@", "@"} == "@+@");
+        // If interpolation placeholder starts with integer value it won't
+        // be treated as a name
+        REQUIRE("$1A" % StrVec{"@"} == "@A");
+        // If you want to make a name that starts with an integer use `${}`
+        REQUIRE("${1A}" % StrVec{"1A", "VALUE"} == "VALUE");
+        // If element at the required index is not found
+        // `FormatStringError` exception is raised. Note that elements use
+        // zero-based indexing.
+        REQUIRE_THROWS_MATCHES(
+            "$1000" % StrVec{},
+            FormatStringError,
+            Message(
+                "Argument index out of bounds. Accessed [999], but only "
+                "0 arguments were supplied"));
+    }
+
+    SECTION("Interpolate values by names") {
+        REQUIRE("$name" % StrPairVec{{"name", "VALUE"}} == "VALUE");
+        REQUIRE("${name}" % StrPairVec{{"name", "VALUE"}} == "VALUE");
+        REQUIRE(
+            "${name}*${name}" % StrPairVec{{"name", "VALUE"}}
+            == "VALUE*VALUE");
+
+        REQUIRE_THROWS_MATCHES(
+            "${RANDOM}" % StrVec{},
+            FormatStringError,
+            Message("No interpolation argument named 'RANDOM'"));
+    }
+}
 
 TEST_CASE("Test integral set operations", "[contains]") {
     IntSet<char> s;

@@ -6,6 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 add_executable(stdlib2 stdlib_2.cpp)
 
+target_compile_options(stdlib2 PRIVATE -fmax-errors=1)
 set_target_properties(stdlib2 PROPERTIES RUNTIME_OUTPUT_DIRECTORY
   "${CMAKE_SOURCE_DIR}")
 
