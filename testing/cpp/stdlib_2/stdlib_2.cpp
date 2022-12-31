@@ -14,6 +14,8 @@
 #include <catch2/matchers/catch_matchers_string.hpp>
 #include <catch2/matchers/catch_matchers_exception.hpp>
 
+#include "enum_types.hpp"
+
 /// Helper implementation to pass multiple types around in a 'pack'
 template <typename... Args>
 struct arg_pack {};
@@ -1180,25 +1182,52 @@ struct StringViewGroup {
 };
 
 struct PosStr {
-    std::variant<StringViewGroup, StringViewState> content;
-    Vec<std::string_view>                          slices;
+    struct SliceStartData {
+        LineCol loc;
+        int     pos;
+    };
 
-    bool hasNext(int shift) const {
-        return std::visit(
-            [shift](const auto& it) { return it.hasNext(shift); },
-            content);
+    Vec<SliceStartData> slices;
+    /// Underlying string view
+    std::string_view view;
+    /// Line and column information for the current position in the string
+    /// string view
+    LineCol loc;
+    /// Absolute offset from the start of string view
+    int pos = 0;
+
+    void pushSlice() { slices.push_back({loc, pos}); }
+
+    PosStr popSlice() {
+        auto slice = slices.pop_back_v();
+        return {
+            .view = std::string_view(
+                view.data() + slice.pos, pos - slice.pos),
+            .loc = slice.loc};
     }
+
+    bool hasNext(int shift = 1) const { return pos < view.size(); }
 
     void next() {
-        std::visit([](auto& it) { it.next(); }, content);
+        ++pos;
+        switch (get()) {
+            case '\n': {
+                ++loc.line;
+                loc.column = 0;
+                break;
+            }
+            default: {
+                ++loc.column;
+            }
+        }
     }
 
-    char get() {
-        return std::visit([](auto& it) { return it.get(); }, content);
-    }
-
-    LineCol loc() {
-        return std::visit([](const auto& it) { return it.loc; }, content);
+    char get(int offset = 0) const {
+        char result = '\0';
+        if (pos + offset < view.size()) {
+            result = view[pos + offset];
+        }
+        return result;
     }
 
     bool finished() { return get() == '\0'; }
@@ -1209,6 +1238,21 @@ struct PosStr {
         return result;
     }
 
+    bool at(char expected) const { return get() == expected; }
+
+    bool at(CR<CharSet> expected) const {
+        return expected.contains(get());
+    }
+
+    bool at(CR<std::string> expected) const {
+        for (const auto& [idx, ch] : enumerate(expected)) {
+            if (get(idx) != ch) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     void skip(char expected) {
         if (get() == expected) {
             next();
@@ -1216,9 +1260,8 @@ struct PosStr {
             throw UnexpectedCharError(
                 "Unexpected character encountered during lexing: found "
                 "'$#' but expected '$#' on $#:$#"
-                    % to_string_vec(
-                        get(), expected, loc().line, loc().column),
-                loc());
+                    % to_string_vec(get(), expected, loc.line, loc.column),
+                loc);
         }
     }
 
@@ -1229,9 +1272,8 @@ struct PosStr {
             throw UnexpectedCharError(
                 "Unexpected character encountered during lexing: fonud "
                 "'$#' but expected any of '$#' on $#:$#"
-                    % to_string_vec(
-                        get(), expected, loc().line, loc().column),
-                loc());
+                    % to_string_vec(get(), expected, loc.line, loc.column),
+                loc);
         }
     }
 
@@ -1246,8 +1288,8 @@ struct PosStr {
             "Unexpected character encountered during lexing: found '$#' "
             "but expected $# while parsing on $#:$#"
                 % to_string_vec(
-                    get(), expected, parsing, loc().line, loc().column),
-            loc());
+                    get(), expected, parsing, loc.line, loc.column),
+            loc);
     }
 };
 
