@@ -511,6 +511,10 @@ requires(sizeof(T) <= sizeof(unsigned short)) struct IntSet {
         return result;
     }
 
+    /// Return complement of the set that contains all values that were not
+    /// placed in the original set.
+    IntSet<T> operator~() { return {.values = ~values}; }
+
     int  size() const { return values.count(); }
     bool empty() const { return size() == 0; }
 
@@ -1096,16 +1100,18 @@ struct StringViewState {
 
     bool hasNext(int shift = 1) const { return pos < view.size(); }
 
-    void next() {
-        ++pos;
-        switch (get()) {
-            case '\n': {
-                ++loc.line;
-                loc.column = 0;
-                break;
-            }
-            default: {
-                ++loc.column;
+    void next(int count = 1) {
+        for (int i = 0; i < count; ++i) {
+            ++pos;
+            switch (get()) {
+                case '\n': {
+                    ++loc.line;
+                    loc.column = 0;
+                    break;
+                }
+                default: {
+                    ++loc.column;
+                }
             }
         }
     }
@@ -1126,11 +1132,84 @@ struct Token {
     std::string_view text;
 };
 
+struct StrPattern {
+    using V = CR<std::string_view>;
+    struct OneOrMore {
+        UPtr<StrPattern> it;
+
+        int matchOffset(V v) const { return 1; }
+    };
+
+    struct ZeroOrMore {
+        UPtr<StrPattern> it;
+
+        int matchOffset(V v) const { return it->matchOffset(v); }
+    };
+
+    struct Sequence {
+        Vec<StrPattern> it;
+
+        int matchOffset(V v) const {
+            int result = 0;
+            for (const auto& sub : it) {
+                auto tmp = v;
+                tmp.remove_prefix(result);
+                int offset = sub.matchOffset(tmp);
+                if (offset == -1) {
+                    return offset;
+                } else {
+                    result += offset;
+                }
+            }
+            return result;
+        }
+    };
+
+    struct AnyChar {
+        CharSet set;
+
+        int matchOffset(V v) const {
+            if (set.contains(v.front())) {
+                return 1;
+            } else {
+                return -1;
+            }
+        }
+    };
+
+
+    StrPattern operator+() {
+        return StrPattern(OneOrMore{
+            .it = UPtr<StrPattern>(new StrPattern(std::move(*this)))});
+    }
+
+    StrPattern operator*() {
+        return StrPattern(ZeroOrMore{
+            .it = UPtr<StrPattern>(new StrPattern(std::move(*this)))});
+    }
+
+    using PatternVar = std::variant<OneOrMore, ZeroOrMore, AnyChar>;
+
+    StrPattern(StrPattern&& moved) : pattern(std::move(moved.pattern)) {}
+    StrPattern(PatternVar&& value) : pattern(std::move(value)) {}
+
+    PatternVar pattern;
+
+    int matchOffset(V view) const {
+        return std::visit(
+            [&view](auto& it) { return it.matchOffset(view); }, pattern);
+    }
+};
+
+/// Type constraint for types that can be passed into base methods of the
+/// positional string checking such as `.at()` or `.skip()` as well as all
+/// helper methods for better skipping such as `skipWhile`
 template <typename S>
-concept PosStrCheckable = (                              //
-    std::same_as<std::remove_cvref_t<S>, char>           //
-    || std::same_as<std::remove_cvref_t<S>, CharSet>     //
-    || std::same_as<std::remove_cvref_t<S>, std::string> //
+concept PosStrCheckable = (                                     //
+    std::convertible_to<std::remove_cvref_t<S>, char>           //
+    || std::convertible_to<std::remove_cvref_t<S>, CharSet>     //
+    || std::convertible_to<std::remove_cvref_t<S>, std::string> //
+    || std::convertible_to<std::remove_cvref_t<S>, StrPattern>  //
 );
 
 struct PosStr {
@@ -1173,16 +1252,18 @@ struct PosStr {
 
     bool hasNext(int shift = 1) const { return pos < view.size(); }
 
-    void next() {
-        ++pos;
-        switch (get()) {
-            case '\n': {
-                ++loc.line;
-                loc.column = 0;
-                break;
-            }
-            default: {
-                ++loc.column;
+    void next(int count = 1) {
+        for (int i = 0; i < count; ++i) {
+            ++pos;
+            switch (get()) {
+                case '\n': {
+                    ++loc.line;
+                    loc.column = 0;
+                    break;
+                }
+                default: {
+                    ++loc.column;
+                }
             }
         }
     }
@@ -1209,13 +1290,13 @@ struct PosStr {
         return get(offset) == expected;
     }
 
-    bool at(CR<CharSet> expected) const {
-        return expected.contains(get());
+    bool at(CR<CharSet> expected, int offset = 0) const {
+        return expected.contains(get(offset));
     }
 
-    bool at(CR<std::string> expected) const {
+    bool at(CR<std::string> expected, int offset = 0) const {
         for (const auto& [idx, ch] : enumerate(expected)) {
-            if (get(idx) != ch) {
+            if (get(offset + idx) != ch) {
                 return false;
             }
         }
@@ -1246,10 +1327,218 @@ struct PosStr {
         }
     }
 
-    void skipWhile(PosStrCheckable auto& item) {
+    void skipWhile(const PosStrCheckable auto& item) {
         while (at(item)) {
             next();
         }
+    }
+
+    void skipTo(const PosStrCheckable auto& item) {
+        while (!at(item)) {
+            next();
+        }
+    }
+
+    void skipBefore(const PosStrCheckable auto& item) {
+        while (!at(item, 1)) {
+            next();
+        }
+    }
+
+    void skipPast(const PosStrCheckable auto& item) {
+        while (at(item)) {
+            next();
+        }
+    }
+
+    /*!Check string is positioned on the empty line - `\n____\n` where `_`
+    is any horizontal space character. Check can be executed at any
+    position on the line.
+    */
+    bool isEmptyLine() {
+        auto before = 0;
+        while (at(charsets::HorizontalSpace, before)) {
+            --before;
+        }
+
+        if (!at(before)) {
+            return false;
+        }
+
+        auto after = 0;
+        while (at(charsets::HorizontalSpace, after)) {
+            ++after;
+        }
+        if (!at(after)) {
+            return false;
+        }
+        return true;
+    }
+
+    /// Skip to the end of current line. After parsing cursor is positioned
+    /// on the last character in the string, or closest newline.
+    void skipToEOL() { skipTo(charsets::Newline); }
+
+
+    /// Skip past the end of the line - that is, for `111\n2222` put cursor
+    /// at the first `2` on the second line.
+    void skipPastEOL() { skipPast(charsets::Newline); }
+
+    /*! If string is positioned on the empty line skip it, and return
+    `true`. Otherwise return `false` */
+    bool trySkipEmptyLine() {
+        bool result = isEmptyLine();
+        if (result) {
+            skipPastEOL();
+        }
+        return result;
+    }
+
+    /// Skip any number of horizontal whitespaces starting from the current
+    /// position and return a number of spaces skipped.
+    int skipIndent(const int& maxIndent = INT_MAX) {
+        int result;
+        while (at(charsets::HorizontalSpace)) {
+            ++result;
+            next();
+            if (maxIndent <= result) {
+                break;
+            }
+        }
+        return result;
+    }
+
+    void skipBeforeEOL() { skipBefore(charsets::Newline); }
+
+    bool hasAhead(
+        const PosStrCheckable auto& item,
+        int                         maxLimit = INT_MAX) {
+        bool result;
+        int  pos = 0;
+        while (hasNext(pos) && pos < maxLimit) {
+            if (at(item, pos)) {
+                return true;
+            }
+            ++pos;
+        };
+        return false;
+    }
+
+    /// Get number of horizontal spaces starting from the current position.
+    /// NOTE: if string is positioned on the newline or any other vertical
+    /// space indentation is considered to be zero. `"\n____text" -> 0`,
+    /// but `"____test" -> 4`
+    int getIndent() const {
+        int result;
+        while (at(charsets::HorizontalSpace, result)) {
+            ++result;
+        }
+        return result;
+    }
+
+    bool hasMoreIndent(const int& indent, const bool& exactIndent = false)
+        const {
+        bool result;
+        int  foundIndent = 0;
+        while (at(charsets::HorizontalSpace, foundIndent)) {
+            ++foundIndent;
+            if (indent <= foundIndent) {
+                break;
+            }
+        }
+
+        if (foundIndent == indent) {
+            return true;
+        } else if (foundIndent <= indent) {
+            return false;
+        } else {
+            return !exactIndent
+                || at(charsets::HorizontalSpace, foundIndent);
+        }
+        return result;
+    }
+
+    void skipStringLit() {
+        auto found = false;
+        next();
+        while (!found) {
+            found = at('"') && !at('\\', -1);
+            next();
+        }
+    }
+
+    void skipDigit() {
+        if (at('-')) {
+            next();
+        }
+        if (at("0x")) {
+            next(2);
+            skip(charsets::HexDigits);
+            skipWhile(charsets::HexDigits + CharSet{'_'});
+        } else if (at("0b")) {
+            next(2);
+            skip(CharSet{'0', '1'});
+            skipWhile(CharSet{'0', '1'});
+        } else {
+            skip(charsets::Digits);
+            skipWhile(charsets::Digits + CharSet{'_', '.'});
+        }
+    }
+
+    void skipIdent(const CharSet& chars = charsets::IdentChars) {
+        skipWhile(chars);
+    }
+
+    void skipBalancedSlice(
+        const CharSet& openChars,
+        const CharSet& closeChars,
+        const CharSet& endChars = charsets::Newline,
+        const bool&    doRaise  = true,
+        /// Allow use of `\` character to escape special characters
+        const bool& allowEscape = true,
+        /// whether opening brace had already been skipped by the wrapping
+        /// lexer logic. Can be used to provide custom handling for the
+        /// opening element. Together with `consumeLast` allow for a fully
+        /// custom handling of the outermost wrapping braces.
+        const bool& skippedStart = false,
+        /// what to do with the wrapping tokens of a balanced range. By
+        /// default they are also skipped, but if lexer needs to handle
+        /// this case separately you can set this argument to false.
+        const bool& consumeLast = true) {
+        auto fullCount = skippedStart ? 1 : 0;
+        int  count[sizeof(char) * 8];
+        while (hasNext()) {
+            if (allowEscape && at('\\')) {
+                next();
+                next();
+            } else if (at(openChars)) {
+                ++fullCount;
+                ++count[ord(pop())];
+            } else if (at(closeChars)) {
+                --fullCount;
+                if ((0 < fullCount) || consumeLast) {
+                    --count[ord(pop())];
+                }
+                if (fullCount == 0) {
+                    return;
+                }
+            } else if (at(endChars)) {
+                if (0 < fullCount) {
+                    if (doRaise) {
+                        // unbalanced();
+                    } else {
+                        return;
+                    }
+                } else {
+                    return;
+                }
+            } else {
+                next();
+            }
+        }
+        // if (( 0 <  fullcount  &&  doRaise )) {
+        //     unbalanced();
+        // }
     }
 
     /// Create new 'unexpected character' error at the current string
@@ -1517,6 +1806,37 @@ TEST_CASE("Positional string lexing", "[str]") {
         REQUIRE(str.at({slice('0', '9')}));
         REQUIRE(str.at(charsets::Digits));
         REQUIRE(!str.at(charsets::Letters));
+    }
+
+    SECTION("Skip while single character") {
+        str.skipWhile('0');
+        REQUIRE(str.at('1'));
+    }
+
+    SECTION("Skip while character set") {
+        REQUIRE(str.at('0'));
+        str.skipWhile(CharSet{'0', '1', '2'});
+        REQUIRE(str.at('3'));
+    }
+
+    SECTION("Skip before a character") {
+        str.skipBefore('3');
+        REQUIRE(str.at('2'));
+    }
+
+    SECTION("Skip to a character") {
+        str.skipTo('3');
+        REQUIRE(str.at('3'));
+    }
+
+    SECTION("Skip until one of the caracters") {
+        str.skipBefore(CharSet{'3', '4'});
+        REQUIRE(str.at('2'));
+    }
+
+    SECTION("Skip until a string is found") {
+        str.skipBefore("34");
+        REQUIRE(str.at('2'));
     }
 }
 
