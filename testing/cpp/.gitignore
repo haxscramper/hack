@@ -98,3 +98,12 @@ cmakedeps_macros.cmake
 CMakePresets.json
 
 */.vscode
+!deps
+
+**/*.profdata
+**/*.profraw
+**/*.gcov
+**/*.lcov
+**/*.gcno
+**/*.gcda
+**/coverage*

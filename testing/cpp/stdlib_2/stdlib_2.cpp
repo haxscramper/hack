@@ -1120,68 +1120,26 @@ struct StringViewState {
 };
 
 
-struct StringViewGroup {
-    /// List of underlying string spans that view group works over
-    Vec<StringViewState> states;
-    /// Current location
-    LineCol loc;
-    int     stateIndex;
-    int     posInState;
-
-    bool hasInState(int index, int shift) const {
-        return index < states.size() && shift < states[index].view.size();
-    }
-
-    bool hasNext(int shift = 1) const {
-#warning TODO implement check for next states
-        return hasInState(stateIndex, posInState + shift);
-    }
-
-    void next() {
-        if (stateIndex < states.size()) {
-            if (posInState + 1 < states[stateIndex].view.size()) {
-                ++posInState;
-                switch (get()) {
-                    case '\n': {
-                        ++loc.line;
-                        loc.column = 0;
-                        break;
-                    }
-                    default: {
-                        ++loc.column;
-                    }
-                }
-            } else {
-                ++stateIndex;
-                posInState = 0;
-                loc        = states[stateIndex].loc;
-            }
-        }
-    }
-
-    char get() {
-        char result = '\0';
-        if (stateIndex < states.size()
-            && posInState < states[stateIndex].view.size()) {
-            result = states[stateIndex].view[posInState];
-        }
-        return result;
-    }
-
-
-  private:
-    Pair<int, int> findStateIdx(int pos) const {
-        for (const auto& [idx, state] : enumerate(states)) {
-            if (state.pos <= pos
-                && pos <= (state.pos + state.view.size())) {
-                return {idx, pos - state.pos};
-            }
-        }
-        return {-1, 0};
-    }
+template <typename K>
+struct Token {
+    K                kind;
+    std::string_view text;
 };
 
+template <typename S>
+concept PosStrCheckable = (                              //
+    std::same_as<std::remove_cvref_t<S>, char>           //
+    || std::same_as<std::remove_cvref_t<S>, CharSet>     //
+    || std::same_as<std::remove_cvref_t<S>, std::string> //
+);
+
 struct PosStr {
+    PosStr(
+        std::string_view inView,
+        LineCol          inLoc = {.line = 0, .column = 0},
+        int              inPos = 0)
+        : view(inView), loc(inLoc), pos(inPos) {}
+
     struct SliceStartData {
         LineCol loc;
         int     pos;
@@ -1198,12 +1156,19 @@ struct PosStr {
 
     void pushSlice() { slices.push_back({loc, pos}); }
 
+    std::string_view completeView(CR<SliceStartData> slice) const {
+        return std::string_view(view.data() + slice.pos, pos - slice.pos);
+    }
+
+    template <typename K>
+    Token<K> tok(K kind) {
+        return Token<K>{
+            .kind = kind, .text = completeView(slices.pop_back_v())};
+    }
+
     PosStr popSlice() {
         auto slice = slices.pop_back_v();
-        return {
-            .view = std::string_view(
-                view.data() + slice.pos, pos - slice.pos),
-            .loc = slice.loc};
+        return PosStr(completeView(slice), slice.loc);
     }
 
     bool hasNext(int shift = 1) const { return pos < view.size(); }
@@ -1238,7 +1203,11 @@ struct PosStr {
         return result;
     }
 
-    bool at(char expected) const { return get() == expected; }
+    /// Check if the current position (with given \arg offset) contains
+    /// expected character.
+    bool at(char expected, int offset = 0) const {
+        return get(offset) == expected;
+    }
 
     bool at(CR<CharSet> expected) const {
         return expected.contains(get());
@@ -1274,6 +1243,12 @@ struct PosStr {
                 "'$#' but expected any of '$#' on $#:$#"
                     % to_string_vec(get(), expected, loc.line, loc.column),
                 loc);
+        }
+    }
+
+    void skipWhile(PosStrCheckable auto& item) {
+        while (at(item)) {
+            next();
         }
     }
 
@@ -1526,6 +1501,22 @@ TEST_CASE("Test integral set operations", "[contains]") {
         // Check that the symmetric difference between empty and s1 is {1,
         // 2, 3}
         REQUIRE((empty ^ s1) == s1);
+    }
+}
+
+TEST_CASE("Positional string lexing", "[str]") {
+    std::string base{"01234"};
+    PosStr      str{base};
+    SECTION("Check for characters on the position ahead") {
+        REQUIRE(str.at('0'));
+        REQUIRE(str.at('1', 1));
+        REQUIRE(str.at('2', 2));
+    }
+
+    SECTION("Check for character set on the position ahead") {
+        REQUIRE(str.at({slice('0', '9')}));
+        REQUIRE(str.at(charsets::Digits));
+        REQUIRE(!str.at(charsets::Letters));
     }
 }
 

@@ -30,10 +30,24 @@ tasks:
     desc: "Helper wrappers for stdlib"
     dir: stdlib_2
     cmds:
+      - rm -rf build
       - mkdir -p build
-      - cmake -B build -DCMAKE_BUILD_TYPE=Debug  .
+      - >
+        cmake
+        -B build
+        -DTEST_COVERAGE=ON
+        -DCMAKE_CXX_COMPILER=clang++
+        -DCMAKE_BUILD_TYPE=Debug
+        .
+
       - cd build && make -j12
-      - ./stdlib2
+      - rm -rf *.gcov *.lcov *.profraw *.profdata
+      - ./stdlib2.bin
+      - llvm-profdata merge -sparse *.profraw -o coverage.profdata
+      - llvm-cov show stdlib2.bin -instr-profile=coverage.profdata -format=html > coverage.html
+      - llvm-cov export -format=lcov -instr-profile=coverage.profdata stdlib2.bin > coverage.lcov
+      - llvm-cov export -format=text -instr-profile=coverage.profdata stdlib2.bin > coverage.json
+      - genhtml -o html coverage.lcov
 
 
   clang_ast_diff:
