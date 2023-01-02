@@ -12,6 +12,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
+#include <catch2/benchmark/catch_benchmark.hpp>
 #include <catch2/matchers/catch_matchers_exception.hpp>
 
 #include "enum_types.hpp"
@@ -152,7 +153,7 @@ struct Slice : public HSlice<T, T> {
 
 /// Return homogeneous inclusive slice of values
 template <typename T>
-Slice<T> slice(CR<T> first, CR<T> last) {
+constexpr Slice<T> slice(CR<T> first, CR<T> last) {
     return {first, last};
 }
 
@@ -407,7 +408,25 @@ template <typename T, typename... U>
 concept AllConvertibleToSet = (ConvertibleToSet<T, U> && ...);
 
 
-/// \brief Packet set of integral values
+/*!
+\brief Packet set of integral values
+
+This type is mostly intended to be used types that have enum-like meaning
+(regular enums, characters, small "state number" integers) instead of a
+more general set solution.
+
+This means that the API has been optimized for things like
+
+```cpp
+enum SomeFlags { flag1, flag2, flag3 };
+IntSet<SomeFlags> flag;
+flag.incl(flag1);
+if (flag.contains(flag2)) {
+  // do something
+}
+```
+
+*/
 template <typename T>
 requires(sizeof(T) <= sizeof(unsigned short)) struct IntSet {
     // constrain the size of the object to avoid blowing up the set size.
@@ -418,19 +437,21 @@ requires(sizeof(T) <= sizeof(unsigned short)) struct IntSet {
     // depending on the size/type of the value, but for now this check is
     // added purely for footgun reasons.
   private:
-    static inline std::size_t toIdx(CR<T> value) { return ord(value); }
+    constexpr static inline std::size_t toIdx(CR<T> value) {
+        return ord(value);
+    }
 
-    void buildSet(R<IntSet<T>> result) {}
+    constexpr void buildSet(R<IntSet<T>> result) {}
 
     template <typename ValueT>
-    void buildSet(R<IntSet<T>> result, CR<ValueT> value) requires
+    constexpr void buildSet(R<IntSet<T>> result, CR<ValueT> value) requires
         ConvertibleToSet<T, ValueT> {
         result.incl(value);
     }
 
     // Helper method to recurse into constructor argument list
     template <typename Value, typename... Args>
-    void buildSet(
+    constexpr void buildSet(
         R<IntSet<T>> result,
         CR<Value>    value,
         Args&&... tail) requires
@@ -444,25 +465,27 @@ requires(sizeof(T) <= sizeof(unsigned short)) struct IntSet {
     using BitsetT = std::bitset<pow_v<2, 8 * sizeof(T)>::res>;
     BitsetT values;
 
-    bool contains(CR<T> value) const { return values.test(toIdx(value)); }
+    constexpr bool contains(CR<T> value) const {
+        return values.test(toIdx(value));
+    }
     /// Check if one set is a proper subset of another -- \arg other
     /// contains all the values.
-    bool contains(CR<IntSet<T>> other) const {
+    constexpr bool contains(CR<IntSet<T>> other) const {
         return ((values & other.values) == other.values);
     }
 
 
-    void incl(CR<IntSet<T>> other) { values |= other.values; }
-    void excl(CR<IntSet<T>> other) { values &= ~other.values; }
-    void incl(CR<T> value) { values.set(toIdx(value)); }
-    void excl(CR<T> value) { values.reset(toIdx(value)); }
-    void incl(CR<Slice<T>> range) {
+    constexpr void incl(CR<IntSet<T>> other) { values |= other.values; }
+    constexpr void excl(CR<IntSet<T>> other) { values &= ~other.values; }
+    constexpr void incl(CR<T> value) { values.set(toIdx(value)); }
+    constexpr void excl(CR<T> value) { values.reset(toIdx(value)); }
+    constexpr void incl(CR<Slice<T>> range) {
         for (const auto val : range) {
             incl(val);
         }
     }
 
-    void excl(CR<Slice<T>> range) {
+    constexpr void excl(CR<Slice<T>> range) {
         for (const auto val : range) {
             excl(val);
         }
@@ -521,7 +544,8 @@ requires(sizeof(T) <= sizeof(unsigned short)) struct IntSet {
     /// Variadic constructor for the set type. It accepts only types that
     /// can be directly converted to the set
     template <typename... Args>
-    IntSet(Args&&... args) requires AllConvertibleToSet<T, Args...> {
+    constexpr IntSet(Args&&... args) requires
+        AllConvertibleToSet<T, Args...> {
         buildSet(*this, args...);
     }
 
@@ -715,7 +739,7 @@ struct FormatStringError : public std::runtime_error {
 
 /*!Iterate over interpolation fragments of the `formatstr`
  */
-Vec<AddfFragment> addfFragments(const std::string& formatstr) {
+constexpr Vec<AddfFragment> addfFragments(const std::string& formatstr) {
     Vec<AddfFragment> result{};
     auto              i   = 0;
     auto              num = 0;
@@ -841,9 +865,8 @@ Vec<AddfFragment> addfFragments(const std::string& formatstr) {
 /*! The same as `add(s, formatstr % a)`, but more efficient. */
 void addf(
     std::string&                    s,
-    const std::string&              formatstr,
+    CR<Vec<AddfFragment>>           fragments,
     const std::vector<std::string>& a) {
-    const auto fragments = addfFragments(formatstr);
     for (const auto fr : fragments) {
         switch (fr.kind) {
             case addfDollar: {
@@ -900,8 +923,8 @@ std::vector<std::string> fold_format_pairs(
     return tmp;
 }
 
-std::string operator%(
-    CR<std::string>              format,
+std::string addf(
+    CR<Vec<AddfFragment>>        format,
     CR<std::vector<std::string>> values) {
     std::string result;
     addf(result, format, values);
@@ -909,11 +932,15 @@ std::string operator%(
 }
 
 std::string operator%(
+    CR<std::string>              format,
+    CR<std::vector<std::string>> values) {
+    return addf(addfFragments(format), values);
+}
+
+std::string operator%(
     CR<std::string>                                 format,
     CR<std::vector<Pair<std::string, std::string>>> values) {
-    std::string result;
-    addf(result, format, fold_format_pairs(values));
-    return result;
+    return addf(addfFragments(format), fold_format_pairs(values));
 }
 
 
@@ -1089,59 +1116,41 @@ TEST_CASE("String operations", "[str]") {
     }
 }
 
-struct StringViewState {
-    /// Underlying string view
-    std::string_view view;
-    /// Line and column information for the current position in the string
-    /// string view
-    LineCol loc;
-    /// Absolute offset from the start of string view
-    int pos;
 
-    bool hasNext(int shift = 1) const { return pos < view.size(); }
-
-    void next(int count = 1) {
-        for (int i = 0; i < count; ++i) {
-            ++pos;
-            switch (get()) {
-                case '\n': {
-                    ++loc.line;
-                    loc.column = 0;
-                    break;
-                }
-                default: {
-                    ++loc.column;
-                }
-            }
-        }
-    }
-
-    char get() {
-        char result = '\0';
-        if (pos < view.size()) {
-            result = view[pos];
-        }
-        return result;
-    }
-};
-
-
+/// Generic token containing minimal required information: span of text and
+/// tag. Line/Column information can be computed on the as-needed basis
+/// from the base string.
 template <typename K>
 struct Token {
-    K                kind;
-    std::string_view text;
+    K                kind; /// Specific kind of the token
+    std::string_view text; /// Token view on the base input text
 };
 
 struct StrPattern {
     using V = CR<std::string_view>;
     struct OneOrMore {
-        UPtr<StrPattern> it;
+        SPtr<StrPattern> it;
 
-        int matchOffset(V v) const { return 1; }
+        int matchOffset(V v) const {
+            auto tmp    = v;
+            int  result = it->matchOffset(v);
+            // Skipping 'empty' and 'fail' matches
+            if (0 < result) {
+                int nextState = result;
+                while (0 < nextState) {
+                    tmp.remove_prefix(nextState);
+                    nextState = it->matchOffset(tmp);
+                    if (-1 < nextState) {
+                        result += nextState;
+                    }
+                }
+            }
+            return result;
+        }
     };
 
     struct ZeroOrMore {
-        UPtr<StrPattern> it;
+        SPtr<StrPattern> it;
 
         int matchOffset(V v) const { return it->matchOffset(v); }
     };
@@ -1168,6 +1177,8 @@ struct StrPattern {
     struct AnyChar {
         CharSet set;
 
+        AnyChar(CR<CharSet> inSet) : set(inSet){};
+
         int matchOffset(V v) const {
             if (set.contains(v.front())) {
                 return 1;
@@ -1180,16 +1191,17 @@ struct StrPattern {
 
     StrPattern operator+() {
         return StrPattern(OneOrMore{
-            .it = UPtr<StrPattern>(new StrPattern(std::move(*this)))});
+            .it = SPtr<StrPattern>(new StrPattern(std::move(*this)))});
     }
 
     StrPattern operator*() {
         return StrPattern(ZeroOrMore{
-            .it = UPtr<StrPattern>(new StrPattern(std::move(*this)))});
+            .it = SPtr<StrPattern>(new StrPattern(std::move(*this)))});
     }
 
     using PatternVar = std::variant<OneOrMore, ZeroOrMore, AnyChar>;
 
+    StrPattern(CR<StrPattern> copy) : pattern(copy.pattern) {}
     StrPattern(StrPattern&& moved) : pattern(std::move(moved.pattern)) {}
     StrPattern(PatternVar&& value) : pattern(std::move(value)) {}
 
@@ -1200,6 +1212,47 @@ struct StrPattern {
             [&view](auto& it) { return it.matchOffset(view); }, pattern);
     }
 };
+
+
+std::ostream& operator<<(std::ostream& os, StrPattern const& value);
+
+std::ostream& operator<<(
+    std::ostream&                 os,
+    StrPattern::ZeroOrMore const& value) {
+    os << "*(" << *(value.it) << ")";
+    return os;
+}
+
+
+std::ostream& operator<<(
+    std::ostream&              os,
+    StrPattern::AnyChar const& value) {
+    os << value.set;
+    return os;
+}
+
+std::ostream& operator<<(
+    std::ostream&                os,
+    StrPattern::OneOrMore const& value) {
+    os << "+(" << *(value.it) << ")";
+    return os;
+}
+
+std::ostream& operator<<(
+    std::ostream&                 os,
+    StrPattern::PatternVar const& value) {
+    return std::visit(
+        [&os](auto& it) -> std::ostream& {
+            os << it;
+            return os;
+        },
+        value);
+}
+
+std::ostream& operator<<(std::ostream& os, StrPattern const& value) {
+    os << value.pattern;
+    return os;
+}
 
 /// Type constraint for types that can be passed into base methods of the
 /// positional string checking such as `.at()` or `.skip()` as well as all
@@ -1235,19 +1288,44 @@ struct PosStr {
 
     void pushSlice() { slices.push_back({loc, pos}); }
 
+    using AdvanceCb = std::function<void(PosStr&)>;
+
     std::string_view completeView(CR<SliceStartData> slice) const {
         return std::string_view(view.data() + slice.pos, pos - slice.pos);
     }
 
+
+    /// Pop last slice into a token object
     template <typename K>
-    Token<K> tok(K kind) {
+    Token<K> popTok(K kind) {
         return Token<K>{
             .kind = kind, .text = completeView(slices.pop_back_v())};
+    }
+
+    template <typename K>
+    Token<K> tok(K kind, AdvanceCb cb) {
+        pushSlice();
+        cb(*this);
+        return popTok(kind);
+    }
+
+    template <typename K>
+    Token<K> tok(K kind, CR<StrPattern> pattern, bool allowEmpty = false) {
+        pushSlice();
+        skip(pattern, 0, allowEmpty);
+        return popTok(kind);
     }
 
     PosStr popSlice() {
         auto slice = slices.pop_back_v();
         return PosStr(completeView(slice), slice.loc);
+    }
+
+    template <typename K>
+    Token<K> slice(K kind, AdvanceCb cb) {
+        pushSlice();
+        cb(*this);
+        return popSlice();
     }
 
     bool hasNext(int shift = 1) const { return pos < view.size(); }
@@ -1301,6 +1379,36 @@ struct PosStr {
             }
         }
         return true;
+    }
+
+    int getSkip(CR<StrPattern> pattern, int offset = 0) const {
+        const auto base = std::string_view(
+            view.data() + (pos + offset), view.size() - (pos + offset));
+        return pattern.matchOffset(base);
+    }
+
+    bool at(CR<StrPattern> pattern, int offset = 0) const {
+        return (0 <= getSkip(pattern));
+    }
+
+    void skip(
+        CR<StrPattern> pattern,
+        int            offset     = 0,
+        bool           allowEmpty = false) {
+        auto skip = getSkip(pattern);
+        if (0 < skip || (skip == 0 && allowEmpty)) {
+            next(skip);
+        } else if (skip == 0 && !allowEmpty) {
+            throw UnexpectedCharError(
+                "Pattern '$#' skipped zero characters at position $#:$#"
+                    % to_string_vec(pattern, loc.line, loc.column),
+                loc);
+        } else {
+            throw UnexpectedCharError(
+                "Skip of the pattern '$#' failed on $#:$#"
+                    % to_string_vec(pattern, loc.line, loc.column),
+                loc);
+        }
     }
 
     void skip(char expected) {
@@ -1458,74 +1566,53 @@ struct PosStr {
         return result;
     }
 
-    void skipStringLit() {
-        auto found = false;
-        next();
-        while (!found) {
-            found = at('"') && !at('\\', -1);
-            next();
-        }
-    }
-
-    void skipDigit() {
-        if (at('-')) {
-            next();
-        }
-        if (at("0x")) {
-            next(2);
-            skip(charsets::HexDigits);
-            skipWhile(charsets::HexDigits + CharSet{'_'});
-        } else if (at("0b")) {
-            next(2);
-            skip(CharSet{'0', '1'});
-            skipWhile(CharSet{'0', '1'});
-        } else {
-            skip(charsets::Digits);
-            skipWhile(charsets::Digits + CharSet{'_', '.'});
-        }
-    }
 
     void skipIdent(const CharSet& chars = charsets::IdentChars) {
         skipWhile(chars);
     }
 
-    void skipBalancedSlice(
-        const CharSet& openChars,
-        const CharSet& closeChars,
-        const CharSet& endChars = charsets::Newline,
-        const bool&    doRaise  = true,
+    struct UnbalancedSkipArgs {
+        const CharSet& openChars;
+        const CharSet& closeChars;
+        const CharSet& endChars = charsets::Newline;
+        const bool&    doRaise  = true;
         /// Allow use of `\` character to escape special characters
-        const bool& allowEscape = true,
+        const bool& allowEscape = true;
         /// whether opening brace had already been skipped by the wrapping
         /// lexer logic. Can be used to provide custom handling for the
         /// opening element. Together with `consumeLast` allow for a fully
         /// custom handling of the outermost wrapping braces.
-        const bool& skippedStart = false,
+        const bool& skippedStart = false;
         /// what to do with the wrapping tokens of a balanced range. By
         /// default they are also skipped, but if lexer needs to handle
         /// this case separately you can set this argument to false.
-        const bool& consumeLast = true) {
-        auto fullCount = skippedStart ? 1 : 0;
+        const bool& consumeLast = true;
+    };
+
+    void skipBalancedSlice(CR<UnbalancedSkipArgs> args) {
+        auto fullCount = args.skippedStart ? 1 : 0;
         int  count[sizeof(char) * 8];
         while (hasNext()) {
-            if (allowEscape && at('\\')) {
+            if (args.allowEscape && at('\\')) {
                 next();
                 next();
-            } else if (at(openChars)) {
+            } else if (at(args.openChars)) {
                 ++fullCount;
                 ++count[ord(pop())];
-            } else if (at(closeChars)) {
+            } else if (at(args.closeChars)) {
                 --fullCount;
-                if ((0 < fullCount) || consumeLast) {
+                if ((0 < fullCount) || args.consumeLast) {
                     --count[ord(pop())];
                 }
                 if (fullCount == 0) {
                     return;
                 }
-            } else if (at(endChars)) {
+            } else if (at(args.endChars)) {
                 if (0 < fullCount) {
-                    if (doRaise) {
-                        // unbalanced();
+                    if (args.doRaise) {
+                        throw makeUnexpected(
+                            "balanced opening/closing pair",
+                            "balanced opening/closing pair");
                     } else {
                         return;
                     }
@@ -1536,9 +1623,11 @@ struct PosStr {
                 next();
             }
         }
-        // if (( 0 <  fullcount  &&  doRaise )) {
-        //     unbalanced();
-        // }
+        if ((0 < fullCount && args.doRaise)) {
+            throw makeUnexpected(
+                "balanced opening/closing pair",
+                "balanced opening/closing pair");
+        }
     }
 
     /// Create new 'unexpected character' error at the current string
@@ -1556,6 +1645,34 @@ struct PosStr {
             loc);
     }
 };
+
+void skipStringLit(PosStr& str) {
+    auto found = false;
+    str.next();
+    while (!found) {
+        found = str.at('"') && !str.at('\\', -1);
+        str.next();
+    }
+}
+
+void skipDigit(R<PosStr> str) {
+    if (str.at('-')) {
+        str.next();
+    }
+    if (str.at("0x")) {
+        str.next(2);
+        str.skip(charsets::HexDigits);
+        str.skipWhile(charsets::HexDigits + CharSet{'_'});
+    } else if (str.at("0b")) {
+        str.next(2);
+        str.skip(CharSet{'0', '1'});
+        str.skipWhile(CharSet{'0', '1'});
+    } else {
+        str.skip(charsets::Digits);
+        str.skipWhile(charsets::Digits + CharSet{'_', '.'});
+    }
+}
+
 
 using Catch::Matchers::EndsWith;
 using Catch::Matchers::Message;
@@ -1793,7 +1910,7 @@ TEST_CASE("Test integral set operations", "[contains]") {
     }
 }
 
-TEST_CASE("Positional string lexing", "[str]") {
+TEST_CASE("Positional string cursor movements", "[str]") {
     std::string base{"01234"};
     PosStr      str{base};
     SECTION("Check for characters on the position ahead") {
@@ -1841,36 +1958,174 @@ TEST_CASE("Positional string lexing", "[str]") {
 }
 
 
-int main(int argc, const char** argv) {
-    {
-        std::string res;
-        addf(res, "[$1]??", {Str("value").leftAligned(20)});
-        std::cout << res << "\n";
-    }
+TEST_CASE("Positional string slice construction", "[str]") {
+    SECTION("Pop until slice") {
+        PosStr s0{"[123]"};
+        REQUIRE(s0.get() == '[');
+        s0.skipTo(']');
+        REQUIRE(s0.get() == ']');
 
-    std::cout << sizeof(SomeEnum) << " " << ord('\0') << ' ' << ord('\xFF')
-              << std::endl;
-    {
-        IntSet<SomeEnum> s{
-            SomeEnum::FirstValue,
-            slice(SomeEnum::RangeStart, SomeEnum::RangeEnd)};
-
-        std::cout << "set size: " << sizeof(s) << std::endl;
-        s.contains(SomeEnum::FirstValue);
-        for (const auto v : s) {
-            std::cout << "--: " << static_cast<int>(v) << std::endl;
+        PosStr s1{"[123]"};
+        REQUIRE(s1.get() == '[');
+        {
+            s1.pushSlice();
+            s1.skipTo(']');
+            auto slice = s1.popSlice();
+            REQUIRE(slice.view == "[123");
         }
     }
-    const Vec<int> v{1, 2, 3, 4, 5};
-    for (int x : v.at(slice(1, 2_B))) {
-        std::cout << x << std::endl;
+
+
+    SECTION("Token construction using callbacks") {
+        PosStr s{"0123*"};
+        auto   tok = s.tok<int>(
+            0, [](PosStr& str) { str.skipWhile(charsets::Digits); });
+        REQUIRE(tok.text == "0123");
     }
 
-    Str              str  = "random test string";
-    std::string_view view = str.at(slice(1, 2_B));
-    for (const auto c : view) {
-        std::cout << "[" << c << "] ";
+    SECTION("Token constrution using standalone functions") {
+        PosStr s{R"("string"/123/0x123)"};
+        {
+            auto tok = s.tok(0, skipStringLit);
+            REQUIRE(tok.text == "\"string\"");
+            s.skip('/');
+        }
+        {
+            auto tok = s.tok(0, skipDigit);
+            REQUIRE(tok.text == "123");
+            s.skip('/');
+        }
+        {
+            auto tok = s.tok(0, skipDigit);
+            REQUIRE(tok.text == "0x123");
+        }
     }
-    std::cout << view.size() << "\n";
-    int result = Catch::Session().run(argc, argv);
+}
+
+TEST_CASE("Positional strig DSL matches") {
+    std::cout << "hello motherfucker\n";
+    SECTION("Character set match") {
+        PosStr     s{"01234"};
+        StrPattern first{StrPattern::AnyChar{{slice('0', '1'), '2'}}};
+        StrPattern second{StrPattern::AnyChar{{'3', '4'}}};
+        {
+            auto tok = s.tok(0, +first);
+            REQUIRE(tok.text == "012");
+        }
+        {
+            auto tok = s.tok(0, +second);
+            REQUIRE(tok.text == "34");
+        }
+    }
+}
+
+
+const auto otcSubtreeKinds = IntSet<OrgTextContext>{
+    slice(otcSubtree0, otcSubtreeOther)};
+const auto otcMarkupKinds = IntSet<OrgTextContext>{
+    slice(otcBold, otcMonospaceBlock)};
+
+const auto orgMarkupKinds = IntSet<OrgNodeKind>{
+    orgBold,
+    orgItalic,
+    orgVerbatim,
+    orgBacktick,
+    orgUnderline,
+    orgStrike,
+    orgQuote,
+    orgAngle,
+    orgMonospace};
+
+const auto orgLineCommandKinds = IntSet<OrgNodeKind>{
+    slice(orgCommandTitle, orgCommandCaption),
+    orgAttrImg};
+
+/// Line commands that can be used as associted property elements.
+const auto orgAttachableKinds = IntSet<OrgNodeKind>{
+    orgCommandAttrHtml,
+    orgCommandName,
+    orgCommandHeader,
+    orgAttrImg,
+    orgCommandCaption};
+
+const auto orgBlockCommandKinds = IntSet<OrgNodeKind>{
+    orgTable,
+    orgSrcCode,
+    orgQuoteBlock,
+    orgExample};
+
+/// Line or block commands that can have associated property elements
+const auto orgAssociatedKinds = IntSet<OrgNodeKind>{orgLink}
+                              + orgBlockCommandKinds
+                              + IntSet<OrgNodeKind>{
+                                  orgCommandInclude,
+                                  orgResult};
+
+/// Line commands that cannot be used in standalone manner, and always
+/// have to be associated with some other block/line command
+const auto orgNoAssociatedKinds = IntSet<OrgNodeKind>{
+    orgCommandHeader,
+    orgCommandName,
+    orgCommandCaption};
+
+/// Nodes that should only be processed when encountered on the toplevel
+/// (initial document configuration)
+const auto orgDoclevelKinds = IntSet<OrgNodeKind>{
+    orgCommandOptions,
+    orgCommandTitle,
+    orgCommandAuthor,
+    orgCommandBackendOptions};
+
+
+/// All node kinds that should not have subnode values
+const auto orgTokenKinds = IntSet<OrgNodeKind>{
+    orgCmdKey,        orgTarget,
+    orgTextSeparator, orgRawLink,
+    orgRadioTarget,   orgCmdFlag,
+    orgOrgTag,        orgCodeText,
+    orgSubtreeStars,  orgSpace,
+    orgPunctuation,   orgAtMention,
+
+    orgIdent,         orgBullet,
+    orgBareIdent,     orgRawText,
+    orgUnparsed,      orgBigIdent,
+    orgUrgencyStatus, orgVerbatimMultilineBlock,
+    orgWord,          orgEscaped,
+    orgNewline,       orgComment,
+    orgCheckbox,      orgCounter,
+    orgCompletion,    orgTimeStamp,
+    orgSimpleTime,    orgEmpty};
+
+
+/// ALl types of org-mode values that can have subnodes
+const auto orgSubnodeKinds = IntSet<OrgNodeKind>{slice(orgNone, org__LAST)}
+                           - orgTokenKinds
+                           - IntSet<OrgNodeKind>{orgUserNode};
+
+/// All possible values of the org-node kind
+const auto orgAllKinds = IntSet<OrgNodeKind>{slice(orgNone, org__LAST)};
+
+
+/// Nodes that can only contain fixed number of subnodes of fixed kinds.
+const auto orgTokenLikeKinds = IntSet<OrgNodeKind>{
+    orgTimeRange,
+    orgTimeStamp};
+
+
+/// Nodes that act like containers but are strongly typed and store
+/// subelements in many typed fields instead of one long untyped list.
+const auto orgTypedContainerLikeKinds = IntSet<OrgNodeKind>{
+    orgListItem,
+    orgSubtree};
+
+/// Nodes that can contain any number of nested nodes in any combinations.
+const auto orgContainerLikeKinds = IntSet<OrgNodeKind>{
+    orgStmtList,
+    orgParagraph,
+    orgList,
+    orgLink,
+};
+
+int main(int argc, const char** argv) {
+    return Catch::Session().run(argc, argv);
 }

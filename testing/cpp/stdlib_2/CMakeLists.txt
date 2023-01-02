@@ -6,6 +6,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 add_executable(stdlib2 stdlib_2.cpp)
 
+if(NOT TEST_COVERAGE)
+    set(TEST_COVERAGE OFF)
+endif()
+
 if(${CMAKE_CXX_COMPILER_ID} MATCHES Clang)
   message(INFO " Using compiler 'clang++'")
   target_compile_options(stdlib2 PRIVATE -ferror-limit=1)

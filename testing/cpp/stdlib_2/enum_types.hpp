@@ -1,4 +1,4 @@
-enum OrgHorizontalDirection
+enum OrgHorizontalDirection : short int
 {
     ohdNone,   /*! No specific positioning requirements */
     ohdLeft,   /*! Align to the left */
@@ -6,7 +6,7 @@ enum OrgHorizontalDirection
     ohdCenter, /*! Align to the center */
 };
 
-enum OrgVerticalDirection
+enum OrgVerticalDirection : short int
 {
     ovdNone,   /*! No specific positioning */
     ovdTop,    /*! Align to the top */
@@ -15,7 +15,7 @@ enum OrgVerticalDirection
 };
 
 
-enum OrgNodeKind
+enum OrgNodeKind : short int
 {
     orgNone,     /*!Default valye for node - invalid state */
     orgDocument, /*!Toplevel part of the ast, not created by parser, and
@@ -431,15 +431,12 @@ to replace>`
     orgTarget,
     /*!`<<TARGET>>`
      */
+
+
+    org__LAST
 };
-;
-/* TYPE DEF OrgTextContext* = enum
-  otcPlain, otcSubtree0, otcSubtree1, otcSubtree2, otcSubtree3,
-  otcSubtree4, otcSubtree5, otcSubtree6, otcSubtree7, otcSubtree8,
-  otcSubtree9, otcSubtree10, otcSubtree11, otcSubtree12, otcSubtreeOther,
-  otcBold, otcItalic, otcStrike, otcUnderline, otcMonospaceInline,
-  otcMonospaceBlock */
-enum OrgTextContext
+
+enum OrgTextContext : short int
 {
     otcPlain,
     otcSubtree0,
@@ -463,9 +460,8 @@ enum OrgTextContext
     otcMonospaceInline,
     otcMonospaceBlock,
 };
-;
 
-enum OrgBigIdentKind
+enum OrgBigIdentKind : short int
 {
     obiNone,
     obiMust,
@@ -667,7 +663,7 @@ lists/enums (for example if return value is mapped to an enum)
 };
 
 
-enum OrgTokenKind
+enum class OrgTokenKind : short int
 {
     otNone,
     otEof,
@@ -1097,9 +1093,3 @@ to handle `##<<commented>>` - prefix comment should be
 duplicated for each line of the placeholder expansion.
 */
 };
-;
-;
-/* TODO CONST SECTION */;
-/* TODO CONST SECTION */;
-/* TODO CONST SECTION */;
-/* TODO CONST SECTION */;
