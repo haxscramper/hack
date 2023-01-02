@@ -663,7 +663,7 @@ lists/enums (for example if return value is mapped to an enum)
 };
 
 
-enum class OrgTokenKind : short int
+enum OrgTokenKind : short int
 {
     otNone,
     otEof,

@@ -1423,6 +1423,19 @@ struct PosStr {
         }
     }
 
+
+    void skip(std::string expected) {
+        if (at(expected)) {
+            next(expected.size());
+        } else {
+            throw UnexpectedCharError(
+                "Unexpected character encountered during lexing: found "
+                "'$#' but expected '$#' on $#:$#"
+                    % to_string_vec(get(), expected, loc.line, loc.column),
+                loc);
+        }
+    }
+
     void skip(CR<CharSet> expected) {
         if (expected.contains(get())) {
             next();
@@ -2124,6 +2137,68 @@ const auto orgContainerLikeKinds = IntSet<OrgNodeKind>{
     orgParagraph,
     orgList,
     orgLink,
+};
+
+struct OrgTokenStore;
+struct OrgNodeStore;
+
+struct OrgNode {
+    static OrgTokenStore* tokens;
+    static OrgNodeStore*  nodes;
+
+    OrgNodeKind kind;
+    /// Id of the token group this node refers to (in case of multple
+    /// documents that were parsed by the same application)
+    u16 storeId;
+    /// Left index of the node -- depending on the specific kind it might
+    /// refer to the leftmost subnode of the current node or specific token
+    /// in the token store.
+    u32 lhs;
+    /// Right index of the node -- for non-token nodes referes to the index
+    /// of the rightmost node
+    u32 rhs;
+};
+
+using OrgToken = Token<OrgTokenKind>;
+
+struct OrgTokenGroup {
+    Vec<OrgToken> tokens;
+    void          push(CR<OrgToken> tok) { tokens.push_back(tok); }
+};
+
+struct OrgTokenStore {
+    Vec<OrgTokenGroup> groups;
+};
+
+struct OrgNodeGroup {
+    Vec<OrgNode> nodes;
+};
+
+struct OrgNodeStore {
+    Vec<OrgNodeGroup> groups;
+};
+
+
+struct OrgLexer {
+    std::string    base;
+    PosStr         str;
+    OrgTokenGroup* out;
+    void           push(CR<OrgToken> tok) { out->push(tok); }
+
+    void lexAngle() {
+        if (str.at("<%%")) {
+            push(str.tok(OTkDiaryTime, [](PosStr& str) {
+                str.skip("<%%");
+                str.skipBalancedSlice(
+                    {.openChars  = CharSet{'('},
+                     .closeChars = CharSet{')'}});
+                str.skip(">");
+            }));
+        } else if (str.at("<<<")) {
+            push(str.tok(
+                OTkTripleAngleOpen, [](PosStr& str) { str.next(3); }));
+        }
+    }
 };
 
 int main(int argc, const char** argv) {
