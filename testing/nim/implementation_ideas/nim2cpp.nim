@@ -228,7 +228,7 @@ proc toCpp(node: PNode, s: State): string =
 
 
     of nkStrLit, nkTripleStrLit, nkRStrLit:
-      result = "R(\"$#\")" % node.strVal.escapeCxxStr(
+      result = "R\"($#)\"" % node.strVal.escapeCxxStr(
         node of nkTripleStrLit)
 
     of nkIncludeStmt:
@@ -732,12 +732,20 @@ proc toCpp(node: PNode, s: State): string =
         result = "(*($#))" % node[0].toCpp(s)
 
       else:
-        result = "${name}${op}${args}${cl}" % {
-          "name": node[0].toCpp(s),
-          "args": mapIt(node[1..^1], it.toCpp(s)).join(", "),
-          "op": tern(s of {ccGeneric, ccType}, "<", "["),
-          "cl": tern(s of {ccGeneric, ccType}, ">", "]"),
-        }
+        let
+          name = node[0].toCpp(s)
+          args = mapIt(node[1..^1], it.toCpp(s)).join(", ")
+
+        if name == "str":
+          result = "str.at($#)" % args
+
+        else:
+          result = "${name}${op}${args}${cl}" % {
+            "name": name,
+            "args": args,
+            "op": tern(s of {ccGeneric, ccType}, "<", "["),
+            "cl": tern(s of {ccGeneric, ccType}, ">", "]"),
+          }
 
     of nkCommentStmt:
       result = doc(node)

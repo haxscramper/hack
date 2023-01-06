@@ -1302,12 +1302,6 @@ struct PosStr {
             .kind = kind, .text = completeView(slices.pop_back_v())};
     }
 
-    template <typename K>
-    Token<K> tok(K kind, AdvanceCb cb) {
-        pushSlice();
-        cb(*this);
-        return popTok(kind);
-    }
 
     template <typename K>
     Token<K> tok(K kind, CR<StrPattern> pattern, bool allowEmpty = false) {
@@ -1321,8 +1315,32 @@ struct PosStr {
         return PosStr(completeView(slice), slice.loc);
     }
 
-    template <typename K>
-    Token<K> slice(K kind, AdvanceCb cb) {
+    template <typename... Args>
+    using AdvanceHandler = void(PosStr&, Args...);
+
+    template <typename K, typename... Args>
+    Token<K> tok(K kind, AdvanceHandler<Args...> cb, Args&&... args) {
+        pushSlice();
+        cb(*this, std::forward<Args>(args)...);
+        return popTok(kind);
+    }
+
+    template <typename... Args>
+    PosStr slice(AdvanceHandler<Args...> cb, Args&&... args) {
+        pushSlice();
+        cb(*this, std::forward<Args>(args)...);
+        return popSlice();
+    }
+
+
+    template <typename K, typename... Args>
+    Token<K> tok(K kind, AdvanceCb cb) {
+        pushSlice();
+        cb(*this);
+        return popTok(kind);
+    }
+
+    PosStr slice(AdvanceCb cb) {
         pushSlice();
         cb(*this);
         return popSlice();
@@ -1584,65 +1602,6 @@ struct PosStr {
         skipWhile(chars);
     }
 
-    struct UnbalancedSkipArgs {
-        const CharSet& openChars;
-        const CharSet& closeChars;
-        const CharSet& endChars = charsets::Newline;
-        const bool&    doRaise  = true;
-        /// Allow use of `\` character to escape special characters
-        const bool& allowEscape = true;
-        /// whether opening brace had already been skipped by the wrapping
-        /// lexer logic. Can be used to provide custom handling for the
-        /// opening element. Together with `consumeLast` allow for a fully
-        /// custom handling of the outermost wrapping braces.
-        const bool& skippedStart = false;
-        /// what to do with the wrapping tokens of a balanced range. By
-        /// default they are also skipped, but if lexer needs to handle
-        /// this case separately you can set this argument to false.
-        const bool& consumeLast = true;
-    };
-
-    void skipBalancedSlice(CR<UnbalancedSkipArgs> args) {
-        auto fullCount = args.skippedStart ? 1 : 0;
-        int  count[sizeof(char) * 8];
-        while (hasNext()) {
-            if (args.allowEscape && at('\\')) {
-                next();
-                next();
-            } else if (at(args.openChars)) {
-                ++fullCount;
-                ++count[ord(pop())];
-            } else if (at(args.closeChars)) {
-                --fullCount;
-                if ((0 < fullCount) || args.consumeLast) {
-                    --count[ord(pop())];
-                }
-                if (fullCount == 0) {
-                    return;
-                }
-            } else if (at(args.endChars)) {
-                if (0 < fullCount) {
-                    if (args.doRaise) {
-                        throw makeUnexpected(
-                            "balanced opening/closing pair",
-                            "balanced opening/closing pair");
-                    } else {
-                        return;
-                    }
-                } else {
-                    return;
-                }
-            } else {
-                next();
-            }
-        }
-        if ((0 < fullCount && args.doRaise)) {
-            throw makeUnexpected(
-                "balanced opening/closing pair",
-                "balanced opening/closing pair");
-        }
-    }
-
     /// Create new 'unexpected character' error at the current string
     /// parsing position.
     UnexpectedCharError makeUnexpected(
@@ -1658,6 +1617,83 @@ struct PosStr {
             loc);
     }
 };
+
+
+struct UnbalancedSkipArgs {
+    const CharSet& openChars;
+    const CharSet& closeChars;
+    const CharSet& endChars = charsets::Newline;
+    const bool&    doRaise  = true;
+    /// Allow use of `\` character to escape special characters
+    const bool& allowEscape = true;
+    /// whether opening brace had already been skipped by the wrapping
+    /// lexer logic. Can be used to provide custom handling for the
+    /// opening element. Together with `consumeLast` allow for a fully
+    /// custom handling of the outermost wrapping braces.
+    const bool& skippedStart = false;
+    /// what to do with the wrapping tokens of a balanced range. By
+    /// default they are also skipped, but if lexer needs to handle
+    /// this case separately you can set this argument to false.
+    const bool& consumeLast = true;
+};
+
+void skipBalancedSlice(PosStr& str, CR<UnbalancedSkipArgs> args) {
+    auto fullCount = args.skippedStart ? 1 : 0;
+    int  count[sizeof(char) * 8];
+    while (str.hasNext()) {
+        if (args.allowEscape && str.at('\\')) {
+            str.next();
+            str.next();
+        } else if (str.at(args.openChars)) {
+            ++fullCount;
+            ++count[ord(str.pop())];
+        } else if (str.at(args.closeChars)) {
+            --fullCount;
+            if ((0 < fullCount) || args.consumeLast) {
+                --count[ord(str.pop())];
+            }
+            if (fullCount == 0) {
+                return;
+            }
+        } else if (str.at(args.endChars)) {
+            if (0 < fullCount) {
+                if (args.doRaise) {
+                    throw str.makeUnexpected(
+                        "balanced opening/closing pair",
+                        "balanced opening/closing pair");
+                } else {
+                    return;
+                }
+            } else {
+                return;
+            }
+        } else {
+            str.next();
+        }
+    }
+    if ((0 < fullCount && args.doRaise)) {
+        throw str.makeUnexpected(
+            "balanced opening/closing pair",
+            "balanced opening/closing pair");
+    }
+}
+
+
+void skipPastEOF(PosStr& str) { assert(false && "IMPLEMENT"); }
+void skipCount(PosStr& str, int count) { str.next(count); }
+void skipBefore(PosStr& str, char item) { str.skipBefore(item); }
+void skipTo(PosStr& str, char item) { str.skipTo(item); }
+void skipOne(PosStr& str, char item) { str.skip(item); }
+
+void skipTo(PosStr& str, const PosStrCheckable auto& item) {
+    str.skipTo(item);
+}
+void skipPast(PosStr& str, const PosStrCheckable auto& item) {
+    str.skipPast(item);
+}
+void skipOne(PosStr& str, const PosStrCheckable auto& item) {
+    str.skip(item);
+}
 
 void skipStringLit(PosStr& str) {
     auto found = false;
@@ -2181,25 +2217,165 @@ struct OrgNodeStore {
 
 struct OrgLexer {
     std::string    base;
-    PosStr         str;
     OrgTokenGroup* out;
     void           push(CR<OrgToken> tok) { out->push(tok); }
 
-    void lexAngle() {
+    void lexAngle(PosStr& str) {
         if (str.at("<%%")) {
             push(str.tok(OTkDiaryTime, [](PosStr& str) {
                 str.skip("<%%");
-                str.skipBalancedSlice(
+                skipBalancedSlice(
+                    str,
                     {.openChars  = CharSet{'('},
                      .closeChars = CharSet{')'}});
                 str.skip(">");
             }));
         } else if (str.at("<<<")) {
-            push(str.tok(
-                OTkTripleAngleOpen, [](PosStr& str) { str.next(3); }));
+            push(str.tok(OTkTripleAngleOpen, skipCount, 3));
+        } else if (str.at("<<")) {
+            push(str.tok(OTkDoubleAngleOpen, skipCount, 2));
+            push(str.tok(OTkRawText, skipTo, '>'));
+            push(str.tok(OTkRawText, skipOne, ">>"));
+        } else if (str.at(charsets::Digits, 1)) {
+            auto skipAngles = [](PosStr& str) {
+                str.skip('<');
+                str.skipTo('>');
+                str.skip('>');
+            };
+
+            push(str.tok(OTkAngleTime, skipAngles));
+
+            if (str.at("--")) {
+                push(str.tok(OTkTimeDash, skipCount, 2));
+                push(str.tok(OTkAngleTime, skipAngles));
+            }
+        } else {
+            push(str.tok(OTkAngleOpen, skipCount, 1));
+            push(str.tok(OTkRawText, skipTo, '>'));
+            push(str.tok(OTkAngleClose, skipOne, '>'));
+        }
+    }
+
+    void lexTime(PosStr& str) {
+        if (str.at('<')) {
+            lexAngle(str);
+        } else if (str.at('[')) {
+            auto skipBracket = [](PosStr& str) {
+                str.skip('[');
+                str.skipTo(']');
+                str.skip(']');
+            };
+
+            push(str.tok(OTkBracketTime, skipBracket));
+            if (str.at("--")) {
+                push(str.tok(OTkTimeDash, skipCount, 2));
+                push(str.tok(OTkBracketTime, skipBracket));
+            }
+        } else {
+            throw str.makeUnexpected("'<' or '['", "time");
+        }
+    }
+
+    void lexLinkTarget(PosStr& str) {
+        if (str.at(R"(https)") || str.at(R"(http)")) {
+            assert(false && "FIXME");
+        } else if (
+            str.at(R"(file)")          //
+            || str.at(R"(attachment)") //
+            || str.at(R"(docview)")    //
+            || str.at('/')             //
+            || str.at(R"(./)")) {
+
+            if (str.at('.') || str.at('/')) {
+                assert(false && "FIXME");
+                // push(
+                //     result,
+                //     str,
+                //     result.add(
+                //         initFakeTok(str, OTkLinkProtocol, R"(file)")));
+            } else {
+                push(str.tok(OTkLinkProtocol, skipTo, ':'));
+                str.skip(':');
+            }
+
+            push(str.tok(OTkLinkTarget, [](PosStr& str) {
+                while (!str.finished() && !str.at(R"(::)")) {
+                    str.next();
+                }
+            }));
+
+            if (str.at(R"(::)")) {
+                push(str.tok(OTkLinkExtraSeparator, skipCount, 2));
+                push(str.tok(OTkLinkExtra, skipPastEOF));
+            }
+        } else {
+            if (str.hasAhead(':')) {
+                push(str.tok(OTkLinkProtocol, skipTo, ':'));
+                str.skip(':');
+                push(str.tok(OTkLinkTarget, skipPastEOF));
+            } else {
+                push(str.tok(OTkLinkInternal, skipPastEOF));
+            }
+        }
+    }
+
+    void lexText(PosStr& str) {}
+
+    void lexBracket(PosStr& str) {
+        if (str.at(R"([[)")) {
+            push(str.tok(OTkLinkOpen, skipOne, '['));
+            // link_token
+            {
+                push(str.tok(OTkLinkTargetOpen, skipOne, '['));
+                PosStr target = str.slice(skipBefore, ']');
+                lexLinkTarget(target);
+                push(str.tok(OTkLinkTargetClose, skipOne, ']'));
+            };
+            // description_token
+            {
+                if (str.at('[')) {
+                    push(str.tok(OTkLinkDescriptionOpen, skipOne, '['));
+                    PosStr desc = str.slice([](PosStr& str) {
+                        int count = 0;
+                        while (!str.finished()
+                               && (!str.at(']') || (0 < count))) {
+
+                            if (str.at('[')) {
+                                ++count;
+                            }
+                            if (str.at(']')) {
+                                --count;
+                            }
+                            str.next();
+                        }
+                    });
+
+                    while (!desc.finished()) {
+                        lexText(desc);
+                    }
+
+                    push(str.tok(OTkLinkDescriptionClose, skipOne, ']'));
+                }
+            }
+            push(str.tok(OTkLinkClose, skipOne, ']'));
+        } else if (str.at(R"([fn:)")) {
+            push(str.tok(OTkFootnoteStart, skipOne, "[fn"));
+            if (str.at(R"(::)")) {
+                push(str.tok(OTkDoubleColon, skipOne, R"(::)"));
+                // FIXME
+                // result.addExpandTok(str, OTkText, str.skipTo(']'););
+            } else {
+                push(str.tok(OTkColon, skipOne, ':'));
+                push(str.tok(OTkIdent, skipTo, ']'));
+            }
+            push(str.tok(OTkFootnoteEnd, skipOne, ']'));
+        } else {
+            // FIXME
+            // push(trySpecific(str, OTkPunctuation, 1, lexTime));
         }
     }
 };
+
 
 int main(int argc, const char** argv) {
     return Catch::Session().run(argc, argv);
