@@ -7,6 +7,7 @@
 #include <utility>
 #include <memory>
 #include <functional>
+#include <array>
 
 #include <catch2/catch_session.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -49,6 +50,11 @@ template <typename T> using SPtr = std::shared_ptr<T>;
 template <typename T> using Func = std::function<T>;
 
 template <typename A, typename B> using Pair = std::tuple<A, B>;
+
+template <typename T>
+CR<T> cr(CR<T> in) {
+   return in;
+}
 
 // clang-format on
 
@@ -97,6 +103,18 @@ T high();
 
 template <typename T>
 int ord(T val);
+
+template <typename T>
+concept ImplementsOrd = requires(CR<T> value) {
+    { ord(value) } -> std::same_as<int>;
+};
+
+
+struct ImplementError : public std::runtime_error {
+    explicit ImplementError(const std::string& message = "")
+        : std::runtime_error(message) {}
+};
+
 
 template <typename T>
 struct Slice : public HSlice<T, T> {
@@ -207,6 +225,100 @@ Pair<A, A> getSpan(
     return {startPos, endPos};
 }
 
+template <typename T, int Size>
+struct Array : std::array<T, Size> {
+    using std::array<T, Size>::array; // Inherit constructor
+    using std::array<T, Size>::size;
+    using std::array<T, Size>::at;
+    using std::array<T, Size>::operator[];
+    using std::array<T, Size>::back;
+    using std::array<T, Size>::begin;
+    using std::array<T, Size>::end;
+
+    operator R<std::array<T, Size>>() {
+        return static_cast<std::array<T, Size>>(*this);
+    }
+
+    operator CR<std::array<T, Size>>() const {
+        return static_cast<std::array<T, Size>>(*this);
+    }
+
+    bool has(int idx) const { return idx < size(); }
+
+    template <typename A, typename B>
+    std::span<T> at(CR<HSlice<A, B>> s, bool checkRange = true) {
+        const auto [start, end] = getSpan(*this, s, checkRange);
+        return std::span(this->data() + start, end - start + 1);
+    }
+
+    template <typename A, typename B>
+    std::span<const T> at(CR<HSlice<A, B>> s, bool checkRange = true)
+        const {
+        const auto [start, end] = getSpan(*this, s, checkRange);
+        return std::span(this->data() + start, end - start + 1);
+    }
+
+    template <typename A, typename B>
+    std::span<T> operator[](CR<HSlice<A, B>> s) {
+#ifdef DEBUG
+        return at(s, true);
+#else
+        return at(s, false);
+#endif
+    }
+
+    template <typename A, typename B>
+    std::span<const T> operator[](CR<HSlice<A, B>> s) const {
+#ifdef DEBUG
+        return at(s, true);
+#else
+        return at(s, false);
+#endif
+    }
+
+    T& operator[](BackwardsIndex idx) {
+        return (*this)[this->size() - idx.value];
+    }
+
+    T& at(BackwardsIndex idx) {
+        return this->at(this->size() - idx.value);
+    }
+
+    int high() const { return size() - 1; }
+    int indexOf(CR<T> item) const { return index_of(*this, item); }
+};
+
+template <ImplementsOrd Key, typename Val>
+struct TypArray : public Array<Val, 8 * sizeof(Key)> {
+    TypArray(std::initializer_list<Pair<Key, Val>> items) {
+        for (const auto& [key, val] : items) {
+            at(key) = val;
+        }
+    }
+
+    Val& at(CR<Key> value) { return at(ord(value)); }
+};
+
+struct MarkupConfigPair {
+    OrgTokenKind startKind;
+    OrgTokenKind finishKind;
+    OrgTokenKind inlineKind;
+};
+
+/// Table of the markup config information, to reduce usage of the
+/// character literals directly in the code.
+const TypArray<char, MarkupConfigPair> markupConfig{{
+    {'*', {OTkBoldOpen, OTkBoldClose, OTkBoldInline}},
+    {'/', {OTkItalicOpen, OTkItalicClose, OTkItalicInline}},
+    {'=', {OTkVerbatimOpen, OTkVerbatimClose, OTkVerbatimInline}},
+    {'`', {OTkBacktickOpen, OTkBacktickClose, OTkBacktickInline}},
+    {'~', {OTkMonospaceOpen, OTkMonospaceClose, OTkMonospaceInline}},
+    {'_', {OTkUnderlineOpen, OTkUnderlineClose, OTkUnderlineInline}},
+    {'+', {OTkStrikeOpen, OTkStrikeClose, OTkStrikeInline}},
+    {'"', {OTkQuoteOpen, OTkQuoteClose, otNone}},
+}};
+
+
 template <typename T, typename Ref>
 struct EnumerateState {
 
@@ -281,7 +393,8 @@ int index_of(CR<std::vector<T>> vector, CR<T> item) {
 template <typename T>
 class Vec : public std::vector<T> {
   public:
-    using std::vector<T>::vector; // Inherit constructor from std::vector
+    using std::vector<T>::vector; // Inherit constructor from
+                                  // std::vector
     using std::vector<T>::size;
     using std::vector<T>::at;
     using std::vector<T>::operator[];
@@ -290,7 +403,11 @@ class Vec : public std::vector<T> {
     using std::vector<T>::pop_back;
     using std::vector<T>::begin;
     using std::vector<T>::end;
+    using std::vector<T>::insert;
 
+    void append(CR<Vec<T>> other) {
+        insert(end(), other.begin(), other.end());
+    }
 
     operator R<std::vector<T>>() {
         return static_cast<std::vector<T>>(*this);
@@ -711,7 +828,11 @@ C<CharSet> VeritcalSpace = Newline;
 // controls (newline, line feed, carriage return etc.). This does include
 // tabulation, because it is not uncommon in regular text.
 C<CharSet> TextLineChars = AllChars - ControlChars + CharSet{'\t'};
+
+C<CharSet> TextChars = MaybeLetters + Digits + CharSet{'.', ',', '-'};
 } // namespace charsets
+
+const CharSet markupKeys{'*', '/', '=', '`', '~', '_', '+', '"'};
 
 
 enum AddfFragmentKind
@@ -1124,6 +1245,33 @@ template <typename K>
 struct Token {
     K                kind; /// Specific kind of the token
     std::string_view text; /// Token view on the base input text
+
+    /// Check if token text is a view over real data
+    bool hasData() const { return text.data() != nullptr; }
+    /// Return character count for the token. If it does not contain any
+    /// data return 0.
+    int size() const {
+        if (hasData()) {
+            return text.size();
+        } else {
+            return 0;
+        }
+    }
+
+
+    /// Return offset from the starting point of the string. If token does
+    /// not have real data, return faked position (`.size()` of the text)
+    /// instead. \warning This function is intended to be used with real
+    /// starting point of the view that was used in the originating
+    /// positional string and so the behavior with 'fake' token is going to
+    /// be invalid when used with any other position in the string.
+    std::size_t offsetFrom(const char* start) const {
+        if (hasData()) {
+            return std::distance(text.data(), start);
+        } else {
+            return text.size();
+        }
+    }
 };
 
 struct StrPattern {
@@ -1287,36 +1435,80 @@ struct PosStr {
     int pos = 0;
 
     void pushSlice() { slices.push_back({loc, pos}); }
+    int  getPos() const { return pos; }
+    void setPos(int _pos) { pos = _pos; }
 
     using AdvanceCb = std::function<void(PosStr&)>;
+    struct Offset {
+        int start;
+        int end;
+        Offset(int _start = 0, int _end = 0) : start(_start), end(_end) {}
+    };
 
-    std::string_view completeView(CR<SliceStartData> slice) const {
-        return std::string_view(view.data() + slice.pos, pos - slice.pos);
+
+    std::string_view completeView(
+        CR<SliceStartData> slice,
+        Offset             offset = Offset()) const {
+        return std::string_view(
+            view.data() + slice.pos + offset.start,
+            pos - slice.pos + offset.end);
     }
 
+
+    template <typename K>
+    Token<K> fakeTok(K kind, Offset offset = Offset()) {
+        return Token<K>{.kind = kind};
+    }
 
     /// Pop last slice into a token object
     template <typename K>
-    Token<K> popTok(K kind) {
+    Token<K> popTok(K kind, Offset offset = Offset()) {
         return Token<K>{
-            .kind = kind, .text = completeView(slices.pop_back_v())};
+            .kind = kind,
+            .text = completeView(slices.pop_back_v(), offset)};
+    }
+
+    PosStr popSlice(Offset offset = {}) {
+        auto slice = slices.pop_back_v();
+        return PosStr(completeView(slice, offset), slice.loc);
     }
 
 
     template <typename K>
-    Token<K> tok(K kind, CR<StrPattern> pattern, bool allowEmpty = false) {
+    Token<K> tok(
+        K              kind,
+        CR<StrPattern> pattern,
+        bool           allowEmpty = false,
+        Offset         offset     = {}) {
         pushSlice();
         skip(pattern, 0, allowEmpty);
-        return popTok(kind);
+        return popTok(kind, offset);
     }
 
-    PosStr popSlice() {
-        auto slice = slices.pop_back_v();
-        return PosStr(completeView(slice), slice.loc);
-    }
 
     template <typename... Args>
     using AdvanceHandler = void(PosStr&, Args...);
+
+    template <typename K, typename... Args>
+    Token<K> tok(
+        K                       kind,
+        Offset                  offset,
+        AdvanceHandler<Args...> cb,
+        Args&&... args) {
+        pushSlice();
+        cb(*this, std::forward<Args>(args)...);
+        return popTok(kind, offset);
+    }
+
+    template <typename... Args>
+    PosStr slice(
+        Offset                  offset,
+        AdvanceHandler<Args...> cb,
+        Args&&... args) {
+        pushSlice();
+        cb(*this, std::forward<Args>(args)...);
+        return popSlice(offset);
+    }
 
     template <typename K, typename... Args>
     Token<K> tok(K kind, AdvanceHandler<Args...> cb, Args&&... args) {
@@ -1333,17 +1525,17 @@ struct PosStr {
     }
 
 
-    template <typename K, typename... Args>
-    Token<K> tok(K kind, AdvanceCb cb) {
+    template <typename K>
+    Token<K> tok(K kind, AdvanceCb cb, Offset offset = Offset()) {
         pushSlice();
         cb(*this);
-        return popTok(kind);
+        return popTok(kind, offset);
     }
 
-    PosStr slice(AdvanceCb cb) {
+    PosStr slice(AdvanceCb cb, Offset offset = Offset()) {
         pushSlice();
         cb(*this);
-        return popSlice();
+        return popSlice(offset);
     }
 
     bool hasNext(int shift = 1) const { return pos < view.size(); }
@@ -1372,7 +1564,9 @@ struct PosStr {
         return result;
     }
 
-    bool finished() { return get() == '\0'; }
+    bool finished() const { return get() == '\0'; }
+    bool atStart() const { return pos == 0; }
+    bool beforeEnd() const { return !hasNext(1); }
 
     char pop() {
         char result = get();
@@ -1471,6 +1665,8 @@ struct PosStr {
             next();
         }
     }
+
+    void space() { skipWhile(charsets::HorizontalSpace); }
 
     void skipTo(const PosStrCheckable auto& item) {
         while (!at(item)) {
@@ -1619,7 +1815,7 @@ struct PosStr {
 };
 
 
-struct UnbalancedSkipArgs {
+struct BalancedSkipArgs {
     const CharSet& openChars;
     const CharSet& closeChars;
     const CharSet& endChars = charsets::Newline;
@@ -1637,7 +1833,7 @@ struct UnbalancedSkipArgs {
     const bool& consumeLast = true;
 };
 
-void skipBalancedSlice(PosStr& str, CR<UnbalancedSkipArgs> args) {
+void skipBalancedSlice(PosStr& str, CR<BalancedSkipArgs> args) {
     auto fullCount = args.skippedStart ? 1 : 0;
     int  count[sizeof(char) * 8];
     while (str.hasNext()) {
@@ -1684,7 +1880,14 @@ void skipCount(PosStr& str, int count) { str.next(count); }
 void skipBefore(PosStr& str, char item) { str.skipBefore(item); }
 void skipTo(PosStr& str, char item) { str.skipTo(item); }
 void skipOne(PosStr& str, char item) { str.skip(item); }
+void skipWhile(PosStr& str, char item) { str.skipWhile(item); }
 
+void skipBefore(PosStr& str, const PosStrCheckable auto& item) {
+    str.skipBefore(item);
+}
+void skipWhile(PosStr& str, const PosStrCheckable auto& item) {
+    str.skipWhile(item);
+}
 void skipTo(PosStr& str, const PosStrCheckable auto& item) {
     str.skipTo(item);
 }
@@ -2199,7 +2402,9 @@ using OrgToken = Token<OrgTokenKind>;
 
 struct OrgTokenGroup {
     Vec<OrgToken> tokens;
-    void          push(CR<OrgToken> tok) { tokens.push_back(tok); }
+
+    void push(CR<OrgToken> tok) { tokens.push_back(tok); }
+    void push(CR<Vec<OrgToken>> tok) { tokens.append(tok); }
 };
 
 struct OrgTokenStore {
@@ -2215,10 +2420,50 @@ struct OrgNodeStore {
 };
 
 
+CR<CharSet> OIdentChars{
+    slice('a', 'z'),
+    slice('A', 'Z'),
+    '_',
+    '-',
+    slice('0', '9')};
+CR<CharSet> OIdentStartChars = charsets::IdentChars
+                             - CharSet{'_', '-', slice('0', '9')};
+
+// IDEA in figure some additional unicode handing might be performed, but
+// for now I just asume text is in UTF-8 and everything above 127 is a
+// unicode rune too.
+
+CR<CharSet> OWordChars = CharSet{
+    slice('a', 'z'),
+    slice('A', 'Z'),
+    slice('0', '9'),
+    slice('\x7F', '\xFF')};
+
+
+CR<CharSet> OBigIdentChars  = CharSet{slice('A', 'Z')};
+const char  OEndOfFile      = '\x00';
+CR<CharSet> OBareIdentChars = charsets::AllChars - charsets::Whitespace;
+CR<CharSet> OWhitespace     = charsets::Whitespace - CharSet{'\n'};
+CR<CharSet> OEmptyChars     = OWhitespace + CharSet{OEndOfFile};
+CR<CharSet> OLinebreaks     = charsets::Newlines + CharSet{OEndOfFile};
+CR<CharSet> OMarkupChars    = CharSet{'*', '_', '/', '+', '~', '`'};
+CR<CharSet> OVerbatimChars  = CharSet{'`', '~', '='};
+CR<CharSet> OPunctChars = CharSet{'(', ')', '[', ']', '.', '?', '!', ','};
+CR<CharSet> OPunctOpenChars    = CharSet{'(', '[', '{', '<'};
+CR<CharSet> OPunctCloseChars   = CharSet{')', ']', '}', '>'};
+CR<CharSet> ONumberedListChars = CharSet{slice('0', '9')}
+                               + CharSet{slice('a', 'z')}
+                               + CharSet{slice('A', 'Z')};
+CR<CharSet> OBulletListChars = CharSet{'-', '+', '*'};
+CR<CharSet> OListChars       = ONumberedListChars + OBulletListChars;
+
+
 struct OrgLexer {
     std::string    base;
     OrgTokenGroup* out;
-    void           push(CR<OrgToken> tok) { out->push(tok); }
+
+    void push(CR<OrgToken> tok) { out->push(tok); }
+    void push(CR<Vec<OrgToken>> tok) { out->push(tok); }
 
     void lexAngle(PosStr& str) {
         if (str.at("<%%")) {
@@ -2319,8 +2564,6 @@ struct OrgLexer {
         }
     }
 
-    void lexText(PosStr& str) {}
-
     void lexBracket(PosStr& str) {
         if (str.at(R"([[)")) {
             push(str.tok(OTkLinkOpen, skipOne, '['));
@@ -2372,6 +2615,420 @@ struct OrgLexer {
         } else {
             // FIXME
             // push(trySpecific(str, OTkPunctuation, 1, lexTime));
+        }
+    }
+
+    void lexTextChars(PosStr& str) {
+        bool isStructure = false;
+        auto skipCurly   = [](PosStr& str) {
+            skipBalancedSlice(
+                str,
+                BalancedSkipArgs{.openChars = {'{'}, .closeChars = {'}'}});
+        };
+
+        auto skipParen = [](PosStr& str) {
+            skipBalancedSlice(
+                str,
+                BalancedSkipArgs{.openChars = {'('}, .closeChars = {')'}});
+        };
+
+        auto skipBrace = [](PosStr& str) {
+            skipBalancedSlice(
+                str,
+                BalancedSkipArgs{.openChars = {'['}, .closeChars = {']'}});
+        };
+
+        if (str.at("src[_-]?\\w+(\\[|\\{)")) {
+            const auto    pos = str.getPos();
+            Vec<OrgToken> buf;
+            // Starting `src_` prefix
+            {
+                buf.push_back(str.tok(OTkSrcOpen, skipOne, "src"));
+                if (str.at(CharSet{'_', '-'})) {
+                    str.next();
+                }
+            }
+
+            if (str.at(charsets::IdentStartChars)) {
+                // FIXME push buffer only if the whole sequence is
+                // determined to be a valid structure
+                push(buf);
+                push(str.tok(OTkSrcName, skipWhile, charsets::IdentChars));
+                if (str.at('[')) {
+                    push(str.tok(OTkSrcArgs, skipBrace, {1, -2}));
+                }
+
+                push(str.tok(OTkSrcBody, skipCurly, {1, -2}));
+                push(str.fakeTok(OTkSrcClose));
+                isStructure = true;
+            } else {
+                str.setPos(pos);
+            }
+
+        } else if (str.at("call[_-]?\\w+(\\[|\\{)")) {
+            const auto    pos = str.getPos();
+            Vec<OrgToken> buf;
+            buf.push_back(str.tok(OTkCallOpen, skipOne, "call"));
+            if (str.at(CharSet{'_', '-'})) {
+                str.next();
+            }
+            if (str.at(charsets::IdentStartChars)) {
+                push(buf);
+                push(str.tok(OTkSrcName, skipWhile, charsets::IdentChars));
+                if (str.at('[')) {
+                    push(str.tok(OTkCallInsideHeader, skipBrace, {1, -2}));
+                };
+                push(str.tok(OTkCallArgs, skipParen, {1, -2}));
+                push(str.fakeTok(OTkCallClose));
+                isStructure = true;
+            } else {
+                str.setPos(pos);
+            }
+        } else if (str.at("https://") || str.at("http://")) {
+            push(str.tok(OTkRawUrl, skipBefore, charsets::Whitespace));
+        }
+        if (!isStructure) {
+            bool allUp = true;
+            str.pushSlice();
+            while (!str.finished()
+                   && str.at(charsets::TextChars + CharSet{'-'})) {
+                if (!str.at(charsets::HighAsciiLetters)) {
+                    allUp = false;
+                }
+                str.next();
+            }
+            push(str.popTok(allUp ? OTkBigIdent : OTkWord));
+        }
+    }
+
+    void lexParenArguments(PosStr& str) {
+        push(str.tok(OTkParOpen, skipOne, '('));
+        while (!str.at(')')) {
+            push(str.tok(OTkRawText, skipBefore, cr(CharSet{',', ')'})));
+            if (str.at(',')) {
+                push(str.tok(OTkComma, skipOne, ','));
+            }
+            str.space();
+        }
+        push(str.tok(OTkParOpen, skipOne, ')'));
+    };
+
+    /*!Lex single text entry starting at current position
+     */
+    void lexText(PosStr& str) {
+        const auto NonText = charsets::TextLineChars
+                           - charsets::AsciiLetters - charsets::Utf8Any
+                           + CharSet{'\n', '/'};
+
+        switch (str.get()) {
+            case '\n': {
+                push(str.tok(OTkNewline, skipCount, 1));
+                break;
+            }
+            case ' ': {
+                push(str.tok(OTkSpace, [](PosStr& str) {
+                    while (!str.finished() && str.at(' ')) {
+                        str.next();
+                    }
+                }));
+                break;
+            }
+            case '#': {
+                std::function<Vec<OrgToken>(PosStr & str)> rec;
+                rec = [&rec](PosStr& str) -> Vec<OrgToken> {
+                    Vec<OrgToken> result;
+                    result.push_back(str.tok(OTkHashTag, [](PosStr& str) {
+                        if (str.at('#')) {
+                            str.skip('#');
+                        };
+                        str.skipWhile(charsets::IdentChars);
+                    }));
+
+                    while (str.at(R"(##)") && !str.at(R"(##[)")) {
+                        result.push_back(
+                            str.tok(OTkHashTagSub, skipOne, '#'));
+                        result.push_back(
+                            str.tok(OTkHashTag, [](PosStr& str) {
+                                str.skip('#');
+                                str.skipWhile(charsets::IdentChars);
+                            }));
+                    }
+
+                    if (str.at(R"(##[)")) {
+                        result.push_back(
+                            str.tok(OTkHashTagSub, skipOne, '#'));
+                        result.push_back(
+                            str.tok(OTkHashTagOpen, skipOne, "#["));
+
+                        while (!str.finished() && !str.at(']')) {
+                            result.append(rec(str));
+                            str.space();
+                            if (str.at(',')) {
+                                result.push_back(
+                                    str.tok(OTkComma, skipOne, ','));
+                                str.space();
+                            }
+                        }
+                        result.push_back(
+                            str.tok(OTkHashTagClose, skipOne, ']'));
+                    }
+                    return result;
+                };
+
+                push(rec(str));
+                break;
+            }
+            case '@': {
+                const auto AtChars = charsets::IdentChars
+                                   + charsets::Utf8Any;
+                if (str.at(AtChars, 1)) {
+                    push(str.tok(OTkAtMention, [&AtChars](PosStr& str) {
+                        str.skip('@');
+                        str.skipWhile(AtChars);
+                    }));
+                } else {
+                    push(str.tok(OTkPunctuation, skipCount, 1));
+                }
+                break;
+            }
+            case '$': {
+                auto          tmp = str;
+                Vec<OrgToken> buf;
+                try {
+                    if (tmp.at('$', 1)) {
+                        buf.push_back(
+                            tmp.tok(OTkDollarOpen, skipOne, "$$"));
+                        tmp.pushSlice();
+                        bool hasEnd = false;
+                        while (!tmp.finished() && !hasEnd) {
+                            while (!tmp.finished() && !tmp.at('$')) {
+                                tmp.next();
+                            }
+                            if (tmp.at("$$")) {
+                                buf.push_back(
+                                    tmp.popTok(OTkLatexInlineRaw));
+                                hasEnd = true;
+                            } else {
+                                throw ImplementError();
+                            }
+                        }
+                        // FIXME
+                        // buf.add(tmp.tok(skip OTkDollarClose, '$', '$'));
+                    } else {
+                        buf.push_back(
+                            tmp.tok(OTkDollarOpen, skipOne, '$'));
+                        buf.push_back(
+                            tmp.tok(OTkLatexInlineRaw, skipBefore, '$'));
+                        buf.push_back(
+                            tmp.tok(OTkDollarClose, skipOne, '$'));
+                    }
+                    push(buf);
+                    str = tmp;
+                } catch (UnexpectedCharError& err) {
+                    push(str.tok(OTkPunctuation, skipWhile, '$'));
+                }
+                break;
+            }
+            case '\\': {
+                switch (str.get(1)) {
+                    case '[':
+                    case '(': {
+                        const auto isInline = str.at('(', 1);
+                        if (isInline) {
+                            push(str.tok(
+                                OTkLatexParOpen, skipOne, R"(\\()"));
+                        } else {
+                            push(str.tok(
+                                OTkLatexBraceOpen, skipOne, R"(\\[)"));
+                        }
+                        push(str.tok(
+                            OTkLatexInlineRaw, [&isInline](PosStr& str) {
+                                while (!str.at(
+                                    isInline ? R"(\\))" : R"(\\])")) {
+                                    str.next();
+                                }
+                            }));
+                        if (isInline) {
+                            push(str.tok(OTkLatexParClose, skipOne, ")"));
+                        } else {
+                            push(
+                                str.tok(OTkLatexBraceClose, skipOne, "]"));
+                        }
+                        break;
+                    }
+                    case '\\': {
+                        push(str.tok(OTkDoubleSlash, skipOne, R"(\\)"));
+                        break;
+                    }
+                    default: {
+                        if (str.at(OMarkupChars, 1)) {
+                            push(str.tok(OTkEscaped, skipCount, 1));
+                        } else if (str.at(
+                                       charsets::IdentStartChars
+                                           - CharSet{'_'},
+                                       1)) {
+                            push(str.tok(OTkSymbolStart, skipOne, '\\'));
+                            push(str.tok(
+                                OTkIdent,
+                                skipWhile,
+                                charsets::IdentChars));
+                            if (str.at('[')) {
+                                push(str.tok(
+                                    OTkMetaBraceOpen, skipOne, '['));
+                                push(str.tok(
+                                    OTkMetaBraceBody, [](PosStr& str) {
+                                        skipBalancedSlice(
+                                            str,
+                                            {.openChars    = {'['},
+                                             .closeChars   = {']'},
+                                             .skippedStart = true,
+                                             .consumeLast  = false});
+                                    }));
+                                push(str.tok(
+                                    OTkMetaBraceClose, skipOne, ']'));
+                            }
+                            while (str.at('{')) {
+                                push(str.tok(
+                                    OTkMetaArgsOpen, skipOne, '{'));
+                                push(str.tok(
+                                    OTkMetaBraceBody, [](PosStr& str) {
+                                        skipBalancedSlice(
+                                            str,
+                                            {.openChars    = {'{'},
+                                             .closeChars   = {'}'},
+                                             .skippedStart = true,
+                                             .consumeLast  = false});
+                                    }));
+
+                                push(str.tok(
+                                    OTkMetaArgsClose, skipOne, '}'));
+                            }
+                            break;
+                        } else {
+                            push(str.tok(OTkEscaped, skipCount, 2));
+                        }
+                    }
+                };
+                break;
+            }
+            case '~':
+            case '`':
+            case '=': {
+                const auto start = str.get();
+                if (str.at(start, 1)) {
+                    push(str.tok(
+                        markupConfig[start].inlineKind, skipCount, 2));
+                    push(str.tok(OTkRawText, [start](PosStr& str) {
+                        while (!str.at(start, start)) {
+                            str.next();
+                        }
+                    }));
+                    push(str.tok(
+                        markupConfig[start].inlineKind, skipCount, 2));
+                } else {
+                    if (str.at(NonText, -1) || str.atStart()) {
+                        push(str.tok(
+                            markupConfig[start].startKind, skipCount, 1));
+                        push(str.tok(OTkRawText, skipTo, start));
+                        if (str.at(NonText, 1) || str.beforeEnd()) {
+                            push(str.tok(
+                                markupConfig[start].finishKind,
+                                skipCount,
+                                1));
+                        }
+                    } else {
+                        push(str.tok(OTkPunctuation, skipCount, 1));
+                    }
+                }
+                break;
+            }
+            case '<': {
+                try {
+                    lexAngle(str);
+                    // REFACTOR remove exception for control handling, make
+                    // interface more explicit
+                } catch (UnexpectedCharError&) {
+                    push(str.tok(OTkPunctuation, skipCount, 1));
+                }
+                break;
+            }
+
+            case '[': {
+                lexBracket(str);
+                break;
+            }
+            case '(': {
+                push(str.tok(OTkParOpen, skipCount, 1));
+                break;
+            }
+            case ')': {
+                push(str.tok(OTkParClose, skipCount, 1));
+                break;
+            }
+            case ':': {
+                push(str.tok(OTkColon, skipCount, 1));
+                break;
+            }
+            case '\'':
+            case '?':
+            case '!':
+            case '%':
+            case ']':
+            case '|':
+            case '&':
+            case ';':
+            case '}':
+            case '>': {
+                push(str.tok(OTkPunctuation, skipCount, 1));
+                break;
+            }
+            case '{': {
+                if (str.at("{{{")) {
+                    push(str.tok(OTkMacroOpen, skipCount, 3));
+                    push(str.tok(OTkIdent, [](PosStr& str) {
+                        while (!str.finished() && !str.at('(')
+                               && !str.at("}}}")) {
+                            str.next();
+                        }
+                    }));
+
+                    if (str.at('(')) {
+                        lexParenArguments(str);
+                    }
+                    if (!str.finished()) {
+                        push(str.tok(OTkMacroOpen, skipOne, "}}}"));
+                    }
+                } else {
+                    push(str.tok(OTkMaybeWord, skipCount, 1));
+                }
+                break;
+            }
+            case '^': {
+                push(str.tok(OTkCircumflex, skipCount, 1));
+                break;
+            }
+            default: {
+                if (str.at(charsets::TextChars)) {
+                    lexTextChars(str);
+                } else if (str.at(
+                               markupKeys - CharSet{'<', '~', '`', '='})) {
+                    const auto ch                        = str.get();
+                    const auto& [kOpen, kClose, kInline] = markupConfig
+                        [ch];
+                    if (str.at((+(1)), ch)) {
+                        push(str.tok(kInline, skipCount, 2));
+                    } else if (str.at(NonText, -1) || str.atStart()) {
+                        push(str.tok(kOpen, skipCount, 1));
+                    } else if (str.at(NonText, 1) || str.beforeEnd()) {
+                        push(str.tok(kClose, skipCount, 1));
+                    } else {
+                        push(str.tok(OTkWord, skipCount, 1));
+                    }
+                    break;
+                } else {
+                    throw str.makeUnexpected("any text character", "text");
+                }
+            }
         }
     }
 };

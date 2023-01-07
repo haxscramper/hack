@@ -682,6 +682,9 @@ proc toCpp(node: PNode, s: State): string =
       if name == "sink":
         result = "const $#&" % node[1].toCpp(s)
 
+      elif name in ["logAddTok"]:
+        result = node[3].toCpp(s)
+
       elif name in ["inc", "dec"]:
         result = "$name $value" % {
           "name": tern(name == "inc", "+=", "-="),
