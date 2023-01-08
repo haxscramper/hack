@@ -288,15 +288,36 @@ struct Array : std::array<T, Size> {
     int indexOf(CR<T> item) const { return index_of(*this, item); }
 };
 
+template <int N, int M>
+struct pow_v {
+    enum
+    {
+        res = N * pow_v<N, M - 1>::res
+    };
+};
+
+
+template <int N>
+struct pow_v<N, 0> {
+    enum
+    {
+        res = 1
+    };
+};
+
+
 template <ImplementsOrd Key, typename Val>
-struct TypArray : public Array<Val, 8 * sizeof(Key)> {
+requires(sizeof(Key) <= sizeof(unsigned short)) struct TypArray
+    : public Array<Val, pow_v<2, 8 * sizeof(Key)>::res> {
+    using Base = Array<Val, pow_v<2, 8 * sizeof(Key)>::res>;
+    using Base::at;
     TypArray(std::initializer_list<Pair<Key, Val>> items) {
         for (const auto& [key, val] : items) {
             at(key) = val;
         }
     }
 
-    Val& at(CR<Key> value) { return at(ord(value)); }
+    Val& at(CR<Key> value) { return Base::at(ord(value)); }
 };
 
 struct MarkupConfigPair {
@@ -409,6 +430,22 @@ class Vec : public std::vector<T> {
         insert(end(), other.begin(), other.end());
     }
 
+    void reverse() { std::reverse(begin(), end()); }
+
+    void sort() { std::sort(begin(), end()); }
+
+    Vec<T> reversed() const {
+        Vec<T> result = *this;
+        result.reverse();
+        return result;
+    }
+
+    Vec<T> sorted() const {
+        Vec<T> result = *this;
+        result.sort();
+        return result;
+    }
+
     operator R<std::vector<T>>() {
         return static_cast<std::vector<T>>(*this);
     }
@@ -469,22 +506,6 @@ class Vec : public std::vector<T> {
     int indexOf(CR<T> item) const { return index_of(*this, item); }
 };
 
-template <int N, int M>
-struct pow_v {
-    enum
-    {
-        res = N * pow_v<N, M - 1>::res
-    };
-};
-
-
-template <int N>
-struct pow_v<N, 0> {
-    enum
-    {
-        res = 1
-    };
-};
 
 template <>
 int succ(int val) {
@@ -1070,6 +1091,9 @@ struct Str : public std::string {
     using std::string::operator[];
     using std::string::at;
 
+    Str(std::string_view view) : std::string(view.data(), view.size()) {}
+    Str() = default;
+
     bool startsWith(const std::string& prefix) {
         return find(prefix) == 0;
     }
@@ -1123,6 +1147,20 @@ struct Str : public std::string {
         return s;
     }
 };
+
+Str normalize(CR<Str> in) {
+    Str res;
+    for (char c : in) {
+        if (!(c == '_' || c == '-')) {
+            if (charsets::LowerAsciiLetters.contains(c)) {
+                res += c;
+            } else if (charsets::HighAsciiLetters.contains(c)) {
+                res += tolower(c);
+            }
+        }
+    }
+    return res;
+}
 
 using StrVec     = std::vector<Str>;
 using StrPairVec = Vec<Pair<Str, Str>>;
@@ -1245,6 +1283,10 @@ template <typename K>
 struct Token {
     K                kind; /// Specific kind of the token
     std::string_view text; /// Token view on the base input text
+
+    Token() = default;
+    Token(K _kind, std::string_view _text) : kind(_kind), text(_text) {}
+    Token(K _kind, int offset) : kind(_kind), text(nullptr, offset) {}
 
     /// Check if token text is a view over real data
     bool hasData() const { return text.data() != nullptr; }
@@ -1425,6 +1467,8 @@ struct PosStr {
         int     pos;
     };
 
+    Str toStr() const { return Str(view); }
+
     Vec<SliceStartData> slices;
     /// Underlying string view
     std::string_view view;
@@ -1454,18 +1498,21 @@ struct PosStr {
             pos - slice.pos + offset.end);
     }
 
+    PosStr sliceBetween(int start, int end) const {
+        return PosStr{
+            std::string_view(view.data() + start, end - start + 1)};
+    }
+
 
     template <typename K>
     Token<K> fakeTok(K kind, Offset offset = Offset()) {
-        return Token<K>{.kind = kind};
+        return Token(kind, pos);
     }
 
     /// Pop last slice into a token object
     template <typename K>
     Token<K> popTok(K kind, Offset offset = Offset()) {
-        return Token<K>{
-            .kind = kind,
-            .text = completeView(slices.pop_back_v(), offset)};
+        return Token(kind, completeView(slices.pop_back_v(), offset));
     }
 
     PosStr popSlice(Offset offset = {}) {
@@ -1540,19 +1587,15 @@ struct PosStr {
 
     bool hasNext(int shift = 1) const { return pos < view.size(); }
 
+    void back(int count = 1) {
+        for (int i = 0; i < count; ++i) {
+            --pos;
+        }
+    }
+
     void next(int count = 1) {
         for (int i = 0; i < count; ++i) {
             ++pos;
-            switch (get()) {
-                case '\n': {
-                    ++loc.line;
-                    loc.column = 0;
-                    break;
-                }
-                default: {
-                    ++loc.column;
-                }
-            }
         }
     }
 
@@ -1623,14 +1666,15 @@ struct PosStr {
         }
     }
 
-    void skip(char expected) {
-        if (get() == expected) {
-            next();
+    void skip(char expected, int offset = 0, int count = 1) {
+        if (get(offset) == expected) {
+            next(count);
         } else {
             throw UnexpectedCharError(
                 "Unexpected character encountered during lexing: found "
                 "'$#' but expected '$#' on $#:$#"
-                    % to_string_vec(get(), expected, loc.line, loc.column),
+                    % to_string_vec(
+                        get(offset), expected, loc.line, loc.column),
                 loc);
         }
     }
@@ -1648,15 +1692,26 @@ struct PosStr {
         }
     }
 
-    void skip(CR<CharSet> expected) {
-        if (expected.contains(get())) {
-            next();
+    void skip(CR<CharSet> expected, int offset = 0, int steps = 1) {
+        if (expected.contains(get(offset))) {
+            next(steps);
         } else {
             throw UnexpectedCharError(
                 "Unexpected character encountered during lexing: fonud "
-                "'$#' but expected any of '$#' on $#:$#"
-                    % to_string_vec(get(), expected, loc.line, loc.column),
+                "'$#' but expected any of (char set) '$#' on $#:$#"
+                    % to_string_vec(
+                        get(offset), expected, loc.line, loc.column),
                 loc);
+        }
+    }
+
+
+    bool trySkip(const PosStrCheckable auto& item) {
+        if (at(item)) {
+            next();
+            return true;
+        } else {
+            return false;
         }
     }
 
@@ -1714,6 +1769,8 @@ struct PosStr {
     /// on the last character in the string, or closest newline.
     void skipToEOL() { skipTo(charsets::Newline); }
 
+    void skipToEOF() { assert(false && "IMPLEMENT"); }
+    void skipToSOF() { assert(false && "IMPLEMENT"); }
 
     /// Skip past the end of the line - that is, for `111\n2222` put cursor
     /// at the first `2` on the second line.
@@ -1876,6 +1933,7 @@ void skipBalancedSlice(PosStr& str, CR<BalancedSkipArgs> args) {
 
 
 void skipPastEOF(PosStr& str) { assert(false && "IMPLEMENT"); }
+void skipToEOL(PosStr& str) { str.skipToEOL(); }
 void skipCount(PosStr& str, int count) { str.next(count); }
 void skipBefore(PosStr& str, char item) { str.skipBefore(item); }
 void skipTo(PosStr& str, char item) { str.skipTo(item); }
@@ -3030,6 +3088,215 @@ struct OrgLexer {
                 }
             }
         }
+    }
+
+    void lexProperties(const PosStr& id, PosStr& str) {
+        push(Token(OTkColonProperties, id.view));
+        auto hasEnd = false;
+        while (!str.finished() && !hasEnd) {
+            str.space();
+            auto       isAdd = false;
+            const auto id    = str.slice([&isAdd](PosStr& str) {
+                str.skip(':');
+                str.skipWhile(charsets::IdentChars);
+                if (str.at('+')) {
+                    isAdd = true;
+                }
+                str.skip(':');
+            });
+
+            if (normalize(id.toStr()) == R"(:end:)") {
+                hasEnd = true;
+                push(Token(OTkColonEnd, id.view));
+            } else {
+                push(Token(
+                    isAdd ? OTkColonAddIdent : OTkColonIdent, id.view));
+                if (str.at(charsets::IdentStartChars)) {
+                    push(str.tok(OTkIdent, [](PosStr& str) {
+                        while (
+                            !str.finished()
+                            && str.at(
+                                charsets::DashIdentChars + CharSet{'/'})) {
+                            str.next();
+                        }
+                    }));
+                    str.skip(':');
+                }
+                str.space();
+                push(str.tok(OTkRawProperty, skipToEOL));
+                str.skip('\n');
+            }
+        }
+    }
+
+    void lexDescription(const PosStr& id, PosStr& str) {
+        push(Token(OTkColonDescription, id.view));
+        str.pushSlice();
+        auto hasEnd = false;
+        while (!str.finished() && !hasEnd) {
+            while (!str.finished() && !str.at(":end:")) {
+                str.next();
+            }
+            push(Token(OTkText, str.popSlice().view));
+            const auto id = str.slice([](PosStr& str) {
+                str.skip(':');
+                str.skipWhile(charsets::IdentChars);
+                str.skip(':');
+            });
+            push(Token(OTkColonEnd, id.view));
+            hasEnd = true;
+        }
+    }
+
+    void lexLogbook(const PosStr& id, PosStr& str) {
+        push(Token(OTkColonLogbook, id.view));
+        str.pushSlice();
+        auto hasEnd = false;
+        while (!str.finished() && !hasEnd) {
+            while (!str.finished() && !str.at(":end:")) {
+                str.next();
+            }
+
+            push(Token(OTkRawLogbook, str.popSlice().view));
+
+            const auto id = str.slice([](PosStr& str) {
+                str.skip(':');
+                str.skipWhile(charsets::IdentChars);
+                str.skip(':');
+            });
+
+            push(Token(OTkColonEnd, id.view));
+            hasEnd = true;
+        };
+    };
+
+    void lexDrawer(PosStr& str) {
+        auto strEnded = false;
+        while (!str.finished() && !strEnded) {
+            str.space();
+            const auto id = str.slice([](PosStr& str) {
+                str.skip(':');
+                str.skipWhile(charsets::IdentChars);
+                str.skip(':');
+            });
+
+            str.skip('\n');
+            const Str norm = normalize(id.toStr());
+            if (norm == ":properties:") {
+                lexProperties(id, str);
+            } else if (norm == ":logbook:") {
+                lexLogbook(id, str);
+            } else if (norm == ":description:") {
+                lexDescription(id, str);
+            } else {
+                assert(false && "FIXME IMPLEMENT");
+                // throw newImplementKindError(norm, toStr(str));
+            }
+
+            auto ahead = str;
+            ahead.space();
+            if (ahead.trySkip('\n')) {
+                ahead.space();
+                if (!ahead.at(':')) {
+                    strEnded = true;
+                    str      = ahead;
+                }
+            }
+            if (!strEnded) {
+                str.skipWhile('\n');
+            }
+        }
+    }
+
+    void lexSubtreeTodo(PosStr& str) {
+        auto tmp = str;
+        tmp.pushSlice();
+        tmp.skipWhile(charsets::HighAsciiLetters);
+        if (tmp.at(' ')) {
+            push(tmp.popTok(OTkSubtreeTodoState));
+            str = tmp;
+        }
+    }
+
+    void lexSubtreeUrgency(PosStr& str) {
+        if (str.at("[#")) {
+            str.pushSlice();
+            str.next(2);
+            str.skip(charsets::HighAsciiLetters);
+            str.skipWhile(charsets::HighAsciiLetters);
+            str.skip(']');
+            push(str.popTok(OTkSubtreeUrgency));
+            str.space();
+        }
+    }
+
+    void lexSubtreeTitle(PosStr& str) {
+        auto          body = str.slice(skipToEOL);
+        Vec<OrgToken> headerTokens;
+        body.skipToEOF();
+        if (body.at(':')) {
+            body.back();
+            auto tagEnded = false;
+            while (!body.finished() && !tagEnded) {
+                const auto finish = body.getPos();
+                while (!body.finished()
+                       && !body.at(
+                           charsets::IdentChars + CharSet{'#', '@'})) {
+                    body.back();
+                }
+
+                const auto start = body.getPos() + 1;
+                body.skip(':', -1);
+                headerTokens.push_back(Token(
+                    OTkSubtreeTag, body.sliceBetween(start, finish).view));
+                if (body.at(' ')) {
+                    tagEnded = true;
+                }
+            }
+            while (body.at(' ')) {
+                body.back();
+            }
+        }
+        if (body.at(']')) {
+            auto tmp = body;
+            try {
+                const auto finish = tmp.getPos();
+                tmp.skip(']', -1);
+                tmp.skip(charsets::Digits, -1);
+                while (tmp.at(charsets::Digits)) {
+                    tmp.back();
+                }
+                if (str.at('%')) {
+                    tmp.back();
+                } else {
+                    tmp.skip('/', -1);
+                    tmp.skip(charsets::Digits, -1);
+                    while (tmp.at(charsets::Digits)) {
+                        tmp.back();
+                    }
+                }
+                tmp.skip('[', -1, -1);
+
+                const auto start = tmp.getPos() + 1;
+                body             = tmp;
+                headerTokens.push_back(Token(
+                    OTkSubtreeCompletion,
+                    tmp.sliceBetween(start, finish).view));
+                while (body.at(' ')) {
+                    body.next(-1);
+                }
+            } catch (UnexpectedCharError& err) { ; };
+        }
+        //
+        {
+
+            auto finish = body.getPos();
+            body.skipToSOF();
+            const auto start = body.getPos();
+            auto       slice = str.sliceBetween(start, finish);
+            headerTokens.push_back(Token(OTkText, slice.view));
+        }
+        push(headerTokens.reversed());
     }
 };
 
