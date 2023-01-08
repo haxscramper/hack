@@ -3501,6 +3501,683 @@ struct OrgLexer {
         }
         return result;
     }
+
+    void lexCommandArguments(PosStr& str, const OrgCommandKind& kind) {
+        OrgTokenKind wrapStart = OTkCommandArgumentsBegin;
+        OrgTokenKind wrapEnd   = OTkCommandArgumentsEnd;
+        switch (kind) {
+            case ockTitle:
+            case ockCaption:
+                wrapStart = OTkParagraphStart;
+                wrapEnd   = OTkParagraphEnd;
+        }
+        push(str.initTok(wrapStart));
+        std::function<void(PosStr&)> lexKeyValue;
+        lexKeyValue = [](PosStr& str) {
+            while (!str.finshed()) {
+                switch ((str.get())) {
+                    case '-': {
+                        push(str.tok(
+                            OTkCommandFlag,
+                            skipWhile,
+                            cr(CharSet{'-'} + IdentChars)));
+                        break;
+                    }
+                    case ':': {
+                        push(str.tok(
+                            OTkCommandKey,
+                            skipWhile,
+                            cr(charsets::IdentChars + CharSet{'-', ':'})));
+                        break;
+                    }
+                    case ' ': {
+                        str.space();
+                        break;
+                    }
+                    default: {
+                        push(str.tok(OTkCommandValue, []() {
+                            auto hasColon = false;
+                            while (!str.finshed() && !hasColon) {
+                                while (!str.finshed()
+                                       && !str.at(
+                                           charsets::HorizontalSpace)) {
+                                    str.next();
+                                }
+                                if (!str.finshed()) {
+                                    auto tmp = str;
+                                    tmp.space();
+                                    if ((!(tmp[':']))) {
+                                        tmp.next();
+                                        str = tmp;
+                                    } else {
+                                        hasColon = true;
+                                    }
+                                }
+                            }
+                        }));
+                    }
+                }
+            }
+            return result;
+        };
+        switch (kind) {
+            case ockBeginQuote: {
+                break;
+            }
+            case ockTitle: {
+                while (!str.finshed()) {
+                    lexText(str);
+                }
+                break;
+            }
+            case ockOptions: {
+                while (!str.finshed()) {
+                    switch (str.get()) {
+                        case '\'':
+                        case '*':
+                        case '|':
+                        case ':':
+                        case '<':
+                        case '\n':
+                        case '^': {
+                            push(str, OTkRawText, str.next(););
+                            break;
+                        }
+                        case ' ': {
+                            str.space();
+                            break;
+                        }
+                        default: {
+                            push(str, OTkRawText, [](PosStr& str) {
+                                while (
+                                    ((!str.finshed())
+                                     && ((!(str.at(HorizontalSpace)))))) {
+                                    str.next();
+                                }
+                            });
+                        }
+                    };
+                };
+                break;
+            }
+            case ockCaption: {
+                push(str, OTkText, str.skipPastEof(););
+                break;
+            }
+            case ockCall: {
+                str.space();
+                push(str, OTkCallName, str.skipWhile(IdentChars););
+                if (str.at('[')) {
+                    push(str,
+                         OTkCallInsideHeader,
+                         str.skipBalancedSlice({'['}, {']'}););
+                };
+                push(str,
+                     OTkCallArgs,
+                     str.skipBalancedSlice({'('}, {')'}););
+                if (!str.finshed()) {
+                    push(str, OTkRawText, str.skipPastEof(););
+                };
+                break;
+            }
+            case ockBeginSrc: {
+                push(str, OTkWord, str.skipWhile(IdentChars););
+                str.space();
+                push(lexKeyValue(str));
+                break;
+            }
+            case ockBeginTable:
+            case ockAttrHtml: {
+                push(lexKeyValue(str));
+                break;
+            }
+            case ockBeginDynamic: {
+                push(str, OTkWord, str.skipWhile(IdentChars););
+                str.space();
+                push(lexKeyValue(str));
+                break;
+            }
+            case ockHeader: {
+                str.space();
+                push(lexKeyValue(str));
+                break;
+            }
+            case ockAuthor:
+            case ockCreator:
+            case ockLanguage: {
+                str.space();
+                push(str, OTkRawText, str.skipPastEof(););
+                break;
+            }
+            case ockProperty: {
+                str.space();
+                push(str, OTkIdent, str.skipUntil({' ', ':'}););
+                if (str.at(':')) {
+                    push(str, OTkColon, str.next(););
+                    push(str, OTkIdent, str.skipUntil({' '}););
+                };
+                str.space();
+                push(str, OTkRawProperty, str.skipPastEof(););
+                break;
+            }
+            case ockFiletags: {
+                while (str.at(':')) {
+                    str.skip(':');
+                    if (!str.finshed()) {
+                        push(
+                            str,
+                            OTkSubtreeTag,
+                            while (
+                                ((!str.finshed()) && ((!(str.at(':')))))) {
+                                next(str);
+                            };);
+                    };
+                };
+                break;
+            }
+            case ockInclude: {
+                str.space();
+                if (str.at('"')) {
+                    push(str.lexDelimited(start = {'"',OTkQuoteOpen,}, finish = {'"',OTkQuoteClose,}, middle = OTkRawText = lexConf));
+                } else {
+                    push(
+                        str,
+                        OTkRawText,
+                        while (
+                            ((!str.finshed())
+                             && ((!(str.at(HorizontalSpace)))))) {
+                            str.next();
+                        };);
+                };
+                push(lexKeyValue(str));
+                break;
+            }
+            case ockName:
+            case ockLatexClass:
+            case ockLatexCompiler:
+            case ockBeginAdmonition: {
+                str.space();
+                push(str, OTkIdent, str.skipPastEof(););
+                break;
+            }
+            case ockColumns:
+            case ockBeginExample:
+            case ockResults:
+            case ockLatexHeader:
+            case ockHtmlHead:
+            case ockBeginCenter:
+            case ockLatexClassOptions: {
+                push(str, OTkRawText, str.skipPastEof(););
+                break;
+            }
+            default: {
+                throw newUnexpectedKindError(kind, toStr(str));
+                ;
+                push(str, OTkRawText, str.skipPastEof(););
+            }
+        };
+
+        push(str.initTok(wrapEnd));
+        ;
+        return result;
+    }
+
+    void lexCommandBlock(PosStr& str) {
+        const auto column = str.column;
+        push(str.initAdvanceTok(2, OTkCommandPrefix));
+        const auto id = str.asSlice(str.skipWhile(OCommandChars););
+        if (id.strValNorm().startsWith(R"(begin)")) {
+            push(initTok(id, OTkCommandBegin));
+            const auto sectionName = id.strVal().normalize().dropPrefix(
+                R"(begin)");
+            const auto kind = id.strVal().classifyCommand();
+            ;
+            ;
+            if (((kind) == (ockBeginDynamic))) {
+                str.skip(':');
+            };
+            str.space();
+
+            auto arguments = str.asSlice(str.skipPastEol(), -2);
+            ;
+            ;
+            push(lexCommandArguments(arguments, kind));
+
+            auto found = false;
+            ;
+            ;
+            str.pushSlice();
+            while ((((!(found))) && (!str.finshed()))) {
+                while (
+                    ((!str.finshed())
+                     && ((
+                         !((((((str.column) == (column)))
+                             && (str.at(R"(#+)"))))))))) {
+                    str.next();
+                };
+                if ((!(!str.finshed()))) {
+                    echov(str);
+                    echov((*(str.baseStr)).len());
+                }
+                assert(!str.finshed());
+                const auto   prefix = str.asSlice(str.next(2));
+                const PosStr id     = str.asSlice(
+                    str.skipWhile(OCommandChars));
+                if (((id.strVal().normalize())
+                     == (((R"(end)") & (sectionName))))) {
+                    found      = true;
+                    auto slice = str.popSlice(
+                        (-((((((1) + (id.strVal().len()))) + (3))))));
+                    push(slice.lexCommandContent(kind));
+                    push(initTok(prefix, OTkCommandPrefix));
+                    push(initTok(id, OTkCommandEnd));
+                }
+            }
+            if (kind == ockBeginDynamic) {
+                str.skip(':');
+            }
+        } else {
+            push(initTok(id, OTkLineCommand));
+            push(str.initAdvanceTok(1, OTkColon, {':'}));
+            str.space();
+            auto args = str.asSlice(str.skipToEol(););
+            push(lexCommandArguments(args, id.strVal().classifyCommand()));
+            if (!str.finshed()) {
+                str.skip('\n');
+            }
+        }
+        return result;
+    }
+
+    bool isFirstOnLine(PosStr& str) {
+        const auto set = charsets::Newline + {'\x00'};
+        if (str.at(set, -1)) {
+            return true;
+        }
+
+        auto pos = 0;
+        while (str.at(charsets::HorizontalSpace, pos)) {
+            --pos;
+        }
+        return str.at(set, pos);
+    };
+
+    /*!Check if the string is positioned at the start of a logbook
+    `CLOCK:` entry.
+    */
+    bool atLogClock(PosStr& str) {
+        bool       result;
+        const auto ahead = str.getAllFromPos(stopChars = {'['});
+        const auto space = ahead.find('C');
+        if (0 <= space) {
+            for (const auto ch : ahead[rangeExcl(0, space)]) {
+                if (ch != ' ') {
+                    return false;
+                }
+            }
+            const auto content = ahead[rangeIncl(space, backIdx(1))];
+            result             = content.startsWith(R"(CLOCK:)");
+        }
+        return result;
+    }
+
+    /*!Check if string is positioned at the start of toplevel language
+    construct.
+    */
+    bool atConstructStart(PosStr& str) {
+        bool result;
+        if (!isFirstOnLine(str)) {
+            return false;
+        }
+        if (str.getIndent() == 0 && str.at('*')) {
+            auto shift = 0;
+            while (str.at('*', shift)) {
+                ++shift;
+            }
+            result = str.at(' ', shift);
+        } else {
+            result = str.at(R"(#+)") || str.at(R"(---)");
+        }
+        return result;
+    }
+
+    void skipIndents(HsLexerStateSimple& state, PosStr& str) {
+        const auto skipped = state.skipIndent(str);
+        for (const auto indent : skipped) {
+            switch (indent) {
+                case likIncIndent: {
+                    push(str.fakeTok(OTkIndent));
+                    break;
+                }
+                case likDecIndent: {
+                    push(str.fakeTok(OTkDedent));
+                    break;
+                }
+                case likSameIndent: {
+                    push(str.fakeTok(OTkSameIndent));
+                    break;
+                }
+                case likNoIndent: {
+                    push(str.fakeTok(OTkNoIndent));
+                    break;
+                }
+                case likEmptyLine: {
+                    assert(false);
+                    break;
+                }
+            }
+        }
+        return result;
+    }
+
+    /*!Attempt to parse list start dash
+     */
+    Vec<OrgToken> tryListStart(PosStr& str) {
+        Vec<OrgToken> result;
+        if (atConstructStart(str)) {
+            return {};
+        }
+        auto tmp = str;
+        if (tmp.at(CharSet{'-', '+'})
+            || (0 < tmp.getIndent()) && tmp.at('*')) {
+            result.push_back(tmp.tok(OTkListDash, skipOne, ListStart));
+
+            if (!tmp.trySkip(' ')) {
+                return {};
+            }
+            tmp.space();
+        } else if (tmp.at(charsets::Digits + charsets::AsciiLetters)) {
+            result.push_back(tmp.tok(OTkListDash, [](PosStr& str) {
+                if (tmp.at(charsets::Digits + charsets::AsciiLetters)) {
+                    tmp.next();
+                } else {
+                    return {};
+                }
+            }));
+
+            if (tmp.at(')') || tmp.at('.')) {
+                tmp.next();
+            } else {
+                return {};
+            }
+
+            if (tmp.at(' ')) {
+                tmp.next();
+            } else {
+                return {};
+            }
+        } else {
+            if (tmp.at(CharSet{'-', '+', '*'})) {
+                tmp.next();
+            } else {
+                return {};
+            }
+
+            if (tmp.at(' ')) {
+                tmp.next();
+            } else {
+                return {};
+            }
+        }
+        str = tmp;
+        return result;
+    }
+
+
+    bool listAhead(PosStr& str, const LexConf& lexConf) {
+        bool result;
+        if ((!(str.isFirstOnLine()))) {
+            return false;
+        }
+
+        const auto init = toStr(str);
+        auto       str  = str;
+        str.space();
+        if (str.at(ListStart)) {
+            result = !tryListStart(str).empty();
+        }
+        return result;
+    }
+
+    /*!Lex head starting from current position onwards. `indent` is the
+indentation of the original list prefix -- dash, number or letter.
+*/
+    void lexListItem(
+        PosStr&             str,
+        const int&          indent,
+        HsLexerStateSimple& state) {
+        if (str.at("\\[[Xx - ]\\]")) {
+            push(str.tok(OTkCheckbox, [](PosStr& str) {
+                str.skip('[');
+                str.skip(CharSet{'X', 'x', ' ', '-'});
+                str.skip(']');
+            }));
+
+            str.space();
+        }
+        //
+        {
+            auto tmp = str;
+            auto buf = (@(
+                {initFakeTok(tmp, OTkListDescOpen),
+                 initFakeTok(tmp, OTkParagraphStart)}));
+            while (((notEmpty(tmp)) && ((!(tmp[Newline]))))) {
+                if (((tmp[':']) && (tmp[R"(::)"]))) {
+                    buf.add(initFakeTok(tmp, OTkParagraphEnd));
+                    buf.add(initFakeTok(tmp, OTkListDescClose));
+                    buf.logAddTok(tmp, OTkDoubleColon, tmp.skip(R"(::)"););
+                    str = tmp;
+                    ;
+                    push(buf);
+                    break;
+                    ;
+                } else {
+                    buf.add(lexText(tmp));
+                }
+            }
+        }
+        str.startSlice();
+        auto atEnd = false;
+        while (((!str.finshed()) && ((!(atEnd))))) {
+            if (str.atLogClock()) {
+                str.next();
+                atEnd = true;
+            } else if (((str.atConstructStart())
+                        && (((str.getIndent()) <= (indent))))) {
+                atEnd = true;
+            } else if (str.listAhead(lexConf)) {
+                atEnd = true;
+            } else {
+                //
+                {
+
+                    auto testTwoSpace = str;
+                    ;
+                    ;
+                    testTwoSpace.space();
+                    if (testTwoSpace[Newline]) {
+                        testTwoSpace.next();
+                        testTwoSpace.space();
+                        if (testTwoSpace[Newline]) {
+                            atEnd = true;
+                            ;
+                        };
+                    };
+                };
+                if ((!(atEnd))) {
+                    echov(str);
+
+                    auto testIndent = str;
+                    ;
+                    ;
+                    testIndent.skipPastEol();
+                    while (testIndent.trySkipEmptyLine()) {
+                        ;
+                    };
+                    if (((testIndent.getIndent()) < (indent))) {
+                        atEnd = true;
+                        ;
+                    } else if (((((testIndent.getIndent()) == (indent)))
+                                && ((!(str.listAhead(lexConf)))))) {
+                        atEnd = true;
+                        ;
+                    };
+                    str.skipPastEol();
+                };
+            };
+        };
+
+        auto slice = str.popSlice(-1);
+        ;
+        ;
+        while (((str.atAbsolute(slice.absEnd())) == ('\n'))) {
+            slice.decEnd();
+        };
+
+        push(str.initTok(slice, OTkStmtList));
+        ;
+
+        push(str.initTok(OTkListItemEnd));
+        ;
+        return result;
+    };
+
+    void lexListItems(
+        PosStr&             str,
+        HsLexerStateSimple& state,
+        const LexConf&      lexConf) {
+
+        assert((((str.get()))notin({'\n'})), toStr(str));
+        while (((str.listAhead(lexConf)) || (str.atLogClock()))) {
+            assert((((str.get()))notin({'\n'})), toStr(str));
+            if (str.atLogClock()) {
+                push(str.initFakeTok(OTkListClock));
+                str.startSlice();
+                str.skipToEol();
+
+                auto slice = str.popSlice();
+                ;
+                ;
+                push(lexParagraph(slice));
+                str.next();
+                push(str.initFakeTok(OTkListItemEnd));
+            } else {
+                push(state.skipIndents(str));
+
+                const auto indent = str.column;
+                ;
+                ;
+
+                auto tmp = str;
+                ;
+                ;
+
+                const auto tokens = tryListStart(tmp);
+                ;
+                ;
+                if (tokens.empty()) {
+                    push(lexParagraph(str));
+                } else {
+                    str = tmp;
+                    ;
+                    push(tokens);
+                    push(lexListItem(str, indent, state));
+                };
+            };
+        };
+        str.skipToEol();
+        return result;
+    };
+
+    void lexList(PosStr& str, const LexConf& lexConf) {
+
+
+        auto state = newLexerState();
+        ;
+        ;
+        push(str.initFakeTok(OTkListStart));
+
+        const auto tokens = str.lexListItems(state);
+        ;
+        ;
+        if ((!((((tokens[0])of(OTkSameIndent)))))) {
+            push(tokens[0]);
+        };
+        push(tokens[rangeIncl(1, backIdx(1))]);
+        while (state.hasIndent()) {
+            state.popIndent();
+            push(str.initFakeTok(OTkDedent));
+        };
+        push(str.initFakeTok(OTKListEnd));
+        return result;
+    };
+
+    void lexParagraph(PosStr& str, const LexConf& lexConf) {
+
+
+        const auto indent = str.getIndent();
+        ;
+        ;
+
+        auto ended = false;
+        ;
+        ;
+        str.startSlice();
+        while (((!str.finshed()) && ((!(ended))))) {
+            if (((((str.getIndent()) == (indent)))
+                 && ((
+                     ((str.atConstructStart())
+                      || (str.listAhead(lexConf))))))) {
+                ended = true;
+                ;
+            } else if (str.at('\n')) {
+                str.next();
+                if ((!(!str.finshed()))) {
+                    ended = true;
+                    ;
+                } else {
+                    switch ((str.get())) {
+                        case TextLineChars: {
+                            ;
+                            break;
+                        }
+                        case '\n': {
+                            str.next();
+                            ended = true;
+                            ;
+                            break;
+                        }
+                        default: {
+                            throw newUnexpectedCharError(
+                                str, parsing = R"(paragraph)");
+                            ;
+                        }
+                    };
+                };
+            } else {
+                str.next();
+            };
+        };
+
+        const auto slice = str.popSlice(tern(
+            ended,
+            tern(!str.finshed(), tern(str.atConstructStart(), -1, -3), -2),
+            -1));
+        ;
+        ;
+
+        const auto tok = str.initTok(slice, OTkText);
+        ;
+        ;
+        push(tok);
+        return result;
+    };
+
+    void lexComment(PosStr& str, const LexConf& lexConf) {
+
+        push(str, OTkComment, str.skipToEol(););
+        return result;
+    };
 };
 
 
