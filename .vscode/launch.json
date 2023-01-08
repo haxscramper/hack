@@ -1,0 +1,20 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Run stdlib2 tests with RR",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceRoot}/testing/cpp/stdlib_2/stdlib2.bin",
+            "args": [],
+            "miDebuggerServerAddress": "localhost:50505",
+            "stopAtEntry": false,
+            "cwd": "${workspaceRoot}/testing/cpp/stdlib_2",
+            "environment": [],
+            "externalConsole": true
+        }
+    ]
+}
