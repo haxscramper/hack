@@ -37,8 +37,6 @@ i8 operator"" _i8(unsigned long long int value) {
     return static_cast<i8>(value);
 }
 
-template <typename A, typename B> using Pair = std::tuple<A, B>;
-
 template <typename T> using R = T&;
 template <typename T> using CR   = const T&;
 template <typename T> using CP   = const T*;
@@ -49,7 +47,7 @@ template <typename T> using UPtr = std::unique_ptr<T>;
 template <typename T> using SPtr = std::shared_ptr<T>;
 template <typename T> using Func = std::function<T>;
 
-template <typename A, typename B> using Pair = std::tuple<A, B>;
+template <typename A, typename B> using Pair = std::pair<A, B>;
 
 template <typename T>
 CR<T> cr(CR<T> in) {
@@ -57,6 +55,11 @@ CR<T> cr(CR<T> in) {
 }
 
 // clang-format on
+
+template <typename T, typename Pred>
+bool all_of(CR<T> seq, CR<Pred> pr) {
+    return std::all_of(seq.begin(), seq.end(), pr);
+}
 
 struct finally {
     Func<void(void)> action;
@@ -503,7 +506,8 @@ class Vec : public std::vector<T> {
 
     int high() const { return size() - 1; }
 
-    int indexOf(CR<T> item) const { return index_of(*this, item); }
+    int  indexOf(CR<T> item) const { return index_of(*this, item); }
+    bool contains(CR<T> item) const { return indexOf(item) != -1; }
 };
 
 
@@ -2520,8 +2524,24 @@ struct OrgLexer {
     std::string    base;
     OrgTokenGroup* out;
 
-    void push(CR<OrgToken> tok) { out->push(tok); }
-    void push(CR<Vec<OrgToken>> tok) { out->push(tok); }
+    Vec<OrgToken>* buffer = nullptr;
+    void           setBuffer(Vec<OrgToken>* _buffer) { buffer = _buffer; }
+    void           clearBuffer() { buffer = nullptr; }
+
+    void push(CR<OrgToken> tok) {
+        if (buffer != nullptr) {
+            buffer->push_back(tok);
+        } else {
+            out->push(tok);
+        }
+    }
+    void push(CR<Vec<OrgToken>> tok) {
+        if (buffer != nullptr) {
+            buffer->append(tok);
+        } else {
+            out->push(tok);
+        }
+    }
 
     void lexAngle(PosStr& str) {
         if (str.at("<%%")) {
@@ -3297,6 +3317,189 @@ struct OrgLexer {
             headerTokens.push_back(Token(OTkText, slice.view));
         }
         push(headerTokens.reversed());
+    }
+
+    void lexSubtreeTimes(PosStr& str) {
+        str.space();
+        auto hadTimes = false;
+        while (str.at(charsets::HighAsciiLetters)) {
+            hadTimes   = true;
+            auto times = str;
+            times.space();
+            const auto tag = times.slice(
+                skipWhile, charsets::HighAsciiLetters);
+
+            if (Vec<Str>{R"(deadline)", R"(closed)", R"(scheduled)"}
+                    .contains(normalize(tag.toStr()))) {
+                push(Token(OTkSubtreeTime, tag.view));
+                times.skip(':');
+                times.space();
+                lexTime(times);
+                times.space();
+                str = times;
+            } else {
+                break;
+            }
+            times.space();
+        }
+        if (hadTimes) {
+            str.skip('\n');
+        }
+    }
+
+    void lexSubtree(PosStr& str) {
+        push(str.tok(OTkSubtreeStars, skipWhile, '*'));
+        str.skip(' ');
+        str.space();
+        lexSubtreeTodo(str);
+        str.space();
+        lexSubtreeUrgency(str);
+        str.space();
+        lexSubtreeTitle(str);
+        str.trySkip('\n');
+        lexSubtreeTimes(str);
+        auto drawer = str;
+        drawer.space();
+        if (drawer.at(':')) {
+            lexDrawer(drawer);
+            str = drawer;
+        }
+    }
+
+    void lexSourceBlockContent(PosStr& str) {
+        while (!str.finished()) {
+            if (str.at(R"(<<)")) {
+                auto          failedAt = -1;
+                auto          tmp      = str;
+                Vec<OrgToken> tmpRes;
+                // try_tangle
+                {
+                    tmpRes.push_back(
+                        tmp.tok(OTkDoubleAngleOpen, skipOne, R"(<<)"));
+                    if (tmp.at(charsets::IdentChars)) {
+                        tmpRes.push_back(tmp.tok(
+                            OTkIdent, skipWhile, charsets::IdentChars));
+                    } else {
+                        failedAt = tmp.pos;
+                        break;
+                    }
+                    if (tmp.at('(')) {
+                        setBuffer(&tmpRes);
+                        lexParenArguments(str);
+                        clearBuffer();
+                    }
+                    if (tmp.at(">>")) {
+                        tmpRes.push_back(
+                            tmp.tok(OTkDoubleAngleClose, skipOne, ">>"));
+                    } else {
+                        failedAt = tmp.pos;
+                        break;
+                    }
+                }
+                if (failedAt != -1) {
+                    push(str.tok(OTkCodeText, [&failedAt](PosStr& str) {
+                        while (((str.pos) < (failedAt))) {
+                            str.next();
+                        }
+                    }));
+                    str.setPos(failedAt);
+                } else {
+                    push(tmpRes);
+                    str = tmp;
+                }
+            } else if (str.at(R"((refs:)")) {
+                push(str.tok(OTkParOpen, skipOne, '('));
+                push(str.tok(OTkIdent, skipOne, "refs"));
+                push(str.tok(OTkColon, skipOne, ":"));
+                push(str.tok(
+                    OTkIdent,
+                    skipWhile,
+                    cr(charsets::IdentChars + CharSet{'-'})));
+                push(str.tok(OTkParClose, skipOne, ')'));
+
+            } else if (str.at('\n')) {
+                push(str.tok(OTkNewline, skipCount, 1));
+            } else {
+                push(str.tok(OTkCodeText, [](PosStr& str) {
+                    while (!str.finished()
+                           && !(
+                               str.at(R"(<<)")     //
+                               || str.at("(refs:") //
+                               || str.at('\n'))) {
+                        str.next();
+                    }
+                }));
+            }
+        }
+    }
+
+    void lexCommandContent(PosStr& str, const OrgCommandKind& kind) {
+        push(str.fakeTok(OTkCommandContentStart));
+        switch (kind) {
+            case ockBeginQuote:
+            case ockBeginCenter:
+            case ockBeginAdmonition: {
+                push(str.tok(OTkText, skipPastEOF));
+                break;
+            }
+            case ockBeginExample: {
+                push(str.tok(OTkRawText, skipPastEOF));
+                break;
+            }
+            case ockBeginDynamic: {
+                str.space();
+                push(str.tok(OTkText, skipPastEOF));
+                break;
+            }
+            case ockBeginSrc: {
+                str.space();
+                push(str.fakeTok(OTkCodeContentBegin));
+                Vec<OrgToken> code;
+                setBuffer(&code);
+                {
+                    lexSourceBlockContent(str);
+                    if (code.back().kind == OTkCodeText
+                        && all_of(code.back().text, [](char c) {
+                               return c == ' ';
+                           })) {
+                        code.pop_back();
+                    }
+                    if (code.back().kind == OTkNewline) {
+                        code.pop_back();
+                    }
+                    push(code);
+                    push(str.fakeTok(OTkCodeContentEnd));
+                }
+                clearBuffer();
+                break;
+            }
+            default: {
+                assert(false && "IMPLEMENT");
+            }
+        };
+        push(str.fakeTok(OTkCommandContentEnd));
+    }
+
+    Vec<OrgToken> lexDelimited(
+        PosStr&                         str,
+        const Pair<char, OrgTokenKind>& start,
+        const Pair<char, OrgTokenKind>& finish,
+        const OrgTokenKind&             middle) {
+        Vec<OrgToken> result;
+        result.push_back(str.tok(start.second, skipOne, start.first));
+        result.push_back(str.tok(middle, [&finish](PosStr& str) {
+            while (!str.finished() && !str.at(finish.first)) {
+                if (str.at('\\')) {
+                    str.next(2);
+                } else {
+                    str.next();
+                }
+            }
+        }));
+        if (!str.finished()) {
+            result.push_back(str.tok(finish.second, skipCount, 1));
+        }
+        return result;
     }
 };
 
