@@ -196,14 +196,16 @@ BackwardsIndex operator"" _B(unsigned long long int value) {
     return backIndex(value);
 }
 
-template <typename Container, typename A, typename B>
+template <typename A, typename B>
 Pair<A, A> getSpan(
-    Container    container,
-    HSlice<A, B> s,
-    bool         checkRange = true) {
+    int          containerSize, /// Size of the container to get span over
+    HSlice<A, B> s,             /// Span slice
+    bool         checkRange = true /// Ensure that slice does not go out of
+                                   /// container bounds
+) {
     const A    startPos = s.first;
     A          endPos;
-    const auto size = container.size();
+    const auto size = containerSize;
     if constexpr (std::is_same_v<B, BackwardsIndex>) {
         endPos = size - s.last.value;
     } else {
@@ -250,14 +252,14 @@ struct Array : std::array<T, Size> {
 
     template <typename A, typename B>
     std::span<T> at(CR<HSlice<A, B>> s, bool checkRange = true) {
-        const auto [start, end] = getSpan(*this, s, checkRange);
+        const auto [start, end] = getSpan(size(), s, checkRange);
         return std::span(this->data() + start, end - start + 1);
     }
 
     template <typename A, typename B>
     std::span<const T> at(CR<HSlice<A, B>> s, bool checkRange = true)
         const {
-        const auto [start, end] = getSpan(*this, s, checkRange);
+        const auto [start, end] = getSpan(size(), s, checkRange);
         return std::span(this->data() + start, end - start + 1);
     }
 
@@ -433,6 +435,10 @@ class Vec : public std::vector<T> {
         insert(end(), other.begin(), other.end());
     }
 
+    void append(CR<std::span<T>> other) {
+        insert(end(), other.begin(), other.end());
+    }
+
     void reverse() { std::reverse(begin(), end()); }
 
     void sort() { std::sort(begin(), end()); }
@@ -461,14 +467,14 @@ class Vec : public std::vector<T> {
 
     template <typename A, typename B>
     std::span<T> at(CR<HSlice<A, B>> s, bool checkRange = true) {
-        const auto [start, end] = getSpan(*this, s, checkRange);
+        const auto [start, end] = getSpan(size(), s, checkRange);
         return std::span(this->data() + start, end - start + 1);
     }
 
     template <typename A, typename B>
     std::span<const T> at(CR<HSlice<A, B>> s, bool checkRange = true)
         const {
-        const auto [start, end] = getSpan(*this, s, checkRange);
+        const auto [start, end] = getSpan(size(), s, checkRange);
         return std::span(this->data() + start, end - start + 1);
     }
 
@@ -1096,30 +1102,51 @@ struct Str : public std::string {
     using std::string::at;
 
     Str(std::string_view view) : std::string(view.data(), view.size()) {}
+    Str(CR<std::string> it) : std::string(it.data(), it.size()) {}
     Str() = default;
 
-    bool startsWith(const std::string& prefix) {
+    Str substr(int start, int count = npos) const {
+        return Str(std::string::substr(start, count));
+    }
+
+    bool startsWith(const std::string& prefix) const {
         return find(prefix) == 0;
     }
 
-    bool endsWith(const std::string& suffix) {
+    Str dropPrefix(CR<Str> prefix) const {
+        if (startsWith(prefix)) {
+            return substr(prefix.size());
+        } else {
+            return *this;
+        }
+    }
+
+    Str dropSuffix(CR<Str> suffix) const {
+        if (endsWith(suffix)) {
+            return substr(0, size() - suffix.size());
+        } else {
+            return *this;
+        }
+    }
+
+    bool endsWith(const std::string& suffix) const {
         return rfind(suffix) == length() - suffix.length();
     }
 
-    bool contains(const std::string& sub) {
+    bool contains(const std::string& sub) const {
         return find(sub) != std::string::npos;
     }
 
     template <typename A, typename B>
     std::string_view at(CR<HSlice<A, B>> s, bool checkRange = true) {
-        const auto [start, end] = getSpan(*this, s, checkRange);
+        const auto [start, end] = getSpan(size(), s, checkRange);
         return std::string_view(this->data() + start, end);
     }
 
     template <typename A, typename B>
     const std::string_view at(CR<HSlice<A, B>> s, bool checkRange = true)
         const {
-        const auto [start, end] = getSpan(*this, s, checkRange);
+        const auto [start, end] = getSpan(size(), s, checkRange);
         return std::string_view(this->data() + start, end);
     }
 
@@ -1450,7 +1477,7 @@ std::ostream& operator<<(std::ostream& os, StrPattern const& value) {
 
 /// Type constraint for types that can be passed into base methods of the
 /// positional string checking such as `.at()` or `.skip()` as well as all
-/// helper methods for better skipping such as `skipWhile`
+/// helper methods for better skipping such as `skipZeroOrMore`
 template <typename S>
 concept PosStrCheckable = (                                     //
     std::convertible_to<std::remove_cvref_t<S>, char>           //
@@ -1466,12 +1493,38 @@ struct PosStr {
         int              inPos = 0)
         : view(inView), loc(inLoc), pos(inPos) {}
 
+
+    PosStr(const char* data, int count, int inPos = 0)
+        : view(data, count), pos(inPos) {}
+
     struct SliceStartData {
         LineCol loc;
         int     pos;
     };
 
     Str toStr() const { return Str(view); }
+    int size() const { return view.size(); }
+
+    std::string_view getOffsetView(int ahead = 0) const {
+        return std::string_view(
+            view.data() + pos + ahead, view.size() - (pos + ahead));
+    }
+
+    template <typename A, typename B>
+    PosStr at(CR<HSlice<A, B>> s, bool checkRange = true) const {
+        const auto base         = getOffsetView();
+        const auto [start, end] = getSpan(size(), s, checkRange);
+        return PosStr(base.data() + start, end - start + 1);
+    }
+
+    template <typename A, typename B>
+    PosStr operator[](CR<HSlice<A, B>> s) const {
+#ifdef DEBUG
+        return at(s, true);
+#else
+        return at(s, false);
+#endif
+    }
 
     Vec<SliceStartData> slices;
     /// Underlying string view
@@ -1506,7 +1559,6 @@ struct PosStr {
         return PosStr{
             std::string_view(view.data() + start, end - start + 1)};
     }
-
 
     template <typename K>
     Token<K> fakeTok(K kind, Offset offset = Offset()) {
@@ -1646,6 +1698,18 @@ struct PosStr {
         return pattern.matchOffset(base);
     }
 
+    int getSkip(const PosStrCheckable auto& item) const {
+        int skip = 0;
+        while (hasNext(skip)) {
+            if (at(item, skip)) {
+                return skip;
+            } else {
+                ++skip;
+            }
+        }
+        return -1;
+    }
+
     bool at(CR<StrPattern> pattern, int offset = 0) const {
         return (0 <= getSkip(pattern));
     }
@@ -1719,17 +1783,22 @@ struct PosStr {
         }
     }
 
-    void skipWhile(const PosStrCheckable auto& item) {
+    void skipZeroOrMore(const PosStrCheckable auto& item) {
         while (at(item)) {
             next();
         }
+    }
+
+    void skipOneOrMore(const PosStrCheckable auto& item) {
+        skip(item);
+        skipZeroOrMore(item);
     }
 
     void space(bool requireOne = false) {
         if (requireOne) {
             skip(' ');
         }
-        skipWhile(charsets::HorizontalSpace);
+        skipZeroOrMore(charsets::HorizontalSpace);
     }
 
     void skipTo(const PosStrCheckable auto& item) {
@@ -1841,6 +1910,17 @@ struct PosStr {
         return result;
     }
 
+    int getColumn() const {
+        int result;
+        int offset = 0;
+        while (!at('\n', offset)) {
+            ++result;
+            --offset;
+        }
+
+        return result;
+    }
+
     bool hasMoreIndent(const int& indent, const bool& exactIndent = false)
         const {
         bool result;
@@ -1865,7 +1945,7 @@ struct PosStr {
 
 
     void skipIdent(const CharSet& chars = charsets::IdentChars) {
-        skipWhile(chars);
+        skipZeroOrMore(chars);
     }
 
     /// Create new 'unexpected character' error at the current string
@@ -1950,18 +2030,23 @@ void skipBalancedSlice(PosStr& str, char open, char close) {
 }
 
 void skipPastEOF(PosStr& str) { assert(false && "IMPLEMENT"); }
+void skipPastEOL(PosStr& str) { str.skipPastEOL(); }
 void skipToEOL(PosStr& str) { str.skipToEOL(); }
 void skipCount(PosStr& str, int count) { str.next(count); }
 void skipBefore(PosStr& str, char item) { str.skipBefore(item); }
 void skipTo(PosStr& str, char item) { str.skipTo(item); }
 void skipOne(PosStr& str, char item) { str.skip(item); }
-void skipWhile(PosStr& str, char item) { str.skipWhile(item); }
+void skipZeroOrMore(PosStr& str, char item) { str.skipZeroOrMore(item); }
+void skipOneOrMore(PosStr& str, char item) { str.skipOneOrMore(item); }
 
 void skipBefore(PosStr& str, const PosStrCheckable auto& item) {
     str.skipBefore(item);
 }
-void skipWhile(PosStr& str, const PosStrCheckable auto& item) {
-    str.skipWhile(item);
+void skipOneOrMore(PosStr& str, const PosStrCheckable auto& item) {
+    str.skipOneOrMore(item);
+}
+void skipZeroOrMore(PosStr& str, const PosStrCheckable auto& item) {
+    str.skipZeroOrMore(item);
 }
 void skipTo(PosStr& str, const PosStrCheckable auto& item) {
     str.skipTo(item);
@@ -1989,14 +2074,14 @@ void skipDigit(R<PosStr> str) {
     if (str.at("0x")) {
         str.next(2);
         str.skip(charsets::HexDigits);
-        str.skipWhile(charsets::HexDigits + CharSet{'_'});
+        str.skipZeroOrMore(charsets::HexDigits + CharSet{'_'});
     } else if (str.at("0b")) {
         str.next(2);
         str.skip(CharSet{'0', '1'});
-        str.skipWhile(CharSet{'0', '1'});
+        str.skipZeroOrMore(CharSet{'0', '1'});
     } else {
         str.skip(charsets::Digits);
-        str.skipWhile(charsets::Digits + CharSet{'_', '.'});
+        str.skipZeroOrMore(charsets::Digits + CharSet{'_', '.'});
     }
 }
 
@@ -2253,13 +2338,13 @@ TEST_CASE("Positional string cursor movements", "[str]") {
     }
 
     SECTION("Skip while single character") {
-        str.skipWhile('0');
+        str.skipZeroOrMore('0');
         REQUIRE(str.at('1'));
     }
 
     SECTION("Skip while character set") {
         REQUIRE(str.at('0'));
-        str.skipWhile(CharSet{'0', '1', '2'});
+        str.skipZeroOrMore(CharSet{'0', '1', '2'});
         REQUIRE(str.at('3'));
     }
 
@@ -2306,7 +2391,7 @@ TEST_CASE("Positional string slice construction", "[str]") {
     SECTION("Token construction using callbacks") {
         PosStr s{"0123*"};
         auto   tok = s.tok<int>(
-            0, [](PosStr& str) { str.skipWhile(charsets::Digits); });
+            0, [](PosStr& str) { str.skipZeroOrMore(charsets::Digits); });
         REQUIRE(tok.text == "0123");
     }
 
@@ -2480,6 +2565,7 @@ struct OrgTokenGroup {
 
     void push(CR<OrgToken> tok) { tokens.push_back(tok); }
     void push(CR<Vec<OrgToken>> tok) { tokens.append(tok); }
+    void push(CR<std::span<OrgToken>> tok) { tokens.append(tok); }
 };
 
 struct OrgTokenStore {
@@ -2515,6 +2601,9 @@ CR<CharSet> OWordChars = CharSet{
     slice('\x7F', '\xFF')};
 
 
+CR<CharSet> OCommandChars = charsets::IdentChars + CharSet{'-', '_'};
+
+
 CR<CharSet> OBigIdentChars  = CharSet{slice('A', 'Z')};
 const char  OEndOfFile      = '\x00';
 CR<CharSet> OBareIdentChars = charsets::AllChars - charsets::Whitespace;
@@ -2541,6 +2630,7 @@ struct OrgLexer {
     void           setBuffer(Vec<OrgToken>* _buffer) { buffer = _buffer; }
     void           clearBuffer() { buffer = nullptr; }
 
+
     void push(CR<OrgToken> tok) {
         if (buffer != nullptr) {
             buffer->push_back(tok);
@@ -2548,6 +2638,16 @@ struct OrgLexer {
             out->push(tok);
         }
     }
+
+
+    void push(CR<std::span<OrgToken>> tok) {
+        if (buffer != nullptr) {
+            buffer->append(tok);
+        } else {
+            out->push(tok);
+        }
+    }
+
     void push(CR<Vec<OrgToken>> tok) {
         if (buffer != nullptr) {
             buffer->append(tok);
@@ -2744,7 +2844,8 @@ struct OrgLexer {
                 // FIXME push buffer only if the whole sequence is
                 // determined to be a valid structure
                 push(buf);
-                push(str.tok(OTkSrcName, skipWhile, charsets::IdentChars));
+                push(str.tok(
+                    OTkSrcName, skipZeroOrMore, charsets::IdentChars));
                 if (str.at('[')) {
                     push(str.tok(OTkSrcArgs, skipBrace, {1, -2}));
                 }
@@ -2765,7 +2866,8 @@ struct OrgLexer {
             }
             if (str.at(charsets::IdentStartChars)) {
                 push(buf);
-                push(str.tok(OTkSrcName, skipWhile, charsets::IdentChars));
+                push(str.tok(
+                    OTkSrcName, skipZeroOrMore, charsets::IdentChars));
                 if (str.at('[')) {
                     push(str.tok(OTkCallInsideHeader, skipBrace, {1, -2}));
                 };
@@ -2832,7 +2934,7 @@ struct OrgLexer {
                         if (str.at('#')) {
                             str.skip('#');
                         };
-                        str.skipWhile(charsets::IdentChars);
+                        str.skipZeroOrMore(charsets::IdentChars);
                     }));
 
                     while (str.at(R"(##)") && !str.at(R"(##[)")) {
@@ -2841,7 +2943,7 @@ struct OrgLexer {
                         result.push_back(
                             str.tok(OTkHashTag, [](PosStr& str) {
                                 str.skip('#');
-                                str.skipWhile(charsets::IdentChars);
+                                str.skipZeroOrMore(charsets::IdentChars);
                             }));
                     }
 
@@ -2875,7 +2977,7 @@ struct OrgLexer {
                 if (str.at(AtChars, 1)) {
                     push(str.tok(OTkAtMention, [&AtChars](PosStr& str) {
                         str.skip('@');
-                        str.skipWhile(AtChars);
+                        str.skipZeroOrMore(AtChars);
                     }));
                 } else {
                     push(str.tok(OTkPunctuation, skipCount, 1));
@@ -2916,7 +3018,7 @@ struct OrgLexer {
                     push(buf);
                     str = tmp;
                 } catch (UnexpectedCharError& err) {
-                    push(str.tok(OTkPunctuation, skipWhile, '$'));
+                    push(str.tok(OTkPunctuation, skipZeroOrMore, '$'));
                 }
                 break;
             }
@@ -2961,7 +3063,7 @@ struct OrgLexer {
                             push(str.tok(OTkSymbolStart, skipOne, '\\'));
                             push(str.tok(
                                 OTkIdent,
-                                skipWhile,
+                                skipZeroOrMore,
                                 charsets::IdentChars));
                             if (str.at('[')) {
                                 push(str.tok(
@@ -3131,7 +3233,7 @@ struct OrgLexer {
             auto       isAdd = false;
             const auto id    = str.slice([&isAdd](PosStr& str) {
                 str.skip(':');
-                str.skipWhile(charsets::IdentChars);
+                str.skipZeroOrMore(charsets::IdentChars);
                 if (str.at('+')) {
                     isAdd = true;
                 }
@@ -3173,7 +3275,7 @@ struct OrgLexer {
             push(Token(OTkText, str.popSlice().view));
             const auto id = str.slice([](PosStr& str) {
                 str.skip(':');
-                str.skipWhile(charsets::IdentChars);
+                str.skipZeroOrMore(charsets::IdentChars);
                 str.skip(':');
             });
             push(Token(OTkColonEnd, id.view));
@@ -3194,7 +3296,7 @@ struct OrgLexer {
 
             const auto id = str.slice([](PosStr& str) {
                 str.skip(':');
-                str.skipWhile(charsets::IdentChars);
+                str.skipZeroOrMore(charsets::IdentChars);
                 str.skip(':');
             });
 
@@ -3209,7 +3311,7 @@ struct OrgLexer {
             str.space();
             const auto id = str.slice([](PosStr& str) {
                 str.skip(':');
-                str.skipWhile(charsets::IdentChars);
+                str.skipZeroOrMore(charsets::IdentChars);
                 str.skip(':');
             });
 
@@ -3236,7 +3338,7 @@ struct OrgLexer {
                 }
             }
             if (!strEnded) {
-                str.skipWhile('\n');
+                str.skipZeroOrMore('\n');
             }
         }
     }
@@ -3244,7 +3346,7 @@ struct OrgLexer {
     void lexSubtreeTodo(PosStr& str) {
         auto tmp = str;
         tmp.pushSlice();
-        tmp.skipWhile(charsets::HighAsciiLetters);
+        tmp.skipZeroOrMore(charsets::HighAsciiLetters);
         if (tmp.at(' ')) {
             push(tmp.popTok(OTkSubtreeTodoState));
             str = tmp;
@@ -3256,7 +3358,7 @@ struct OrgLexer {
             str.pushSlice();
             str.next(2);
             str.skip(charsets::HighAsciiLetters);
-            str.skipWhile(charsets::HighAsciiLetters);
+            str.skipZeroOrMore(charsets::HighAsciiLetters);
             str.skip(']');
             push(str.popTok(OTkSubtreeUrgency));
             str.space();
@@ -3340,7 +3442,7 @@ struct OrgLexer {
             auto times = str;
             times.space();
             const auto tag = times.slice(
-                skipWhile, charsets::HighAsciiLetters);
+                skipZeroOrMore, charsets::HighAsciiLetters);
 
             if (Vec<Str>{R"(deadline)", R"(closed)", R"(scheduled)"}
                     .contains(normalize(tag.toStr()))) {
@@ -3361,7 +3463,7 @@ struct OrgLexer {
     }
 
     void lexSubtree(PosStr& str) {
-        push(str.tok(OTkSubtreeStars, skipWhile, '*'));
+        push(str.tok(OTkSubtreeStars, skipZeroOrMore, '*'));
         str.skip(' ');
         str.space();
         lexSubtreeTodo(str);
@@ -3391,7 +3493,9 @@ struct OrgLexer {
                         tmp.tok(OTkDoubleAngleOpen, skipOne, R"(<<)"));
                     if (tmp.at(charsets::IdentChars)) {
                         tmpRes.push_back(tmp.tok(
-                            OTkIdent, skipWhile, charsets::IdentChars));
+                            OTkIdent,
+                            skipZeroOrMore,
+                            charsets::IdentChars));
                     } else {
                         failedAt = tmp.pos;
                         break;
@@ -3426,7 +3530,7 @@ struct OrgLexer {
                 push(str.tok(OTkColon, skipOne, ":"));
                 push(str.tok(
                     OTkIdent,
-                    skipWhile,
+                    skipZeroOrMore,
                     cr(charsets::IdentChars + CharSet{'-'})));
                 push(str.tok(OTkParClose, skipOne, ')'));
 
@@ -3533,14 +3637,14 @@ struct OrgLexer {
                     case '-': {
                         push(str.tok(
                             OTkCommandFlag,
-                            skipWhile,
+                            skipZeroOrMore,
                             cr(CharSet{'-'} + charsets::IdentChars)));
                         break;
                     }
                     case ':': {
                         push(str.tok(
                             OTkCommandKey,
-                            skipWhile,
+                            skipZeroOrMore,
                             cr(charsets::IdentChars + CharSet{'-', ':'})));
                         break;
                     }
@@ -3620,8 +3724,8 @@ struct OrgLexer {
             }
             case ockCall: {
                 str.space();
-                push(
-                    str.tok(OTkCallName, skipWhile, charsets::IdentChars));
+                push(str.tok(
+                    OTkCallName, skipZeroOrMore, charsets::IdentChars));
                 if (str.at('[')) {
                     push(str.tok(
                         OTkCallInsideHeader, skipBalancedSlice, '[', ']'));
@@ -3634,7 +3738,8 @@ struct OrgLexer {
                 break;
             }
             case ockBeginSrc: {
-                push(str.tok(OTkWord, skipWhile, charsets::IdentChars));
+                push(str.tok(
+                    OTkWord, skipZeroOrMore, charsets::IdentChars));
                 str.space();
                 lexKeyValue(str);
                 break;
@@ -3645,7 +3750,8 @@ struct OrgLexer {
                 break;
             }
             case ockBeginDynamic: {
-                push(str.tok(OTkWord, skipWhile, charsets::IdentChars));
+                push(str.tok(
+                    OTkWord, skipZeroOrMore, charsets::IdentChars));
                 str.space();
                 lexKeyValue(str);
                 break;
@@ -3726,67 +3832,65 @@ struct OrgLexer {
             default: {
                 assert(false);
                 // throw newUnexpectedKindError(kind, toStr(str));
-                push(str, OTkRawText, str.skipPastEof(););
+                push(str.tok(OTkRawText, skipPastEOF));
             }
         }
 
         push(str.fakeTok(wrapEnd));
-        return result;
     }
 
     void lexCommandBlock(PosStr& str) {
-        const auto column = str.column;
-        push(str.initAdvanceTok(2, OTkCommandPrefix));
-        const auto id = str.asSlice(str.skipWhile(OCommandChars););
-        if (id.strValNorm().startsWith(R"(begin)")) {
-            push(initTok(id, OTkCommandBegin));
-            const auto sectionName = id.strVal().normalize().dropPrefix(
-                R"(begin)");
-            const auto kind = id.strVal().classifyCommand();
-            if (((kind) == (ockBeginDynamic))) {
+        const auto column = str.getColumn();
+        push(str.tok(OTkCommandPrefix, skipOne, "#+"));
+        const auto id = str.slice(skipZeroOrMore, OCommandChars);
+        if (normalize(id.toStr()).startsWith("begin")) {
+            push(Token(OTkCommandBegin, id.view));
+            const auto sectionName = normalize(id.toStr())
+                                         .dropPrefix("begin");
+            const auto kind = classifyCommand(id.toStr());
+            if (kind == ockBeginDynamic) {
                 str.skip(':');
             }
             str.space();
-            auto arguments = str.asSlice(str.skipPastEol(), -2);
-            push(lexCommandArguments(arguments, kind));
+            auto arguments = str.slice({0, -2}, skipPastEOL);
+            lexCommandArguments(arguments, kind);
             auto found = false;
             str.pushSlice();
             while (!found && !str.finished()) {
-                while (!str.finished()
-                       && !(str.column == column && str.at(R"(#+)"))) {
+                while (
+                    !str.finished()
+                    && !(str.getColumn() == column && str.at(R"(#+)"))) {
                     str.next();
                 }
                 assert(!str.finished());
-                const auto   prefix = str.asSlice(str.next(2));
-                const PosStr id     = str.asSlice(
-                    str.skipWhile(OCommandChars));
-                if (id.strVal().normalize() == (R"(end)" + sectionName)) {
+                const auto   prefix = str.slice(skipCount, 2);
+                const PosStr id = str.slice(skipZeroOrMore, OCommandChars);
+                if (normalize(id.toStr()) == "end" + sectionName) {
                     found      = true;
                     auto slice = str.popSlice(
-                        (-((((((1) + (id.strVal().len()))) + (3))))));
-                    push(slice.lexCommandContent(kind));
-                    push(Token(OTkCommandPrefix, prefix));
-                    push(Token(OTkCommandEnd, id));
+                        (-((((1 + id.size()) + (3))))));
+                    lexCommandContent(slice, kind);
+                    push(Token(OTkCommandPrefix, prefix.view));
+                    push(Token(OTkCommandEnd, id.view));
                 }
             }
             if (kind == ockBeginDynamic) {
                 str.skip(':');
             }
         } else {
-            push(initTok(id, OTkLineCommand));
-            push(str.initAdvanceTok(1, OTkColon, {':'}));
+            push(Token(OTkLineCommand, id.view));
+            push(str.tok(OTkColon, skipOne, ':'));
             str.space();
-            auto args = str.asSlice(str.skipToEol(););
-            push(lexCommandArguments(args, id.strVal().classifyCommand()));
+            auto args = str.slice(skipToEOL);
+            lexCommandArguments(args, classifyCommand(id.toStr()));
             if (!str.finished()) {
                 str.skip('\n');
             }
         }
-        return result;
     }
 
     bool isFirstOnLine(PosStr& str) {
-        const auto set = charsets::Newline + {'\x00'};
+        const auto set = charsets::Newline + CharSet{'\0'};
         if (str.at(set, -1)) {
             return true;
         }
@@ -3802,19 +3906,19 @@ struct OrgLexer {
     `CLOCK:` entry.
     */
     bool atLogClock(PosStr& str) {
-        bool       result;
-        const auto ahead = str.getAllFromPos(stopChars = {'['});
-        const auto space = ahead.find('C');
+        const auto ahead = str.slice(skipTo, '[');
+        const auto space = ahead.getSkip('C');
         if (0 <= space) {
-            for (const auto ch : ahead[rangeExcl(0, space)]) {
+            for (const auto ch : ahead[slice(0, space - 1)].view) {
                 if (ch != ' ') {
                     return false;
                 }
             }
-            const auto content = ahead[rangeIncl(space, backIdx(1))];
-            result             = content.startsWith(R"(CLOCK:)");
+
+            return ahead[slice(space, 1_B)].at("CLOCK:");
+        } else {
+            return false;
         }
-        return result;
     }
 
     /*!Check if string is positioned at the start of toplevel language
@@ -3844,6 +3948,9 @@ struct OrgLexer {
         Vec<Flag> flagStack;
         Vec<int>  indent; /// Indentation steps encountered by the lexer
                           /// state
+        /*!Check if state has any indentation levels stored
+         */
+        bool hasIndent() { return 0 < indent.size(); }
 
         enum LexerIndentKind
         {
@@ -3856,40 +3963,98 @@ struct OrgLexer {
                            /// determine (e.g. is inside of a identifier or
                            /// at the start of the line)
         };
+
+
+        /// Get total indentation level from the state
+        int getIndent() const {
+            int result;
+            for (const auto& level : indent) {
+                result += level;
+            }
+            return result;
+        }
+
+        void addIndent(int ind) { indent.push_back(ind); }
+
+        int popIndent() { return indent.pop_back_v(); }
+
+        /// Skip all indentation levels in the lexer - consume leading
+        /// whitespaces and calculate list of the indentation level
+        /// changes.
+        ///
+        /// NOTE: indentation calculations are independent from the actual
+        /// column values and are only based on the actual spaces used in
+        /// the input.
+        Vec<LexerIndentKind> skipIndent(PosStr& str) {
+            Vec<LexerIndentKind> result;
+            if (str.at(charsets::Newline)) {
+                str.next();
+            }
+
+            int skip = 0;
+            while (str.at(charsets::HorizontalSpace, skip)) {
+                ++skip;
+            }
+
+            str.next(skip);
+            if (str.at(charsets::Newline)) {
+                result.push_back(likEmptyLine);
+            } else {
+                const int now = getIndent();
+                if (skip == now) {
+                    result.push_back(likSameIndent);
+                } else if (now < skip) {
+                    result.push_back(likIncIndent);
+                    // add single indentation level;
+                    addIndent(skip - now);
+                } else if (skip < now) { // indentation level decreased
+                                         // from the current one - pop all
+                    // indentation levels until it will be the same.
+                    while (skip < getIndent()) {
+                        popIndent();
+                        result.push_back(likDecIndent);
+                    }
+                }
+            }
+
+            return result;
+        }
     };
 
 
-    using HsLexerStateSimple = HsLexerState<void>;
-
+    using HsLexerStateSimple = HsLexerState<char>;
 
     void skipIndents(HsLexerStateSimple& state, PosStr& str) {
+        using LK           = HsLexerStateSimple::LexerIndentKind;
         const auto skipped = state.skipIndent(str);
         for (const auto indent : skipped) {
             switch (indent) {
-                case likIncIndent: {
+                case LK::likIncIndent: {
                     push(str.fakeTok(OTkIndent));
                     break;
                 }
-                case likDecIndent: {
+                case LK::likDecIndent: {
                     push(str.fakeTok(OTkDedent));
                     break;
                 }
-                case likSameIndent: {
+                case LK::likSameIndent: {
                     push(str.fakeTok(OTkSameIndent));
                     break;
                 }
-                case likNoIndent: {
+                case LK::likNoIndent: {
                     push(str.fakeTok(OTkNoIndent));
                     break;
                 }
-                case likEmptyLine: {
+                case LK::likEmptyLine: {
                     assert(false);
                     break;
                 }
             }
         }
-        return result;
     }
+
+    const CharSet ListStart = CharSet{'-', '+', '*'} + charsets::Digits
+                            + charsets::AsciiLetters;
 
     /*!Attempt to parse list start dash
      */
@@ -3899,6 +4064,8 @@ struct OrgLexer {
             return {};
         }
         auto tmp = str;
+
+
         if (tmp.at(CharSet{'-', '+'})
             || (0 < tmp.getIndent()) && tmp.at('*')) {
             result.push_back(tmp.tok(OTkListDash, skipOne, ListStart));
@@ -3909,10 +4076,10 @@ struct OrgLexer {
             tmp.space();
         } else if (tmp.at(charsets::Digits + charsets::AsciiLetters)) {
             result.push_back(tmp.tok(OTkListDash, [](PosStr& str) {
-                if (tmp.at(charsets::Digits + charsets::AsciiLetters)) {
-                    tmp.next();
+                if (str.at(charsets::Digits + charsets::AsciiLetters)) {
+                    str.next();
                 } else {
-                    return {};
+                    return;
                 }
             }));
 
@@ -3947,17 +4114,23 @@ struct OrgLexer {
 
     bool listAhead(PosStr& str) {
         bool result;
-        if (!str.isFirstOnLine()) {
+        if (!isFirstOnLine(str)) {
             return false;
         }
 
-        const auto init = toStr(str);
-        auto       str  = str;
-        str.space();
-        if (str.at(ListStart)) {
-            result = !tryListStart(str).empty();
+        const auto init = str.toStr();
+        auto       tmp  = str;
+        tmp.space();
+        if (tmp.at(ListStart)) {
+            if (tryListStart(tmp).empty()) {
+                return false;
+            } else {
+                str = tmp;
+                return true;
+            }
+        } else {
+            return false;
         }
-        return result;
     }
 
     /*!Lex head starting from current position onwards. `indent` is the
@@ -3979,134 +4152,136 @@ indentation of the original list prefix -- dash, number or letter.
         //
         {
             auto tmp = str;
-            auto buf = (@(
-                {initFakeTok(tmp, OTkListDescOpen),
-                 initFakeTok(tmp, OTkParagraphStart)}));
-            while (((notEmpty(tmp)) && ((!(tmp[Newline]))))) {
-                if (((tmp[':']) && (tmp[R"(::)"]))) {
-                    buf.add(initFakeTok(tmp, OTkParagraphEnd));
-                    buf.add(initFakeTok(tmp, OTkListDescClose));
-                    buf.logAddTok(tmp, OTkDoubleColon, tmp.skip(R"(::)"););
+            auto buf = Vec<OrgToken>{
+                tmp.fakeTok(OTkListDescOpen),
+                tmp.fakeTok(OTkParagraphStart)};
+
+            while (!tmp.finished() && !tmp.at(charsets::Newline)) {
+                if (tmp.at(':') && tmp.at("::")) {
+                    buf.push_back(tmp.fakeTok(OTkParagraphEnd));
+                    buf.push_back(tmp.fakeTok(OTkListDescClose));
+                    buf.push_back(tmp.tok(OTkDoubleColon, skipOne, "::"));
                     str = tmp;
-                    ;
                     push(buf);
                     break;
-                    ;
                 } else {
-                    buf.add(lexText(tmp));
+                    setBuffer(&buf);
+                    lexText(tmp);
+                    clearBuffer();
                 }
             }
         }
-        str.startSlice();
+
+        str.pushSlice();
         auto atEnd = false;
-        while (((!str.finished()) && ((!(atEnd))))) {
-            if (str.atLogClock()) {
+        while (!str.finished() && !atEnd) {
+            if (atLogClock(str)) {
                 str.next();
                 atEnd = true;
-            } else if (((str.atConstructStart())
-                        && (((str.getIndent()) <= (indent))))) {
+            } else if (
+                atConstructStart(str) && (str.getIndent() <= indent)) {
                 atEnd = true;
-            } else if (str.listAhead(lexConf)) {
+            } else if (listAhead(str)) {
                 atEnd = true;
             } else {
                 //
                 {
                     auto testTwoSpace = str;
                     testTwoSpace.space();
-                    if (testTwoSpace[Newline]) {
+                    if (testTwoSpace.at(charsets::Newline)) {
                         testTwoSpace.next();
                         testTwoSpace.space();
-                        if (testTwoSpace[Newline]) {
+                        if (testTwoSpace.at(charsets::Newline)) {
                             atEnd = true;
                         }
                     }
                 }
                 if (!atEnd) {
                     auto testIndent = str;
-                    testIndent.skipPastEol();
+                    testIndent.skipPastEOL();
                     while (testIndent.trySkipEmptyLine()) {}
-                    if (((testIndent.getIndent()) < (indent))) {
+                    if (testIndent.getIndent() < indent) {
                         atEnd = true;
-                    } else if (((((testIndent.getIndent()) == (indent)))
-                                && ((!(str.listAhead(lexConf)))))) {
+                    } else if (
+                        testIndent.getIndent() == indent
+                        && !listAhead(str)) {
                         atEnd = true;
                     }
-                    str.skipPastEol();
+                    str.skipPastEOL();
                 }
             }
         }
 
         auto slice = str.popSlice(-1);
-        while (((str.atAbsolute(slice.absEnd())) == ('\n'))) {
-            slice.decEnd();
+        while (str.view.at(slice.view.size()) == '\n') {
+            slice.view.remove_suffix(1);
         }
 
-        push(str.initTok(slice, OTkStmtList));
-        push(str.initTok(OTkListItemEnd));
-        return result;
+        push(Token(OTkStmtList, slice.view));
+        push(str.fakeTok(OTkListItemEnd));
     }
 
     void lexListItems(PosStr& str, HsLexerStateSimple& state) {
-
         assert(!str.at('\n'));
         while (listAhead(str) || atLogClock(str)) {
-            assert(!at.get('\n'));
-            if (str.atLogClock()) {
-                push(str.initFakeTok(OTkListClock));
-                str.startSlice();
-                str.skipToEol();
+            assert(!str.at('\n'));
+            if (atLogClock(str)) {
+                push(str.fakeTok(OTkListClock));
+                str.pushSlice();
+                str.skipToEOL();
                 auto slice = str.popSlice();
-                push(lexParagraph(slice));
+                lexParagraph(slice);
                 str.next();
-                push(str.initFakeTok(OTkListItemEnd));
+                push(str.fakeTok(OTkListItemEnd));
             } else {
-                push(state.skipIndents(str));
-                const auto indent = str.column;
+                skipIndents(state, str);
+                const auto indent = str.getColumn();
                 auto       tmp    = str;
                 const auto tokens = tryListStart(tmp);
                 if (tokens.empty()) {
-                    push(lexParagraph(str));
+                    lexParagraph(str);
                 } else {
                     str = tmp;
                     push(tokens);
-                    push(lexListItem(str, indent, state));
+                    lexListItem(str, indent, state);
                 }
             }
         }
-        str.skipToEol();
-        return result;
+        str.skipToEOL();
     }
 
     void lexList(PosStr& str) {
-        auto state = newLexerState();
-        push(str.initFakeTok(OTkListStart));
-        const auto tokens = str.lexListItems(state);
-        if (!(tokens[0].kind == OTkSameIndent)) {
+        auto state = HsLexerStateSimple();
+        push(str.fakeTok(OTkListStart));
+        Vec<OrgToken> tokens;
+        setBuffer(&tokens);
+        lexListItems(str, state);
+        clearBuffer();
+        if (tokens[0].kind != OTkSameIndent) {
             push(tokens[0]);
         }
-        push(tokens[slice(1, backIdx(1))]);
+        push(tokens[slice(1, 1_B)]);
         while (state.hasIndent()) {
             state.popIndent();
-            push(str.initFakeTok(OTkDedent));
+            push(str.fakeTok(OTkDedent));
         }
-        push(str.initFakeTok(OTKListEnd));
-        return result;
+        push(str.fakeTok(OTkListEnd));
     }
 
     void lexParagraph(PosStr& str) {
         const auto indent = str.getIndent();
         auto       ended  = false;
-        str.startSlice();
+        str.pushSlice();
         while (!str.finished() && !ended) {
             if (str.getIndent() == indent
-                && (str.atConstructStart() || str.listAhead(lexConf))) {
+                && (atConstructStart(str) || listAhead(str))) {
                 ended = true;
             } else if (str.at('\n')) {
                 str.next();
                 if (str.finished()) {
                     ended = true;
                 } else {
-                    if (str.at(TextLineChars)) {
+                    if (str.at(charsets::TextLineChars)) {
                     } else if (str.at('\n')) {
                         str.next();
                         ended = true;
@@ -4120,20 +4295,26 @@ indentation of the original list prefix -- dash, number or letter.
                 str.next();
             }
         }
-        const auto slice = str.popSlice(tern(
-            ended,
-            tern(
-                !str.finished(), tern(str.atConstructStart(), -1, -3), -2),
-            -1));
-        const auto tok   = str.initTok(slice, OTkText);
-        push(tok);
-        return result;
+
+        int endOffset = -1;
+        if (ended) {
+            // last trailing newline and pargraph separator newline
+            if (!str.finished()) {
+                if (atConstructStart(str)) {
+                    endOffset = -1;
+                } else {
+                    endOffset = -3;
+                }
+            } else {
+                endOffset = -2;
+            }
+        }
+
+        const auto slice = str.popSlice(endOffset);
+        push(Token(OTkText, slice.view));
     }
 
-    void lexComment(PosStr& str) {
-        push(str.tok(OTkComment, skipToEOL));
-        return result;
-    }
+    void lexComment(PosStr& str) { push(str.tok(OTkComment, skipToEOL)); }
 };
 
 

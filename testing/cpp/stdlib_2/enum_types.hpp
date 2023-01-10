@@ -1,3 +1,6 @@
+#include <unordered_map>
+#include <string>
+
 enum OrgHorizontalDirection : short int
 {
     ohdNone,   /*! No specific positioning requirements */
@@ -1197,3 +1200,61 @@ enum OrgCommandKind
     /*!`#+header:`
      */
 };
+
+
+const auto commandNameMap = std::
+    unordered_map<std::string, OrgCommandKind>{
+        {"begin", ockBeginDynamic},
+        {"end", ockEndDynamic},
+
+        {"beginsrc", ockBeginSrc},
+        {"endsrc", ockEndSrc},
+
+        {"beginquote", ockBeginQuote},
+        {"endquote", ockEndQuote},
+
+        {"beginexample", ockBeginExample},
+        {"endexample", ockEndExample},
+
+        {"beginexport", ockBeginExport},
+        {"endexport", ockEndExport},
+
+        {"begintable", ockBeginTable},
+        {"endtable", ockEndTable},
+
+        {"begincenter", ockBeginCenter},
+        {"endcenter", ockEndCenter},
+
+        {"title", ockTitle},
+        {"include", ockInclude},
+        {"language", ockLanguage},
+        {"caption", ockCaption},
+        {"name", ockName},
+        {"attrimg", ockAttrImg},
+        {"author", ockAuthor},
+        {"bind", ockBind},
+        {"creator", ockCreator},
+        {"filetags", ockFiletags},
+
+        {"htmlhead", ockHtmlHead},
+        {"attrhtml", ockAttrHtml},
+
+        {"row", ockRow},
+        {"cell", ockCell},
+        {"header", ockHeader},
+        {"options", ockOptions},
+        {"property", ockProperty},
+        {"columns", ockColumns},
+        {"results", ockResults},
+        {"call", ockCall},
+        {"latexclass", ockLatexClass},
+        {"latexcompiler", ockLatexCompiler},
+        {"latexclassoptions", ockLatexClassOptions},
+        {"beginadmonition", ockBeginAdmonition},
+        {"endadmonition", ockEndAdmonition},
+        {"latexheader", ockLatexHeader},
+    };
+
+OrgCommandKind classifyCommand(std::string const& command) {
+    return commandNameMap.at(command);
+}

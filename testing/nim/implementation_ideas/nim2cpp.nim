@@ -835,7 +835,7 @@ for file in walkDir(
      ]):
     continue
 
-  if ["hlex_base", "haxorg"] notin file.string:
+  if ["hlex_base", "haxorg", "hparse_base"] notin file.string:
     continue
 
   conv(root / file, withExt(res / file, "cpp"))
