@@ -1,17 +1,48 @@
 version: 3
 tasks:
-  test_grammar:
-    desc: "Run test grammar execution"
+  generate_grammar:
     cmds:
-      - antlr4 -Dlanguage=Cpp -visitor -o test_grammar_build test_grammar.g4
+      - antlr4 -Dlanguage=Cpp -visitor -o {{.grammar_name}}_build {{.grammar_name}}.g4
+
+
+  compile_grammar:
+    cmds:
       - >
         clang++
         -std=c++20
         -g
         -l antlr4-runtime
         -I/usr/include/antlr4-runtime/
-        -o test_grammar_build.bin
-        test_grammar_build/*.cpp
-        test_grammar_user.cpp
+        -ferror-limit=1
+        -o {{.grammar_name}}_build.bin
+        {{.grammar_name}}_build/*.cpp
+        {{.grammar_name}}_user.cpp
+
+  generate_and_compile:
+    cmds:
+      - task: generate_grammar
+        vars:
+          grammar_name: "{{.grammar_name}}"
+
+      - task: compile_grammar
+        vars:
+          grammar_name: "{{.grammar_name}}"
+
+  test_grammar:
+    desc: "Run test grammar execution"
+    cmds:
+      - task: generate_and_compile
+        vars:
+          grammar_name: "test_grammar"
 
       - ./test_grammar_build.bin test_grammar_input.txt
+
+
+  custom_lexer:
+    desc: "Run test grammar execution"
+    cmds:
+      - task: generate_and_compile
+        vars:
+          grammar_name: "custom_lexer"
+
+      - ./custom_lexer_build.bin custom_lexer_input.txt
