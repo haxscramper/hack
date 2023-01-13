@@ -37,7 +37,7 @@ tasks:
     cmds:
       - task: generate_and_compile
         vars:
-          grammar_name: "test_grammar"
+          grammar_name: "{{.grammar_name}}"
 
       - task: run_debug
         vars:
@@ -56,3 +56,10 @@ tasks:
       - task: full_cycle
         vars:
           grammar_name: "custom_lexer"
+
+  flat_vs_structured_fallback:
+    desc: "Run test grammar execution"
+    cmds:
+      - task: full_cycle
+        vars:
+          grammar_name: "FSFallback"

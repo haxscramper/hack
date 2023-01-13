@@ -7,7 +7,7 @@
 
 using namespace antlr4;
 
-class MyParserErrorListener : public antlr4::BaseErrorListener {
+class ErrorListener : public antlr4::BaseErrorListener {
     virtual void syntaxError(
         Recognizer*        recognizer,
         Token*             offendingSymbol,
@@ -59,7 +59,7 @@ void treeRepr(
             Token* start     = parserContext->getStart();
             Token* end       = parserContext->getStart();
 
-            os <<                                     //
+            os << "N " <<                             //
                 start->getLine() << ":" <<            //
                 start->getCharPositionInLine() <<     //
                 std::string(2 * level, ' ') << " " << //
@@ -80,17 +80,75 @@ void treeRepr(
             std::string_view       name       = vocabulary.getSymbolicName(
                 tok->getType());
             if (name.size() == 0) {
+                // for anonymous tokens use the literal value name
                 name = vocabulary.getLiteralName(tok->getType());
             }
 
-            os << tok->getLine() << ":" << tok->getCharPositionInLine()
-               << std::string(2 * level, ' ') << name << " '"
-               << escapeLiteral(tree->getText()) << "'";
+            os
+                // token index
+                << "T [" << tok->getTokenIndex()
+                << "]"
+                // line start position
+                << tok->getLine()
+                // column position on the line
+                << ":" << tok->getCharPositionInLine()
+                << ".."
+                // end column (not exactly correct for tokens that span
+                // multiple lines but I don't think I can track the ed
+                // column of the token)
+                << (tok->getCharPositionInLine()
+                    + (tok->getStopIndex() - tok->getStartIndex()))
+                // indentation
+                << std::string(2 * level, ' ')
+                // best-guess name
+                << name
+                << " "
+                // cleaned up literal value
+                << escapeLiteral(tree->getText());
             break;
         }
         case tree::ParseTreeType::ERROR: {
-            os << " ERROR";
+            os << "E ERROR";
             break;
         }
     }
+}
+
+template <typename Parse, typename ResultContext>
+int executeParser(
+    Parse& parser,
+    Lexer& lexer,
+    // Using separate generic parameter because start fuction always
+    // returns its own type, derived from the ParserRuleContext (which in
+    // turns is derived from the ParseTree)
+    ResultContext* (Parse::*startFunction)()) {
+    parser.removeErrorListeners();
+    parser.addErrorListener(new ErrorListener());
+    try {
+        tree::ParseTree* tree = (parser.*startFunction)();
+        std::cout << tree->toStringTree() << std::endl;
+        treeRepr(std::cout, parser, lexer, tree, 0);
+        std::cout << "\ndone" << std::endl;
+        return 0;
+    } catch (std::invalid_argument& e) {
+        std::cout << e.what() << std::endl;
+        return 10;
+    }
+}
+
+template <typename Lexer, typename Parser, typename ResultContext>
+int fullCycle(
+    int    argc,
+    char** argv,
+    ResultContext* (Parser::*startFunction)()) {
+    std::ifstream file{};
+    file.open(argv[1]);
+    ANTLRInputStream  input{file};
+    Lexer             lexer{&input};
+    CommonTokenStream tokens{&lexer};
+
+    tokens.fill();
+
+    Parser parser{&tokens};
+    return executeParser(parser, lexer, startFunction);
 }

@@ -182,21 +182,8 @@ int main(int argc, char* argv[]) {
     CustomLexer       custom{&lexer, buffer.data(), buffer.size()};
     CommonTokenStream tokens{&custom};
 
-    MyParserErrorListener errorListner;
-
     tokens.fill();
 
     custom_lexerParser parser{&tokens};
-    parser.removeErrorListeners();
-    parser.addErrorListener(&errorListner);
-    try {
-        tree::ParseTree* tree = parser.main();
-        std::cout << tree->toStringTree() << std::endl;
-        treeRepr(std::cout, parser, lexer, tree, 0);
-        std::cout << "\ndone" << std::endl;
-        return 0;
-    } catch (std::invalid_argument& e) {
-        std::cout << e.what() << std::endl;
-        return 10;
-    }
+    executeParser(parser, &custom_lexerParser::main);
 }
