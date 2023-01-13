@@ -3,6 +3,7 @@
 #include <string>
 
 #include "antlr4-runtime.h"
+#include <tree/TerminalNode.h>
 
 using namespace antlr4;
 
@@ -22,9 +23,28 @@ class MyParserErrorListener : public antlr4::BaseErrorListener {
 };
 
 
+std::string escapeLiteral(std::string const& in) {
+    std::string res;
+    res.reserve(in.size() + 2);
+    res += "«";
+    for (char c : in) {
+        if (c == '\n') {
+            res += "␤";
+
+        } else {
+            res += c;
+        }
+    }
+
+    res += "»";
+
+    return res;
+}
+
 void treeRepr(
     std::ostream&    os,
     const Parser&    parser,
+    const Lexer&     lexer,
     tree::ParseTree* tree,
     int              level) {
 
@@ -47,13 +67,25 @@ void treeRepr(
 
             for (int i = 0; i < tree->children.size(); ++i) {
                 std::cout << "\n";
-                treeRepr(os, parser, tree->children.at(i), level + 1);
+                treeRepr(
+                    os, parser, lexer, tree->children.at(i), level + 1);
             }
             break;
         }
         case tree::ParseTreeType::TERMINAL: {
-            os << std::string(2 * level + 2, ' ') << " '"
-               << tree->getText() << "'";
+            auto terminal = dynamic_cast<tree::TerminalNode*>(tree);
+            assert(terminal != nullptr);
+            dfa::Vocabulary const& vocabulary = lexer.getVocabulary();
+            Token*                 tok        = terminal->getSymbol();
+            std::string_view       name       = vocabulary.getSymbolicName(
+                tok->getType());
+            if (name.size() == 0) {
+                name = vocabulary.getLiteralName(tok->getType());
+            }
+
+            os << tok->getLine() << ":" << tok->getCharPositionInLine()
+               << std::string(2 * level, ' ') << name << " '"
+               << escapeLiteral(tree->getText()) << "'";
             break;
         }
         case tree::ParseTreeType::ERROR: {

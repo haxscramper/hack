@@ -28,21 +28,31 @@ tasks:
         vars:
           grammar_name: "{{.grammar_name}}"
 
-  test_grammar:
+  run_debug:
+    cmds:
+      - "{{.EXPR}} || rr record {{.EXPR}}"
+
+  full_cycle:
     desc: "Run test grammar execution"
     cmds:
       - task: generate_and_compile
         vars:
           grammar_name: "test_grammar"
 
-      - ./test_grammar_build.bin test_grammar_input.txt
+      - task: run_debug
+        vars:
+          EXPR: "./{{.grammar_name}}_build.bin {{.grammar_name}}_input.txt"
 
+  test_grammar:
+    desc: "Run test grammar execution"
+    cmds:
+      - task: full_cycle
+        vars:
+          grammar_name: "test_grammar"
 
   custom_lexer:
     desc: "Run test grammar execution"
     cmds:
-      - task: generate_and_compile
+      - task: full_cycle
         vars:
           grammar_name: "custom_lexer"
-
-      - ./custom_lexer_build.bin custom_lexer_input.txt

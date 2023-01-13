@@ -49,7 +49,7 @@ int main(int argc, char* argv[]) {
     try {
         tree::ParseTree* tree = parser.main();
         std::cout << tree->toStringTree() << std::endl;
-        treeRepr(std::cout, parser, tree, 0);
+        treeRepr(std::cout, parser, lexer, tree, 0);
         std::cout << "\ndone" << std::endl;
         return 0;
     } catch (std::invalid_argument& e) {

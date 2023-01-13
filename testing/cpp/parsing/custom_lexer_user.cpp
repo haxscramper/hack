@@ -94,17 +94,14 @@ struct CustomLexer : Lexer {
     void next(int offset = 1) { pos += offset; }
 
     bool has(int offset) {
-        return 0 <= offset + pos && offset + pos < view.size();
+        return (0 <= offset + pos) && (offset + pos < view.size());
     }
 
     std::unique_ptr<TToken<OrgTokenKind>> token(OrgTokenKind kind) {
         int start = popSlice();
 
         auto res_view = std::string_view(view.data() + start, pos - start);
-
-        std::cout << "Creating token '" << getRuleNames()[kind]
-                  << "' value " << res_view << "\n";
-
+        const auto names = getRuleNames();
         return std::make_unique<TToken<OrgTokenKind>>(
             kind, index, view.data(), res_view);
         ++index;
@@ -118,20 +115,18 @@ struct CustomLexer : Lexer {
     void pushSlice() { sliceStarts.push_back(pos); }
 
     std::unique_ptr<Token> nextToken() override {
+        pushSlice();
         if (!has(0)) {
             return token(OTkEOF);
         }
 
-        std::cout << "get next token from pos '" << get() << "' " << pos
-                  << "\n";
-        pushSlice();
-
         switch (get()) {
             case '*': {
-                next();
                 if (!has(-1) || get(-1) == ' ') {
+                    next();
                     return token(OTkBoldOpen);
                 } else {
+                    next();
                     return token(OTkBoldClose);
                 }
             }
@@ -176,11 +171,10 @@ struct CustomLexer : Lexer {
 int main(int argc, char* argv[]) {
     std::ifstream file{argv[1]};
     file.seekg(0, std::ios::end);
-    const auto  size = file.tellg();
+    const int   size = file.tellg();
     std::string buffer(size, ' ');
     file.seekg(0);
     file.read(&buffer[0], size);
-
 
     ANTLRInputStream  input{file};
     custom_lexerLexer lexer{&input};
@@ -198,7 +192,7 @@ int main(int argc, char* argv[]) {
     try {
         tree::ParseTree* tree = parser.main();
         std::cout << tree->toStringTree() << std::endl;
-        treeRepr(std::cout, parser, tree, 0);
+        treeRepr(std::cout, parser, lexer, tree, 0);
         std::cout << "\ndone" << std::endl;
         return 0;
     } catch (std::invalid_argument& e) {
