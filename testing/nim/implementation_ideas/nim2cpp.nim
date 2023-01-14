@@ -814,6 +814,10 @@ proc conv(ffrom, fto: AbsFile) =
     echov "wrote", fto
 
 conv(ffrom = AbsFile"/tmp/test.nim", fto = AbsFile"/tmp/test.cpp")
+conv(
+  ffrom = AbsFile"/mnt/workspace/repos/nimskull/lib/experimental/text_layouter.nim",
+  fto = AbsFile"/tmp/text_layouter.cpp"
+)
 
 for file in walkDir(
     root,
