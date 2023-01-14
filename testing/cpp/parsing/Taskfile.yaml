@@ -67,7 +67,14 @@ tasks:
 
   flat_vs_structured_fallback:
     desc: "Run test grammar execution"
+    vars:
+      grammar: FSFallback
     cmds:
-      - task: full_cycle
+      - task: generate_grammar
         vars:
-          grammar_name: "FSFallback"
+          grammar_name: "{{.grammar}}"
+      - xmake config --grammar_name={{.grammar}} --file={{.grammar}}.lua
+      - xmake build --file={{.grammar}}.lua
+      # - task: run_debug
+      #   vars:
+      #     EXPR: "./{{.grammar}}_build.bin {{.grammar}}_input.txt"

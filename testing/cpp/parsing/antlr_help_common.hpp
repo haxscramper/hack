@@ -6,8 +6,13 @@
 
 #include "antlr4-runtime.h"
 #include <tree/TerminalNode.h>
+#include <termcolor/termcolor.hpp>
 
 using namespace antlr4;
+
+namespace tc {
+using namespace termcolor;
+};
 
 class ErrorListener : public antlr4::BaseErrorListener {
     virtual void syntaxError(
@@ -74,17 +79,18 @@ void treeRepr(
 
                 os << "N "
                    // line
+                   << tc::blue
                    << start->getLine()
                    // column
                    << ":" << std::setw(2) << std::left
-                   << start->getCharPositionInLine()
+                   << start->getCharPositionInLine() << tc::reset
                    << std::setw(0)
                    // separator
                    << " | "
                    // indent
                    << std::string(2 * level, ' ')
                    // name
-                   << " " << name;
+                   << tc::bright_green << name << tc::reset;
 
                 for (int i = 0; i < tree->children.size(); ++i) {
                     std::cout << "\n";
@@ -107,20 +113,22 @@ void treeRepr(
                     // token index
                     << "T "
                     // line start position
+                    << tc::blue
                     << tok->getLine()
                     // column position on the line
                     << ":" << std::left << std::setw(2)
-                    << tok->getCharPositionInLine()
+                    << tok->getCharPositionInLine() << tc::reset
                     << std::setw(0)
                     // Tree structure separator
                     << " | "
                     // indentation
                     << std::string(2 * level, ' ')
                     // best-guess name
-                    << name
+                    << tc::bright_cyan << name << tc::reset
                     << " "
                     // cleaned up literal value
-                    << escapeLiteral(tree->getText())
+                    << tc::yellow << escapeLiteral(tree->getText())
+                    << tc::reset
                     // Token start/end extent
                     << " " << tok->getStartIndex() << ".."
                     << tok->getStopIndex()

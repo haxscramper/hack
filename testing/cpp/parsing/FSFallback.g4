@@ -1,5 +1,4 @@
 grammar FSFallback;
-
 main : text+ EOF;
 text : structured_text | flat_text ;
 
