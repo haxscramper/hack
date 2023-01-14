@@ -57,6 +57,14 @@ tasks:
         vars:
           grammar_name: "custom_lexer"
 
+
+  simple_expression:
+    desc: "Run test grammar execution"
+    cmds:
+      - task: full_cycle
+        vars:
+          grammar_name: "Expression"
+
   flat_vs_structured_fallback:
     desc: "Run test grammar execution"
     cmds:

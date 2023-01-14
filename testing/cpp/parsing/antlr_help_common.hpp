@@ -1,5 +1,7 @@
 #include <iostream>
 #include <strstream>
+#include <iomanip>
+#include <functional>
 #include <string>
 
 #include "antlr4-runtime.h"
@@ -48,70 +50,95 @@ void treeRepr(
     tree::ParseTree* tree,
     int              level) {
 
-    tree::ParseTreeType type = tree->getTreeType();
-    switch (type) {
-        case tree::ParseTreeType::RULE: {
-            ParserRuleContext* parserContext = dynamic_cast<
-                ParserRuleContext*>(tree);
+    std::function<void(tree::ParseTree*, int)> aux;
+    dfa::Vocabulary const& vocabulary = lexer.getVocabulary();
+    const auto&            names      = parser.getRuleNames();
 
-            auto   ruleIndex = parserContext->getRuleIndex();
-            auto   name      = parser.getRuleNames()[ruleIndex];
-            Token* start     = parserContext->getStart();
-            Token* end       = parserContext->getStart();
-
-            os << "N " <<                             //
-                start->getLine() << ":" <<            //
-                start->getCharPositionInLine() <<     //
-                std::string(2 * level, ' ') << " " << //
-                name;
-
-            for (int i = 0; i < tree->children.size(); ++i) {
-                std::cout << "\n";
-                treeRepr(
-                    os, parser, lexer, tree->children.at(i), level + 1);
-            }
-            break;
-        }
-        case tree::ParseTreeType::TERMINAL: {
-            auto terminal = dynamic_cast<tree::TerminalNode*>(tree);
-            assert(terminal != nullptr);
-            dfa::Vocabulary const& vocabulary = lexer.getVocabulary();
-            Token*                 tok        = terminal->getSymbol();
-            std::string_view       name       = vocabulary.getSymbolicName(
-                tok->getType());
-            if (name.size() == 0) {
-                // for anonymous tokens use the literal value name
-                name = vocabulary.getLiteralName(tok->getType());
-            }
-
-            os
-                // token index
-                << "T [" << tok->getTokenIndex()
-                << "]"
-                // line start position
-                << tok->getLine()
-                // column position on the line
-                << ":" << tok->getCharPositionInLine()
-                << ".."
-                // end column (not exactly correct for tokens that span
-                // multiple lines but I don't think I can track the ed
-                // column of the token)
-                << (tok->getCharPositionInLine()
-                    + (tok->getStopIndex() - tok->getStartIndex()))
-                // indentation
-                << std::string(2 * level, ' ')
-                // best-guess name
-                << name
-                << " "
-                // cleaned up literal value
-                << escapeLiteral(tree->getText());
-            break;
-        }
-        case tree::ParseTreeType::ERROR: {
-            os << "E ERROR";
-            break;
-        }
+    int nameLen = 0;
+    for (const auto& name : names) {
+        nameLen = std::max<int>(nameLen, name.size());
     }
+
+    aux = [&](tree::ParseTree* tree, int level) {
+        tree::ParseTreeType type = tree->getTreeType();
+        switch (type) {
+            case tree::ParseTreeType::RULE: {
+                ParserRuleContext* parserContext = dynamic_cast<
+                    ParserRuleContext*>(tree);
+
+                auto   ruleIndex = parserContext->getRuleIndex();
+                auto   name      = names[ruleIndex];
+                Token* start     = parserContext->getStart();
+                Token* end       = parserContext->getStart();
+
+
+                os << "N "
+                   // line
+                   << start->getLine()
+                   // column
+                   << ":" << std::setw(2) << std::left
+                   << start->getCharPositionInLine()
+                   << std::setw(0)
+                   // separator
+                   << " | "
+                   // indent
+                   << std::string(2 * level, ' ')
+                   // name
+                   << " " << name;
+
+                for (int i = 0; i < tree->children.size(); ++i) {
+                    std::cout << "\n";
+                    aux(tree->children.at(i), level + 1);
+                }
+                break;
+            }
+            case tree::ParseTreeType::TERMINAL: {
+                auto terminal = dynamic_cast<tree::TerminalNode*>(tree);
+                assert(terminal != nullptr);
+                Token*           tok  = terminal->getSymbol();
+                std::string_view name = vocabulary.getSymbolicName(
+                    tok->getType());
+                if (name.size() == 0) {
+                    // for anonymous tokens use the literal value name
+                    name = vocabulary.getLiteralName(tok->getType());
+                }
+
+                os
+                    // token index
+                    << "T "
+                    // line start position
+                    << tok->getLine()
+                    // column position on the line
+                    << ":" << std::left << std::setw(2)
+                    << tok->getCharPositionInLine()
+                    << std::setw(0)
+                    // Tree structure separator
+                    << " | "
+                    // indentation
+                    << std::string(2 * level, ' ')
+                    // best-guess name
+                    << name
+                    << " "
+                    // cleaned up literal value
+                    << escapeLiteral(tree->getText())
+                    // Token start/end extent
+                    << " " << tok->getStartIndex() << ".."
+                    << tok->getStopIndex()
+                    // Token index
+                    << "[#" << tok->getTokenIndex() << "]";
+                break;
+            }
+            case tree::ParseTreeType::ERROR: {
+                os << "E ERROR";
+                break;
+            }
+        }
+    };
+
+    std::ios init{NULL};
+    init.copyfmt(os);
+    aux(tree, level);
+    os.copyfmt(init);
 }
 
 template <typename Parse, typename ResultContext>

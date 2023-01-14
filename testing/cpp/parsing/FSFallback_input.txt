@@ -1,1 +1,4 @@
-1 + 2 + 3 * 12 / 2
+<t>REGULAR</t>
+<t><b>BOLD</b></t>
+<t><b><i>ITALIC BOLD SPACE</i></b></t>
+<t><b>UNBALANCED<b><i>MORE UNBALANCED<i></t>

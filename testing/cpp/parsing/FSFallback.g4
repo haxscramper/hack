@@ -1,22 +1,22 @@
 grammar FSFallback;
 
-main : expression EOF ;
+main : text+ EOF;
+text : structured_text | flat_text ;
 
-expression
-    : expression (MULT | DIV) expression
-    | expression (PLUS | MINUS) expression
-    | (PLUS | MINUS)* number ;
+structured_text : TEXT_START text_structure TEXT_END;
+text_structure : bold | italic | WORD | SPACE ;
+bold : BOLD_OPEN text_structure+ BOLD_CLOSE;
+italic : ITALIC_OPEN text_structure+ ITALIC_CLOSE ;
 
-number : NUMBER ;
+flat_text : TEXT_START flat_element+ TEXT_END ;
+flat_element : BOLD_OPEN | BOLD_CLOSE | ITALIC_OPEN | ITALIC_CLOSE | SPACE | WORD ;
 
-NUMBER : ('0' .. '9') + ('.' ('0' .. '9') +)? ;
-
-PLUS  : '+' ;
-
-MINUS : '-' ;
-
-MULT  : '*' ;
-
-DIV   : '/' ;
-
-WS : [ \r\n\t] + -> skip ;
+BOLD_OPEN : '<b>' ;
+BOLD_CLOSE : '</b>' ;
+ITALIC_OPEN : '<i>' ;
+ITALIC_CLOSE : '</i>' ;
+TEXT_START : '<t>' ;
+TEXT_END : '</t>' ;
+SPACE : ' ' -> skip;
+NEWLINE : '\n' -> skip;
+WORD : [A-Z_]+ ;
