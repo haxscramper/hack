@@ -1,0 +1,17 @@
+version: 3
+
+tasks:
+  generate_enum_boilerplate:
+    desc: "Generate boilerplate definitions for enum data"
+    vars:
+      name: basic_enum
+    cmds:
+      - ./generate_type_info.py {{.name}}.hpp {{.name}}.tmp.json
+      - >
+        ./generate_type_aux.py
+        {{.name}}.tmp.json
+        {{.name}}_aux.tmp.hpp
+        {{.name}}_aux.tmp.cpp
+
+      - clang++ -o {{.name}}_gen_user.bin {{.name}}_gen_user.cpp
+      - ./{{.name}}_gen_user.bin

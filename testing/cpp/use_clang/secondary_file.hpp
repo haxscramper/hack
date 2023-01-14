@@ -1,0 +1,4 @@
+enum SecondaryEnum
+{
+    Field2
+};

@@ -75,6 +75,6 @@ tasks:
           grammar_name: "{{.grammar}}"
       - xmake config --grammar_name={{.grammar}} --file={{.grammar}}.lua
       - xmake build --file={{.grammar}}.lua
-      # - task: run_debug
-      #   vars:
-      #     EXPR: "./{{.grammar}}_build.bin {{.grammar}}_input.txt"
+      - task: run_debug
+        vars:
+          EXPR: "./{{.grammar}}_build.bin {{.grammar}}_input.txt"

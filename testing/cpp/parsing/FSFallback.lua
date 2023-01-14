@@ -1,22 +1,4 @@
-function wrap_target(name, body)
-    target(name)
-    body()
-    target_end()
-end
-
-function wrap_option(name, body)
-    option(name)
-    body()
-    option_end()
-end
-
-function wrap_rule(name, body)
-    rule(name)
-    body()
-    rule_end()
-end
-
-wrap_option(
+option(
     "grammar_name",
     function()
         set_description("Antlr name of the grammar")
@@ -65,7 +47,7 @@ function on_g4_build(target, batchcmds, sourcefile_antlr4, opt)
     -- batchcmds:set_depcache(target:dependfile(objectfile))
 end
 
-wrap_rule(
+rule(
     "antlr4",
     function()
         set_extensions(".g4")
@@ -78,7 +60,7 @@ if has_config("grammar_name") then
     add_requires("termcolor")
     set_config("buildir", name .. "_build")
 
-    wrap_target(
+    target(
         name .. "_build",
         function()
             set_kind("binary")
