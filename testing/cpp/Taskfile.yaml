@@ -1,6 +1,21 @@
 version: 3
 
 tasks:
+  backward_cpp_test:
+    desc: "Get backtrace"
+    cmds:
+      - >
+        g++
+        -g
+        -ldw
+        -DBACKWARD_HAS_DW=1
+        -o to_backtrace.bin
+        -Ideps/backward-cpp
+        deps/backward-cpp/backward.cpp
+        to_backtrace.cpp
+
+      - ./to_backtrace.bin
+
   compile:
     dir: "{{.DIR}}"
     desc: "Build and compile files"
@@ -21,6 +36,20 @@ tasks:
     cmds:
       - >
         firejail --rlimit-as=600000000 {{.PWD}}/{{.DIR}}/{{.IN}} {{.ARGS}}
+    # ||
+    # (
+    # firejail --rlimit-as=600000000 lldb
+    # -o 'run'
+    # --source-on-crash {{.PWD}}/lldb-script.txt
+    # --batch
+    # --
+    # {{.IN}}
+    # {{.ARGS}}
+    # &&
+    # false
+    # )
+
+
 
   compile_run:
     cmds:

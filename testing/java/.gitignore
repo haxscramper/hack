@@ -1,3 +1,4 @@
 *.d/**
 !lab_3.html
 !report_template
+*.class
