@@ -31,6 +31,19 @@
 #include <ogdf/layered/GreedyInsertHeuristic.h>
 #include <ogdf/layered/BarycenterHeuristic.h>
 
+#include <ogdf/energybased/DavidsonHarelLayout.h>
+#include <ogdf/energybased/FastMultipoleEmbedder.h>
+#include <ogdf/energybased/FMMMLayout.h>
+#include <ogdf/energybased/GEMLayout.h>
+#include <ogdf/energybased/MultilevelLayout.h>
+#include <ogdf/energybased/NodeRespecterLayout.h>
+#include <ogdf/energybased/PivotMDS.h>
+#include <ogdf/energybased/SpringEmbedderGridVariant.h>
+#include <ogdf/energybased/SpringEmbedderKK.h>
+#include <ogdf/energybased/StressMinimization.h>
+#include <ogdf/energybased/TutteLayout.h>
+
+
 #include <vector>
 #include <utility>
 #include <string>
@@ -94,17 +107,79 @@ int main() {
              PlanarStraightLayout PSL;
              PSL.call(GA);
          }}},
-        {"gem", {[](GraphAttributes& GA, Graph& G) {
+        {"DavidsonHarelLayout",
+         [](GraphAttributes& GA, Graph& G) {
              enumerateGraphContent(GA, G);
-             GEMLayout PSL;
-             PSL.numberOfRounds(50);
-             PSL.call(GA);
-         }}},
-        {"fmmm", {[](GraphAttributes& GA, Graph& G) {
+             DavidsonHarelLayout lyt;
+             lyt.call(GA);
+         }},
+        {"FastMultipoleEmbedder",
+         [](GraphAttributes& GA, Graph& G) {
              enumerateGraphContent(GA, G);
-             FMMMLayout FL;
-             FL.call(GA);
-         }}}};
+             FastMultipoleEmbedder lyt;
+             lyt.call(GA);
+         }},
+        {"FastMultipoleMultilevelEmbedder",
+         [](GraphAttributes& GA, Graph& G) {
+             enumerateGraphContent(GA, G);
+             FastMultipoleMultilevelEmbedder lyt;
+             lyt.call(GA);
+         }},
+        {"FMMMLayout",
+         [](GraphAttributes& GA, Graph& G) {
+             enumerateGraphContent(GA, G);
+             FMMMLayout lyt;
+             lyt.call(GA);
+         }},
+        {"GEMLayout",
+         [](GraphAttributes& GA, Graph& G) {
+             enumerateGraphContent(GA, G);
+             GEMLayout lyt;
+             lyt.call(GA);
+         }},
+        {"MultilevelLayout",
+         [](GraphAttributes& GA, Graph& G) {
+             enumerateGraphContent(GA, G);
+             MultilevelLayout lyt;
+             lyt.call(GA);
+         }},
+        {"NodeRespecterLayouut",
+         [](GraphAttributes& GA, Graph& G) {
+             enumerateGraphContent(GA, G);
+             NodeRespecterLayout lyt;
+             lyt.call(GA);
+         }},
+        {"PivotMDS",
+         [](GraphAttributes& GA, Graph& G) {
+             enumerateGraphContent(GA, G);
+             PivotMDS lyt;
+             lyt.call(GA);
+         }},
+        {"SpringEmbedderGridVariant",
+         [](GraphAttributes& GA, Graph& G) {
+             enumerateGraphContent(GA, G);
+             SpringEmbedderGridVariant lyt;
+             lyt.call(GA);
+         }},
+        {"SpringEmbedderKK",
+         [](GraphAttributes& GA, Graph& G) {
+             enumerateGraphContent(GA, G);
+             SpringEmbedderKK lyt;
+             lyt.call(GA);
+         }},
+        {"StressMinimization",
+         [](GraphAttributes& GA, Graph& G) {
+             enumerateGraphContent(GA, G);
+             StressMinimization lyt;
+             lyt.call(GA);
+         }},
+        {"TutteLayot",
+         [](GraphAttributes& GA, Graph& G) {
+             enumerateGraphContent(GA, G);
+             TutteLayout lyt;
+             lyt.call(GA);
+         }},
+    };
 
 
     for (const auto& ranking : StrVec<std::function<RankingModule*()>>{{
