@@ -1,6 +1,81 @@
 version: 3
 
 tasks:
+  compile:
+    dir: "{{.DIR}}"
+    desc: "Build and compile files"
+    cmds:
+      - >
+        clang++
+        -std=c++2a
+        -g
+        -ferror-limit=2
+        -o {{.OUT}}
+        {{.IN}}
+        {{.FLAGS}}
+
+
+  run:
+    dir: "{{.DIR}}"
+    desc: "Run compiled file"
+    cmds:
+      - >
+        ./{{.IN}}
+        {{.ARGS}}
+        ||
+        (
+        lldb
+        -o 'run'
+        --source-on-crash {{.PWD}}/lldb-script.txt
+        --batch
+        --
+        {{.IN}}
+        {{.ARGS}}
+        &&
+        false
+        )
+
+  compile_run:
+    cmds:
+      - task: compile
+        vars:
+          FLAGS: "{{.FLAGS}}"
+          DIR: "{{.DIR}}"
+          IN: "{{.IN}}"
+          OUT: "{{.OUT}}"
+
+      - task: run
+        vars:
+          DIR: "{{.DIR}}"
+          IN: "{{.OUT}}"
+          ARGS: "{{.ARGS}}"
+
+
+  ogdf_one_file:
+    desc: "Compile, run and print one graph created by FILE.cpp program"
+    dir: ogdf_tests
+    cmds:
+      - task: compile_run
+        vars:
+          FLAGS: >
+            -L/mnt/workspace/repos/ogdf/debug_build
+            -lOGDF
+            -lCOIN
+          DIR: ogdf_tests
+          IN: "{{.FILE}}.cpp"
+          OUT: "{{.FILE}}.bin"
+      - "convert -density 600 -resize 600x600 {{.FILE}}.tmp.svg {{.FILE}}.tmp.png"
+      - "viu {{.FILE}}.tmp.png"
+
+  ogdf_simple:
+    cmds:
+      - task: compile_run
+        vars:
+          FLAGS: "-lOGDF -lCOIN"
+          DIR: ogdf_tests
+          IN: simple.cpp
+          OUT: simple.bin
+
   nim_ast_diff:
     desc: "Build ad execute nim AST diff port"
     vars:

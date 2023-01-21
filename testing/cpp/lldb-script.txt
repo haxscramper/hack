@@ -1,0 +1,2 @@
+settings set frame-format "\033[35m#${frame.index}\033[0m:${function.name-with-args}{ at \033[34m${line.file.basename}\033[0m:\033[31m${line.number}\033[0m}\n"
+bt
