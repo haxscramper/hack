@@ -20,20 +20,7 @@ tasks:
     desc: "Run compiled file"
     cmds:
       - >
-        ./{{.IN}}
-        {{.ARGS}}
-        ||
-        (
-        lldb
-        -o 'run'
-        --source-on-crash {{.PWD}}/lldb-script.txt
-        --batch
-        --
-        {{.IN}}
-        {{.ARGS}}
-        &&
-        false
-        )
+        firejail --rlimit-as=600000000 {{.PWD}}/{{.DIR}}/{{.IN}} {{.ARGS}}
 
   compile_run:
     cmds:
@@ -57,8 +44,8 @@ tasks:
     cmds:
       - task: compile_run
         vars:
+          # -L/mnt/workspace/repos/ogdf/debug_build
           FLAGS: >
-            -L/mnt/workspace/repos/ogdf/debug_build
             -lOGDF
             -lCOIN
           DIR: ogdf_tests

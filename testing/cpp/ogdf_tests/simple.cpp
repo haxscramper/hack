@@ -80,7 +80,7 @@ int main() {
             randomTriconnectedGraph(G, 10, 2, 3);
         }
 
-        GraphAttributes = enumerateGraphContent(G);
+        GraphAttributes GA = enumerateGraphContent(G);
         if (conf == "random_simple") {
             SugiyamaLayout SL; // Compute a hierarchical drawing of G
                                // (using SugiyamaLayout)
