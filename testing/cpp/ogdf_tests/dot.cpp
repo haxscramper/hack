@@ -32,6 +32,9 @@
 #include <ogdf/layered/GreedySwitchHeuristic.h>
 #include <ogdf/layered/GreedyInsertHeuristic.h>
 #include <ogdf/layered/BarycenterHeuristic.h>
+#include <ogdf/upward/UpwardPlanarizationLayout.h>
+#include <ogdf/upward/DominanceLayout.h>
+#include <ogdf/upward/VisibilityLayout.h>
 
 #include <ogdf/energybased/DavidsonHarelLayout.h>
 #include <ogdf/energybased/FastMultipoleEmbedder.h>
@@ -127,12 +130,6 @@ int main() {
              FastMultipoleMultilevelEmbedder lyt;
              lyt.call(GA);
          }},
-        {"FMMMLayout",
-         [](GraphAttributes& GA, Graph& G) {
-             enumerateGraphContent(GA, G);
-             FMMMLayout lyt;
-             lyt.call(GA);
-         }},
         {"GEMLayout",
          [](GraphAttributes& GA, Graph& G) {
              enumerateGraphContent(GA, G);
@@ -155,6 +152,24 @@ int main() {
          [](GraphAttributes& GA, Graph& G) {
              enumerateGraphContent(GA, G);
              PivotMDS lyt;
+             lyt.call(GA);
+         }},
+        {"UpwardPlanarizationLayout",
+         [](GraphAttributes& GA, Graph& G) {
+             enumerateGraphContent(GA, G);
+             UpwardPlanarizationLayout lyt;
+             lyt.call(GA);
+         }},
+        {"VisibilityLayout",
+         [](GraphAttributes& GA, Graph& G) {
+             enumerateGraphContent(GA, G);
+             VisibilityLayout lyt;
+             lyt.call(GA);
+         }},
+        {"DominanceLayout",
+         [](GraphAttributes& GA, Graph& G) {
+             enumerateGraphContent(GA, G);
+             DominanceLayout lyt;
              lyt.call(GA);
          }},
         {"SpringEmbedderGridVariant",
@@ -182,6 +197,32 @@ int main() {
              lyt.call(GA);
          }},
     };
+
+    for (const auto& quality : StrVec<FMMMOptions::QualityVsSpeed>{{
+             // clang-format off
+             {"gae", FMMMOptions::QualityVsSpeed::GorgeousAndEfficient},
+             {"nais", FMMMOptions::QualityVsSpeed::NiceAndIncredibleSpeed},
+             // clang-format on
+         }}) {
+        for (const auto& forces :
+             StrVec<FMMMOptions::RepulsiveForcesMethod>{{
+                 // clang-format off
+                 {"grid", FMMMOptions::RepulsiveForcesMethod::GridApproximation},
+                 {"nmm", FMMMOptions::RepulsiveForcesMethod::NMM},
+                 // clang-format on
+             }}) {
+            configurations.push_back(
+                {"FMMMLayout_quality=" + quality.first
+                     + ",forces=" + forces.first,
+                 [=](GraphAttributes& GA, Graph& G) {
+                     enumerateGraphContent(GA, G);
+                     FMMMLayout lyt;
+                     lyt.repulsiveForcesCalculation(forces.second);
+                     lyt.qualityVersusSpeed(quality.second);
+                     lyt.call(GA);
+                 }});
+        }
+    }
 
 
     for (const auto& ranking : StrVec<std::function<RankingModule*()>>{{
@@ -228,10 +269,11 @@ int main() {
                  }}) {
 
                 configurations.push_back(
-                    {"sugiyama" + ranking.first + "_ranking" + cross.first
-                         + "_cross" + hierarchy.first + "_hierarchy",
+                    {"sugiyama_ranking=" + ranking.first + ",cross="
+                         + cross.first + ",hierarchy=" + hierarchy.first,
                      [ranking, cross, hierarchy](
                          GraphAttributes& GA, Graph& G) {
+                         enumerateGraphContent(GA, G);
                          SugiyamaLayout SL;
                          SL.setRanking(ranking.second());
                          SL.setCrossMin(cross.second());
@@ -242,29 +284,52 @@ int main() {
         }
     }
 
-    for (const auto& conf : configurations) {
-        std::cout << "running: " << conf.first << std::endl;
-        std::cout << "Reading dot file configuration" << std::endl;
-        std::ifstream file{"dot_test.dot"};
-        Graph         G;
-        GraphIO::readDOT(G, file);
-        std::cout << "READ DONE " << std::endl;
+    const std::vector<std::string> files{
+        "dot_test.dot",
+        "go_packages.dot",
+        "ninja_build.dot",
+    };
 
-        GraphAttributes GA(
-            G,
-            GraphAttributes::nodeGraphics | GraphAttributes::edgeGraphics
-                | GraphAttributes::nodeLabel | GraphAttributes::nodeStyle
-                | GraphAttributes::edgeType | GraphAttributes::edgeArrow
-                | GraphAttributes::edgeStyle);
-        std::cout << "CALL LAYOUT" << std::endl;
-        try {
-            conf.second(GA, G);
-            std::cout << ":> " << conf.first << std::endl;
-            GraphIO::drawSVG(GA, "dot_" + conf.first + ".tmp.svg");
-        } catch (std::exception& ex) {
-            std::cerr << "Layout failed " << ex.what() << std::endl;
+    for (const auto& infile : files) {
+        std::cout << "file: " << infile << std::endl;
+        for (const auto& conf : configurations) {
+            bool skip = ((
+                (conf.first == "mixed_model"
+                 || conf.first == "planar_straight"
+                 || conf.first == "TutteLayot")
+                && infile == "go_packages.dot"));
+
+            if (skip) {
+                std::cout << "  skipping " << conf.first << std::endl;
+            } else {
+                std::cout << "  " << conf.first << std::endl;
+                std::ifstream file{infile};
+                Graph         G;
+                GraphIO::readDOT(G, file);
+
+                GraphAttributes GA(
+                    G,
+                    GraphAttributes::nodeGraphics
+                        | GraphAttributes::edgeGraphics
+                        | GraphAttributes::nodeLabel
+                        | GraphAttributes::nodeStyle
+                        | GraphAttributes::edgeType
+                        | GraphAttributes::edgeArrow
+                        | GraphAttributes::edgeStyle);
+
+                try {
+                    conf.second(GA, G);
+                    GraphIO::drawSVG(
+                        GA,
+                        "/tmp/dot_" + infile + conf.first + ".tmp.svg");
+                } catch (std::exception& ex) {
+                    std::cerr << "Layout failed " << ex.what()
+                              << std::endl;
+                }
+            }
         }
     }
+
 
     std::cout << "DONE ____________ !\n";
     return 0;
