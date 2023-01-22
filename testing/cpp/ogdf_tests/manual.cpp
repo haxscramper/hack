@@ -30,5 +30,6 @@ int main() {
 
     GraphIO::write(GA, "manual.tmp.svg", GraphIO::drawSVG);
 
+    std::cout << "Manual execution done\n";
     return 0;
 }

@@ -48,14 +48,26 @@
 #include <ogdf/energybased/StressMinimization.h>
 #include <ogdf/energybased/TutteLayout.h>
 
+#include <ogdf/planarlayout/MMCBDoubleGrid.h>
+#include <ogdf/planarlayout/MMCBLocalStretch.h>
+
+#include <ogdf/augmentation/PlanarAugmentationFix.h>
+#include <ogdf/augmentation/PlanarAugmentation.h>
+#include <ogdf/augmentation/DfsMakeBiconnected.h>
 
 #include <vector>
 #include <utility>
 #include <string>
 #include <fstream>
 
+#include <ogdf/planarlayout/TriconnectedShellingOrder.h>
+#include <ogdf/planarlayout/BiconnectedShellingOrder.h>
+
 using namespace ogdf;
 
+bool contains(std::string const& str, std::string const& sub) {
+    return str.find(sub) != std::string::npos;
+}
 
 void enumerateGraphContent(GraphAttributes& GA, Graph const& G) {
     for (node v : G.nodes) {
@@ -101,16 +113,6 @@ int main() {
              enumerateGraphContent(GA, G);
              PlanarizationGridLayout PGL;
              PGL.call(GA);
-         }}},
-        {"mixed_model", {[](GraphAttributes& GA, Graph& G) {
-             enumerateGraphContent(GA, G);
-             MixedModelLayout MML;
-             MML.call(GA);
-         }}},
-        {"planar_straight", {[](GraphAttributes& GA, Graph& G) {
-             enumerateGraphContent(GA, G);
-             PlanarStraightLayout PSL;
-             PSL.call(GA);
          }}},
         {"DavidsonHarelLayout",
          [](GraphAttributes& GA, Graph& G) {
@@ -197,6 +199,76 @@ int main() {
              lyt.call(GA);
          }},
     };
+
+    // NOTE setting augmentation module or shelling order module on these
+    // layouts leads to unbounded memory bugs for almost all graphs.
+    // Default configuration works file though.
+    configurations.push_back(
+        {"planar_straight_" // + conf
+         ,
+         {[=](GraphAttributes& GA, Graph& G) {
+             enumerateGraphContent(GA, G);
+             PlanarStraightLayout PSL;
+             // PSL.setShellingOrder(shelling.second());
+             // PSL.setAugmenter(augmenter.second());
+             PSL.call(GA);
+         }}});
+
+    configurations.push_back(
+        {"planar_draw_" // + conf
+         ,
+         {[=](GraphAttributes& GA, Graph& G) {
+             enumerateGraphContent(GA, G);
+             PlanarDrawLayout PSL;
+             // PSL.setShellingOrder(shelling.second());
+             // PSL.setAugmenter(augmenter.second());
+             PSL.call(GA);
+         }}});
+
+
+    for (const auto& shelling :
+         StrVec<std::function<ShellingOrderModule*()>>{{
+             // clang-format off
+            {"biconnect", [](){ return new BiconnectedShellingOrder(); }},
+            {"triconnect", [](){ return new TriconnectedShellingOrder(); }},
+             // clang-format on
+         }}) {
+
+
+        for (const auto& augmenter :
+             StrVec<std::function<AugmentationModule*()>>{{
+                 // clang-format off
+                 {"planar_fix", [](){ return new PlanarAugmentationFix(); }},
+                 {"planar", [](){ return new PlanarAugmentation(); }},
+                 {"dfs", [](){ return new DfsMakeBiconnected(); }},
+                 // clang-format on
+             }}) {
+
+            const auto conf = "shelling=" + shelling.first
+                            + ",augmenter=" + augmenter.first;
+
+
+            for (const auto& cross : StrVec<std::function<
+                     MixedModelCrossingsBeautifierModule*()>>{{
+                     // clang-format off
+                     {"double_grid", [](){return new MMCBDoubleGrid();}},
+                     {"local_stretch", [](){return new MMCBLocalStretch();}},
+                     // clang-format on
+                 }}) {
+                configurations.push_back(
+                    {"mixed_model_cross=" + cross.first + "," + conf,
+                     {[=](GraphAttributes& GA, Graph& G) {
+                         enumerateGraphContent(GA, G);
+                         MixedModelLayout MML;
+                         MML.setCrossingsBeautifier(cross.second());
+                         MML.setShellingOrder(shelling.second());
+                         MML.setAugmenter(augmenter.second());
+                         MML.call(GA);
+                     }}});
+            }
+        }
+    }
+
 
     for (const auto& quality : StrVec<FMMMOptions::QualityVsSpeed>{{
              // clang-format off
@@ -293,20 +365,40 @@ int main() {
     for (const auto& infile : files) {
         std::cout << "file: " << infile << std::endl;
         for (const auto& conf : configurations) {
-            bool skip = ((
-                (conf.first == "mixed_model"
-                 || conf.first == "planar_straight"
-                 || conf.first == "TutteLayot")
-                && infile == "go_packages.dot"));
+            const auto n = conf.first;
+            bool       skip
+                = (((
+                        // Infinite execution
+                        contains(n, "mixed_model")
+                        || contains(n, "planar_straight")
+                        || contains(n, "planar_draw")
+                        // Uncontrolled memory allocation
+                        || contains(n, "TutteLayot"))
+                    && infile == "go_packages.dot")
+                   || ((
+                           // Memory bugs
+                           (contains(n, "mixed_model")
+                            && (contains(n, "triconnect")
+                                || contains(n, "augmenter=planar")))
+                           || ((contains(n, "planar_straight")
+                                || contains(n, "planar_draw"))
+                               && (contains(n, "augmenter=planar_fix")
+                                   || contains(n, "augmenter=planar")
+                                   || contains(n, "augmenter=dfs"))))
+                       && infile == "dot_test.dot")
+                   || ((
+                           // Memory bug
+                           (contains(n, "mixed_model")
+                            && (contains(n, "triconnect")
+                                || contains(n, "augmenter=planar"))))
+                       && infile == "ninja_build.dot"));
 
             if (skip) {
-                std::cout << "  skipping " << conf.first << std::endl;
+                std::cout << "  skipping " << n << std::endl;
             } else {
-                std::cout << "  " << conf.first << std::endl;
-                std::ifstream file{infile};
-                Graph         G;
-                GraphIO::readDOT(G, file);
-
+                std::cout << "  " << n << std::endl;
+                std::ifstream   file{infile};
+                Graph           G;
                 GraphAttributes GA(
                     G,
                     GraphAttributes::nodeGraphics
@@ -317,11 +409,13 @@ int main() {
                         | GraphAttributes::edgeArrow
                         | GraphAttributes::edgeStyle);
 
+                GraphIO::readDOT(GA, G, file);
+
+
                 try {
                     conf.second(GA, G);
                     GraphIO::drawSVG(
-                        GA,
-                        "/tmp/dot_" + infile + conf.first + ".tmp.svg");
+                        GA, "/tmp/dot_" + infile + n + ".tmp.svg");
                 } catch (std::exception& ex) {
                     std::cerr << "Layout failed " << ex.what()
                               << std::endl;

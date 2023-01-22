@@ -1,6 +1,8 @@
 version: 3
 
 tasks:
+
+
   backward_cpp_test:
     desc: "Get backtrace"
     cmds:
@@ -20,14 +22,7 @@ tasks:
     dir: "{{.DIR}}"
     desc: "Build and compile files"
     cmds:
-      - >
-        clang++
-        -std=c++2a
-        -g
-        -ferror-limit=2
-        -o {{.OUT}}
-        {{.IN}}
-        {{.FLAGS}}
+      - "clang++ -std=c++2a -g -ferror-limit=2 -o {{.OUT}} {{.IN}} {{.FLAGS}}"
 
 
   run:
@@ -50,7 +45,6 @@ tasks:
     # )
 
 
-
   compile_run:
     cmds:
       - task: compile
@@ -66,6 +60,19 @@ tasks:
           IN: "{{.OUT}}"
           ARGS: "{{.ARGS}}"
 
+  graphviz:
+    vars:
+      CFLAGS:
+        sh: pkg-config libgvc --cflags
+      LDLIBS:
+        sh: pkg-config libgvc --libs
+
+    cmds:
+      - task: compile_run
+        vars:
+          IN: "graphviz.cpp"
+          OUT: "graphviz.bin"
+          FLAGS: "{{.CFLAGS}} {{.LDLIBS}} -Wall -g -O2"
 
   ogdf_one_file:
     desc: "Compile, run and print one graph created by FILE.cpp program"
@@ -74,7 +81,7 @@ tasks:
       - task: compile_run
         vars:
           # -L/mnt/workspace/repos/ogdf/debug_build
-          FLAGS: >
+          FLAGS: >-
             -lOGDF
             -lCOIN
           DIR: ogdf_tests
