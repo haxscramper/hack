@@ -819,6 +819,12 @@ conv(
   fto = AbsFile"/tmp/text_layouter.cpp"
 )
 
+
+conv(
+  ffrom = AbsFile"/mnt/workspace/repos/hmisc/src/hmisc/macros/ast_spec.nim",
+  fto = AbsFile"/tmp/ast_spec.cpp"
+)
+
 for file in walkDir(
     root,
     RelFile,

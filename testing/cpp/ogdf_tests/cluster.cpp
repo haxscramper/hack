@@ -10,17 +10,22 @@
 
 using namespace ogdf;
 
+// The example works, but compilation must be done using cmake
+// -DOGDF_MEMORY_MANAGER=MALLOC_TS ..
+// https://github.com/ogdf/ogdf/issues/83
+void generateExampleGraph() {
+    Graph                  G;
+    ClusterGraph           CG(G);
+    ClusterGraphAttributes GA(CG, ClusterGraphAttributes::all);
+    GraphIO::read(GA, CG, G, "infile.gml");
+    ClusterPlanarizationLayout cpl;
+    cpl.call(G, GA, CG, true);
+    GraphIO::write(GA, "cluster-out.tmp.svg");
+    std::cout << "wrote GML-based cluster graph" << std::endl;
+}
+
 int main() {
-    {
-        Graph                  G;
-        ClusterGraph           CG(G);
-        ClusterGraphAttributes GA(CG, ClusterGraphAttributes::all);
-        GraphIO::read(GA, CG, G, "infile.gml");
-        ClusterPlanarizationLayout cpl;
-        cpl.call(G, GA, CG, true);
-        GraphIO::write(GA, "cluster-out.tmp.svg");
-        std::cout << "wrote GML-based cluster graph" << std::endl;
-    }
+    generateExampleGraph();
 
     for (int i = 0; i < 2; ++i) {
         Graph        G;

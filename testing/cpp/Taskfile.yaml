@@ -30,19 +30,18 @@ tasks:
     desc: "Run compiled file"
     cmds:
       - >
-        firejail --rlimit-as=600000000 {{.PWD}}/{{.DIR}}/{{.IN}} {{.ARGS}}
-    # ||
-    # (
-    # firejail --rlimit-as=600000000 lldb
-    # -o 'run'
-    # --source-on-crash {{.PWD}}/lldb-script.txt
-    # --batch
-    # --
-    # {{.IN}}
-    # {{.ARGS}}
-    # &&
-    # false
-    # )
+        {{.PWD}}/capped_run.sh {{.PWD}}/{{.DIR}}/{{.IN}} {{.ARGS}}
+        ||
+        (
+        {{.PWD}}/capped_run.sh
+        lldb
+        -o 'run'
+        --source-on-crash {{.PWD}}/lldb-script.txt
+        --batch
+        -- {{.IN}} {{.ARGS}}
+        &&
+        false
+        )
 
 
   compile_run:
@@ -80,8 +79,8 @@ tasks:
     cmds:
       - task: compile_run
         vars:
-          # -L/mnt/workspace/repos/ogdf/debug_build
           FLAGS: >-
+            -L/mnt/workspace/repos/ogdf/build
             -lOGDF
             -lCOIN
           DIR: ogdf_tests
