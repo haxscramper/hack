@@ -1,0 +1,91 @@
+@startuml
+
+skinparam DefaultFontName Iosevka
+skinparam defaultTextAlignment left
+skinparam maxMessageSize 300
+skinparam wrapWidth 300
+
+state hypothesis_set as "Set of Hypothesis" : Initial set of hypothesis that might be proven os disproven.
+
+note right of hypothesis_set
+Inductive step -- come up with more explanations based on the limited data
+end note
+
+[*] --> initial_evidence
+
+state initial_evidence as "Initial evidence"
+
+initial_evidence --> question
+
+state resolution_and_composition as "Resolution and composition" : Break down complex problem into a set of smaller ones that can be answered on it's own.
+
+question --> resolution_and_composition
+resolution_and_composition --> question
+
+question --> hypothesis_set : Form set of hypothesis
+hypothesis_set --> similarities
+hypothesis_set --> difference
+
+state basic_presupposition as "Basic presupposition" : Basic assumption that is necessary for the hypothesis to be meaningful, but it should not affect the validity of hypothesis in question.
+
+note top of basic_presupposition
+Things such as: (1) physical world exists and knowable, (2) it won't randomly change so induction works.
+end note
+
+basic_presupposition --> hypothesis_set
+
+state similarities as "Similarities" : Find similar elements in hypothesis set form presuppositions for logic
+
+similarities --> presuppositions
+difference --> evidence
+
+state logic as "Logic" : Use inductive or deductive logic in order to further reduce set of hypothesis
+
+note left of logic
+Mostly deductive step that takes different assumptions and refutes or confirms them
+end note
+
+presuppositions --> logic
+evidence --> logic
+logic --> conclusion
+
+conclusion --> hypothesis_set : Hypothesis does not fully (or partially matches) with experimental data
+
+state communicate as "Communicate" {
+  state cleanup as "Cleanup" : It might be possible to arrive at several different hypothesis that are not mutually exclusive with each other
+  state simplicity as "Simplify" : Out of multiple similar hypothesis the most simply one should be chosen
+  state usefulness as "Usefullness" : Simplicity, predictive accuracy, explanatory power, testability, fruitfullnesss in generating new insigths and knowledge, coherence with other scientific and philosophical beliefs, and repeatability of the results.
+  cleanup --> simplicity
+  cleanup --> usefulness
+}
+
+state conclusion as "Conclusion" {
+  state model as "Model" : Simplified representation of the more complex system. Model can be used to simulate behavior of the system
+  --
+  state theory as "Theory" : Substantiated explanation of the evidence. Theory can be used to make predictions and explain why certain relationships exist.
+  --
+  state law as "Law" : Description of the consistent, universal relationship between phenomena, often expressed in mathematical terms. Laws can be used to make predictions, but don't try explain *why* certain relationships exist.
+  --
+  state principle as "Principle"
+}
+
+conclusion --> communicate
+
+state evidence as "Evidence" {
+      state experiment as "Experiment" : Come up with an experiment that can be used to get more experimental data
+      state gather_data as "Gather data"
+      state gather_info as "Gather information"
+      experiment --> gather_data
+      note right of gather_data
+          Data gathered in the experiment is likely to contain certain amount of noise
+      end note
+      gather_data --> gather_info : Turn data points acquired in the experiment into entries that are more useful for logical assesments.
+}
+
+note top of evidence
+Largely inductive step -- come up with more tests and experiments that might produce more data. Assume some action will produce data that is useful
+end note
+
+question : Ask a question or formulate a problem that need to be solved.
+
+@enduml
