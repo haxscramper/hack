@@ -1,0 +1,100 @@
+@startuml
+skinparam DefaultFontName Iosevka
+skinparam defaultTextAlignment left
+skinparam maxMessageSize 200
+skinparam wrapWidth 200
+
+legend
+
+This diagram shows general workflow of the discussion on a political topic
+with someone who is deeply comitted to denigrading a specific side's
+actions -- they might not focus as directly on *supporting* the other side,
+but most of the time this distinction can hardly be visible because in
+almost all times they are engaging with attacking one side or considering
+attack on another as defense of their percieved enemy.
+
+In some cases this is also followed by claims of impartiality in some form.
+
+General difference from the scientific method is complete disregard of any
+facts that a person might introduce to the discussion -- everything is
+almost instantly countered either by a link in semi-circular logic or vague
+assertion of some sort. Effectively the system of reasoning already
+contains some facts integrated into it and actively resists taking in any
+other elements.
+
+In general the whole apparatus has some internal theory of the events,
+built on a cherry-picked set of data points and actively resists any new
+inputs that contradict the assertions made by the system.
+
+endlegend
+
+state input as "Input statement" #green : Some statement or observation is introduced to the discussion
+
+state evil as "They are Evil"
+state war as "They wage of finance wars" : They wage or finance wars or oppose any sort of peaceful political resolution to the conflict
+
+evil -[dashed]-> war : Direct backwards link is rarely expressed explicitly, but the underlying discussion almost always implies it
+war --> evil
+
+state disagreement : "Third party in a conflict" : Two conficting parties tried to work out a peace deal, but third party intervened due to their interests in the area being concerned as well
+
+disagreement --> war : It is asserted as a given that third party interjected because they were not interested in reaching peaceful resolution of the debate and instead their main objective is to profit off war
+
+state research_backed as "Research-backed assertion is introduced" : Report, study or theory is provided to assert validity of a point
+
+research_backed --> partial_data
+
+state modern_academia as "State of modern academia"
+
+state negative as "Negative statement" : Any sort of negative statement is introduced about one party
+
+state both_sides as "Both sides are 'equal'" : It is said that both sides are equally bad because they are both interested in prolongating the conflict
+
+both_sides --> evil
+
+state we_dont_know as "Not possible to get the full picture"
+
+input --> negative
+
+negative --> what_about
+what_about --> both_sides
+both_sides --> all_the_same
+
+state positive as "Positive" : Some generally positive statement is introduced -- one that is not directly related to the conflict in questions, but nonetheless is presented in the positive light
+
+input --> positive
+
+positive --> backdoor_deals : This is a singular instance that should not be considered important because in general, the party in question is corrupt and evil (sometimes this is asserted via other counter-examples)
+
+state what_about as "What about"
+
+research_backed --> modern_academia
+
+all_the_same --> backdoor_deals
+
+we_dont_know --> backdoor_deals
+state partial_data as "Partial data" : Information presented is favorable to a specific side or is manufactured by some side, which means it is cannot be readily trusted
+
+input --> observable_based
+
+observable_based --> backdoor_deals
+
+evil --> vested_interests
+
+vested_interests --> modern_academia : State of modern academia is considered to be completely degraded with vested interests so any sort of attempt to make a fact-based claim is denigrated for one reason on the other.
+
+input --> research_backed
+
+state observable_based as "Observable event" : Some event is introduced to the discussion -- one that seems to be based on the evidence that can be generally evaluated without going into too much details. Things like a video, photo, news report
+
+backdoor_deals --> vested_interests
+
+vested_interests --> disagreement
+
+state hypocricy as "Hypocricy"
+
+positive --> hypocricy : They engage in destructive activity and therefore all their positive actions don't amount to anything, in the grand scheme of things
+
+hypocricy --> evil
+
+@enduml

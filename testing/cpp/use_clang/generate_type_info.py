@@ -6,33 +6,12 @@ import json
 import clang.cindex
 from typing import List
 
-parser = argparse.ArgumentParser(
-    description="Generate structured JSON for types in the input file"
-)
-parser.add_argument(
-    "infile",
-    type=str,
-    help="Input header/source file to generate info for",
-)
-
-parser.add_argument(
-    "outfile",
-    type=str,
-    help="resulting JSON file to write data to",
-)
-
-args = parser.parse_args()
-print("Reading input from ", args.infile)
-print("Writing output to ", args.outfile)
+def is_std_ns(node):
+    return node.kind == K.NAMESPACE and node.spelling == "std"
 
 
 INDENT = 4
 K = clang.cindex.CursorKind
-
-
-def is_std_ns(node):
-    return node.kind == K.NAMESPACE and node.spelling == "std"
-
 
 def clangCursorTreeRepr(
     cursor: clang.cindex.Cursor,
@@ -109,14 +88,36 @@ def find_enums(cursor, basefile) -> List:
     return result
 
 
-# By default `libclang-14.so` is used, but on arch installation shared
-# library has different name. Alternative solution would be to symlink
-# correct target library but I prefer to have more localized configuration
-# in this case.
-clang.cindex.Config.set_library_file("/usr/lib/libclang.so.14.0.6")
-index = clang.cindex.Index.create()
-tu = index.parse(args.infile)
-enums = find_enums(tu.cursor, args.infile)
+if __name__ == '__main__':
+    # By default `libclang-14.so` is used, but on arch installation shared
+    # library has different name. Alternative solution would be to symlink
+    # correct target library but I prefer to have more localized configuration
+    # in this case.
+    clang.cindex.Config.set_library_file("/usr/lib/libclang.so.14.0.6")
+    index = clang.cindex.Index.create()
+    tu = index.parse(args.infile)
+    enums = find_enums(tu.cursor, args.infile)
 
-with open(args.outfile, "w+") as file:
-    file.write(json.dumps(enums))
+    parser = argparse.ArgumentParser(
+        description="Generate structured JSON for types in the input file"
+    )
+    parser.add_argument(
+        "infile",
+        type=str,
+        help="Input header/source file to generate info for",
+    )
+
+    parser.add_argument(
+        "outfile",
+        type=str,
+        help="resulting JSON file to write data to",
+    )
+
+    args = parser.parse_args()
+    print("Reading input from ", args.infile)
+    print("Writing output to ", args.outfile)
+
+
+
+    with open(args.outfile, "w+") as file:
+        file.write(json.dumps(enums))
