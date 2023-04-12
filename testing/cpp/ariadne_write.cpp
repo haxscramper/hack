@@ -7,6 +7,8 @@
 #include <optional>
 #include <cmath>
 #include <iostream>
+#include <algorithm>
+#include <numeric>
 
 #include <cassert>
 
@@ -113,6 +115,15 @@ struct Source {
         size_t      col = 0;
     };
 
+    // Get access to a specific, zero-indexed Line.
+    std::optional<Line> line(size_t idx) const {
+        if (idx < lines.size()) {
+            return std::cref(lines[idx]);
+        } else {
+            return std::nullopt;
+        }
+    }
+
     // Get the line that the given offset appears on, and the line/column
     // numbers of the offset. Note that the line/column numbers are
     // zero-indexed.
@@ -136,16 +147,15 @@ struct Source {
     // Get the range of lines that this span runs across.
     // The resulting range is guaranteed to contain valid line indices
     // (i.e: those that can be used for Source::line()).
-    template <typename S>
-    std::pair<size_t, size_t> get_line_range(const S& span) {
-        size_t start = get_offset_line(span.start())
-                           .value_or(std::make_tuple(std::ref(lines[0]), 0, 0))
-                           .template get<1>();
-        size_t end = get_offset_line(std::max(span.end() - 1, span.start()))
-                         .value_or(std::make_tuple(std::ref(lines[lines.size() - 1]), lines.size() - 1, 0))
-                         .template get<1>()
-                   + 1;
-        return std::make_pair(start, end);
+    std::pair<size_t, size_t> get_line_range(const Span& span) {
+        std::optional<OffsetLine> start = get_offset_line(span.start());
+        std::optional<OffsetLine> end   = get_offset_line(span.end());
+
+        if (start && end) {
+            return {start->idx, end->idx};
+        } else {
+            return {0, lines.size()};
+        }
     }
 };
 
@@ -304,7 +314,13 @@ struct Label {
     Color                 color;
     int32_t               order;
     int32_t               priority;
+
+    bool operator==(Label const& other) const { return msg == other.msg; }
+
+    size_t last_offset() const { return std::max(span->end() - 1, span->start()); }
 };
+
+bool contains(std::pair<size_t, size_t> range, size_t point) { return range.first <= point && point <= range.second; }
 
 
 // struct LabelInfo<'a, S> {
@@ -443,59 +459,6 @@ class Report {
     std::vector<Label>         labels;
     Config                     config;
 
-    // fn get_source_groups(&self, cache: &mut impl Cache<S::SourceId>) ->
-    // Vec<SourceGroup<S>> {
-    //     let mut groups = Vec::new();
-    //     for label in self.labels.iter() {
-    //         let src_display = cache.display(label.span.source());
-    //         let src = match cache.fetch(label.span.source()) {
-    //             Ok(src) => src,
-    //             Err(e) => {
-    //                 eprintln!("Unable to fetch source '{}': {:?}",
-    //                 Show(src_display), e); continue;
-    //             }
-    //         };
-
-    //         assert!(
-    //             label.span.start() <= label.span.end(),
-    //             "Label start is after its end"
-    //         );
-
-    //         let start_line =
-    //         src.get_offset_line(label.span.start()).map(|(_, l, _)| l);
-    //         let end_line = src
-    //             .get_offset_line(label.span.end().saturating_sub(1).max(label.span.start()))
-    //             .map(|(_, l, _)| l);
-
-    //         let label_info = LabelInfo {
-    //             kind: if start_line == end_line {
-    //                 LabelKind::Inline
-    //             } else {
-    //                 LabelKind::Multiline
-    //             },
-    //             label,
-    //         };
-
-    //         if let Some(group) = groups
-    //             .iter_mut()
-    //             .find(|g: &&mut SourceGroup<S>| g.src_id ==
-    //             label.span.source())
-    //         {
-    //             group.span.start =
-    //             group.span.start.min(label.span.start()); group.span.end
-    //             = group.span.end.max(label.span.end());
-    //             group.labels.push(label_info);
-    //         } else {
-    //             groups.push(SourceGroup {
-    //                 src_id: label.span.source(),
-    //                 span: label.span.start()..label.span.end(),
-    //                 labels: vec![label_info],
-    //             });
-    //         }
-    //     }
-    //     groups
-    // }
-
     std::vector<SourceGroup> get_source_groups(Cache* cache) {
         std::vector<SourceGroup> groups;
         for (const auto& label : labels) {
@@ -537,7 +500,7 @@ class Report {
 
     std::error_code write(Cache cache, std::ostream w) { return write_for_stream(cache, w); }
 
-    std::error_code write_for_stream(Cache& cache, std::ostream& s) {
+    std::error_code write_for_stream(Cache& cache, std::ostream& w) {
         Characters draw;
         switch (config.char_set) {
             case CharSet::Unicode: draw = unicode(); break;
@@ -572,7 +535,7 @@ class Report {
             try {
                 auto src = cache.fetch(group.src_id);
 
-                auto line_range = src->get_line_range(group.span);
+                auto line_range = src->get_line_range(RangeSpan(group.span));
                 int  width      = 0;
                 for (uint32_t x = 1, y = 1; line_range.second / y != 0; x *= 10, y = std::pow(10, x)) {
                     ++width;
@@ -598,7 +561,7 @@ class Report {
                 continue;
             }
 
-            auto line_range = src->get_line_range(span);
+            std::pair<size_t, size_t> line_range = src->get_line_range(RangeSpan(span));
 
             // File name & reference
             size_t location = (src_id == this->location.first) ? this->location.second : labels[0].label.span->start();
@@ -612,400 +575,325 @@ class Report {
             }
 
             if (!config.compact) {}
-        }
 
+            struct LineLabel {
+                size_t col;
+                Label  label;
+                bool   multi;
+                bool   draw_msg;
+            };
 
-        struct LineLabel {
-            size_t       col;
-            const Label& label;
-            bool         multi;
-            bool         draw_msg;
-        };
-
-        // Generate a list of multi-line labels
-        std::vector<const Label*> multi_labels;
-        for (const auto& label_info : labels) {
-            if (label_info.kind == LabelKind::Multiline) {
-                multi_labels.push_back(&label_info.label);
+            // Generate a list of multi-line labels
+            std::vector<const Label*> multi_labels;
+            for (LabelInfo const& label_info : labels) {
+                if (label_info.kind == LabelKind::Multiline) {
+                    multi_labels.push_back(&label_info.label);
+                }
             }
-        }
-
-        // Sort multiline labels by length
-        std::sort(multi_labels.begin(), multi_labels.end(), [](const Label<S>* a, const Label<S>* b) {
-            return (a->span.len()) > (b->span.len());
-        });
 
 
-        auto write_margin = [&](std::ostream&                          w,
-                                size_t                                 idx,
-                                bool                                   is_line,
-                                bool                                   is_ellipsis,
-                                bool                                   draw_labels,
-                                std::optional<std::pair<size_t, bool>> report_row,
-                                const std::vector<LineLabel>&          line_labels,
-                                const std::optional<LineLabel>&        margin_label) {
-            if (draw_labels) {
-                for (size_t col = 0; col < multi_labels.size() + (multi_labels.size() > 0); ++col) {
-                    std::optional<std::pair<const Label*, bool>>     corner     = std::nullopt;
-                    std::optional<const Label*>                      hbar       = std::nullopt;
-                    std::optional<const Label*>                      vbar       = std::nullopt;
-                    std::optional<std::pair<const LineLabel*, bool>> margin_ptr = std::nullopt;
+            // Sort multiline labels by length
+            std::sort(multi_labels.begin(), multi_labels.end(), [](Label const* a, Label const* b) {
+                return (a->span->len()) > (b->span->len());
+            });
 
-                    const Label* multi_label = (col < multi_label->size()) ? &multi_label[col] : nullptr;
-                    auto         line_span   = src.line(idx)->span();
 
-                    for (size_t i = 0; i < std::min(col + 1, multi_labels.size()); ++i) {
-                        const auto& label  = multi_label[i];
-                        auto        margin = margin_label ? (label == margin_label->label ? &(*margin_label) : nullptr)
-                                                          : nullptr;
+            auto write_margin = [&](std::ostream&                          w,
+                                    size_t                                 idx,
+                                    bool                                   is_line,
+                                    bool                                   is_ellipsis,
+                                    bool                                   draw_labels,
+                                    std::optional<std::pair<size_t, bool>> report_row,
+                                    const std::vector<LineLabel>&          line_labels,
+                                    const std::optional<LineLabel>&        margin_label) {
+                if (draw_labels) {
+                    for (size_t col = 0; col < multi_labels.size() + (multi_labels.size() > 0); ++col) {
+                        std::optional<std::pair<const Label*, bool>>     corner     = std::nullopt;
+                        std::optional<const Label*>                      hbar       = std::nullopt;
+                        std::optional<const Label*>                      vbar       = std::nullopt;
+                        std::optional<std::pair<const LineLabel*, bool>> margin_ptr = std::nullopt;
 
-                        if (label.span->start() <= line_span.end && label.span->end() > line_span.start) {
-                            bool is_parent = i != col;
-                            bool is_start  = line_span.contains(label.span->start());
-                            bool is_end    = line_span.contains(label.last_offset());
+                        const Label* multi_label = (col < multi_labels.size()) ? &multi_label[col] : nullptr;
+                        auto         line_span   = src->line(idx).value().span();
 
-                            if (margin && is_line) {
-                                margin_ptr = std::make_pair(margin, is_start);
-                            } else if (!is_start && (!is_end || is_line)) {
-                                vbar = vbar ? vbar : (!is_parent ? &label : nullptr);
-                            } else if (report_row.has_value()) {
-                                auto   report_row_value = report_row.value();
-                                size_t label_row        = 0;
-                                for (size_t r = 0; r < line_labels.size(); ++r) {
-                                    if (label == line_labels[r].label) {
-                                        label_row = r;
-                                        break;
-                                    }
-                                }
+                        for (size_t i = 0; i < std::min(col + 1, multi_labels.size()); ++i) {
+                            const auto& label = multi_label[i];
+                            auto margin = margin_label ? (label == margin_label->label ? &(*margin_label) : nullptr)
+                                                       : nullptr;
 
-                                if (report_row_value.first == label_row) {
-                                    if (margin) {
-                                        vbar = (col == i) ? &margin->label : nullptr;
-                                        if (is_start) {
-                                            continue;
+                            if (label.span->start() <= line_span.second && line_span.first < label.span->end()) {
+                                bool is_parent = i != col;
+                                bool is_start  = contains(line_span, label.span->start());
+                                bool is_end    = contains(line_span, label.last_offset());
+
+                                if (margin && is_line) {
+                                    margin_ptr = std::make_pair(margin, is_start);
+                                } else if (!is_start && (!is_end || is_line)) {
+                                    vbar = vbar ? vbar : (!is_parent ? &label : nullptr);
+                                } else if (report_row.has_value()) {
+                                    auto   report_row_value = report_row.value();
+                                    size_t label_row        = 0;
+                                    for (size_t r = 0; r < line_labels.size(); ++r) {
+                                        if (label == line_labels[r].label) {
+                                            label_row = r;
+                                            break;
                                         }
                                     }
 
-                                    if (report_row_value.second) {
-                                        hbar = &label;
-                                        if (!is_parent) {
-                                            corner = std::make_pair(&label, is_start);
+                                    if (report_row_value.first == label_row) {
+                                        if (margin) {
+                                            vbar = (col == i) ? &margin->label : nullptr;
+                                            if (is_start) {
+                                                continue;
+                                            }
                                         }
-                                    } else if (!is_start) {
-                                        vbar = vbar ? vbar : (!is_parent ? &label : nullptr);
+
+                                        if (report_row_value.second) {
+                                            hbar = &label;
+                                            if (!is_parent) {
+                                                corner = std::make_pair(&label, is_start);
+                                            }
+                                        } else if (!is_start) {
+                                            vbar = vbar ? vbar : (!is_parent ? &label : nullptr);
+                                        }
+                                    } else {
+                                        vbar = vbar ? vbar
+                                                    : (!is_parent && (is_start ^ (report_row_value.first < label_row))
+                                                           ? &label
+                                                           : nullptr);
                                     }
-                                } else {
-                                    vbar = vbar ? vbar
-                                                : (!is_parent && (is_start ^ (report_row_value.first < label_row))
-                                                       ? &label
-                                                       : nullptr);
                                 }
                             }
+                        }
+
+
+                        if (auto margin_ptr_value = margin_ptr; margin_ptr_value.has_value() && is_line) {
+                            auto [margin, _is_start] = *margin_ptr_value;
+                            bool is_col              = multi_label ? (*multi_label == margin->label) : false;
+                            bool is_limit            = col + 1 == multi_labels.size();
+                            if (!is_col && !is_limit) {
+                                hbar = hbar.value_or(&margin->label);
+                            }
+                        }
+
+                        if (hbar.has_value()) {
+                            hbar = **hbar != margin_label->label || !is_line ? hbar : std::nullopt;
+                        }
+
+                        std::pair<wchar_t, wchar_t> ab;
+                        auto                        fg = [](wchar_t ch, Color col) { return ch; };
+                        if (auto corner_value = corner; corner_value.has_value()) {
+                            auto [label, is_start] = *corner_value;
+                            ab                     = {
+                                is_start ? fg(draw.ltop, label->color) : fg(draw.lbot, label->color),
+                                fg(draw.hbar, label->color),
+                            };
+                        } else if (auto label = hbar.value(); vbar.has_value() && !config.cross_gap) {
+                            ab = {fg(draw.xbar, label->color), fg(draw.hbar, label->color)};
+                        } else if (hbar.has_value()) {
+                            auto label = hbar.value();
+                            ab         = {
+                                fg(draw.hbar, label->color),
+                                fg(draw.hbar, label->color),
+                            };
+                        } else if (vbar.has_value()) {
+                            auto label = vbar.value();
+                            ab         = {
+                                is_ellipsis ? fg(draw.vbar_gap, label->color) : fg(draw.vbar, label->color),
+                                fg(' ', Color::Default),
+                            };
+                        } else if (auto margin_ptr_value = margin_ptr; margin_ptr_value.has_value() && is_line) {
+                            auto [margin, is_start] = *margin_ptr_value;
+                            bool is_col             = multi_label ? (*multi_label == margin->label) : false;
+                            bool is_limit           = col == multi_labels.size();
+                            ab                      = {
+                                is_limit ? fg(draw.rarrow, margin->label.color)
+                                                     : is_col
+                                                         ? (is_start ? fg(draw.ltop, margin->label.color)
+                                                                     : fg(draw.lcross, margin->label.color))
+                                                         : fg(draw.hbar, margin->label.color),
+                                !is_limit ? fg(draw.hbar, margin->label.color) : fg(' ', Color::Default),
+                            };
+                        } else {
+                            ab = {
+                                fg(' ', Color::Default),
+                                fg(' ', Color::Default),
+                            };
                         }
                     }
                 }
-            }
-        };
+            };
 
 
-        is_ellipsis = false;
-            for{
-                idx in line_range {
-                    let line = if let Some(line) = src.line(idx) { line }
-                    else {
-                        continue;
-                    };
+            bool is_ellipsis = false;
+            for (size_t idx = line_range.first; idx <= line_range.second; ++idx) {
+                auto line_opt = src->line(idx);
+                if (!line_opt) {
+                    continue;
+                }
+
+                Line line = line_opt.value();
+
+                std::optional<LineLabel> margin_label;
+                int                      min_key = std::numeric_limits<int>::max();
+                for (size_t i = 0; i < multi_labels.size(); ++i) {
+                    const Label* label    = multi_labels[i];
+                    bool         is_start = contains(line.span(), label->span->start());
+                    bool         is_end   = contains(line.span(), label->last_offset());
+
+                    if (is_start || is_end) {
+                        LineLabel ll{
+                            .col      = (is_start ? label->span->start() : label->last_offset()) - line.offset,
+                            .label    = *label,
+                            .multi    = true,
+                            .draw_msg = is_end,
+                        };
 
 
-                    std::vector<LineLabel> line_labels;
-
-                    for (const auto& label : multi_labels) {
-                        bool is_start = line.span().contains(label->span.start());
-                        bool is_end   = line.span().contains(label->last_offset());
-                        if (is_start && (margin_label == std::nullopt || *label != margin_label->label)) {
-                            line_labels.push_back(
-                                LineLabel{static_cast<int>(label->span.start() - line.offset()), *label, true, false});
-                        } else if (is_end) {
-                            line_labels.push_back(
-                                LineLabel{static_cast<int>(label->last_offset() - line.offset()), *label, true, true});
+                        int key = (ll.col << 1) | (!label->span->start());
+                        if (key < min_key) {
+                            min_key      = key;
+                            margin_label = ll;
                         }
                     }
+                }
 
-                    for (const auto& label_info : labels) {
-                        if (label_info.label.span.start() >= line.span().start
-                            && label_info.label.span.end() <= line.span().end && label_info.kind == LabelKind::Inline) {
-                            int col;
-                            switch (self.config.label_attach) {
-                                case LabelAttach::Start: col = label_info.label.span.start(); break;
+                std::vector<LineLabel> line_labels;
+                for (const Label* label : multi_labels) {
+                    bool is_start = contains(line.span(), label->span->start());
+                    bool is_end   = contains(line.span(), label->last_offset());
+                    bool different_from_margin_label
+                        = (!margin_label.has_value()
+                           || reinterpret_cast<const void*>(label)
+                                  != reinterpret_cast<const void*>(&margin_label->label));
+
+                    if ((is_start && different_from_margin_label) || is_end) {
+                        LineLabel ll{
+                            .col      = (is_start ? label->span->start() : label->last_offset()) - line.offset,
+                            .label    = *label,
+                            .multi    = true,
+                            .draw_msg = is_end,
+                        };
+
+
+                        line_labels.push_back(ll);
+                    }
+                }
+
+                for (const LabelInfo& label_info : labels) {
+                    if (label_info.label.span->start() >= line.span().first
+                        && label_info.label.span->end() <= line.span().second) {
+                        if (label_info.kind == LabelKind::Inline) {
+                            size_t position = 0;
+                            switch (config.label_attach) {
+                                case LabelAttach::Start: position = label_info.label.span->start(); break;
                                 case LabelAttach::Middle:
-                                    col = (label_info.label.span.start() + label_info.label.span.end()) / 2;
+                                    position = (label_info.label.span->start() + label_info.label.span->end()) / 2;
                                     break;
-                                case LabelAttach::End: col = label_info.label.last_offset(); break;
+                                case LabelAttach::End: position = label_info.label.last_offset(); break;
                             }
-                            col = std::max(col, static_cast<int>(label_info.label.span.start())) - line.offset();
-                            line_labels.push_back(LineLabel{col, label_info.label, false, true});
+
+                            LineLabel ll{
+                                .col      = std::max(position, label_info.label.span->start()) - line.offset,
+                                .label    = label_info.label,
+                                .multi    = false,
+                                .draw_msg = true,
+                            };
+
+
+                            line_labels.push_back(ll);
                         }
                     }
+                }
 
-
-                    if (line_labels.empty() && margin_label == std::nullopt) {
-                        bool within_label = std::any_of(
-                            multi_labels.begin(), multi_labels.end(), [&](const auto& label) {
-                                return label->span.contains(line.span().start());
-                            });
-                        if (!is_ellipsis && within_label) {
-                            is_ellipsis = true;
-                        } else {
-                            if (!self.config.compact && !is_ellipsis) {
-                                write_margin(w, idx, false, is_ellipsis, false, std::nullopt, {}, std::nullopt);
-                                w << "\n";
-                            }
-                            is_ellipsis = true;
-                            continue;
-                        }
-                    } else {
-                        is_ellipsis = false;
-                    }
-
-
-                    // Sort the labels by their columns
-                    std::sort(line_labels.begin(), line_labels.end(), [](const auto& ll1, const auto& ll2) {
-                        return std::tie(ll1.label.order, ll1.col, !ll1.label.span.start())
-                             < std::tie(ll2.label.order, ll2.col, !ll2.label.span.start());
+                // Skip this line if we don't have labels for it
+                if (line_labels.size() == 0 && !margin_label.has_value()) {
+                    bool within_label = std::any_of(multi_labels.begin(), multi_labels.end(), [&](const Label* label) {
+                        return label->span->contains(line.span().first);
                     });
-
-                    // Determine label bounds so we know where to put error
-                    // messages let arrow_end_space = if
-                    int arrow_end_space = self.config.compact ? 1 : 2;
-                    int arrow_len       = std::accumulate(
-                                        line_labels.begin(),
-                                        line_labels.end(),
-                                        0,
-                                        [&](int l, const auto& ll) {
-                                            return ll.multi
-                                                           ? line.length()
-                                                           : std::max(
-                                                         l, static_cast<int>(ll.label.span.end() - line.offset()));
-                                        })
-                                  + arrow_end_space;
-
-
-                    // Should we draw a vertical bar as part of a label
-                    // arrow on this line?
-                    auto get_vbar = [&](int col, int row) {
-                        auto it = std::find_if(line_labels.begin(), line_labels.end(), [&](const auto& ll) {
-                            return ll.label.msg.has_value()
-                                && (margin_label == std::nullopt || ll.label != margin_label->label) && ll.col == col
-                                && ((row <= &ll - &line_labels[0] && !ll.multi)
-                                    || (row <= &ll - &line_labels[0] && ll.multi));
-                        });
-                        return it != line_labels.end() ? &*it : nullptr;
-                    };
-
-                    auto get_highlight = [&](int col) {
-                        auto it = std::min_element(
-                            margin_label.begin(), margin_label.end(), [&](const auto& l1, const auto& l2) {
-                                return std::tie(-l1.priority, l1.span.length())
-                                     < std::tie(-l2.priority, l2.span.length());
-                            });
-                        return it != margin_label.end() && it->span.contains(line.offset() + col) ? &*it : nullptr;
-                    };
-
-
-                    auto get_underline = [&](int col) {
-                        auto it = std::min_element(
-                            line_labels.begin(), line_labels.end(), [&](const auto& ll1, const auto& ll2) {
-                                return std::tie(-ll1.label.priority, ll1.label.span.length())
-                                     < std::tie(-ll2.label.priority, ll2.label.span.length());
-                            });
-                        return it != line_labels.end() && self.config.underlines && !it->multi
-                                    && it->label.span.contains(line.offset() + col)
-                                 ? &*it
-                                 : nullptr;
-                    };
-
-                    write_margin(w, idx, true, is_ellipsis, true, std::nullopt, line_labels, margin_label);
-
-                    // Line
-                    if (!is_ellipsis) {
-                        int col = 0;
-                        for (char c : line) {
-                            auto highlight = get_highlight(col);
-                            auto color     = highlight.has_value() ? highlight->color : self.config.unimportant_color();
-                            auto [c_, width] = self.config.char_width(c, col);
-                            if (isspace(c_)) {
-                                for (int i = 0; i < width; ++i) {
-                                    w << fg(c_, color, s);
-                                }
-                            } else {
-                                w << fg(c_, color, s);
-                            }
-                            ++col;
-                        }
-                    }
-                    w << "\n";
-
-
-                    // Arrows
-                for{
-                    row in 0..line_labels.len() {
-                        let line_label = &line_labels[row];
-
-                        if (!self.config.compact) {
-                            // Margin alternate
-                            write_margin(
-                                w,
-                                idx,
-                                false,
-                                is_ellipsis,
-                                true,
-                                std::make_pair(row, false),
-                                line_labels,
-                                margin_label);
-                            // Lines alternate
-                            auto chars = line.begin();
-                            for (size_t col = 0; col < arrow_len; ++col) {
-                                int width = chars == line.end() ? 1 : self.config.char_width(*chars, col).second;
-
-                                auto vbar      = get_vbar(col, row);
-                                auto underline = get_underline(col).value_or(false);
-                                auto [c, tail] = vbar.has_value() ? ([&] {
-                                    auto vbar_ll = vbar.value();
-                                    if (underline) {
-                                        // TODO: Is this good?
-                                        if (vbar_ll.label.span.length() <= 1 || true) {
-                                            return std::make_pair(draw.underbar, draw.underline);
-                                        } else if (line.offset() + col == vbar_ll.label.span.start()) {
-                                            return std::make_pair(draw.ltop, draw.underbar);
-                                        } else if (line.offset() + col == vbar_ll.label.last_offset()) {
-                                            return std::make_pair(draw.rtop, draw.underbar);
-                                        } else {
-                                            return std::make_pair(draw.underbar, draw.underline);
-                                        }
-                                    } else if (vbar_ll.multi && row == 0 && self.config.multiline_arrows) {
-                                        return std::make_pair(draw.uarrow, ' ');
-                                    } else {
-                                        return std::make_pair(draw.vbar, ' ');
-                                    }
-                                }())
-                                                                  : (underline ? std::make_pair(
-                                                                         draw.underline, draw.underline)
-                                                                               : std::make_pair(' ', ' '));
-                                c              = c.fg(vbar.value().label.color, s);
-                                tail           = tail.fg(vbar.value().label.color, s);
-
-                                for (int i = 0; i < width; ++i) {
-                                    w << (i == 0 ? c : tail);
-                                }
-                            }
+                    if (!is_ellipsis && within_label) {
+                        is_ellipsis = true;
+                    } else {
+                        if (!config.compact && !is_ellipsis) {
+                            write_margin(w, idx, false, is_ellipsis, false, std::nullopt, {}, std::nullopt);
                             w << "\n";
                         }
-
-
-                        write_margin(
-                            w, idx, false, is_ellipsis, true, std::make_pair(row, true), line_labels, margin_label);
-
-                        auto chars = line.begin();
-                        for (size_t col = 0; col < arrow_len; ++col) {
-                            int width = chars == line.end() ? 1 : self.config.char_width(*chars, col).second;
-
-                            bool is_hbar = (((col > line_label.col) ^ line_label.multi)
-                                            || (line_label.label.msg.has_value() && line_label.draw_msg
-                                                && col > line_label.col))
-                                        && line_label.label.msg.has_value();
-                            auto [c, tail] = (col == line_label.col && line_label.label.msg.has_value()
-                                              && (!margin_label.has_value()
-                                                  || line_label.label != margin_label.value().label))
-                                               ? (std::make_pair(
-                                                   (line_label.multi ? (line_label.draw_msg ? draw.mbot : draw.rbot)
-                                                                     : draw.lbot)
-                                                       .fg(line_label.label.color, s),
-                                                   draw.hbar.fg(line_label.label.color, s)))
-                                               : ([&]() {
-                                                     auto vbar_ll = get_vbar(col, row);
-                                                     if (vbar_ll.has_value()
-                                                         && (col != line_label.col
-                                                             || line_label.label.msg.has_value())) {
-                                                         if (!self.config.cross_gap && is_hbar) {
-                                                             return std::make_pair(
-                                                                 draw.xbar.fg(line_label.label.color, s),
-                                                                 ' '.fg(line_label.label.color, s));
-                                                         } else if (is_hbar) {
-                                                             return std::make_pair(
-                                                                 draw.hbar.fg(line_label.label.color, s),
-                                                                 draw.hbar.fg(line_label.label.color, s));
-                                                         } else {
-                                                             return std::make_pair(
-                                                                 (vbar_ll.value().multi && row == 0
-                                                                          && self.config.compact
-                                                                      ? draw.uarrow
-                                                                      : draw.vbar)
-                                                                     .fg(vbar_ll.value().label.color, s),
-                                                                 ' '.fg(line_label.label.color, s));
-                                                         }
-                                                     } else if (is_hbar) {
-                                                         return std::make_pair(
-                                                             draw.hbar.fg(line_label.label.color, s),
-                                                             draw.hbar.fg(line_label.label.color, s));
-                                                     } else {
-                                                         return std::make_pair(
-                                                             ' '.fg(std::nullopt, s), ' '.fg(std::nullopt, s));
-                                                     }
-                                                 }());
-
-                            if (width > 0) {
-                                w << c;
-                            }
-                            for (int i = 1; i < width; ++i) {
-                                w << tail;
-                            }
-                        }
-
-
-                        if line_label {
-                            .draw_msg { write !(w, " {}", Show(line_label.label.msg.as_ref())) ? ; }
-                        }
-                        write !(w, "\n") ? ;
+                        is_ellipsis = true;
+                        continue;
                     }
-                }
-                }
-            }
-
-            // let is_final_group = group_idx + 1 == groups_len;
-            bool is_final_group = group_idx + 1 == groups_len;
-
-            // Help
-            if (self.help.has_value() && is_final_group) {
-                if (!self.config.compact) {
-                write_margin(w, 0, false, false, true, std::make_pair(0, false), std::vector<Label>(), std::nullopt);
-                w << "\n";
-                }
-                write_margin(w, 0, false, false, true, std::make_pair(0, false), std::vector<Label>(), std::nullopt);
-                w << "Help".fg(self.config.note_color(), s) << ": " << self.help.value() << "\n";
-            }
-
-
-            // Note
-            if (self.note.has_value() && is_final_group) {
-                if (!self.config.compact) {
-                write_margin(w, 0, false, false, true, std::make_pair(0, false), std::vector<Label>(), std::nullopt);
-                w << "\n";
-                }
-                write_margin(w, 0, false, false, true, std::make_pair(0, false), std::vector<Label>(), std::nullopt);
-                w << "Note".fg(self.config.note_color(), s) << ": " << self.note.value() << "\n";
-            }
-
-            // Tail of report
-            if (!self.config.compact) {
-                if (is_final_group) {
-                std::string final_margin = format("{}{}", Show(draw.hbar, line_no_width + 2), draw.rbot);
-                w << final_margin.fg(self.config.margin_color(), s) << std::endl;
                 } else {
-                w << Show(' ', line_no_width + 2) << draw.vbar.fg(self.config.margin_color(), s) << std::endl;
+                    is_ellipsis = false;
                 }
+
+                // Sort the labels by their columns
+                std::sort(line_labels.begin(), line_labels.end(), [](const LineLabel& a, const LineLabel& b) {
+                    return std::make_tuple(a.label.order, a.col, !a.label.span->start())
+                         < std::make_tuple(b.label.order, b.col, !b.label.span->start());
+                });
+
+                // Determine label bounds so we know where to put error messages
+                int    arrow_end_space = config.compact ? 1 : 2;
+                size_t arrow_len       = std::accumulate(
+                                       line_labels.begin(),
+                                       line_labels.end(),
+                                       0,
+                                       [&](size_t l, const auto& ll) {
+                                           if (ll.multi) {
+                                               return line.get_len();
+                                           } else {
+                                               return std::max(l, ll.label.span->end() - line.offset);
+                                           }
+                                       })
+                                 + arrow_end_space;
+
+                // Should we draw a vertical bar as part of a label arrow on this line?
+                auto get_vbar = [&](size_t col, size_t row) {
+                    auto it = std::find_if(line_labels.begin(), line_labels.end(), [&](const auto& ll) {
+                        return !ll.label.msg.empty() && (!margin_label.has_value() || ll.label != margin_label->label)
+                            && ll.col == col
+                            && ((row <= &ll - &line_labels[0] && !ll.multi)
+                                || (row <= &ll - &line_labels[0] && ll.multi));
+                    });
+                    return it != line_labels.end() ? &(*it) : nullptr;
+                };
+
+                auto get_highlight = [&](size_t col) {
+                    std::vector<const Label*> candidates;
+
+                    // TODO fixme
+//                    for (const auto& ll : margin_label) {
+//                        candidates.push_back(&ll.label);
+//                    }
+
+                    for (const auto& l : multi_labels) {
+                        candidates.push_back(l);
+                    }
+
+                    for (const auto& l : line_labels) {
+                        candidates.push_back(&l.label);
+                    }
+
+                    auto it = std::min_element(candidates.begin(), candidates.end(), [&](const auto& a, const auto& b) {
+                        return std::make_tuple(-a->priority, a->span->len())
+                             < std::make_tuple(-b->priority, b->span->len());
+                    });
+
+                    return (it != candidates.end() && (*it)->span->contains(line.offset + col)) ? *it : nullptr;
+                };
+
+                auto get_underline = [&](size_t col) {
+                    auto it = std::min_element(
+                        line_labels.begin(), line_labels.end(), [&](const auto& a, const auto& b) {
+                            return std::make_tuple(-a.label.priority, a.label.span->len())
+                                 < std::make_tuple(-b.label.priority, b.label.span->len());
+                        });
+
+                    return (it != line_labels.end() && config.underlines && !it->multi
+                            && it->label.span->contains(line.offset + col))
+                             ? &(*it)
+                             : nullptr;
+                };
             }
+        }
     }
-}
-}
-}
-;
+};
