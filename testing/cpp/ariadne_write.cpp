@@ -438,6 +438,21 @@ struct Config {
 
     std::optional<Color> note_color() { return color ? std::make_optional(Color::Fixed) : std::nullopt; }
 
+    std::pair<char, std::size_t> char_width(char c, std::size_t col) {
+        if (c == '\t') {
+            // Find the column that the tab should end at
+            std::size_t tab_end = (col / tab_width + 1) * tab_width;
+            return std::make_pair(' ', tab_end - col);
+        } else if (std::isspace(c)) {
+            return std::make_pair(' ', 1);
+        } else {
+            // Assuming you have a function called 'width()' to get the character width.
+            std::size_t char_width = 1;
+            return std::make_pair(c, char_width);
+        }
+    }
+
+
     bool        cross_gap;
     LabelAttach label_attach;
     bool        compact;
@@ -447,6 +462,8 @@ struct Config {
     size_t      tab_width;
     CharSet     char_set;
 };
+
+auto fg = [](wchar_t ch, std::optional<Color> col) { return ch; };
 
 class Report {
   public:
@@ -498,9 +515,9 @@ class Report {
     }
 
 
-    std::error_code write(Cache cache, std::ostream w) { return write_for_stream(cache, w); }
+    void write(Cache cache, std::ostream w) { write_for_stream(cache, w); }
 
-    std::error_code write_for_stream(Cache& cache, std::ostream& w) {
+    void write_for_stream(Cache& cache, std::ostream& w) {
         Characters draw;
         switch (config.char_set) {
             case CharSet::Unicode: draw = unicode(); break;
@@ -681,7 +698,7 @@ class Report {
                         }
 
                         std::pair<wchar_t, wchar_t> ab;
-                        auto                        fg = [](wchar_t ch, Color col) { return ch; };
+
                         if (auto corner_value = corner; corner_value.has_value()) {
                             auto [label, is_start] = *corner_value;
                             ab                     = {
@@ -847,7 +864,7 @@ class Report {
                                  + arrow_end_space;
 
                 // Should we draw a vertical bar as part of a label arrow on this line?
-                auto get_vbar = [&](size_t col, size_t row) {
+                auto get_vbar = [&](size_t col, size_t row) -> LineLabel* {
                     auto it = std::find_if(line_labels.begin(), line_labels.end(), [&](const auto& ll) {
                         return !ll.label.msg.empty() && (!margin_label.has_value() || ll.label != margin_label->label)
                             && ll.col == col
@@ -861,9 +878,9 @@ class Report {
                     std::vector<const Label*> candidates;
 
                     // TODO fixme
-//                    for (const auto& ll : margin_label) {
-//                        candidates.push_back(&ll.label);
-//                    }
+                    //                    for (const auto& ll : margin_label) {
+                    //                        candidates.push_back(&ll.label);
+                    //                    }
 
                     for (const auto& l : multi_labels) {
                         candidates.push_back(l);
@@ -881,8 +898,8 @@ class Report {
                     return (it != candidates.end() && (*it)->span->contains(line.offset + col)) ? *it : nullptr;
                 };
 
-                auto get_underline = [&](size_t col) {
-                    auto it = std::min_element(
+                auto get_underline = [&](size_t col) -> LineLabel* {
+                    std::vector<LineLabel>::iterator it = std::min_element(
                         line_labels.begin(), line_labels.end(), [&](const auto& a, const auto& b) {
                             return std::make_tuple(-a.label.priority, a.label.span->len())
                                  < std::make_tuple(-b.label.priority, b.label.span->len());
@@ -893,7 +910,215 @@ class Report {
                              ? &(*it)
                              : nullptr;
                 };
+
+                // Margin
+                write_margin(w, idx, true, is_ellipsis, true, std::nullopt, line_labels, margin_label);
+
+                // Line
+                if (!is_ellipsis) {
+                    int col = 0;
+                    for (char c : line.chars) {
+                        auto highlight   = get_highlight(col);
+                        auto color       = highlight ? highlight->color : config.unimportant_color();
+                        auto [wc, width] = config.char_width(c, col);
+
+                        if (std::isspace(c)) {
+                            for (int i = 0; i < width; ++i) {
+                                //                                w << fg(wc, color);
+                            }
+                        } else {
+                            //                            w << fg(wc, color);
+                        }
+
+                        col++;
+                    }
+                }
+                w << "\n";
+
+                for (std::size_t row = 0; row < line_labels.size(); ++row) {
+                    const auto& line_label = line_labels[row];
+
+                    if (!config.compact) {
+                        // Margin alternate
+                        write_margin(
+                            w,
+                            idx,
+                            false,
+                            is_ellipsis,
+                            true,
+                            std::make_optional(std::make_pair(row, false)),
+                            line_labels,
+                            margin_label);
+
+                        // Lines alternate
+                        auto chars = line.chars.begin();
+                        for (std::size_t col = 0; col < arrow_len; ++col) {
+                            int width = (chars != line.chars.end()) ? config.char_width(*chars, col).second : 1;
+
+                            auto vbar = get_vbar(col, row);
+
+                            // let underline = get_underline(col).filter(|_| row == 0);
+                            // I think it translates like this, but fuck this Rust garbage
+                            LineLabel* underline;
+                            if (row == 0) {
+                                if (LineLabel* tmp = get_underline(col)) {
+                                    underline = tmp;
+                                }
+                            }
+
+                            std::array<wchar_t, 2> ct_array;
+                            if (auto vbar_ll = vbar) {
+                                std::array<wchar_t, 2> ct_inner;
+                                if (underline) {
+                                    // TODO: Is this good?
+                                    if (vbar_ll->label.span->len() <= 1 || true) {
+                                        ct_inner = {draw.underbar, draw.underline};
+                                    } else if (line.offset + col == vbar_ll->label.span->start()) {
+                                        ct_inner = {draw.ltop, draw.underbar};
+                                    } else if (line.offset + col == vbar_ll->label.last_offset()) {
+                                        ct_inner = {draw.rtop, draw.underbar};
+                                    } else {
+                                        ct_inner = {draw.underbar, draw.underline};
+                                    }
+                                } else if (vbar_ll->multi && row == 0 && config.multiline_arrows) {
+                                    ct_inner = {draw.uarrow, ' '};
+                                } else {
+                                    ct_inner = {draw.vbar, ' '};
+                                }
+                                ct_array = {
+                                    fg(ct_inner[0], vbar_ll->label.color), fg(ct_inner[1], vbar_ll->label.color)};
+                            } else if (underline) {
+                                ct_array = {
+                                    fg(draw.underline, underline->label.color),
+                                    fg(draw.underline, underline->label.color)};
+                            } else {
+                                ct_array = {fg(' ', std::nullopt), fg(' ', std::nullopt)};
+                            }
+
+                            for (int i = 0; i < width; ++i) {
+                                //                                w << ((i == 0) ? ct_array[0] : ct_array[1]);
+                            }
+
+                            if (chars != line.chars.end()) {
+                                ++chars;
+                            }
+                        }
+                        w << "\n";
+                    }
+
+                    // Margin
+                    write_margin(
+                        w,
+                        idx,
+                        false,
+                        is_ellipsis,
+                        true,
+                        std::make_optional(std::make_pair(row, true)),
+                        line_labels,
+                        margin_label);
+
+                    // Lines
+                    auto chars = line.chars.begin();
+                    for (std::size_t col = 0; col < arrow_len; ++col) {
+                        int width = (chars != line.chars.end()) ? config.char_width(*chars, col).second : 1;
+
+                        bool is_hbar = (((col > line_label.col) ^ line_label.multi)
+                                        || (!line_label.label.msg.empty() && line_label.draw_msg
+                                            && col > line_label.col))
+                                    && !line_label.label.msg.empty();
+                        std::array<wchar_t, 2> ct_array;
+                        if (col == line_label.col && !line_label.label.msg.empty()
+                            && (!margin_label.has_value() || line_label.label != margin_label->label)) {
+                            ct_array = {
+                                fg((line_label.multi ? (line_label.draw_msg ? draw.mbot : draw.rbot) : draw.lbot),
+                                   line_label.label.color),
+                                fg(draw.hbar, line_label.label.color),
+                            };
+                        } else if (LineLabel* vbar_ll = nullptr;
+                                   (vbar_ll = get_vbar(col, row))
+                                   && (col != line_label.col || !line_label.label.msg.empty())) {
+                            if (!config.cross_gap && is_hbar) {
+                                ct_array = {
+                                    fg(draw.xbar, line_label.label.color),
+                                    fg(' ', line_label.label.color),
+                                };
+                            } else if (is_hbar) {
+                                ct_array = {
+                                    fg(draw.hbar, line_label.label.color),
+                                    fg(draw.hbar, line_label.label.color),
+                                };
+                            } else {
+                                ct_array = {
+                                    fg((vbar_ll->multi && row == 0 && config.compact ? draw.uarrow : draw.vbar),
+                                       vbar_ll->label.color),
+                                    fg(' ', line_label.label.color),
+                                };
+                            }
+                        } else if (is_hbar) {
+                            ct_array = {
+                                fg(draw.hbar, line_label.label.color),
+                                fg(draw.hbar, line_label.label.color),
+                            };
+                        } else {
+                            ct_array = {
+                                fg(' ', std::nullopt),
+                                fg(' ', std::nullopt),
+                            };
+                        }
+
+                        if (width > 0) {
+                            //                            w << ct_array[0];
+                        }
+                        for (int i = 1; i < width; ++i) {
+                            //                            w << ct_array[1];
+                        }
+
+                        if (chars != line.chars.end()) {
+                            ++chars;
+                        }
+                    }
+
+                    if (line_label.draw_msg) {
+//                        w << " " << show(line_label.label.msg.value());
+                    }
+                    w << "\n";
+
+
+                }
             }
+
+            bool is_final_group = group_idx + 1 == groups.size();
+
+            // Help
+            if (help.has_value() && is_final_group) {
+                if (!config.compact) {
+                    write_margin(w, 0, false, false, true, std::make_pair(0, false), {}, std::nullopt);
+                    w << "\n";
+                }
+                write_margin(w, 0, false, false, true, std::make_pair(0, false), {}, std::nullopt);
+//                w << "Help".fg(self.config.note_color()) << ": " << self.help.value() << "\n";
+            }
+
+            // Note
+            if (note.has_value() && is_final_group) {
+                if (!config.compact) {
+                    write_margin(w, 0, false, false, true, std::make_pair(0, false), {}, std::nullopt);
+//                    w << "\n";
+                }
+                write_margin(w, 0, false, false, true, std::make_pair(0, false), {}, std::nullopt);
+//                w << "Note" << fg(config.note_color()) << ": " << note.value() << "\n";
+            }
+
+            // Tail of report
+            if (!config.compact) {
+                if (is_final_group) {
+//                    std::string final_margin = show(std::make_pair(draw.hbar, line_no_width + 2)) + show(draw.rbot);
+//                    w << final_margin.fg(config.margin_color()) << "\n";
+                } else {
+//                    w << show(std::make_pair(' ', line_no_width + 2)) << draw.vbar.fg(self.config.margin_color()) << "\n";
+                }
+            }
+
         }
     }
 };
