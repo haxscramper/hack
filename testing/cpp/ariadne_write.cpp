@@ -81,6 +81,8 @@ class Cache {
     virtual std::optional<std::string> display(Id const& id) const = 0;
 };
 
+
+
 // A type representing a single line of a `Source`.
 struct Line {
     size_t      offset;
@@ -108,6 +110,8 @@ struct Line {
 struct Source {
     std::vector<Line> lines;
     size_t            len;
+
+    Source(std::string const& l) {}
 
     struct OffsetLine {
         const Line& line;
@@ -156,6 +160,24 @@ struct Source {
         } else {
             return {0, lines.size()};
         }
+    }
+};
+
+class StrCache : public Cache {
+
+
+    // Cache interface
+public:
+    std::unordered_map<Id, std::shared_ptr<Source>> sources;
+    void add(Id id, std::string const& source ){
+        sources[id] = std::make_shared<Source>(source);
+    }
+    std::shared_ptr<Source> fetch(const Id &id) override {
+    return sources.at(id);
+    }
+    std::optional<std::string> display(const Id &id) const override {
+        return "";
+
     }
 };
 
@@ -306,7 +328,6 @@ struct Label {
         return *this;
     }
 
-    // Private constructor
     Label(const std::shared_ptr<Span>& span) : span(span), msg(""), color(Color()), order(0), priority(0) {}
 
     std::shared_ptr<Span> span;
@@ -476,6 +497,70 @@ class Report {
     std::vector<Label>         labels;
     Config                     config;
 
+
+    // Give this report a numerical code that may be used to more precisely look up the error in documentation.
+    Report& with_code(const std::string& code) {
+        this->code = code;
+        return *this;
+    }
+
+    // Set the message of this report.
+    void set_message(const std::string& msg) { this->msg = msg; }
+
+    // Add a message to this report.
+    Report& with_message(const std::string& msg) {
+        set_message(msg);
+        return *this;
+    }
+
+    // Set the note of this report.
+    void set_note(const std::string& note) { this->note = note; }
+
+    // Set the note of this report.
+    Report& with_note(const std::string& note) {
+        set_note(note);
+        return *this;
+    }
+
+    // Set the help message of this report.
+    void set_help(const std::string& help) { this->help = help; }
+
+    // Set the help message of this report.
+    Report& with_help(const std::string& help) {
+        set_help(help);
+        return *this;
+    }
+
+    // Add a label to the report.
+    void add_label(const Label& label) { labels.push_back(label); }
+
+    // Add multiple labels to the report.
+    template <typename Container>
+    void add_labels(const Container& labels) {
+        this->labels.insert(this->labels.end(), labels.begin(), labels.end());
+    }
+
+    // Add a label to the report.
+    Report& with_label(const Label& label) {
+        add_label(label);
+        return *this;
+    }
+
+    // Add multiple labels to the report.
+    template <typename Container>
+    Report& with_labels(const Container& labels) {
+        add_labels(labels);
+        return *this;
+    }
+
+    // Use the given Config to determine diagnostic attributes.
+    Report& with_config(const Config& config) {
+        this->config = config;
+        return *this;
+    }
+
+    Report(ReportKind kind, Id id, int offset) : kind(kind), location({id, offset}) {}
+
     std::vector<SourceGroup> get_source_groups(Cache* cache) {
         std::vector<SourceGroup> groups;
         for (const auto& label : labels) {
@@ -515,9 +600,21 @@ class Report {
     }
 
 
-    void write(Cache cache, std::ostream w) { write_for_stream(cache, w); }
+    void write(Cache & cache, std::ostream& w) { write_for_stream(cache, w); }
 
-    void write_for_stream(Cache& cache, std::ostream& w) {
+    // Write this diagnostic out to stderr.
+    void eprint(Cache& cache) {
+         write(cache, std::cerr);
+    }
+
+    // Write this diagnostic out to stdout.
+    // In most cases, eprint is the more correct function to use.
+    void print(Cache& cache) {
+         write(cache, std::cout);
+    }
+
+
+    void write_for_stream(Cache & cache, std::ostream& w) {
         Characters draw;
         switch (config.char_set) {
             case CharSet::Unicode: draw = unicode(); break;
@@ -586,7 +683,7 @@ class Report {
             auto                                offset_line = src->get_offset_line(location);
             std::pair<std::string, std::string> line_col;
             if (offset_line) {
-                line_col = {fmt::format("{}", offset_line->idx + 1), fmt::format("{}", offset_line->col + 1)};
+//                line_col = {fmt::format("{}", offset_line->idx + 1), fmt::format("{}", offset_line->col + 1)};
             } else {
                 line_col = {"?", "?"};
             }
@@ -1079,11 +1176,9 @@ class Report {
                     }
 
                     if (line_label.draw_msg) {
-//                        w << " " << show(line_label.label.msg.value());
+                        //                        w << " " << show(line_label.label.msg.value());
                     }
                     w << "\n";
-
-
                 }
             }
 
@@ -1096,29 +1191,75 @@ class Report {
                     w << "\n";
                 }
                 write_margin(w, 0, false, false, true, std::make_pair(0, false), {}, std::nullopt);
-//                w << "Help".fg(self.config.note_color()) << ": " << self.help.value() << "\n";
+                //                w << "Help".fg(self.config.note_color()) << ": " << self.help.value() << "\n";
             }
 
             // Note
             if (note.has_value() && is_final_group) {
                 if (!config.compact) {
                     write_margin(w, 0, false, false, true, std::make_pair(0, false), {}, std::nullopt);
-//                    w << "\n";
+                    //                    w << "\n";
                 }
                 write_margin(w, 0, false, false, true, std::make_pair(0, false), {}, std::nullopt);
-//                w << "Note" << fg(config.note_color()) << ": " << note.value() << "\n";
+                //                w << "Note" << fg(config.note_color()) << ": " << note.value() << "\n";
             }
 
             // Tail of report
             if (!config.compact) {
                 if (is_final_group) {
-//                    std::string final_margin = show(std::make_pair(draw.hbar, line_no_width + 2)) + show(draw.rbot);
-//                    w << final_margin.fg(config.margin_color()) << "\n";
+                    //                    std::string final_margin = show(std::make_pair(draw.hbar, line_no_width + 2))
+                    //                    + show(draw.rbot); w << final_margin.fg(config.margin_color()) << "\n";
                 } else {
-//                    w << show(std::make_pair(' ', line_no_width + 2)) << draw.vbar.fg(self.config.margin_color()) << "\n";
+                    //                    w << show(std::make_pair(' ', line_no_width + 2)) <<
+                    //                    draw.vbar.fg(self.config.margin_color()) << "\n";
                 }
             }
-
         }
     }
 };
+
+int main() {
+    std::string a_tao = R"''(
+def five = 5
+)''";
+
+    std::string b_tao = R"''(
+def six = five + "1"
+)''";
+
+    std::string natColorized  = "Nat";
+    std::string strColorized  = "Str";
+    std::string fiveColorized = "5";
+
+    Id a_id = 1;
+    Id b_id = 2;
+
+
+    Color a;
+    Color b;
+    Color c;
+
+    auto p = [](size_t a, size_t b) { return std::make_pair(a, b); };
+    StrCache sources;
+    sources.add(a_id, a_tao);
+    sources.add(b_id, b_tao);
+
+    Report(ReportKind::Error, b_id, 10)
+        .with_code("3")
+        .with_message("Cannot add types Nat and Str")
+        .with_label(Label(std::make_shared<TupleSpan>(b_id, p(10, 14)))
+                        .with_message("This is of type " + natColorized)
+                        .with_color(a))
+        .with_label(Label(std::make_shared<TupleSpan>(b_id, p(17, 20)))
+                        .with_message("This is of type " + strColorized)
+                        .with_color(b))
+        .with_label(Label(std::make_shared<TupleSpan>(b_id, p(15, 16)))
+                        .with_message(natColorized + " and " + strColorized + " undergo addition here")
+                        .with_color(c)
+                        .with_order(10))
+        .with_label(Label(std::make_shared<TupleSpan>(a_id, p(4, 8)))
+                        .with_message("Original definition of " + fiveColorized + " is here")
+                        .with_color(a))
+        .with_note(natColorized + " is a number and can only be added to other numbers")
+        .print(sources);
+}
