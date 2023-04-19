@@ -32,7 +32,10 @@ add_definitions(${CLANG_DEFINITIONS})
 # Now build our tools
 add_executable(simple-tool tool.cpp)
 
+add_library(macro_tracker MODULE macro_expansion_tracker.cpp)
+target_link_libraries(macro_tracker PRIVATE clang-cpp LLVM-15)
+
 # Link against LLVM libraries
-target_link_libraries(simple-tool ${llvm_libs} ${clangTooling})
+target_link_libraries(simple-tool PRIVATE clang-cpp LLVM-15) 
 
 

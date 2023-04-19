@@ -27,8 +27,8 @@ log.setLevel(logging.DEBUG)
 GITHUB_API_TOKEN = open("secret.key").read().strip()
 GITHUB_GRAPHQL_URL = "https://api.github.com/graphql"
 
-OWNER = "nim-works"
-REPO_NAME = "nimskull"
+OWNER = "nim-lang"
+REPO_NAME = "Nim"
 
 query = """
 query ListPRs($owner: String!, $name: String!, $cursor: String) {
@@ -80,7 +80,7 @@ def get_all_prs(owner, repo_name, max_requests: int = 100000):
         if "errors" in result:
             pprint(result)
             log.error("Request failed")
-            return None
+            return all_prs
 
         else:
             prs = result["data"]["repository"]["pullRequests"]
@@ -95,7 +95,7 @@ def get_all_prs(owner, repo_name, max_requests: int = 100000):
 
 
 def main():
-    all_prs = get_all_prs(OWNER, REPO_NAME, 100)
+    all_prs = get_all_prs(OWNER, REPO_NAME, 2)
 
     # Sort PRs by additions + deletions
     sorted_prs = sorted(
@@ -117,7 +117,7 @@ def main():
     for pr in sorted_prs[:40]:
         table.add_row(
             str(pr["number"]),
-            str(pr["author"]["login"]),
+            str(pr["author"]["login"] if pr["author"] else "<none>"),
             str(pr["title"]),
             str(pr["additions"]),
             str(pr["deletions"]),
