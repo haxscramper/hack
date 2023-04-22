@@ -4,6 +4,7 @@ import requests
 import json
 
 import logging
+from datetime import datetime
 from rich.logging import RichHandler
 from rich.pretty import pprint
 from rich.console import Console
@@ -27,8 +28,8 @@ log.setLevel(logging.DEBUG)
 GITHUB_API_TOKEN = open("secret.key").read().strip()
 GITHUB_GRAPHQL_URL = "https://api.github.com/graphql"
 
-OWNER = "nim-lang"
-REPO_NAME = "Nim"
+OWNER = "nim-works"
+REPO_NAME = "nimskull"
 
 query = """
 query ListPRs($owner: String!, $name: String!, $cursor: String) {
@@ -44,6 +45,7 @@ query ListPRs($owner: String!, $name: String!, $cursor: String) {
         additions
         deletions
         url
+        mergedAt
         author {
           login
         }
@@ -94,8 +96,14 @@ def get_all_prs(owner, repo_name, max_requests: int = 100000):
     return all_prs
 
 
+def time_difference_in_days(dt):
+    now = datetime.now()
+    delta = now - dt
+    days = delta.days
+    return f"{days} days"
+
 def main():
-    all_prs = get_all_prs(OWNER, REPO_NAME, 2)
+    all_prs = get_all_prs(OWNER, REPO_NAME, 20)
 
     # Sort PRs by additions + deletions
     sorted_prs = sorted(
@@ -112,16 +120,19 @@ def main():
     table.add_column("Additions", no_wrap=True, justify="right", style="green")
     table.add_column("Deletions", no_wrap=True, justify="right", style="red")
     table.add_column("Total", no_wrap=True, justify="right", style="magenta")
+    table.add_column("Merged", no_wrap=True, justify="left")
 
 
     for pr in sorted_prs[:40]:
+        date = datetime.strptime(pr["mergedAt"], "%Y-%m-%dT%H:%M:%SZ")
         table.add_row(
             str(pr["number"]),
             str(pr["author"]["login"] if pr["author"] else "<none>"),
             str(pr["title"]),
             str(pr["additions"]),
             str(pr["deletions"]),
-            str(pr["deletions"] + pr["additions"])
+            str(pr["deletions"] + pr["additions"]),
+            str(f"{date.strftime('%Y-%m-%d')}, {time_difference_in_days(date)}")
         )
 
     console = Console()
