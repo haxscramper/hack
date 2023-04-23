@@ -47,5 +47,4 @@ int clang_Cursor_getParamNum(CXCursor C) {
     return -1;
 }
 
-int main() {
-}
+int main() {}

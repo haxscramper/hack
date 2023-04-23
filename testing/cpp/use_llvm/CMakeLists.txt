@@ -9,9 +9,9 @@ list(APPEND CMAKE_MODULE_PATH "${LLVM_CMAKE_DIR}")
 include_directories(${LLVM_INCLUDE_DIRS} ${CLANG_INCLUDE_DIRS})
 
 # Use `add_llvm_...` functions.
-include(AddLLVM)
+# include(AddLLVM)
 # Set compiler flags.
-include(HandleLLVMOptions)
+# include(HandleLLVMOptions)
 
 # separate_arguments(LLVM_DEFINITIONS_LIST NATIVE_COMMAND ${LLVM_DEFINITIONS})
 # add_definitions(${LLVM_DEFINITIONS_LIST})
@@ -32,10 +32,8 @@ add_definitions(${CLANG_DEFINITIONS})
 # Now build our tools
 add_executable(simple-tool tool.cpp)
 
-add_library(macro_tracker MODULE macro_expansion_tracker.cpp)
-target_link_libraries(macro_tracker PRIVATE clang-cpp LLVM-15)
+# add_library(macro_tracker MODULE macro_expansion_tracker.cpp)
+# target_link_libraries(macro_tracker PRIVATE clang-cpp LLVM-15)
 
 # Link against LLVM libraries
-target_link_libraries(simple-tool PRIVATE clang-cpp LLVM-15) 
-
-
+target_link_libraries(simple-tool PRIVATE clang-cpp clang LLVM-15)
