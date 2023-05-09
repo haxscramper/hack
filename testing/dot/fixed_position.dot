@@ -1,0 +1,14 @@
+  digraph {
+    splines=ortho;
+    graph [pad="0.212,0.055" bgcolor=lightgray, layout=neato]
+    node [style=filled]
+    a [fillcolor="#d62728" pos="0,0" pin=true]
+    b [fillcolor="#1f77b4" pos="0,1" pin=true]
+    c [fillcolor="#2ca02c" pos="2,4" pin=true]
+    c1 [fillcolor="#2ca02c" pos="2,5" pin=true]
+    d [fillcolor="#ff7f0e" pos="-1,0" pin=true]
+    a -> b
+    a -> c
+    a -> c1[splines=true, pos="2,2 0,0 1,1 2,2", pin=true];
+    a -> d
+  }

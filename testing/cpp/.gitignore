@@ -107,3 +107,5 @@ CMakePresets.json
 **/*.gcno
 **/*.gcda
 **/coverage*
+*.bin
+*.dot
