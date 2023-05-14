@@ -1,1 +1,4 @@
 *.png
+*.tmp
+*.xdot
+**/*.png

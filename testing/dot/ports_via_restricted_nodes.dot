@@ -1,0 +1,33 @@
+digraph structs {
+    graph[layout="neato"]
+    node [shape=plaintext]
+    struct1 [label=<
+<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0">
+  <TR><TD>left</TD><TD PORT="middle">mid dle</TD><TD PORT="right">right</TD></TR>
+</TABLE>>];
+    struct2 [label=<
+<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0">
+  <TR><TD PORT="one">one</TD><TD>two</TD></TR>
+</TABLE>>];
+    struct3 [label=<
+<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+  <TR>
+    <TD port="hello" ROWSPAN="3">hello<BR/>world</TD>
+    <TD COLSPAN="3">b</TD>
+    <TD ROWSPAN="3">g</TD>
+    <TD ROWSPAN="3">h</TD>
+  </TR>
+  <TR>
+    <TD>c</TD><TD PORT="here">d</TD><TD>e</TD>
+  </TR>
+  <TR>
+    <TD COLSPAN="3">f</TD>
+  </TR>
+</TABLE>>];
+
+    struct_hello_port[label="", shape=box, height=0, width=0, style=invis];
+    {rank=same; struct3:hello:w -> struct_hello_port:w[len="0.0001"];}
+
+    struct1:middle -> struct2:one[arrowhead=obox, arrowtail=obox, dir=both];
+    struct1:right -> struct_hello_port[arrowhead=obox, arrowtail=obox, dir=both];
+}

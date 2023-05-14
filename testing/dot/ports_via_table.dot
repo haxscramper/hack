@@ -1,0 +1,138 @@
+digraph G {
+	graph [bb="0,0,643.42,204",
+		rankdir=TB
+	];
+	node [label="\N"];
+	{
+		graph [rank=source];
+		src	[height=1.1667,
+			label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0">
+  <TR>
+    <TD BORDER="0">
+      <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0">
+        <TR>
+          <TD WIDTH="20"></TD>
+          <TD PORT="in1" BORDER="1" CELLPADDING="1">
+            <FONT POINT-SIZE="10">in1</FONT>
+          </TD>
+          <TD WIDTH="10"></TD>
+          <TD PORT="in2" BORDER="1" CELLPADDING="1">
+            <FONT POINT-SIZE="10">in2</FONT>
+          </TD>
+          <TD WIDTH="10"></TD>
+          <TD PORT="in3" BORDER="1" CELLPADDING="1">
+            <FONT POINT-SIZE="10">in3</FONT>
+          </TD>
+          <TD WIDTH="20"></TD>
+        </TR>
+      </TABLE>
+    </TD>
+  </TR>
+  <TR>
+    <TD BORDER="1" STYLE="ROUNDED" CELLPADDING="4" COLOR="black">A<BR />
+      <FONT POINT-SIZE="10">node</FONT>
+    </TD>
+  </TR>
+  <TR>
+    <TD BORDER="0">
+      <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0">
+        <TR>
+          <TD WIDTH="20"></TD>
+          <TD PORT="out1" BORDER="1" CELLPADDING="1">
+            <FONT POINT-SIZE="10">out1</FONT>
+          </TD>
+          <TD WIDTH="10"></TD>
+          <TD PORT="out2" BORDER="1" CELLPADDING="1">
+            <FONT POINT-SIZE="10">out2</FONT>
+          </TD>
+          <TD WIDTH="20"></TD>
+        </TR>
+      </TABLE>
+    </TD>
+  </TR>
+  </TABLE>>,
+			pos="319,162",
+			shape=plaintext,
+			width=8.1389];
+	}
+	{
+		graph [rank=sink];
+		snk	[height=1.1667,
+			label=<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0">
+  <TR>
+    <TD BORDER="0">
+      <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0">
+        <TR>
+          <TD WIDTH="20"></TD>
+          <TD PORT="in1" BORDER="1" CELLPADDING="1">
+            <FONT POINT-SIZE="10">in1</FONT>
+          </TD>
+          <TD WIDTH="10"></TD>
+          <TD PORT="in2" BORDER="1" CELLPADDING="1">
+            <FONT POINT-SIZE="10">in2</FONT>
+          </TD>
+          <TD WIDTH="10"></TD>
+          <TD PORT="in3" BORDER="1" CELLPADDING="1">
+            <FONT POINT-SIZE="10">in3</FONT>
+          </TD>
+          <TD WIDTH="20"></TD>
+        </TR>
+      </TABLE>
+    </TD>
+  </TR>
+  <TR>
+    <TD BORDER="1" STYLE="ROUNDED" CELLPADDING="4" COLOR="black">B<BR />
+      <FONT POINT-SIZE="10">node</FONT>
+    </TD>
+  </TR>
+  <TR>
+    <TD BORDER="0">
+      <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0">
+        <TR>
+          <TD WIDTH="20"></TD>
+          <TD PORT="out1" BORDER="1" CELLPADDING="1">
+            <FONT POINT-SIZE="10">out1</FONT>
+          </TD>
+          <TD WIDTH="10"></TD>
+          <TD PORT="out2" BORDER="1" CELLPADDING="1">
+            <FONT POINT-SIZE="10">out2</FONT>
+          </TD>
+          <TD WIDTH="20"></TD>
+        </TR>
+      </TABLE>
+    </TD>
+  </TR>
+  </TABLE>>,
+			pos="293,42",
+			shape=plaintext,
+			width=8.1389];
+	}
+	src:out1 -> snk:in1	[arrowhead=normal,
+		color=black,
+		fontsize=10,
+		labelangle=45,
+		labeldistance=2.0,
+		labelfontcolor=black,
+		pos="e,113,81 192,123 192,87.585 129.34,113.48 115.63,91.476"];
+	src:out1 -> snk:in2	[arrowhead=normal,
+		color=black,
+		fontsize=10,
+		labelangle=45,
+		labeldistance=2.0,
+		labelfontcolor=black,
+		pos="e,293,81 192,123 192,78.752 275.67,120.53 290.7,91.739"];
+	src:out2 -> snk:in3	[arrowhead=normal,
+		color=black,
+		fontsize=10,
+		labelangle=45,
+		labeldistance=2.0,
+		labelfontcolor=black,
+		pos="e,473,81 446,123 446,105.14 463.48,103.2 470.31,91.557"];
+	snk:e -> src:e	[arrowhead=vee,
+		color=red,
+		fontsize=10,
+		labelangle=45,
+		labeldistance=2.0,
+		labelfontcolor=black,
+		pos="e,613,162 587,42 637.95,42 663.99,146.59 622.82,160.48"];
+}
