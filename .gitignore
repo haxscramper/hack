@@ -418,3 +418,4 @@ nim.cfg
 deps/
 **/*.tmp*
 **/secret*
+**/heaptrack*
