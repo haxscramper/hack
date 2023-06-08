@@ -1,8 +1,8 @@
 @startuml
 skinparam DefaultFontName Iosevka
 skinparam defaultTextAlignment left
-skinparam maxMessageSize 200
-skinparam wrapWidth 200
+skinparam maxMessageSize 300
+skinparam wrapWidth 300
 
 legend
 
@@ -40,29 +40,58 @@ state disagreement : "Third party in a conflict" : Two conficting parties tried 
 
 disagreement --> war : It is asserted as a given that third party interjected because they were not interested in reaching peaceful resolution of the debate and instead their main objective is to profit off war
 
-state research_backed as "Research-backed assertion is introduced" : Report, study or theory is provided to assert validity of a point
+state research_backed as "Research-backed assertion is introduced" #yellow : Report, study or theory is provided to assert validity of a point
 
 research_backed --> partial_data
 
 state modern_academia as "State of modern academia"
 
-state negative as "Negative statement" : Any sort of negative statement is introduced about one party
+state negative as "Negative statement" #yellow : Any sort of negative statement is introduced about one party
+
+state lack_of_evidence as "Lack of evidence" #yellow : Lack of evidence in support of some hypothesis is called out as the reason for its implausibility.
+
+state cover_up as "Covered up the evidence"
+
+note top of cover_up
+Lack of substantial evidence is pointed out. Specifically comes up in situations like "they covered everything up". Someone says it is highly implausible that the cover-up story of any kind would've survived for long enough. Instead of using the fact about the lack of evidence to question validity of the theory "cover up" allows spinning it into a different direction: "they covered up so much" => "they are so powerful"
+
+In case the argument is done in the paradigm of conspiracy theory, most of the external argumentation can be used as a proof of said theory, only to further cement the opinion of the power of the conspiracy rather than get rid of this notion.
+endnote
+
+input --> lack_of_evidence
+lack_of_evidence  --> cover_up
+cover_up --> partial_data
+cover_up --> backdoor_deals
 
 state both_sides as "Both sides are 'equal'" : It is said that both sides are equally bad because they are both interested in prolongating the conflict
 
 both_sides --> evil
 
-state we_dont_know as "Not possible to get the full picture"
+state we_dont_know as "Not possible to get the full picture" : Because the newly introduced piece of information is only partially trustworthy we cant use it. It either does not account for enough things (so unless the statement is a claim about literally everything it is not considered (conspiracy theories *are* claims of this nature -- about everything in general and nothing in particular)) OR leaves out some important pieces that absolutely must be accounted for (so unless the claim includes some other, partially unrelated stuff it is not considered)
+
+note left of we_dont_know
+Fundamental issue: every piece is considered in isolation and this makes it impossible to to build the model if every decision turns into rigid dichotomy that divides the pro and con data points into two categories each time. I say something. You arrange your statements in a way that would allow you to exclude mine from the chamber and then proceed to do exactly this. Instead of being able to consider the problem as a whole AND at a high resolution we are dropping down to singular points and discard everything else at once.
+endnote
+
+note right of we_dont_know
+The ultimate objective is to build a model of reality that provides a way to explain earlier events, predict new ones and incorporate new facts and assumptions as well. We can adopt pretty much any model that explains all the events that were picked for it, but it won't have a good predictive power. Overfitting on too much points.
+endnote
+
+modern_academia --> we_dont_know : Because scientific research is intrinsically untrustworthy due to the apparent state of the moder anademia we cannot really put too much trust in this research.
 
 input --> negative
+
+partial_data --> we_dont_know
 
 negative --> what_about
 what_about --> both_sides
 both_sides --> all_the_same
 
-state positive as "Positive" : Some generally positive statement is introduced -- one that is not directly related to the conflict in questions, but nonetheless is presented in the positive light
+state positive as "Positive" #yellow : Some generally positive statement is introduced -- one that is not directly related to the conflict in questions, but nonetheless is presented in the positive light
 
 input --> positive
+
+state backdoor_deals as "Backdoor deals"
 
 positive --> backdoor_deals : This is a singular instance that should not be considered important because in general, the party in question is corrupt and evil (sometimes this is asserted via other counter-examples)
 
@@ -72,12 +101,13 @@ research_backed --> modern_academia
 
 all_the_same --> backdoor_deals
 
-we_dont_know --> backdoor_deals
+backdoor_deals --> we_dont_know
 state partial_data as "Partial data" : Information presented is favorable to a specific side or is manufactured by some side, which means it is cannot be readily trusted
 
 input --> observable_based
 
 observable_based --> backdoor_deals
+observable_based --> partial_data : Even though some parts of the events are visible to the naked eye it is not possible to get the whole information and therefore this should not be considered as something that we can interpret with enough certainty to add to our body of understanding.
 
 evil --> vested_interests
 
@@ -85,7 +115,7 @@ vested_interests --> modern_academia : State of modern academia is considered to
 
 input --> research_backed
 
-state observable_based as "Observable event" : Some event is introduced to the discussion -- one that seems to be based on the evidence that can be generally evaluated without going into too much details. Things like a video, photo, news report
+state observable_based as "Observable event" #yellow : Some event is introduced to the discussion -- one that seems to be based on the evidence that can be generally evaluated without going into too much details. Things like a video, photo, news report
 
 backdoor_deals --> vested_interests
 
@@ -96,5 +126,26 @@ state hypocricy as "Hypocricy"
 positive --> hypocricy : They engage in destructive activity and therefore all their positive actions don't amount to anything, in the grand scheme of things
 
 hypocricy --> evil
+
+state book_or_article as "Book or Article is called up as a source of information" #yellow : Huge chunk of informatoin (usually a book or an article) is introduced into the discussion to back up some claims. Similar to how research papers are done, only a small portion is actually referenced to avoid infodumping the whole body into the discussion.
+
+state personal as "Ad hominem" : The simpliest form of dismissal where personality is called in question instead of addressing the problem itself.
+
+book_or_article --> personal
+personal --> output
+
+input --> book_or_article
+
+state why_true as "Why do you think it is true" : Instead of reacting to the statement itself the source of information is questioned instead as a "narrative building" or whitewashing of some side.
+
+book_or_article --> why_true
+book_or_article --> partial_data
+
+
+
+state output as "Output"
+
+we_dont_know --> output
+why_true --> output
 
 @enduml

@@ -1,5 +1,6 @@
 {
   "files.associations": {
+    "*.test": "Gherkin",
     "*.inc": "cpp",
     "complex": "cpp",
     "cctype": "cpp",
@@ -80,6 +81,10 @@
     "typeindex": "cpp",
     "typeinfo": "cpp",
     "valarray": "cpp",
-    "variant": "cpp"
+    "variant": "cpp",
+    "format": "cpp",
+    "ranges": "cpp",
+    "stdfloat": "cpp",
+    "*.def": "cpp"
   }
 }
