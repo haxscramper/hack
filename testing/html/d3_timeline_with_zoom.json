@@ -1,0 +1,374 @@
+[
+  {
+    "startdate": "Jan 01 00:00:00 2000",
+    "enddate": "Jan 22 12:00:00 2000",
+    "type": "Jan task",
+    "price": 1394.46
+  },
+  {
+    "startdate": "Feb 01 00:00:00 2000",
+    "enddate": "Feb 12 12:00:00 2000",
+    "type": "Feb task",
+    "price": 1366.42
+  },
+  {
+    "startdate": "Mar 01 00:00:00 2000",
+    "enddate": "Mar 11 12:00:00 2000",
+    "type": "Mar task",
+    "price": 1498.58
+  },
+  {
+    "startdate": "Apr 01 00:00:00 2000",
+    "enddate": "Apr 05 12:00:00 2000",
+    "type": "Apr task",
+    "price": 1452.43
+  },
+  {
+    "startdate": "May 01 00:00:00 2000",
+    "enddate": "May 22 12:00:00 2000",
+    "type": "May task",
+    "price": 1420.6
+  },
+  {
+    "startdate": "Jun 01 00:00:00 2000",
+    "enddate": "Jun 15 12:00:00 2000",
+    "type": "Jun task",
+    "price": 1454.6
+  },
+  {
+    "startdate": "Jul 01 00:00:00 2000",
+    "enddate": "Jul 07 12:00:00 2000",
+    "type": "Jul task",
+    "price": 1430.83
+  },
+  {
+    "startdate": "Aug 01 00:00:00 2000",
+    "enddate": "Aug 22 12:00:00 2000",
+    "type": "Aug task",
+    "price": 1517.68
+  },
+  {
+    "startdate": "Sep 01 00:00:00 2000",
+    "enddate": "Sep 28 12:00:00 2000",
+    "type": "Sep task",
+    "price": 1436.51
+  },
+  {
+    "startdate": "Oct 01 00:00:00 2000",
+    "enddate": "Oct 22 12:00:00 2000",
+    "type": "Oct task",
+    "price": 1429.4
+  },
+  {
+    "startdate": "Nov 01 00:00:00 2000",
+    "enddate": "Nov 22 12:00:00 2000",
+    "type": "Nov task",
+    "price": 1314.95
+  },
+  {
+    "startdate": "Dec 01 00:00:00 2000",
+    "enddate": "Dec 22 12:00:00 2000",
+    "type": "Dec task",
+    "price": 1320.28
+  },
+  {
+    "startdate": "Jan 01 00:00:00 2001",
+    "enddate": "Jan 22 12:00:00 2001",
+    "type": "Jan task",
+    "price": 1366.01
+  },
+  {
+    "startdate": "Feb 01 00:00:00 2001",
+    "enddate": "Feb 12 12:00:00 2001",
+    "type": "Feb task",
+    "price": 1239.94
+  },
+  {
+    "startdate": "Mar 01 00:00:00 2001",
+    "enddate": "Mar 11 12:00:00 2001",
+    "type": "Mar task",
+    "price": 1160.33
+  },
+  {
+    "startdate": "Apr 01 00:00:00 2001",
+    "enddate": "Apr 05 12:00:00 2001",
+    "type": "Apr task",
+    "price": 1249.46
+  },
+  {
+    "startdate": "May 01 00:00:00 2001",
+    "enddate": "May 22 12:00:00 2001",
+    "type": "May task",
+    "price": 1255.82
+  },
+  {
+    "startdate": "Jun 01 00:00:00 2001",
+    "enddate": "Jun 15 12:00:00 2001",
+    "type": "Jun task",
+    "price": 1224.38
+  },
+  {
+    "startdate": "Jul 01 00:00:00 2001",
+    "enddate": "Jul 07 12:00:00 2001",
+    "type": "Jul task",
+    "price": 1211.23
+  },
+  {
+    "startdate": "Aug 01 00:00:00 2001",
+    "enddate": "Aug 22 12:00:00 2001",
+    "type": "Aug task",
+    "price": 1133.58
+  },
+  {
+    "startdate": "Sep 01 00:00:00 2001",
+    "enddate": "Sep 28 12:00:00 2001",
+    "type": "Sep task",
+    "price": 1040.94
+  },
+  {
+    "startdate": "Oct 01 00:00:00 2001",
+    "enddate": "Oct 22 12:00:00 2001",
+    "type": "Oct task",
+    "price": 1059.78
+  },
+  {
+    "startdate": "Nov 01 00:00:00 2001",
+    "enddate": "Nov 22 12:00:00 2001",
+    "type": "Nov task",
+    "price": 1139.45
+  },
+  {
+    "startdate": "Dec 01 00:00:00 2001",
+    "enddate": "Dec 22 12:00:00 2001",
+    "type": "Dec task",
+    "price": 1148.08
+  },
+  {
+    "startdate": "Jan 01 00:00:00 2002",
+    "enddate": "Jan 22 12:00:00 2002",
+    "type": "Jan task",
+    "price": 1130.2
+  },
+  {
+    "startdate": "Feb 01 00:00:00 2002",
+    "enddate": "Feb 12 12:00:00 2002",
+    "type": "Feb task",
+    "price": 1106.73
+  },
+  {
+    "startdate": "Mar 01 00:00:00 2002",
+    "enddate": "Mar 11 12:00:00 2002",
+    "type": "Mar task",
+    "price": 1147.39
+  },
+  {
+    "startdate": "Apr 01 00:00:00 2002",
+    "enddate": "Apr 05 12:00:00 2002",
+    "type": "Apr task",
+    "price": 1076.92
+  },
+  {
+    "startdate": "May 01 00:00:00 2002",
+    "enddate": "May 22 12:00:00 2002",
+    "type": "May task",
+    "price": 1067.14
+  },
+  {
+    "startdate": "Jun 01 00:00:00 2002",
+    "enddate": "Jun 15 12:00:00 2002",
+    "type": "Jun task",
+    "price": 989.82
+  },
+  {
+    "startdate": "Jul 01 00:00:00 2002",
+    "enddate": "Jul 07 12:00:00 2002",
+    "type": "Jul task",
+    "price": 911.62
+  },
+  {
+    "startdate": "Aug 01 00:00:00 2002",
+    "enddate": "Aug 22 12:00:00 2002",
+    "type": "Aug task",
+    "price": 916.07
+  },
+  {
+    "startdate": "Sep 01 00:00:00 2002",
+    "enddate": "Sep 28 12:00:00 2002",
+    "type": "Sep task",
+    "price": 815.28
+  },
+  {
+    "startdate": "Oct 01 00:00:00 2002",
+    "enddate": "Oct 22 12:00:00 2002",
+    "type": "Oct task",
+    "price": 885.76
+  },
+  {
+    "startdate": "Nov 01 00:00:00 2002",
+    "enddate": "Nov 22 12:00:00 2002",
+    "type": "Nov task",
+    "price": 936.31
+  },
+  {
+    "startdate": "Dec 01 00:00:00 2002",
+    "enddate": "Dec 22 12:00:00 2002",
+    "type": "Dec task",
+    "price": 879.82
+  },
+  {
+    "startdate": "Jan 01 00:00:00 2003",
+    "enddate": "Jan 22 12:00:00 2003",
+    "type": "Jan task",
+    "price": 855.7
+  },
+  {
+    "startdate": "Feb 01 00:00:00 2003",
+    "enddate": "Feb 12 12:00:00 2003",
+    "type": "Feb task",
+    "price": 841.15
+  },
+  {
+    "startdate": "Mar 01 00:00:00 2003",
+    "enddate": "Mar 11 12:00:00 2003",
+    "type": "Mar task",
+    "price": 848.18
+  },
+  {
+    "startdate": "Apr 01 00:00:00 2003",
+    "enddate": "Apr 05 12:00:00 2003",
+    "type": "Apr task",
+    "price": 916.92
+  },
+  {
+    "startdate": "May 01 00:00:00 2003",
+    "enddate": "May 22 12:00:00 2003",
+    "type": "May task",
+    "price": 963.59
+  },
+  {
+    "startdate": "Jun 01 00:00:00 2003",
+    "enddate": "Jun 15 12:00:00 2003",
+    "type": "Jun task",
+    "price": 974.5
+  },
+  {
+    "startdate": "Jul 01 00:00:00 2003",
+    "enddate": "Jul 07 12:00:00 2003",
+    "type": "Jul task",
+    "price": 990.31
+  },
+  {
+    "startdate": "Aug 01 00:00:00 2003",
+    "enddate": "Aug 22 12:00:00 2003",
+    "type": "Aug task",
+    "price": 1008.01
+  },
+  {
+    "startdate": "Sep 01 00:00:00 2003",
+    "enddate": "Sep 28 12:00:00 2003",
+    "type": "Sep task",
+    "price": 995.97
+  },
+  {
+    "startdate": "Oct 01 00:00:00 2003",
+    "enddate": "Oct 22 12:00:00 2003",
+    "type": "Oct task",
+    "price": 1050.71
+  },
+  {
+    "startdate": "Nov 01 00:00:00 2003",
+    "enddate": "Nov 22 12:00:00 2003",
+    "type": "Nov task",
+    "price": 1058.2
+  },
+  {
+    "startdate": "Dec 01 00:00:00 2003",
+    "enddate": "Dec 22 12:00:00 2003",
+    "type": "Dec task",
+    "price": 1111.92
+  },
+  {
+    "startdate": "Jan 01 00:00:00 2004",
+    "enddate": "Jan 22 12:00:00 2004",
+    "type": "Jan task",
+    "price": 1131.13
+  },
+  {
+    "startdate": "Feb 01 00:00:00 2004",
+    "enddate": "Feb 12 12:00:00 2004",
+    "type": "Feb task",
+    "price": 1144.94
+  },
+  {
+    "startdate": "Mar 01 00:00:00 2004",
+    "enddate": "Mar 11 12:00:00 2004",
+    "type": "Mar task",
+    "price": 1126.21
+  },
+  {
+    "startdate": "Apr 01 00:00:00 2004",
+    "enddate": "Apr 05 12:00:00 2004",
+    "type": "Apr task",
+    "price": 1107.3
+  },
+  {
+    "startdate": "May 01 00:00:00 2004",
+    "enddate": "May 22 12:00:00 2004",
+    "type": "May task",
+    "price": 1120.68
+  },
+  {
+    "startdate": "Jun 01 00:00:00 2004",
+    "enddate": "Jun 15 12:00:00 2004",
+    "type": "Jun task",
+    "price": 1140.84
+  },
+  {
+    "startdate": "Jul 01 00:00:00 2004",
+    "enddate": "Jul 07 12:00:00 2004",
+    "type": "Jul task",
+    "price": 1101.72
+  },
+  {
+    "startdate": "Aug 01 00:00:00 2004",
+    "enddate": "Aug 22 12:00:00 2004",
+    "type": "Aug task",
+    "price": 1104.24
+  },
+  {
+    "startdate": "Sep 01 00:00:00 2004",
+    "enddate": "Sep 28 12:00:00 2004",
+    "type": "Sep task",
+    "price": 1114.58
+  },
+  {
+    "startdate": "Oct 01 00:00:00 2004",
+    "enddate": "Oct 22 12:00:00 2004",
+    "type": "Oct task",
+    "price": 1130.2
+  },
+  {
+    "startdate": "Nov 01 00:00:00 2004",
+    "enddate": "Nov 22 12:00:00 2004",
+    "type": "Nov task",
+    "price": 1173.82
+  },
+  {
+    "startdate": "Dec 01 00:00:00 2004",
+    "enddate": "Dec 22 12:00:00 2004",
+    "type": "Dec task",
+    "price": 1211.92
+  },
+  {
+    "startdate": "Jan 01 00:00:00 2005",
+    "enddate": "Jan 22 12:00:00 2005",
+    "type": "Jan task",
+    "price": 1181.27
+  },
+  {
+    "startdate": "Feb 01 00:00:00 2005",
+    "enddate": "Feb 12 12:00:00 2005",
+    "type": "Feb task",
+    "price": 1203.6
+  }
+]

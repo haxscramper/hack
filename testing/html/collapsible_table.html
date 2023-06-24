@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html>
+<script>
+  function collapse(cell) {
+    var row = cell.parentElement;
+    var target_row = row.parentElement.children[row.rowIndex + 1];
+    if (target_row.style.display == 'table-row') {
+      cell.innerHTML = '+';
+      target_row.style.display = 'none';
+    } else {
+      cell.innerHTML = '-';
+      target_row.style.display = 'table-row';
+    }
+  }
+
+  function selectAndHighlightRange(id, start, end) {
+    const preElement = document.getElementById(id);
+    const textContent = preElement.textContent;
+
+    if (start < 0 || textContent.length <= end) {
+      console.error("Invalid range.");
+      return;
+    }
+
+    const beforeHighlight = textContent.substring(0, start - 1);
+    const highlightedText = textContent.substring(start - 1, end);
+    const afterHighlight = textContent.substring(end);
+
+    preElement.innerHTML = `${beforeHighlight}<span class="highlight">${highlightedText}</span>${afterHighlight}`;
+  }
+
+</script>
+<style>
+  * {
+    font-family: Iosevka;
+  }
+
+  .collapseButton {
+    vertical-align: text-top;
+  }
+
+  th,
+  td {
+    padding: 0em;
+    text-align: right;
+  }
+
+  .Table {
+    margin-left: 0em;
+    margin-top: 0em;
+    margin-right: 0em;
+  }
+
+  table {
+    border-collapse: collapse;
+  }
+
+  .highlight {
+    background-color: yellow;
+  }
+
+  table table {
+    width: auto;
+    margin-left: auto;
+    margin-right: 0;
+    display: table;
+  }
+
+  th.content0 {
+    width: 50px;
+  }
+
+  th.content1 {
+    width: 100px;
+  }
+
+  th.content2 {
+    width: 150px;
+  }
+
+  th.content3 {
+    width: 150px;
+  }
+
+
+  th.button {
+    width: 10px;
+  }
+
+  th.inner_content {
+    visibility: hidden;
+    height: 0;
+  }
+
+  table th,
+  td {
+    padding: 0px;
+    text-align: left;
+  }
+
+  #collapseButton:hover {
+    background-color: red;
+  }
+
+</style>
+
+<body>
+  <table>
+    <tr>
+      <th>Tree</th>
+      <th>Text</th>
+    </tr>
+    <tr>
+      <td>
+        <table>
+          <tr>
+            <th class="button"></th>
+            <th style="width:20px;"></th>
+            <th class="content0">IDX</th>
+            <th class="content1">KIND</th>
+            <th class="content2">STR</th>
+            <th class="content3">RANGE</th>
+          </tr>
+          <tr>
+            <td id="collapseButton" onclick="collapse(this)">+</td>
+            <td></td>
+            <td>0</td>
+            <td>StmtList</td>
+            <td></td>
+            <td onclick="selectAndHighlightRange('target', 0, 20)">[0..20]</td>
+          </tr>
+          <tr id="hidden">
+            <td></td>
+            <td colspan=6>
+              <table>
+                <tr>
+                  <th class="button"></th>
+                  <th style="width:10px;"></th>
+                  <th class="content0"></th>
+                  <th class="content1"></th>
+                  <th class="content2"></th>
+                  <th class="content3"></th>
+                </tr>
+                <tr>
+                  <td id="collapseButton" onclick="collapse(this)">+</td>
+                  <td></td>
+                  <td>1</td>
+                  <td>TimeStamp</td>
+                  <td></td>
+                  <td onclick="selectAndHighlightRange('target', 0, 20)">[0..20]</td>
+                </tr>
+                <tr id="hidden">
+                  <td></td>
+                  <td colspan=5>
+                    <table>
+                      <tr>
+                        <th style="width:0px;"></th>
+                        <th class="content0"></th>
+                        <th class="content1"></th>
+                        <th class="content2"></th>
+                        <th class="content3"></th>
+                      </tr>
+                      <tr>
+                        <td></td>
+                        <td>2</td>
+                        <td>StrLit</td>
+                        <td>Value</td>
+                        <td onclick="selectAndHighlightRange('target', 0, 10)">[0..10]</td>
+                      </tr>
+                    </table>
+                    <table>
+                      <tr>
+                        <th style="width:0px;"></th>
+                        <th class="content0"></th>
+                        <th class="content1"></th>
+                        <th class="content2"></th>
+                        <th class="content3"></th>
+                      </tr>
+                      <tr>
+                        <td></td>
+                        <td>3</td>
+                        <td>StrLit</td>
+                        <td>Other</td>
+                        <td onclick="selectAndHighlightRange('target', 11, 20)">[11..20]</td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      </td>
+      <td style="vertical-align:top;">
+        <pre id="target">
+Preformatted text that
+might span multiple lines
+        </pre>
+      </td>
+    </tr>
+
+  </table>
+
+</body>
+
+</html>
