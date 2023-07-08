@@ -1,0 +1,34 @@
+version: 3
+vars:
+  OPTS: -ftime-trace -O0 -g
+  DUMP: clang++ -Xclang -ast-dump -fsyntax-only -fno-diagnostics-color
+
+
+tasks:
+  main:
+    cmds:
+      - echo "Test"
+
+      - clang++ {{.OPTS}} -c user_1.cpp -o user_1.o
+      - >
+        {{.DUMP}} user_1.cpp > user_1_structure.txt
+
+      - clang++ {{.OPTS}} -c user_2.cpp -o user_2.o
+      - >
+        {{.DUMP}} user_2.cpp > user_2_structure.txt
+
+      - clang++ {{.OPTS}} -c implementation.cpp -o implementation.o
+      - >
+        {{.DUMP}} implementation.cpp > implementation_structure.txt
+
+      - clang++ {{.OPTS}} -c main.cpp -o main.o
+      - >
+        {{.DUMP}} main.cpp > main_structure.txt
+
+      - nm -C user_1.o > user_1_symbols
+      - nm -C user_2.o > user_2_symbols
+      - nm -C implementation.o > implementation_symbols
+      - clang++ user_1.o user_2.o main.o implementation.o -o main.bin
+      - fd -I -e json -x sh -c 'jq . {} | sponge {}'
+      - fd -I -e json -x jq 'include "filter"; . | main' '{}'
+      - echo "Done"
