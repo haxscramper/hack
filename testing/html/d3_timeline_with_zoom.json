@@ -12,6 +12,12 @@
     "price": 1366.42
   },
   {
+    "startdate": "Feb 01 00:00:00 2000",
+    "enddate": "Feb 12 12:00:00 2000",
+    "type": "Jan task",
+    "price": 1366.42
+  },
+  {
     "startdate": "Mar 01 00:00:00 2000",
     "enddate": "Mar 11 12:00:00 2000",
     "type": "Mar task",
