@@ -1,11 +1,3 @@
-function toSvgPaths(edge) {
-  return edge.sections.map(section => {
-    const data =
-        [ section.startPoint, ...(section.bendPoints || []), section.endPoint ];
-    return d3.line().x(d => d.x).y(d => d.y)(data)
-  });
-}
-
 function defaultStyles() {
   return ({
     nodeShapeStroke : "#444488",
@@ -21,120 +13,112 @@ function defaultStyles() {
   })
 };
 
-function renderGraph(g, scaleFactor = 1.0) {
+d3.selection.prototype.appendComment = function(comment) {
+  return this.each(
+      function() { this.appendChild(document.createComment(comment)); });
+};
+
+function toSvgPaths(edge) {
+  return edge.sections.map(section => {
+    const data =
+        [ section.startPoint, ...(section.bendPoints || []), section.endPoint ];
+    return d3.line().x(d => d.x).y(d => d.y)(data);
+  });
+}
+
+function renderGraph(svg, root, scaleFactor = 1.0) {
   const styles = defaultStyles();
-  function edgeShape(edge_path) {
-    return `
-      <path 
-        d="${edge_path}"
-        stroke="${styles.edgeShapeStroke}"
-        fill="${styles.edgeShapeFill}"
-        marker-end="url(#edgeShapeMarker)"
-      />
-    `;
+  svg.attr("width", root.data.width).attr("height", root.data.height);
+
+  // Define edge arrow marker
+  const defs = svg.append("defs");
+  defs.append("marker")
+      .attr("id", "edgeShapeMarker")
+      .attr("markerWidth", 10)
+      .attr("markerHeight", 10)
+      .attr("refX", 6)
+      .attr("refY", 3)
+      .attr("orient", "auto")
+      .attr("markerUnits", "strokeWidth")
+      .append("path")
+      .attr("d", "M0,0 L0,6 L6,3 z")
+      .attr("fill", styles.edgeShapeStroke);
+
+  function drawEdge(parent, edge) {
+    const edgePaths = toSvgPaths(edge);
+
+    edgePaths.forEach(edgePathString => {
+      parent.append("path")
+          .attr("d", edgePathString)
+          .attr("stroke", styles.edgeShapeStroke)
+          .attr("fill", styles.edgeShapeFill)
+          .attr("marker-end", "url(#edgeShapeMarker)");
+    });
   }
 
-  function edge(edge_d) {
-    return `<g>${toSvgPaths(edge_d).map(edge_path => edgeShape(edge_path))}</g>`;
-  };
+  function drawNode(parent, node) {
+    // Create a group for each node
+    const g = parent.append("g").attr(
+        "transform", `translate(${node.data.x}, ${node.data.y})`);
+    g.appendComment("Node");
 
-  function edgeDefs() {
-    return `
-      <marker 
-        id="edgeShapeMarker"
-        markerWidth="10"
-        markerHeight="10"
-        refX="6"
-        refY="3"
-        orient="auto"
-        markerUnits="strokeWidth">
-        <path 
-          d="M0,0 L0,6 L6,3 z"
-          fill="${styles.edgeShapeStroke}"
-        />
-      </marker>
-    `;
+    // Add a rectangle for the node
+    g.append("rect")
+        .attr("x", node.data.x)
+        .attr("y", node.data.y)
+        .attr("width", node.data.width)
+        .attr("height", node.data.height)
+        .attr("stroke", styles.nodeShapeStroke)
+        .attr("fill", styles.nodeShapeFill);
+
+    // Add labels
+    if (node.data.labels) {
+      node.data.labels.forEach((label) => {
+        g.append("text")
+            .attr("x", node.data.x + label.x)
+            .attr("y", node.data.y + label.y)
+            .attr("stroke", styles.nodeLabelStroke)
+            .attr("fill", styles.nodeLabelFill)
+            .style("font",
+                   `${styles.nodeLabelFontSize} ${styles.nodeLabelFontFamily}`)
+            .attr("text-anchor", "left")
+            .attr("alignment-baseline", "hanging")
+            .text(label.text);
+      });
+    }
+
+    // Add ports
+    if (node.data.ports) {
+      node.data.ports.forEach(function(port) {
+        g.appendComment("Port");
+        g.append("rect")
+            .attr("x", node.data.x + port.x)
+            .attr("y", node.data.y + port.y)
+            .attr("width", port.width)
+            .attr("height", port.height)
+            .attr("stroke", styles.portShapeStroke)
+            .attr("fill", styles.portShapeFill);
+      });
+    }
+
+    if (node.data.edges) {
+      node.data.edges.forEach(edge => drawEdge(g, edge));
+    }
+
+    // Draw child nodes recursively
+    if (node.children) {
+      node.children.forEach(node => drawNode(g, node));
+    }
   }
-
-  function nodeShape(node_d) {
-    return `
-      <rect 
-        x="${node_d.x}" 
-        y="${node_d.y}"
-        width="${node_d.width}" 
-        height="${node_d.height}" 
-        stroke="${styles.nodeShapeStroke}" 
-        fill="${styles.nodeShapeFill}"
-      />
-    `
-  };
-
-  function nodeLabel(label_d, node_d) {
-    return `
-      <text
-        x="${node_d.x + label_d.x}"
-        y="${node_d.y + label_d.y}"
-        stroke="${styles.nodeLabelStroke}"
-        fill="${styles.nodeLabelFill}"
-        style="font: ${styles.nodeLabelFontSize} ${styles.nodeLabelFontFamily};"
-        text-anchor="left"
-        alignment-baseline="hanging">
-        ${label_d.text}
-      </text>
-    `;
-  }
-
-  function nodePort(port_d, node_d) {
-    return `
-      <rect 
-        x="${node_d.x + port_d.x}" 
-        y="${node_d.y + port_d.y}" 
-        width="${port_d.width}" 
-        height="${port_d.height}" 
-        stroke="${styles.portShapeStroke}" 
-        fill="${styles.portShapeFill}"
-      />
-    `;
-  }
-
-  function node(node_d, parent_d) {
-    return `
-      <g style="transform: translate(${parent_d.x}px, ${parent_d.y}px);">
-        <g>${nodeShape(node_d)}<g>
-        <g>${node_d.labels.map(label_d => nodeLabel(label_d, node_d))}</g>
-        <g>${node_d.ports.map(port_d => nodePort(port_d, node_d))}</g>
-        <g>${
-        node_d.children &&
-        node_d.children.map(_node_d => node(_node_d, node_d))}</g>
-        <g style="transform: translate(${node_d.x}px, ${node_d.y}px);">
-          ${node_d.edges && node_d.edges.map(edge_d => edge(edge_d))}
-        </g>
-      </g>
-    `;
-  }
-
-  return `
-    <svg 
-      viewBox="${g.x} ${g.y} ${g.width} ${g.height}"
-      width="${g.width * scaleFactor}" 
-      height="${g.height * scaleFactor}">
-      <!-- Edge definitions -->
-      <defs>${edgeDefs()}</defs>
-      <!-- Nodes -->
-      <g>${g.children.map(node_d => node(node_d, g))}</g>
-      <!-- Edges -->
-      <g>${g.edges && g.edges.map(edge_d => edge(edge_d))}</g>
-    </svg>
-  `;
+  // Draw the root node
+  drawNode(svg, root);
 }
 
 function update(graph) {
   const elk = new ELK()
   elk.layout(graph).then(function(layout) {
-    var svg = d3.select("svg");
     console.log(layout);
-    svg.html(renderGraph(layout));
-    var tree = d3.hierarchy(layout, d => d.children);
+    renderGraph(d3.select("svg"), d3.hierarchy(layout, d => d.children));
   });
 }
 
