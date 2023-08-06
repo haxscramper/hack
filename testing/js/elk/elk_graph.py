@@ -16,30 +16,41 @@ graph = json.loads(result.stdout)
 with open("/tmp/result.json", "w") as file:
     file.write(json.dumps(graph, indent=2))
 
+
 # Step 2: Convert the JSON output to DOT
-dot_lines = ["digraph {", "splines=ortho;"]
-for node in graph["children"]:
-    dot_lines.append(
-        f'  {node["id"]} [pos="{node["x"]},{node["y"]}!", width=0.3937, height=0.3937, shape=rect];'
-    )
-
-for edge in graph["edges"]:
-    for section in edge["sections"]:
-        points = [f'{section["startPoint"]["x"]},{section["startPoint"]["y"]}']
-        if "bendPoints" in section:
-            points.extend(
-                [f'{point["x"]},{point["y"]}' for point in section["bendPoints"]]
-            )
-        points.append(f'e,{section["endPoint"]["x"]},{section["endPoint"]["y"]}')
-        dot_lines.append(
-            f'  {edge["sources"][0]} -> {edge["targets"][0]} [pos="{" ".join(points)}", arrowhead=none];'
+def to_dot(graph):
+    dot = ["digraph {", "splines=ortho;", "node[shape=rect];"]
+    for node in graph["children"]:
+        pos = f'{node["x"]},{node["y"]}'
+        if "ports" in node:
+            for port in node["ports"]:
+                port_id = port["id"]
+                port_pos = f'{node["x"] + port["x"]},{node["y"] + port["y"]}'
+                dot.append(
+                    f'{port_id} [width=0.1, height=0.1, pos="{port_pos}!", shape=point]'
+                )
+        dot.append(
+            f'{node["id"]} [pos="{pos}!", width={node["width"]/72}, height={node["height"]/72}]'
         )
+    for edge in graph["edges"]:
+        for section in edge["sections"]:
+            points = [f'{section["startPoint"]["x"]},{section["startPoint"]["y"]}']
+            if "bendPoints" in section:
+                points.extend(
+                    [f'{point["x"]},{point["y"]}' for point in section["bendPoints"]]
+                )
+            points.append(f'e,{section["endPoint"]["x"]},{section["endPoint"]["y"]}')
+            dot.append(
+                f'  {edge["sources"][0]} -> {edge["targets"][0]} [pos="{" ".join(points)}", arrowhead=none];'
+            )
 
-dot_lines.append("}")
+    dot.append("}")
+    return "\n".join(dot)
+
 
 # Write the DOT content to /tmp/result.dot
 with open("/tmp/result.dot", "w") as f:
-    f.write("\n".join(dot_lines))
+    f.write(to_dot(graph))
 
 # Step 3: Generate PNG using Graphviz
 os.system("neato -n -Tpng -o /tmp/result.png /tmp/result.dot")
