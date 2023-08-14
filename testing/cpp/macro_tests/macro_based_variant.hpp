@@ -25,12 +25,12 @@
     enum class Name                                                       \
     {                                                                     \
         __VA_ARGS__                                                       \
-    };                                                                    \
-    BOOST_DESCRIBE_NESTED_ENUM(Name, __VA_ARGS__);
+    };
 
-#define __SUB_VARIANT_UNION_GETTER(fieldName, Type)                       \
-    Type&       get##Type() { std::get<Type>(fieldName); }                \
-    Type const& get##Type() const { std::get<Type>(fieldName); }
+#define Q_ASSERT(X)
+#define CONCAT(a, b) CONCAT_INNER(a, b)
+#define CONCAT_INNER(a, b) a##b
+
 
 #define __SUB_VARIANT_UNION_KIND_LAMBDA(EnumName, Type)                   \
     [](Type const&) { return EnumName::Type; },
@@ -41,20 +41,32 @@
 #define __PACK_IDX1(it1, it2, ...) it2
 #define __PACK_IDX2(it1, it2, it3, ...) it3
 
+
 #define __SUB_VARIANT_UNION_DEFINE_METHODS(Pass, Type)                    \
     __PACK_IDX1(Pass)                                                     \
     (Type const& arg)                                                     \
         : kindValue(__PACK_IDX0(Pass)::Type), Type##_field(arg) {}        \
                                                                           \
-    Type& get##Type() {                                                   \
-        Q_ASSERT(kindValue == __PACK_IDX0(Pass)::Type);                   \
-        return Type##_field;                                              \
-    }
+    Type& get##Type() { return Type##_field; }
 
 #define __SUB_VARIANT_UNION_DEFINE_VISIT(EnumName, Type)                  \
     case __PACK_IDX0(EnumName)::Type:                                     \
-        return cb(                                                        \
-            Type##_field, std::forward<Args>(__PACK_IDX1(EnumName))...);
+        return cb(Type##_field);
+
+
+#define __SUB_VARIANT_UNION_DEFINE_FIELD_COPY(EnumName, Type)             \
+    case __PACK_IDX0(EnumName)::Type:                                     \
+        this->Type##_field = other.Type##_field;                          \
+        break;
+
+
+#define __SUB_VARIANT_UNION_DEFINE_FIELD_DESTROY(EnumName, Type)          \
+    case __PACK_IDX0(EnumName)::Type:                                     \
+        Type##_field.~Type();                                             \
+        break;
+
+#define __TAIL(Head, ...) __VA_ARGS__
+#define __HEAD(Head, ...) Head
 
 #define SUB_VARIANTS_UNION(                                               \
     EnumName, VariantName, fieldName, kindGetterName, ...)                \
@@ -62,10 +74,12 @@
     struct VariantName {                                                  \
         EnumName kindValue;                                               \
         union {                                                           \
+            __HEAD(__VA_ARGS__)                                           \
+            CONCAT(__HEAD(__VA_ARGS__), _field) = __HEAD(__VA_ARGS__)();  \
             FOR_EACH_CALL_WITH_PASS(                                      \
                 __SUB_VARIANT_UNION_DEFINE_UNION,                         \
                 (fieldName),                                              \
-                __VA_ARGS__)                                              \
+                __TAIL(__VA_ARGS__))                                      \
         };                                                                \
                                                                           \
         FOR_EACH_CALL_WITH_PASS(                                          \
@@ -73,17 +87,34 @@
             (EnumName, VariantName),                                      \
             __VA_ARGS__)                                                  \
                                                                           \
-        template <typename Func, typename... Args>                        \
-        auto visit(Func const& cb, Args&&... args) {                      \
+        VariantName()                                                     \
+            : kindValue(EnumName::__PACK_IDX0(__VA_ARGS__))               \
+            , CONCAT(__PACK_IDX0(__VA_ARGS__), _field)(                   \
+                  __PACK_IDX0(__VA_ARGS__)()) {}                          \
+                                                                          \
+        template <typename Func>                                          \
+        auto visit(Func const& cb) {                                      \
             switch (kindValue) {                                          \
                 FOR_EACH_CALL_WITH_PASS(                                  \
                     __SUB_VARIANT_UNION_DEFINE_VISIT,                     \
-                    (EnumName, args),                                     \
+                    (EnumName),                                           \
+                    __VA_ARGS__)                                          \
+            }                                                             \
+        }                                                                 \
+        ~VariantName() {                                                  \
+            switch (kindValue) {                                          \
+                FOR_EACH_CALL_WITH_PASS(                                  \
+                    __SUB_VARIANT_UNION_DEFINE_FIELD_DESTROY,             \
+                    (EnumName),                                           \
                     __VA_ARGS__)                                          \
             }                                                             \
         }                                                                 \
     }
 
-int main() {
-    SUB_VARIANTS_UNION(Base, Data, field, getKind, Weekday, Range);
-}
+struct Weekday {};
+struct Range {};
+
+SUB_VARIANTS_UNION(Base, Data, field, getKind, Weekday, Range);
+
+
+int main() { Data data; }

@@ -86,5 +86,6 @@
     "ranges": "cpp",
     "stdfloat": "cpp",
     "*.def": "cpp"
-  }
+  },
+  "python.formatting.provider": "black"
 }
