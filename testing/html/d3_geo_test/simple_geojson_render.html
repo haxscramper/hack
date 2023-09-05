@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <title>D3 Geo Example</title>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@turf/turf/turf.min.js"></script>
+</head>
+
+<body>
+  <script>
+
+    function wrap(text, width) {
+      text.each(function () {
+        let text = d3.select(this),
+          words = text.text().split(/\s+/).reverse(),
+          word,
+          line = [],
+          lineNumber = 0,
+          lineHeight = 1.1, // ems
+          x = text.attr("x"),
+          y = text.attr("y"),
+          dy = 0, //parseFloat(text.attr("dy")),
+          tspan = text.text(null)
+            .append("tspan")
+            .attr("x", x)
+            .attr("y", y)
+            .attr("dy", dy + "em");
+        while (word = words.pop()) {
+          line.push(word);
+          tspan.text(line.join(" "));
+          if (tspan.node().getComputedTextLength() > width) {
+            line.pop();
+            tspan.text(line.join(" "));
+            line = [word];
+            tspan = text.append("tspan")
+              .attr("x", 0)
+              .attr("y", 0)
+              .attr("dy", ++lineNumber * lineHeight + dy + "em")
+              .text(word);
+          }
+        }
+      });
+    }
+
+    // Create SVG element
+    const width = 800;
+    const height = 600;
+    const svg = d3.select("body")
+      .append("svg")
+      .attr("id", "main")
+      .attr("width", width)
+      .attr("height", height);
+
+    // Load the GeoJSON file
+    // d3.json("/tmp/sdfa.json").then((geojson) => {
+    d3.json("/tmp/district_boundaries.json").then((geojson) => {
+
+      // Create a projection that fits the GeoJSON data
+      var projection = d3.geoMercator();
+      const rewoundGeoJSON = turf.rewind(geojson, { reverse: true });
+      projection.fitExtent([[20, 20], [width, height]], rewoundGeoJSON);
+
+      // Create a path generator based on the projection
+      const path = d3.geoPath()
+        .projection(projection);
+
+      // Render the GeoJSON as SVG paths
+      svg.selectAll("path")
+        .data(rewoundGeoJSON.features)
+        .enter()
+        .append("path")
+        .attr("d", path)
+        .attr("stroke", "red") // Stroke color set to red
+        .attr("name", (d) => d.properties.name)
+        .attr("fill", "#EEE");
+
+      // Add text labels
+      var labels = svg.selectAll("text")
+        .data(rewoundGeoJSON.features)
+        .enter()
+        .append("text")
+        .attr("transform", function (d) {
+          const centroid = path.centroid(d);
+          return `translate(${centroid[0]}, ${centroid[1]})`;
+        })
+        .attr("text-anchor", "middle")
+        .attr("font-size", 8)
+        .text(function (d) { return d.properties.name; });
+
+      wrap(labels, 60);
+
+    }).catch((error) => {
+      console.error("Error loading the GeoJSON file:", error);
+    });
+  </script>
+  <button id="download">Download SVG</button>
+  <script>
+
+    // Function to handle download
+    function downloadSVG() {
+      // Get the SVG element
+      const svgElement = document.getElementById("main");
+
+      // Serialize the SVG to string
+      const serializer = new XMLSerializer();
+      const svgString = serializer.serializeToString(svgElement);
+
+      // Create a Blob object from the SVG string
+      const blob = new Blob([svgString], { type: "image/svg+xml;charset=utf-8" });
+
+      // Create an Object URL for the Blob
+      const url = URL.createObjectURL(blob);
+
+      // Create an anchor element and attach the Object URL to it
+      const downloadLink = document.createElement("a");
+      downloadLink.href = url;
+      downloadLink.download = "my_d3_graph.svg";
+
+      // Trigger the download by simulating a click
+      document.body.appendChild(downloadLink);
+      downloadLink.click();
+
+      // Clean up: remove the link and revoke the Object URL
+      document.body.removeChild(downloadLink);
+      URL.revokeObjectURL(url);
+    }
+
+    document.getElementById("download").addEventListener("click", downloadSVG);
+  </script>
+</body>
+
+</html>
