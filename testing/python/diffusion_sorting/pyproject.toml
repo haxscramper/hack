@@ -1,0 +1,20 @@
+[tool.poetry]
+name = "grabber"
+version = "0.1.0"
+description = ""
+authors = ["haxscramper <haxscramper@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+dominate = "^2.9.1"
+pillow = "^10.2.0"
+imagehash = "^4.3.1"
+pdfkit = "^1.0.0"
+requests = "^2.31.0"
+beartype = "^0.18.5"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
