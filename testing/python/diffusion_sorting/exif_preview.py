@@ -215,6 +215,10 @@ def main_impl():
                     full_json = json.loads(
                         metadata["prompt"]) if "prompt" in metadata else {}
 
+                    # if "prompt" not in metadata:
+                    if "Xqmn92N5vg" in str(filename):
+                        log.warning(f"No prompt metadata for {filename}. meta {metadata}")
+
                     def rowname(name: str):
                         with tags.td(style="text-align:center;"):
                             with tags.b():
@@ -324,6 +328,11 @@ def main_impl():
                                 json.dumps(
                                     json.loads(metadata["generation_data"])))
 
+                        elif "prompt" in metadata:
+                            tags.td(
+                                json.dumps(
+                                    json.loads(metadata["prompt"])))
+
                         else:
                             tags.td(text("no generation_data"))
 
@@ -338,7 +347,7 @@ def main_impl():
                                         style="border-collapse: collapse;"):
                                     for model in generation_data["models"]:
                                         with tags.tr():
-                                            tags.td(model["modelFileName"])
+                                            tags.td(model["modelFileName"], style="word-break: break-all;")
                                             tags.td(model["weight"])
 
                             else:
@@ -378,5 +387,5 @@ for test in [
         "Hana Midorikawa (Prison School)"
 ]:
     parsed = test_parse(test)
-    print(parsed)
-    print([tag.categories for tag in parsed if isinstance(tag, Tag)])
+    # print(parsed)
+    # print([tag.categories for tag in parsed if isinstance(tag, Tag)])
