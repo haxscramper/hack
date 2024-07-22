@@ -16,6 +16,7 @@ import functools
 import sys
 from pydantic import BaseModel, Field, validator, AliasChoices
 from pprint import pformat, pprint
+import itertools
 
 import logging
 
@@ -59,7 +60,7 @@ class Tag:
     text: str
     amplifier: float = 1.0
     parens: int = 0
-    categories: List[str] = field(default_factory=list)
+    category: Optional[str] = None
 
     def __repr__(self) -> str:
         if self.amplifier == 1.0:
@@ -68,10 +69,17 @@ class Tag:
         else:
             result = f"{self.text}:{self.amplifier}"
 
-        return "(" * self.parens + result + ")" * self.parens
+        return "<{}{}{}{}>".format(
+            "(" * self.parens,
+            result,
+            ")" * self.parens,
+            ":" + self.category if self.category else "",
+        )
 
 
 ParsedTag = Union[Tag, LoRATag, str]
+
+RX_DELETE = re.compile(r"[- _,()/\\:]")
 
 
 @beartype
@@ -79,26 +87,50 @@ ParsedTag = Union[Tag, LoRATag, str]
 class TagCategory():
     tags: Set[str]
     name: str
+    aliases: Dict[str, str] = field(default_factory=dict)
 
+    @beartype
+    def clean_text(tag: str) -> str:
+        return re.sub(RX_DELETE, "", tag).lower()
+
+    @beartype
+    def no_alias(self, tag: str) -> str:
+        clean = TagCategory.clean_text(tag)
+        if clean in self.aliases:
+            return self.aliases[clean]
+
+        else:
+            return clean
+
+    @beartype
     def matches(self, tag: str) -> bool:
-        return tag in self.tags
+        return self.no_alias(tag) in self.tags
 
     @beartype
     @staticmethod
-    def from_file(path: Path) -> "TagCategory":
-        result = TagCategory(name=path.stem.lower(), tags=set())
+    def from_file(path: Path, name: Optional[str] = None) -> "TagCategory":
+        result = TagCategory(name=name or path.stem.lower(), tags=set())
         for line in path.read_text().splitlines():
             if line.startswith("#"):
                 continue
 
             else:
+                if "," in line:
+                    multiple = [
+                        TagCategory.clean_text(it) for it in line.split(",")
+                    ]
+                    line = multiple[0]
+                    for item in multiple[1:]:
+                        result.aliases[TagCategory.clean_text(item)] = line
 
                 def add(text: str):
-                    result.tags.add(text.strip().strip("\\").lower())
+                    result.tags.add(TagCategory.clean_text(text))
 
                 add(line)
                 if "(" in line:
                     add(line.split("(")[0])
+
+        log.info(result.aliases)
 
         return result
 
@@ -110,13 +142,12 @@ class PromptParser:
         self.break_token = "BREAK"
         self.category_dicts = category_dicts
 
-    def categories(self, tag: str) -> List:
-        result = []
+    def categories(self, tag: str) -> Optional[TagCategory]:
         for cat in self.category_dicts:
             if cat.matches(tag):
-                result.append(cat.name)
+                return cat
 
-        return result
+        return None
 
     def parse(self, prompt: str) -> List[ParsedTag]:
         tokens = self.tokenize(prompt)
@@ -137,11 +168,12 @@ class PromptParser:
         current_level = 0
 
         def add_tag(text: str, amplifier: float = 1.0, level: int = 0):
+            cats = self.categories(text.strip())
             result.append(
-                Tag(text=text.strip(),
+                Tag(text=cats.no_alias(text.strip()) if cats else text.strip(),
                     amplifier=amplifier,
                     parens=level,
-                    categories=self.categories(text.strip())))
+                    category=cats.name if cats else None))
 
         for token in tokens:
             if token == "":
@@ -180,27 +212,30 @@ class PromptParser:
 
 borders = dict(border=1, style='border-collapse: collapse; width: 100%;')
 
-categories: List[TagCategory] = []
-for directory in ["reference_tag_categories", "manual_tag_categories"]:
-    log.info(f"Parsing tag categories from {directory}")
-    for file in workspace_root.joinpath(directory).rglob("*.txt"):
-        categories.append(TagCategory.from_file(file))
-
-log.info(f"Found {len(categories)} tag category descriptors")
-
 
 class ModelParam(BaseModel):
     name: str = ""
     weight: float = 1.0
 
 
-class ImageParams(BaseModel):
+@beartype
+@dataclass
+class ImageTags:
+    Character: Optional[str] = None
+
+
+@beartype
+@dataclass
+class ImageParams:
     prompt: str = ""
     negative_prompt: str = ""
     generation_data: str = ""
-    loras: List[ModelParam] = Field(default_factory=list)
+    loras: List[ModelParam] = field(default_factory=list)
     model: str = ""
     size: Tuple[int, int] = (-1, -1)
+    ImagePath: Optional[Path] = None
+    tags: ImageTags = field(default_factory=lambda: ImageTags())
+    parsed_prompt: Optional[List[LoRATag]] = None
 
 
 PATTERN = re.compile("(" + "|".join(
@@ -312,11 +347,18 @@ class TArtV1MainData(BaseModel):
     workEngine: str
 
 
+categories: List[TagCategory] = []
+categories.append(
+    TagCategory.from_file(Path("~/tmp/Characters.txt").expanduser(),
+                          name="Character"))
+
+
 def get_image_params(path: Path) -> ImageParams:
     img = Image.open(path)
     metadata = img.info
 
     res = ImageParams()
+    res.ImagePath = path
     if path.with_suffix(".txt").exists():
         text_gen_data = path.with_suffix(".txt").read_text()
         sd = parse_parameters(text_gen_data)
@@ -359,7 +401,40 @@ def get_image_params(path: Path) -> ImageParams:
             e.add_note(pformat(full_json, width=180))
             raise e from None
 
+    if res.prompt:
+        parser = PromptParser(category_dicts=categories)
+        res.parsed_prompt = parser.parse(res.prompt)
+
+        for tag in res.parsed_prompt:
+            if isinstance(tag, Tag):
+                if tag.category == "Character":
+                    res.tags.Character = TagCategory.clean_text(tag.text)
+
     return res
+
+
+def get_full_params() -> List[ImageParams]:
+    result: List[ImageParams] = []
+    for reference_dir in [
+            workspace_root.joinpath("reference_tensor_art"),
+            workspace_root.joinpath("tensor_saved_high_res"),
+    ]:
+        log.info(f"Getting files from {reference_dir}")
+        for filename in reference_dir.rglob("*.png"):
+            result.append(get_image_params(filename))
+
+    resort = []
+
+    def sort_key(param: ImageParams):
+        return param.tags.Character or ""
+
+    for key, group in itertools.groupby(sorted(result, key=sort_key),
+                                        sort_key):
+        log.info(key)
+        for item in group:
+            resort.append(item)
+
+    return resort
 
 
 def main_impl():
@@ -376,19 +451,7 @@ def main_impl():
                 tags.th(style="width: 35%;")
                 tags.th(style="width: 10%;")
 
-            for reference_dir in [
-                    workspace_root.joinpath("reference_tensor_art"),
-                    workspace_root.joinpath("tensor_saved_high_res"),
-            ]:
-                log.info(f"Getting files from {reference_dir}")
-                for filename in sorted(
-                        reference_dir.rglob("*.png"),
-                        key=lambda it: datetime.fromtimestamp(it.stat().
-                                                              st_mtime),
-                        reverse=True,
-                ):
-
-                    params = get_image_params(filename)
+                for params in get_full_params():
 
                     def rowname(name: str):
                         with tags.td(style="text-align:center;"):
@@ -397,25 +460,14 @@ def main_impl():
 
                     with tags.tr():
                         tags.td(
-                            tags.img(src=str(filename.resolve()), width="300"))
+                            tags.img(src=str(params.ImagePath.resolve()),
+                                     width="300"))
 
-                        def add_prompt(prompt: str) -> List[ParsedTag]:
-                            parser = PromptParser(category_dicts=categories)
-                            try:
-                                parsed = parser.parse(prompt)
-                            except Exception as e:
-                                log.error("-------")
-                                log.error(prompt)
-                                log.exception(e, stack_info=True)
-                                parsed = None
-
+                        def add_prompt(prompt: str):
                             as_multiline(prompt)
-                            return parsed
 
                         with tags.td():
                             with tags.table(**borders):
-                                parsed_positive: List[ParsedTag] = []
-                                parsed_negative: List[ParsedTag] = []
                                 rowname("prompt text")
                                 with tags.tr():
                                     with tags.td():
@@ -424,59 +476,17 @@ def main_impl():
                                 rowname("negative prompt")
                                 with tags.tr():
                                     with tags.td():
-                                        parsed_positive = add_prompt(
-                                            params.negative_prompt)
+                                        add_prompt(params.negative_prompt)
 
-                                if parsed_positive:
-                                    rowname("parsed positive")
-                                    with tags.tr():
-                                        with tags.td():
-                                            parsed_negative = as_multiline(
-                                                str(parsed_positive))
+                                rowname("tags")
+                                with tags.tr():
+                                    with tags.td():
+                                        as_multiline(str(params.tags))
 
-                                    all_categories = [
-                                        set(tag.categories)
-                                        for tag in parsed_positive
-                                        if isinstance(tag, Tag)
-                                    ]
-
-                                    this_prompt_categories = list(
-                                        sorted(
-                                            functools.reduce(
-                                                lambda prev, new: prev.union(
-                                                    new),
-                                                all_categories,
-                                                set(),
-                                            )))
-
-                                    rowname("prompt categories")
-                                    with tags.tr():
-                                        with tags.td():
-                                            as_multiline(
-                                                str(", ".join(
-                                                    this_prompt_categories)))
-
-                                    for category in [
-                                            "Characters",
-                                    ]:
-                                        matching = [
-                                            tag for tag in parsed_positive
-                                            if isinstance(tag, Tag) and (
-                                                category in tag.categories)
-                                        ]
-                                        if matching:
-                                            rowname("cat")
-                                            with tags.tr():
-                                                with tags.td():
-                                                    as_multiline(
-                                                        f"CATEGORY: {category}:{matching}"
-                                                    )
-
-                                rowname("parsed negative")
-                                if parsed_negative:
-                                    with tags.tr():
-                                        with tags.td():
-                                            as_multiline(str(parsed_negative))
+                                rowname("prompt_long")
+                                with tags.tr():
+                                    with tags.td():
+                                        as_multiline(str(params.parsed_prompt))
 
                         tags.td(params.generation_data)
 
@@ -494,9 +504,9 @@ def main_impl():
                         with tags.td(style="text-align:center;"):
                             text("{}x{} {} on {}".format(
                                 *params.size,
-                                filename.name,
+                                params.ImagePath.name,
                                 datetime.fromtimestamp(
-                                    filename.stat().st_mtime),
+                                    params.ImagePath.stat().st_mtime),
                             ))
 
     with open(output_html, "w") as f:
