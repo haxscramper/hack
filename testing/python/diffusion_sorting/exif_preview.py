@@ -14,7 +14,7 @@ from beartype.typing import List, Union, Set, Tuple, Optional, Dict
 from beartype import beartype
 import functools
 import sys
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, validator, AliasChoices
 from pprint import pformat, pprint
 
 import logging
@@ -219,10 +219,10 @@ PATTERN = re.compile("(" + "|".join(
         "Clip skip",
         "Model",
         "LoRA",
-        "Hires resize", 
-        "Hires steps", 
-        "Hires upscaler", 
-        "ADetailer model", 
+        "Hires resize",
+        "Hires steps",
+        "Hires upscaler",
+        "ADetailer model",
         "ADetailer negative prompt",
         "ADetailer confidence",
     ]) + "):")
@@ -246,6 +246,7 @@ class SDGenParams(BaseModel):
     HiresResize: Optional[str] = Field(alias="Hires resize", default=None)
     HiresSteps: Optional[str] = Field(alias="Hires steps", default=None)
     HiresUpscaler: Optional[str] = Field(alias="Hires upscaler", default=None)
+
 
 def parse_parameters(param_string: str) -> Optional[SDGenParams]:
     matches = list(re.finditer(PATTERN, param_string))
@@ -271,87 +272,51 @@ def parse_parameters(param_string: str) -> Optional[SDGenParams]:
         return SDGenParams.model_validate(results)
 
 
-class TArtV1CheckpointLoaderSimple(BaseModel):
-    ckpt_name: str
-    rm_background: int
-    rm_nearest: int
-    start_percent: int
+class TArtV1ModelInfo(BaseModel):
+    label: str
+    modelId: str
+    modelFileId: str
+    weight: float
+    modelFileName: str
+    baseModel: str
+    hash: str
 
-class TArtV1CLIPSetLastLayer(BaseModel):
-    clip: List[Union[str, int]]
-    rm_background: int
-    rm_nearest: int
-    start_percent: int
-    stop_at_clip_layer: int
 
-class TArtV1CLIPTextEncode(BaseModel):
-    clip: List[Union[str, int]]
-    rm_background: int
-    rm_nearest: int
-    start_percent: int
-    text: str
+class TArtV1BaseModelInfo(BaseModel):
+    label: str
+    modelId: str
+    modelFileId: str
+    modelFileName: str
+    baseModel: str
+    hash: str
 
-class TArtV1EmptyLatentImage(BaseModel):
-    batch_size: int
-    height: int
-    rm_background: int
-    rm_nearest: int
-    start_percent: int
+
+class TArtV1SDXLSettings(BaseModel):
+    refiner: Optional[bool] = None
+
+
+class TArtV1MainData(BaseModel):
+    models: List[TArtV1ModelInfo] = Field(default_factory=list)
+    prompt: str
+    negativePrompt: str
     width: int
-
-class TArtV1KSampler(BaseModel):
-    cfg: float
-    denoise: float
-    latent_image: List[Union[str, int]]
-    model: List[Union[str, int]]
-    negative: List[Union[str, int]]
-    positive: List[Union[str, int]]
-    rm_background: int
-    rm_nearest: int
-    sampler_name: str
-    scheduler: str
-    seed: int
-    start_percent: int
+    height: int
+    imageCount: int
+    samplerName: str
     steps: int
+    cfgScale: int
+    seed: Optional[str] = None
+    clipSkip: int
+    baseModel: TArtV1BaseModelInfo
+    sdxl: Optional[TArtV1SDXLSettings] = None
+    workEngine: str
 
-class TArtV1LoraTagLoader(BaseModel):
-    clip: List[Union[str, int]]
-    model: List[Union[str, int]]
-    rm_background: int
-    rm_nearest: int
-    start_percent: int
-    text: str
-
-class TArtV1SaveImage(BaseModel):
-    filename_prefix: str
-    images: List[Union[str, int]]
-    rm_background: int
-    rm_nearest: int
-    start_percent: int
-
-class TArtV1VAEDecode(BaseModel):
-    rm_background: int
-    rm_nearest: int
-    samples: List[Union[str, int]]
-    start_percent: int
-    vae: List[Union[str, int]]
-
-class TArtV1AllModels(BaseModel):
-    CheckpointLoaderSimple: TArtV1CheckpointLoaderSimple = Field(alias="ECHOCheckpointLoaderSimple")
-    CLIPSetLastLayer: TArtV1CLIPSetLastLayer
-    CLIPTextEncode: TArtV1CLIPTextEncode
-    EmptyLatentImage: Optional[TArtV1EmptyLatentImage] = None
-    KSampler: TArtV1KSampler = Field(alias="KSampler_A1111")
-    LoraTagLoader: TArtV1LoraTagLoader
-    SaveImage: TArtV1SaveImage
-    VAEDecode: TArtV1VAEDecode
 
 def get_image_params(path: Path) -> ImageParams:
     img = Image.open(path)
     metadata = img.info
 
     res = ImageParams()
-
     if path.with_suffix(".txt").exists():
         text_gen_data = path.with_suffix(".txt").read_text()
         sd = parse_parameters(text_gen_data)
@@ -370,20 +335,31 @@ def get_image_params(path: Path) -> ImageParams:
                             name = lora
                             weight = 1.0
 
-                        res.loras.append(ModelParam(
-                            name=name,
-                            weight=float(weight),
-                        ))
+                        res.loras.append(
+                            ModelParam(
+                                name=name,
+                                weight=float(weight),
+                            ))
 
-    elif "prompt" in metadata:
-        full_json = json.loads(metadata["prompt"])
-        if all("class_type" in it for it in full_json.values()):
-            pivot = {it["class_type"]: it["inputs"] for it in full_json.values()}
-            log.info(pformat(pivot, width=160))
-            load = TArtV1AllModels.model_validate(pivot)
+    elif "generation_data" in metadata:
+        full_json = json.loads(metadata["generation_data"])
+        try:
+            load = TArtV1MainData.model_validate(full_json)
+            res.prompt = load.prompt
+            res.negative_prompt = load.negativePrompt
+            res.generation_data = json.dumps(full_json)
+            for lora in load.models:
+                res.loras.append(
+                    ModelParam(
+                        name=lora.modelFileName,
+                        weight=lora.weight,
+                    ))
+
+        except Exception as e:
+            e.add_note(pformat(full_json, width=180))
+            raise e from None
 
     return res
-
 
 
 def main_impl():
