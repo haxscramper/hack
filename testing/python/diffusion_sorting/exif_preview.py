@@ -10,20 +10,23 @@ import json
 from pathlib import Path
 from datetime import datetime
 from dataclasses import dataclass, field
-from beartype.typing import List, Union, Set
+from beartype.typing import List, Union, Set, Tuple, Optional, Dict
 from beartype import beartype
 import functools
 import sys
+from pydantic import BaseModel, Field, validator
+from pprint import pformat, pprint
 
 import logging
 
 log = logging.getLogger("preview")
+
 log.setLevel(logging.DEBUG)
 
 log.setLevel(logging.DEBUG)
 handler = logging.StreamHandler()
 handler.setLevel(logging.DEBUG)
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+formatter = logging.Formatter("%(name)s - %(levelname)s - %(message)s")
 handler.setFormatter(formatter)
 log.addHandler(handler)
 log.info(f"Changing path to {sys.argv[1]}")
@@ -185,6 +188,204 @@ for directory in ["reference_tag_categories", "manual_tag_categories"]:
 
 log.info(f"Found {len(categories)} tag category descriptors")
 
+
+class ModelParam(BaseModel):
+    name: str = ""
+    weight: float = 1.0
+
+
+class ImageParams(BaseModel):
+    prompt: str = ""
+    negative_prompt: str = ""
+    generation_data: str = ""
+    loras: List[ModelParam] = Field(default_factory=list)
+    model: str = ""
+    size: Tuple[int, int] = (-1, -1)
+
+
+PATTERN = re.compile("(" + "|".join(
+    re.escape(key) for key in [
+        "Prompt",
+        "Negative prompt",
+        "Seed",
+        "Size",
+        "VAE",
+        "Denoising strength",
+        "Steps",
+        "Sampler",
+        "KSampler",
+        "Schedule",
+        "CFG scale",
+        "Clip skip",
+        "Model",
+        "LoRA",
+        "Hires resize", 
+        "Hires steps", 
+        "Hires upscaler", 
+        "ADetailer model", 
+        "ADetailer negative prompt",
+        "ADetailer confidence",
+    ]) + "):")
+
+
+class SDGenParams(BaseModel):
+    Prompt: str
+    NegativePrompt: str = Field(alias="Negative prompt")
+    Seed: str
+    Size: str
+    Steps: str
+    VAE: str
+    Sampler: str
+    CFGScale: str = Field(alias="CFG scale")
+    DenoisingStrength: str = Field(alias="Denoising strength")
+    KSampler: str
+    Schedule: str
+    ClipSkip: str = Field(alias="Clip skip")
+    Model: str
+    LoRA: Optional[str] = None
+    HiresResize: Optional[str] = Field(alias="Hires resize", default=None)
+    HiresSteps: Optional[str] = Field(alias="Hires steps", default=None)
+    HiresUpscaler: Optional[str] = Field(alias="Hires upscaler", default=None)
+
+def parse_parameters(param_string: str) -> Optional[SDGenParams]:
+    matches = list(re.finditer(PATTERN, param_string))
+    results = {}
+
+    for i in range(len(matches)):
+        start = matches[i].start()
+        end = matches[i].end()
+
+        if i + 1 < len(matches):
+            next_start = matches[i + 1].start()
+        else:
+            next_start = len(param_string)
+
+        key = param_string[start:end - 1].strip()
+        value = param_string[end:next_start].strip()
+
+        results[key] = value
+
+    if "Prompt" not in results:
+        return None
+    else:
+        return SDGenParams.model_validate(results)
+
+
+class TArtV1CheckpointLoaderSimple(BaseModel):
+    ckpt_name: str
+    rm_background: int
+    rm_nearest: int
+    start_percent: int
+
+class TArtV1CLIPSetLastLayer(BaseModel):
+    clip: List[Union[str, int]]
+    rm_background: int
+    rm_nearest: int
+    start_percent: int
+    stop_at_clip_layer: int
+
+class TArtV1CLIPTextEncode(BaseModel):
+    clip: List[Union[str, int]]
+    rm_background: int
+    rm_nearest: int
+    start_percent: int
+    text: str
+
+class TArtV1EmptyLatentImage(BaseModel):
+    batch_size: int
+    height: int
+    rm_background: int
+    rm_nearest: int
+    start_percent: int
+    width: int
+
+class TArtV1KSampler(BaseModel):
+    cfg: float
+    denoise: float
+    latent_image: List[Union[str, int]]
+    model: List[Union[str, int]]
+    negative: List[Union[str, int]]
+    positive: List[Union[str, int]]
+    rm_background: int
+    rm_nearest: int
+    sampler_name: str
+    scheduler: str
+    seed: int
+    start_percent: int
+    steps: int
+
+class TArtV1LoraTagLoader(BaseModel):
+    clip: List[Union[str, int]]
+    model: List[Union[str, int]]
+    rm_background: int
+    rm_nearest: int
+    start_percent: int
+    text: str
+
+class TArtV1SaveImage(BaseModel):
+    filename_prefix: str
+    images: List[Union[str, int]]
+    rm_background: int
+    rm_nearest: int
+    start_percent: int
+
+class TArtV1VAEDecode(BaseModel):
+    rm_background: int
+    rm_nearest: int
+    samples: List[Union[str, int]]
+    start_percent: int
+    vae: List[Union[str, int]]
+
+class TArtV1AllModels(BaseModel):
+    CheckpointLoaderSimple: TArtV1CheckpointLoaderSimple = Field(alias="ECHOCheckpointLoaderSimple")
+    CLIPSetLastLayer: TArtV1CLIPSetLastLayer
+    CLIPTextEncode: TArtV1CLIPTextEncode
+    EmptyLatentImage: Optional[TArtV1EmptyLatentImage] = None
+    KSampler: TArtV1KSampler = Field(alias="KSampler_A1111")
+    LoraTagLoader: TArtV1LoraTagLoader
+    SaveImage: TArtV1SaveImage
+    VAEDecode: TArtV1VAEDecode
+
+def get_image_params(path: Path) -> ImageParams:
+    img = Image.open(path)
+    metadata = img.info
+
+    res = ImageParams()
+
+    if path.with_suffix(".txt").exists():
+        text_gen_data = path.with_suffix(".txt").read_text()
+        sd = parse_parameters(text_gen_data)
+
+        if sd:
+            res.prompt = sd.Prompt
+            res.negative_prompt = sd.NegativePrompt
+            res.generation_data = text_gen_data
+            if sd.LoRA:
+                for lora in [it.strip() for it in sd.LoRA.split(",")]:
+                    if lora:
+                        if ":" in lora:
+                            name, weight = lora.split(":")
+
+                        else:
+                            name = lora
+                            weight = 1.0
+
+                        res.loras.append(ModelParam(
+                            name=name,
+                            weight=float(weight),
+                        ))
+
+    elif "prompt" in metadata:
+        full_json = json.loads(metadata["prompt"])
+        if all("class_type" in it for it in full_json.values()):
+            pivot = {it["class_type"]: it["inputs"] for it in full_json.values()}
+            log.info(pformat(pivot, width=160))
+            load = TArtV1AllModels.model_validate(pivot)
+
+    return res
+
+
+
 def main_impl():
     with document(title="Images and EXIF Metadata") as doc:
         log.info("Creating HTML")
@@ -205,19 +406,13 @@ def main_impl():
             ]:
                 log.info(f"Getting files from {reference_dir}")
                 for filename in sorted(
-                        reference_dir.glob("*.png"),
+                        reference_dir.rglob("*.png"),
                         key=lambda it: datetime.fromtimestamp(it.stat().
                                                               st_mtime),
                         reverse=True,
                 ):
-                    img = Image.open(filename)
-                    metadata = img.info
-                    full_json = json.loads(
-                        metadata["prompt"]) if "prompt" in metadata else {}
 
-                    # if "prompt" not in metadata:
-                    if "Xqmn92N5vg" in str(filename):
-                        log.warning(f"No prompt metadata for {filename}. meta {metadata}")
+                    params = get_image_params(filename)
 
                     def rowname(name: str):
                         with tags.td(style="text-align:center;"):
@@ -248,36 +443,20 @@ def main_impl():
                                 rowname("prompt text")
                                 with tags.tr():
                                     with tags.td():
-                                        if "1000" in full_json:
-                                            parsed_positive = add_prompt(
-                                                str(full_json["1000"]["inputs"]
-                                                    ["text"]))
-                                            del full_json["1000"]
-
-                                        elif "1000000000" in full_json:
-                                            parsed_positive = add_prompt(
-                                                str(full_json["1000000000"]
-                                                    ["inputs"]["text"]))
-                                            del full_json["1000000000"]
-
-                                        elif "parameters" in metadata:
-                                            as_multiline(
-                                                str(metadata["parameters"]))
+                                        add_prompt(params.prompt)
 
                                 rowname("negative prompt")
                                 with tags.tr():
                                     with tags.td():
-                                        if "1001" in full_json:
-                                            parsed_negative = add_prompt(
-                                                str(full_json["1001"]["inputs"]
-                                                    ["text"]))
-                                            del full_json["1001"]
+                                        parsed_positive = add_prompt(
+                                            params.negative_prompt)
 
                                 if parsed_positive:
                                     rowname("parsed positive")
                                     with tags.tr():
                                         with tags.td():
-                                            as_multiline(str(parsed_positive))
+                                            parsed_negative = as_multiline(
+                                                str(parsed_positive))
 
                                     all_categories = [
                                         set(tag.categories)
@@ -323,40 +502,22 @@ def main_impl():
                                         with tags.td():
                                             as_multiline(str(parsed_negative))
 
-                        if "generation_data" in metadata:
-                            tags.td(
-                                json.dumps(
-                                    json.loads(metadata["generation_data"])))
-
-                        elif "prompt" in metadata:
-                            tags.td(
-                                json.dumps(
-                                    json.loads(metadata["prompt"])))
-
-                        else:
-                            tags.td(text("no generation_data"))
+                        tags.td(params.generation_data)
 
                         with tags.td():
-                            generation_data = json.loads(
-                                metadata["generation_data"]
-                            ) if "generation_data" in metadata else {}
-
-                            if "models" in generation_data:
-                                with tags.table(
-                                        border=1,
-                                        style="border-collapse: collapse;"):
-                                    for model in generation_data["models"]:
-                                        with tags.tr():
-                                            tags.td(model["modelFileName"], style="word-break: break-all;")
-                                            tags.td(model["weight"])
-
-                            else:
-                                text("no lora")
+                            with tags.table(
+                                    border=1,
+                                    style="border-collapse: collapse;"):
+                                for model in params.loras:
+                                    with tags.tr():
+                                        tags.td(model.name,
+                                                style="word-break: break-all;")
+                                        tags.td(model.weight)
 
                     with tags.tr():
                         with tags.td(style="text-align:center;"):
                             text("{}x{} {} on {}".format(
-                                *img.size,
+                                *params.size,
                                 filename.name,
                                 datetime.fromtimestamp(
                                     filename.stat().st_mtime),
