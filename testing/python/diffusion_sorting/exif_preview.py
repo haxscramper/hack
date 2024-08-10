@@ -17,6 +17,7 @@ import sys
 from pydantic import BaseModel, Field, validator, AliasChoices
 from pprint import pformat, pprint
 import itertools
+import more_itertools
 
 import logging
 
@@ -451,7 +452,42 @@ def get_full_params() -> List[ImageParams]:
 
 
 def main_impl():
+    full_param_list = get_full_params()
     with document(title="Images and EXIF Metadata") as doc:
+        with tags.div(id="sidebar", ):
+            tags.style("""
+#sidebar {
+    z-index: 1000;
+    position:fixed; 
+    top:0; 
+    left:-230px; 
+    width:250px; 
+    height:100%; 
+    background:#f0f0f0;
+    overflow-y: auto;
+    background-color: white;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-family: Arial, sans-serif;
+}
+#sidebar:hover {
+    left: 0;
+}
+#sidebar a {
+    display: block;
+    padding: 5px;
+    color: black;
+    text-decoration: none;
+}
+#sidebar a:hover {
+    background: lightgray;
+}
+            """)
+            for idx, tag in enumerate(
+                    more_itertools.unique_everseen(it.group_key
+                                                   for it in full_param_list)):
+                tags.a(f"#{idx} {tag}", href=f"#row-{tag}-0")
+
         log.info("Creating HTML")
         with tags.table(
                 border=1,
@@ -464,7 +500,7 @@ def main_impl():
                 tags.th(style="width: 35%;")
                 tags.th(style="width: 10%;")
 
-                for params in get_full_params():
+                for params in full_param_list:
 
                     def rowname(name: str):
                         with tags.td(style="text-align:center;"):
