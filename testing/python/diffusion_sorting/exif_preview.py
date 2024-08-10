@@ -9,7 +9,7 @@ from PIL import Image
 import json
 from pathlib import Path
 from datetime import datetime
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from beartype.typing import List, Union, Set, Tuple, Optional, Dict
 from beartype import beartype
 import functools
@@ -52,34 +52,6 @@ class LoRATag:
     id2: str
     id3: str
     weight: str
-
-
-@beartype
-@dataclass
-class Tag:
-    text: str
-    amplifier: float = 1.0
-    parens: int = 0
-    category: Optional[str] = None
-
-    def __repr__(self) -> str:
-        if self.amplifier == 1.0:
-            result = self.text
-
-        else:
-            result = f"{self.text}:{self.amplifier}"
-
-        return "<{}{}{}{}>".format(
-            "(" * self.parens,
-            result,
-            ")" * self.parens,
-            ":" + self.category if self.category else "",
-        )
-
-
-ParsedTag = Union[Tag, LoRATag, str]
-
-RX_DELETE = re.compile(r"[- _,()/\\:]")
 
 
 @beartype
@@ -136,6 +108,34 @@ class TagCategory():
 
 
 @beartype
+@dataclass
+class Tag:
+    text: str
+    amplifier: float = 1.0
+    parens: int = 0
+    category: Optional[TagCategory] = None
+
+    def __repr__(self) -> str:
+        if self.amplifier == 1.0:
+            result = self.text
+
+        else:
+            result = f"{self.text}:{self.amplifier}"
+
+        return "<{}{}{}{}>".format(
+            "(" * self.parens,
+            result,
+            ")" * self.parens,
+            ":" + self.category.name if self.category else "",
+        )
+
+
+ParsedTag = Union[Tag, LoRATag, str]
+
+RX_DELETE = re.compile(r"[- _,()/\\:]")
+
+
+@beartype
 class PromptParser:
 
     def __init__(self, category_dicts: List[TagCategory]):
@@ -173,7 +173,7 @@ class PromptParser:
                 Tag(text=cats.no_alias(text.strip()) if cats else text.strip(),
                     amplifier=amplifier,
                     parens=level,
-                    category=cats.name if cats else None))
+                    category=cats))
 
         for token in tokens:
             if token == "":
@@ -235,7 +235,10 @@ class ImageParams:
     size: Tuple[int, int] = (-1, -1)
     ImagePath: Optional[Path] = None
     tags: ImageTags = field(default_factory=lambda: ImageTags())
-    parsed_prompt: Optional[List[LoRATag]] = None
+    parsed_prompt: Optional[List[ParsedTag]] = None
+    group_key: str = ""
+    in_group_index: int = 0
+    image_time: datetime = field(default_factory=lambda: datetime.now())
 
 
 PATTERN = re.compile("(" + "|".join(
@@ -357,7 +360,7 @@ def get_image_params(path: Path) -> ImageParams:
     img = Image.open(path)
     metadata = img.info
 
-    res = ImageParams()
+    res = ImageParams(image_time=datetime.fromtimestamp(path.stat().st_mtime))
     res.ImagePath = path
     if path.with_suffix(".txt").exists():
         text_gen_data = path.with_suffix(".txt").read_text()
@@ -405,10 +408,16 @@ def get_image_params(path: Path) -> ImageParams:
         parser = PromptParser(category_dicts=categories)
         res.parsed_prompt = parser.parse(res.prompt)
 
+        for lora in res.loras:
+            cats = parser.categories(lora.name)
+            if cats and cats.name == "Character":
+                res.tags.Character = cats.no_alias(lora.name)
+
         for tag in res.parsed_prompt:
             if isinstance(tag, Tag):
-                if tag.category == "Character":
-                    res.tags.Character = TagCategory.clean_text(tag.text)
+                if tag.category and tag.category.name == "Character":
+                    res.tags.Character = TagCategory.clean_text(
+                        tag.category.no_alias(tag.text))
 
     return res
 
@@ -425,14 +434,18 @@ def get_full_params() -> List[ImageParams]:
 
     resort = []
 
-    def sort_key(param: ImageParams):
+    def sort_by_character(param: ImageParams):
         return param.tags.Character or ""
 
-    for key, group in itertools.groupby(sorted(result, key=sort_key),
-                                        sort_key):
-        log.info(key)
-        for item in group:
-            resort.append(item)
+    def sort_by_mtime(param: ImageParams) -> datetime:
+        return param.image_time
+
+    for key, group in itertools.groupby(
+            sorted(result, key=sort_by_character),
+            sort_by_character,
+    ):
+        for idx, item in enumerate(sorted(group, key=sort_by_mtime)):
+            resort.append(replace(item, in_group_index=idx, group_key=key))
 
     return resort
 
@@ -458,7 +471,8 @@ def main_impl():
                             with tags.b():
                                 as_multiline(name.upper())
 
-                    with tags.tr():
+                    with tags.tr(id="row-{}-{}".format(params.group_key,
+                                                       params.in_group_index)):
                         tags.td(
                             tags.img(src=str(params.ImagePath.resolve()),
                                      width="300"))
@@ -488,7 +502,8 @@ def main_impl():
                                     with tags.td():
                                         as_multiline(str(params.parsed_prompt))
 
-                        tags.td(params.generation_data)
+                        with tags.td(_class="prompt-raw"):
+                            as_multiline(params.generation_data)
 
                         with tags.td():
                             with tags.table(
@@ -505,8 +520,7 @@ def main_impl():
                             text("{}x{} {} on {}".format(
                                 *params.size,
                                 params.ImagePath.name,
-                                datetime.fromtimestamp(
-                                    params.ImagePath.stat().st_mtime),
+                                params.image_time,
                             ))
 
     with open(output_html, "w") as f:

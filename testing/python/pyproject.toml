@@ -10,6 +10,11 @@ python = "^3.12"
 ebooklib = "^0.18"
 newspaper3k = "^0.2.8"
 lxml-html-clean = "^0.1.1"
+geopandas = "^1.0.1"
+beartype = "^0.18.5"
+sqlalchemy = "^2.0.31"
+pydantic = "^2.8.2"
+click = "^8.1.7"
 
 
 [build-system]
