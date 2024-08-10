@@ -233,13 +233,19 @@ class ImageParams:
     generation_data: str = ""
     loras: List[ModelParam] = field(default_factory=list)
     model: str = ""
-    size: Tuple[int, int] = (-1, -1)
+    size: Tuple[int, int] = (896, 1088)
     ImagePath: Optional[Path] = None
     tags: ImageTags = field(default_factory=lambda: ImageTags())
     parsed_prompt: Optional[List[ParsedTag]] = None
     group_key: str = ""
     in_group_index: int = 0
     image_time: datetime = field(default_factory=lambda: datetime.now())
+    sampler: str = "Euler a"
+    steps: int = 25
+    cfgScale: int = 7
+    clipSkip: int = 2
+    sdVae: str = "Automatic"
+    etaNoiseSeedDelta: int = 31337
 
 
 PATTERN = re.compile("(" + "|".join(
@@ -348,7 +354,9 @@ class TArtV1MainData(BaseModel):
     clipSkip: int
     baseModel: TArtV1BaseModelInfo
     sdxl: Optional[TArtV1SDXLSettings] = None
-    workEngine: str
+    workEngine: str = "TAMS_V2"
+    sdVae: str = "Automatic"
+    etaNoiseSeedDelta: int = 31337
 
 
 categories: List[TagCategory] = []
@@ -368,9 +376,16 @@ def get_image_params(path: Path) -> ImageParams:
         sd = parse_parameters(text_gen_data)
 
         if sd:
-            res.prompt = sd.Prompt
-            res.negative_prompt = sd.NegativePrompt
+            res.prompt = sd.Prompt.lstrip(",")
+            res.negative_prompt = sd.NegativePrompt.lstrip(",")
             res.generation_data = text_gen_data
+            res.sampler = sd.Sampler.strip(",")
+            res.steps = int(sd.Steps.strip(","))
+            res.model = sd.Model
+            res.clipSkip = int(sd.ClipSkip.strip(","))
+            res.cfgScale = int(sd.CFGScale.strip(","))
+            wStr, hStr = sd.Size.strip(",").split("x")
+            res.size = (int(wStr), int(hStr))
             if sd.LoRA:
                 for lora in [it.strip() for it in sd.LoRA.split(",")]:
                     if lora:
@@ -394,6 +409,14 @@ def get_image_params(path: Path) -> ImageParams:
             res.prompt = load.prompt
             res.negative_prompt = load.negativePrompt
             res.generation_data = json.dumps(full_json)
+            res.sampler = load.samplerName
+            res.steps = load.steps
+            res.model = load.baseModel.modelFileName
+            res.clipSkip = load.clipSkip
+            res.cfgScale = load.cfgScale
+            res.size = (load.width, load.height)
+            res.sdVae = load.sdVae
+            res.etaNoiseSeedDelta = load.etaNoiseSeedDelta
             for lora in load.models:
                 res.loras.append(
                     ModelParam(
@@ -451,38 +474,24 @@ def get_full_params() -> List[ImageParams]:
     return resort
 
 
+def get_current_source_dir() -> Path:
+    return Path(__file__).resolve().parent
+
+
 def main_impl():
+    output_json = output_html.with_suffix(".json")
+    dump_data = {}
     full_param_list = get_full_params()
     with document(title="Images and EXIF Metadata") as doc:
+        doc.head.add(
+            tags.link(
+                rel="stylesheet",
+                href=str(
+                    get_current_source_dir().joinpath("exif_preview.css"))))
+        doc.head.add(
+            tags.script(
+                src=str(get_current_source_dir().joinpath("exif_preview.js"))))
         with tags.div(id="sidebar", ):
-            tags.style("""
-#sidebar {
-    z-index: 1000;
-    position:fixed; 
-    top:0; 
-    left:-230px; 
-    width:250px; 
-    height:100%; 
-    background:#f0f0f0;
-    overflow-y: auto;
-    background-color: white;
-    border: 1px solid #ccc;
-    border-radius: 4px;
-    font-family: Arial, sans-serif;
-}
-#sidebar:hover {
-    left: 0;
-}
-#sidebar a {
-    display: block;
-    padding: 5px;
-    color: black;
-    text-decoration: none;
-}
-#sidebar a:hover {
-    background: lightgray;
-}
-            """)
             for idx, tag in enumerate(
                     more_itertools.unique_everseen(it.group_key
                                                    for it in full_param_list)):
@@ -500,7 +509,7 @@ def main_impl():
                 tags.th(style="width: 35%;")
                 tags.th(style="width: 10%;")
 
-                for params in full_param_list:
+                for param_idx, params in enumerate(full_param_list):
 
                     def rowname(name: str):
                         with tags.td(style="text-align:center;"):
@@ -533,12 +542,39 @@ def main_impl():
                                     with tags.td():
                                         as_multiline(str(params.tags))
 
-                                rowname("prompt_long")
+                                rowname("model")
                                 with tags.tr():
                                     with tags.td():
-                                        as_multiline(str(params.parsed_prompt))
+                                        as_multiline(params.model)
 
                         with tags.td(_class="prompt-raw"):
+                            paste = json.dumps(
+                                dict(
+                                    prompt=params.prompt,
+                                    negativePrompt=params.negative_prompt,
+                                    width=params.size[0],
+                                    height=params.size[1],
+                                    samplerName=params.sampler,
+                                    steps=params.steps,
+                                    cfgScale=params.cfgScale,
+                                    clipSkip=params.clipSkip,
+                                    sdVae=params.sdVae,
+                                    etaNoiseSeedDelta=params.etaNoiseSeedDelta,
+                                ),
+                                indent=2,
+                            )
+
+                            idname = f"prompt_copy_{param_idx}"
+                            if "prompts" not in dump_data:
+                                dump_data["prompts"] = {}
+
+                            dump_data["prompts"][idname] = paste
+
+                            with tags.button(
+                                    onclick=
+                                    f"copyToClipboard(data.prompts.{idname})"):
+                                text("Copy prompt")
+
                             as_multiline(params.generation_data)
 
                         with tags.td():
@@ -558,6 +594,13 @@ def main_impl():
                                 params.ImagePath.name,
                                 params.image_time,
                             ))
+
+
+    json_literal = tags.script(type="application/json", id="data")
+    json_str = json.dumps(dump_data, indent=2)
+    json_literal.add_raw_string(json_str)
+    doc.head.add(json_literal)
+
 
     with open(output_html, "w") as f:
         f.write(str(doc))
