@@ -4,6 +4,7 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 import json
 from beartype.typing import Optional, Union, List
+import logging
 
 class TextEntity(BaseModel):
     type: str
@@ -23,6 +24,21 @@ class Message(BaseModel):
     text: Union[str, List[Union[str, TextEntity]]]
     text_entities: list
 
+    def get_text(self) -> str:
+        result = ""
+        if isinstance(self.text, str):
+            result = self.text
+
+        else:
+            for it in self.text:
+                if isinstance(it, str):
+                    result += it
+                else: 
+                    result += it.text
+
+        return result
+
+
 class SavedMessages(BaseModel):
     type: str
     id: int
@@ -38,11 +54,15 @@ def save_prompts(data: SavedMessages):
     base_dir.mkdir(parents=True, exist_ok=True)
 
     for message in data.messages:
-        if "Prompt:" in message.text:
-            file_name = Path(message.file_name).stem
-            target_path = base_dir / f"{file_name}.txt"
-            with open(target_path, "w", encoding="utf-8") as file:
-                file.write(message.text)
+        if "Prompt:" in message.get_text():
+            if message.file_name:
+                file_name = Path(message.file_name).stem
+                target_path = base_dir / f"{file_name}.txt"
+                with open(target_path, "w", encoding="utf-8") as file:
+                    file.write(message.get_text())
+
+            else:
+                logging.warning(f"{message}")
 
 if __name__ == "__main__":
     data = load_json_file("/tmp/messages.json")

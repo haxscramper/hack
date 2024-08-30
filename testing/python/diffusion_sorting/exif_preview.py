@@ -403,30 +403,35 @@ def get_image_params(path: Path) -> ImageParams:
                             ))
 
     elif "generation_data" in metadata:
-        full_json = json.loads(metadata["generation_data"])
         try:
-            load = TArtV1MainData.model_validate(full_json)
-            res.prompt = load.prompt
-            res.negative_prompt = load.negativePrompt
-            res.generation_data = json.dumps(full_json)
-            res.sampler = load.samplerName
-            res.steps = load.steps
-            res.model = load.baseModel.modelFileName
-            res.clipSkip = load.clipSkip
-            res.cfgScale = load.cfgScale
-            res.size = (load.width, load.height)
-            res.sdVae = load.sdVae
-            res.etaNoiseSeedDelta = load.etaNoiseSeedDelta
-            for lora in load.models:
-                res.loras.append(
-                    ModelParam(
-                        name=lora.modelFileName,
-                        weight=lora.weight,
-                    ))
+            full_json = json.loads(metadata["generation_data"])
+            try:
+                load = TArtV1MainData.model_validate(full_json)
+                res.prompt = load.prompt
+                res.negative_prompt = load.negativePrompt
+                res.generation_data = json.dumps(full_json)
+                res.sampler = load.samplerName
+                res.steps = load.steps
+                res.model = load.baseModel.modelFileName
+                res.clipSkip = load.clipSkip
+                res.cfgScale = load.cfgScale
+                res.size = (load.width, load.height)
+                res.sdVae = load.sdVae
+                res.etaNoiseSeedDelta = load.etaNoiseSeedDelta
+                for lora in load.models:
+                    res.loras.append(
+                        ModelParam(
+                            name=lora.modelFileName,
+                            weight=lora.weight,
+                        ))
 
-        except Exception as e:
-            e.add_note(pformat(full_json, width=180))
-            raise e from None
+            except Exception as e:
+                e.add_note(pformat(full_json, width=180))
+                raise e from None
+
+        except Exception:
+            return res
+        
 
     if res.prompt:
         parser = PromptParser(category_dicts=categories)
@@ -482,6 +487,7 @@ def main_impl():
     output_json = output_html.with_suffix(".json")
     dump_data = {}
     full_param_list = get_full_params()
+    default_negative_prompt = Path("~/tmp/default_negative_prompt.txt").expanduser().read_text()
     with document(title="Images and EXIF Metadata") as doc:
         doc.head.add(
             tags.link(
@@ -564,16 +570,40 @@ def main_impl():
                                 indent=2,
                             )
 
+                            defaulted_prompt = json.dumps(
+                                dict(
+                                    prompt=params.prompt,
+                                    negativePrompt=default_negative_prompt,
+                                    width=896,
+                                    height=1088,
+                                    samplerName=params.sampler,
+                                    steps=25,
+                                    cfgScale=params.cfgScale,
+                                    clipSkip=params.clipSkip,
+                                    sdVae=params.sdVae,
+                                    etaNoiseSeedDelta=params.etaNoiseSeedDelta,
+                                ),
+                                indent=2,
+                            )
+
                             idname = f"prompt_copy_{param_idx}"
                             if "prompts" not in dump_data:
                                 dump_data["prompts"] = {}
 
-                            dump_data["prompts"][idname] = paste
+                            dump_data["prompts"][idname] = dict(
+                                full=paste,
+                                defaulted_prompt=defaulted_prompt,
+                            )
 
                             with tags.button(
                                     onclick=
-                                    f"copyToClipboard(data.prompts.{idname})"):
+                                    f"copyToClipboard(data.prompts.{idname}.full)"):
                                 text("Copy prompt")
+
+                            with tags.button(
+                                    onclick=
+                                    f"copyToClipboard(data.prompts.{idname}.defaulted_prompt)"):
+                                text("Defaulted prompt")
 
                             as_multiline(params.generation_data)
 
