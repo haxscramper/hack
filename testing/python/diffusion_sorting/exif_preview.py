@@ -158,7 +158,7 @@ class PromptParser:
         prompt = prompt.replace(r"\s+", " ")
         prompt = re.sub(r"(,\s*)+", ",", prompt)
         result = [
-            tok for tok in re.split(r"(,|BREAK|<[^>]+>|[\(\)])", prompt)
+            tok for tok in re.split(r"(\n+|,|BREAK|<[^>]+>|[\(\)])", prompt)
             if (tok not in [","]) and len(tok.strip()) != 0
         ]
         # print(f"{prompt} -> {result}")
@@ -270,6 +270,7 @@ PATTERN = re.compile("(" + "|".join(
         "ADetailer model",
         "ADetailer negative prompt",
         "ADetailer confidence",
+        "Guidance",
     ]) + "):")
 
 
@@ -364,6 +365,7 @@ categories.append(
     TagCategory.from_file(Path("~/tmp/Characters.txt").expanduser(),
                           name="Character"))
 
+WARN_IDX = 0
 
 def get_image_params(path: Path) -> ImageParams:
     img = Image.open(path)
@@ -403,8 +405,9 @@ def get_image_params(path: Path) -> ImageParams:
                             ))
 
     elif "generation_data" in metadata:
+        generation = metadata["generation_data"].strip('\x00')
         try:
-            full_json = json.loads(metadata["generation_data"])
+            full_json = json.loads(generation)
             try:
                 load = TArtV1MainData.model_validate(full_json)
                 res.prompt = load.prompt
@@ -426,12 +429,12 @@ def get_image_params(path: Path) -> ImageParams:
                         ))
 
             except Exception as e:
+                log.warning(f"{path}", exc_info=e)
                 e.add_note(pformat(full_json, width=180))
                 raise e from None
 
-        except Exception:
+        except Exception as e:
             return res
-        
 
     if res.prompt:
         parser = PromptParser(category_dicts=categories)
@@ -447,6 +450,11 @@ def get_image_params(path: Path) -> ImageParams:
                 if tag.category and tag.category.name == "Character":
                     res.tags.Character = TagCategory.clean_text(
                         tag.category.no_alias(tag.text))
+
+        if not res.tags.Character:
+            global WARN_IDX
+            # log.warning(f"[{WARN_IDX}] {res.parsed_prompt} + {res.loras} no character")
+            WARN_IDX += 1
 
     return res
 
@@ -516,6 +524,8 @@ def main_impl():
                 tags.th(style="width: 10%;")
 
                 for param_idx, params in enumerate(full_param_list):
+                    # if not params.prompt:
+                    #     continue
 
                     def rowname(name: str):
                         with tags.td(style="text-align:center;"):
@@ -537,6 +547,8 @@ def main_impl():
                                 with tags.tr():
                                     with tags.td():
                                         add_prompt(params.prompt)
+                                        # if params.parsed_prompt:
+                                            # add_prompt(str(params.parsed_prompt) + str(params.loras))
 
                                 rowname("negative prompt")
                                 with tags.tr():
