@@ -436,6 +436,20 @@ def get_image_params(path: Path) -> ImageParams:
         except Exception as e:
             return res
 
+    elif "prompt" in metadata:
+        prompt = json.loads(metadata["prompt"])
+        for _, node in prompt.items():
+            if node["class_type"] == "BNK_CLIPTextEncodeAdvanced":
+                text = node["inputs"]["text"]
+                if "EasyNegative" in text or "bad anatomy" in text or "negative" in text:
+                    res.negative_prompt = text
+
+                else:
+                    res.prompt = text
+
+    else:
+        log.warning(f"No generation data for {path}")
+
     if res.prompt:
         parser = PromptParser(category_dicts=categories)
         res.parsed_prompt = parser.parse(res.prompt)
