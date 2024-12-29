@@ -1,6 +1,6 @@
+#include "util.hpp"
 #include <future>
 #include <gtest/gtest.h>
-#include <iostream>
 #include <mutex>
 #include <string>
 
@@ -8,17 +8,17 @@ std::mutex m;
 
 void foo(int i, const std::string &str) {
   std::lock_guard<std::mutex> _guard{m};
-  std::cout << str << ' ' << i << '\n';
+  LOG_INFO(ol_log(), "foo {} {}", str, i);
 }
 
 void bar(const std::string &str) {
   std::lock_guard<std::mutex> _guard{m};
-  std::cout << str << '\n';
+  LOG_INFO(ol_log(), "bar {}", str);
 }
 
 int baz(int i) {
   std::lock_guard<std::mutex> _guard{m};
-  std::cout << i << '\n';
+  LOG_INFO(ol_log(), "{}", i);
   return i + 10;
 }
 
@@ -32,7 +32,7 @@ TEST(Async, Simple) {
   // Calls baz(43); with async policy
   // prints "43" concurrently
   std::future<int> a3 = std::async(std::launch::async, baz, 43);
-  a2.wait();                     // prints "world!"
-  std::cout << a3.get() << '\n'; // prints "53"
+  a2.wait();                          // prints "world!"
+  LOG_INFO(ol_log(), "{}", a3.get()); // prints "53"
 } // if a1 is not done at this point, destructor of a1 prints "Hello 42"
   // here

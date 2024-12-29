@@ -1,3 +1,4 @@
+#include "util.hpp"
 #include <gtest/gtest.h>
 #include <iostream>
 #include <semaphore>
@@ -16,14 +17,14 @@ void ThreadProc() {
   // this call blocks until the semaphore's count
   // is increased from the main proc
 
-  std::cout << "[thread] Got the signal\n"; // response message
+  LOG_INFO(ol_log(), "[thread] Got the signal"); // response message
 
   // wait for 3 seconds to imitate some work
   // being done by the thread
   using namespace std::literals;
   std::this_thread::sleep_for(3s);
 
-  std::cout << "[thread] Send the signal\n"; // message
+  LOG_INFO(ol_log(), "[thread] Send the signal"); // message
 
   // signal the main proc back
   smphSignalThreadToMain.release();
@@ -33,7 +34,7 @@ TEST(Semaphore, BinarySemaphore) {
   // create some worker thread
   std::thread thrWorker(ThreadProc);
 
-  std::cout << "[main] Send the signal\n"; // message
+  LOG_INFO(ol_log(), "[main] Send the signal"); // message
 
   // signal the worker thread to start working
   // by increasing the semaphore's count
@@ -43,7 +44,7 @@ TEST(Semaphore, BinarySemaphore) {
   // by attempting to decrement the semaphore's count
   smphSignalThreadToMain.acquire();
 
-  std::cout << "[main] Got the signal\n"; // response message
+  LOG_INFO(ol_log(), "[main] Got the signal"); // response message
   thrWorker.join();
 }
 
@@ -53,19 +54,18 @@ std::counting_semaphore<1> prepareSignal(0); // (1)
 
 void prepareWork() {
   myVec.insert(myVec.end(), {0, 1, 0, 3});
-  std::cout << "Sender: Data prepared." << '\n';
+  LOG_INFO(ol_log(), "Sender: Data prepared.");
   prepareSignal.release(); // (2)
 }
 
 void completeWork() {
-  std::cout << "Waiter: Waiting for data." << '\n';
+  LOG_INFO(ol_log(), "Waiter: Waiting for data.");
   prepareSignal.acquire(); // (3)
   myVec[2] = 2;
-  std::cout << "Waiter: Complete the work." << '\n';
+  LOG_INFO(ol_log(), "Waiter: Complete the work.");
   for (auto i : myVec) {
-    std::cout << i << " ";
+    LOG_INFO(ol_log(), "{}", i);
   }
-  std::cout << '\n';
 }
 
 TEST(Semaphore, CountingSemaphore) {
@@ -73,5 +73,4 @@ TEST(Semaphore, CountingSemaphore) {
   std::thread t2(completeWork);
   t1.join();
   t2.join();
-  std::cout << '\n';
 }

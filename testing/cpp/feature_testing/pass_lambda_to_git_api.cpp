@@ -5,6 +5,7 @@
 #include <string.h>
 #define __GIT_THROW_EXCEPTION throw "git failed with code???";
 
+#include "util.hpp"
 #include <gtest/gtest.h>
 
 void config_backend_foreach_match(
@@ -40,6 +41,6 @@ int exec_c_callback(std::function<int(const char *)> callback) {
 
 TEST(Lambda, PassToCAPi) {
   // comment
-  std::cout << exec_c_callback([](const char *in) -> int { return strlen(in); })
-            << "\n";
+  LOG_INFO(ol_log(), "Callback result {}",
+           exec_c_callback([](const char *in) -> int { return strlen(in); }));
 }

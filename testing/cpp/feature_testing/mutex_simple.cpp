@@ -1,8 +1,10 @@
 #include <iostream>
 // include init list in order to be able to use literal sequences
+#include "util.hpp"
 #include <chrono>
 #include <initializer_list>
 #include <mutex>
+
 #include <string>
 #include <thread>
 
@@ -39,5 +41,5 @@ TEST(Mutex, Simple) {
     data += "\n";
   }
 
-  std::cout << data;
+  LOG_INFO(ol_log(), "{}", data);
 }
