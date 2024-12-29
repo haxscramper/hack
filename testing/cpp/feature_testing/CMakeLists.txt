@@ -16,10 +16,14 @@ add_executable(
   pass_lambda_to_git_api.cpp
   std_async_example.cpp
   std_binary_semaphore.cpp
-  virtual_testing.cpp)
+  virtual_testing.cpp
+  util.cpp
+  util.hpp
+  main.cpp)
 
 find_package(Matplot++ REQUIRED)
 find_package(GTest CONFIG REQUIRED)
+find_package(quill REQUIRED)
 
 find_package(PkgConfig)
 pkg_check_modules(LIBGIT2 REQUIRED libgit2)
@@ -27,5 +31,4 @@ pkg_check_modules(LIBGIT2 REQUIRED libgit2)
 target_link_libraries(main PUBLIC "${LIBGIT2_LIBRARIES}")
 target_include_directories(main PUBLIC "${LIBGIT2_INCLUDE_DIRS}")
 
-target_link_libraries(main PUBLIC GTest::gtest GTest::gtest_main
-                                  Matplot++::matplot)
+target_link_libraries(main PUBLIC GTest::gtest Matplot++::matplot quill::quill)
