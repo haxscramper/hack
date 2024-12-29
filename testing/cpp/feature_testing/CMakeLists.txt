@@ -21,7 +21,6 @@ add_executable(
   util.hpp
   main.cpp)
 
-find_package(Matplot++ REQUIRED)
 find_package(GTest CONFIG REQUIRED)
 find_package(quill REQUIRED)
 
@@ -31,4 +30,4 @@ pkg_check_modules(LIBGIT2 REQUIRED libgit2)
 target_link_libraries(main PUBLIC "${LIBGIT2_LIBRARIES}")
 target_include_directories(main PUBLIC "${LIBGIT2_INCLUDE_DIRS}")
 
-target_link_libraries(main PUBLIC GTest::gtest Matplot++::matplot quill::quill)
+target_link_libraries(main PUBLIC GTest::gtest quill::quill)
