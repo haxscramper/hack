@@ -39,13 +39,15 @@ def generate_pdf(groups: List[QuestionGroup], output_path: Path) -> None:
     offset_te = form_height + 20
     x_offset = 40
 
+    width = 900
+
     height = 2 * offset_te
     for group in groups:
         for question in group.questions:
             height += offset_te
 
 
-    c = canvas.Canvas(str(output_path), pagesize=(900, height))
+    c = canvas.Canvas(str(output_path), pagesize=(width, height))
     y_position = height - offset_te
     form = c.acroForm
 
@@ -60,7 +62,7 @@ def generate_pdf(groups: List[QuestionGroup], output_path: Path) -> None:
                 name=field_name,
                 x=x_offset,
                 y=y_position - form_height,
-                width=500,
+                width=width - (2 * x_offset),
                 height=form_height,
                 maxlen=0,  # No length limit
                 fieldFlags="richText multiline",  # Enable rich text for word wrapping

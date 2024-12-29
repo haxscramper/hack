@@ -1,7 +1,4 @@
+#include <gtest/gtest.h>
 #include <iostream>
-#include <vector>
 
-int main() {
-    std::cout << "1\n";
-    return 0;
-}
+TEST(CodePatterns, SimpleCout) { std::cout << "1\n"; }
