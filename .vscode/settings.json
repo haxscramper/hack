@@ -85,7 +85,11 @@
     "format": "cpp",
     "ranges": "cpp",
     "stdfloat": "cpp",
-    "*.def": "cpp"
+    "*.def": "cpp",
+    "hash_map": "cpp",
+    "barrier": "cpp",
+    "regex": "cpp",
+    "text_encoding": "cpp"
   },
   "python.formatting.provider": "black"
 }
