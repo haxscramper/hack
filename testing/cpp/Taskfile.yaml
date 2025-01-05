@@ -182,3 +182,10 @@ tasks:
 
     vars:
       NAME: cyg_profile_trace
+
+  atomic_memory_ordering:
+    desc: "Run example program to see different memory ordering effects"
+    cmds: 
+      - g++ -g -O2 -o atomic_memory_ordering.bin atomic_memory_ordering.cpp -lpthread
+      - perf record -e instructions,mem-loads,mem-stores ./atomic_memory_ordering.bin
+      - perf annotate --symbol=memory_order_relaxed ./atomic_memory_ordering.bin

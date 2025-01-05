@@ -69,8 +69,10 @@ void completeWork() {
 }
 
 TEST(Semaphore, CountingSemaphore) {
-  std::thread t1(prepareWork);
-  std::thread t2(completeWork);
+  std::thread t1{prepareWork};
+  std::thread t2{completeWork};
+  set_thread_name(t1, "prepare work");
+  set_thread_name(t2, "complete work");
   t1.join();
   t2.join();
 }

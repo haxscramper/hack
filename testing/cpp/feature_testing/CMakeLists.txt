@@ -19,7 +19,8 @@ add_executable(
   virtual_testing.cpp
   util.cpp
   util.hpp
-  main.cpp)
+  main.cpp
+  barrier_and_latch.cpp)
 
 find_package(GTest CONFIG REQUIRED)
 find_package(quill REQUIRED)
