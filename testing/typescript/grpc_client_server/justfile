@@ -1,0 +1,3 @@
+[working-directory: 'client']
+install_deno_deps:
+  deno cache --allow-scripts --node-modules-dir npm:@grpc/grpc-js npm:protobufjs

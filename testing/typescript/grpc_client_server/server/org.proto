@@ -1,0 +1,49 @@
+syntax = "proto3";
+
+package org;
+
+service OrgService {
+  rpc GetKind(HandleRequest) returns (KindResponse) {}
+  rpc GetSubnodeCount(HandleRequest) returns (CountResponse) {}
+  rpc GetSubnode(SubnodeRequest) returns (HandleResponse) {}
+  rpc GetText(HandleRequest) returns (TextResponse) {}
+  rpc GetSubtreeLevel(HandleRequest) returns (LevelResponse) {}
+  rpc GetRoot(Empty) returns (HandleResponse) {}
+}
+
+message Empty {}
+
+message HandleRequest {
+  int64 handle = 1;
+}
+
+message SubnodeRequest {
+  int64 handle = 1;
+  int32 index = 2;
+}
+
+message HandleResponse {
+  int64 handle = 1;
+}
+
+message KindResponse {
+  enum Kind {
+    NONE = 0;
+    TEXT = 1;
+    PARAGRAPH = 2;
+    SUBTREE = 3;
+  }
+  Kind kind = 1;
+}
+
+message CountResponse {
+  int32 count = 1;
+}
+
+message TextResponse {
+  string text = 1;
+}
+
+message LevelResponse {
+  int32 level = 1;
+}
