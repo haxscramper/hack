@@ -33,9 +33,9 @@ handler.setFormatter(formatter)
 log.addHandler(handler)
 log.info(f"Changing path to {sys.argv[1]}")
 
-workspace_root = Path(sys.argv[1])
-
-output_html = workspace_root.joinpath("images_with_exif.html")
+if __name__ == "__main__":
+    workspace_root = Path(sys.argv[1])
+    output_html = workspace_root.joinpath("images_with_exif.html")
 
 
 @beartype
@@ -225,6 +225,10 @@ class ImageTags:
     Character: Optional[str] = None
 
 
+default_negative_prompt = Path(
+    "~/tmp/default_negative_prompt.txt").expanduser().read_text()
+
+
 @beartype
 @dataclass
 class ImageParams:
@@ -237,6 +241,7 @@ class ImageParams:
     ImagePath: Optional[Path] = None
     tags: ImageTags = field(default_factory=lambda: ImageTags())
     parsed_prompt: Optional[List[ParsedTag]] = None
+    parsed_negative_prompt: Optional[List[ParsedTag]] = None
     group_key: str = ""
     in_group_index: int = 0
     image_time: datetime = field(default_factory=lambda: datetime.now())
@@ -246,6 +251,66 @@ class ImageParams:
     clipSkip: int = 2
     sdVae: str = "Automatic"
     etaNoiseSeedDelta: int = 31337
+
+    def get_tag_formatted_prompt(self) -> str:
+        return ",".join(it.text for it in self.parsed_prompt
+                        if isinstance(it, Tag))
+
+    def get_tag_formatted_negative_prompt(self) -> str:
+        return ",".join(it.text for it in self.parsed_prompt
+                        if isinstance(it, Tag))
+
+    def get_infinite_browser_extra(self) -> dict:
+        meta = {
+            "Model": self.model,
+            "Lora hashes": ",".join(f"{it.name}" for it in self.loras),
+            "Steps": self.steps,
+            "TA defaulted": json.dumps(self.get_defaulted_tensor_art_prompt(), indent=2),
+        }
+        extra = dict(
+            lora=[dict(name=it.name, value=it.weight) for it in self.loras],
+            meta=meta,
+            pos_prompt=[
+                it.text for it in self.parsed_prompt if isinstance(it, Tag)
+            ],
+        )
+
+        return extra
+
+    def get_defaulted_tensor_art_prompt(self) -> dict:
+        return dict(
+            prompt=self.prompt,
+            negativePrompt=default_negative_prompt,
+            width=896,
+            height=1088,
+            samplerName=self.sampler,
+            steps=25,
+            cfgScale=self.cfgScale,
+            clipSkip=self.clipSkip,
+            sdVae=self.sdVae,
+            etaNoiseSeedDelta=self.etaNoiseSeedDelta,
+        )
+
+    def get_tensor_art_prompt(self) -> dict:
+        return dict(
+            prompt=self.prompt,
+            negativePrompt=self.negative_prompt,
+            width=self.size[0],
+            height=self.size[1],
+            samplerName=self.sampler,
+            steps=self.steps,
+            cfgScale=self.cfgScale,
+            clipSkip=self.clipSkip,
+            sdVae=self.sdVae,
+            etaNoiseSeedDelta=self.etaNoiseSeedDelta,
+        )
+
+    def get_normalized_a1111(self) -> str:
+        return f"""
+{self.get_tag_formatted_prompt()}
+Negative prompt: {self.get_tag_formatted_negative_prompt()},
+Steps: {self.steps}, Model: {self.model}
+"""
 
 
 PATTERN = re.compile("(" + "|".join(
@@ -367,6 +432,7 @@ categories.append(
 
 WARN_IDX = 0
 
+
 def get_image_params(path: Path) -> ImageParams:
     img = Image.open(path)
     metadata = img.info
@@ -383,7 +449,7 @@ def get_image_params(path: Path) -> ImageParams:
             res.generation_data = text_gen_data
             res.sampler = sd.Sampler.strip(",")
             res.steps = int(sd.Steps.strip(","))
-            res.model = sd.Model
+            res.model = sd.Model.strip(",")
             res.clipSkip = int(sd.ClipSkip.strip(","))
             res.cfgScale = int(sd.CFGScale.strip(","))
             wStr, hStr = sd.Size.strip(",").split("x")
@@ -429,7 +495,7 @@ def get_image_params(path: Path) -> ImageParams:
                         ))
 
             except Exception as e:
-                log.warning(f"{path}", exc_info=e)
+                # log.warning(f"{path}", exc_info=e)
                 e.add_note(pformat(full_json, width=180))
                 raise e from None
 
@@ -453,6 +519,8 @@ def get_image_params(path: Path) -> ImageParams:
     if res.prompt:
         parser = PromptParser(category_dicts=categories)
         res.parsed_prompt = parser.parse(res.prompt)
+        if res.negative_prompt:
+            res.parsed_negative_prompt = parser.parse(res.negative_prompt)
 
         for lora in res.loras:
             cats = parser.categories(lora.name)
@@ -473,6 +541,7 @@ def get_image_params(path: Path) -> ImageParams:
     return res
 
 
+@beartype
 def get_full_params() -> List[ImageParams]:
     result: List[ImageParams] = []
     for reference_dir in [
@@ -501,15 +570,26 @@ def get_full_params() -> List[ImageParams]:
     return resort
 
 
+@beartype
+def get_artist_prompt_galleries() -> List[Tuple[str, List[ImageParams]]]:
+    result: List[Tuple[str, List[ImageParams]]] = []
+    for reference_dir in workspace_root.glob("*_artists"):
+        if reference_dir.is_dir():
+            result.append(
+                (reference_dir.name,
+                 [get_image_params(f) for f in reference_dir.glob("*.png")]))
+
+    return result
+
+
 def get_current_source_dir() -> Path:
     return Path(__file__).resolve().parent
 
 
-def main_impl():
+def generate_common_prompt_gallery():
     output_json = output_html.with_suffix(".json")
     dump_data = {}
     full_param_list = get_full_params()
-    default_negative_prompt = Path("~/tmp/default_negative_prompt.txt").expanduser().read_text()
     with document(title="Images and EXIF Metadata") as doc:
         doc.head.add(
             tags.link(
@@ -562,7 +642,7 @@ def main_impl():
                                     with tags.td():
                                         add_prompt(params.prompt)
                                         # if params.parsed_prompt:
-                                            # add_prompt(str(params.parsed_prompt) + str(params.loras))
+                                        # add_prompt(str(params.parsed_prompt) + str(params.loras))
 
                                 rowname("negative prompt")
                                 with tags.tr():
@@ -581,34 +661,12 @@ def main_impl():
 
                         with tags.td(_class="prompt-raw"):
                             paste = json.dumps(
-                                dict(
-                                    prompt=params.prompt,
-                                    negativePrompt=params.negative_prompt,
-                                    width=params.size[0],
-                                    height=params.size[1],
-                                    samplerName=params.sampler,
-                                    steps=params.steps,
-                                    cfgScale=params.cfgScale,
-                                    clipSkip=params.clipSkip,
-                                    sdVae=params.sdVae,
-                                    etaNoiseSeedDelta=params.etaNoiseSeedDelta,
-                                ),
+                                params.get_tensor_art_prompt(),
                                 indent=2,
                             )
 
                             defaulted_prompt = json.dumps(
-                                dict(
-                                    prompt=params.prompt,
-                                    negativePrompt=default_negative_prompt,
-                                    width=896,
-                                    height=1088,
-                                    samplerName=params.sampler,
-                                    steps=25,
-                                    cfgScale=params.cfgScale,
-                                    clipSkip=params.clipSkip,
-                                    sdVae=params.sdVae,
-                                    etaNoiseSeedDelta=params.etaNoiseSeedDelta,
-                                ),
+                                params.get_defaulted_tensor_art_prompt(),
                                 indent=2,
                             )
 
@@ -623,12 +681,14 @@ def main_impl():
 
                             with tags.button(
                                     onclick=
-                                    f"copyToClipboard(data.prompts.{idname}.full)"):
+                                    f"copyToClipboard(data.prompts.{idname}.full)"
+                            ):
                                 text("Copy prompt")
 
                             with tags.button(
                                     onclick=
-                                    f"copyToClipboard(data.prompts.{idname}.defaulted_prompt)"):
+                                    f"copyToClipboard(data.prompts.{idname}.defaulted_prompt)"
+                            ):
                                 text("Defaulted prompt")
 
                             as_multiline(params.generation_data)
@@ -651,12 +711,10 @@ def main_impl():
                                 params.image_time,
                             ))
 
-
     json_literal = tags.script(type="application/json", id="data")
     json_str = json.dumps(dump_data, indent=2)
     json_literal.add_raw_string(json_str)
     doc.head.add(json_literal)
-
 
     with open(output_html, "w") as f:
         f.write(str(doc))
@@ -664,24 +722,84 @@ def main_impl():
     log.info(f"HTML file created at {output_html}")
 
 
-if True:
+@beartype
+def extract_artist(prompt: str) -> str:
+    match = re.search(r"by ([^,\n]+)", prompt)
+    if match:
+        return match.group(1).strip()
+    return "Unknown Artist"
+
+
+def generate_artist_galleries():
+    artists: List[str] = []
+    for dir, images in get_artist_prompt_galleries():
+        gallery_dir = workspace_root.joinpath(dir)
+        log.info(f"{gallery_dir}")
+        columns = 8
+
+        with document(title="Images and EXIF Metadata") as doc:
+            tbl = tags.table()
+            row = None
+            for index, image in enumerate(images):
+                if index % columns == 0:
+                    row = tbl.add(tags.tr())
+                artist_name = extract_artist(image.prompt)
+                with row.add(tags.td()) as cell:
+                    img_path = str(image.ImagePath) if image.ImagePath else "#"
+                    image_element = tags.img(src=img_path)
+                    cell.add(image_element)
+                    cell.add(tags.p(artist_name))
+                    artists.append(artist_name)
+
+        doc.head.add(
+            tags.style("""
+            table {
+                width: 100%;
+                table-layout: fixed;
+                border-collapse: collapse;
+            }
+            td {
+                padding: 10px;
+                text-align: center;
+                vertical-align: top;
+            }
+            img {
+                max-width: 100%;
+                height: auto;
+            }
+            p {
+                margin: 0;
+                font-size: 14px;
+                text-align: center;
+            }
+        """))
+
+        gallery_dir.joinpath("index.html").write_text(str(doc))
+        gallery_dir.joinpath("arists.txt").write_text("\n".join(
+            sorted(artists)))
+
+
+def main_impl():
+    generate_artist_galleries()
+    generate_common_prompt_gallery()
+
+
+if __name__ == "__main__":
     main_impl()
 
+    def test_parse(prompt: str):
+        return PromptParser(categories).parse(prompt)
 
-def test_parse(prompt: str):
-    return PromptParser(categories).parse(prompt)
-
-
-for test in [
-        "dog", "cat, dog", "(cat), dog", "((cat)), dog:2",
-        "cat:0.5, dog:2, elephant", "((cat, dog)), (elephant:2), giraffe",
-        "cat, <id2:id3:1>, dog",
-        "((cat, (dog))), cat:3, <id2:id3:0.5>, BREAK, elephant, ((tiger, (lion:2)))",
-        "cat, dog, elephant, tiger, lion, giraffe, bear, wolf, fox, rabbit, deer, moose, squirrel, hedgehog, bat, owl, rat, mouse, duck, swan",
-        "((cat)), ((dog)), (((elephant))), ((((tiger)))), cat:2, dog:1.5, elephant:0.3, tiger:4, ((giraffe:2), (bear:3)), <idA:idB:2>",
-        "cat, dog, ((elephant, (tiger, ((lion)))), giraffe), ((bear:2, wolf:0.5)), fox:1.2, (rabbit, (deer, (moose))), (squirrel, (hedgehog, (bat, (owl)))), rat, (mouse), (duck), (swan)",
-        "Hana Midorikawa (Prison School)"
-]:
-    parsed = test_parse(test)
-    # print(parsed)
-    # print([tag.categories for tag in parsed if isinstance(tag, Tag)])
+    for test in [
+            "dog", "cat, dog", "(cat), dog", "((cat)), dog:2",
+            "cat:0.5, dog:2, elephant", "((cat, dog)), (elephant:2), giraffe",
+            "cat, <id2:id3:1>, dog",
+            "((cat, (dog))), cat:3, <id2:id3:0.5>, BREAK, elephant, ((tiger, (lion:2)))",
+            "cat, dog, elephant, tiger, lion, giraffe, bear, wolf, fox, rabbit, deer, moose, squirrel, hedgehog, bat, owl, rat, mouse, duck, swan",
+            "((cat)), ((dog)), (((elephant))), ((((tiger)))), cat:2, dog:1.5, elephant:0.3, tiger:4, ((giraffe:2), (bear:3)), <idA:idB:2>",
+            "cat, dog, ((elephant, (tiger, ((lion)))), giraffe), ((bear:2, wolf:0.5)), fox:1.2, (rabbit, (deer, (moose))), (squirrel, (hedgehog, (bat, (owl)))), rat, (mouse), (duck), (swan)",
+            "Hana Midorikawa (Prison School)"
+    ]:
+        parsed = test_parse(test)
+        # print(parsed)
+        # print([tag.categories for tag in parsed if isinstance(tag, Tag)])
