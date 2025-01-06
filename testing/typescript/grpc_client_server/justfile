@@ -1,3 +1,27 @@
+export GRPC_VERBOSITY := 'INFO'
+export GRPC_TRACE := 'api'
+
 [working-directory: 'client']
 install_deno_deps:
   deno cache --allow-scripts --node-modules-dir npm:@grpc/grpc-js npm:protobufjs
+
+[working-directory: 'server']
+build_cmake:
+  cmake -S . -B build
+  cmake --build build --target all
+
+[working-directory: 'client']
+deno_gen_bindings: 
+  rm -rfv generated
+  mkdir -p generated
+  deno task gen
+
+[working-directory: 'client']
+deno_run_client: deno_gen_bindings
+  deno task dev
+
+run_grpc_server: build_cmake 
+  killall org_server || true
+  ./server/build/org_server &> /tmp/org_server_out.log &
+  just deno_run_client
+

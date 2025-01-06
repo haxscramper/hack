@@ -19,6 +19,7 @@ int64_t OrgServiceImpl::registerObject(std::shared_ptr<Org> obj) {
   std::lock_guard<std::mutex> lock(mutex_);
   int64_t handle = next_handle_++;
   handles_[handle] = obj;
+  LOG_INFO(ol_log(), "Handle is {}", handle);
   return handle;
 }
 

@@ -1,14 +1,21 @@
 {
   "tasks": {
-    "dev": "deno run --allow-env --allow-net --watch main.ts",
-    "gen": "mkdir -p protobuf && protoc --plugin=protoc-gen-ts=./node_modules/.bin/protoc-gen-ts --ts_out=generated --proto_path=../server org.proto"
+    "dev": "deno run --allow-read --unstable-detect-cjs --unstable-sloppy-imports --allow-env --allow-net main.ts",
+    "gen": "protoc --plugin=./node_modules/.bin/protoc-gen-ts_proto --ts_proto_opt=outputServices=generic-definitions,outputClientImpl=false,oneof=unions,snakeToCamel=false,esModuleInterop=true --ts_proto_out=generated --proto_path=../server org.proto"
   },
   "imports": {
+    "@bufbuild/protobuf": "npm:@bufbuild/protobuf@^2.2.3",
+    "@protobuf-ts/grpc-transport": "npm:@protobuf-ts/grpc-transport@^2.9.4",
     "@std/assert": "jsr:@std/assert@1",
     "@grpc/grpc-js": "npm:@grpc/grpc-js",
     "google-protobuf": "npm:google-protobuf@^3.21.4",
+    "grpc-web": "npm:grpc-web@^1.5.0",
+    "nice-grpc": "npm:nice-grpc@^2.1.10",
     "protobufjs": "npm:protobufjs",
-    "protoc-gen-ts": "npm:protoc-gen-ts@^0.8.7"
+    "protoc-gen-grpc-web": "npm:protoc-gen-grpc-web@^1.5.0",
+    "protoc-gen-js": "npm:protoc-gen-js@^3.21.4",
+    "protoc-gen-ts": "npm:protoc-gen-ts@^0.8.7",
+    "ts-proto": "npm:ts-proto@^2.6.1"
   },
   "nodeModulesDir": "auto"
 }

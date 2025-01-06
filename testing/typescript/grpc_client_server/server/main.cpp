@@ -13,7 +13,7 @@ void RunServer(std::shared_ptr<Org> root) {
   builder.RegisterService(&service);
 
   std::unique_ptr<grpc::Server> server(builder.BuildAndStart());
-  std::cout << "Server listening on " << server_address << std::endl;
+  LOG_INFO(ol_log(), "Server listening on '{}'", server_address);
   server->Wait();
 }
 
