@@ -13,6 +13,7 @@
     "npm:protoc-gen-grpc-web@^1.5.0": "1.5.0",
     "npm:protoc-gen-js@^3.21.4": "3.21.4",
     "npm:protoc-gen-ts@~0.8.7": "0.8.7",
+    "npm:ts-pattern@^5.6.0": "5.6.0",
     "npm:ts-proto@^2.6.1": "2.6.1"
   },
   "jsr": {
@@ -772,6 +773,9 @@
     "ts-error@1.0.6": {
       "integrity": "sha512-tLJxacIQUM82IR7JO1UUkKlYuUTmoY9HBJAmNWFzheSlDS5SPMcNIepejHJa4BpPQLAcbRhRf3GDJzyj6rbKvA=="
     },
+    "ts-pattern@5.6.0": {
+      "integrity": "sha512-SL8u60X5+LoEy9tmQHWCdPc2hhb2pKI6I1tU5Jue3v8+iRqZdcT3mWPwKKJy1fMfky6uha82c8ByHAE8PMhKHw=="
+    },
     "ts-poet@6.9.0": {
       "integrity": "sha512-roe6W6MeZmCjRmppyfOURklO5tQFQ6Sg7swURKkwYJvV7dbGCrK28um5+51iW3twdPRKtwarqFAVMU6G1mvnuQ==",
       "dependencies": [
@@ -871,6 +875,7 @@
       "npm:protoc-gen-grpc-web@^1.5.0",
       "npm:protoc-gen-js@^3.21.4",
       "npm:protoc-gen-ts@~0.8.7",
+      "npm:ts-pattern@^5.6.0",
       "npm:ts-proto@^2.6.1"
     ]
   }

@@ -15,6 +15,8 @@ find_package(Protobuf CONFIG REQUIRED)
 find_package(gRPC CONFIG REQUIRED)
 find_package(Threads REQUIRED)
 find_package(quill REQUIRED)
+find_package(cpptrace CONFIG REQUIRED)
+
 
 find_program(GRPC_CPP_PLUGIN grpc_cpp_plugin REQUIRED)
 
@@ -42,8 +44,11 @@ add_library(org_proto
 )
 
 target_link_libraries(org_proto
+    PUBLIC
     protobuf::libprotobuf
     gRPC::grpc++
+    gRPC::grpcpp_channelz
+    gRPC::grpc++_reflection
 )
 
 target_include_directories(org_proto PUBLIC
@@ -60,6 +65,7 @@ target_link_libraries(org_server
     org_proto
     Threads::Threads
     quill::quill
+    cpptrace::cpptrace
 )
 
 target_include_directories(org_server PRIVATE

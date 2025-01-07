@@ -257,7 +257,7 @@ class ImageParams:
                         if isinstance(it, Tag))
 
     def get_tag_formatted_negative_prompt(self) -> str:
-        return ",".join(it.text for it in self.parsed_prompt
+        return ",".join(it.text for it in self.parsed_negative_prompt
                         if isinstance(it, Tag))
 
     def get_infinite_browser_extra(self) -> dict:

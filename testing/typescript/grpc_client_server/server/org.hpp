@@ -11,6 +11,7 @@ struct Org {
   std::shared_ptr<Org> at(int idx);
   virtual OrgSemKind getKind() const = 0;
   virtual ~Org() = default;
+  void add(std::shared_ptr<Org> sub) { subnodes.push_back(sub); }
 };
 
 struct Text : public Org {

@@ -41,11 +41,8 @@ public:
                        org::HandleResponse *response) override;
 
 private:
-  std::shared_ptr<Org> root_;
   std::mutex mutex_;
-  std::unordered_map<int64_t, std::shared_ptr<Org>> handles_;
-  int64_t next_handle_ = 1;
-
+  std::unordered_map<int64_t, std::shared_ptr<Org>> handles;
   int64_t registerObject(std::shared_ptr<Org> obj);
   std::shared_ptr<Org> getObject(int64_t handle);
 };

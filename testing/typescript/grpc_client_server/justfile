@@ -1,5 +1,5 @@
-export GRPC_VERBOSITY := 'INFO'
-export GRPC_TRACE := 'api'
+# export GRPC_VERBOSITY := 'INFO'
+# export GRPC_TRACE := 'api'
 
 [working-directory: 'client']
 install_deno_deps:
@@ -7,7 +7,7 @@ install_deno_deps:
 
 [working-directory: 'server']
 build_cmake:
-  cmake -S . -B build
+  cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
   cmake --build build --target all
 
 [working-directory: 'client']
@@ -22,6 +22,6 @@ deno_run_client: deno_gen_bindings
 
 run_grpc_server: build_cmake 
   killall org_server || true
-  ./server/build/org_server &> /tmp/org_server_out.log &
+  ./server/build/org_server &
   just deno_run_client
 
