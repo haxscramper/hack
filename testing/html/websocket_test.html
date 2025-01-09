@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html>
+<script>
+  async function test_socket() {
+    // Create WebSocket and wait for connection
+    const ws = new WebSocket("ws://localhost:8089");
+    await new Promise((resolve, reject) => {
+      ws.onopen = resolve;
+      ws.onerror = reject;
+    });
+    console.log("open connection");
+
+    // Helper function to send and wait for response
+    const sendAndWait = async (message) => {
+      return new Promise((resolve, reject) => {
+        ws.send(JSON.stringify(message));
+        const handler = (event) => {
+          ws.removeEventListener("message", handler);
+          resolve(JSON.parse(event.data));
+        };
+        ws.addEventListener("message", handler);
+      });
+    };
+
+    // Set root file and wait for response
+    const setRootResponse = await sendAndWait({
+      target: "/api/setRootFile",
+      body: {
+        path: "/home/haxscramper/workspace/repos/fic/ordered.org"
+      }
+    });
+    console.log("set root response:", setRootResponse);
+
+    // Send getRoot requests sequentially
+    const startTime = performance.now();
+    const iteration_count = 10_000;
+    for (var i = 0; i < iteration_count; ++i) {
+      const getRootResponse = await sendAndWait({
+        target: "/api/getRoot"
+      });
+      // console.log(`getRoot response ${i}:`, getRootResponse);
+    }
+
+    const endTime = performance.now();
+    const totalRunTime = endTime - startTime;
+
+    console.log(`Complete getRoot statistics:
+    Total time: ${totalRunTime.toFixed(2)}ms
+    Average time per call: ${(totalRunTime / iteration_count).toFixed(2)}ms`);
+
+    // Get tree JSON
+    const treeResponse = await sendAndWait({
+      target: "/api/getTreeJsonDeep",
+      query: {
+        skipEmptyLists: "true",
+        skipLocation: "true",
+        skipId: "true",
+        skipNullFields: "true",
+      },
+      body: {
+        target: {
+          id: {
+            format: "Document_1",
+            number: 69269232549889
+          },
+          path: {
+            path: [],
+            root: {
+              format: "Document_1",
+              number: 69269232549889
+            }
+          }
+        }
+      }
+    });
+    console.log("tree response:", treeResponse);
+
+    // Setup error and close handlers
+    ws.onerror = (error) => {
+      console.error("WebSocket error:", error);
+    };
+
+    ws.onclose = () => {
+      console.log("WebSocket connection closed");
+    };
+  }
+
+  async function test_http() {
+    const iteration_count = 10_000;
+    const baseUrl = "http://localhost:8080";
+
+    const headers = {
+      "content-type": "application/json",
+      "Access-Control-Allow-Origin": "*"
+    }
+
+
+    await fetch(`${baseUrl}/api/setRootFile`, {
+      method: "POST",
+      headers: headers,
+      mode: 'no-cors',
+      body: JSON.stringify({
+        path: "/home/haxscramper/workspace/repos/fic/ordered.org"
+      })
+    });
+
+    // Start timing the getRoot calls
+    const startTime = performance.now();
+
+    // Execute getRoot requests
+    for (let i = 0; i < iteration_count; ++i) {
+      await fetch(`${baseUrl}/api/getRoot`, {
+        method: "POST",
+        mode: 'no-cors',
+        headers: headers,
+      });
+    }
+
+    const totalRunTime = performance.now() - startTime;
+
+    console.log(`Complete getRoot statistics:
+      Total time: ${totalRunTime.toFixed(2)}ms
+      Average time per call: ${(totalRunTime / iteration_count).toFixed(2)}ms`);
+  }
+
+</script>
+
+<body>
+
+</body>
+
+</html>
