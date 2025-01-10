@@ -1,0 +1,9 @@
+{
+  "tasks": {
+    "dev": "deno run --allow-sys --allow-read --unstable-detect-cjs --unstable-sloppy-imports --allow-env --allow-net main.ts"
+  },
+  "nodeModulesDir": "auto",
+  "imports": {
+    "tslog": "npm:tslog@^4.9.3"
+  }
+}
