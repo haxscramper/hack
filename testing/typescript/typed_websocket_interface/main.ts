@@ -8,25 +8,28 @@ const log = new Logger({
 
 // Type definitions for service metadata
 interface ParamDefinition {
-  name: string;
-  type: string;
-  optional?: boolean;
-  default?: any;
+  readonly name: string;
+  readonly type: string;
+  readonly optional?: boolean;
+  readonly default?: any;
 }
 
 interface MethodDefinition {
-  name: string;
-  parameters: readonly ParamDefinition[];  // Make readonly
-  returnType: string;
+  readonly name: string;
+  readonly parameters: readonly ParamDefinition[];
+  readonly result: string;
 }
 
 interface ServiceDefinition {
-  name: string;
-  methods: {[key: string]: MethodDefinition;};
+  readonly name: string;
+  readonly methods: {[key: string]: MethodDefinition;};
 }
 
 // Helper type for tuple to union conversion
 type TupleToUnion<T extends readonly any[]> = T[number];
+
+interface ImmUniqId {}
+
 
 // Improved type inference helpers
 type InferParamType<T extends string> =
@@ -43,33 +46,28 @@ type InferServiceClient<T extends ServiceDefinition> = {
       Promise<any>
 };
 
+import {data} from '/tmp/schema.ts';
+
 // Example service definition
-const ApiServiceDefinition = {
-  name: 'ApiService',
-  methods: {
-    getRoot: {name: 'getRoot', parameters: [], returnType: 'GetValueResponse'},
-    setRootFile: {
-      name: 'setRootFile',
-      parameters: [{name: 'path', type: 'string'}],
-      returnType: 'SetRootFileResponse'
-    }
-  }
-} as const;
+const OrgServiceDefinition = data;
+
+type OrgClient = InferServiceClient<typeof OrgServiceDefinition>;
 
 // Client implementation
-function createWebSocketClient<T extends ServiceDefinition>(
-    definition: T, ws: WebSocket): InferServiceClient<T> {
+function createWebSocketClient(ws: WebSocket): OrgClient {
   // Use any temporarily to avoid index signature issue
   const client = {} as any;
 
+  const definition = OrgServiceDefinition as ServiceDefinition;
+
   for (const [methodName, methodDef] of Object.entries(definition.methods)) {
-    log.info(`${methodName}`)
     client[methodName] = async (params: any) => {
       return new Promise((resolve, reject) => {
         const id = Math.random().toString(36).substr(2, 9);
 
         // Convert params to expected format
         const args = {};
+        // log.info(`TS params ${JSON.stringify(params)}`)
         for (const param of methodDef.parameters) {
           if (params[param.name] !== undefined) {
             args[param.name] = params[param.name];
@@ -88,8 +86,9 @@ function createWebSocketClient<T extends ServiceDefinition>(
         const handler = (event: MessageEvent) => {
           const response = JSON.parse(event.data);
           if (response.id === id) {
+            log.info(`ID: ${id} got response: ${JSON.stringify(response)}`)
             ws.removeEventListener('message', handler);
-            resolve(response);
+            resolve(response.body);
           }
         };
 
@@ -98,7 +97,11 @@ function createWebSocketClient<T extends ServiceDefinition>(
     };
   }
 
-  return client as InferServiceClient<T>;
+  return client as OrgClient;
+}
+
+async function treeRepr(client: OrgClient, id: ImmUniqId, depth: number = 0) {
+  log.info(`${JSON.stringify(await client.getKind({id: id}))}`)
 }
 
 // Usage example
@@ -109,13 +112,16 @@ async function main() {
   await new Promise<void>(
       resolve => ws.addEventListener('open', () => resolve()));
 
-  const client = createWebSocketClient(ApiServiceDefinition, ws);
+  const client = createWebSocketClient(ws);
+  client.setExceptionHandler({handler: true});
 
   await client.setRootFile(
       {path: '/home/haxscramper/workspace/repos/fic/ordered.org'});
 
   const root = await client.getRoot({});
   log.info(`root: ${JSON.stringify(root)}`);
+
+  treeRepr(client, root, 0); 
 }
 
 main();
