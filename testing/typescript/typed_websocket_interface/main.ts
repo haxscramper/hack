@@ -33,7 +33,28 @@ interface ImmUniqId {}
 
 // Improved type inference helpers
 type InferParamType<T extends string> =
-    T extends 'string' ? string : T extends 'number' ? number : never;
+    // clang-format off
+    T extends 'string' ? string : 
+    T extends 'number' ? number : 
+    T extends 'bool' | 'boolean' ? boolean :
+    T extends 'null' ? null :
+    T extends 'undefined' ? undefined :
+    T extends 'void' ? void :
+    T extends 'any' ? any :
+    T extends 'object' ? object :
+    T extends `Array<${infer U}>` ? Array<InferParamType<U>> :
+    T extends `Map<${infer K},${infer V}>` ? Map<InferParamType<K>, InferParamType<V>> :
+    T extends `Set<${infer U}>` ? Set<InferParamType<U>> :
+    T extends `Promise<${infer U}>` ? Promise<InferParamType<U>> :
+    T extends `${infer U}[]` ? InferParamType<U>[] :
+    T extends keyof GlobalTypes ? GlobalTypes[T] :
+    // clang-format on
+    unknown;
+
+interface GlobalTypes {
+  'ImmUniqId': ImmUniqId,
+}
+
 
 type InferMethodParams<T extends MethodDefinition> = {
   [P in TupleToUnion<T['parameters']>as P['name']]: P['optional'] extends true ?
@@ -43,7 +64,7 @@ type InferMethodParams<T extends MethodDefinition> = {
 
 type InferServiceClient<T extends ServiceDefinition> = {
   [M in keyof T['methods']]: (params: InferMethodParams<T['methods'][M]>) =>
-      Promise<any>
+      Promise<InferParamType<T['methods'][M]['result']>>
 };
 
 import {data} from '/tmp/schema.ts';
@@ -86,7 +107,9 @@ function createWebSocketClient(ws: WebSocket): OrgClient {
         const handler = (event: MessageEvent) => {
           const response = JSON.parse(event.data);
           if (response.id === id) {
-            log.info(`ID: ${id} got response: ${JSON.stringify(response)}`)
+            if (response.error) {
+              log.error(`ID: ${id} got response: ${JSON.stringify(response.error)}`)
+            }
             ws.removeEventListener('message', handler);
             resolve(response.body);
           }
@@ -101,7 +124,15 @@ function createWebSocketClient(ws: WebSocket): OrgClient {
 }
 
 async function treeRepr(client: OrgClient, id: ImmUniqId, depth: number = 0) {
-  log.info(`${JSON.stringify(await client.getKind({id: id}))}`)
+  log.info(
+      ' '.repeat(depth * 2) +
+      `[${depth}] ${id.id.format}`)
+
+  const size: number = await client.getSize({id: id});
+  for (var idx = 0; idx < size; ++idx) {
+    const subnode = await client.getSubnodeAt({id: id, index: idx})
+    await treeRepr(client, subnode, depth + 1);
+  }
 }
 
 // Usage example
@@ -116,12 +147,13 @@ async function main() {
   client.setExceptionHandler({handler: true});
 
   await client.setRootFile(
-      {path: '/home/haxscramper/workspace/repos/fic/ordered.org'});
+      {path: '/home/haxscramper/tmp/org_trivial.org'});
 
   const root = await client.getRoot({});
   log.info(`root: ${JSON.stringify(root)}`);
 
-  treeRepr(client, root, 0); 
+  await treeRepr(client, root, 0);
+  log.info("done");
 }
 
 main();
