@@ -262,10 +262,14 @@ class ImageParams:
 
     def get_infinite_browser_extra(self) -> dict:
         meta = {
-            "Model": self.model,
-            "Lora hashes": ",".join(f"{it.name}" for it in self.loras),
-            "Steps": self.steps,
-            "TA defaulted": json.dumps(self.get_defaulted_tensor_art_prompt(), indent=2),
+            "Model":
+            self.model,
+            "Lora hashes":
+            ",".join(f"{it.name}" for it in self.loras),
+            "Steps":
+            self.steps,
+            "TA defaulted":
+            json.dumps(self.get_defaulted_tensor_art_prompt(), indent=2),
         }
         extra = dict(
             lora=[dict(name=it.name, value=it.weight) for it in self.loras],
@@ -586,6 +590,31 @@ def get_current_source_dir() -> Path:
     return Path(__file__).resolve().parent
 
 
+@beartype
+def get_thumbnail(path: Path, downscale: float = 0.2) -> Path:
+    cache_dir = Path.home() / ".cache" / "exif_preview"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+
+    hasher = hashlib.md5()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(4096), b""):
+            hasher.update(chunk)
+    hash_hex = hasher.hexdigest()
+
+    thumbnail_path = cache_dir / f"{hash_hex}.jpg"
+    if thumbnail_path.exists():
+        return thumbnail_path
+
+    with Image.open(path) as img:
+        if img.mode in ("RGBA", "P"):
+            img = img.convert("RGB")
+        new_size = (int(img.width * downscale), int(img.height * downscale))
+        img.thumbnail(new_size)
+        img.save(thumbnail_path)
+
+    return thumbnail_path
+
+
 def generate_common_prompt_gallery():
     output_json = output_html.with_suffix(".json")
     dump_data = {}
@@ -628,9 +657,11 @@ def generate_common_prompt_gallery():
 
                     with tags.tr(id="row-{}-{}".format(params.group_key,
                                                        params.in_group_index)):
-                        tags.td(
-                            tags.img(src=str(params.ImagePath.resolve()),
-                                     width="300"))
+                        original = params.ImagePath.resolve()
+                        with tags.td(style="text-align:center;"):
+                            tags.img(src=str(get_thumbnail(original)),
+                                     width="300")
+                            tags.a("original image", href=original)
 
                         def add_prompt(prompt: str):
                             as_multiline(prompt)
@@ -730,6 +761,9 @@ def extract_artist(prompt: str) -> str:
     return "Unknown Artist"
 
 
+import hashlib
+
+
 def generate_artist_galleries():
     artists: List[str] = []
     for dir, images in get_artist_prompt_galleries():
@@ -745,10 +779,12 @@ def generate_artist_galleries():
                     row = tbl.add(tags.tr())
                 artist_name = extract_artist(image.prompt)
                 with row.add(tags.td()) as cell:
-                    img_path = str(image.ImagePath) if image.ImagePath else "#"
+                    img_path = str(get_thumbnail(
+                        image.ImagePath)) if image.ImagePath else "#"
                     image_element = tags.img(src=img_path)
                     cell.add(image_element)
                     cell.add(tags.p(artist_name))
+                    cell.add(tags.a("original image", href=image.ImagePath))
                     artists.append(artist_name)
 
         doc.head.add(
