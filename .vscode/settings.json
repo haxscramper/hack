@@ -91,5 +91,6 @@
     "regex": "cpp",
     "text_encoding": "cpp"
   },
-  "python.formatting.provider": "black"
+  "python.formatting.provider": "black",
+  "deno.enable": true
 }

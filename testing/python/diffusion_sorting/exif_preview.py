@@ -18,6 +18,10 @@ from pydantic import BaseModel, Field, validator, AliasChoices
 from pprint import pformat, pprint
 import itertools
 import more_itertools
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.manifold import TSNE
+from dataclasses import asdict
+from sklearn.preprocessing import MinMaxScaler
 
 import logging
 
@@ -615,10 +619,76 @@ def get_thumbnail(path: Path, downscale: float = 0.2) -> Path:
     return thumbnail_path
 
 
+def extract_text_from_image(image: ImageParams) -> str:
+    prompt_text = " ".join(tag.text if isinstance(tag, Tag) else ""
+                           for tag in (image.parsed_prompt or [])
+                           if isinstance(tag, (Tag, str)))
+    lora_text = " ".join(f"{lora.name} {lora.weight}" for lora in image.loras)
+    return f"{prompt_text} {lora_text} {image.model}".strip()
+
+
+class FixEncouter(json.JSONEncoder):
+
+    def default(self, obj):
+        if isinstance(obj, set):
+            return sorted(obj)
+
+        else:
+            return super().default(obj)
+
+
+@beartype
+def generate_embedding_json(images: List[ImageParams]) -> None:
+    workspace_root.mkdir(exist_ok=True, parents=True)
+    embeddings_text = [extract_text_from_image(image) for image in images]
+
+    tfidf = TfidfVectorizer()
+    tfidf_matrix = tfidf.fit_transform(embeddings_text)
+
+    tsne = TSNE(n_components=2, random_state=42, init="random")
+    embeddings_2d = tsne.fit_transform(tfidf_matrix.toarray())
+
+    scaler = MinMaxScaler(feature_range=(0, 1))
+    embeddings_normalized = scaler.fit_transform(embeddings_2d)
+
+    embedding_data = []
+    for image, (x, y) in zip(images, embeddings_normalized):
+        embedding_data.append({
+            "id":
+            str(id(image)),
+            "x":
+            float(x),
+            "y":
+            float(y),
+            "tags": [
+                asdict(tag) if isinstance(tag, (Tag, LoRATag)) else tag
+                for tag in (image.parsed_prompt or [])
+            ],
+            "image_path":
+            str(get_thumbnail(image.ImagePath)) if image.ImagePath else "",
+            "tooltip":
+            extract_text_from_image(image),
+            "associated":
+            json.dumps(
+                image.get_tensor_art_prompt(),
+                indent=2,
+            )
+        })
+
+    out_path = workspace_root.joinpath("embedding.json")
+    log.info(f"Write embeddings to '{out_path}")
+    out_path.write_text(json.dumps(
+        embedding_data,
+        indent=2,
+        cls=FixEncouter,
+    ))
+
+
 def generate_common_prompt_gallery():
     output_json = output_html.with_suffix(".json")
     dump_data = {}
     full_param_list = get_full_params()
+    generate_embedding_json(full_param_list)
     with document(title="Images and EXIF Metadata") as doc:
         doc.head.add(
             tags.link(
