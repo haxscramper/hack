@@ -38,22 +38,42 @@ class CustomGraphicsView(QtWidgets.QGraphicsView):
         self.zoomChanged.emit(self._zoom)
 
 
+import html
+
+
 class CustomGraphicsPixmapItem(QtWidgets.QGraphicsPixmapItem):
 
-    def __init__(self, pixmap: QtGui.QPixmap) -> None:
+    def __init__(self, pixmap: QtGui.QPixmap, tooltip: str) -> None:
         super().__init__(pixmap)
         self.setAcceptHoverEvents(True)
+        self.tooltip = tooltip
 
     def hoverEnterEvent(self,
                         event: QtWidgets.QGraphicsSceneHoverEvent) -> None:
         QtWidgets.QApplication.setOverrideCursor(
             QtCore.Qt.CursorShape.PointingHandCursor)
+        if self.tooltip:
+            QtWidgets.QToolTip.setFont(QtGui.QFont("Arial", 10))
+            QtWidgets.QToolTip.showText(
+                event.screenPos(),
+                self._format_tooltip(self.tooltip),
+                None,
+                QtCore.QRect(0, 0, 300, 0),
+                msecShowTime=12000,
+            )
+            
         super().hoverEnterEvent(event)
 
     def hoverLeaveEvent(self,
                         event: QtWidgets.QGraphicsSceneHoverEvent) -> None:
         QtWidgets.QApplication.restoreOverrideCursor()
+        QtWidgets.QToolTip.hideText()
         super().hoverLeaveEvent(event)
+
+    def _format_tooltip(self, text: str) -> str:
+        # Escape special HTML characters to prevent rendering issues
+        sanitized_text = html.escape(text)
+        return f'<div style="width: 300px; white-space: normal;">{sanitized_text}</div>'
 
 
 class CustomGraphicsScene(QtWidgets.QGraphicsScene):
@@ -111,7 +131,9 @@ class MainWindow(QtWidgets.QMainWindow):
                 pixmap.scaled(
                     base_size, base_size,
                     QtCore.Qt.AspectRatioMode.KeepAspectRatio,
-                    QtCore.Qt.TransformationMode.SmoothTransformation))
+                    QtCore.Qt.TransformationMode.SmoothTransformation),
+                entry["tooltip"],
+            )
 
             img.setData(0, entry["associated"])
 

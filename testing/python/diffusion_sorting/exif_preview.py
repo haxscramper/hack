@@ -25,6 +25,7 @@ from sklearn.preprocessing import MinMaxScaler
 import numpy as np
 from sklearn.preprocessing import normalize
 from scipy.sparse import csr_matrix
+from collections import defaultdict
 
 import logging
 
@@ -662,25 +663,38 @@ class AnnotatedTfidfVectorizer:
     @beartype
     def fit_transform(self,
                       tokenized_lists: List[List[EmbedToken]]) -> csr_matrix:
-        for l1 in tokenized_lists:
-            for token in l1:
-                if token.category:
-                    assert token.category in self.category_weights, f"{token.category} not in weights"
+        text_counts = defaultdict(int)
+        all_document_count = len(tokenized_lists)
 
+        for doc in tokenized_lists:
+            for token in doc:
+                if token.category and token.category not in self.category_weights:
+                    raise ValueError(
+                        f"Category {token.category} not in weights")
+                text_counts[token.text] += 1
+
+        max_token_count = max(text_counts.values()) if text_counts else 1
         annotated_texts = self._annotate_tokens(tokenized_lists)
         matrix = self.vectorizer.fit_transform(annotated_texts)
-        weighted_matrix = self._apply_category_weights(matrix)
-        return normalize(weighted_matrix)
 
-    def _apply_category_weights(self, matrix: csr_matrix) -> csr_matrix:
-        feature_names = np.array(self.vectorizer.get_feature_names_out(),
-                                 dtype=str)
-        weights = np.ones(len(feature_names))
-        for category, weight in self.category_weights.items():
-            category_mask = np.char.startswith(feature_names, f"{category}:")
-            weights[category_mask] *= weight
-        weight_matrix = csr_matrix(weights).diagonal()
-        return matrix.multiply(weight_matrix)
+        feature_weights = []
+        for feature in self.vectorizer.get_feature_names_out():
+            if ":" in feature:
+                category, text = feature.split(":", 1)
+                multiplier = self.category_weights[category]
+            else:
+                text = feature
+                multiplier = 1.0
+
+            count = text_counts[text]
+            weight = (all_document_count +
+                      max_token_count) / count * multiplier
+            feature_weights.append(weight)
+
+        weight_diag = csr_matrix(
+            (feature_weights, (range(len(feature_weights)),
+                               range(len(feature_weights)))))
+        return normalize(matrix.dot(weight_diag))
 
 
 @beartype
@@ -712,25 +726,26 @@ def generate_embedding_json(images: List[ImageParams]) -> None:
 
     embedding_data = []
     for image, (x, y) in zip(images, embeddings_normalized):
-        embedding_data.append({
-            "id":
-            str(id(image)),
-            "x":
-            float(x),
-            "y":
-            float(y),
-            "tags": [
-                asdict(tag) if isinstance(tag, (Tag, LoRATag)) else tag
-                for tag in (image.parsed_prompt or [])
-            ],
-            "image_path":
-            str(get_thumbnail(image.ImagePath)) if image.ImagePath else "",
-            "associated":
-            json.dumps(
-                image.get_tensor_art_prompt(),
-                indent=2,
-            )
-        })
+        embedding_data.append(
+            dict(
+                id=str(id(image)),
+                x=float(x),
+                y=float(y),
+                tags=[
+                    asdict(tag) if isinstance(tag, (Tag, LoRATag)) else tag
+                    for tag in (image.parsed_prompt or [])
+                ],
+                image_path=str(get_thumbnail(image.ImagePath))
+                if image.ImagePath else "",
+                associated=json.dumps(
+                    image.get_tensor_art_prompt(),
+                    indent=2,
+                ),
+                tooltip=f"""{image.parsed_prompt}
+
+{image.tags}
+""",
+            ))
 
     out_path = workspace_root.joinpath("embedding.json")
     log.info(f"Write embeddings to '{out_path}")
