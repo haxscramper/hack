@@ -2,7 +2,8 @@
 
 import pandas as pd
 from beartype import beartype
-from beartype.typing import List, Optional
+from beartype.typing import List, Optional, Dict, Any
+from notion_client import Client
 from collections import defaultdict
 from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Boolean
 from sqlalchemy import create_engine, MetaData, Table as SATable, Engine, inspect
@@ -18,11 +19,12 @@ import re
 import logging
 import json
 from pprint import pformat, pprint
+import sys
 
+logging.basicConfig(stream=sys.stdout)
 
-def log(category="rich") -> logging.Logger:
-    log = logging.getLogger(category)
-    return log
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
 
 
 @beartype
@@ -85,7 +87,7 @@ class AlXreaderImportOptions(BaseModel):
 
     @field_validator('import_offset', mode="before")
     def parse_timedelta(cls, v: Optional[str]):
-        log(CAT).info("Importing the time delta")
+        logger.info("Importing the time delta")
         if v == None:
             return None
 
@@ -246,14 +248,167 @@ def format_timedelta(td: timedelta) -> str:
     return duration
 
 
+@beartype
+class NotionSyncManager:
+
+    def __init__(self, token: str, database_id: str, dry_run: bool):
+        self.notion = Client(auth=token)
+        self.database_id = database_id
+        self.dry_run = dry_run
+
+    def get_existing_books(self) -> Dict[str, Dict[str, Any]]:
+        books = {}
+        start_cursor = None
+
+        while True:
+            query_params = {"database_id": self.database_id}
+            if start_cursor:
+                query_params["start_cursor"] = start_cursor
+
+            response = self.notion.databases.query(**query_params)
+            results = response.get("results", [])
+
+            for page in results:
+                properties = page.get("properties", {})
+                title = properties.get("Name", {}).get("title", [])
+                if title:
+                    book_title = title[0].get("plain_text", "")
+                    if book_title in books:
+                        logger.warning(f"Notion database has duplicate data, '{book_title}' is already present")
+
+                    if book_title:
+                        books[book_title] = {
+                            "id": page["id"],
+                            "properties": properties
+                        }
+
+            # Check if there are more pages to fetch
+            next_cursor = response.get("next_cursor")
+            if not next_cursor:
+                break
+
+            start_cursor = next_cursor
+
+        logger.info(f"Retrieved {len(books)} books from Notion database")
+        return books
+
+    def update_notion_database(self, books: List[BookRecord]) -> None:
+        existing_books = self.get_existing_books()
+
+        if self.dry_run:
+            for idx, book in enumerate(existing_books):
+                logger.info(f"Existing book [{idx}] '{book}'")
+
+        for book in books:
+            reading_progress = book.bookpos / book.booksize if book.booksize > 0 else 0
+
+            # Skip books with less than 2% progress if they're not already in the database
+            if reading_progress < 0.02 and book.title not in existing_books:
+                logger.info(
+                    f"Skipping new book with less than 2% progress: {book.title}"
+                )
+                continue
+
+            if book.title in existing_books:
+                # Check if reading progress has changed
+                current_page = existing_books[book.title]
+                current_progress = current_page["properties"].get(
+                    "Reading progress", {}).get("number", 0)
+
+                if int(reading_progress) <= int(
+                        current_progress
+                ):  # I can go back on reading some books
+                    logger.info(f"No progress change for book: {book.title}")
+                    continue
+
+                # Update existing book
+                logger.info(
+                    f"Updating book: {book.title} with new progress: {reading_progress:.2%} < {current_progress:.2%}"
+                )
+
+                if not self.dry_run:
+                    self.notion.pages.update(
+                        page_id=current_page["id"],
+                        properties={
+                            "Reading progress": {
+                                "number": reading_progress
+                            },
+                            "Finished/paused reading": {
+                                "date": {
+                                    "start": book.datelast.isoformat()
+                                }
+                            },
+                        },
+                    )
+            elif book.title:
+                # Create new book
+                logger.info(
+                    f"Adding new book: {book.title} with progress: {reading_progress:.2%}"
+                )
+                if not self.dry_run:
+                    self.notion.pages.create(
+                        parent={"database_id": self.database_id},
+                        properties={
+                            "Name": {
+                                "title": [{
+                                    "text": {
+                                        "content": book.title
+                                    }
+                                }]
+                            },
+                            "Author": {
+                                "rich_text": [{
+                                    "text": {
+                                        "content": book.author
+                                    }
+                                }]
+                            },
+                            "Reading progress": {
+                                "number": reading_progress
+                            },
+                            "Started reading": {
+                                "date": {
+                                    "start": book.datefirst.isoformat()
+                                }
+                            },
+                            "Finished/paused reading": {
+                                "date": {
+                                    "start": book.datelast.isoformat()
+                                }
+                            },
+                        },
+                    )
+
+
+@beartype
+def sync_books_to_notion(
+    books: List[BookRecord],
+    notion_token: str,
+    database_id: str,
+    dry_run: bool,
+) -> None:
+    sync_manager = NotionSyncManager(
+        token=notion_token,
+        database_id=database_id,
+        dry_run=dry_run,
+    )
+    sync_manager.update_notion_database(books)
+
+
 @click.command()
 @click.argument("infile")
 @click.argument("outfile")
 @click.option("--import_offset")
+@click.option("--notion_token")
+@click.option("--notion_database")
+@click.option("--notion_access_dry_run")
 def main(
     infile: str,
     outfile: str,
     import_offset: Optional[str] = None,
+    notion_token: Optional[str] = None,
+    notion_database: Optional[str] = None,
+    notion_access_dry_run: bool = True,
 ) -> None:
     opts = AlXreaderImportOptions(
         infile=Path(infile),
@@ -263,7 +418,7 @@ def main(
     engine = open_sqlite(opts.infile)
     session = sessionmaker()(bind=engine)
     if opts.import_offset:
-        log(CAT).info(f"Import time offset {opts.import_offset}")
+        logger.info(f"Import time offset {opts.import_offset}")
         bookmarks = [
             it.model_copy(update=dict(
                 dateadd=it.dateadd + opts.import_offset,
@@ -305,7 +460,15 @@ def main(
             ensure_ascii=False,
         ))
 
-    log(CAT).info("Import done")
+    logger.info("Import done")
+
+    if notion_database and notion_token:
+        sync_books_to_notion(
+            reading.books,
+            notion_token=notion_token,
+            database_id=notion_database,
+            dry_run=bool(notion_access_dry_run),
+        )
 
 
 if __name__ == "__main__":

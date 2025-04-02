@@ -687,8 +687,8 @@ class AnnotatedTfidfVectorizer:
                 multiplier = 1.0
 
             count = text_counts[text]
-            weight = (all_document_count +
-                      max_token_count) / count * multiplier
+            weight = ((all_document_count + max_token_count) / count *
+                      multiplier)**10
             feature_weights.append(weight)
 
         weight_diag = csr_matrix(
@@ -712,7 +712,7 @@ def generate_embedding_json(images: List[ImageParams]) -> None:
     embeddings_text = [extract_text_from_image(image) for image in images]
 
     tfidf = AnnotatedTfidfVectorizer({
-        "Character": 1000,
+        "Character": 10,
         "": 1,
     })
 
