@@ -7,12 +7,16 @@ from pathlib import Path
 from beartype import beartype
 from beartype.typing import Dict, List, Any, Optional, Tuple
 import mistune
+import json
+import itertools
 
 import click
 import pytz
 from notion_client import Client
 
-logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s")
+logging.basicConfig(
+    format="%(asctime)s - %(filename)s:%(lineno)d - %(levelname)s - %(message)s"
+)
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
@@ -87,7 +91,7 @@ def markdown_to_org(text: str) -> str:
     # Convert non-checkbox markdown to org using mistune
     markdown_text = "\n".join(lines)
     markdown = mistune.create_markdown(renderer=OrgModeRenderer())
-    return markdown(markdown_text)
+    return markdown(markdown_text).rstrip("\n")
 
 
 @beartype
@@ -129,31 +133,51 @@ def get_notes_from_notion(token: str, database_id: str,
 
 @beartype
 def get_note_content(notion: Client, page_id: str) -> List[Dict[str, Any]]:
-    blocks = []
-    start_cursor = None
 
-    while True:
-        query_params = {"block_id": page_id}
-        if start_cursor:
-            query_params["start_cursor"] = start_cursor
+    def fetch_blocks_recursively(block_id: str) -> List[Dict[str, Any]]:
+        blocks = []
+        start_cursor = None
 
-        response = notion.blocks.children.list(**query_params)
-        blocks.extend(response.get("results", []))
+        while True:
+            query_params = {"block_id": block_id}
+            if start_cursor:
+                query_params["start_cursor"] = start_cursor
 
-        next_cursor = response.get("next_cursor")
-        if not next_cursor:
-            break
+            response = notion.blocks.children.list(**query_params)
+            results = response.get("results", [])
 
-        start_cursor = next_cursor
+            for block in results:
+                blocks.append(block)
+                # Check if block has children
+                if block.get("has_children", False):
+                    child_blocks = fetch_blocks_recursively(block["id"])
+                    block["children"] = child_blocks
 
+                else:
+                    block["children"] = []
+
+            next_cursor = response.get("next_cursor")
+            if not next_cursor:
+                break
+
+            start_cursor = next_cursor
+
+        return blocks
+
+    blocks = fetch_blocks_recursively(page_id)
+    Path("/tmp/debug.json").write_text(json.dumps(blocks, indent=2))
     return blocks
 
 
 @beartype
 def convert_to_org_timestamp(dt: datetime) -> str:
-    utc_dt = dt.astimezone(pytz.UTC)
-    ftime = utc_dt.strftime("%Y-%m-%d %a %H:%M:%S")
-    return f"[{ftime} +04]"
+    if dt.hour == 0 and dt.minute == 0 and dt.second == 0:
+        ftime = dt.strftime("%Y-%m-%d")
+        return f"[{ftime} +04]"
+    else:
+        utc_dt = dt.astimezone(pytz.UTC)
+        ftime = utc_dt.strftime("%Y-%m-%d %a %H:%M:%S")
+        return f"[{ftime} +04]"
 
 
 @beartype
@@ -168,7 +192,12 @@ def parse_and_replace_datetimes(text: str) -> str:
          lambda x: datetime.strptime(x, "%B %d, %Y %I:%M %p")),
 
         # Month day, year: March 11, 2025
-        (r"(\w+ \d+, \d{4})", lambda x: datetime.strptime(x, "%B %d, %Y"))
+        (r"(\w+ \d+, \d{4})", lambda x: datetime.strptime(x, "%b %d, %Y")
+         if len(x.split()[0]) <= 3 else datetime.strptime(x, "%B %d, %Y")),
+
+        # Simple date format: 2025-01-04
+        (r"(\d{4}-\d{2}-\d{2})(?!T)",
+         lambda x: datetime.strptime(x, "%Y-%m-%d")),
     ]
 
     result = text
@@ -183,103 +212,102 @@ def parse_and_replace_datetimes(text: str) -> str:
 
 
 @beartype
-def process_text_block(text: str) -> List[str]:
-    items = []
-
-    # Convert markdown to org-mode
-    text = markdown_to_org(text)
-
-    # Handle checkbox items
-    checkbox_pattern = r"- $$([ xX])$$\s+(.*)"
-    for line in text.split("\n"):
-        line = line.strip()
-        if not line:
-            continue
-
-        checkbox_match = re.match(checkbox_pattern, line)
-        if checkbox_match:
-            checked = checkbox_match.group(1).upper() == "X"
-            content = checkbox_match.group(2)
-            content = parse_and_replace_datetimes(content)
-            items.append(f"- [{'X' if checked else ' '}] {content}")
-        else:
-            line = parse_and_replace_datetimes(line)
-            items.append(f"- {line}")
-
-    return items
-
-
-@beartype
 def convert_blocks_to_org(blocks: List[Dict[str, Any]]) -> str:
-    org_content = ""
 
-    for block in blocks:
+    @beartype
+    def retext(t: str) -> str:
+        return parse_and_replace_datetimes(markdown_to_org(t))
+
+    @beartype
+    def aux(block: Dict[str, Any], level: int) -> List[str]:
+        res = ""
         block_type = block.get("type")
-
-        # org_content += f"block-type {block_type}"
 
         if block_type == "paragraph":
             text_content = block.get("paragraph", {}).get("rich_text", [])
             if text_content:
                 text = "".join([t.get("plain_text", "") for t in text_content])
                 if text.strip():
-                    items = process_text_block(text)
+                    items = retext(text)
                     for item_text in items:
-                        org_content += f"{item_text}\n"
+                        res += f"{item_text}"
 
         elif block_type == "to_do":
             checked = block.get("to_do", {}).get("checked", False)
             text_content = block.get("to_do", {}).get("rich_text", [])
             if text_content:
                 text = "".join([t.get("plain_text", "") for t in text_content])
-                text = markdown_to_org(text)
-                text = parse_and_replace_datetimes(text)
-                org_content += f"- [{'X' if checked else ' '}] {text}\n"
+                res += f"- [{'X' if checked else ' '}] {retext(text)}"
 
         elif block_type == "bulleted_list_item" or block_type == "numbered_list_item":
             text_content = block.get(block_type, {}).get("rich_text", [])
             if text_content:
                 text = "".join([t.get("plain_text", "") for t in text_content])
-                text = markdown_to_org(text)
-                text = parse_and_replace_datetimes(text)
-                org_content += f"- {text}\n"
+                res += f"- {retext(text)}"
 
         elif block_type == "heading_1":
             text_content = block.get("heading_1", {}).get("rich_text", [])
             if text_content:
                 text = "".join([t.get("plain_text", "") for t in text_content])
-                org_content += f"* {text}\n"
+                res += f"** {retext(text)}"
 
         elif block_type == "heading_2":
             text_content = block.get("heading_2", {}).get("rich_text", [])
             if text_content:
                 text = "".join([t.get("plain_text", "") for t in text_content])
-                org_content += f"** {text}\n"
+                res += f"*** {retext(text)}"
 
         elif block_type == "heading_3":
             text_content = block.get("heading_3", {}).get("rich_text", [])
             if text_content:
                 text = "".join([t.get("plain_text", "") for t in text_content])
-                org_content += f"*** {text}\n"
+                res += f"**** {retext(text)}"
 
         elif block_type == "code":
             text_content = block.get("code", {}).get("rich_text", [])
             language = block.get("code", {}).get("language", "")
             if text_content:
                 text = "".join([t.get("plain_text", "") for t in text_content])
-                org_content += f"#+BEGIN_SRC {language}\n{text}\n#+END_SRC\n"
+                res += f"#+BEGIN_SRC {language}\n{text}\n#+END_SRC"
 
         elif block_type == "quote":
             text_content = block.get("quote", {}).get("rich_text", [])
             if text_content:
                 text = "".join([t.get("plain_text", "") for t in text_content])
                 text = markdown_to_org(text)
-                org_content += f"#+BEGIN_QUOTE\n{text}\n#+END_QUOTE\n"
+                res += f"#+BEGIN_QUOTE\n{text}\n#+END_QUOTE"
+
+        elif block_type == "toggle":
+            text_content = block.get("toggle", {}).get("rich_text", [])
+            if text_content:
+                text = "".join([t.get("plain_text", "") for t in text_content])
+                text = markdown_to_org(text)
+                res += f"#+BEGIN_DETAIL\n{text}\n#+END_DETAIL"
+
+        elif block_type == "image":
+            res += "!IMAGE!"
 
         else:
-            logger.error(f"Unhandled notion block type {block_type} {block}")
+            raise ValueError(
+                f"Unhandled notion block type {block_type} {block}")
 
-    return org_content
+        res = "\n".join("  " * level + s for s in res.split("\n"))
+
+        return [res] + list(
+            itertools.chain(*[aux(n, level + 1) for n in block["children"]]))
+
+        # nested = convert_blocks_to_org(block["children"])
+
+        # logger.info(f"{nested}")
+
+        # org_content += nested
+        # org_content += "\n".join(["  " + s for s in nested.split("\n")])
+
+    out = []
+    for b in blocks:
+        out += aux(b, 0)
+
+    return "\n".join(out)
 
 
 @beartype
@@ -293,6 +321,7 @@ def note_to_org_subtree(notion: Client, note: Dict[str, Any]) -> str:
     else:
         title = "Untitled note"
 
+    logger.info(f"{title}")
     title = parse_and_replace_datetimes(title)
 
     # Get due date
@@ -337,10 +366,10 @@ def main(outfile: str, notion_database: str, notion_token: str,
     logger.info(f"Processing {len(notes)} notes")
 
     # Convert notes to org-mode and append to file
-    with output_path.open("a", encoding="utf-8") as f:
+    with output_path.open("w", encoding="utf-8") as f:
         for note in notes:
             org_content = note_to_org_subtree(notion, note)
-            f.write(org_content + "\n")
+            f.write(org_content + "\n\n")
 
     logger.info(f"Notes exported to {output_path}")
 
