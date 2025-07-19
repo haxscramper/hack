@@ -313,7 +313,7 @@ class NotionSyncManager:
                 # Check if reading progress has changed
                 current_page = existing_books[book.title]
                 current_progress = current_page["properties"].get(
-                    "Reading progress", {}).get("number", 0)
+                    "Reading progress", {}).get("number", 0) or 0
 
                 if int(reading_progress) <= int(
                         current_progress

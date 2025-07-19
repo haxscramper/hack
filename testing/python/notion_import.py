@@ -287,6 +287,48 @@ def convert_blocks_to_org(blocks: List[Dict[str, Any]]) -> str:
         elif block_type == "image":
             res += "!IMAGE!"
 
+        elif block_type == "table":
+
+            def rich_text_to_org(rich_text_list: list) -> str:
+                result = ""
+                for text_obj in rich_text_list:
+                    content = text_obj["plain_text"]
+                    annotations = text_obj["annotations"]
+
+                    if annotations["bold"]:
+                        content = f"*{content}*"
+                    if annotations["italic"]:
+                        content = f"/{content}/"
+                    if annotations["code"]:
+                        content = f"~{content}~"
+                    if annotations["strikethrough"]:
+                        content = f"+{content}+"
+
+                    if text_obj.get("href"):
+                        content = f"[[{text_obj['href']}][{content}]]"
+
+                    result += content
+                return result
+
+            rows = []
+            for child in block["children"]:
+                if child["type"] == "table_row":
+                    cells = child["table_row"]["cells"]
+                    org_cells = []
+                    for cell in cells:
+                        cell_content = rich_text_to_org(cell)
+                        org_cells.append(cell_content)
+                    rows.append("| " + " | ".join(org_cells) + " |")
+
+            if block["table"]["has_column_header"] and rows:
+                header_separator = "|" + "|".join([
+                    "-" * (len(cell.strip()) + 2)
+                    for cell in rows[0].split("|")[1:-1]
+                ]) + "|"
+                rows.insert(1, header_separator)
+
+            res += "\n".join(rows)
+
         else:
             raise ValueError(
                 f"Unhandled notion block type {block_type} {block}")

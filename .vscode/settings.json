@@ -92,5 +92,8 @@
     "text_encoding": "cpp"
   },
   "python.formatting.provider": "black",
-  "deno.enable": true
+  "deno.enable": true,
+  "dart.flutterSdkPaths": [
+    "/home/haxscramper/software/flutter_sdk/flutter"
+  ]
 }

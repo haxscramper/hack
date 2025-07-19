@@ -203,7 +203,7 @@ class PromptParser:
                     result.append(LoRATag(parts[0], parts[1], parts[2]))
 
             elif ":" in token:
-                tag, amp = token.split(":")
+                tag, amp, *other = token.split(":")
                 tag = tag.strip()
                 if tag:
                     try:
@@ -255,7 +255,7 @@ class ImageParams:
     image_time: datetime = field(default_factory=lambda: datetime.now())
     sampler: str = "Euler a"
     steps: int = 25
-    cfgScale: int = 7
+    cfgScale: float = 7.0
     clipSkip: int = 2
     sdVae: str = "Automatic"
     etaNoiseSeedDelta: int = 31337
@@ -463,7 +463,7 @@ def get_image_params(path: Path) -> ImageParams:
             res.steps = int(sd.Steps.strip(","))
             res.model = sd.Model.strip(",")
             res.clipSkip = int(sd.ClipSkip.strip(","))
-            res.cfgScale = int(sd.CFGScale.strip(","))
+            res.cfgScale = float(sd.CFGScale.strip(","))
             wStr, hStr = sd.Size.strip(",").split("x")
             res.size = (int(wStr), int(hStr))
             if sd.LoRA:
@@ -495,7 +495,7 @@ def get_image_params(path: Path) -> ImageParams:
                 res.steps = load.steps
                 res.model = load.baseModel.modelFileName
                 res.clipSkip = load.clipSkip
-                res.cfgScale = load.cfgScale
+                res.cfgScale = float(load.cfgScale)
                 res.size = (load.width, load.height)
                 res.sdVae = load.sdVae
                 res.etaNoiseSeedDelta = load.etaNoiseSeedDelta
