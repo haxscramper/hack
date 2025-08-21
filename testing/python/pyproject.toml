@@ -29,6 +29,7 @@ aiohttp = "^3.12.9"
 lxml = "^5.4.0"
 openai = "^1.97.1"
 termcolor = "^3.1.0"
+pytest = "^8.4.1"
 
 
 [build-system]

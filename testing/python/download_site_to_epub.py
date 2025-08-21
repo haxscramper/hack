@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 from ebooklib import epub
 from bs4 import BeautifulSoup
 import re
-from pprint import pprint
+from pprint import pprint, pformat
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -68,8 +68,6 @@ class EpubGenerator:
         self.cache_dir = Path(config.cache_dir)
         self.cache_dir.mkdir(exist_ok=True)
         self.session: Optional[aiohttp.ClientSession] = None
-        self.url_mapping: Dict[str, str] = {}
-        self.with_images = config.with_images
 
     async def __aenter__(self):
         self.session = aiohttp.ClientSession()
@@ -99,7 +97,7 @@ class EpubGenerator:
 
         if cache_path.exists():
             return cache_path.read_text(encoding="utf-8")
-        
+
         if error_cache_path.exists():
             raise Exception(f"Previously failed to download {url}")
 
@@ -123,9 +121,10 @@ class EpubGenerator:
         if cache_path.exists():
             logging.debug(f"Loading cached image for {url}")
             return cache_path.read_bytes()
-        
+
         if error_cache_path.exists():
-            logging.debug(f"Skipping image {url} due to previous download failure")
+            logging.debug(
+                f"Skipping image {url} due to previous download failure")
             raise Exception(f"Previously failed to download image {url}")
 
         try:
@@ -141,15 +140,16 @@ class EpubGenerator:
             logging.error(f"Failed to download image {url}: {e}")
             raise
 
-
-    def _process_links(self, soup: BeautifulSoup, base_url: str) -> None:
+    def _process_links(self, soup: BeautifulSoup, base_url: str,
+                       url_mapping: Dict[str,
+                                         str], book_base_url: str) -> None:
         for link in soup.find_all("a", href=True):
             href = link["href"]
             full_url = urljoin(base_url, href)
 
-            if full_url in self.url_mapping:
-                link["href"] = self.url_mapping[full_url]
-            elif full_url.startswith(self.config.base_url):
+            if full_url in url_mapping:
+                link["href"] = url_mapping[full_url]
+            elif full_url.startswith(book_base_url):
                 link["href"] = f"#{hashlib.md5(full_url.encode()).hexdigest()}"
 
     def _extract_images(self, soup: BeautifulSoup, base_url: str) -> List[str]:
@@ -195,20 +195,18 @@ class EpubGenerator:
                          level=level,
                          anchor=anchor,
                          page_id=page_id))
-            # logging.debug(
-            #     f"TOC entry: {title} (level {level}, anchor {anchor})")
 
         return toc_entries
 
-    async def _process_page(self,
-                            page_config: PageConfig,
-                            depth: int = 0) -> ProcessedPage:
-        full_url = urljoin(self.config.base_url, page_config.url)
+    async def _process_page(self, page_config: PageConfig, depth: int,
+                            base_url: str,
+                            url_mapping: Dict[str, str]) -> ProcessedPage:
+        full_url = urljoin(base_url, page_config.url)
         content = await self._download_content(full_url)
 
         soup = BeautifulSoup(content, "html.parser")
         images = self._extract_images(soup, full_url)
-        self._process_links(soup, full_url)
+        self._process_links(soup, full_url, url_mapping, base_url)
 
         content_soup = BeautifulSoup(self._clean_content(soup), "html.parser")
         clean_content = content_soup.prettify()
@@ -273,29 +271,39 @@ class EpubGenerator:
 
         return convert_to_epub_format(result)
 
-    async def generate_epub(self) -> None:
-        flat_pages = self._flatten_pages(self.config.pages)
+    async def generate_epub(self, book_config: BookConfig) -> None:
+        flat_pages = self._flatten_pages(book_config.pages)
         digest_list = set()
+        url_mapping = {}
+
+        dbg_path = Path(self.cache_dir).joinpath(
+            Path(book_config.output_file).name + "debug").with_suffix(".py")
+        logging.info(f"debug to {dbg_path}")
+        dbg_path.write_text("# pyright: reportUndefinedVariable=false\n" +
+                            pformat(flat_pages))
+
         for page in flat_pages:
-            full_url = urljoin(self.config.base_url, page.url)
+            full_url = urljoin(book_config.base_url, page.url)
             digest = hashlib.md5(full_url.encode()).hexdigest()
             if digest in digest_list:
-                logging.warning(f"{full_url} is already used for {digest}")
+                raise ValueError(f"{full_url} is already used for {digest}")
 
             digest_list.add(digest)
 
             chapter_id = f"chapter_{digest}"
-            self.url_mapping[full_url] = f"{chapter_id}.xhtml"
+            url_mapping[full_url] = f"{chapter_id}.xhtml"
 
         processed_pages = []
         all_toc_entries = []
 
         for page in flat_pages:
             depth = getattr(page, 'depth', 0)
-            processed_page = await self._process_page(page, depth)
+            processed_page = await self._process_page(page, depth,
+                                                      book_config.base_url,
+                                                      url_mapping)
             processed_pages.append(processed_page)
 
-            full_url = urljoin(self.config.base_url, page.url)
+            full_url = urljoin(book_config.base_url, page.url)
             chapter_id = f"chapter_{hashlib.md5(full_url.encode()).hexdigest()}"
 
             page_toc_entry = TocEntry(title=page.title,
@@ -319,7 +327,7 @@ class EpubGenerator:
 
         unique_images = list(set(all_images))
         image_data = {}
-        if self.with_images:
+        if book_config.with_images:
             for img_url in unique_images:
                 try:
                     img_data = await self._download_image(img_url)
@@ -329,9 +337,9 @@ class EpubGenerator:
 
         book = epub.EpubBook()
         book.set_identifier("atomic_rockets_book")
-        book.set_title(self.config.title)
+        book.set_title(book_config.title)
         book.set_language("en")
-        book.add_author(self.config.author)
+        book.add_author(book_config.author)
 
         chapters = []
         for page in processed_pages:
@@ -377,9 +385,9 @@ class EpubGenerator:
 
         word_count, image_count = self._get_statistics(processed_pages)
 
-        output_path = Path(self.config.output_file)
+        output_path = Path(book_config.output_file)
         if not output_path.is_absolute():
-            output_path = Path(self.cache_dir).joinpath(output_path)
+            output_path = Path(book_config.cache_dir).joinpath(output_path)
 
         epub.write_epub(str(output_path), book)
         logging.info(
@@ -405,26 +413,26 @@ class EpubGenerator:
     def _collect_book_configs(
         self,
         pages: List[PageConfig],
+        base_config: BookConfig,
         parent_book_config: Optional[BookConfig] = None
     ) -> tuple[List[BookConfig], List[PageConfig]]:
         book_configs = []
         remaining_pages = []
-
         for page in pages:
             if page.output_file:
                 if page.children:
                     book_config = BookConfig(
                         title=page.title,
-                        author=self.config.author,
-                        base_url=self.config.base_url,
+                        author=base_config.author,
+                        base_url=base_config.base_url,
                         pages=page.children,
-                        with_images=self.config.with_images,
-                        cache_dir=self.config.cache_dir,
+                        with_images=base_config.with_images,
+                        cache_dir=base_config.cache_dir,
                         output_file=page.output_file)
                     book_configs.append(book_config)
 
                     child_book_configs, leftover_children = self._collect_book_configs(
-                        page.children, book_config)
+                        page.children, base_config, book_config)
                     book_configs.extend(child_book_configs)
 
                     if leftover_children:
@@ -443,7 +451,7 @@ class EpubGenerator:
             else:
                 if page.children:
                     child_book_configs, filtered_children = self._collect_book_configs(
-                        page.children, parent_book_config)
+                        page.children, base_config, parent_book_config)
                     book_configs.extend(child_book_configs)
 
                     if filtered_children:
@@ -481,27 +489,26 @@ class EpubGenerator:
 
     async def generate_books(self) -> None:
         book_configs, remaining_pages = self._collect_book_configs(
-            self.config.pages)
-
-        
+            self.config.pages, self.config)
 
         for book_config in book_configs:
             logging.info(
                 f"Generating book: {book_config.title} -> {book_config.output_file}"
             )
-            original_config = self.config
-            self.config = book_config
-            await self.generate_epub()
-            self.config = original_config
+            await self.generate_epub(book_config)
 
         if remaining_pages:
             logging.info(
                 f"Generating root book: {self.config.title} -> {self.config.output_file}"
             )
-            original_pages = self.config.pages
-            self.config.pages = remaining_pages
-            await self.generate_epub()
-            self.config.pages = original_pages
+            root_config = BookConfig(title=self.config.title,
+                                     author=self.config.author,
+                                     base_url=self.config.base_url,
+                                     pages=remaining_pages,
+                                     with_images=self.config.with_images,
+                                     cache_dir=self.config.cache_dir,
+                                     output_file=self.config.output_file)
+            await self.generate_epub(root_config)
 
 
 import sys
