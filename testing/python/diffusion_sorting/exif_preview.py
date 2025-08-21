@@ -760,7 +760,7 @@ def generate_common_prompt_gallery():
     output_json = output_html.with_suffix(".json")
     dump_data = {}
     full_param_list = get_full_params()
-    generate_embedding_json(full_param_list)
+    # generate_embedding_json(full_param_list)
     with document(title="Images and EXIF Metadata") as doc:
         doc.head.add(
             tags.link(
