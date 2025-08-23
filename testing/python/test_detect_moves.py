@@ -24,6 +24,7 @@ class SeqMove:
     count: int
 
 
+
 def apply_move(src: List[T], move: SeqMove) -> None:
     logger.info(f"apply move {move}")
     logger.info(src)

@@ -15,18 +15,42 @@ from ebooklib import epub
 from bs4 import BeautifulSoup
 import re
 from pprint import pprint, pformat
+from rich.console import Console
+from rich.pretty import pprint
 
 logging.basicConfig(
     level=logging.DEBUG,
-    format="%(asctime)s - %(filename)s:%(lineno)d - %(levelname)s - %(message)s"
+    format=
+    "%(asctime)s %(name)s - %(filename)s:%(lineno)d - %(levelname)s - %(message)s"
 )
+
+logging.getLogger("asyncio").setLevel(logging.WARNING)
+
+
+def render_rich_pprint(
+    obj,
+    width: int = 150,
+    color: bool = False,
+    max_string: int | None = None,
+) -> str:
+
+    console = Console(record=True, width=width, force_terminal=color)
+    with console.capture() as capture:
+        pprint(
+            obj,
+            console=console,
+            max_length=width,
+            max_string=max_string,
+            indent_guides=False,
+        )
+    return capture.get()
 
 
 class PageConfig(BaseModel):
     title: str
     url: Optional[str] = None
     order: int = -1
-    children: Optional[List["PageConfig"]] = None
+    children: List["PageConfig"] = Field(default_factory=list)
     depth: int = 0
     output_file: Optional[str] = None
 
@@ -225,10 +249,7 @@ class EpubGenerator:
         flattened = []
         order = 0
         for page in pages:
-            page_copy = PageConfig(url=page.url,
-                                   title=page.title,
-                                   order=order,
-                                   children=None)
+            page_copy = page.model_copy(update=dict(order=order, children=[]))
             order += 1
             page_copy.depth = depth
             flattened.append(page_copy)
@@ -271,24 +292,30 @@ class EpubGenerator:
 
         return convert_to_epub_format(result)
 
-    async def generate_epub(self, book_config: BookConfig) -> None:
+    def pprint_cache(self, value, book_config: BookConfig,
+                     name: str | Path) -> None:
+        dbg_name = Path(book_config.output_file).stem + "_" + name + "_debug"
+        dbg_path = Path(self.cache_dir).joinpath(dbg_name).with_suffix(".py")
+        logging.info(f"debug to {dbg_path}")
+        dbg_path.write_text("# pyright: reportUndefinedVariable=false\n" +
+                            render_rich_pprint(value))
+
+    async def generate_epub(self, book_config: BookConfig) -> tuple[str, int, int]:
         flat_pages = self._flatten_pages(book_config.pages)
         digest_list = set()
         url_mapping = {}
 
-        dbg_path = Path(self.cache_dir).joinpath(
-            Path(book_config.output_file).name + "debug").with_suffix(".py")
-        logging.info(f"debug to {dbg_path}")
-        dbg_path.write_text("# pyright: reportUndefinedVariable=false\n" +
-                            pformat(flat_pages))
-
         for page in flat_pages:
-            full_url = urljoin(book_config.base_url, page.url)
-            digest = hashlib.md5(full_url.encode()).hexdigest()
-            if digest in digest_list:
-                raise ValueError(f"{full_url} is already used for {digest}")
+            if page.url:
+                full_url = urljoin(book_config.base_url, page.url)
+                digest = hashlib.md5(full_url.encode()).hexdigest()
+                if digest in digest_list:
+                    raise ValueError(
+                        f"{full_url} is already used for {digest}")
 
-            digest_list.add(digest)
+                digest_list.add(digest)
+            else:
+                digest = hashlib.md5(f"page_{page.order}".encode()).hexdigest()
 
             chapter_id = f"chapter_{digest}"
             url_mapping[full_url] = f"{chapter_id}.xhtml"
@@ -390,9 +417,7 @@ class EpubGenerator:
             output_path = Path(book_config.cache_dir).joinpath(output_path)
 
         epub.write_epub(str(output_path), book)
-        logging.info(
-            f"EPUB generated: {output_path} with {word_count} words and {image_count} images"
-        )
+        return output_path, word_count, image_count
 
     def _get_statistics(
             self, processed_pages: List[ProcessedPage]) -> tuple[int, int]:
@@ -404,7 +429,6 @@ class EpubGenerator:
             text_content = soup.get_text()
             word_count = len(text_content.split())
             image_count = len(page.images)
-
             total_words += word_count
             total_images += image_count
 
@@ -414,93 +438,62 @@ class EpubGenerator:
         self,
         pages: List[PageConfig],
         base_config: BookConfig,
-        parent_book_config: Optional[BookConfig] = None
     ) -> tuple[List[BookConfig], List[PageConfig]]:
         book_configs = []
-        remaining_pages = []
+        sub_pages = []
+
         for page in pages:
             if page.output_file:
-                if page.children:
-                    book_config = BookConfig(
-                        title=page.title,
-                        author=base_config.author,
-                        base_url=base_config.base_url,
-                        pages=page.children,
-                        with_images=base_config.with_images,
-                        cache_dir=base_config.cache_dir,
-                        output_file=page.output_file)
-                    book_configs.append(book_config)
+                book_config = BookConfig(title=page.title,
+                                         author=base_config.author,
+                                         base_url=base_config.base_url,
+                                         pages=[],
+                                         with_images=base_config.with_images,
+                                         cache_dir=base_config.cache_dir,
+                                         output_file=page.output_file)
 
-                    child_book_configs, leftover_children = self._collect_book_configs(
-                        page.children, base_config, book_config)
-                    book_configs.extend(child_book_configs)
+                child_book_configs, leftover_children = self._collect_book_configs(
+                    page.children, base_config)
+                book_configs.extend(child_book_configs)
 
-                    if leftover_children:
-                        book_config.pages.extend(leftover_children)
+                book_config.pages = leftover_children
+                book_configs.append(book_config)
 
-                if page.url:
-                    page_copy = PageConfig(title=page.title,
-                                           url=page.url,
-                                           order=page.order,
-                                           children=None,
-                                           depth=page.depth)
-                    if parent_book_config:
-                        parent_book_config.pages.append(page_copy)
-                    else:
-                        remaining_pages.append(page_copy)
+                page_copy = page.model_copy(update=dict(children=[]))
+                sub_pages.append(page_copy)
             else:
-                if page.children:
-                    child_book_configs, filtered_children = self._collect_book_configs(
-                        page.children, base_config, parent_book_config)
-                    book_configs.extend(child_book_configs)
+                child_book_configs, filtered_children = self._collect_book_configs(
+                    page.children, base_config)
+                book_configs.extend(child_book_configs)
 
-                    if filtered_children:
-                        page_copy = PageConfig(title=page.title,
-                                               url=page.url,
-                                               order=page.order,
-                                               children=filtered_children,
-                                               depth=page.depth)
-                        if parent_book_config:
-                            parent_book_config.pages.append(page_copy)
-                        else:
-                            remaining_pages.append(page_copy)
-                    elif page.url:
-                        page_copy = PageConfig(title=page.title,
-                                               url=page.url,
-                                               order=page.order,
-                                               children=None,
-                                               depth=page.depth)
-                        if parent_book_config:
-                            parent_book_config.pages.append(page_copy)
-                        else:
-                            remaining_pages.append(page_copy)
-                else:
-                    page_copy = PageConfig(title=page.title,
-                                           url=page.url,
-                                           order=page.order,
-                                           children=None,
-                                           depth=page.depth)
-                    if parent_book_config:
-                        parent_book_config.pages.append(page_copy)
-                    else:
-                        remaining_pages.append(page_copy)
+                if filtered_children or page.url:
+                    page_copy = page.model_copy(update=dict(
+                        children=filtered_children))
+                    sub_pages.append(page_copy)
 
-        return book_configs, remaining_pages
+        return book_configs, sub_pages
 
     async def generate_books(self) -> None:
+        self.pprint_cache(self.config, self.config, "before_split")
         book_configs, remaining_pages = self._collect_book_configs(
             self.config.pages, self.config)
 
-        for book_config in book_configs:
-            logging.info(
-                f"Generating book: {book_config.title} -> {book_config.output_file}"
-            )
-            await self.generate_epub(book_config)
+        self.pprint_cache([book_configs, remaining_pages], self.config,
+                          "after_split")
+
+        import csv
+        csv_path = Path(self.cache_dir).joinpath("tmp.csv")
+        logging.info(f"csv path {csv_path}")
+        with open(csv_path, "w+") as file:
+            writer = csv.writer(file)
+            writer.writerow(["path", "words", "images"])
+
+            for book_config in book_configs:
+                path, words, images = await self.generate_epub(book_config)
+                logging.info(f"wrote {path} with {words} words and {images} images")
+                writer.writerow([path, words, images])
 
         if remaining_pages:
-            logging.info(
-                f"Generating root book: {self.config.title} -> {self.config.output_file}"
-            )
             root_config = BookConfig(title=self.config.title,
                                      author=self.config.author,
                                      base_url=self.config.base_url,
@@ -515,6 +508,7 @@ import sys
 
 
 async def main() -> None:
+    logging.info("+" * 120)
     config_path = Path(sys.argv[1])
 
     if not config_path.exists():
@@ -526,6 +520,8 @@ async def main() -> None:
 
     async with EpubGenerator(config) as generator:
         await generator.generate_books()
+
+    logging.info("-" * 120)
 
 
 if __name__ == "__main__":
