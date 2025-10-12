@@ -17,6 +17,9 @@ import re
 from pprint import pprint, pformat
 from rich.console import Console
 from rich.pretty import pprint
+from PIL import Image
+import io
+
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -25,7 +28,8 @@ logging.basicConfig(
 )
 
 logging.getLogger("asyncio").setLevel(logging.WARNING)
-
+logging.getLogger("PIL.PngImagePlugin").setLevel(logging.WARNING)
+logging.getLogger("PIL.TiffImagePlugin").setLevel(logging.WARNING)
 
 def render_rich_pprint(
     obj,
@@ -53,6 +57,7 @@ class PageConfig(BaseModel):
     children: List["PageConfig"] = Field(default_factory=list)
     depth: int = 0
     output_file: Optional[str] = None
+    
 
 
 class BookConfig(BaseModel):
@@ -63,6 +68,8 @@ class BookConfig(BaseModel):
     with_images: bool
     cache_dir: str = "cache"
     output_file: str = "book.epub"
+    force_optimize_image: bool = False
+    use_optimized_image: bool = True
 
 
 PageConfig.model_rebuild()
@@ -109,11 +116,7 @@ class EpubGenerator:
         url_hash = hashlib.md5(url.encode()).hexdigest()
         return self.cache_dir / f"{url_hash}.error"
 
-    def _get_image_cache_path(self, url: str) -> Path:
-        url_hash = hashlib.md5(url.encode()).hexdigest()
-        parsed = urlparse(url)
-        ext = Path(parsed.path).suffix or ".jpg"
-        return self.cache_dir / f"img_{url_hash}{ext}"
+
 
     async def _download_content(self, url: str) -> str:
         cache_path = self._get_cache_path(url)
@@ -138,31 +141,84 @@ class EpubGenerator:
             logging.error(f"Failed to download {url}: {e}")
             raise
 
-    async def _download_image(self, url: str) -> bytes:
+    def _optimize_image(self, content: bytes) -> bytes:
+        with Image.open(io.BytesIO(content)) as img:
+            width, height = img.size
+            file_size_kb = len(content) / 1024
+            
+            if file_size_kb <= 50 and width <= 480 and height <= 320:
+                return content
+
+            
+            max_dimension = 1920
+             
+            if width > height:
+                new_width = min(width, max_dimension)
+                new_height = int((height * new_width) / width)
+            else:
+                new_height = min(height, max_dimension)
+                new_width = int((width * new_height) / height)
+            
+            img_resized = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+            
+            output = io.BytesIO()
+            format_name = img.format or "JPEG"
+            quality = 85
+            
+            if file_size_kb > 2000:
+                quality = 60
+            elif file_size_kb > 1000:
+                quality = 70
+            
+            img_resized.save(output, format=format_name, quality=quality, optimize=True)
+            tmp = output.getvalue()
+            # logging.info(f"Downscaled from {len(content)} to {len(tmp)}, {int(float(len(tmp)) / float(len(content)) * 100)}%")
+            if len(tmp) < len(content):
+                return tmp
+
+            else:
+                return content
+                
+
+
+    def _get_image_cache_path(self, url: str) -> Path:
+        url_hash = hashlib.md5(url.encode()).hexdigest()
+        parsed = urlparse(url)
+        ext = Path(parsed.path).suffix or ".jpg"
+        return self.cache_dir / f"img_{url_hash}{ext}"
+
+    async def _download_image(self, url: str) -> Optional[bytes]:
         cache_path = self._get_image_cache_path(url)
+        optimized_cache_path = cache_path.with_suffix(f".opt{cache_path.suffix}")
         error_cache_path = self._get_error_cache_path(url)
 
-        if cache_path.exists():
-            logging.debug(f"Loading cached image for {url}")
-            return cache_path.read_bytes()
-
         if error_cache_path.exists():
-            logging.debug(
-                f"Skipping image {url} due to previous download failure")
-            raise Exception(f"Previously failed to download image {url}")
+            # logging.warning(f"Previously failed to download image {url}")
+            return None
 
-        try:
-            logging.debug(f"Downloading image {url}")
-            async with self.session.get(url) as response:
-                response.raise_for_status()
-                content = await response.read()
+        if not cache_path.exists():
+            try:
+                logging.debug(f"Downloading image {url}")
+                async with self.session.get(url) as response:
+                    response.raise_for_status()
+                    content = await response.read()
+                cache_path.write_bytes(content)
+            except Exception as e:
+                error_cache_path.write_text(str(e), encoding="utf-8")
+                logging.error(f"Failed to download image {url}: {e}")
+                return None
 
-            cache_path.write_bytes(content)
-            return content
-        except Exception as e:
-            error_cache_path.write_text(str(e), encoding="utf-8")
-            logging.error(f"Failed to download image {url}: {e}")
-            raise
+        if self.config.use_optimized_image:
+            if self.config.force_optimize_image or not optimized_cache_path.exists():
+                original_content = cache_path.read_bytes()
+                optimized_content = self._optimize_image(original_content)
+                optimized_cache_path.write_bytes(optimized_content)
+                return optimized_content
+            else:
+                return optimized_cache_path.read_bytes()
+
+        else:
+            return cache_path.read_bytes()
 
     def _process_links(self, soup: BeautifulSoup, base_url: str,
                        url_mapping: Dict[str,
@@ -356,11 +412,8 @@ class EpubGenerator:
         image_data = {}
         if book_config.with_images:
             for img_url in unique_images:
-                try:
-                    img_data = await self._download_image(img_url)
-                    image_data[img_url] = img_data
-                except Exception as e:
-                    pass
+                img_data = await self._download_image(img_url)
+                image_data[img_url] = img_data
 
         book = epub.EpubBook()
         book.set_identifier("atomic_rockets_book")
@@ -415,6 +468,9 @@ class EpubGenerator:
         output_path = Path(book_config.output_file)
         if not output_path.is_absolute():
             output_path = Path(book_config.cache_dir).joinpath(output_path)
+
+        if output_path.exists():
+            output_path.unlink()
 
         epub.write_epub(str(output_path), book)
         return output_path, word_count, image_count
@@ -490,7 +546,8 @@ class EpubGenerator:
 
             for book_config in book_configs:
                 path, words, images = await self.generate_epub(book_config)
-                logging.info(f"wrote {path} with {words} words and {images} images")
+                size = int(Path(path).stat().st_size / 1024)
+                logging.info(f"wrote {path} with {words} words and {images} images. Book size is {size:,} KB")
                 writer.writerow([path, words, images])
 
         if remaining_pages:
