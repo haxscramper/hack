@@ -20,7 +20,6 @@ from rich.pretty import pprint
 from PIL import Image
 import io
 
-
 logging.basicConfig(
     level=logging.DEBUG,
     format=
@@ -28,8 +27,10 @@ logging.basicConfig(
 )
 
 logging.getLogger("asyncio").setLevel(logging.WARNING)
+logging.getLogger("PIL").setLevel(logging.WARNING)
 logging.getLogger("PIL.PngImagePlugin").setLevel(logging.WARNING)
 logging.getLogger("PIL.TiffImagePlugin").setLevel(logging.WARNING)
+
 
 def render_rich_pprint(
     obj,
@@ -57,7 +58,6 @@ class PageConfig(BaseModel):
     children: List["PageConfig"] = Field(default_factory=list)
     depth: int = 0
     output_file: Optional[str] = None
-    
 
 
 class BookConfig(BaseModel):
@@ -116,8 +116,6 @@ class EpubGenerator:
         url_hash = hashlib.md5(url.encode()).hexdigest()
         return self.cache_dir / f"{url_hash}.error"
 
-
-
     async def _download_content(self, url: str) -> str:
         cache_path = self._get_cache_path(url)
         error_cache_path = self._get_error_cache_path(url)
@@ -145,32 +143,35 @@ class EpubGenerator:
         with Image.open(io.BytesIO(content)) as img:
             width, height = img.size
             file_size_kb = len(content) / 1024
-            
+
             if file_size_kb <= 50 and width <= 480 and height <= 320:
                 return content
 
-            
             max_dimension = 1920
-             
+
             if width > height:
                 new_width = min(width, max_dimension)
                 new_height = int((height * new_width) / width)
             else:
                 new_height = min(height, max_dimension)
                 new_width = int((width * new_height) / height)
-            
-            img_resized = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
-            
+
+            img_resized = img.resize((new_width, new_height),
+                                     Image.Resampling.LANCZOS)
+
             output = io.BytesIO()
             format_name = img.format or "JPEG"
             quality = 85
-            
+
             if file_size_kb > 2000:
                 quality = 60
             elif file_size_kb > 1000:
                 quality = 70
-            
-            img_resized.save(output, format=format_name, quality=quality, optimize=True)
+
+            img_resized.save(output,
+                             format=format_name,
+                             quality=quality,
+                             optimize=True)
             tmp = output.getvalue()
             # logging.info(f"Downscaled from {len(content)} to {len(tmp)}, {int(float(len(tmp)) / float(len(content)) * 100)}%")
             if len(tmp) < len(content):
@@ -178,8 +179,6 @@ class EpubGenerator:
 
             else:
                 return content
-                
-
 
     def _get_image_cache_path(self, url: str) -> Path:
         url_hash = hashlib.md5(url.encode()).hexdigest()
@@ -189,7 +188,8 @@ class EpubGenerator:
 
     async def _download_image(self, url: str) -> Optional[bytes]:
         cache_path = self._get_image_cache_path(url)
-        optimized_cache_path = cache_path.with_suffix(f".opt{cache_path.suffix}")
+        optimized_cache_path = cache_path.with_suffix(
+            f".opt{cache_path.suffix}")
         error_cache_path = self._get_error_cache_path(url)
 
         if error_cache_path.exists():
@@ -209,11 +209,17 @@ class EpubGenerator:
                 return None
 
         if self.config.use_optimized_image:
-            if self.config.force_optimize_image or not optimized_cache_path.exists():
+            if self.config.force_optimize_image or not optimized_cache_path.exists(
+            ):
                 original_content = cache_path.read_bytes()
-                optimized_content = self._optimize_image(original_content)
-                optimized_cache_path.write_bytes(optimized_content)
-                return optimized_content
+                try: 
+                    optimized_content = self._optimize_image(original_content)
+                    optimized_cache_path.write_bytes(optimized_content)
+                    return optimized_content
+                    
+                except Image.UnidentifiedImageError:
+                    return original_content
+                    
             else:
                 return optimized_cache_path.read_bytes()
 
@@ -305,12 +311,15 @@ class EpubGenerator:
         flattened = []
         order = 0
         for page in pages:
-            page_copy = page.model_copy(update=dict(order=order, children=[]))
-            order += 1
-            page_copy.depth = depth
-            flattened.append(page_copy)
+            if page.url:
+                page_copy = page.model_copy(update=dict(order=order, children=[]))
+                order += 1
+                page_copy.depth = depth
+                flattened.append(page_copy)
+
             if page.children:
                 flattened.extend(self._flatten_pages(page.children, depth + 1))
+
         return flattened
 
     def _build_toc_structure(self, toc_entries: List[TocEntry]) -> List:
@@ -356,23 +365,20 @@ class EpubGenerator:
         dbg_path.write_text("# pyright: reportUndefinedVariable=false\n" +
                             render_rich_pprint(value))
 
-    async def generate_epub(self, book_config: BookConfig) -> tuple[str, int, int]:
+    async def generate_epub(self,
+                            book_config: BookConfig) -> tuple[str, int, int]:
         flat_pages = self._flatten_pages(book_config.pages)
         digest_list = set()
         url_mapping = {}
 
         for page in flat_pages:
-            if page.url:
-                full_url = urljoin(book_config.base_url, page.url)
-                digest = hashlib.md5(full_url.encode()).hexdigest()
-                if digest in digest_list:
-                    raise ValueError(
-                        f"{full_url} is already used for {digest}")
+            full_url = urljoin(book_config.base_url, page.url)
+            digest = hashlib.md5(full_url.encode()).hexdigest()
+            if digest in digest_list:
+                raise ValueError(
+                    f"{full_url} is already used for {digest}")
 
-                digest_list.add(digest)
-            else:
-                digest = hashlib.md5(f"page_{page.order}".encode()).hexdigest()
-
+            digest_list.add(digest)
             chapter_id = f"chapter_{digest}"
             url_mapping[full_url] = f"{chapter_id}.xhtml"
 
@@ -496,36 +502,40 @@ class EpubGenerator:
         base_config: BookConfig,
     ) -> tuple[List[BookConfig], List[PageConfig]]:
         book_configs = []
-        sub_pages = []
 
-        for page in pages:
-            if page.output_file:
-                book_config = BookConfig(title=page.title,
-                                         author=base_config.author,
-                                         base_url=base_config.base_url,
-                                         pages=[],
-                                         with_images=base_config.with_images,
-                                         cache_dir=base_config.cache_dir,
-                                         output_file=page.output_file)
 
-                child_book_configs, leftover_children = self._collect_book_configs(
-                    page.children, base_config)
-                book_configs.extend(child_book_configs)
+        def aux(pages: List[PageConfig]) -> List[PageConfig]:
+            result = []
+            for page in pages:
+                if page.output_file:
+                    book_config = BookConfig(
+                        title=page.title,
+                        author=base_config.author,
+                        base_url=base_config.base_url,
+                        pages=[],
+                        with_images=base_config.with_images,
+                        cache_dir=base_config.cache_dir,
+                        output_file=page.output_file)
 
-                book_config.pages = leftover_children
-                book_configs.append(book_config)
+                    leftover_children = aux(page.children)
 
-                page_copy = page.model_copy(update=dict(children=[]))
-                sub_pages.append(page_copy)
-            else:
-                child_book_configs, filtered_children = self._collect_book_configs(
-                    page.children, base_config)
-                book_configs.extend(child_book_configs)
+                    page_copy = page.model_copy(update=dict(children=[]))
+                    book_config.pages.append(page_copy)
 
-                if filtered_children or page.url:
-                    page_copy = page.model_copy(update=dict(
-                        children=filtered_children))
-                    sub_pages.append(page_copy)
+                    book_config.pages.extend(leftover_children)
+                    book_configs.append(book_config)
+
+                else:
+                    filtered_children = aux(page.children)
+
+                    if filtered_children or page.url:
+                        page_copy = page.model_copy(update=dict(
+                            children=filtered_children))
+                        result.append(page_copy)
+
+            return result
+
+        sub_pages = aux(pages)
 
         return book_configs, sub_pages
 
@@ -534,8 +544,8 @@ class EpubGenerator:
         book_configs, remaining_pages = self._collect_book_configs(
             self.config.pages, self.config)
 
-        self.pprint_cache([book_configs, remaining_pages], self.config,
-                          "after_split")
+        self.pprint_cache(book_configs, self.config, "split_book_configs")
+        self.pprint_cache(remaining_pages, self.config, "remaining_pages")
 
         import csv
         csv_path = Path(self.cache_dir).joinpath("tmp.csv")
@@ -547,7 +557,9 @@ class EpubGenerator:
             for book_config in book_configs:
                 path, words, images = await self.generate_epub(book_config)
                 size = int(Path(path).stat().st_size / 1024)
-                logging.info(f"wrote {path} with {words} words and {images} images. Book size is {size:,} KB")
+                logging.info(
+                    f"wrote {path} with {words} words and {images} images. Book size is {size:,} KB"
+                )
                 writer.writerow([path, words, images])
 
         if remaining_pages:
