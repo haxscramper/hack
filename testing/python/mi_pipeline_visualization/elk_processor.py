@@ -82,24 +82,223 @@ class PortAlignment(str, Enum):
 class ELKNodePlacementBK(BaseModel):
     fixedAlignment: Optional[str] = None
 
-    class Config:
-        extra = "allow"
 
 
 class ELKNodePlacement(BaseModel):
     bk: Optional[ELKNodePlacementBK] = None
 
-    class Config:
-        extra = "allow"
+
+
+class DirectionCongruency(str, Enum):
+    READING_DIRECTION = "READING_DIRECTION"
+    ROTATION = "ROTATION"
+
+
+class InteractiveReferencePoint(str, Enum):
+    CENTER = "CENTER"
+    TOP_LEFT = "TOP_LEFT"
+
+
+class PortSortingStrategy(str, Enum):
+    INPUT_ORDER = "INPUT_ORDER"
+    PORT_DEGREE = "PORT_DEGREE"
+
+
+class CycleBreakingStrategy(str, Enum):
+    GREEDY = "GREEDY"
+    DEPTH_FIRST = "DEPTH_FIRST"
+    INTERACTIVE = "INTERACTIVE"
+
+
+class LayeringStrategy(str, Enum):
+    NETWORK_SIMPLEX = "NETWORK_SIMPLEX"
+    LONGEST_PATH = "LONGEST_PATH"
+    COFFMAN_GRAHAM = "COFFMAN_GRAHAM"
+    INTERACTIVE = "INTERACTIVE"
+    STRETCH_WIDTH = "STRETCH_WIDTH"
+    MIN_WIDTH = "MIN_WIDTH"
+
+
+class LayerConstraint(str, Enum):
+    NONE = "NONE"
+    FIRST = "FIRST"
+    FIRST_SEPARATE = "FIRST_SEPARATE"
+    LAST = "LAST"
+    LAST_SEPARATE = "LAST_SEPARATE"
+
+
+class NodePromotionStrategy(str, Enum):
+    NONE = "NONE"
+    LEFT = "LEFT"
+    RIGHT = "RIGHT"
+    ALL = "ALL"
+    NIKOLOV = "NIKOLOV"
+
+
+class CrossingMinimizationStrategy(str, Enum):
+    LAYER_SWEEP = "LAYER_SWEEP"
+    INTERACTIVE = "INTERACTIVE"
+
+
+class GreedySwitchType(str, Enum):
+    OFF = "OFF"
+    ONE_SIDED = "ONE_SIDED"
+    TWO_SIDED = "TWO_SIDED"
+
+
+class NodePlacementStrategy(str, Enum):
+    BRANDES_KOEPF = "BRANDES_KOEPF"
+    LINEAR_SEGMENTS = "LINEAR_SEGMENTS"
+    INTERACTIVE = "INTERACTIVE"
+    SIMPLE = "SIMPLE"
+    NETWORK_SIMPLEX = "NETWORK_SIMPLEX"
+
+
+class EdgeStraighteningStrategy(str, Enum):
+    NONE = "NONE"
+    IMPROVE_STRAIGHTNESS = "IMPROVE_STRAIGHTNESS"
+
+
+class FixedAlignment(str, Enum):
+    NONE = "NONE"
+    LEFTUP = "LEFTUP"
+    RIGHTUP = "RIGHTUP"
+    LEFTDOWN = "LEFTDOWN"
+    RIGHTDOWN = "RIGHTDOWN"
+    BALANCED = "BALANCED"
+
+
+class NodeFlexibility(str, Enum):
+    NONE = "NONE"
+    NODE_SIZE = "NODE_SIZE"
+    PORT_POSITION = "PORT_POSITION"
+
+
+class SelfLoopDistributionStrategy(str, Enum):
+    NORTH = "NORTH"
+    EQUALLY = "EQUALLY"
+    NORTH_SOUTH = "NORTH_SOUTH"
+
+
+class SelfLoopOrderingStrategy(str, Enum):
+    STACKED = "STACKED"
+    SEQUENCED = "SEQUENCED"
+
+
+class SplineRoutingMode(str, Enum):
+    SLOPPY = "SLOPPY"
+    CONSERVATIVE = "CONSERVATIVE"
+
+
+class ELKLayeredCycleBreaking(BaseModel):
+    strategy: Optional[CycleBreakingStrategy] = Field(
+        None,
+        description="Strategy for cycle breaking. Cycle breaking looks for cycles in the graph and determines which edges to reverse to break the cycles."
+    )
+    
+
+
+class ELKLayeredLayering(BaseModel):
+    strategy: Optional[LayeringStrategy] = Field(None, description="Strategy for node layering.")
+    layerConstraint: Optional[LayerConstraint] = Field(None, description="Determines a constraint on the placement of the node regarding the layering.")
+    layerChoiceConstraint: Optional[int] = Field(None, ge=-1, description="Allows to set a constraint regarding the layer placement of a node.")
+    layerId: Optional[int] = Field(None, ge=-1, description="Layer identifier that was calculated by ELK Layered for a node.")
+    
+
+
+class ELKLayeredLayeringMinWidth(BaseModel):
+    upperBoundOnWidth: Optional[int] = Field(None, ge=-1, description="Defines a loose upper bound on the width of the MinWidth layerer.")
+    upperLayerEstimationScalingFactor: Optional[int] = Field(None, ge=-1, description="Multiplied with Upper Bound On Width for defining an upper bound on the width of layers.")
+    
+
+
+class ELKLayeredLayeringNodePromotion(BaseModel):
+    strategy: Optional[NodePromotionStrategy] = Field(None, description="Reduces number of dummy nodes after layering phase (if possible).")
+    maxIterations: Optional[int] = Field(None, ge=0, description="Limits the number of iterations for node promotion.")
+    
+
+
+class ELKLayeredLayeringCoffmanGraham(BaseModel):
+    layerBound: Optional[int] = Field(None, description="The maximum number of nodes allowed per layer.")
+    
+
+
+class ELKLayeredCrossingMinimization(BaseModel):
+    strategy: Optional[CrossingMinimizationStrategy] = Field(None, description="Strategy for crossing minimization.")
+    forceNodeModelOrder: Optional[bool] = Field(None, description="The node order given by the model does not change to produce a better layout.")
+    hierarchicalSweepiness: Optional[float] = Field(None, description="How likely it is to use cross-hierarchy (1) vs bottom-up (-1).")
+    semiInteractive: Optional[bool] = Field(None, description="Preserves the order of nodes within a layer but still minimizes crossings between edges.")
+    inLayerPredOf: Optional[str] = Field(None, description="Specifies of which node the current node is the predecessor.")
+    inLayerSuccOf: Optional[str] = Field(None, description="Specifies of which node the current node is the successor.")
+    positionChoiceConstraint: Optional[int] = Field(None, ge=-1, description="Allows to set a constraint regarding the position placement of a node in a layer.")
+    positionId: Optional[int] = Field(None, ge=-1, description="Position within a layer that was determined by ELK Layered for a node.")
+    
+
+
+class ELKLayeredCrossingMinimizationGreedySwitch(BaseModel):
+    activationThreshold: Optional[int] = Field(None, ge=0, description="Threshold for automatic activation of greedy switch.")
+    type: Optional[GreedySwitchType] = Field(None, description="Greedy Switch strategy for crossing minimization.")
+
+
+class ELKLayeredCrossingMinimizationGreedySwitchHierarchical(BaseModel):
+    type: Optional[GreedySwitchType] = Field(None, description="Activates the greedy switch heuristic in case hierarchical layout is used.")
+
+
+class ELKLayeredNodePlacementBK(BaseModel):
+    edgeStraightening: Optional[EdgeStraighteningStrategy] = Field(None, description="Specifies whether the Brandes Koepf node placer tries to increase the number of straight edges.")
+    fixedAlignment: Optional[FixedAlignment] = Field(None, description="Tells the BK node placer to use a certain alignment instead of the one producing the smallest height.")
+
+
+class ELKLayeredNodePlacementLinearSegments(BaseModel):
+    deflectionDampening: Optional[float] = Field(None, gt=0, description="Dampens the movement of nodes to keep the diagram from getting too large.")
+
+
+class ELKLayeredNodePlacementNetworkSimplex(BaseModel):
+    nodeFlexibility: Optional[NodeFlexibility] = Field(None, description="Aims at shorter and straighter edges.")
+    
+
+class ELKLayeredNodePlacementNetworkSimplexNodeFlexibility(BaseModel):
+    default: Optional[NodeFlexibility] = Field(None, description="Default value of the 'nodeFlexibility' option for the children of a hierarchical node.")
+
+
+class ELKLayeredNodePlacement(BaseModel):
+    strategy: Optional[NodePlacementStrategy] = Field(None, description="Strategy for node placement.")
+    favorStraightEdges: Optional[bool] = Field(None, description="Favor straight edges over a balanced node placement.")
+    bk: Optional[ELKLayeredNodePlacementBK] = None
+    linearSegments: Optional[ELKLayeredNodePlacementLinearSegments] = None
+    networkSimplex: Optional[ELKLayeredNodePlacementNetworkSimplex] = None
+
+
+class ELKLayeredEdgeRoutingSplines(BaseModel):
+    mode: Optional[SplineRoutingMode] = Field(None, description="Specifies the way control points are assembled for each individual edge.")
+    sloppyLayerSpacingFactor: Optional[float] = Field(None, description="Factor for sloppy spline layer spacing.")
+    
+   
+
+
+class ELKLayeredEdgeRouting(BaseModel):
+    selfLoopDistribution: Optional[SelfLoopDistributionStrategy] = Field(None, description="Alter the distribution of the loops around the node.")
+    selfLoopOrdering: Optional[SelfLoopOrderingStrategy] = Field(None, description="Alter the ordering of the loops they can either be stacked or sequenced.")
+    splines: Optional[ELKLayeredEdgeRoutingSplines] = None
 
 
 class ELKLayered(BaseModel):
-    feedbackEdges: Optional[bool] = None
-    nodePlacement: Optional[ELKNodePlacement] = None
-    allowNonFlowPortsToSwitchSides: Optional[bool] = None
-
-    class Config:
-        extra = "allow"
+    directionCongruency: Optional[DirectionCongruency] = Field(None, description="Specifies how drawings of the same graph with different layout directions compare to each other.")
+    feedbackEdges: Optional[bool] = Field(None, description="Whether feedback edges should be highlighted by routing around the nodes.")
+    interactiveReferencePoint: Optional[InteractiveReferencePoint] = Field(None, description="Determines which point of a node is considered by interactive layout phases.")
+    mergeEdges: Optional[bool] = Field(None, description="Edges that have no ports are merged so they touch the connected nodes at the same points.")
+    mergeHierarchyEdges: Optional[bool] = Field(None, description="If hierarchical layout is active, hierarchy-crossing edges use as few hierarchical ports as possible.")
+    allowNonFlowPortsToSwitchSides: Optional[bool] = Field(None, description="Specifies whether non-flow ports may switch sides if their node's port constraints are either FIXED_SIDE or FIXED_ORDER.")
+    portSortingStrategy: Optional[PortSortingStrategy] = Field(None, description="Determines the way a node's ports are distributed on the sides of a node if their order is not prescribed.")
+    thoroughness: Optional[int] = Field(None, ge=1, description="How much effort should be spent to produce a nice layout.")
+    unnecessaryBendpoints: Optional[bool] = Field(None, description="Adds bend points even if an edge does not change direction.")
+    generatePositionAndLayerIds: Optional[bool] = Field(None, description="If enabled position id and layer id are generated.")
+    cycleBreaking: Optional[ELKLayeredCycleBreaking] = None
+    layering: Optional[ELKLayeredLayering] = None
+    crossingMinimization: Optional[ELKLayeredCrossingMinimization] = None
+    nodePlacement: Optional[ELKLayeredNodePlacement] = None
+    edgeRouting: Optional[ELKLayeredEdgeRouting] = None
+    
 
 
 class ELKSpacing(BaseModel):
@@ -113,8 +312,6 @@ class ELKSpacing(BaseModel):
     portPort: Optional[float] = None
     componentComponent: Optional[float] = None
 
-    class Config:
-        extra = "allow"
 
 
 class LayoutOptionsELK(BaseModel):
@@ -127,15 +324,11 @@ class LayoutOptionsELK(BaseModel):
     edgeRouting: Optional[ELKEdgeRouting] = None
     spacing: Optional[ELKSpacing] = None
 
-    class Config:
-        extra = "allow"
 
 
 class LayoutOptionsPartitioning(BaseModel):
     activate: Optional[bool] = None
 
-    class Config:
-        extra = "allow"
 
 
 class LayoutOptions(BaseModel):
@@ -143,8 +336,6 @@ class LayoutOptions(BaseModel):
     partitioning: Optional[LayoutOptionsPartitioning] = None
     nodeFlexibility: Optional[NodeFlexibility] = None
 
-    class Config:
-        extra = "allow"
 
     @model_validator(mode="before")
     @classmethod
@@ -206,8 +397,6 @@ class PortProperties(BaseModel):
     portAlignment: Optional[PortAlignment] = None
     allowNonFlowPortsToSwitchSides: Optional[bool] = None
 
-    class Config:
-        extra = "allow"
 
     @model_validator(mode="before")
     @classmethod
@@ -259,8 +448,6 @@ class NodeProperties(BaseModel):
     portConstraints: Optional[PortConstraints] = None
     portAlignment: Optional[PortAlignment] = None
 
-    class Config:
-        extra = "allow"
 
 
 class Point(BaseModel):
@@ -539,8 +726,8 @@ def compute_absolute_positions(graph: Graph) -> Tuple[List[AbsolutePosition], Li
             for child in node.children:
                 process_node(child, abs_x, abs_y)
     
-    if laid_out_graph.children:
-        for node in laid_out_graph.children:
+    if graph.children:
+        for node in graph.children:
             process_node(node)
     
     def process_edges(edges: Optional[List[Edge]], container_x: float = 0, container_y: float = 0) -> None:
@@ -584,7 +771,7 @@ def compute_absolute_positions(graph: Graph) -> Tuple[List[AbsolutePosition], Li
                         ))
                 edges_coords.append((start, bends, end))
     
-    process_edges(laid_out_graph.edges)
+    process_edges(graph.edges)
     
     def process_node_edges(node: Node, parent_x: float = 0, parent_y: float = 0) -> None:
         abs_x = parent_x + (node.x or 0)
@@ -596,8 +783,8 @@ def compute_absolute_positions(graph: Graph) -> Tuple[List[AbsolutePosition], Li
             for child in node.children:
                 process_node_edges(child, abs_x, abs_y)
     
-    if laid_out_graph.children:
-        for node in laid_out_graph.children:
+    if graph.children:
+        for node in graph.children:
             process_node_edges(node)
     
     return nodes, edges_coords
@@ -707,41 +894,57 @@ def render_to_png(nodes: List[AbsolutePosition], edges: List[Tuple[Point, List[P
 
 
 
+def process_graph_files():
+    input_dir = Path("elk-models")
+    output_dir = Path("/tmp/elk-layout")
+    script_dir = Path("/home/haxscramper/workspace/repos/hack/testing/java/elk-graph-layout-kotlin")
+    script_path = script_dir / "scripts" / "run.sh"
+    
+    for json_file in input_dir.rglob("*.json"):
+        relative_path = json_file.relative_to(input_dir)
+        output_subdir = output_dir / relative_path.parent
+        output_subdir.mkdir(parents=True, exist_ok=True)
+        
+        base_name = relative_path.stem
+        
+        logging.info(f"Processing {json_file}")
+        
+        sample_data = json.loads(json_file.read_text())
+        graph = Graph(**sample_data)
+        
+        if graph.layoutOptions and graph.layoutOptions.elk:
+            if graph.layoutOptions.elk.algorithm:
+                logging.info(f"  Algorithm: {graph.layoutOptions.elk.algorithm}")
+            if graph.layoutOptions.elk.direction:
+                logging.info(f"  Direction: {graph.layoutOptions.elk.direction}")
+        
+        validate_graph_structure(graph)
+        
+        validated_path = output_subdir / f"{base_name}_validated.json"
+        GraphSerializer.save_to_file(graph, validated_path, use_dotted=True)
+        
+        layout_path = output_subdir / f"{base_name}_layout.json"
+        
+        cmd = local[str(script_path)].with_cwd(script_dir)
+        cmd.run([f"--input={validated_path}", f"--output={layout_path}"])
+        
+        graph = GraphSerializer.load_from_file(layout_path)
+        
+        nodes, edges = compute_absolute_positions(graph)
+        png_path = output_subdir / f"{base_name}.png"
+        render_to_png(nodes, edges, png_path)
+        
+        logging.info(f"  Completed: {png_path}")
+            
+
+
+
 if __name__ == "__main__":
     logging.basicConfig(
         level=logging.DEBUG,
         format=
-        "%(asctime)s - %(filename)s:%(lineno)d - %(levelname)s - %(message)s")
+        "%(asctime)s %(name)s - %(filename)s:%(lineno)d - %(levelname)s - %(message)s")
 
-    sample_data = json.loads(Path("/tmp/input_graph.json").read_text())
+    logging.getLogger("matplotlib.font_manager").setLevel(logging.INFO)
 
-    graph = Graph(**sample_data)
-
-    if graph.layoutOptions:
-        logging.info(f"Algorithm: {graph.layoutOptions.elk.algorithm}")
-        logging.info(f"Direction: {graph.layoutOptions.elk.direction}")
-        logging.info(f"Edge spacing: {graph.layoutOptions.elk.spacing.edgeNode}")
-        logging.info(f"Node flexibility: {graph.layoutOptions.nodeFlexibility}")
-
-    validate_graph_structure(graph)
-
-    output_path = Path("/tmp/graph_validated.json")
-    GraphSerializer.save_to_file(graph, output_path, use_dotted=True)
-    logging.info(f"Generated validated {output_path}")
-
-    loaded_graph = GraphSerializer.load_from_file(output_path)
-    logging.info(f"Successfully loaded graph with id: {loaded_graph.id}")
-    script_dir = Path("/home/haxscramper/workspace/repos/hack/testing/java/elk-graph-layout-kotlin")
-    script_path = script_dir / "scripts" / "run.sh"
-    output_layout_path = Path("/tmp/graph_layout.json")
-
-    cmd = local[str(script_path)].with_cwd(script_dir)
-    result = cmd.run([f"--input={output_path}", f"--output={output_layout_path}"])
-
-    logging.info(f"Layout script executed successfully, output saved to {output_layout_path}")
-
-    laid_out_graph = GraphSerializer.load_from_file(output_layout_path)
-
-    nodes, edges = compute_absolute_positions(laid_out_graph)
-    png_output = Path("/tmp/graph_layout.png")
-    render_to_png(nodes, edges, png_output)
+    process_graph_files()
