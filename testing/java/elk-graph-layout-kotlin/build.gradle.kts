@@ -13,9 +13,10 @@ repositories {
 
 dependencies {
     // Eclipse ELK dependencies
-    implementation("org.eclipse.elk:org.eclipse.elk.core:0.8.1")
-    implementation("org.eclipse.elk:org.eclipse.elk.graph:0.8.1")
-    implementation("org.eclipse.elk:org.eclipse.elk.alg.layered:0.8.1")
+    implementation("org.eclipse.elk:org.eclipse.elk.core:0.11.0")
+    implementation("org.eclipse.elk:org.eclipse.elk.graph:0.11.0")
+    implementation("org.eclipse.elk:org.eclipse.elk.graph.json:0.11.0")
+    implementation("org.eclipse.elk:org.eclipse.elk.alg.layered:0.11.0")
     
     // Kotlin serialization for JSON
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.0")

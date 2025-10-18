@@ -3,12 +3,21 @@ import subprocess
 import json
 import os
 
+import logging
+
+
+logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(filename)s:%(lineno)d - %(levelname)s - %(message)s")
+
+
 # Step 1: Execute the JS code
 result = subprocess.run(
     ["node", "elk_graph.js"],
     capture_output=True,
     text=True,
 )
+
+logging.info(result.stderr)
+logging.info(result.stdout)
 
 # Parse the output as JSON
 graph = json.loads(result.stdout)

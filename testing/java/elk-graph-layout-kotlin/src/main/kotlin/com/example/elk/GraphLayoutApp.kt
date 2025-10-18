@@ -1,57 +1,54 @@
 package com.example.elk
 
-import com.example.elk.models.InputGraph
 import com.github.ajalt.clikt.core.CliktCommand
 import com.github.ajalt.clikt.parameters.options.default
 import com.github.ajalt.clikt.parameters.options.option
 import com.github.ajalt.clikt.parameters.types.file
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
+import org.eclipse.elk.core.RecursiveGraphLayoutEngine
+import org.eclipse.elk.core.options.CoreOptions
+import org.eclipse.elk.core.util.BasicProgressMonitor
+import org.eclipse.elk.graph.ElkNode
+import org.eclipse.elk.graph.json.ElkGraphJson
+import org.eclipse.elk.graph.json.JsonImporter
+import org.eclipse.elk.alg.layered.options.LayeredOptions
+import com.google.gson.JsonObject
+import com.google.gson.JsonParser
+import org.eclipse.elk.core.util.Maybe
 import java.io.File
-import kotlin.system.exitProcess
 
 class GraphLayoutApp : CliktCommand(name = "elk-layout") {
-    
+
     private val inputFile by option("-i", "--input", help = "Input JSON file")
         .file(mustExist = true, canBeDir = false, mustBeReadable = true)
-    
+
     private val outputFile by option("-o", "--output", help = "Output JSON file")
         .file(canBeDir = false)
-    
+
     private val pretty by option("--pretty", help = "Pretty print JSON output")
         .default("false")
-    
-    private val json = Json {
-        prettyPrint = true
-        ignoreUnknownKeys = true
-    }
-    
+
     override fun run() {
-        // Read input
-        val inputText = if (inputFile != null) {
+        val inputText: String = if (inputFile != null) {
             echo("Reading input file $inputFile")
             inputFile!!.readText()
         } else {
-            // Read from stdin
             generateSequence(::readLine).joinToString("\n")
         }
 
-        // Parse input JSON
-        val inputGraph = json.decodeFromString<InputGraph>(inputText)
+        val jsonGraph: JsonObject = JsonParser.parseString(inputText).asJsonObject
+        val elkGraph: ElkNode = ElkGraphJson.forGraph(jsonGraph)
+            .toElk()
 
-        // Process graph
-        echo("Processing graph with ${inputGraph.nodes.size} nodes and ${inputGraph.edges.size} edges...")
-        val processor = GraphProcessor()
-        val outputGraph = processor.processGraph(inputGraph)
+        echo("Processing graph with ${elkGraph.children.size} nodes and ${elkGraph.containedEdges.size} edges...")
 
-        // Serialize output
-        val outputJson = if (pretty == "true") {
-            json.encodeToString(outputGraph)
-        } else {
-            Json.encodeToString(outputGraph)
-        }
+        val layoutEngine: RecursiveGraphLayoutEngine = RecursiveGraphLayoutEngine()
+        val monitor: BasicProgressMonitor = BasicProgressMonitor()
 
-        // Write output
+        val startTime: Long = System.currentTimeMillis()
+        layoutEngine.layout(elkGraph, monitor)
+        val executionTime: Long = System.currentTimeMillis() - startTime
+        val outputJson: String = ElkGraphJson.forGraph(elkGraph).prettyPrint(true).toJson()
+
         if (outputFile != null) {
             outputFile!!.writeText(outputJson)
             echo("Layout completed! Output written to ${outputFile!!.absolutePath}")
@@ -59,13 +56,14 @@ class GraphLayoutApp : CliktCommand(name = "elk-layout") {
             println(outputJson)
         }
 
-        // Print summary
-        echo("Layout summary:")
-        echo("  - Execution time: ${outputGraph.layoutInfo.executionTime}ms")
-        echo("  - Graph bounds: ${outputGraph.bounds.width} x ${outputGraph.bounds.height}")
-        echo("  - Algorithm: ${outputGraph.layoutInfo.algorithm}")
-        echo("  - Direction: ${outputGraph.layoutInfo.direction}")
+        val algorithm: String = elkGraph.getProperty(CoreOptions.ALGORITHM) ?: "layered"
+        val direction: String = elkGraph.getProperty(CoreOptions.DIRECTION)?.toString() ?: "UNDEFINED"
 
+        echo("Layout summary:")
+        echo("  - Execution time: ${executionTime}ms")
+        echo("  - Graph bounds: ${elkGraph.width} x ${elkGraph.height}")
+        echo("  - Algorithm: ${algorithm}")
+        echo("  - Direction: ${direction}")
     }
 }
 
