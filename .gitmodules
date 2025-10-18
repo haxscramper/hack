@@ -8,3 +8,6 @@
 [submodule "genny"]
     path = testing/nim/implementation_ideas/genny_user/genny
     url = https://github.com/treeform/genny.git
+[submodule "testing/python/mi_pipeline_visualization/elk-models"]
+	path = testing/python/mi_pipeline_visualization/elk-models
+	url = https://github.com/eclipse-elk/elk-models.git
