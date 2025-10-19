@@ -1,10 +1,11 @@
 use nix::sys::ptrace;
 use nix::sys::wait::{waitpid, WaitStatus, WaitPidFlag};
-use nix::sys::signal::Signal;
 use nix::unistd::Pid;
 use std::collections::HashSet;
 use color_eyre::Result;
 use color_eyre::eyre::eyre;
+use tracing::info;
+
 
 pub struct PtraceTracker {
     traced_pids: HashSet<u32>,
@@ -31,7 +32,7 @@ impl PtraceTracker {
         let pid = Pid::from_raw(pid as i32);
         
         if self.verbose {
-            println!("Attaching to new child PID: {}", pid);
+            info!("Attaching to new child PID: {}", pid);
         }
 
         ptrace::attach(pid)?;
@@ -52,7 +53,7 @@ impl PtraceTracker {
         
         if self.traced_pids.contains(&(pid.as_raw() as u32)) {
             if self.verbose {
-                println!("Detaching from PID: {}", pid);
+                info!("Detaching from PID: {}", pid);
             }
             // Only detach if process is still alive
             if let Ok(_) = waitpid(Some(pid), Some(WaitPidFlag::WNOHANG)) {
@@ -66,7 +67,7 @@ impl PtraceTracker {
     pub fn continue_process(&self, pid: u32) -> Result<()> {
         let pid = Pid::from_raw(pid as i32);
         if self.verbose {
-            println!("Continuing PID: {}", pid);
+            info!("Continuing PID: {}", pid);
         }
         ptrace::cont(pid, None)?;
         Ok(())
@@ -95,7 +96,7 @@ impl PtraceTracker {
         let pid = Pid::from_raw(pid as i32);
         
         if self.verbose {
-            println!("Setting trace options for PID: {}", pid);
+            info!("Setting trace options for PID: {}", pid);
         }
         
         // Set ptrace options to trace forks, vforks, clones, and execs

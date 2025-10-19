@@ -6,6 +6,10 @@ mod ptrace_wrapper;
 use clap::Parser;
 use std::path::PathBuf;
 use color_eyre::Result;
+use tracing_subscriber::{fmt, EnvFilter};
+use tracing::info;
+
+
 
 
 #[derive(Parser)]
@@ -43,7 +47,14 @@ async fn main() -> Result<()> {
     use tracing_subscriber::prelude::*;
     
     tracing_subscriber::registry()
-        .with(ErrorLayer::default())
+        .with(fmt::layer()
+            .with_target(false)  // Don't show module paths
+            .with_thread_ids(true)  // Useful for debugging
+            .with_line_number(true))
+        .with(EnvFilter::from_default_env()
+            .add_directive("process_profiler=debug".parse()?)
+            .add_directive("warn".parse()?))  // Default level for other crates
+        .with(ErrorLayer::default())  // Your existing ErrorLayer
         .init();
         
     color_eyre::config::HookBuilder::default()
@@ -53,10 +64,10 @@ async fn main() -> Result<()> {
     let args = Args::parse();
 
     if args.verbose {
-        println!("Starting process profiler...");
-        println!("Command: {} {:?}", args.command, args.args);
-        println!("Output: {:?}", args.output);
-        println!("Sampling interval: {}ms", args.interval);
+        info!("Starting process profiler...");
+        info!("Command: {} {:?}", args.command, args.args);
+        info!("Output: {:?}", args.output);
+        info!("Sampling interval: {}ms", args.interval);
     }
 
     let mut profiler = profiler::ProcessProfiler::new(
@@ -74,7 +85,7 @@ async fn main() -> Result<()> {
     std::fs::write(&args.output, json)?;
 
     if args.verbose {
-        println!("Profile data written to {:?}", args.output);
+        info!("Profile data written to {:?}", args.output);
     }
 
     Ok(())

@@ -2,6 +2,7 @@ use crate::data_model::{ProcessProfile, ResourceSample};
 use procfs::process::Process;
 use std::collections::HashMap;
 use color_eyre::Result;
+use tracing::info;
 
 use chrono::Utc;
 
@@ -20,7 +21,7 @@ impl ProcessTree {
 
     pub fn add_process(&mut self, profile: ProcessProfile) {
         if self.verbose {
-            println!("Adding process: PID {} - {}", profile.pid, profile.command);
+            info!("Adding process: PID {} - {}", profile.pid, profile.command);
         }
         self.processes.insert(profile.pid, profile);
     }
@@ -65,7 +66,7 @@ impl ProcessTree {
         if let Some(profile) = self.processes.get_mut(&pid) {
             profile.set_end_time(exit_code);
             if self.verbose {
-                println!("Process ended: PID {} - exit code: {:?}", pid, exit_code);
+                info!("Process ended: PID {} - exit code: {:?}", pid, exit_code);
             }
         }
     }

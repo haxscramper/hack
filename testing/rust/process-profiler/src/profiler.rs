@@ -14,6 +14,7 @@ use std::os::unix::process::CommandExt;
 use color_eyre::eyre::eyre;
 use nix::sys::wait::waitpid;
 use nix::unistd::Pid;
+use tracing::{info, error};
 
 
 
@@ -54,7 +55,7 @@ impl ProcessProfiler {
         let start_time = Utc::now();
         
         if self.verbose {
-            println!("Starting profiler at: {}", start_time);
+            info!("Starting profiler at: {}", start_time);
         }
     
         // Fork and exec the target process
@@ -68,7 +69,7 @@ impl ProcessProfiler {
             tokio::select! {
                 _ = sampling_timer.tick() => {
                     if self.verbose {
-                        println!("Sampling {} active processes", self.active_pids.len());
+                        info!("Sampling {} active processes", self.active_pids.len());
                     }
                     self.sample_all_processes().await?;
                 }
@@ -77,7 +78,7 @@ impl ProcessProfiler {
             // Check for ptrace events (non-blocking)
             if !self.handle_ptrace_events().await? {
                 if self.verbose {
-                    println!("All processes have terminated");
+                    info!("All processes have terminated");
                 }
                 break;
             }
@@ -90,8 +91,8 @@ impl ProcessProfiler {
         let duration = (end_time - start_time).num_milliseconds() as u64;
     
         if self.verbose {
-            println!("Profiling completed at: {}", end_time);
-            println!("Total duration: {}ms", duration);
+            info!("Profiling completed at: {}", end_time);
+            info!("Total duration: {}ms", duration);
         }
     
         // Build the final process tree
@@ -122,13 +123,13 @@ impl ProcessProfiler {
             had_events = true;
             
             if self.verbose {
-                println!("Got event for PID {}: {:?}", pid, status);
+                info!("Got event for PID {}: {:?}", pid, status);
             }
             
             match status {
                 WaitStatus::Stopped(_, signal) => {
                     if self.verbose {
-                        println!("Process {} stopped with signal {:?}", pid, signal);
+                        info!("Process {} stopped with signal {:?}", pid, signal);
                     }
                     
                     // Check if this is a new process (fork/clone event)
@@ -142,7 +143,7 @@ impl ProcessProfiler {
 
                 WaitStatus::PtraceEvent(child_pid, _, event) => {
                     if self.verbose {
-                        println!("Ptrace event from {}: {}", child_pid, event);
+                        info!("Ptrace event from {}: {}", child_pid, event);
                     }
                     
                     // Handle fork/clone/vfork events
@@ -158,7 +159,7 @@ impl ProcessProfiler {
                             if let Ok(new_pid) = nix::sys::ptrace::getevent(Pid::from_raw(i32::from(child_pid))) {
                                 let new_pid = new_pid as u32;
                                 if self.verbose {
-                                    println!("New child process detected: {}", new_pid);
+                                    info!("New child process detected: {}", new_pid);
                                 }
                                 self.handle_new_process(new_pid).await?;
                             }
@@ -172,7 +173,7 @@ impl ProcessProfiler {
 
                 WaitStatus::Exited(_, exit_code) => {
                     if self.verbose {
-                        println!("Process {} exited with code {}", pid, exit_code);
+                        info!("Process {} exited with code {}", pid, exit_code);
                     }
                     
                     self.process_tree.mark_process_ended(pid, Some(exit_code));
@@ -181,7 +182,7 @@ impl ProcessProfiler {
                 }
                 WaitStatus::Signaled(_, signal, _) => {
                     if self.verbose {
-                        println!("Process {} terminated by signal {:?}", pid, signal);
+                        info!("Process {} terminated by signal {:?}", pid, signal);
                     }
                     
                     self.process_tree.mark_process_ended(pid, None);
@@ -190,7 +191,7 @@ impl ProcessProfiler {
                 }
                 _ => {
                     if self.verbose {
-                        println!("Unhandled wait status for PID {}: {:?}", pid, status);
+                        info!("Unhandled wait status for PID {}: {:?}", pid, status);
                     }
                 }
             }
@@ -199,7 +200,7 @@ impl ProcessProfiler {
         // Return true if we still have active processes
         let has_active = !self.active_pids.is_empty();
         if self.verbose && !had_events && has_active {
-            println!("No events, but still have {} active PIDs", self.active_pids.len());
+            info!("No events, but still have {} active PIDs", self.active_pids.len());
         }
         
         Ok(has_active)
@@ -211,14 +212,14 @@ impl ProcessProfiler {
                 let child_pid = child.as_raw() as u32;
                 
                 if self.verbose {
-                    println!("Spawned child process with PID: {}", child_pid);
+                    info!("Spawned child process with PID: {}", child_pid);
                 }
     
                 // Wait for the child to stop itself after calling traceme()
                 match waitpid(Some(child), None) {
                     Ok(WaitStatus::Stopped(_, signal)) => {
                         if self.verbose {
-                            println!("Child stopped with signal: {:?}", signal);
+                            info!("Child stopped with signal: {:?}", signal);
                         }
                     }
                     Ok(status) => {
@@ -291,7 +292,7 @@ impl ProcessProfiler {
         let error = cmd.exec();
         
         // If we reach here, exec failed
-        eprintln!("Failed to execute command: {}", error);
+        error!("Failed to execute command: {}", error);
         std::process::exit(1);
     }
 
@@ -326,7 +327,7 @@ impl ProcessProfiler {
         for pid in pids {
             if let Err(e) = self.process_tree.sample_resources(pid) {
                 if self.verbose {
-                    println!("Failed to sample resources for PID {}: {}", pid, e);
+                    info!("Failed to sample resources for PID {}: {}", pid, e);
                 }
                 // Process might have died, remove it from active list
                 self.active_pids.remove(&pid);
