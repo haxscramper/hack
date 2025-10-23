@@ -10,62 +10,8 @@ from abc import ABC
 from pydantic import BaseModel, Field, field_validator, ValidationError
 from pydantic.aliases import AliasChoices
 import igraph as ig
-import structlog
-import logging
-import graphviz
-import itertools
 
-logging.basicConfig(level=logging.DEBUG)
-
-from rich.console import Console
-from rich.traceback import Traceback
-
-
-def format_callsite(logger, method_name, event_dict):
-    if "filename" in event_dict and "lineno" in event_dict:
-        event_dict[
-            "location"] = f" {event_dict['filename']}:{event_dict['lineno']}"
-        del event_dict["filename"]
-        del event_dict["lineno"]
-        if "func_name" in event_dict:
-            del event_dict["func_name"]
-    return event_dict
-
-
-structlog.configure(
-    processors=[
-        structlog.stdlib.filter_by_level, structlog.stdlib.add_logger_name,
-        structlog.stdlib.add_log_level,
-        structlog.stdlib.PositionalArgumentsFormatter(),
-        structlog.processors.TimeStamper(fmt="iso"),
-        structlog.processors.StackInfoRenderer(),
-        structlog.processors.CallsiteParameterAdder(parameters=[
-            structlog.processors.CallsiteParameter.FILENAME,
-            structlog.processors.CallsiteParameter.LINENO,
-            structlog.processors.CallsiteParameter.FUNC_NAME
-        ]), format_callsite,
-        structlog.dev.ConsoleRenderer(
-            colors=True,
-            exception_formatter=structlog.dev.RichTracebackFormatter(width=-1),
-            force_colors=True,
-        )
-    ],
-    wrapper_class=structlog.stdlib.BoundLogger,
-    logger_factory=structlog.stdlib.LoggerFactory(),
-    cache_logger_on_first_use=True,
-)
-
-log: structlog.PrintLogger = structlog.get_logger()
-
-
-class RecipeNodeData(BaseModel):
-    type: str
-    fluid_inputs: List[FluidInput]
-    fluid_outputs: List[FluidOutput]
-    item_inputs: List[ItemInput]
-    item_outputs: List[ItemOutput]
-    duration: Optional[int] = None
-    eu: Optional[int] = None
+from log_writer import log
 
 
 class FluidNodeData(BaseModel):
@@ -76,6 +22,16 @@ class ItemNodeData(BaseModel):
     id: str
 
 
+class RecipeNodeData(BaseModel):
+    type: str
+    fluid_inputs: List[FluidNodeData]
+    fluid_outputs: List[FluidNodeData]
+    item_inputs: List[ItemNodeData]
+    item_outputs: List[ItemNodeData]
+    duration: Optional[int] = None
+    eu: Optional[int] = None
+
+
 class IgnoreResult():
     pass
 
@@ -83,10 +39,10 @@ class IgnoreResult():
 @beartype
 def collect_inputs_outputs(
     obj: Any,
-        disambiguate_item: Callable[[ItemModel],
+    disambiguate_item: Callable[[ItemModel],
                                 Optional[ItemNodeData | IgnoreResult]],
 ) -> tuple[List[FluidInput], List[FluidOutput], List[ItemInput],
-            List[ItemOutput]]:
+           List[ItemOutput]]:
     fluid_inputs = []
     fluid_outputs = []
     item_inputs = []
@@ -138,31 +94,11 @@ def create_recipe_graph(
     item_nodes: Dict[str, int] = {}
     fluid_nodes: Dict[str, int] = {}
 
-
     @beartype
     def _traverse(obj: Any) -> None:
         if isinstance(obj, Recipe):
             fluid_inputs, fluid_outputs, item_inputs, item_outputs = collect_inputs_outputs(
                 obj, disambiguate_item)
-
-            recipe_data = RecipeNodeData(type=obj.type,
-                                         fluid_inputs=fluid_inputs,
-                                         fluid_outputs=fluid_outputs,
-                                         item_inputs=item_inputs,
-                                         item_outputs=item_outputs)
-
-            if isinstance(obj, MIElectricRecipe):
-                recipe_data.duration = obj.duration
-                recipe_data.eu = obj.eu
-
-            recipe_id = f"recipe_{obj.type}_{len(recipe_nodes)}"
-            if recipe_id not in recipe_nodes:
-                recipe_nodes[recipe_id] = graph.vcount()
-                graph.add_vertex(name=recipe_id,
-                                 node_type="recipe",
-                                 data=recipe_data)
-
-            recipe_vertex = recipe_nodes[recipe_id]
 
             def disambiguate(
                 value, callback
@@ -180,7 +116,12 @@ def create_recipe_graph(
                 else:
                     return (True, node_data)
 
-            for fluid_input in recipe_data.fluid_inputs:
+            fluid_input_nodes = []
+            fluid_output_nodes = []
+            item_input_nodes = []
+            item_output_nodes = []
+
+            for fluid_input in fluid_inputs:
                 accepted, fluid_node_data = disambiguate(
                     fluid_input, disambiguate_fluid)
                 if not accepted:
@@ -192,9 +133,9 @@ def create_recipe_graph(
                                      node_type="fluid",
                                      data=fluid_node_data)
 
-                graph.add_edge(fluid_nodes[fluid_node_data.id], recipe_vertex)
+                fluid_input_nodes.append(fluid_node_data)
 
-            for fluid_output in recipe_data.fluid_outputs:
+            for fluid_output in fluid_outputs:
                 accepted, fluid_node_data = disambiguate(
                     fluid_output, disambiguate_fluid)
                 if not accepted:
@@ -206,9 +147,9 @@ def create_recipe_graph(
                                      node_type="fluid",
                                      data=fluid_node_data)
 
-                graph.add_edge(recipe_vertex, fluid_nodes[fluid_node_data.id])
+                fluid_output_nodes.append(fluid_node_data)
 
-            for item_input in recipe_data.item_inputs:
+            for item_input in item_inputs:
                 accepted, item_node_data = disambiguate(
                     item_input, disambiguate_item)
                 if not accepted:
@@ -220,9 +161,9 @@ def create_recipe_graph(
                                      node_type="item",
                                      data=item_node_data)
 
-                graph.add_edge(item_nodes[item_node_data.id], recipe_vertex)
+                item_input_nodes.append(item_node_data)
 
-            for item_output in recipe_data.item_outputs:
+            for item_output in item_outputs:
                 accepted, item_node_data = disambiguate(
                     item_output, disambiguate_item)
                 if not accepted:
@@ -234,6 +175,39 @@ def create_recipe_graph(
                                      node_type="item",
                                      data=item_node_data)
 
+                item_output_nodes.append(item_node_data)
+
+            recipe_data = RecipeNodeData(
+                type=obj.type,
+                fluid_inputs=fluid_input_nodes,
+                fluid_outputs=fluid_output_nodes,
+                item_inputs=item_input_nodes,
+                item_outputs=item_output_nodes,
+            )
+
+            if isinstance(obj, MIElectricRecipe):
+                recipe_data.duration = obj.duration
+                recipe_data.eu = obj.eu
+
+            recipe_id = f"recipe_{obj.type}_{len(recipe_nodes)}"
+            if recipe_id not in recipe_nodes:
+                recipe_nodes[recipe_id] = graph.vcount()
+                graph.add_vertex(name=recipe_id,
+                                 node_type="recipe",
+                                 data=recipe_data)
+
+            recipe_vertex = recipe_nodes[recipe_id]
+
+            for fluid_input in recipe_data.fluid_inputs:
+                graph.add_edge(fluid_nodes[fluid_node_data.id], recipe_vertex)
+
+            for fluid_output in recipe_data.fluid_outputs:
+                graph.add_edge(recipe_vertex, fluid_nodes[fluid_node_data.id])
+
+            for item_input in recipe_data.item_inputs:
+                graph.add_edge(item_nodes[item_node_data.id], recipe_vertex)
+
+            for item_output in recipe_data.item_outputs:
                 graph.add_edge(recipe_vertex, item_nodes[item_node_data.id])
 
         elif isinstance(obj, list):
@@ -313,10 +287,12 @@ def filter_items(graph: ig.Graph, item_predicate: Callable[[ItemNodeData],
 
     return graph.induced_subgraph(vertices_to_keep)
 
+
 @beartype
 def remove_isolated_nodes(graph: ig.Graph) -> ig.Graph:
     nodes_to_keep = [v.index for v in graph.vs if graph.degree(v.index) > 0]
     return graph.subgraph(nodes_to_keep)
+
 
 @beartype
 def parse_recipes_to_graph(path: Path) -> ig.Graph:
@@ -388,11 +364,17 @@ def parse_recipes_to_graph(path: Path) -> ig.Graph:
 
         # return False
 
-    log.info(f"Constructed initial graph, {result.vcount()} vertices {result.ecount()} edges")
+    log.info(
+        f"Constructed initial graph, {result.vcount()} vertices {result.ecount()} edges"
+    )
     result = filter_recipes(result, recipe_predicate=recipe_callback)
-    log.info(f"Filtered MI recipes, {result.vcount()} vertices {result.ecount()} edges")
+    log.info(
+        f"Filtered MI recipes, {result.vcount()} vertices {result.ecount()} edges"
+    )
     result = remove_isolated_nodes(result)
-    log.info(f"Removed isolated nodes, {result.vcount()} vertices {result.ecount()} edges")
+    log.info(
+        f"Removed isolated nodes, {result.vcount()} vertices {result.ecount()} edges"
+    )
 
     return result
 
