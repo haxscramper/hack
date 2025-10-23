@@ -2,38 +2,28 @@
 
 from beartype.typing import List, Dict, Any, Union, Optional, Literal
 from typing import Annotated, get_args
-from pydantic import BaseModel, Field, field_validator, Discriminator, ValidationError, AliasChoices, ConfigDict
+from pydantic import BaseModel, Field, field_validator, Discriminator, ValidationError, AliasChoices, ConfigDict, model_validator
 from abc import ABC, abstractmethod
 import json
 from pathlib import Path
-
-
-class ItemId(BaseModel):
-    modname: str
-    itemname: str
-
-    @classmethod
-    def from_string(cls, item_string: str) -> "ItemId":
-        parts = item_string.split(":", 1)
-        return cls(modname=parts[0], itemname=parts[1])
-
-    def __hash__(self) -> int:
-        return hash((self.modname, self.itemname))
-
-    def __eq__(self, other: object) -> bool:
-        if not isinstance(other, ItemId):
-            return False
-        return self.modname == other.modname and self.itemname == other.itemname
-
-    def __lt__(self, other: "ItemId") -> bool:
-        return (self.modname, self.itemname) < (other.modname, other.itemname)
 
 
 class FluidModel(BaseModel):
     amount: Optional[int] = None
     fluid: Optional[str] = None
     tag: Optional[str] = None
+    class Config:
+        extra = "forbid"
 
+    @property
+    def modname(self) -> Optional[str]:
+        if isinstance(self.fluid, str):
+            return self.fluid.split(":")[0]
+
+    @property
+    def itemname(self) -> Optional[str]:
+        if isinstance(self.fluid, str):
+            return self.fluid.split(":")[1]
 
 class FluidInput(FluidModel):
     pass
@@ -51,6 +41,30 @@ class ItemModel(BaseModel):
     item: Optional[Union[str, Any]] = Field(default=None,
                                             validation_alias=AliasChoices(
                                                 "item", "id"))
+
+    @property
+    def modname(self) -> Optional[str]:
+        if isinstance(self.item, str):
+            return self.item.split(":")[0]
+
+    @property
+    def itemname(self) -> Optional[str]:
+        if isinstance(self.item, str):
+            return self.item.split(":")[1]
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_item_field(cls, data):
+        if isinstance(data, dict):
+            if ("item" in data and isinstance(data["item"], dict)) or ("id" in data and isinstance(data["id"], dict)):
+                if "id" in data["item"]:
+                    data["item"] = data["item"]["id"]
+
+            if "tag" in data and isinstance(data["tag"], dict) and "tag" in data["tag"]:
+                data["tag"] = data["tag"]["tag"]
+
+        return data
+
     tag: Optional[Union[str, Any]] = None
     probability: Optional[float] = None
 
@@ -58,6 +72,8 @@ class ItemModel(BaseModel):
     subtracted: Optional["ItemModel"] = None
     children: Optional[List["ItemModel"]] = None
 
+    class Config:
+        extra = "forbid"
 
 class ItemInput(ItemModel):
     pass
@@ -80,7 +96,6 @@ class Recipe(BaseModel, ABC):
     type: str
     category: Optional[str] = None
     group: Optional[str] = None
-
 
     @field_validator("type")
     @classmethod
@@ -138,6 +153,7 @@ class CraftingShapedRecipe(Recipe):
     pattern: List[str]
     result: ItemOutputUse
 
+
 class PackerRecipe(MIElectricRecipe):
     type: Literal[r"modern_industrialization:packer"]
 
@@ -169,6 +185,7 @@ class CraftingShapelessRecipe(Recipe):
     ingredients: List[Union[ItemInput, List[ItemInput]]]
     result: ItemOutputUse
     group: Optional[str] = None
+
 
 class NeoforgeCondition(BaseModel):
     type: str
@@ -1282,6 +1299,7 @@ class ItemCopyingRecipe(Recipe):
 class TypewriterPageCloningRecipe(Recipe):
     type: Literal["bibliocraft:typewriter_page_cloning"]
 
+
 class FallbackUnknown(Recipe):
     type: Optional[str]
 
@@ -1475,12 +1493,6 @@ def parse_recipe_collection(recipe_data: Dict[str, Any]) -> RecipeCollection:
 import pydantic
 
 if __name__ == "__main__":
-
-    pydantic.config.ConfigDict.update({
-        'str_max_length': None,
-        'hide_input_in_errors': False
-    })
-
     content = json.loads(
         Path(
             "/home/haxscramper/.local/share/multimc/instances/1.21.1 V2/.minecraft/kubejs/server_scripts/all_recipes.json"

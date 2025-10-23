@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-from recipe_schema import parse_recipe_collection, FluidInput, FluidOutput, ItemInput, ItemOutput, Recipe, ItemModel, FluidModel
+from recipe_schema import parse_recipe_collection, FluidInput, FluidOutput, ItemInput, ItemOutput, Recipe, ItemModel, FluidModel, MIElectricRecipe
 import json
 from pathlib import Path
 
@@ -11,18 +11,39 @@ from pydantic import BaseModel, Field, field_validator, ValidationError
 from pydantic.aliases import AliasChoices
 import igraph as ig
 import structlog
+import logging
+import graphviz
+import itertools
+
+logging.basicConfig(level=logging.DEBUG)
 
 from rich.console import Console
 from rich.traceback import Traceback
 
+
+def format_callsite(logger, method_name, event_dict):
+    if "filename" in event_dict and "lineno" in event_dict:
+        event_dict[
+            "location"] = f" {event_dict['filename']}:{event_dict['lineno']}"
+        del event_dict["filename"]
+        del event_dict["lineno"]
+        if "func_name" in event_dict:
+            del event_dict["func_name"]
+    return event_dict
+
+
 structlog.configure(
     processors=[
-        structlog.stdlib.filter_by_level,
-        structlog.stdlib.add_logger_name,
+        structlog.stdlib.filter_by_level, structlog.stdlib.add_logger_name,
         structlog.stdlib.add_log_level,
         structlog.stdlib.PositionalArgumentsFormatter(),
         structlog.processors.TimeStamper(fmt="iso"),
         structlog.processors.StackInfoRenderer(),
+        structlog.processors.CallsiteParameterAdder(parameters=[
+            structlog.processors.CallsiteParameter.FILENAME,
+            structlog.processors.CallsiteParameter.LINENO,
+            structlog.processors.CallsiteParameter.FUNC_NAME
+        ]), format_callsite,
         structlog.dev.ConsoleRenderer(
             colors=True,
             exception_formatter=structlog.dev.RichTracebackFormatter(width=-1),
@@ -34,9 +55,7 @@ structlog.configure(
     cache_logger_on_first_use=True,
 )
 
-console = Console(width=None, force_terminal=True)
-
-log = structlog.get_logger()
+log: structlog.PrintLogger = structlog.get_logger()
 
 
 class RecipeNodeData(BaseModel):
@@ -45,6 +64,8 @@ class RecipeNodeData(BaseModel):
     fluid_outputs: List[FluidOutput]
     item_inputs: List[ItemInput]
     item_outputs: List[ItemOutput]
+    duration: Optional[int] = None
+    eu: Optional[int] = None
 
 
 class FluidNodeData(BaseModel):
@@ -55,70 +76,84 @@ class ItemNodeData(BaseModel):
     id: str
 
 
+class IgnoreResult():
+    pass
+
+
+@beartype
+def collect_inputs_outputs(
+    obj: Any,
+        disambiguate_item: Callable[[ItemModel],
+                                Optional[ItemNodeData | IgnoreResult]],
+) -> tuple[List[FluidInput], List[FluidOutput], List[ItemInput],
+            List[ItemOutput]]:
+    fluid_inputs = []
+    fluid_outputs = []
+    item_inputs = []
+    item_outputs = []
+
+    @beartype
+    def _traverse_for_io(current_obj: Any) -> None:
+        if isinstance(current_obj, FluidInput):
+            fluid_inputs.append(current_obj)
+        elif isinstance(current_obj, FluidOutput):
+            fluid_outputs.append(current_obj)
+        elif isinstance(current_obj, ItemInput):
+            item_inputs.append(current_obj)
+        elif isinstance(current_obj, ItemOutput):
+            item_outputs.append(current_obj)
+        elif isinstance(current_obj, list):
+            if current_obj and isinstance(current_obj[0], ItemInput):
+                item_node_data = disambiguate_item(current_obj[0])
+                if item_node_data:
+                    item_inputs.append(current_obj[0])
+            elif current_obj and isinstance(current_obj[0], ItemOutput):
+                item_node_data = disambiguate_item(current_obj[0])
+                if item_node_data:
+                    item_outputs.append(current_obj[0])
+            else:
+                for item in current_obj:
+                    _traverse_for_io(item)
+        elif isinstance(current_obj, dict):
+            for value in current_obj.values():
+                _traverse_for_io(value)
+        elif hasattr(current_obj, "__dict__"):
+            for attr_value in current_obj.__dict__.values():
+                _traverse_for_io(attr_value)
+
+    _traverse_for_io(obj)
+    return fluid_inputs, fluid_outputs, item_inputs, item_outputs
+
+
 @beartype
 def create_recipe_graph(
-    data: Any, disambiguate_item: Callable[[ItemModel],
-                                           Optional[ItemNodeData]],
-    disambiguate_fluid: Callable[[FluidModel], Optional[FluidNodeData]]
+    data: Any,
+    disambiguate_item: Callable[[ItemModel],
+                                Optional[ItemNodeData | IgnoreResult]],
+    disambiguate_fluid: Callable[[FluidModel],
+                                 Optional[FluidNodeData | IgnoreResult]],
 ) -> ig.Graph:
     graph = ig.Graph(directed=True)
     recipe_nodes: Dict[str, int] = {}
     item_nodes: Dict[str, int] = {}
     fluid_nodes: Dict[str, int] = {}
 
-    @beartype
-    def _collect_inputs_outputs(
-        obj: Any
-    ) -> tuple[List[FluidInput], List[FluidOutput], List[ItemInput],
-               List[ItemOutput]]:
-        fluid_inputs = []
-        fluid_outputs = []
-        item_inputs = []
-        item_outputs = []
-
-        @beartype
-        def _traverse_for_io(current_obj: Any) -> None:
-            if isinstance(current_obj, FluidInput):
-                fluid_inputs.append(current_obj)
-            elif isinstance(current_obj, FluidOutput):
-                fluid_outputs.append(current_obj)
-            elif isinstance(current_obj, ItemInput):
-                item_inputs.append(current_obj)
-            elif isinstance(current_obj, ItemOutput):
-                item_outputs.append(current_obj)
-            elif isinstance(current_obj, list):
-                if current_obj and isinstance(current_obj[0], ItemInput):
-                    item_node_data = disambiguate_item(current_obj[0])
-                    if item_node_data:
-                        item_inputs.append(current_obj[0])
-                elif current_obj and isinstance(current_obj[0], ItemOutput):
-                    item_node_data = disambiguate_item(current_obj[0])
-                    if item_node_data:
-                        item_outputs.append(current_obj[0])
-                else:
-                    for item in current_obj:
-                        _traverse_for_io(item)
-            elif isinstance(current_obj, dict):
-                for value in current_obj.values():
-                    _traverse_for_io(value)
-            elif hasattr(current_obj, "__dict__"):
-                for attr_value in current_obj.__dict__.values():
-                    _traverse_for_io(attr_value)
-
-        _traverse_for_io(obj)
-        return fluid_inputs, fluid_outputs, item_inputs, item_outputs
 
     @beartype
     def _traverse(obj: Any) -> None:
         if isinstance(obj, Recipe):
-            fluid_inputs, fluid_outputs, item_inputs, item_outputs = _collect_inputs_outputs(
-                obj)
+            fluid_inputs, fluid_outputs, item_inputs, item_outputs = collect_inputs_outputs(
+                obj, disambiguate_item)
 
             recipe_data = RecipeNodeData(type=obj.type,
                                          fluid_inputs=fluid_inputs,
                                          fluid_outputs=fluid_outputs,
                                          item_inputs=item_inputs,
                                          item_outputs=item_outputs)
+
+            if isinstance(obj, MIElectricRecipe):
+                recipe_data.duration = obj.duration
+                recipe_data.eu = obj.eu
 
             recipe_id = f"recipe_{obj.type}_{len(recipe_nodes)}"
             if recipe_id not in recipe_nodes:
@@ -129,12 +164,26 @@ def create_recipe_graph(
 
             recipe_vertex = recipe_nodes[recipe_id]
 
-            for fluid_input in recipe_data.fluid_inputs:
-                fluid_node_data = disambiguate_fluid(fluid_input)
-                if fluid_node_data is None:
+            def disambiguate(
+                value, callback
+            ) -> tuple[bool, Optional[FluidNodeData | ItemNodeData]]:
+                node_data = callback(value)
+                if isinstance(node_data, IgnoreResult):
+                    return (False, None)
+
+                elif node_data is None:
                     log.warning(
-                        f"Could not disambiguate fluid input: {fluid_input.model_dump_json()} {type(fluid_input)}"
+                        f"Could not disambiguate: {value.model_dump_json()} {type(value)}"
                     )
+                    return (False, None)
+
+                else:
+                    return (True, node_data)
+
+            for fluid_input in recipe_data.fluid_inputs:
+                accepted, fluid_node_data = disambiguate(
+                    fluid_input, disambiguate_fluid)
+                if not accepted:
                     continue
 
                 if fluid_node_data.id not in fluid_nodes:
@@ -146,11 +195,9 @@ def create_recipe_graph(
                 graph.add_edge(fluid_nodes[fluid_node_data.id], recipe_vertex)
 
             for fluid_output in recipe_data.fluid_outputs:
-                fluid_node_data = disambiguate_fluid(fluid_output)
-                if fluid_node_data is None:
-                    log.warning(
-                        f"Could not disambiguate fluid output: {fluid_output.model_dump_json()} {type(fluid_output)}"
-                    )
+                accepted, fluid_node_data = disambiguate(
+                    fluid_output, disambiguate_fluid)
+                if not accepted:
                     continue
 
                 if fluid_node_data.id not in fluid_nodes:
@@ -162,11 +209,9 @@ def create_recipe_graph(
                 graph.add_edge(recipe_vertex, fluid_nodes[fluid_node_data.id])
 
             for item_input in recipe_data.item_inputs:
-                item_node_data = disambiguate_item(item_input)
-                if item_node_data is None:
-                    log.warning(
-                        f"Could not disambiguate item input: {item_input.model_dump_json()} {type(item_input)}"
-                    )
+                accepted, item_node_data = disambiguate(
+                    item_input, disambiguate_item)
+                if not accepted:
                     continue
 
                 if item_node_data.id not in item_nodes:
@@ -178,11 +223,9 @@ def create_recipe_graph(
                 graph.add_edge(item_nodes[item_node_data.id], recipe_vertex)
 
             for item_output in recipe_data.item_outputs:
-                item_node_data = disambiguate_item(item_output)
-                if item_node_data is None:
-                    log.warning(
-                        f"Could not disambiguate item output: {item_output.model_dump_json()} {type(item_output)}"
-                    )
+                accepted, item_node_data = disambiguate(
+                    item_output, disambiguate_item)
+                if not accepted:
                     continue
 
                 if item_node_data.id not in item_nodes:
@@ -220,11 +263,7 @@ def extract_item_ids(graph: ig.Graph) -> Set[str]:
 @beartype
 def filter_recipes(
     graph: ig.Graph,
-    recipe_predicate: Optional[Callable[[RecipeNodeData], bool]] = None,
-    input_predicate: Optional[Callable[[Union[ItemNodeData, FluidNodeData]],
-                                       bool]] = None,
-    output_predicate: Optional[Callable[[Union[ItemNodeData, FluidNodeData]],
-                                        bool]] = None
+    recipe_predicate: Optional[Callable[[RecipeNodeData], bool]] = None
 ) -> ig.Graph:
     vertices_to_keep = set()
 
@@ -235,26 +274,6 @@ def filter_recipes(
 
             if recipe_predicate and not recipe_predicate(recipe_data):
                 keep_recipe = False
-
-            if keep_recipe and input_predicate:
-                has_matching_input = False
-                for predecessor in graph.predecessors(v.index):
-                    pred_vertex = graph.vs[predecessor]
-                    if input_predicate(pred_vertex["data"]):
-                        has_matching_input = True
-                        break
-                if not has_matching_input:
-                    keep_recipe = False
-
-            if keep_recipe and output_predicate:
-                has_matching_output = False
-                for successor in graph.successors(v.index):
-                    succ_vertex = graph.vs[successor]
-                    if output_predicate(succ_vertex["data"]):
-                        has_matching_output = True
-                        break
-                if not has_matching_output:
-                    keep_recipe = False
 
             if keep_recipe:
                 vertices_to_keep.add(v.index)
@@ -294,12 +313,14 @@ def filter_items(graph: ig.Graph, item_predicate: Callable[[ItemNodeData],
 
     return graph.induced_subgraph(vertices_to_keep)
 
+@beartype
+def remove_isolated_nodes(graph: ig.Graph) -> ig.Graph:
+    nodes_to_keep = [v.index for v in graph.vs if graph.degree(v.index) > 0]
+    return graph.subgraph(nodes_to_keep)
 
-if __name__ == "__main__":
-    content = json.loads(
-        Path(
-            "/home/haxscramper/.local/share/multimc/instances/1.21.1 V2/.minecraft/kubejs/server_scripts/all_recipes.json"
-        ).read_text())
+@beartype
+def parse_recipes_to_graph(path: Path) -> ig.Graph:
+    content = json.loads(path.read_text())
 
     collection = dict(recipes=content)
     model = parse_recipe_collection(collection)
@@ -308,7 +329,8 @@ if __name__ == "__main__":
     # exit()
 
     @beartype
-    def disambiguate_fluid(model: FluidModel) -> Optional[FluidNodeData]:
+    def disambiguate_fluid(
+            model: FluidModel) -> Optional[FluidNodeData | IgnoreResult]:
         if model.fluid:
             return FluidNodeData(id=model.fluid)
 
@@ -318,7 +340,11 @@ if __name__ == "__main__":
         return None
 
     @beartype
-    def disambiguate_item(model: ItemModel) -> Optional[ItemNodeData]:
+    def disambiguate_item(
+            model: ItemModel) -> Optional[ItemNodeData | IgnoreResult]:
+        if model.type and model.type.startswith("neoforge:"):
+            return IgnoreResult()
+
         try:
             if model.item:
                 return ItemNodeData(id=model.item)
@@ -333,8 +359,46 @@ if __name__ == "__main__":
             log.error(f"{model.model_dump_json()}", exc_info=err)
             return None
 
-    graph = create_recipe_graph(
+    result = create_recipe_graph(
         model,
         disambiguate_fluid=disambiguate_fluid,
         disambiguate_item=disambiguate_item,
     )
+
+    interesting_names = [
+        "extended_industrialization",
+        "modern_industrialization",
+        "industrialization_overdrive",
+    ]
+
+    def recipe_callback(data: RecipeNodeData) -> bool:
+        if data.type:
+            if data.type == "modern_industrialization:chemical_reactor":
+                return True
+
+            # split = data.type.split(":")
+            # if split[0] in interesting_names:
+            #     return True
+
+        # ref = collect_inputs_outputs(data, disambiguate_item=disambiguate_item)
+
+        # for item in itertools.chain(*ref):
+        #     if item.modname in interesting_names:
+        #         return True
+
+        # return False
+
+    log.info(f"Constructed initial graph, {result.vcount()} vertices {result.ecount()} edges")
+    result = filter_recipes(result, recipe_predicate=recipe_callback)
+    log.info(f"Filtered MI recipes, {result.vcount()} vertices {result.ecount()} edges")
+    result = remove_isolated_nodes(result)
+    log.info(f"Removed isolated nodes, {result.vcount()} vertices {result.ecount()} edges")
+
+    return result
+
+
+if __name__ == "__main__":
+    parse_recipes_to_graph(
+        Path(
+            "/home/haxscramper/.local/share/multimc/instances/1.21.1 V2/.minecraft/kubejs/server_scripts/all_recipes.json"
+        ))

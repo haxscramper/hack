@@ -893,6 +893,7 @@ def render_to_png(nodes: List[AbsolutePosition], edges: List[Tuple[Point, List[P
     logging.info(f"Graph rendered to {output_file}")
 
 
+def perform_elk_layotu
 
 def process_graph_files():
     input_dir = Path("elk-models")
