@@ -7,6 +7,7 @@ import pickle
 import igraph as ig
 import elk_schema as elk
 from typst_schema import *
+from enum import Enum
 
 
 def graph_to_typst(graph: elk.Graph) -> Document:
@@ -218,7 +219,16 @@ if __name__ == "__main__":
     log.info(
         f"Using graph with {graph.ecount()} edges and {graph.vcount()} nodes")
 
-    result = elk.Graph(id="root")
+    result = elk.Graph(id="root", nodes=[], edges=[], ports=[], )
+
+    @beartype
+    class Direction(Enum):
+        IN = 0
+        OUT = 1
+
+    @beartype
+    def get_resource_port_id(id: str, side: Direction) -> str:
+        return id + ("-in" if side == Direction.IN else "-out")
 
     for recipe_idx, v in enumerate(graph.vs):
         match v["node_type"]:
@@ -232,28 +242,72 @@ if __name__ == "__main__":
                     ports=[],
                 )
 
-                def add_port(kind: str, idx: int, side: str):
-                    node.ports.append(elk.Port(
-                        id=f"{kind}_{idx}_{side}",
-                        side=side,
-                    ))
+                @beartype
+                def get_port_id(kind: str, idx: int, side: Direction) -> str: 
+                    return f"{node.id}.{kind}_{idx}_{side}"
+
+                @beartype
+                def connect_resource(kind: str, idx: int, side: Direction, it: Union[ItemNodeData, FluidNodeData]):
+                    port = elk.Port(
+                        id=get_port_id(kind, idx, side),
+                        side="WEST" if side == Direction.IN else "EAST",
+                    )
+
+                    node.ports.append(port)
+
+                    if side == Direction.IN:
+                        port_src = get_resource_port_id(it.id, Direction.OUT)
+                        port_dst = port.id
+                        edge = elk.Edge(source=port_src, target=port_dst, id=f"{port_src}-{port_dst}",)
+
+                    else:
+                        port_src = port.id
+                        port_dst = get_resource_port_id(it.id, Direction.IN)
+                        edge = elk.Edge(source=port_src, target=port_dst, id=f"{port_src}-{port_dst}",)
+
+                    result.edges.append(edge)
+
+
 
                 for idx, it in enumerate(rec.fluid_inputs):
-                    add_port("fluid", idx, "WEST")
+                    connect_resource("fluid", idx, Direction.IN, it)
 
                 for idx, it in enumerate(rec.fluid_outputs):
-                    add_port("fluid", idx, "EAST")
+                    connect_resource("fluid", idx, Direction.OUT, it)
 
                 for idx, it in enumerate(rec.item_inputs):
-                    add_port("item", idx, "WEST")
+                    connect_resource("item", idx, Direction.IN, it)
 
                 for idx, it in enumerate(rec.item_outputs):
-                    add_port("item", idx, "EAST")
-
-                for item_in in rec.fluid_inputs + rec.item_inputs:
-                    edge = elk.Edge(id=f"{item_in}")
+                    connect_resource("item", idx, Direction.OUT, it)
 
                 result.children.append(node)
+
+            case "fluid" | "item":
+                if v["node_type"] == "fluid":
+                    fluid: FluidNodeData = v["data"]
+                    id = fluid.id
+
+                else:
+                    item: FluidNodeData = v["data"]
+                    id = item.id
+
+                node = elk.Node(
+                    id=f"{id}",
+                    width=50,
+                    height=50,
+                    ports=[
+                        elk.Port(id=get_resource_port_id(id, Direction.IN), side="WEST"),
+                        elk.Port(id=get_resource_port_id(id, Direction.OUT), side="EAST"),
+                    ]
+                )
+
+                result.children.append(node)
+
+
+            case _: 
+                raise ValueError(f"{v["node_type"]}")
+
 
     elk_init = Path("/tmp/elk-init.json")
     elk_init.write_text(result.model_dump_json(indent=2, exclude_none=True))
