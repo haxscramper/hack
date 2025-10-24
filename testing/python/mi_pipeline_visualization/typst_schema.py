@@ -1,10 +1,14 @@
 from beartype.typing import Any, Dict, List, Optional, Union
 from pydantic import BaseModel, Field
+from beartype import beartype
 
 
 class TypstNode(BaseModel):
     """Base class for all Typst AST nodes"""
     pass
+
+class PtSize(TypstNode):
+    size: Union[int, float]
 
 
 class Text(TypstNode):
@@ -33,7 +37,7 @@ class Expression(TypstNode):
 
 class Literal(Expression):
     """Literal value (string, number, boolean, none)"""
-    value: Union[str, int, float, bool, None]
+    value: Union[str, int, float, bool, None, PtSize]
 
 
 class RawLiteral(Expression):
@@ -98,6 +102,7 @@ Document.model_rebuild()
 from typing import Any, List, Union
 
 
+@beartype
 class TypstGenerator:
     """Generates Typst document from schema"""
 
@@ -207,6 +212,8 @@ class TypstGenerator:
             return f'"{self._escape_string(value)}"'
         elif isinstance(value, (int, float)):
             return str(value)
+        elif isinstance(value, PtSize):
+            return f"{value.size}pt"
         else:
             return str(value)
 
