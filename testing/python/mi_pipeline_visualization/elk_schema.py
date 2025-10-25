@@ -2,7 +2,7 @@
 
 from typing import Any, Dict, List, Optional, Union
 from enum import Enum
-from pydantic import BaseModel, Field, model_validator, model_serializer
+from pydantic import BaseModel, Field, model_validator, model_serializer, field_validator, field_serializer, ValidationError
 from dataclasses import dataclass
 from beartype.typing import List, Tuple, Optional
 from beartype import beartype
@@ -15,6 +15,35 @@ from plumbum import local
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from log_writer import log
+
+
+@beartype
+def parse_indents(v: str) -> Optional[List[str]]:
+    if v is None:
+        return None
+
+    if isinstance(v, str):
+        v = v.strip()
+        if v == "[]":
+            return []
+        if v.startswith("[") and v.endswith("]"):
+            content = v[1:-1].strip()
+            if not content:
+                return []
+            items = [item.strip() for item in content.split(",")]
+            return [item for item in items if item]
+        return None
+    return v
+
+@beartype
+def serialize_indents(value: Optional[List[str]]) -> Optional[str]:
+    if value is None:
+        return None
+    if not value:
+        return "[]"
+    return f"[{','.join(value)}]"
+
+
 
 
 class ELKAlgorithm(str, Enum):
@@ -512,10 +541,54 @@ class LayoutOptionsBase(BaseModel, extra="forbid"):
         return result
 
 
+class GraphLayoutNodeSizeOptions(LayoutOptionsBase, extra="forbid"): 
+    constraints: Optional[List[str]] = None
+    options: Optional[List[str]] = None
+
+    @field_validator("constraints", "options", mode="before")
+    @classmethod
+    def validate_ident_list(cls, v: Any) -> Optional[List[str]]:
+        return parse_indents(v)
+
+    @field_serializer("constraints", "options")
+    def serialize_list_indentsn(self, v) -> str:
+        return serialize_indents(v)
+
+class GraphLayoutNodeLabels(LayoutOptionsBase, extra="forbid"):
+    placement: Optional[List[str]] = None
+
+    @field_validator("placement", mode="before")
+    @classmethod
+    def validate_ident_list(cls, v: Any) -> Optional[List[str]]:
+        return parse_indents(v)
+
+    @field_serializer("placement")
+    def serialize_list_indentsn(self, v) -> str:
+        return serialize_indents(v)
+
+class GraphLayoutPortLabels(LayoutOptionsBase, extra="forbid"):
+    placement: Optional[List[str]] = None
+
+    @field_validator("placement", mode="before")
+    @classmethod
+    def validate_ident_list(cls, v: Any) -> Optional[List[str]]:
+        return parse_indents(v)
+
+    @field_serializer("placement")
+    def serialize_list_indentsn(self, v) -> str:
+        return serialize_indents(v)
+
 class GraphLayoutOptions(LayoutOptionsBase, extra="forbid"):
     elk: Optional[LayoutOptionsELK] = None
     partitioning: Optional[LayoutOptionsPartitioning] = None
     nodeFlexibility: Optional[NodeFlexibility] = None
+    resolvedAlgorithm: Optional[str] = None
+    hierarchyHandling: Optional[str] = None
+    nodeSize: Optional[GraphLayoutNodeSizeOptions] = None
+    nodeLabels: Optional[GraphLayoutNodeLabels] = None
+    portLabels: Optional[GraphLayoutPortLabels] = None
+
+
 
 
 class PortProperties(BaseModel, extra="forbid"):
@@ -597,8 +670,11 @@ class Label(BaseModel, extra="forbid"):
     layoutOptions: Optional[LabelLayoutOptions] = None
 
 
+class PortPortLayoutOptions(LayoutOptionsBase, extra="forbid"): 
+    side: Optional[PortSide] = None
+
 class PortLayoutOptions(LayoutOptionsBase, extra="forbid"):
-    pass
+    port: Optional[PortPortLayoutOptions] = None
 
 
 class Port(BaseModel, extra="forbid"):
@@ -626,6 +702,47 @@ class EdgeSection(BaseModel, extra="forbid"):
 class EdgeLayoutOptions(LayoutOptionsBase, extra="forbid"):
     junctionPoints: Optional[List[Point]] = None
 
+    @field_validator("junctionPoints", mode="before")
+    @classmethod
+    @beartype
+    def parse_junction_points(cls, v: Any) -> Optional[List[Point]]:
+        if v is None:
+            return None
+        if isinstance(v, str):
+            if not v.strip():
+                return None
+            points = []
+            for point_str in v.split(";"):
+                point_str = point_str.strip()
+                if point_str:
+                    coords = point_str.strip("()").split(",")
+                    if 0 < len(coords) and coords[0]:
+                        x = float(coords[0].strip())
+                    
+                    else:
+                        x = None
+
+                    if 1 < len(coords) and coords[1]:
+                        y = float(coords[1].strip())
+
+                    else:
+                        y = None
+
+                    if x and y: 
+                        points.append(Point(x=x, y=y))
+
+            return points
+        return v
+
+    @field_serializer("junctionPoints")
+    @beartype
+    def serialize_junction_points(
+            self, value: Optional[List[Point]]) -> Optional[str]:
+        if value is None:
+            return None
+        point_strings = [f"({point.x},{point.y})" for point in value]
+        return "; ".join(point_strings)
+
 
 class Edge(BaseModel, extra="forbid"):
     id: Union[str, int]
@@ -644,8 +761,23 @@ class Edge(BaseModel, extra="forbid"):
     layoutOptions: Optional[EdgeLayoutOptions] = None
 
 
+class NodeSizeLayoutOptions(LayoutOptionsBase, extra="forbid"): 
+    constraints: Optional[List[str]] = None
+
+    @field_validator("constraints", mode="before")
+    @classmethod
+    def validate_ident_list(cls, v: Any) -> Optional[List[str]]:
+        return parse_indents(v)
+
+    @field_serializer("constraints")
+    def serialize_list_indentsn(self, v) -> str:
+        return serialize_indents(v)
+
+
 class NodeLayoutOptions(LayoutOptionsBase, extra="forbid"):
-    pass
+    nodeSize: Optional[NodeSizeLayoutOptions] = None
+    crossingMinimization: Optional[ELKLayeredCrossingMinimization] = None
+    layering: Optional[ELKLayeredLayering] = None
 
 
 class Node(BaseModel, extra="forbid"):
@@ -691,14 +823,14 @@ class GraphSerializer:
         data = graph.model_dump(exclude_none=True)
 
         if "layoutOptions" in data and isinstance(data["layoutOptions"], dict):
-            layout_options = LayoutOptions(**data["layoutOptions"])
+            layout_options = GraphLayoutOptions(**data["layoutOptions"])
             data["layoutOptions"] = layout_options.flatten_for_export(
                 use_dotted=True)
 
         def process_node(node: Dict[str, Any]) -> Dict[str, Any]:
             if "layoutOptions" in node and isinstance(node["layoutOptions"],
                                                       dict):
-                layout_options = LayoutOptions(**node["layoutOptions"])
+                layout_options = GraphLayoutOptions(**node["layoutOptions"])
                 node["layoutOptions"] = layout_options.flatten_for_export(
                     use_dotted=True)
 
@@ -1050,7 +1182,17 @@ def perform_graph_layout(graph: Graph) -> Graph:
         cmd = local[str(script_path)].with_cwd(script_dir)
         cmd.run([f"--input={validated_path}", f"--output={layout_path}"])
 
-        return GraphSerializer.load_from_file(layout_path)
+        LAYOUT_VALIDATION_DEBUG_PATH = Path("/tmp/layout-result-validation.txt")
+        try:
+            result = GraphSerializer.load_from_file(layout_path)
+            LAYOUT_VALIDATION_DEBUG_PATH.write_text("LAYOUT_VALIDATION_DEBUG_PATH OK")
+
+            return result
+
+        except ValidationError as err:
+            LAYOUT_VALIDATION_DEBUG_PATH.write_text(str(err))
+            raise ValueError(
+                "Failed to validate resulting graph layout") from None
 
 
 def process_graph_files():
