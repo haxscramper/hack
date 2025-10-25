@@ -39,19 +39,27 @@ def graph_to_typst(graph: elk.Graph) -> typ.Document:
 
     bbox = elk.compute_graph_bounding_box(graph)
 
+
     subnodes.append(
         typ.Set(target="page",
                 args=dict(
                     width=typ.Literal(value=typ.PtSize(size=bbox.width)),
                     height=typ.Literal(value=typ.PtSize(size=bbox.height)),
-                    margin=typ.Literal(
-                        value=dict(
-                            top=typ.PtSize(size=0),
-                            bottom=typ.PtSize(size=0),
-                            left=typ.PtSize(size=0),
-                            right=typ.PtSize(size=0),
-                        )),
+                    margin=typ.Literal(value=dict(
+                        top=typ.PtSize(size=0),
+                        bottom=typ.PtSize(size=0),
+                        left=typ.PtSize(size=0),
+                        right=typ.PtSize(size=0),
+                    )),
                 )))
+
+    subnodes.append(
+        typ.Command(name="draw_grid",
+                    args=[
+                        typ.Literal(value=bbox.width),
+                        typ.Literal(value=bbox.height),
+                    ]))
+
 
     if graph.children:
         for node in graph.children:
@@ -131,6 +139,11 @@ def convert_to_elk(graph: ig.Graph) -> elk.Graph:
                         height=8,
                         properties=elk.PortProperties(
                             side=side.to_port_side()),
+                        extra=dict(
+                            data=ElkExtra(kind="port",
+                                          data=PortData(
+                                              direction="in" if side ==
+                                              Direction.IN else "out"))),
                     )
 
                     node.ports.append(port)

@@ -1,40 +1,59 @@
 
-#let draw_port(x: 0, y: 0, direction: "", radius: 3pt) = {
-  // Draw port circle centered at x, y
+#let draw_port(port) = {
+  let port_x = port.at("x", default: 0)
+  let port_y = port.at("y", default: 0)
+  let port_width = port.at("width", default: 6)
+  let port_height = port.at("height", default: 6)
+  let direction = port.at("extra", default: (:)).at("data", default: (:)).at("data", default: (:)).at("direction", default: "")
+
+  
+
+
   place(
-    dx: x * 1pt - radius,
-    dy: y * 1pt - radius,
-    circle(
-      radius: radius,
-      stroke: black + 1pt,
-      fill: white
+    dx: (port_x) * 1pt,
+    dy: (port_y) * 1pt,
+    stack(
+      rect(
+        width: port_width * 1pt,
+        height: port_height * 1pt,
+        stroke: black + 1pt,
+        fill: white,
+      ),
+      place(
+        text(
+          size: 2pt,
+          fill: red,
+          weight: "bold",
+          repr(port)
+        )
+      )
     )
   )
   
-  // Draw direction arrow
-  if direction == "in" {
-    place(
-      dx: (x - 8) * 1pt,
-      dy: (y - 2) * 1pt,
-      polygon(
-        fill: black,
-        (0pt, 0pt),
-        (6pt, 2pt),
-        (0pt, 4pt)
-      )
-    )
-  } else if direction == "out" {
-    place(
-      dx: (x + 8) * 1pt,
-      dy: (y - 2) * 1pt,
-      polygon(
-        fill: black,
-        (0pt, 0pt),
-        (6pt, 2pt),
-        (0pt, 4pt)
-      )
-    )
-  }
+  // // Direction arrows
+  // if direction == "in" {
+  //   place(
+  //     dx: (port_x - 8) * 1pt,
+  //     dy: (port_y - 2) * 1pt,
+  //     polygon(
+  //       fill: black,
+  //       (0pt, 0pt),
+  //       (6pt, 2pt),
+  //       (0pt, 4pt)
+  //     )
+  //   )
+  // } else if direction == "out" {
+  //   place(
+  //     dx: (port_x + 8) * 1pt,
+  //     dy: (port_y - 2) * 1pt,
+  //     polygon(
+  //       fill: black,
+  //       (0pt, 0pt),
+  //       (6pt, 2pt),
+  //       (0pt, 4pt)
+  //     )
+  //   )
+  // }
 }
 
 #let draw_node_base(node, fill_color) = {
@@ -50,19 +69,15 @@
       width: width * 1pt,
       height: height * 1pt,
       stroke: black + 1pt,
-      fill: fill_color
+      fill: fill_color,
+      // Place ports inside this rectangle
+      if "ports" in node {
+        for port in node.ports {
+          draw_port(port)
+        }
+      }
     )
   )
-  
-  if "ports" in node {
-    for port in node.ports {
-      let port_x = x + port.at("x", default: 0)
-      let port_y = y + port.at("y", default: 0)
-      let direction = port.at("extra", default: (:)).at("data", default: (:)).at("data", default: (:)).at("direction", default: "")
-      
-      draw_port(x: port_x, y: port_y, direction: direction)
-    }
-  }
 }
 
 #let fluid_node(node) = {
@@ -109,4 +124,82 @@
       )
     }
   }
+}
+
+
+#let draw_grid(horizontal_size, vertical_size) = {
+  let page_width = 100%
+  let page_height = 100%
+  
+  // Major grid (10pt spacing)
+  place(
+    top + left,
+    dx: 0pt,
+    dy: 0pt,
+    {
+      // Vertical lines
+      for x in range(0, int(horizontal_size), step: 10) {
+        place(
+          dx: x * 1pt,
+          dy: 0pt,
+          line(
+            start: (0pt, 0pt),
+            end: (0pt, horizontal_size * 1pt),
+            stroke: gray + 0.5pt
+          )
+        )
+      }
+      
+      // Horizontal lines
+      for y in range(0, int(vertical_size), step: 10) {
+        place(
+          dx: 0pt,
+          dy: y * 1pt,
+          line(
+            start: (0pt, 0pt),
+            end: (vertical_size * 1pt, 0pt),
+            stroke: gray + 0.5pt
+          )
+        )
+      }
+    }
+  )
+  
+  // Minor grid (2pt spacing)
+  place(
+    top + left,
+    dx: 0pt,
+    dy: 0pt,
+    {
+      // Vertical lines
+      for x in range(0, int(horizontal_size), step: 2) {
+        if calc.rem(x, 10) != 0 { // Skip major grid lines
+          place(
+            dx: x * 1pt,
+            dy: 0pt,
+            line(
+              start: (0pt, 0pt),
+              end: (0pt, horizontal_size * 1pt),
+              stroke: gray.lighten(50%) + 0.25pt
+            )
+          )
+        }
+      }
+      
+      // Horizontal lines
+      for y in range(0, int(vertical_size), step: 2) {
+        if calc.rem(y, 10) != 0 { // Skip major grid lines
+          place(
+            dx: 0pt,
+            dy: y * 1pt,
+            line(
+              start: (0pt, 0pt),
+              end: (vertical_size * 1pt, 0pt),
+              stroke: gray.lighten(50%) + 0.25pt
+            )
+          )
+        }
+      }
+    }
+  )
 }
