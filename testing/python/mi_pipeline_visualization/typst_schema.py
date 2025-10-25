@@ -7,6 +7,7 @@ class TypstNode(BaseModel):
     """Base class for all Typst AST nodes"""
     pass
 
+
 class PtSize(TypstNode):
     size: Union[int, float]
 
@@ -37,7 +38,7 @@ class Expression(TypstNode):
 
 class Literal(Expression):
     """Literal value (string, number, boolean, none)"""
-    value: Union[str, int, float, bool, None, PtSize]
+    value: Union[str, int, float, bool, None, PtSize, dict]
 
 
 class RawLiteral(Expression):
@@ -214,6 +215,15 @@ class TypstGenerator:
             return str(value)
         elif isinstance(value, PtSize):
             return f"{value.size}pt"
+
+        elif isinstance(value, dict):
+            return "(" + ", ".join(key + ": " + self._generate_literal(it)
+                                   for key, it in value.items()) + ")"
+
+        elif isinstance(value, list):
+            return "(" + ", ".join(self._generate_literal(it)
+                                   for it in value) + ")"
+
         else:
             return str(value)
 

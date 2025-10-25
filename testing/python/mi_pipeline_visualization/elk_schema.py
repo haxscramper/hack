@@ -35,6 +35,7 @@ def parse_indents(v: str) -> Optional[List[str]]:
         return None
     return v
 
+
 @beartype
 def serialize_indents(value: Optional[List[str]]) -> Optional[str]:
     if value is None:
@@ -42,8 +43,6 @@ def serialize_indents(value: Optional[List[str]]) -> Optional[str]:
     if not value:
         return "[]"
     return f"[{','.join(value)}]"
-
-
 
 
 class ELKAlgorithm(str, Enum):
@@ -541,7 +540,7 @@ class LayoutOptionsBase(BaseModel, extra="forbid"):
         return result
 
 
-class GraphLayoutNodeSizeOptions(LayoutOptionsBase, extra="forbid"): 
+class GraphLayoutNodeSizeOptions(LayoutOptionsBase, extra="forbid"):
     constraints: Optional[List[str]] = None
     options: Optional[List[str]] = None
 
@@ -553,6 +552,7 @@ class GraphLayoutNodeSizeOptions(LayoutOptionsBase, extra="forbid"):
     @field_serializer("constraints", "options")
     def serialize_list_indentsn(self, v) -> str:
         return serialize_indents(v)
+
 
 class GraphLayoutNodeLabels(LayoutOptionsBase, extra="forbid"):
     placement: Optional[List[str]] = None
@@ -566,6 +566,7 @@ class GraphLayoutNodeLabels(LayoutOptionsBase, extra="forbid"):
     def serialize_list_indentsn(self, v) -> str:
         return serialize_indents(v)
 
+
 class GraphLayoutPortLabels(LayoutOptionsBase, extra="forbid"):
     placement: Optional[List[str]] = None
 
@@ -578,6 +579,7 @@ class GraphLayoutPortLabels(LayoutOptionsBase, extra="forbid"):
     def serialize_list_indentsn(self, v) -> str:
         return serialize_indents(v)
 
+
 class GraphLayoutOptions(LayoutOptionsBase, extra="forbid"):
     elk: Optional[LayoutOptionsELK] = None
     partitioning: Optional[LayoutOptionsPartitioning] = None
@@ -587,8 +589,6 @@ class GraphLayoutOptions(LayoutOptionsBase, extra="forbid"):
     nodeSize: Optional[GraphLayoutNodeSizeOptions] = None
     nodeLabels: Optional[GraphLayoutNodeLabels] = None
     portLabels: Optional[GraphLayoutPortLabels] = None
-
-
 
 
 class PortProperties(BaseModel, extra="forbid"):
@@ -668,10 +668,12 @@ class Label(BaseModel, extra="forbid"):
     text: Optional[str] = None
     labels: Optional[List["Label"]] = None
     layoutOptions: Optional[LabelLayoutOptions] = None
+    extra: Optional[Dict[str, Any]] = None
 
 
-class PortPortLayoutOptions(LayoutOptionsBase, extra="forbid"): 
+class PortPortLayoutOptions(LayoutOptionsBase, extra="forbid"):
     side: Optional[PortSide] = None
+
 
 class PortLayoutOptions(LayoutOptionsBase, extra="forbid"):
     port: Optional[PortPortLayoutOptions] = None
@@ -686,6 +688,7 @@ class Port(BaseModel, extra="forbid"):
     labels: Optional[List[Label]] = None
     properties: Optional[PortProperties] = None
     layoutOptions: Optional[PortLayoutOptions] = None
+    extra: Optional[Dict[str, Any]] = None
 
 
 class EdgeSection(BaseModel, extra="forbid"):
@@ -718,7 +721,7 @@ class EdgeLayoutOptions(LayoutOptionsBase, extra="forbid"):
                     coords = point_str.strip("()").split(",")
                     if 0 < len(coords) and coords[0]:
                         x = float(coords[0].strip())
-                    
+
                     else:
                         x = None
 
@@ -728,7 +731,7 @@ class EdgeLayoutOptions(LayoutOptionsBase, extra="forbid"):
                     else:
                         y = None
 
-                    if x and y: 
+                    if x and y:
                         points.append(Point(x=x, y=y))
 
             return points
@@ -759,9 +762,10 @@ class Edge(BaseModel, extra="forbid"):
     labels: Optional[List[Label]] = None
     junctionPoints: Optional[List[Point]] = None
     layoutOptions: Optional[EdgeLayoutOptions] = None
+    extra: Optional[Dict[str, Any]] = None
 
 
-class NodeSizeLayoutOptions(LayoutOptionsBase, extra="forbid"): 
+class NodeSizeLayoutOptions(LayoutOptionsBase, extra="forbid"):
     constraints: Optional[List[str]] = None
 
     @field_validator("constraints", mode="before")
@@ -782,14 +786,15 @@ class NodeLayoutOptions(LayoutOptionsBase, extra="forbid"):
 
 class Node(BaseModel, extra="forbid"):
     id: Union[str, int]
+    extra: Optional[Dict[str, Any]] = None
     x: Optional[float] = None
+    children: Optional[List["Node"]] = None
     y: Optional[float] = None
     width: Optional[float] = None
     height: Optional[float] = None
     type: Optional[str] = None
     ports: Optional[List[Port]] = None
     labels: Optional[List[Label]] = None
-    children: Optional[List["Node"]] = None
     edges: Optional[List[Edge]] = None
     properties: Optional[NodeProperties] = None
     layoutOptions: Optional[NodeLayoutOptions] = None
@@ -806,6 +811,7 @@ class Graph(BaseModel, extra="forbid"):
     edges: Optional[List[Edge]] = None
     ports: Optional[List[Port]] = None
     labels: Optional[List[Label]] = None
+    extra: Optional[Dict[str, Any]] = None
 
 
 Node.model_rebuild()
@@ -1162,6 +1168,113 @@ script_dir = Path(
 script_path = script_dir / "scripts" / "run.sh"
 
 
+@beartype
+def extract_extra_data(graph: Graph) -> Dict[str, Dict[str, Any]]:
+    extra_map: Dict[str, Dict[str, Any]] = {}
+
+    def collect_extra(obj: Any) -> None:
+        if hasattr(obj, "id") and hasattr(obj,
+                                          "extra") and obj.extra is not None:
+            extra_map[str(obj.id)] = obj.extra
+
+    def traverse_node(node: Node) -> None:
+        collect_extra(node)
+        if node.children:
+            for child in node.children:
+                traverse_node(child)
+        if node.ports:
+            for port in node.ports:
+                collect_extra(port)
+                if port.labels:
+                    for label in port.labels:
+                        traverse_label(label)
+        if node.labels:
+            for label in node.labels:
+                traverse_label(label)
+        if node.edges:
+            for edge in node.edges:
+                collect_extra(edge)
+
+    def traverse_label(label: Label) -> None:
+        if label.id is not None:
+            collect_extra(label)
+        if label.labels:
+            for sub_label in label.labels:
+                traverse_label(sub_label)
+
+    collect_extra(graph)
+    for child in graph.children:
+        traverse_node(child)
+    if graph.edges:
+        for edge in graph.edges:
+            collect_extra(edge)
+    if graph.ports:
+        for port in graph.ports:
+            collect_extra(port)
+            if port.labels:
+                for label in port.labels:
+                    traverse_label(label)
+    if graph.labels:
+        for label in graph.labels:
+            traverse_label(label)
+
+    return extra_map
+
+
+@beartype
+def restore_extra_data(graph: Graph, extra_map: Dict[str, Dict[str,
+                                                               Any]]) -> Graph:
+
+    def restore_extra(obj: Any) -> None:
+        if hasattr(obj, "id") and hasattr(obj, "extra"):
+            obj_id = str(obj.id)
+            if obj_id in extra_map:
+                obj.extra = extra_map[obj_id]
+
+    def traverse_node(node: Node) -> None:
+        restore_extra(node)
+        if node.children:
+            for child in node.children:
+                traverse_node(child)
+        if node.ports:
+            for port in node.ports:
+                restore_extra(port)
+                if port.labels:
+                    for label in port.labels:
+                        traverse_label(label)
+        if node.labels:
+            for label in node.labels:
+                traverse_label(label)
+        if node.edges:
+            for edge in node.edges:
+                restore_extra(edge)
+
+    def traverse_label(label: Label) -> None:
+        if label.id is not None:
+            restore_extra(label)
+        if label.labels:
+            for sub_label in label.labels:
+                traverse_label(sub_label)
+
+    restore_extra(graph)
+    for child in graph.children:
+        traverse_node(child)
+    if graph.edges:
+        for edge in graph.edges:
+            restore_extra(edge)
+    if graph.ports:
+        for port in graph.ports:
+            restore_extra(port)
+            if port.labels:
+                for label in port.labels:
+                    traverse_label(label)
+    if graph.labels:
+        for label in graph.labels:
+            traverse_label(label)
+
+    return graph
+
+
 def perform_graph_layout(graph: Graph) -> Graph:
     if graph.layoutOptions and graph.layoutOptions.elk:
         if graph.layoutOptions.elk.algorithm:
@@ -1175,6 +1288,7 @@ def perform_graph_layout(graph: Graph) -> Graph:
         dir = Path(output_subdir)
         dir = Path("/tmp")
         validated_path = dir / f"result_validated.json"
+        extra_metadata = extract_extra_data(graph)
         GraphSerializer.save_to_file(graph, validated_path, use_dotted=True)
 
         layout_path = dir / f"result_layout.json"
@@ -1182,10 +1296,15 @@ def perform_graph_layout(graph: Graph) -> Graph:
         cmd = local[str(script_path)].with_cwd(script_dir)
         cmd.run([f"--input={validated_path}", f"--output={layout_path}"])
 
-        LAYOUT_VALIDATION_DEBUG_PATH = Path("/tmp/layout-result-validation.txt")
+
+        LAYOUT_VALIDATION_DEBUG_PATH = Path(
+            "/tmp/layout-result-validation.txt")
         try:
             result = GraphSerializer.load_from_file(layout_path)
-            LAYOUT_VALIDATION_DEBUG_PATH.write_text("LAYOUT_VALIDATION_DEBUG_PATH OK")
+            LAYOUT_VALIDATION_DEBUG_PATH.write_text(
+                "LAYOUT_VALIDATION_DEBUG_PATH OK")
+
+            restore_extra_data(result, extra_metadata)
 
             return result
 
