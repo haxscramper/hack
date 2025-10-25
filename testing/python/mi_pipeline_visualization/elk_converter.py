@@ -127,6 +127,8 @@ def convert_to_elk(graph: ig.Graph) -> elk.Graph:
                                      it: Union[ItemNodeData, FluidNodeData]):
                     port = elk.Port(
                         id=get_port_id(kind, idx, side),
+                        width=8,
+                        height=8,
                         properties=elk.PortProperties(
                             side=side.to_port_side()),
                     )

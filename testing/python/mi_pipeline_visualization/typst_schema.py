@@ -139,6 +139,9 @@ class TypstGenerator:
             parts.append(self.generate(child, indent))
         return "\n".join(parts)
 
+    def _normalize(self, str: str) -> str:
+        return str.replace(".", "_")
+
     def _generate_text(self, node: Text, indent: int) -> str:
         """Generate plain text"""
         return self._indent(indent) + self._escape(node.content)
@@ -196,7 +199,7 @@ class TypstGenerator:
             return f"({', '.join(items)})"
         elif isinstance(expr, Dictionary):
             items = [
-                f"{key}: {self._generate_expression(value)}"
+                f"{self._normalize(key)}: {self._generate_expression(value)}"
                 for key, value in expr.items.items()
             ]
             return f"({', '.join(items)})"
@@ -217,12 +220,13 @@ class TypstGenerator:
             return f"{value.size}pt"
 
         elif isinstance(value, dict):
-            return "(" + ", ".join(key + ": " + self._generate_literal(it)
-                                   for key, it in value.items()) + ")"
+            return "(" + ", ".join(
+                self._normalize(key) + ": " + self._generate_literal(it)
+                for key, it in value.items()) + ")"
 
         elif isinstance(value, list):
             return "(" + ", ".join(self._generate_literal(it)
-                                   for it in value) + ")"
+                                   for it in value) + ",)"
 
         else:
             return str(value)

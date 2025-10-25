@@ -633,6 +633,9 @@ class PortProperties(BaseModel, extra="forbid"):
             data[
                 "allowNonFlowPortsToSwitchSides"] = self.allowNonFlowPortsToSwitchSides
 
+        if self.side is not None:
+            data["port.side"] = self.side.name
+
         # Handle port nested data
         if hasattr(self, "__pydantic_extra__") and self.__pydantic_extra__:
             for key, value in self.__pydantic_extra__.items():
@@ -1293,14 +1296,24 @@ script_dir = Path(
 script_path = script_dir / "scripts" / "run.sh"
 
 
+from collections import defaultdict
+
 @beartype
 def extract_extra_data(graph: Graph) -> Dict[str, Dict[str, Any]]:
-    extra_map: Dict[str, Dict[str, Any]] = {}
+    extra_map: Dict[str, Dict[str, Any]] = defaultdict(lambda: dict())
 
     def collect_extra(obj: Any) -> None:
-        if hasattr(obj, "id") and hasattr(obj,
-                                          "extra") and obj.extra is not None:
-            extra_map[str(obj.id)] = obj.extra
+        if hasattr(obj, "id"):
+
+            def get_property(name: str):
+                if hasattr(obj, name) and getattr(obj, name) is not None:
+                    extra_map[obj.id][name] = getattr(obj, name)
+
+            get_property("extra")
+
+            if isinstance(obj, Port):
+                get_property("properties")
+
 
     def traverse_node(node: Node) -> None:
         collect_extra(node)
@@ -1351,10 +1364,19 @@ def restore_extra_data(graph: Graph, extra_map: Dict[str, Dict[str,
                                                                Any]]) -> Graph:
 
     def restore_extra(obj: Any) -> None:
-        if hasattr(obj, "id") and hasattr(obj, "extra"):
-            obj_id = str(obj.id)
-            if obj_id in extra_map:
-                obj.extra = extra_map[obj_id]
+        if hasattr(obj, "id"):
+            def transfer_property(name: str): 
+                if hasattr(obj, name):
+                    obj_id = str(obj.id)
+                    if obj_id in extra_map and name in extra_map[obj_id]:
+                        setattr(obj, name, extra_map[obj_id][name])
+
+
+            transfer_property("extra")
+
+            if isinstance(obj, Port):
+                transfer_property("properties")
+                        
 
     def traverse_node(node: Node) -> None:
         restore_extra(node)
@@ -1425,10 +1447,12 @@ def perform_graph_layout(graph: Graph) -> Graph:
             "/tmp/layout-result-validation.txt")
         try:
             result = GraphSerializer.load_from_file(layout_path)
+            restore_extra_data(result, extra_metadata)
+
             LAYOUT_VALIDATION_DEBUG_PATH.write_text(
                 "LAYOUT_VALIDATION_DEBUG_PATH OK")
 
-            restore_extra_data(result, extra_metadata)
+
 
             return result
 
