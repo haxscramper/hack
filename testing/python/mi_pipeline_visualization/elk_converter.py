@@ -39,7 +39,6 @@ def graph_to_typst(graph: elk.Graph) -> typ.Document:
 
     bbox = elk.compute_graph_bounding_box(graph)
 
-
     subnodes.append(
         typ.Set(target="page",
                 args=dict(
@@ -53,14 +52,6 @@ def graph_to_typst(graph: elk.Graph) -> typ.Document:
                     )),
                 )))
 
-    # subnodes.append(
-    #     typ.Command(name="draw_grid",
-    #                 args=[
-    #                     typ.Literal(value=bbox.width),
-    #                     typ.Literal(value=bbox.height),
-    #                 ]))
-
-
     if graph.children:
         for node in graph.children:
             extra: ElkExtra = node.extra["data"]
@@ -68,8 +59,7 @@ def graph_to_typst(graph: elk.Graph) -> typ.Document:
                 typ.Command(
                     name=extra.kind,
                     args=[
-                        typ.Literal(value=node.model_copy(update=dict(
-                            extra=None)).model_dump(exclude_none=True))
+                        typ.Literal(value=node.model_dump(exclude_none=True))
                     ],
                 ))
 
@@ -80,8 +70,7 @@ def graph_to_typst(graph: elk.Graph) -> typ.Document:
                 typ.Command(
                     name="edge",
                     args=[
-                        typ.Literal(value=edge.model_copy(update=dict(
-                            extra=None)).model_dump(exclude_none=True))
+                        typ.Literal(value=edge.model_dump(exclude_none=True))
                     ],
                 ))
 
@@ -212,7 +201,7 @@ def convert_to_elk(graph: ig.Graph) -> elk.Graph:
                         elk.Port(
                             id=get_resource_port_id(id, Direction.IN),
                             width=8,
-                        height=8,
+                            height=8,
                             properties=elk.PortProperties(
                                 side=Direction.IN.to_port_side()),
                             extra=dict(data=ElkExtra(
@@ -221,7 +210,7 @@ def convert_to_elk(graph: ig.Graph) -> elk.Graph:
                         elk.Port(
                             id=get_resource_port_id(id, Direction.OUT),
                             width=8,
-                        height=8,
+                            height=8,
                             properties=elk.PortProperties(
                                 side=Direction.OUT.to_port_side()),
                             extra=dict(data=ElkExtra(

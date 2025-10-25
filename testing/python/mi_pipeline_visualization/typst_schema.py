@@ -222,11 +222,12 @@ class TypstGenerator:
         elif isinstance(value, dict):
             return "(" + ", ".join(
                 self._normalize(key) + ": " + self._generate_literal(it)
-                for key, it in value.items()) + ")"
+                for key, it in value.items()) + ("," if value else "") + ")"
 
         elif isinstance(value, list):
-            return "(" + ", ".join(self._generate_literal(it)
-                                   for it in value) + ",)"
+            return "(" + ", ".join(
+                self._generate_literal(it)
+                for it in value) + ("," if value else "") + ")"
 
         else:
             return str(value)

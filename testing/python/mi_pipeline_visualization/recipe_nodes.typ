@@ -74,6 +74,9 @@
   let rect_x = 0
   let rect_y = 0
 
+  // If the port has explicit width and height it is going to be properly offset 
+  // relative to the parent node. But if the port originally had no dimensions, 
+  // the ELK layout treats it as a zero-sized point. 
   if "width" in port and "height" in port {
     port_width = port.at("width")
     port_height = port.at("height")
@@ -118,41 +121,59 @@
 }
 
 #let draw_node_base(node, fill_color) = {
-  let x = node.x
-  let y = node.y
-  let width = node.width
-  let height = node.height
-
-  place(
-    dx: x * 1pt,
-    dy: y * 1pt,
-    stack(
-      rect(
-        width: width * 1pt,
-        height: height * 1pt,
-        stroke: black + 1pt,
-        fill: fill_color,
-        // Place ports inside this rectangle
-        if "ports" in node {
-          for port in node.ports {
-            draw_port(port)
-          }
-        },
-      ),
-    ),
+  rect(
+    width: 100%,
+    height: 100%,
+    stroke: black + 1pt,
+    fill: fill_color,
+    // Place ports inside this rectangle
+    if "ports" in node {
+      for port in node.ports {
+        draw_port(port)
+      }
+    },
   )
 }
 
+#let draw_node_image(node) = {
+  if (
+    "extra" in node
+      and "data" in node.extra
+      and "data" in node.extra.data
+      and "image" in node.extra.data.data
+  ) {
+    let image_path = node.extra.data.data.image
+    place(
+      center + horizon,
+      image(image_path, width: 32pt, height: 32pt),
+    )
+  }
+}
+
+#let node_box(node, body) = {
+    place(
+      dx: node.x * 1pt,
+      dy: node.y * 1pt,
+      box(
+        width: node.width * 1pt,
+        height: node.height * 1pt,
+        body,
+      ),
+    )
+}
+
 #let fluid_node(node) = {
-  draw_node_base(node, blue.lighten(80%))
+  node_box(node, draw_node_base(node, blue.lighten(80%)))
+  node_box(node, draw_node_image(node))
 }
 
 #let item_node(node) = {
-  draw_node_base(node, orange.lighten(80%))
+  node_box(node, draw_node_base(node, orange.lighten(80%)))
+  node_box(node, draw_node_image(node))
 }
 
 #let recipe_node(node) = {
-  draw_node_base(node, green.lighten(80%))
+  node_box(node, draw_node_base(node, green.lighten(80%)))
 }
 
 #let edge(edge_data) = {

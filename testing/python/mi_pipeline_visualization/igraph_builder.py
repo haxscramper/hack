@@ -2,7 +2,7 @@
 
 from recipe_schema import parse_recipe_collection, FluidInput, FluidOutput, ItemInput, ItemOutput, Recipe, ItemModel, FluidModel, MIElectricRecipe
 import json
-from common import JSON_PATH
+from common import JSON_PATH, TEXTURE_DIRECTORY
 from pathlib import Path
 
 from beartype.typing import Any, Dict, List, Optional, Union, Callable, Set, Literal
@@ -11,17 +11,103 @@ from abc import ABC
 from pydantic import BaseModel, Field, field_validator, ValidationError
 from pydantic.aliases import AliasChoices
 import igraph as ig
+import os
+import glob
+from collections import defaultdict
 
 from log_writer import log
+
+_texture_cache = None
+
+
+def _build_texture_cache():
+    """Build a cache of all textures in the texture directory."""
+    global _texture_cache
+
+    if _texture_cache is not None:
+        return
+
+    _texture_cache = defaultdict(list)
+
+    if not os.path.exists(TEXTURE_DIRECTORY):
+        log.warning(f"Texture directory does not exist: {TEXTURE_DIRECTORY}")
+        return
+
+    # Find all PNG files matching the pattern
+    pattern = os.path.join(TEXTURE_DIRECTORY, "*.png")
+    all_textures = glob.glob(pattern)
+
+    for texture_path in all_textures:
+        filename = os.path.basename(texture_path)
+
+        # Parse filename: [fluid__]modid__itemid[__metadata][__NBT].png
+        parts = filename[:-4].split('__')  # Remove .png extension
+
+        if len(parts) >= 2:
+            if parts[0] == 'fluid' and len(parts) >= 3:
+                # fluid__modid__itemid[__metadata][__NBT].png
+                modid = parts[1]
+                itemid = parts[2]
+                key = f"fluid:{modid}:{itemid}"
+            else:
+                # modid__itemid[__metadata][__NBT].png
+                modid = parts[0]
+                itemid = parts[1]
+                key = f"{modid}:{itemid}"
+
+            _texture_cache[key].append(texture_path)
+
+    Path("/tmp/texture-cache.json").write_text(
+        json.dumps(_texture_cache, indent=2))
+
+
+def get_texture_path(id: str) -> str | None:
+    """
+    Resolve texture path for given mod:item ID.
+    
+    Args:
+        id: Item ID in format "modid:itemid" or "fluid:modid:itemid"
+        
+    Returns:
+        Path to texture file, or None if not found/ambiguous
+    """
+    if ':' not in id:
+        log.warning(
+            f"Invalid ID format '{id}', expected 'modid:itemid' or 'fluid:modid:itemid'"
+        )
+        return None
+
+    if id.startswith("c:"):
+        return None
+
+    # Ensure cache is built
+    _build_texture_cache()
+
+    matches = _texture_cache.get(id, [])
+
+    if not matches:
+        log.warning(f"No texture found for '{id}' in {TEXTURE_DIRECTORY}")
+        return None
+
+    if len(matches) == 1:
+        return matches[0]
+
+    # Multiple matches - return first and warn
+    # log.warning(
+    #     f"Multiple textures found for '{id}', using first: {matches[0]}. All matches: {matches}"
+    # )
+    return matches[0]
 
 
 class FluidNodeData(BaseModel):
     id: str
+    image: Optional[str] = None
     node_kind: Literal["fluid"] = "fluid"
 
 
 class ItemNodeData(BaseModel):
     id: str
+    image: Optional[str] = None
     node_kind: Literal["item"] = "item"
 
 
@@ -37,6 +123,7 @@ class RecipeNodeData(BaseModel):
 
 
 NodeDataUnion = Union[RecipeNodeData, FluidNodeData, ItemNodeData]
+
 
 class IgnoreResult():
     pass
@@ -205,16 +292,24 @@ def create_recipe_graph(
             recipe_vertex = recipe_nodes[recipe_id]
 
             for fluid_input in recipe_data.fluid_inputs:
-                graph.add_edge(fluid_nodes[fluid_input.id], recipe_vertex, data=fluid_input)
+                graph.add_edge(fluid_nodes[fluid_input.id],
+                               recipe_vertex,
+                               data=fluid_input)
 
             for fluid_output in recipe_data.fluid_outputs:
-                graph.add_edge(recipe_vertex, fluid_nodes[fluid_output.id], data=fluid_output)
+                graph.add_edge(recipe_vertex,
+                               fluid_nodes[fluid_output.id],
+                               data=fluid_output)
 
             for item_input in recipe_data.item_inputs:
-                graph.add_edge(item_nodes[item_input.id], recipe_vertex, data=item_input)
+                graph.add_edge(item_nodes[item_input.id],
+                               recipe_vertex,
+                               data=item_input)
 
             for item_output in recipe_data.item_outputs:
-                graph.add_edge(recipe_vertex, item_nodes[item_output.id], data=item_output)
+                graph.add_edge(recipe_vertex,
+                               item_nodes[item_output.id],
+                               data=item_output)
 
         elif isinstance(obj, list):
             for item in obj:
@@ -313,14 +408,17 @@ def parse_recipes_to_graph(path: Path) -> ig.Graph:
     collection = dict(recipes=content)
     model = parse_recipe_collection(collection)
 
-    Path("/tmp/model.json").write_text(model.model_dump_json(indent=2, exclude_none=True))
+    Path("/tmp/model.json").write_text(
+        model.model_dump_json(indent=2, exclude_none=True))
     # exit()
 
     @beartype
     def disambiguate_fluid(
             model: FluidModel) -> Optional[FluidNodeData | IgnoreResult]:
         if model.fluid:
-            return FluidNodeData(id=model.fluid)
+            return FluidNodeData(id=model.fluid,
+                                 image=get_texture_path("fluid:" +
+                                                        model.fluid))
 
         elif model.tag:
             return FluidNodeData(id=model.tag)
@@ -335,7 +433,8 @@ def parse_recipes_to_graph(path: Path) -> ig.Graph:
 
         try:
             if model.item:
-                return ItemNodeData(id=model.item)
+                return ItemNodeData(id=model.item,
+                                    image=get_texture_path(model.item))
 
             elif model.tag:
                 return ItemNodeData(id=model.tag)
