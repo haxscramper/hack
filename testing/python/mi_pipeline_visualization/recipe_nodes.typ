@@ -1,59 +1,120 @@
 
+#let debug_text(text_in, color) = {
+  place(
+    top + left,
+    dx: 0pt,
+    dy: 0pt,
+    text(
+      size: 2pt,
+      fill: color,
+      weight: "bold",
+      text_in,
+    ),
+  )
+}
+
+#let debug_point(x, y, color) = {
+  place(
+    top + left,
+    dx: 0pt,
+    dy: 0pt,
+    circle(radius: 0.5pt, fill: color),
+  )
+  debug_text(repr((x, y)), color)
+}
+
+#let debug_abs_point(x, y, color) = {
+  place(
+    dx: x * 1pt,
+    dy: y * 1pt,
+    debug_point(x, y, color),
+  )
+}
+
+#let draw_arrow(direction, width, height) = {
+  let width = width * 1pt;
+  let height = height * 1pt;
+  if direction == "in" {
+    place(
+      center,
+      polygon(
+        fill: black,
+        (0pt, 0pt),
+        (width * 0.6, height * 0.2),
+        (0pt, width * 0.4)
+      )
+    )
+  } else if direction == "out" {
+    place(
+      center,
+      polygon(
+        fill: black,
+        (0pt, 0pt),
+        (width * 0.6, height * 0.2),
+        (0pt, width * 0.4)
+      )
+    )
+  }
+}
+
 #let draw_port(port) = {
   let port_x = port.at("x", default: 0)
   let port_y = port.at("y", default: 0)
-  let port_width = port.at("width", default: 6)
-  let port_height = port.at("height", default: 6)
-  let direction = port.at("extra", default: (:)).at("data", default: (:)).at("data", default: (:)).at("direction", default: "")
+  let direction = port
+    .at("extra", default: (:))
+    .at("data", default: (:))
+    .at("data", default: (:))
+    .at("direction", default: "")
+  let port_side = port
+    .at("properties", default: (:))
+    .at("port_side", default: "")
 
-  
+  let port_width = 8
+  let port_height = 8
+  let rect_x = 0
+  let rect_y = 0
 
+  if "width" in port and "height" in port {
+    port_width = port.at("width")
+    port_height = port.at("height")
+    rect_x = port_x - port_width / 2
+    rect_y = port_y - port_height / 2
+  } else {
+    // Determine the placement of the port rectangle based on the port side
+    if port_side == "WEST" {
+      rect_x = port_x - port_width
+      rect_y = port_y - port_height / 2
+    } else if port_side == "EAST" {
+      rect_x = port_x
+      rect_y = port_y - port_height / 2
+    } else if port_side == "NORTH" {
+      rect_x = port_x - port_width / 2
+      rect_y = port_y - port_height
+    } else if port_side == "SOUTH" {
+      rect_x = port_x - port_width / 2
+      rect_y = port_y
+    } else {
+      // Default: center the rectangle
+      rect_x = port_x - port_width / 2
+      rect_y = port_y - port_height / 2
+    }
+  }
 
+  // Draw the port rectangle
   place(
-    dx: (port_x) * 1pt,
-    dy: (port_y) * 1pt,
+    dx: rect_x * 1pt - 1pt,
+    dy: rect_y * 1pt - 1pt,
     stack(
       rect(
         width: port_width * 1pt,
         height: port_height * 1pt,
         stroke: black + 1pt,
         fill: white,
+        // draw_arrow(direction, port_width, port_height),
       ),
-      place(
-        text(
-          size: 2pt,
-          fill: red,
-          weight: "bold",
-          repr(port)
-        )
-      )
-    )
+      // Draw direction arrow inside the rectangle
+    ),
   )
-  
-  // // Direction arrows
-  // if direction == "in" {
-  //   place(
-  //     dx: (port_x - 8) * 1pt,
-  //     dy: (port_y - 2) * 1pt,
-  //     polygon(
-  //       fill: black,
-  //       (0pt, 0pt),
-  //       (6pt, 2pt),
-  //       (0pt, 4pt)
-  //     )
-  //   )
-  // } else if direction == "out" {
-  //   place(
-  //     dx: (port_x + 8) * 1pt,
-  //     dy: (port_y - 2) * 1pt,
-  //     polygon(
-  //       fill: black,
-  //       (0pt, 0pt),
-  //       (6pt, 2pt),
-  //       (0pt, 4pt)
-  //     )
-  //   )
-  // }
 }
 
 #let draw_node_base(node, fill_color) = {
@@ -61,22 +122,24 @@
   let y = node.y
   let width = node.width
   let height = node.height
-  
+
   place(
     dx: x * 1pt,
     dy: y * 1pt,
-    rect(
-      width: width * 1pt,
-      height: height * 1pt,
-      stroke: black + 1pt,
-      fill: fill_color,
-      // Place ports inside this rectangle
-      if "ports" in node {
-        for port in node.ports {
-          draw_port(port)
-        }
-      }
-    )
+    stack(
+      rect(
+        width: width * 1pt,
+        height: height * 1pt,
+        stroke: black + 1pt,
+        fill: fill_color,
+        // Place ports inside this rectangle
+        if "ports" in node {
+          for port in node.ports {
+            draw_port(port)
+          }
+        },
+      ),
+    ),
   )
 }
 
@@ -97,30 +160,41 @@
     for section in edge_data.sections {
       let start = section.at("startPoint")
       let end = section.at("endPoint")
-      
+
       let curve_elements = ()
-      
+
       if "bendPoints" in section {
         let points = (start,) + section.at("bendPoints") + (end,)
-        
-        curve_elements.push(curve.line((points.at(0).at("x") * 1pt, points.at(0).at("y") * 1pt)))
-        
+
+        curve_elements.push(curve.line((
+          points.at(0).at("x") * 1pt,
+          points.at(0).at("y") * 1pt,
+        )))
+
         for i in range(1, points.len()) {
           let point = points.at(i)
-          curve_elements.push(curve.line((point.at("x") * 1pt, point.at("y") * 1pt)))
+          curve_elements.push(curve.line((
+            point.at("x") * 1pt,
+            point.at("y") * 1pt,
+          )))
         }
       } else {
-        curve_elements.push(curve.line((start.at("x") * 1pt, start.at("y") * 1pt)))
+        curve_elements.push(curve.line((
+          start.at("x") * 1pt,
+          start.at("y") * 1pt,
+        )))
         curve_elements.push(curve.line((end.at("x") * 1pt, end.at("y") * 1pt)))
       }
 
-      
+      // debug_abs_point(start.x, start.y, blue)
+      // debug_abs_point(end.x, end.y, blue)
+
       place(
         curve(
           stroke: black + 1pt,
           curve.move((start.x * 1pt, start.y * 1pt)),
-          ..curve_elements
-        )
+          ..curve_elements,
+        ),
       )
     }
   }
@@ -130,7 +204,7 @@
 #let draw_grid(horizontal_size, vertical_size) = {
   let page_width = 100%
   let page_height = 100%
-  
+
   // Major grid (10pt spacing)
   place(
     top + left,
@@ -145,11 +219,11 @@
           line(
             start: (0pt, 0pt),
             end: (0pt, horizontal_size * 1pt),
-            stroke: gray + 0.5pt
-          )
+            stroke: gray + 0.5pt,
+          ),
         )
       }
-      
+
       // Horizontal lines
       for y in range(0, int(vertical_size), step: 10) {
         place(
@@ -158,13 +232,13 @@
           line(
             start: (0pt, 0pt),
             end: (vertical_size * 1pt, 0pt),
-            stroke: gray + 0.5pt
-          )
+            stroke: gray + 0.5pt,
+          ),
         )
       }
-    }
+    },
   )
-  
+
   // Minor grid (2pt spacing)
   place(
     top + left,
@@ -173,33 +247,35 @@
     {
       // Vertical lines
       for x in range(0, int(horizontal_size), step: 2) {
-        if calc.rem(x, 10) != 0 { // Skip major grid lines
+        if calc.rem(x, 10) != 0 {
+          // Skip major grid lines
           place(
             dx: x * 1pt,
             dy: 0pt,
             line(
               start: (0pt, 0pt),
               end: (0pt, horizontal_size * 1pt),
-              stroke: gray.lighten(50%) + 0.25pt
-            )
+              stroke: gray.lighten(50%) + 0.25pt,
+            ),
           )
         }
       }
-      
+
       // Horizontal lines
       for y in range(0, int(vertical_size), step: 2) {
-        if calc.rem(y, 10) != 0 { // Skip major grid lines
+        if calc.rem(y, 10) != 0 {
+          // Skip major grid lines
           place(
             dx: 0pt,
             dy: y * 1pt,
             line(
               start: (0pt, 0pt),
               end: (vertical_size * 1pt, 0pt),
-              stroke: gray.lighten(50%) + 0.25pt
-            )
+              stroke: gray.lighten(50%) + 0.25pt,
+            ),
           )
         }
       }
-    }
+    },
   )
 }

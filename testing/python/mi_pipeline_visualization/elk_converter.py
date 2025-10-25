@@ -53,12 +53,12 @@ def graph_to_typst(graph: elk.Graph) -> typ.Document:
                     )),
                 )))
 
-    subnodes.append(
-        typ.Command(name="draw_grid",
-                    args=[
-                        typ.Literal(value=bbox.width),
-                        typ.Literal(value=bbox.height),
-                    ]))
+    # subnodes.append(
+    #     typ.Command(name="draw_grid",
+    #                 args=[
+    #                     typ.Literal(value=bbox.width),
+    #                     typ.Literal(value=bbox.height),
+    #                 ]))
 
 
     if graph.children:
@@ -211,6 +211,8 @@ def convert_to_elk(graph: ig.Graph) -> elk.Graph:
                     ports=[
                         elk.Port(
                             id=get_resource_port_id(id, Direction.IN),
+                            width=8,
+                        height=8,
                             properties=elk.PortProperties(
                                 side=Direction.IN.to_port_side()),
                             extra=dict(data=ElkExtra(
@@ -218,6 +220,8 @@ def convert_to_elk(graph: ig.Graph) -> elk.Graph:
                         ),
                         elk.Port(
                             id=get_resource_port_id(id, Direction.OUT),
+                            width=8,
+                        height=8,
                             properties=elk.PortProperties(
                                 side=Direction.OUT.to_port_side()),
                             extra=dict(data=ElkExtra(
