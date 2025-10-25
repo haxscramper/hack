@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 from log_writer import log
+from common import JSON_PATH, USE_GRAPH_CACHE
 from pathlib import Path
 from igraph_builder import parse_recipes_to_graph, RecipeNodeData, ItemNodeData, FluidNodeData
 import pickle
@@ -197,38 +198,30 @@ def _convert_edge(
     return result
 
 
-USE_CACHE = True
+def convert_to_elk(graph: ig.Graph) -> elk.Graph:
 
-if __name__ == "__main__":
-    cachefile = Path("/tmp/mi_recipes.bin")
-
-    if USE_CACHE and cachefile.exists():
-        log.info(f"Cache file {cachefile} exists, reading the igraph")
-        with cachefile.open("rb") as f:
-            graph: ig.Graph = pickle.load(f)
-
-    else:
-        graph = parse_recipes_to_graph(
-            Path(
-                "/home/haxscramper/.local/share/multimc/instances/1.21.1 V2/.minecraft/kubejs/server_scripts/all_recipes.json"
-            ))
-
-        with cachefile.open("wb") as f:
-            pickle.dump(graph, f)
-
-    log.info(
-        f"Using graph with {graph.ecount()} edges and {graph.vcount()} nodes")
-
-    result = elk.Graph(id="root", nodes=[], edges=[], ports=[], )
+    result = elk.Graph(
+        id="root",
+        children=[],
+        edges=[],
+        ports=[],
+    )
 
     @beartype
     class Direction(Enum):
         IN = 0
         OUT = 1
 
+        def to_port_side(self) -> elk.PortSide:
+            if self == Direction.IN:
+                return elk.PortSide.WEST
+
+            else:
+                return elk.PortSide.EAST
+
     @beartype
     def get_resource_port_id(id: str, side: Direction) -> str:
-        return id + ("-in" if side == Direction.IN else "-out")
+        return f"{id}-{side.name}"
 
     for recipe_idx, v in enumerate(graph.vs):
         match v["node_type"]:
@@ -243,14 +236,16 @@ if __name__ == "__main__":
                 )
 
                 @beartype
-                def get_port_id(kind: str, idx: int, side: Direction) -> str: 
-                    return f"{node.id}.{kind}_{idx}_{side}"
+                def get_port_id(kind: str, idx: int, side: Direction) -> str:
+                    return f"{node.id}.{kind}_{idx}_{side.name}"
 
                 @beartype
-                def connect_resource(kind: str, idx: int, side: Direction, it: Union[ItemNodeData, FluidNodeData]):
+                def connect_resource(kind: str, idx: int, side: Direction,
+                                     it: Union[ItemNodeData, FluidNodeData]):
                     port = elk.Port(
                         id=get_port_id(kind, idx, side),
-                        side="WEST" if side == Direction.IN else "EAST",
+                        properties=elk.PortProperties(
+                            side=side.to_port_side()),
                     )
 
                     node.ports.append(port)
@@ -258,16 +253,26 @@ if __name__ == "__main__":
                     if side == Direction.IN:
                         port_src = get_resource_port_id(it.id, Direction.OUT)
                         port_dst = port.id
-                        edge = elk.Edge(source=port_src, target=port_dst, id=f"{port_src}-{port_dst}",)
+                        edge = elk.Edge(
+                            source=it.id,
+                            target=node.id,
+                            sourcePort=port_src,
+                            targetPort=port_dst,
+                            id=f"{port_src}-{port_dst}",
+                        )
 
                     else:
                         port_src = port.id
                         port_dst = get_resource_port_id(it.id, Direction.IN)
-                        edge = elk.Edge(source=port_src, target=port_dst, id=f"{port_src}-{port_dst}",)
+                        edge = elk.Edge(
+                            source=node.id,
+                            target=it.id,
+                            sourcePort=port_src,
+                            targetPort=port_dst,
+                            id=f"{port_src}-{port_dst}",
+                        )
 
                     result.edges.append(edge)
-
-
 
                 for idx, it in enumerate(rec.fluid_inputs):
                     connect_resource("fluid", idx, Direction.IN, it)
@@ -297,31 +302,17 @@ if __name__ == "__main__":
                     width=50,
                     height=50,
                     ports=[
-                        elk.Port(id=get_resource_port_id(id, Direction.IN), side="WEST"),
-                        elk.Port(id=get_resource_port_id(id, Direction.OUT), side="EAST"),
-                    ]
-                )
+                        elk.Port(id=get_resource_port_id(id, Direction.IN),
+                                 properties=elk.PortProperties(
+                                     side=Direction.IN.to_port_side())),
+                        elk.Port(id=get_resource_port_id(id, Direction.OUT),
+                                 properties=elk.PortProperties(
+                                     side=Direction.OUT.to_port_side())),
+                    ])
 
                 result.children.append(node)
 
+            case _:
+                raise ValueError(f"{v['node_type']}")
 
-            case _: 
-                raise ValueError(f"{v["node_type"]}")
-
-
-    elk_init = Path("/tmp/elk-init.json")
-    elk_init.write_text(result.model_dump_json(indent=2, exclude_none=True))
-    log.info(f"Wrote initial graph structure to {elk_init}")
-    layout = elk.perform_graph_layout(result)
-    elk_layout = Path("/tmp/elk-layout.json")
-    log.info(f"Wrote graph layout JSON to {elk_layout}")
-    elk_layout.write_text(layout.model_dump_json(indent=2, exclude_none=True))
-
-    doc = graph_to_typst(layout)
-    doc_json = Path("/tmp/typst-doc.json")
-    doc_json.write_text(doc.model_dump_json(indent=2))
-    log.info(f"Wrote doc JSON to {doc_json}")
-    final = generate_typst(doc)
-    final_path = Path("/tmp/result.typ")
-    log.info(f"Write final text to {final_path}")
-    final_path.write_text(final)
+    return result

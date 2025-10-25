@@ -82,11 +82,11 @@ class PortAlignment(str, Enum):
     JUSTIFIED = "JUSTIFIED"
 
 
-class ELKNodePlacementBK(BaseModel):
+class ELKNodePlacementBK(BaseModel, extra="forbid"):
     fixedAlignment: Optional[str] = None
 
 
-class ELKNodePlacement(BaseModel):
+class ELKNodePlacement(BaseModel, extra="forbid"):
     bk: Optional[ELKNodePlacementBK] = None
 
 
@@ -191,7 +191,7 @@ class SplineRoutingMode(str, Enum):
     CONSERVATIVE = "CONSERVATIVE"
 
 
-class ELKLayeredCycleBreaking(BaseModel):
+class ELKLayeredCycleBreaking(BaseModel, extra="forbid"):
     strategy: Optional[CycleBreakingStrategy] = Field(
         None,
         description=
@@ -199,7 +199,7 @@ class ELKLayeredCycleBreaking(BaseModel):
     )
 
 
-class ELKLayeredLayering(BaseModel):
+class ELKLayeredLayering(BaseModel, extra="forbid"):
     strategy: Optional[LayeringStrategy] = Field(
         None, description="Strategy for node layering.")
     layerConstraint: Optional[LayerConstraint] = Field(
@@ -219,7 +219,7 @@ class ELKLayeredLayering(BaseModel):
         "Layer identifier that was calculated by ELK Layered for a node.")
 
 
-class ELKLayeredLayeringMinWidth(BaseModel):
+class ELKLayeredLayeringMinWidth(BaseModel, extra="forbid"):
     upperBoundOnWidth: Optional[int] = Field(
         None,
         ge=-1,
@@ -233,7 +233,7 @@ class ELKLayeredLayeringMinWidth(BaseModel):
     )
 
 
-class ELKLayeredLayeringNodePromotion(BaseModel):
+class ELKLayeredLayeringNodePromotion(BaseModel, extra="forbid"):
     strategy: Optional[NodePromotionStrategy] = Field(
         None,
         description=
@@ -244,12 +244,12 @@ class ELKLayeredLayeringNodePromotion(BaseModel):
         description="Limits the number of iterations for node promotion.")
 
 
-class ELKLayeredLayeringCoffmanGraham(BaseModel):
+class ELKLayeredLayeringCoffmanGraham(BaseModel, extra="forbid"):
     layerBound: Optional[int] = Field(
         None, description="The maximum number of nodes allowed per layer.")
 
 
-class ELKLayeredCrossingMinimization(BaseModel):
+class ELKLayeredCrossingMinimization(BaseModel, extra="forbid"):
     strategy: Optional[CrossingMinimizationStrategy] = Field(
         None, description="Strategy for crossing minimization.")
     forceNodeModelOrder: Optional[bool] = Field(
@@ -288,7 +288,7 @@ class ELKLayeredCrossingMinimization(BaseModel):
     )
 
 
-class ELKLayeredCrossingMinimizationGreedySwitch(BaseModel):
+class ELKLayeredCrossingMinimizationGreedySwitch(BaseModel, extra="forbid"):
     activationThreshold: Optional[int] = Field(
         None,
         ge=0,
@@ -297,7 +297,8 @@ class ELKLayeredCrossingMinimizationGreedySwitch(BaseModel):
         None, description="Greedy Switch strategy for crossing minimization.")
 
 
-class ELKLayeredCrossingMinimizationGreedySwitchHierarchical(BaseModel):
+class ELKLayeredCrossingMinimizationGreedySwitchHierarchical(BaseModel,
+                                                             extra="forbid"):
     type: Optional[GreedySwitchType] = Field(
         None,
         description=
@@ -305,7 +306,7 @@ class ELKLayeredCrossingMinimizationGreedySwitchHierarchical(BaseModel):
     )
 
 
-class ELKLayeredNodePlacementBK(BaseModel):
+class ELKLayeredNodePlacementBK(BaseModel, extra="forbid"):
     edgeStraightening: Optional[EdgeStraighteningStrategy] = Field(
         None,
         description=
@@ -318,7 +319,7 @@ class ELKLayeredNodePlacementBK(BaseModel):
     )
 
 
-class ELKLayeredNodePlacementLinearSegments(BaseModel):
+class ELKLayeredNodePlacementLinearSegments(BaseModel, extra="forbid"):
     deflectionDampening: Optional[float] = Field(
         None,
         gt=0,
@@ -327,12 +328,13 @@ class ELKLayeredNodePlacementLinearSegments(BaseModel):
     )
 
 
-class ELKLayeredNodePlacementNetworkSimplex(BaseModel):
+class ELKLayeredNodePlacementNetworkSimplex(BaseModel, extra="forbid"):
     nodeFlexibility: Optional[NodeFlexibility] = Field(
         None, description="Aims at shorter and straighter edges.")
 
 
-class ELKLayeredNodePlacementNetworkSimplexNodeFlexibility(BaseModel):
+class ELKLayeredNodePlacementNetworkSimplexNodeFlexibility(BaseModel,
+                                                           extra="forbid"):
     default: Optional[NodeFlexibility] = Field(
         None,
         description=
@@ -340,7 +342,7 @@ class ELKLayeredNodePlacementNetworkSimplexNodeFlexibility(BaseModel):
     )
 
 
-class ELKLayeredNodePlacement(BaseModel):
+class ELKLayeredNodePlacement(BaseModel, extra="forbid"):
     strategy: Optional[NodePlacementStrategy] = Field(
         None, description="Strategy for node placement.")
     favorStraightEdges: Optional[bool] = Field(
@@ -351,7 +353,7 @@ class ELKLayeredNodePlacement(BaseModel):
     networkSimplex: Optional[ELKLayeredNodePlacementNetworkSimplex] = None
 
 
-class ELKLayeredEdgeRoutingSplines(BaseModel):
+class ELKLayeredEdgeRoutingSplines(BaseModel, extra="forbid"):
     mode: Optional[SplineRoutingMode] = Field(
         None,
         description=
@@ -361,7 +363,7 @@ class ELKLayeredEdgeRoutingSplines(BaseModel):
         None, description="Factor for sloppy spline layer spacing.")
 
 
-class ELKLayeredEdgeRouting(BaseModel):
+class ELKLayeredEdgeRouting(BaseModel, extra="forbid"):
     selfLoopDistribution: Optional[SelfLoopDistributionStrategy] = Field(
         None,
         description="Alter the distribution of the loops around the node.")
@@ -373,7 +375,7 @@ class ELKLayeredEdgeRouting(BaseModel):
     splines: Optional[ELKLayeredEdgeRoutingSplines] = None
 
 
-class ELKLayered(BaseModel):
+class ELKLayered(BaseModel, extra="forbid"):
     directionCongruency: Optional[DirectionCongruency] = Field(
         None,
         description=
@@ -427,7 +429,7 @@ class ELKLayered(BaseModel):
     edgeRouting: Optional[ELKLayeredEdgeRouting] = None
 
 
-class ELKSpacing(BaseModel):
+class ELKSpacing(BaseModel, extra="forbid"):
     edgeNode: Optional[float] = None
     nodeNode: Optional[float] = None
     edgeEdge: Optional[float] = None
@@ -439,7 +441,7 @@ class ELKSpacing(BaseModel):
     componentComponent: Optional[float] = None
 
 
-class LayoutOptionsELK(BaseModel):
+class LayoutOptionsELK(BaseModel, extra="forbid"):
     algorithm: Optional[ELKAlgorithm] = None
     layered: Optional[ELKLayered] = None
     hierarchyHandling: Optional[ELKHierarchyHandling] = None
@@ -450,14 +452,11 @@ class LayoutOptionsELK(BaseModel):
     spacing: Optional[ELKSpacing] = None
 
 
-class LayoutOptionsPartitioning(BaseModel):
+class LayoutOptionsPartitioning(BaseModel, extra="forbid"):
     activate: Optional[bool] = None
 
 
-class LayoutOptions(BaseModel):
-    elk: Optional[LayoutOptionsELK] = None
-    partitioning: Optional[LayoutOptionsPartitioning] = None
-    nodeFlexibility: Optional[NodeFlexibility] = None
+class LayoutOptionsBase(BaseModel, extra="forbid"):
 
     @model_validator(mode="before")
     @classmethod
@@ -513,11 +512,18 @@ class LayoutOptions(BaseModel):
         return result
 
 
-class PortProperties(BaseModel):
+class GraphLayoutOptions(LayoutOptionsBase, extra="forbid"):
+    elk: Optional[LayoutOptionsELK] = None
+    partitioning: Optional[LayoutOptionsPartitioning] = None
+    nodeFlexibility: Optional[NodeFlexibility] = None
+
+
+class PortProperties(BaseModel, extra="forbid"):
     port: Optional[Dict[str, Any]] = None
     portConstraints: Optional[PortConstraints] = None
     portAlignment: Optional[PortAlignment] = None
     allowNonFlowPortsToSwitchSides: Optional[bool] = None
+    side: Optional[PortSide] = None
 
     @model_validator(mode="before")
     @classmethod
@@ -566,17 +572,21 @@ class PortProperties(BaseModel):
         return data
 
 
-class NodeProperties(BaseModel):
+class NodeProperties(BaseModel, extra="forbid"):
     portConstraints: Optional[PortConstraints] = None
     portAlignment: Optional[PortAlignment] = None
 
 
-class Point(BaseModel):
+class Point(BaseModel, extra="forbid"):
     x: float
     y: float
 
 
-class Label(BaseModel):
+class LabelLayoutOptions(BaseModel, extra="forbid"):
+    pass
+
+
+class Label(BaseModel, extra="forbid"):
     id: Optional[Union[str, int]] = None
     x: Optional[float] = None
     y: Optional[float] = None
@@ -584,10 +594,14 @@ class Label(BaseModel):
     height: Optional[float] = None
     text: Optional[str] = None
     labels: Optional[List["Label"]] = None
-    layoutOptions: Optional[Dict[str, Any]] = None
+    layoutOptions: Optional[LabelLayoutOptions] = None
 
 
-class Port(BaseModel):
+class PortLayoutOptions(LayoutOptionsBase, extra="forbid"):
+    pass
+
+
+class Port(BaseModel, extra="forbid"):
     id: Union[str, int]
     x: Optional[float] = None
     y: Optional[float] = None
@@ -595,10 +609,10 @@ class Port(BaseModel):
     height: Optional[float] = None
     labels: Optional[List[Label]] = None
     properties: Optional[PortProperties] = None
-    layoutOptions: Optional[Dict[str, Any]] = None
+    layoutOptions: Optional[PortLayoutOptions] = None
 
 
-class EdgeSection(BaseModel):
+class EdgeSection(BaseModel, extra="forbid"):
     id: Optional[Union[str, int]] = None
     startPoint: Point
     endPoint: Point
@@ -609,7 +623,11 @@ class EdgeSection(BaseModel):
     outgoingSections: Optional[List[Union[str, int]]] = None
 
 
-class Edge(BaseModel):
+class EdgeLayoutOptions(LayoutOptionsBase, extra="forbid"):
+    junctionPoints: Optional[List[Point]] = None
+
+
+class Edge(BaseModel, extra="forbid"):
     id: Union[str, int]
     source: Optional[Union[str, int]] = None
     sourcePort: Optional[Union[str, int]] = None
@@ -623,10 +641,14 @@ class Edge(BaseModel):
     sections: Optional[List[EdgeSection]] = None
     labels: Optional[List[Label]] = None
     junctionPoints: Optional[List[Point]] = None
-    layoutOptions: Optional[Dict[str, Any]] = None
+    layoutOptions: Optional[EdgeLayoutOptions] = None
 
 
-class Node(BaseModel):
+class NodeLayoutOptions(LayoutOptionsBase, extra="forbid"):
+    pass
+
+
+class Node(BaseModel, extra="forbid"):
     id: Union[str, int]
     x: Optional[float] = None
     y: Optional[float] = None
@@ -638,16 +660,16 @@ class Node(BaseModel):
     children: Optional[List["Node"]] = None
     edges: Optional[List[Edge]] = None
     properties: Optional[NodeProperties] = None
-    layoutOptions: Optional[LayoutOptions] = None
+    layoutOptions: Optional[NodeLayoutOptions] = None
 
 
-class Graph(BaseModel):
+class Graph(BaseModel, extra="forbid"):
     id: Union[str, int]
     x: Optional[float] = None
     y: Optional[float] = None
     width: Optional[float] = None
     height: Optional[float] = None
-    layoutOptions: Optional[LayoutOptions] = None
+    layoutOptions: Optional[GraphLayoutOptions] = None
     children: List[Node] = Field(default_factory=list)
     edges: Optional[List[Edge]] = None
     ports: Optional[List[Port]] = None
@@ -1019,6 +1041,7 @@ def perform_graph_layout(graph: Graph) -> Graph:
 
     with TemporaryDirectory() as output_subdir:
         dir = Path(output_subdir)
+        dir = Path("/tmp")
         validated_path = dir / f"result_validated.json"
         GraphSerializer.save_to_file(graph, validated_path, use_dotted=True)
 

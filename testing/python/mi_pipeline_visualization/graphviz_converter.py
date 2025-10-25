@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import graphviz
+from common import JSON_PATH
 from beartype.typing import Dict, List, Tuple, Union
 from beartype import beartype
 import igraph as ig
@@ -23,16 +24,16 @@ def convert_igraph_to_graphviz(graph: ig.Graph) -> graphviz.Digraph:
                 return str(s).replace(":", "_")
             
             for fluid_input in node_data.fluid_inputs:
-                inputs.append(f"<f_in_{norm(fluid_input.fluid)}>F: {norm(fluid_input.fluid)} ({fluid_input.amount})")
+                inputs.append(f"<f_in_{norm(fluid_input.id)}>F: {norm(fluid_input.id)}")
             
             for item_input in node_data.item_inputs:
-                inputs.append(f"<i_in_{norm(item_input.item)}>I: {norm(item_input.item)} ({item_input.amount})")
+                inputs.append(f"<i_in_{norm(item_input.id)}>I: {norm(item_input.id)}")
             
             for fluid_output in node_data.fluid_outputs:
-                outputs.append(f"<f_out_{norm(fluid_output.fluid)}>F: {norm(fluid_output.fluid)} ({fluid_output.amount})")
+                outputs.append(f"<f_out_{norm(fluid_output.id)}>F: {norm(fluid_output.id)}")
             
             for item_output in node_data.item_outputs:
-                outputs.append(f"<i_out_{norm(item_output.item)}>I: {norm(item_output.item)} ({item_output.amount})")
+                outputs.append(f"<i_out_{norm(item_output.id)}>I: {norm(item_output.id)}")
             
             label_parts = []
             if inputs:
@@ -67,13 +68,13 @@ def convert_igraph_to_graphviz(graph: ig.Graph) -> graphviz.Digraph:
             port = None
             if isinstance(source_data, FluidNodeData):
                 for fluid_input in target_data.fluid_inputs:
-                    if fluid_input.fluid == source_data.id:
-                        port = f"f_in_{norm(fluid_input.fluid)}"
+                    if fluid_input.id == source_data.id:
+                        port = f"f_in_{norm(fluid_input.id)}"
                         break
             elif isinstance(source_data, ItemNodeData):
                 for item_input in target_data.item_inputs:
-                    if item_input.item == source_data.id:
-                        port = f"i_in_{norm(item_input.item)}"
+                    if item_input.id == source_data.id:
+                        port = f"i_in_{norm(item_input.id)}"
                         break
             
             if port:
@@ -85,13 +86,13 @@ def convert_igraph_to_graphviz(graph: ig.Graph) -> graphviz.Digraph:
             port = None
             if isinstance(target_data, FluidNodeData):
                 for fluid_output in source_data.fluid_outputs:
-                    if fluid_output.fluid == target_data.id:
-                        port = f"f_out_{norm(fluid_output.fluid)}"
+                    if fluid_output.id == target_data.id:
+                        port = f"f_out_{norm(fluid_output.id)}"
                         break
             elif isinstance(target_data, ItemNodeData):
                 for item_output in source_data.item_outputs:
-                    if item_output.item == target_data.id:
-                        port = f"i_out_{norm(item_output.item)}"
+                    if item_output.id == target_data.id:
+                        port = f"i_out_{norm(item_output.id)}"
                         break
             
             if port:
@@ -104,7 +105,7 @@ def convert_igraph_to_graphviz(graph: ig.Graph) -> graphviz.Digraph:
 if __name__ == "__main__":
     graph = parse_recipes_to_graph(
         Path(
-            "/home/haxscramper/.local/share/multimc/instances/1.21.1 V2/.minecraft/kubejs/server_scripts/all_recipes.json"
+            JSON_PATH
         ))
 
     dot = convert_igraph_to_graphviz(graph)

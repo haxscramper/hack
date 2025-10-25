@@ -2,6 +2,7 @@
 
 from recipe_schema import parse_recipe_collection, FluidInput, FluidOutput, ItemInput, ItemOutput, Recipe, ItemModel, FluidModel, MIElectricRecipe
 import json
+from common import JSON_PATH
 from pathlib import Path
 
 from beartype.typing import Any, Dict, List, Optional, Union, Callable, Set
@@ -199,16 +200,16 @@ def create_recipe_graph(
             recipe_vertex = recipe_nodes[recipe_id]
 
             for fluid_input in recipe_data.fluid_inputs:
-                graph.add_edge(fluid_nodes[fluid_node_data.id], recipe_vertex)
+                graph.add_edge(fluid_nodes[fluid_input.id], recipe_vertex, data=fluid_input)
 
             for fluid_output in recipe_data.fluid_outputs:
-                graph.add_edge(recipe_vertex, fluid_nodes[fluid_node_data.id])
+                graph.add_edge(recipe_vertex, fluid_nodes[fluid_output.id], data=fluid_output)
 
             for item_input in recipe_data.item_inputs:
-                graph.add_edge(item_nodes[item_node_data.id], recipe_vertex)
+                graph.add_edge(item_nodes[item_input.id], recipe_vertex, data=item_input)
 
             for item_output in recipe_data.item_outputs:
-                graph.add_edge(recipe_vertex, item_nodes[item_node_data.id])
+                graph.add_edge(recipe_vertex, item_nodes[item_output.id], data=item_output)
 
         elif isinstance(obj, list):
             for item in obj:
@@ -253,6 +254,12 @@ def filter_recipes(
                 vertices_to_keep.add(v.index)
                 vertices_to_keep.update(graph.predecessors(v.index))
                 vertices_to_keep.update(graph.successors(v.index))
+
+    vertices_to_remove = set(graph.vs).difference(vertices_to_keep)
+
+    with open("/tmp/filter_recipe.txt", "w") as file:
+        for v in vertices_to_remove:
+            print(f"{v['node_type']} {v['data']}", file=file)
 
     return graph.induced_subgraph(list(vertices_to_keep))
 
@@ -301,7 +308,7 @@ def parse_recipes_to_graph(path: Path) -> ig.Graph:
     collection = dict(recipes=content)
     model = parse_recipe_collection(collection)
 
-    Path("/tmp/model.json").write_text(model.model_dump_json(indent=2))
+    Path("/tmp/model.json").write_text(model.model_dump_json(indent=2, exclude_none=True))
     # exit()
 
     @beartype
@@ -380,7 +387,4 @@ def parse_recipes_to_graph(path: Path) -> ig.Graph:
 
 
 if __name__ == "__main__":
-    parse_recipes_to_graph(
-        Path(
-            "/home/haxscramper/.local/share/multimc/instances/1.21.1 V2/.minecraft/kubejs/server_scripts/all_recipes.json"
-        ))
+    parse_recipes_to_graph(Path(JSON_PATH))

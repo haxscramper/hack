@@ -2,6 +2,7 @@
 
 from beartype.typing import List, Dict, Any, Union, Optional, Literal
 from typing import Annotated, get_args
+from common import JSON_PATH
 from pydantic import BaseModel, Field, field_validator, Discriminator, ValidationError, AliasChoices, ConfigDict, model_validator
 from abc import ABC, abstractmethod
 import json
@@ -12,6 +13,7 @@ class FluidModel(BaseModel):
     amount: Optional[int] = None
     fluid: Optional[str] = None
     tag: Optional[str] = None
+
     class Config:
         extra = "forbid"
 
@@ -24,6 +26,7 @@ class FluidModel(BaseModel):
     def itemname(self) -> Optional[str]:
         if isinstance(self.fluid, str):
             return self.fluid.split(":")[1]
+
 
 class FluidInput(FluidModel):
     pass
@@ -56,11 +59,13 @@ class ItemModel(BaseModel):
     @classmethod
     def normalize_item_field(cls, data):
         if isinstance(data, dict):
-            if ("item" in data and isinstance(data["item"], dict)) or ("id" in data and isinstance(data["id"], dict)):
+            if ("item" in data and isinstance(data["item"], dict)) or (
+                    "id" in data and isinstance(data["id"], dict)):
                 if "id" in data["item"]:
                     data["item"] = data["item"]["id"]
 
-            if "tag" in data and isinstance(data["tag"], dict) and "tag" in data["tag"]:
+            if "tag" in data and isinstance(data["tag"],
+                                            dict) and "tag" in data["tag"]:
                 data["tag"] = data["tag"]["tag"]
 
         return data
@@ -74,6 +79,7 @@ class ItemModel(BaseModel):
 
     class Config:
         extra = "forbid"
+
 
 class ItemInput(ItemModel):
     pass
@@ -1493,10 +1499,7 @@ def parse_recipe_collection(recipe_data: Dict[str, Any]) -> RecipeCollection:
 import pydantic
 
 if __name__ == "__main__":
-    content = json.loads(
-        Path(
-            "/home/haxscramper/.local/share/multimc/instances/1.21.1 V2/.minecraft/kubejs/server_scripts/all_recipes.json"
-        ).read_text())
+    content = json.loads(Path(JSON_PATH).read_text())
 
     recipe_types = get_args(RecipeUnion.__args__[0])
     type_values = set()
