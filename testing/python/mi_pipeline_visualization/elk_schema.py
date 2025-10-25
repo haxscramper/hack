@@ -788,8 +788,8 @@ class Node(BaseModel, extra="forbid"):
     id: Union[str, int]
     extra: Optional[Dict[str, Any]] = None
     x: Optional[float] = None
-    children: Optional[List["Node"]] = None
     y: Optional[float] = None
+    children: Optional[List["Node"]] = None
     width: Optional[float] = None
     height: Optional[float] = None
     type: Optional[str] = None
@@ -1067,6 +1067,131 @@ def compute_absolute_positions(
     return nodes, edges_coords
 
 
+from dataclasses import dataclass
+from typing import Optional
+
+
+@dataclass
+class BoundingBox:
+    min_x: float
+    min_y: float
+    max_x: float
+    max_y: float
+
+    @property
+    def width(self) -> float:
+        return self.max_x - self.min_x
+
+    @property
+    def height(self) -> float:
+        return self.max_y - self.min_y
+
+
+def compute_graph_bounding_box(graph: Graph,
+                               parent_x: float = 0.0,
+                               parent_y: float = 0.0) -> BoundingBox:
+    min_x = float("inf")
+    min_y = float("inf")
+    max_x = float("-inf")
+    max_y = float("-inf")
+
+    def update_bounds(x: float,
+                      y: float,
+                      width: float = 0.0,
+                      height: float = 0.0) -> None:
+        nonlocal min_x, min_y, max_x, max_y
+        min_x = min(min_x, x)
+        min_y = min(min_y, y)
+        max_x = max(max_x, x + width)
+        max_y = max(max_y, y + height)
+
+    def process_label(label: Label, abs_x: float, abs_y: float) -> None:
+        label_x = abs_x + (label.x or 0.0)
+        label_y = abs_y + (label.y or 0.0)
+        update_bounds(label_x, label_y, label.width or 0.0, label.height
+                      or 0.0)
+
+        if label.labels:
+            for sub_label in label.labels:
+                process_label(sub_label, label_x, label_y)
+
+    def process_port(port: Port, abs_x: float, abs_y: float) -> None:
+        port_x = abs_x + (port.x or 0.0)
+        port_y = abs_y + (port.y or 0.0)
+        update_bounds(port_x, port_y, port.width or 0.0, port.height or 0.0)
+
+        if port.labels:
+            for label in port.labels:
+                process_label(label, port_x, port_y)
+
+    def process_edge(edge: Edge) -> None:
+        if edge.sourcePoint:
+            update_bounds(edge.sourcePoint.x, edge.sourcePoint.y)
+        if edge.targetPoint:
+            update_bounds(edge.targetPoint.x, edge.targetPoint.y)
+        if edge.bendPoints:
+            for point in edge.bendPoints:
+                update_bounds(point.x, point.y)
+        if edge.sections:
+            for section in edge.sections:
+                update_bounds(section.startPoint.x, section.startPoint.y)
+                update_bounds(section.endPoint.x, section.endPoint.y)
+                if section.bendPoints:
+                    for point in section.bendPoints:
+                        update_bounds(point.x, point.y)
+        if edge.junctionPoints:
+            for point in edge.junctionPoints:
+                update_bounds(point.x, point.y)
+        if edge.labels:
+            for label in edge.labels:
+                process_label(label, 0.0, 0.0)
+
+    def process_node(node: Node, abs_x: float, abs_y: float) -> None:
+        node_x = abs_x + (node.x or 0.0)
+        node_y = abs_y + (node.y or 0.0)
+        update_bounds(node_x, node_y, node.width or 0.0, node.height or 0.0)
+
+        if node.ports:
+            for port in node.ports:
+                process_port(port, node_x, node_y)
+
+        if node.labels:
+            for label in node.labels:
+                process_label(label, node_x, node_y)
+
+        if node.edges:
+            for edge in node.edges:
+                process_edge(edge)
+
+        if node.children:
+            for child in node.children:
+                process_node(child, node_x, node_y)
+
+    graph_x = parent_x + (graph.x or 0.0)
+    graph_y = parent_y + (graph.y or 0.0)
+    update_bounds(graph_x, graph_y, graph.width or 0.0, graph.height or 0.0)
+
+    for node in graph.children:
+        process_node(node, graph_x, graph_y)
+
+    if graph.edges:
+        for edge in graph.edges:
+            process_edge(edge)
+
+    if graph.ports:
+        for port in graph.ports:
+            process_port(port, graph_x, graph_y)
+
+    if graph.labels:
+        for label in graph.labels:
+            process_label(label, graph_x, graph_y)
+
+    if min_x == float("inf"):
+        return BoundingBox(0.0, 0.0, 0.0, 0.0)
+
+    return BoundingBox(min_x, min_y, max_x, max_y)
+
+
 def render_to_png(nodes: List[AbsolutePosition],
                   edges: List[Tuple[Point, List[Point],
                                     Point]], output_file: Path) -> None:
@@ -1295,7 +1420,6 @@ def perform_graph_layout(graph: Graph) -> Graph:
 
         cmd = local[str(script_path)].with_cwd(script_dir)
         cmd.run([f"--input={validated_path}", f"--output={layout_path}"])
-
 
         LAYOUT_VALIDATION_DEBUG_PATH = Path(
             "/tmp/layout-result-validation.txt")

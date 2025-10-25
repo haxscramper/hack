@@ -5,7 +5,7 @@ import json
 from common import JSON_PATH
 from pathlib import Path
 
-from beartype.typing import Any, Dict, List, Optional, Union, Callable, Set
+from beartype.typing import Any, Dict, List, Optional, Union, Callable, Set, Literal
 from beartype import beartype
 from abc import ABC
 from pydantic import BaseModel, Field, field_validator, ValidationError
@@ -17,14 +17,17 @@ from log_writer import log
 
 class FluidNodeData(BaseModel):
     id: str
+    node_kind: Literal["fluid"] = "fluid"
 
 
 class ItemNodeData(BaseModel):
     id: str
+    node_kind: Literal["item"] = "item"
 
 
 class RecipeNodeData(BaseModel):
     type: str
+    node_kind: Literal["recipe"] = "recipe"
     fluid_inputs: List[FluidNodeData]
     fluid_outputs: List[FluidNodeData]
     item_inputs: List[ItemNodeData]
@@ -32,6 +35,8 @@ class RecipeNodeData(BaseModel):
     duration: Optional[int] = None
     eu: Optional[int] = None
 
+
+NodeDataUnion = Union[RecipeNodeData, FluidNodeData, ItemNodeData]
 
 class IgnoreResult():
     pass

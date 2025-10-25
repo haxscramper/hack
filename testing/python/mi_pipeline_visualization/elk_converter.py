@@ -3,32 +3,81 @@
 from log_writer import log
 from common import JSON_PATH, USE_GRAPH_CACHE
 from pathlib import Path
-from igraph_builder import parse_recipes_to_graph, RecipeNodeData, ItemNodeData, FluidNodeData
+from igraph_builder import parse_recipes_to_graph, RecipeNodeData, ItemNodeData, FluidNodeData, NodeDataUnion
 import pickle
 import igraph as ig
 import elk_schema as elk
-from typst_schema import *
+import typst_schema as typ
+from pydantic import BaseModel
+from beartype.typing import Literal, Union, List
 from enum import Enum
+from beartype import beartype
 
 
-def graph_to_typst(graph: elk.Graph) -> Document:
-    children: List[TypstNode] = []
+class PortData(BaseModel, extra="forbid"):
+    direction: Literal["in", "out"]
+
+
+class EdgeData(BaseModel, extra="forbid"):
+    source: NodeDataUnion
+    target: NodeDataUnion
+
+
+class ElkExtra(BaseModel, extra="forbid"):
+    data: Union[NodeDataUnion, EdgeData, PortData]
+    kind: Literal["fluid_node", "item_node", "recipe_node", "port", "edge"]
+
+
+def graph_to_typst(graph: elk.Graph) -> typ.Document:
+    subnodes: List[typ.TypstNode] = []
+
+    subnodes.append(
+        typ.Import(
+            path=
+            "/home/haxscramper/workspace/repos/hack/testing/python/mi_pipeline_visualization/recipe_nodes.typ",
+            items=["*"]))
+
+    bbox = elk.compute_graph_bounding_box(graph)
+
+    subnodes.append(
+        typ.Set(target="page",
+                args=dict(
+                    width=typ.Literal(value=typ.PtSize(size=bbox.width)),
+                    height=typ.Literal(value=typ.PtSize(size=bbox.height)),
+                    margin=typ.Literal(
+                        value=dict(
+                            top=typ.PtSize(size=0),
+                            bottom=typ.PtSize(size=0),
+                            left=typ.PtSize(size=0),
+                            right=typ.PtSize(size=0),
+                        )),
+                )))
 
     if graph.children:
         for node in graph.children:
-            children.append(
-                Command(
-                    name="node",
-                    args=[Literal(value=node.model_dump(exclude_none=True))]))
+            extra: ElkExtra = node.extra["data"]
+            subnodes.append(
+                typ.Command(
+                    name=extra.kind,
+                    args=[
+                        typ.Literal(value=node.model_copy(update=dict(
+                            extra=None)).model_dump(exclude_none=True))
+                    ],
+                ))
 
     if graph.edges:
         for edge in graph.edges:
-            children.append(
-                Command(
+            extra: ElkExtra = edge.extra["data"]
+            subnodes.append(
+                typ.Command(
                     name="edge",
-                    args=[Literal(value=edge.model_dump(exclude_none=True))]))
+                    args=[
+                        typ.Literal(value=edge.model_copy(update=dict(
+                            extra=None)).model_dump(exclude_none=True))
+                    ],
+                ))
 
-    return Document(children=children)
+    return typ.Document(subnodes=subnodes)
 
 
 def convert_to_elk(graph: ig.Graph) -> elk.Graph:
@@ -66,7 +115,7 @@ def convert_to_elk(graph: ig.Graph) -> elk.Graph:
                     width=200,
                     height=100,
                     ports=[],
-                    extra=dict(data=rec),
+                    extra=dict(data=ElkExtra(data=rec, kind="recipe_node")),
                 )
 
                 @beartype
@@ -87,12 +136,16 @@ def convert_to_elk(graph: ig.Graph) -> elk.Graph:
                     if side == Direction.IN:
                         port_src = get_resource_port_id(it.id, Direction.OUT)
                         port_dst = port.id
-                        edge = elk.Edge(source=it.id,
-                                        target=node.id,
-                                        sourcePort=port_src,
-                                        targetPort=port_dst,
-                                        id=f"{port_src}-{port_dst}",
-                                        extra=dict(src_data=it, dst_data=node))
+                        edge = elk.Edge(
+                            source=it.id,
+                            target=node.id,
+                            sourcePort=port_src,
+                            targetPort=port_dst,
+                            id=f"{port_src}-{port_dst}",
+                            extra=dict(data=ElkExtra(
+                                kind="edge",
+                                data=EdgeData(source=it, target=rec))),
+                        )
 
                     else:
                         port_src = port.id
@@ -103,7 +156,10 @@ def convert_to_elk(graph: ig.Graph) -> elk.Graph:
                             sourcePort=port_src,
                             targetPort=port_dst,
                             id=f"{port_src}-{port_dst}",
-                            extra=dict(src_data=node, dst_data=it),
+                            extra=dict(
+                                ElkExtra(kind="edge",
+                                         data=EdgeData(source=rec,
+                                                       target=it))),
                         )
 
                     result.edges.append(edge)
@@ -135,19 +191,22 @@ def convert_to_elk(graph: ig.Graph) -> elk.Graph:
                     id=f"{id}",
                     width=50,
                     height=50,
-                    extra=dict(data=v["data"]),
+                    extra=dict(data=ElkExtra(data=v["data"],
+                                             kind=v["node_type"] + "_node")),
                     ports=[
                         elk.Port(
                             id=get_resource_port_id(id, Direction.IN),
                             properties=elk.PortProperties(
                                 side=Direction.IN.to_port_side()),
-                            extra=dict(direction="in"),
+                            extra=dict(data=ElkExtra(
+                                kind="port", data=PortData(direction="in"))),
                         ),
                         elk.Port(
                             id=get_resource_port_id(id, Direction.OUT),
                             properties=elk.PortProperties(
                                 side=Direction.OUT.to_port_side()),
-                            extra=dict(direciton="out"),
+                            extra=dict(data=ElkExtra(
+                                kind="port", data=PortData(direction="out"))),
                         ),
                     ])
 

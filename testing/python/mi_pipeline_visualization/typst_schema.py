@@ -92,7 +92,7 @@ class Include(TypstNode):
 
 class Document(TypstNode):
     """Root document node"""
-    children: List[TypstNode] = Field(default_factory=list)
+    subnodes: List[TypstNode] = Field(default_factory=list)
 
 
 # Update forward references
@@ -135,7 +135,7 @@ class TypstGenerator:
     def _generate_document(self, node: Document, indent: int) -> str:
         """Generate complete document"""
         parts = []
-        for child in node.children:
+        for child in node.subnodes:
             parts.append(self.generate(child, indent))
         return "\n".join(parts)
 
@@ -321,14 +321,14 @@ def generate_typst(document: Union[Document, TypstNode]) -> str:
         return generator.generate(document)
     else:
         # Wrap single node in document
-        doc = Document(children=[document])
+        doc = Document(subnodes=[document])
         return generator.generate(doc)
 
 
 # Example usage:
 if __name__ == "__main__":
     # Create a simple document
-    doc = Document(children=[
+    doc = Document(subnodes=[
         Set(target="text",
             args={
                 "font": Literal(value="Arial"),
