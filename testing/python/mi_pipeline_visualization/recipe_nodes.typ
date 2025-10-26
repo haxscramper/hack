@@ -1,3 +1,5 @@
+#set text(font: "Iosevka Term")
+
 #let debug_text(text_in, color) = {
   place(
     top + left,
@@ -149,10 +151,10 @@
   }
 }
 
-#let node_box(node, body) = {
+#let node_box(node, body, x_offset, y_offset) = {
     place(
-      dx: node.x * 1pt,
-      dy: node.y * 1pt,
+      dx: (node.x + x_offset) * 1pt,
+      dy: (node.y + y_offset) * 1pt,
       box(
         width: node.width * 1pt,
         height: node.height * 1pt,
@@ -162,13 +164,13 @@
 }
 
 #let fluid_node(node) = {
-  node_box(node, draw_node_base(node, blue.lighten(80%)))
-  node_box(node, draw_node_image(node))
+  node_box(node, draw_node_base(node, blue.lighten(80%)), 0, 0)
+  node_box(node, draw_node_image(node), 0, 0)
 }
 
 #let item_node(node) = {
-  node_box(node, draw_node_base(node, orange.lighten(80%)))
-  node_box(node, draw_node_image(node))
+  node_box(node, draw_node_base(node, orange.lighten(80%)), 0, 0)
+  node_box(node, draw_node_image(node), 0, 0)
 }
 
 #let draw_slot(x, y, slot_size, slot_type, content) = {
@@ -269,48 +271,106 @@
     )
   )
   
-  // Draw energy bar
-  place(
-    dx: machine.energy_bar.x * 1pt,
-    dy: machine.energy_bar.y * 1pt,
-    rect(
-      stroke: 0.5pt + gray,
-      fill: yellow.lighten(80%),
-      width: 12pt,
-      height: 18pt,
-    )
-  )
+  // // Draw energy bar
+  // place(
+  //   dx: machine.energy_bar.x * 1pt,
+  //   dy: machine.energy_bar.y * 1pt,
+  //   rect(
+  //     stroke: 0.5pt + gray,
+  //     fill: yellow.lighten(80%),
+  //     width: 12pt,
+  //     height: 18pt,
+  //   )
+  // )
   
-  // Draw efficiency bar
-  place(
-    dx: machine.efficiency_bar.x * 1pt,
-    dy: machine.efficiency_bar.y * 1pt,
-    rect(
-      stroke: 0.5pt + gray,
-      fill: orange.lighten(80%),
-      width: 24pt,
-      height: 12pt,
-    )
-  )
+  // // Draw efficiency bar
+  // place(
+  //   dx: machine.efficiency_bar.x * 1pt,
+  //   dy: machine.efficiency_bar.y * 1pt,
+  //   rect(
+  //     stroke: 0.5pt + gray,
+  //     fill: orange.lighten(80%),
+  //     width: 24pt,
+  //     height: 12pt,
+  //   )
+  // )
   
-  // Draw EU and duration text
-  place(
-    dx: machine.progress_bar.x * 1pt,
-    dy: (machine.progress_bar.y - 12) * 1pt,
-    text(size: 8pt, str(data.data.eu) + " EU/t")
-  )
+  // // Draw EU and duration text
+  // place(
+  //   dx: machine.progress_bar.x * 1pt,
+  //   dy: (machine.progress_bar.y - 12) * 1pt,
+  //   text(size: 8pt, str(data.data.eu) + " EU/t")
+  // )
   
-  place(
-    dx: machine.progress_bar.x * 1pt,
-    dy: (machine.progress_bar.y + 20) * 1pt,
-    text(size: 8pt, str(data.data.duration) + " ticks")
-  )
+  // place(
+  //   dx: machine.progress_bar.x * 1pt,
+  //   dy: (machine.progress_bar.y + 20) * 1pt,
+  //   text(size: 8pt, str(data.data.duration) + " ticks")
+  // )
 }
 
+#let draw_recipe_info(data) = {
+  let recipe_data = data.data
+  let machine = data.machine
+  
+  let col1 = ()
+  let col2 = ()
+  
+  col1.push(([*Machine:*], [#machine.english_name]))
+  col1.push(([*Energy:*], [#recipe_data.eu EU/t]))
+  col1.push(([*Duration:*], [#recipe_data.duration ticks]))
+  
+  if recipe_data.item_inputs.len() > 0 {
+    let items = recipe_data.item_inputs.map(item => item.id.split(":").at(1)).join(", ")
+    col2.push(([*Input Items:*], [#items]))
+  }
+  
+  if recipe_data.item_outputs.len() > 0 {
+    let items = recipe_data.item_outputs.map(item => item.id.split(":").at(1)).join(", ")
+    col2.push(([*Output Items:*], [#items]))
+  }
+  
+  if recipe_data.fluid_inputs.len() > 0 {
+    let fluids = recipe_data.fluid_inputs.map(fluid => fluid.id.split(":").at(1)).join(", ")
+    col2.push(([*Input Fluids:*], [#fluids]))
+  }
+  
+  if recipe_data.fluid_outputs.len() > 0 {
+    let fluids = recipe_data.fluid_outputs.map(fluid => fluid.id.split(":").at(1)).join(", ")
+    col2.push(([*Output Fluids:*], [#fluids]))
+  }
+  
+  let max_rows = calc.max(col1.len(), col2.len())
+  while col1.len() < max_rows { col1.push(([], [])) }
+  while col2.len() < max_rows { col2.push(([], [])) }
+  
+  let table_rows = ()
+  for i in range(max_rows) {
+    table_rows.push(col1.at(i).at(0))
+    table_rows.push(col1.at(i).at(1))
+    table_rows.push(col2.at(i).at(0))
+    table_rows.push(col2.at(i).at(1))
+  }
+  
+  text(
+    size: 5pt,
+    pad(
+      4pt,
+      table(
+        columns: (auto, 1fr, auto, 1fr),
+        stroke: none,
+        inset: 2pt,
+        ..table_rows
+      )
+    )
+  )
+
+}
 
 #let recipe_node(node) = {
-  node_box(node, draw_node_base(node, green.lighten(80%)))
-  node_box(node, draw_recipe_gui(node.extra.data))
+  node_box(node, draw_node_base(node, green.lighten(80%)), 0, 0)
+  node_box(node, draw_recipe_info(node.extra.data), 0, 0)
+  node_box(node, draw_recipe_gui(node.extra.data), 0, 20)
 }
 
 #let edge(edge_data) = {

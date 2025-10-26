@@ -42,6 +42,10 @@ def graph_to_typst(graph: elk.Graph) -> typ.Document:
     bbox = elk.compute_graph_bounding_box(graph)
 
     subnodes.append(
+        typ.Set(target="text",
+                args=dict(font=typ.Literal(value="Iosevka Term"))))
+
+    subnodes.append(
         typ.Set(target="page",
                 args=dict(
                     width=typ.Literal(value=typ.PtSize(size=bbox.width)),
@@ -82,11 +86,7 @@ def graph_to_typst(graph: elk.Graph) -> typ.Document:
 def get_recipe_shape(id: str) -> MachineData:
     modid, machineid = id.split(":")
     if machineid in mi_fixed_machines:
-        result = mi_fixed_machines[machineid]
-        if not result.size:
-            result.size = compute_ui_size(result)
-
-        return result
+        return mi_fixed_machines[machineid]
 
     else:
         return MachineData(size=(200, 100))
