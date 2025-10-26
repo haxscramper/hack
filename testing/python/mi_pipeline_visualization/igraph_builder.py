@@ -127,7 +127,7 @@ class RecipeNodeData(BaseModel):
     eu: Optional[int] = None
 
 
-NodeDataUnion: Type = Union[RecipeNodeData, FluidNodeData, ItemNodeData]
+NodeDataUnion = Union[RecipeNodeData, FluidNodeData, ItemNodeData]
 
 
 class IgnoreResult():
@@ -354,14 +354,21 @@ class DependencyMode(Enum):
     TRANSITIVE = "transitive"
 
 
-NodeDataUnion = Union["FluidNodeData", "ItemNodeData", "RecipeNodeData"]
+class PredicateContext(Enum):
+    TARGET = "target"
+    RECIPE_CONSUMING = "recipe_consuming"
+    OUTPUT_OF_RECIPE = "output_of_recipe"
+    INPUT_OF_RECIPE = "input_of_recipe"
+    DEPENDENCY = "dependency"
 
 
 def find_dependency_subgraph(
     graph: ig.Graph,
     target_id: str,
-    dependency_mode: DependencyMode,
-    predicate: Callable[[NodeDataUnion, str, int], bool] = None,
+    dependency_mode: Literal["immediate", "exclude_non_produce", "transitive"],
+    node_predicate: Callable[[NodeDataUnion, PredicateContext], bool] = None,
+    continue_predicate: Callable[[NodeDataUnion, PredicateContext],
+                                 bool] = None,
 ) -> ig.Graph:
     target_vertex = None
     for v in graph.vs:
@@ -372,120 +379,94 @@ def find_dependency_subgraph(
     if target_vertex is None:
         raise ValueError(f"Target node with id '{target_id}' not found")
 
-    if predicate is None:
-        predicate = lambda node_data, context, distance: True
+    if node_predicate is None:
+        node_predicate = lambda node_data, context: True
 
-    mst_vertices = set()
-    queue = [(target_vertex.index, "target", 0)]
-    visited = set()
-    distances = {}
+    if continue_predicate is None:
+        continue_predicate = lambda node_data, context: True
 
-    while queue:
-        current_idx, context, distance = queue.pop(0)
-        if current_idx in visited:
-            continue
+    def dfs_with_predicates(start_idx: int,
+                            start_context: PredicateContext) -> Set[int]:
+        result_vertices = set()
+        stack = [(start_idx, start_context)]
+        visited = set()
+        in_stack = set()
 
-        current_vertex = graph.vs[current_idx]
-        if not predicate(current_vertex["data"], context, distance):
-            continue
+        while stack:
+            current_idx, context = stack.pop()
 
-        visited.add(current_idx)
-        mst_vertices.add(current_idx)
-        distances[current_idx] = distance
+            if current_idx in in_stack:
+                continue
 
-        for edge in graph.es.select(_source=current_idx):
-            target_idx = edge.target
-            if target_idx not in visited:
-                target_vertex_data = graph.vs[target_idx]
-                if target_vertex_data["node_type"] == "recipe":
-                    queue.append(
-                        (target_idx, "recipe_consuming", distance + 1))
-                else:
-                    queue.append(
-                        (target_idx, "output_of_recipe", distance + 1))
+            if current_idx in visited:
+                continue
 
+            current_vertex = graph.vs[current_idx]
+
+            if not node_predicate(current_vertex["data"], context):
+                continue
+
+            visited.add(current_idx)
+            in_stack.add(current_idx)
+            result_vertices.add(current_idx)
+
+            if continue_predicate(current_vertex["data"], context):
+                for edge in graph.es.select(_source=current_idx):
+                    target_idx = edge.target
+                    if target_idx not in visited:
+                        target_vertex_data = graph.vs[target_idx]
+                        if target_vertex_data["node_type"] == "recipe":
+                            stack.append((target_idx,
+                                          PredicateContext.RECIPE_CONSUMING))
+                        else:
+                            stack.append((target_idx,
+                                          PredicateContext.OUTPUT_OF_RECIPE))
+
+            in_stack.remove(current_idx)
+
+        return result_vertices
+
+    def add_recipe_inputs(vertices: Set[int],
+                          allowed_sources: Set[int] = None) -> Set[int]:
+        additional_vertices = set()
+        for v_idx in vertices:
+            if graph.vs[v_idx]["node_type"] == "recipe":
+                for edge in graph.es.select(_target=v_idx):
+                    if allowed_sources is None or edge.source in allowed_sources:
+                        source_vertex = graph.vs[edge.source]
+                        if node_predicate(source_vertex["data"],
+                                          PredicateContext.INPUT_OF_RECIPE):
+                            additional_vertices.add(edge.source)
+        return additional_vertices
+
+    mst_vertices = dfs_with_predicates(target_vertex.index,
+                                       PredicateContext.TARGET)
     oil_based_vertices = mst_vertices.copy()
     reachable_vertices = mst_vertices.copy()
 
-    if dependency_mode == DependencyMode.IMMEDIATE:
-        additional_vertices = set()
-        for v_idx in mst_vertices:
-            if graph.vs[v_idx]["node_type"] == "recipe":
-                for edge in graph.es.select(_target=v_idx):
-                    source_vertex = graph.vs[edge.source]
-                    recipe_distance = distances.get(v_idx, 0)
-                    if predicate(source_vertex["data"], "input_of_recipe",
-                                 recipe_distance):
-                        additional_vertices.add(edge.source)
-                        distances[edge.source] = recipe_distance
+    if dependency_mode == "immediate":
+        additional_vertices = add_recipe_inputs(mst_vertices)
         reachable_vertices.update(additional_vertices)
 
-    elif dependency_mode == DependencyMode.EXCLUDE_NON_PRODUCE:
-        additional_vertices = set()
-        for v_idx in mst_vertices:
-            if graph.vs[v_idx]["node_type"] == "recipe":
-                for edge in graph.es.select(_target=v_idx):
-                    if edge.source in oil_based_vertices:
-                        source_vertex = graph.vs[edge.source]
-                        recipe_distance = distances.get(v_idx, 0)
-                        if predicate(source_vertex["data"], "input_of_recipe",
-                                     recipe_distance):
-                            additional_vertices.add(edge.source)
-                            distances[edge.source] = recipe_distance
+    elif dependency_mode == "exclude_non_produce":
+        additional_vertices = add_recipe_inputs(mst_vertices,
+                                                oil_based_vertices)
         reachable_vertices.update(additional_vertices)
 
-    elif dependency_mode == DependencyMode.TRANSITIVE:
+    elif dependency_mode == "transitive":
         changed = True
         while changed:
             changed = False
             current_size = len(reachable_vertices)
-            additional_vertices = set()
 
-            for v_idx in reachable_vertices:
-                if graph.vs[v_idx]["node_type"] == "recipe":
-                    for edge in graph.es.select(_target=v_idx):
-                        if edge.source not in reachable_vertices:
-                            source_vertex = graph.vs[edge.source]
-                            recipe_distance = distances.get(v_idx, 0)
-                            if predicate(source_vertex["data"],
-                                         "input_of_recipe", recipe_distance):
-                                additional_vertices.add(edge.source)
-                                distances[edge.source] = recipe_distance
-
+            additional_vertices = add_recipe_inputs(reachable_vertices)
             reachable_vertices.update(additional_vertices)
 
             for v_idx in additional_vertices:
                 if graph.vs[v_idx]["node_type"] in ["fluid", "item"]:
-                    queue = [(v_idx, "dependency", distances.get(v_idx, 0))]
-                    visited_trans = set()
-
-                    while queue:
-                        current_idx, context, distance = queue.pop(0)
-                        if current_idx in visited_trans:
-                            continue
-
-                        current_vertex = graph.vs[current_idx]
-                        if not predicate(current_vertex["data"], context,
-                                         distance):
-                            continue
-
-                        visited_trans.add(current_idx)
-                        reachable_vertices.add(current_idx)
-
-                        for edge in graph.es.select(_source=current_idx):
-                            target_idx = edge.target
-                            if target_idx not in visited_trans:
-                                target_vertex_data = graph.vs[target_idx]
-                                new_distance = distance + 1
-                                distances[target_idx] = new_distance
-                                if target_vertex_data["node_type"] == "recipe":
-                                    queue.append(
-                                        (target_idx, "recipe_consuming",
-                                         new_distance))
-                                else:
-                                    queue.append(
-                                        (target_idx, "output_of_recipe",
-                                         new_distance))
+                    dependency_vertices = dfs_with_predicates(
+                        v_idx, PredicateContext.DEPENDENCY)
+                    reachable_vertices.update(dependency_vertices)
 
             if len(reachable_vertices) > current_size:
                 changed = True

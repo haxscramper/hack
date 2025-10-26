@@ -8,7 +8,7 @@ from pathlib import Path
 import pickle
 from plumbum import local, CommandNotFound
 
-from igraph_builder import parse_recipes_to_graph, find_dependency_subgraph, NodeDataUnion, ItemNodeData, FluidNodeData, RecipeNodeData
+import igraph_builder as gbuild
 from elk_converter import convert_to_elk, graph_to_typst
 from typst_schema import generate_typst
 import elk_schema as elk
@@ -22,25 +22,28 @@ if USE_GRAPH_CACHE and cachefile.exists():
         graph: ig.Graph = pickle.load(f)
 
 else:
-    graph = parse_recipes_to_graph(Path(JSON_PATH))
+    graph = gbuild.parse_recipes_to_graph(Path(JSON_PATH))
 
     with cachefile.open("wb") as f:
         pickle.dump(graph, f)
 
 
-def accept_node(data: NodeDataUnion, context: str, distance) -> bool:
-    if isinstance(data, FluidNodeData) and data.id == "modern_industrialization:oxygen":
+def accept_node(data: gbuild.NodeDataUnion, context: str, distance) -> bool:
+    return distance < 8
+
+
+def continue_predicate(data: gbuild.NodeDataUnion, context: gbuild.PredicateContext) -> bool:
+    if isinstance(data, gbuild.FluidNodeData) and data.id == "modern_industrialization:oxygen":
+        return False
+
+    else:
         return True
 
-    else: 
-        return distance < 8
-
-
-graph = find_dependency_subgraph(
+graph = gbuild.find_dependency_subgraph(
     graph,
     "modern_industrialization:crude_oil",
     "immediate",
-    predicate=accept_node,
+    node_predicate=accept_node,
 )
 
 log.info(f"Using graph with {graph.ecount()} edges and {graph.vcount()} nodes")
