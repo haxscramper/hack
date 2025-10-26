@@ -41,9 +41,9 @@ def graph_to_typst(graph: elk.Graph) -> typ.Document:
 
     bbox = elk.compute_graph_bounding_box(graph)
 
-    subnodes.append(
-        typ.Set(target="text",
-                args=dict(font=typ.Literal(value="Iosevka Term"))))
+    # subnodes.append(
+    #     typ.Set(target="text",
+    #             args=dict(font=typ.Literal(value="Iosevka Term"))))
 
     subnodes.append(
         typ.Set(target="page",

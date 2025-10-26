@@ -104,12 +104,14 @@ def get_texture_path(id: str) -> str | None:
 class FluidNodeData(BaseModel):
     id: str
     image: Optional[str] = None
+    amount: Optional[int] = None
     node_kind: Literal["fluid"] = "fluid"
 
 
 class ItemNodeData(BaseModel):
     id: str
     image: Optional[str] = None
+    amount: Optional[int] = None
     node_kind: Literal["item"] = "item"
 
 
@@ -418,12 +420,17 @@ def parse_recipes_to_graph(path: Path) -> ig.Graph:
     def disambiguate_fluid(
             model: FluidModel) -> Optional[FluidNodeData | IgnoreResult]:
         if model.fluid:
-            return FluidNodeData(id=model.fluid,
-                                 image=get_texture_path("fluid:" +
-                                                        model.fluid))
+            return FluidNodeData(
+                id=model.fluid,
+                image=get_texture_path("fluid:" + model.fluid),
+                amount=model.amount,
+            )
 
         elif model.tag:
-            return FluidNodeData(id=model.tag)
+            return FluidNodeData(
+                id=model.tag,
+                amount=model.amount,
+            )
 
         return None
 
@@ -435,11 +442,17 @@ def parse_recipes_to_graph(path: Path) -> ig.Graph:
 
         try:
             if model.item:
-                return ItemNodeData(id=model.item,
-                                    image=get_texture_path(model.item))
+                return ItemNodeData(
+                    id=model.item,
+                    image=get_texture_path(model.item),
+                    amount=model.amount,
+                )
 
             elif model.tag:
-                return ItemNodeData(id=model.tag)
+                return ItemNodeData(
+                    id=model.tag,
+                    amount=model.amount,
+                )
 
             else:
                 return None

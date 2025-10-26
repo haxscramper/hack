@@ -33,8 +33,8 @@
 }
 
 #let draw_arrow(direction, width, height) = {
-  let width = width * 1pt;
-  let height = height * 1pt;
+  let width = width * 1pt
+  let height = height * 1pt
   if direction == "in" {
     place(
       center,
@@ -42,8 +42,8 @@
         fill: black,
         (0pt, 0pt),
         (width * 0.6, height * 0.2),
-        (0pt, width * 0.4)
-      )
+        (0pt, width * 0.4),
+      ),
     )
   } else if direction == "out" {
     place(
@@ -52,8 +52,8 @@
         fill: black,
         (0pt, 0pt),
         (width * 0.6, height * 0.2),
-        (0pt, width * 0.4)
-      )
+        (0pt, width * 0.4),
+      ),
     )
   }
 }
@@ -75,9 +75,9 @@
   let rect_x = 0
   let rect_y = 0
 
-  // If the port has explicit width and height it is going to be properly offset 
-  // relative to the parent node. But if the port originally had no dimensions, 
-  // the ELK layout treats it as a zero-sized point. 
+  // If the port has explicit width and height it is going to be properly offset
+  // relative to the parent node. But if the port originally had no dimensions,
+  // the ELK layout treats it as a zero-sized point.
   if "width" in port and "height" in port {
     port_width = port.at("width")
     port_height = port.at("height")
@@ -152,15 +152,15 @@
 }
 
 #let node_box(node, body, x_offset, y_offset) = {
-    place(
-      dx: (node.x + x_offset) * 1pt,
-      dy: (node.y + y_offset) * 1pt,
-      box(
-        width: node.width * 1pt,
-        height: node.height * 1pt,
-        body,
-      ),
-    )
+  place(
+    dx: (node.x + x_offset) * 1pt,
+    dy: (node.y + y_offset) * 1pt,
+    box(
+      width: node.width * 1pt,
+      height: node.height * 1pt,
+      body,
+    ),
+  )
 }
 
 #let fluid_node(node) = {
@@ -173,19 +173,45 @@
   node_box(node, draw_node_image(node), 0, 0)
 }
 
+#let format_amount(content) = {
+  if "amount" in content and content.amount != none {
+    if (content.node_kind == "fluid") {
+      if 1000 < content.amount {
+        return str(content.amount / 1000) + "B"
+      } else {
+        return str(content.amount) + "mB"
+      }
+    } else {
+      return str(content.amount)
+    }
+  } else {
+    return ""
+  }
+}
+
+#let format_content(content) = {
+  let name = content.id.split(":").at(1)
+  if "amount" in content and content.amount != none {
+    return name + " (" + format_amount(content) + ")"
+  } else {
+    return name
+  }
+}
+
+
 #let draw_slot(x, y, slot_size, slot_type, content) = {
   let fill_color = if slot_type == "item" {
     rgb("#8B8B8B").lighten(80%)
   } else {
     blue.lighten(90%)
   }
-  
+
   let stroke_color = if slot_type == "item" {
     gray
   } else {
     blue
   }
-  
+
   place(
     dx: x * 1pt,
     dy: y * 1pt,
@@ -194,14 +220,27 @@
       fill: fill_color,
       width: slot_size * 1pt,
       height: slot_size * 1pt,
-    )
+    ),
   )
-  
-  if content != none and "image" in content {
+
+  if content != none {
     place(
       dx: x * 1pt + 1pt,
       dy: y * 1pt + 1pt,
-      image(content.image, width: 16pt, height: 16pt)
+      if "image" in content {
+        image(content.image, width: 16pt, height: 16pt)
+      } else {
+        box(width: 16pt, height: 16pt, inset: 2pt, text(hyphenate: true, size: 3pt, content.id))
+      },
+    )
+    place(
+      dx: x * 1pt + 1pt,
+      dy: y * 1pt + 1pt,
+      box(
+        width: 16pt, 
+        height: 16pt, 
+        place(bottom + right, text(size: 5pt, format_amount(content)))
+      )
     )
   }
 }
@@ -210,7 +249,7 @@
   if slot_position == none {
     return
   }
-  
+
   for row in range(slot_position.rows) {
     for col in range(slot_position.cols) {
       let idx = row * slot_position.cols + col
@@ -226,39 +265,39 @@
 #let draw_recipe_gui(data) = {
   let machine = data.machine
   let slot_size = 18
-  
+
   // Draw item input slots
   draw_slot_grid(
     machine.item_slots.positions.at(0, default: none),
     slot_size,
     "item",
-    data.data.item_inputs
+    data.data.item_inputs,
   )
-  
+
   // Draw item output slots
   draw_slot_grid(
     machine.item_slots.positions.at(1, default: none),
     slot_size,
     "item",
-    data.data.item_outputs
+    data.data.item_outputs,
   )
-  
+
   // Draw fluid input slots
   draw_slot_grid(
     machine.fluid_slots.positions.at(0, default: none),
     slot_size,
     "fluid",
-    data.data.fluid_inputs
+    data.data.fluid_inputs,
   )
-  
+
   // Draw fluid output slots
   draw_slot_grid(
     machine.fluid_slots.positions.at(1, default: none),
     slot_size,
     "fluid",
-    data.data.fluid_outputs
+    data.data.fluid_outputs,
   )
-  
+
   // Draw progress bar
   place(
     dx: machine.progress_bar.x * 1pt,
@@ -268,9 +307,9 @@
       fill: green.lighten(80%),
       width: 24pt,
       height: 18pt,
-    )
+    ),
   )
-  
+
   // // Draw energy bar
   // place(
   //   dx: machine.energy_bar.x * 1pt,
@@ -282,7 +321,7 @@
   //     height: 18pt,
   //   )
   // )
-  
+
   // // Draw efficiency bar
   // place(
   //   dx: machine.efficiency_bar.x * 1pt,
@@ -294,14 +333,14 @@
   //     height: 12pt,
   //   )
   // )
-  
+
   // // Draw EU and duration text
   // place(
   //   dx: machine.progress_bar.x * 1pt,
   //   dy: (machine.progress_bar.y - 12) * 1pt,
   //   text(size: 8pt, str(data.data.eu) + " EU/t")
   // )
-  
+
   // place(
   //   dx: machine.progress_bar.x * 1pt,
   //   dy: (machine.progress_bar.y + 20) * 1pt,
@@ -309,41 +348,42 @@
   // )
 }
 
+
 #let draw_recipe_info(data) = {
   let recipe_data = data.data
   let machine = data.machine
-  
+
   let col1 = ()
   let col2 = ()
-  
+
   col1.push(([*Machine:*], [#machine.english_name]))
   col1.push(([*Energy:*], [#recipe_data.eu EU/t]))
   col1.push(([*Duration:*], [#recipe_data.duration ticks]))
-  
+
   if recipe_data.item_inputs.len() > 0 {
-    let items = recipe_data.item_inputs.map(item => item.id.split(":").at(1)).join(", ")
+    let items = recipe_data.item_inputs.map(format_content).join(", ")
     col2.push(([*Input Items:*], [#items]))
   }
-  
+
   if recipe_data.item_outputs.len() > 0 {
-    let items = recipe_data.item_outputs.map(item => item.id.split(":").at(1)).join(", ")
+    let items = recipe_data.item_outputs.map(format_content).join(", ")
     col2.push(([*Output Items:*], [#items]))
   }
-  
+
   if recipe_data.fluid_inputs.len() > 0 {
-    let fluids = recipe_data.fluid_inputs.map(fluid => fluid.id.split(":").at(1)).join(", ")
+    let fluids = recipe_data.fluid_inputs.map(format_content).join(", ")
     col2.push(([*Input Fluids:*], [#fluids]))
   }
-  
+
   if recipe_data.fluid_outputs.len() > 0 {
-    let fluids = recipe_data.fluid_outputs.map(fluid => fluid.id.split(":").at(1)).join(", ")
+    let fluids = recipe_data.fluid_outputs.map(format_content).join(", ")
     col2.push(([*Output Fluids:*], [#fluids]))
   }
-  
+
   let max_rows = calc.max(col1.len(), col2.len())
   while col1.len() < max_rows { col1.push(([], [])) }
   while col2.len() < max_rows { col2.push(([], [])) }
-  
+
   let table_rows = ()
   for i in range(max_rows) {
     table_rows.push(col1.at(i).at(0))
@@ -351,7 +391,7 @@
     table_rows.push(col2.at(i).at(0))
     table_rows.push(col2.at(i).at(1))
   }
-  
+
   text(
     size: 5pt,
     pad(
@@ -361,10 +401,9 @@
         stroke: none,
         inset: 2pt,
         ..table_rows
-      )
-    )
+      ),
+    ),
   )
-
 }
 
 #let recipe_node(node) = {
