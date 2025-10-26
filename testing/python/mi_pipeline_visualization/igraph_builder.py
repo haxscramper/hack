@@ -117,6 +117,7 @@ class ItemNodeData(BaseModel):
 
 class RecipeNodeData(BaseModel):
     type: str
+    machine_item: Optional[ItemNodeData] = None
     node_kind: Literal["recipe"] = "recipe"
     fluid_inputs: List[FluidNodeData]
     fluid_outputs: List[FluidNodeData]
@@ -274,12 +275,18 @@ def create_recipe_graph(
 
                 item_output_nodes.append(item_node_data)
 
+            accepted, machine_item = disambiguate(ItemModel(item=obj.type), disambiguate_item)
+
+            if isinstance(machine_item, IgnoreResult): 
+                machine_item = None
+
             recipe_data = RecipeNodeData(
                 type=obj.type,
                 fluid_inputs=fluid_input_nodes,
                 fluid_outputs=fluid_output_nodes,
                 item_inputs=item_input_nodes,
                 item_outputs=item_output_nodes,
+                machine_item=machine_item,
             )
 
             if isinstance(obj, MIElectricRecipe):

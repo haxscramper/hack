@@ -127,6 +127,7 @@
     height: 100%,
     stroke: black + 2pt,
     fill: fill_color,
+    radius: 5pt,
     // Place ports inside this rectangle
     if "ports" in node {
       for port in node.ports {
@@ -149,6 +150,21 @@
       image(image_path, width: 32pt, height: 32pt),
     )
   }
+}
+
+#let box_at(..args) = {
+  place(
+    dx: args.at("x") * 1pt,
+    dy: args.at("y") * 1pt,
+    box(
+      inset: args.at("inset", default: 0pt),
+      width: args.at("width") * 1pt,
+      height: args.at("height") * 1pt,
+      place(
+        args.at("body"),
+      ),
+    ),
+  )
 }
 
 #let node_box(node, body, x_offset, y_offset) = {
@@ -212,36 +228,46 @@
     blue
   }
 
-  place(
-    dx: x * 1pt,
-    dy: y * 1pt,
-    rect(
+  let box_args = (
+    x: x,
+    y: y,
+    width: slot_size,
+    height: slot_size,
+    inset: 1pt,
+  )
+
+  box_at(
+    ..box_args,
+    body: rect(
       stroke: 0.5pt + stroke_color,
       fill: fill_color,
-      width: slot_size * 1pt,
-      height: slot_size * 1pt,
+      width: 100%,
+      height: 100%,
+      radius: 2pt,
     ),
   )
 
   if content != none {
-    place(
-      dx: x * 1pt + 1pt,
-      dy: y * 1pt + 1pt,
-      if "image" in content {
-        image(content.image, width: 16pt, height: 16pt)
-      } else {
-        box(width: 16pt, height: 16pt, inset: 2pt, text(hyphenate: true, size: 3pt, content.id))
-      },
-    )
-    place(
-      dx: x * 1pt + 1pt,
-      dy: y * 1pt + 1pt,
-      box(
-        width: 16pt, 
-        height: 16pt, 
-        place(bottom + right, text(size: 5pt, format_amount(content)))
-      )
-    )
+    if "image" in content {
+      box_at(..box_args, inset: 3pt, body: image(
+        content.image,
+        width: 100%,
+        height: 100%,
+      ))
+    } else {
+      box_at(..box_args, body: text(
+        hyphenate: true,
+        size: 3pt,
+        content.id,
+      ))
+    }
+    box_at(..box_args, inset: 2pt, body: box(width: 100%, height: 100%, place(
+      bottom + right,
+      text(
+        size: 5pt,
+        format_amount(content),
+      ),
+    )))
   }
 }
 
@@ -397,7 +423,7 @@
     pad(
       4pt,
       table(
-        columns: (auto, 1fr, auto, 1fr),
+        columns: (1fr, auto, 1fr, auto),
         stroke: none,
         inset: 2pt,
         ..table_rows
