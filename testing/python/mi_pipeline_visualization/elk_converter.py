@@ -9,9 +9,10 @@ import igraph as ig
 import elk_schema as elk
 import typst_schema as typ
 from pydantic import BaseModel
-from beartype.typing import Literal, Union, List
+from beartype.typing import Literal, Union, List, Optional
 from enum import Enum
 from beartype import beartype
+from recipe_gui_schema import MachineData, mi_fixed_machines, compute_ui_size
 
 
 class PortData(BaseModel, extra="forbid"):
@@ -25,6 +26,7 @@ class EdgeData(BaseModel, extra="forbid"):
 
 class ElkExtra(BaseModel, extra="forbid"):
     data: Union[NodeDataUnion, EdgeData, PortData]
+    machine: Optional[MachineData] = None
     kind: Literal["fluid_node", "item_node", "recipe_node", "port", "edge"]
 
 
@@ -77,14 +79,26 @@ def graph_to_typst(graph: elk.Graph) -> typ.Document:
     return typ.Document(subnodes=subnodes)
 
 
+def get_recipe_shape(id: str) -> MachineData:
+    modid, machineid = id.split(":")
+    if machineid in mi_fixed_machines:
+        result = mi_fixed_machines[machineid]
+        if not result.size:
+            result.size = compute_ui_size(result)
+
+        return result
+
+    else:
+        return MachineData(size=(200, 100))
+
+
 def convert_to_elk(graph: ig.Graph) -> elk.Graph:
 
-    result = elk.Graph(
-        id="root",
-        children=[],
-        edges=[],
-        ports=[],
-    )
+    result = elk.Graph(id="root",
+                       children=[],
+                       edges=[],
+                       ports=[],
+                       layoutOptions={})
 
     @beartype
     class Direction(Enum):
@@ -107,12 +121,18 @@ def convert_to_elk(graph: ig.Graph) -> elk.Graph:
             case "recipe":
                 rec: RecipeNodeData = v["data"]
 
+                recipe = get_recipe_shape(rec.type)
+
                 node = elk.Node(
                     id=f"{rec.type}-{recipe_idx}",
-                    width=200,
-                    height=100,
+                    width=recipe.size[0],
+                    height=recipe.size[1],
                     ports=[],
-                    extra=dict(data=ElkExtra(data=rec, kind="recipe_node")),
+                    extra=dict(data=ElkExtra(
+                        data=rec,
+                        kind="recipe_node",
+                        machine=recipe,
+                    )),
                 )
 
                 @beartype

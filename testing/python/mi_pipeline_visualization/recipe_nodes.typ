@@ -124,7 +124,7 @@
   rect(
     width: 100%,
     height: 100%,
-    stroke: black + 1pt,
+    stroke: black + 2pt,
     fill: fill_color,
     // Place ports inside this rectangle
     if "ports" in node {

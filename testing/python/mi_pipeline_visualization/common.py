@@ -1,3 +1,3 @@
 JSON_PATH = "/home/haxscramper/.local/share/multimc/instances/1.21.1 V2/.minecraft/kubejs/server_scripts/all_recipes.json"
-USE_GRAPH_CACHE = False
+USE_GRAPH_CACHE = True
 TEXTURE_DIRECTORY = "/home/haxscramper/.local/share/multimc/instances/1.21.1 V2/.minecraft/icon-exports-x32"

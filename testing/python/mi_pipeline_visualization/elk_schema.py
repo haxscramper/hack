@@ -930,12 +930,6 @@ def restore_extra_data(graph: Graph, extra_map: Dict[str, Dict[str,
 
 
 def perform_graph_layout(graph: Graph) -> Graph:
-    if graph.layoutOptions and graph.layoutOptions.elk:
-        if graph.layoutOptions.elk.algorithm:
-            log.info(f"  Algorithm: {graph.layoutOptions.elk.algorithm}")
-        if graph.layoutOptions.elk.direction:
-            log.info(f"  Direction: {graph.layoutOptions.elk.direction}")
-
     validate_graph_structure(graph)
 
     with TemporaryDirectory() as output_subdir:
