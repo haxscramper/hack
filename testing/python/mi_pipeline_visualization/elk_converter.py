@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from beartype.typing import Literal, Union, List, Optional
 from enum import Enum
 from beartype import beartype
-from recipe_gui_schema import MachineData, mi_fixed_machines, compute_ui_size
+from recipe_gui_schema import MachineData, mi_fixed_machines
 
 
 class PortData(BaseModel, extra="forbid"):

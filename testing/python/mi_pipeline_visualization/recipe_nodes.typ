@@ -1,4 +1,3 @@
-
 #let debug_text(text_in, color) = {
   place(
     top + left,
@@ -172,8 +171,146 @@
   node_box(node, draw_node_image(node))
 }
 
+#let draw_slot(x, y, slot_size, slot_type, content) = {
+  let fill_color = if slot_type == "item" {
+    rgb("#8B8B8B").lighten(80%)
+  } else {
+    blue.lighten(90%)
+  }
+  
+  let stroke_color = if slot_type == "item" {
+    gray
+  } else {
+    blue
+  }
+  
+  place(
+    dx: x * 1pt,
+    dy: y * 1pt,
+    rect(
+      stroke: 0.5pt + stroke_color,
+      fill: fill_color,
+      width: slot_size * 1pt,
+      height: slot_size * 1pt,
+    )
+  )
+  
+  if content != none and "image" in content {
+    place(
+      dx: x * 1pt + 1pt,
+      dy: y * 1pt + 1pt,
+      image(content.image, width: 16pt, height: 16pt)
+    )
+  }
+}
+
+#let draw_slot_grid(slot_position, slot_size, slot_type, contents) = {
+  if slot_position == none {
+    return
+  }
+  
+  for row in range(slot_position.rows) {
+    for col in range(slot_position.cols) {
+      let idx = row * slot_position.cols + col
+      let x = slot_position.x + col * slot_size
+      let y = slot_position.y + row * slot_size
+      let content = if idx < contents.len() { contents.at(idx) } else { none }
+      draw_slot(x, y, slot_size, slot_type, content)
+    }
+  }
+}
+
+
+#let draw_recipe_gui(data) = {
+  let machine = data.machine
+  let slot_size = 18
+  
+  // Draw item input slots
+  draw_slot_grid(
+    machine.item_slots.positions.at(0, default: none),
+    slot_size,
+    "item",
+    data.data.item_inputs
+  )
+  
+  // Draw item output slots
+  draw_slot_grid(
+    machine.item_slots.positions.at(1, default: none),
+    slot_size,
+    "item",
+    data.data.item_outputs
+  )
+  
+  // Draw fluid input slots
+  draw_slot_grid(
+    machine.fluid_slots.positions.at(0, default: none),
+    slot_size,
+    "fluid",
+    data.data.fluid_inputs
+  )
+  
+  // Draw fluid output slots
+  draw_slot_grid(
+    machine.fluid_slots.positions.at(1, default: none),
+    slot_size,
+    "fluid",
+    data.data.fluid_outputs
+  )
+  
+  // Draw progress bar
+  place(
+    dx: machine.progress_bar.x * 1pt,
+    dy: machine.progress_bar.y * 1pt,
+    rect(
+      stroke: 0.5pt + gray,
+      fill: green.lighten(80%),
+      width: 24pt,
+      height: 18pt,
+    )
+  )
+  
+  // Draw energy bar
+  place(
+    dx: machine.energy_bar.x * 1pt,
+    dy: machine.energy_bar.y * 1pt,
+    rect(
+      stroke: 0.5pt + gray,
+      fill: yellow.lighten(80%),
+      width: 12pt,
+      height: 18pt,
+    )
+  )
+  
+  // Draw efficiency bar
+  place(
+    dx: machine.efficiency_bar.x * 1pt,
+    dy: machine.efficiency_bar.y * 1pt,
+    rect(
+      stroke: 0.5pt + gray,
+      fill: orange.lighten(80%),
+      width: 24pt,
+      height: 12pt,
+    )
+  )
+  
+  // Draw EU and duration text
+  place(
+    dx: machine.progress_bar.x * 1pt,
+    dy: (machine.progress_bar.y - 12) * 1pt,
+    text(size: 8pt, str(data.data.eu) + " EU/t")
+  )
+  
+  place(
+    dx: machine.progress_bar.x * 1pt,
+    dy: (machine.progress_bar.y + 20) * 1pt,
+    text(size: 8pt, str(data.data.duration) + " ticks")
+  )
+}
+
+
 #let recipe_node(node) = {
   node_box(node, draw_node_base(node, green.lighten(80%)))
+  node_box(node, draw_recipe_gui(node.extra.data))
 }
 
 #let edge(edge_data) = {

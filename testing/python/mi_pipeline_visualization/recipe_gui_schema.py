@@ -113,32 +113,33 @@ mi_fixed_machines_list = [
                 side_overlay=True,
                 tiers=16,
                 io_bucket_capacity=16),
-    MachineData(english_name="Chemical Reactor",
-                machine="chemical_reactor",
-                recipe_type="CHEMICAL_REACTOR",
-                item_input_count=3,
-                item_output_count=3,
-                fluid_input_count=3,
-                fluid_output_count=3,
-                gui_params=GuiParameters(),
-                progress_bar=ProgressBarParameters(x=88,
-                                                   y=35,
-                                                   texture="triple_arrow"),
-                efficiency_bar=RecipeEfficiencyBarParameters(x=50, y=66),
-                energy_bar=EnergyBarParameters(x=12, y=35),
-                item_slots=ItemSlots(positions=[
-                    SlotPosition(x=30, y=27, cols=3, rows=1),
-                    SlotPosition(x=116, y=27, cols=3, rows=1)
-                ]),
-                fluid_slots=FluidSlots(positions=[
-                    SlotPosition(x=30, y=47, cols=3, rows=1),
-                    SlotPosition(x=116, y=47, cols=3, rows=1)
-                ]),
-                front_overlay=True,
-                top_overlay=False,
-                side_overlay=False,
-                tiers=16,
-                io_bucket_capacity=24),
+    MachineData(
+        english_name="Chemical Reactor",
+        machine="chemical_reactor",
+        recipe_type="CHEMICAL_REACTOR",
+        item_input_count=3,
+        item_output_count=3,
+        fluid_input_count=3,
+        fluid_output_count=3,
+        gui_params=GuiParameters(),
+        progress_bar=ProgressBarParameters(x=88, y=35, texture="triple_arrow"),
+        efficiency_bar=RecipeEfficiencyBarParameters(x=50, y=66),
+        energy_bar=EnergyBarParameters(x=12, y=35),
+        item_slots=ItemSlots(positions=[
+            SlotPosition(x=30, y=27, cols=3, rows=1),
+            SlotPosition(x=116, y=27, cols=3, rows=1)
+        ]),
+        fluid_slots=FluidSlots(positions=[
+            SlotPosition(x=30, y=47, cols=3, rows=1),
+            SlotPosition(x=116, y=47, cols=3, rows=1)
+        ]),
+        front_overlay=True,
+        top_overlay=False,
+        side_overlay=False,
+        tiers=16,
+        io_bucket_capacity=24,
+        size=(200, 100),
+    ),
     MachineData(english_name="Compressor",
                 machine="compressor",
                 recipe_type="COMPRESSOR",
@@ -399,49 +400,3 @@ mi_fixed_machines: Dict[str, MachineData] = {
     it.machine: it
     for it in mi_fixed_machines_list
 }
-
-
-def compute_ui_size(machine: MachineData,
-                    slot_size: int = 18) -> Tuple[int, int]:
-    padding = 8
-    min_width = 176
-    min_height = 166
-
-    max_x = 0
-    max_y = 0
-
-    for slot in machine.item_slots.positions:
-        slot_end_x = slot.x + (slot.cols * slot_size)
-        slot_end_y = slot.y + (slot.rows * slot_size)
-        if max_x < slot_end_x:
-            max_x = slot_end_x
-        if max_y < slot_end_y:
-            max_y = slot_end_y
-
-    for slot in machine.fluid_slots.positions:
-        slot_end_x = slot.x + (slot.cols * slot_size)
-        slot_end_y = slot.y + (slot.rows * slot_size)
-        if max_x < slot_end_x:
-            max_x = slot_end_x
-        if max_y < slot_end_y:
-            max_y = slot_end_y
-
-    bar_elements = [(machine.progress_bar.x, machine.progress_bar.y),
-                    (machine.efficiency_bar.x, machine.efficiency_bar.y),
-                    (machine.energy_bar.x, machine.energy_bar.y)]
-
-    for x, y in bar_elements:
-        bar_end_x = x + 24
-        bar_end_y = y + 18
-        if max_x < bar_end_x:
-            max_x = bar_end_x
-        if max_y < bar_end_y:
-            max_y = bar_end_y
-
-    width = max(max_x + padding, min_width)
-    height = max(max_y + padding, min_height)
-
-    if machine.gui_params.background_height:
-        height = machine.gui_params.background_height
-
-    return width, height
