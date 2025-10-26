@@ -29,20 +29,30 @@ else:
 
 
 def accept_node(data: gbuild.NodeDataUnion, context: str, distance) -> bool:
-    return distance < 8
+    if isinstance(data, gbuild.RecipeNodeData) and data.type.startswith(
+        ("xycraft")):
+        return False
+
+    else:
+        return distance < 8
 
 
-def continue_predicate(data: gbuild.NodeDataUnion, context: gbuild.PredicateContext) -> bool:
-    if isinstance(data, gbuild.FluidNodeData) and data.id == "modern_industrialization:oxygen":
+def continue_predicate(data: gbuild.NodeDataUnion,
+                       context: gbuild.PredicateContext) -> bool:
+    if isinstance(data, gbuild.FluidNodeData) and data.id in [
+            "modern_industrialization:oxygen",
+            "modern_industrialization:lubricant",
+    ]:
         return False
 
     else:
         return True
 
+
 graph = gbuild.find_dependency_subgraph(
     graph,
     "modern_industrialization:crude_oil",
-    "immediate",
+    gbuild.DependencyMode.IMMEDIATE,
     node_predicate=accept_node,
 )
 

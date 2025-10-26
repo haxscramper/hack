@@ -362,12 +362,14 @@ class PredicateContext(Enum):
     DEPENDENCY = "dependency"
 
 
+@beartype
 def find_dependency_subgraph(
     graph: ig.Graph,
     target_id: str,
-    dependency_mode: Literal["immediate", "exclude_non_produce", "transitive"],
-    node_predicate: Callable[[NodeDataUnion, PredicateContext], bool] = None,
-    continue_predicate: Callable[[NodeDataUnion, PredicateContext],
+    dependency_mode: DependencyMode,
+    node_predicate: Callable[[NodeDataUnion, PredicateContext, int],
+                             bool] = None,
+    continue_predicate: Callable[[NodeDataUnion, PredicateContext, int],
                                  bool] = None,
 ) -> ig.Graph:
     target_vertex = None
@@ -380,20 +382,20 @@ def find_dependency_subgraph(
         raise ValueError(f"Target node with id '{target_id}' not found")
 
     if node_predicate is None:
-        node_predicate = lambda node_data, context: True
+        node_predicate = lambda node_data, context, distance: True
 
     if continue_predicate is None:
-        continue_predicate = lambda node_data, context: True
+        continue_predicate = lambda node_data, context, distance: True
 
     def dfs_with_predicates(start_idx: int,
                             start_context: PredicateContext) -> Set[int]:
         result_vertices = set()
-        stack = [(start_idx, start_context)]
+        stack = [(start_idx, start_context, 0)]
         visited = set()
         in_stack = set()
 
         while stack:
-            current_idx, context = stack.pop()
+            current_idx, context, distance = stack.pop()
 
             if current_idx in in_stack:
                 continue
@@ -403,31 +405,34 @@ def find_dependency_subgraph(
 
             current_vertex = graph.vs[current_idx]
 
-            if not node_predicate(current_vertex["data"], context):
+            if not node_predicate(current_vertex["data"], context, distance):
                 continue
 
             visited.add(current_idx)
             in_stack.add(current_idx)
             result_vertices.add(current_idx)
 
-            if continue_predicate(current_vertex["data"], context):
+            if continue_predicate(current_vertex["data"], context, distance):
                 for edge in graph.es.select(_source=current_idx):
                     target_idx = edge.target
                     if target_idx not in visited:
                         target_vertex_data = graph.vs[target_idx]
                         if target_vertex_data["node_type"] == "recipe":
-                            stack.append((target_idx,
-                                          PredicateContext.RECIPE_CONSUMING))
+                            stack.append(
+                                (target_idx, PredicateContext.RECIPE_CONSUMING,
+                                 distance + 1))
                         else:
-                            stack.append((target_idx,
-                                          PredicateContext.OUTPUT_OF_RECIPE))
+                            stack.append(
+                                (target_idx, PredicateContext.OUTPUT_OF_RECIPE,
+                                 distance + 1))
 
             in_stack.remove(current_idx)
 
         return result_vertices
 
     def add_recipe_inputs(vertices: Set[int],
-                          allowed_sources: Set[int] = None) -> Set[int]:
+                          allowed_sources: Set[int] = None,
+                          base_distance: int = 0) -> Set[int]:
         additional_vertices = set()
         for v_idx in vertices:
             if graph.vs[v_idx]["node_type"] == "recipe":
@@ -435,7 +440,8 @@ def find_dependency_subgraph(
                     if allowed_sources is None or edge.source in allowed_sources:
                         source_vertex = graph.vs[edge.source]
                         if node_predicate(source_vertex["data"],
-                                          PredicateContext.INPUT_OF_RECIPE):
+                                          PredicateContext.INPUT_OF_RECIPE,
+                                          base_distance):
                             additional_vertices.add(edge.source)
         return additional_vertices
 
@@ -444,22 +450,25 @@ def find_dependency_subgraph(
     oil_based_vertices = mst_vertices.copy()
     reachable_vertices = mst_vertices.copy()
 
-    if dependency_mode == "immediate":
-        additional_vertices = add_recipe_inputs(mst_vertices)
+    if dependency_mode == DependencyMode.IMMEDIATE:
+        additional_vertices = add_recipe_inputs(mst_vertices, base_distance=1)
         reachable_vertices.update(additional_vertices)
 
-    elif dependency_mode == "exclude_non_produce":
+    elif dependency_mode == DependencyMode.EXCLUDE_NON_PRODUCE:
         additional_vertices = add_recipe_inputs(mst_vertices,
-                                                oil_based_vertices)
+                                                oil_based_vertices,
+                                                base_distance=1)
         reachable_vertices.update(additional_vertices)
 
-    elif dependency_mode == "transitive":
+    elif dependency_mode == DependencyMode.TRANSITIVE:
         changed = True
+        iteration = 1
         while changed:
             changed = False
             current_size = len(reachable_vertices)
 
-            additional_vertices = add_recipe_inputs(reachable_vertices)
+            additional_vertices = add_recipe_inputs(reachable_vertices,
+                                                    base_distance=iteration)
             reachable_vertices.update(additional_vertices)
 
             for v_idx in additional_vertices:
@@ -470,6 +479,7 @@ def find_dependency_subgraph(
 
             if len(reachable_vertices) > current_size:
                 changed = True
+                iteration += 1
 
     subgraph = graph.subgraph(list(reachable_vertices))
     return subgraph
