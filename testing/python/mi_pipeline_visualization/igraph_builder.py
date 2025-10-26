@@ -14,6 +14,7 @@ import igraph as ig
 import os
 import glob
 from collections import defaultdict
+import functools
 
 from log_writer import log
 
@@ -61,6 +62,7 @@ def _build_texture_cache():
         json.dumps(_texture_cache, indent=2))
 
 
+@functools.cache
 def get_texture_path(id: str) -> str | None:
     """
     Resolve texture path for given mod:item ID.

@@ -203,393 +203,6 @@ class NodeFlexibility(str, Enum):
     PORT_POSITION = "PORT_POSITION"
 
 
-class SelfLoopDistributionStrategy(str, Enum):
-    NORTH = "NORTH"
-    EQUALLY = "EQUALLY"
-    NORTH_SOUTH = "NORTH_SOUTH"
-
-
-class SelfLoopOrderingStrategy(str, Enum):
-    STACKED = "STACKED"
-    SEQUENCED = "SEQUENCED"
-
-
-class SplineRoutingMode(str, Enum):
-    SLOPPY = "SLOPPY"
-    CONSERVATIVE = "CONSERVATIVE"
-
-
-class ELKLayeredCycleBreaking(BaseModel, extra="forbid"):
-    strategy: Optional[CycleBreakingStrategy] = Field(
-        None,
-        description=
-        "Strategy for cycle breaking. Cycle breaking looks for cycles in the graph and determines which edges to reverse to break the cycles."
-    )
-
-
-class ELKLayeredLayering(BaseModel, extra="forbid"):
-    strategy: Optional[LayeringStrategy] = Field(
-        None, description="Strategy for node layering.")
-    layerConstraint: Optional[LayerConstraint] = Field(
-        None,
-        description=
-        "Determines a constraint on the placement of the node regarding the layering."
-    )
-    layerChoiceConstraint: Optional[int] = Field(
-        None,
-        ge=-1,
-        description=
-        "Allows to set a constraint regarding the layer placement of a node.")
-    layerId: Optional[int] = Field(
-        None,
-        ge=-1,
-        description=
-        "Layer identifier that was calculated by ELK Layered for a node.")
-
-
-class ELKLayeredLayeringMinWidth(BaseModel, extra="forbid"):
-    upperBoundOnWidth: Optional[int] = Field(
-        None,
-        ge=-1,
-        description=
-        "Defines a loose upper bound on the width of the MinWidth layerer.")
-    upperLayerEstimationScalingFactor: Optional[int] = Field(
-        None,
-        ge=-1,
-        description=
-        "Multiplied with Upper Bound On Width for defining an upper bound on the width of layers."
-    )
-
-
-class ELKLayeredLayeringNodePromotion(BaseModel, extra="forbid"):
-    strategy: Optional[NodePromotionStrategy] = Field(
-        None,
-        description=
-        "Reduces number of dummy nodes after layering phase (if possible).")
-    maxIterations: Optional[int] = Field(
-        None,
-        ge=0,
-        description="Limits the number of iterations for node promotion.")
-
-
-class ELKLayeredLayeringCoffmanGraham(BaseModel, extra="forbid"):
-    layerBound: Optional[int] = Field(
-        None, description="The maximum number of nodes allowed per layer.")
-
-
-class ELKLayeredCrossingMinimization(BaseModel, extra="forbid"):
-    strategy: Optional[CrossingMinimizationStrategy] = Field(
-        None, description="Strategy for crossing minimization.")
-    forceNodeModelOrder: Optional[bool] = Field(
-        None,
-        description=
-        "The node order given by the model does not change to produce a better layout."
-    )
-    hierarchicalSweepiness: Optional[float] = Field(
-        None,
-        description=
-        "How likely it is to use cross-hierarchy (1) vs bottom-up (-1).")
-    semiInteractive: Optional[bool] = Field(
-        None,
-        description=
-        "Preserves the order of nodes within a layer but still minimizes crossings between edges."
-    )
-    inLayerPredOf: Optional[str] = Field(
-        None,
-        description=
-        "Specifies of which node the current node is the predecessor.")
-    inLayerSuccOf: Optional[str] = Field(
-        None,
-        description="Specifies of which node the current node is the successor."
-    )
-    positionChoiceConstraint: Optional[int] = Field(
-        None,
-        ge=-1,
-        description=
-        "Allows to set a constraint regarding the position placement of a node in a layer."
-    )
-    positionId: Optional[int] = Field(
-        None,
-        ge=-1,
-        description=
-        "Position within a layer that was determined by ELK Layered for a node."
-    )
-
-
-class ELKLayeredCrossingMinimizationGreedySwitch(BaseModel, extra="forbid"):
-    activationThreshold: Optional[int] = Field(
-        None,
-        ge=0,
-        description="Threshold for automatic activation of greedy switch.")
-    type: Optional[GreedySwitchType] = Field(
-        None, description="Greedy Switch strategy for crossing minimization.")
-
-
-class ELKLayeredCrossingMinimizationGreedySwitchHierarchical(BaseModel,
-                                                             extra="forbid"):
-    type: Optional[GreedySwitchType] = Field(
-        None,
-        description=
-        "Activates the greedy switch heuristic in case hierarchical layout is used."
-    )
-
-
-class ELKLayeredNodePlacementBK(BaseModel, extra="forbid"):
-    edgeStraightening: Optional[EdgeStraighteningStrategy] = Field(
-        None,
-        description=
-        "Specifies whether the Brandes Koepf node placer tries to increase the number of straight edges."
-    )
-    fixedAlignment: Optional[FixedAlignment] = Field(
-        None,
-        description=
-        "Tells the BK node placer to use a certain alignment instead of the one producing the smallest height."
-    )
-
-
-class ELKLayeredNodePlacementLinearSegments(BaseModel, extra="forbid"):
-    deflectionDampening: Optional[float] = Field(
-        None,
-        gt=0,
-        description=
-        "Dampens the movement of nodes to keep the diagram from getting too large."
-    )
-
-
-class ELKLayeredNodePlacementNetworkSimplex(BaseModel, extra="forbid"):
-    nodeFlexibility: Optional[NodeFlexibility] = Field(
-        None, description="Aims at shorter and straighter edges.")
-
-
-class ELKLayeredNodePlacementNetworkSimplexNodeFlexibility(BaseModel,
-                                                           extra="forbid"):
-    default: Optional[NodeFlexibility] = Field(
-        None,
-        description=
-        "Default value of the 'nodeFlexibility' option for the children of a hierarchical node."
-    )
-
-
-class ELKLayeredNodePlacement(BaseModel, extra="forbid"):
-    strategy: Optional[NodePlacementStrategy] = Field(
-        None, description="Strategy for node placement.")
-    favorStraightEdges: Optional[bool] = Field(
-        None,
-        description="Favor straight edges over a balanced node placement.")
-    bk: Optional[ELKLayeredNodePlacementBK] = None
-    linearSegments: Optional[ELKLayeredNodePlacementLinearSegments] = None
-    networkSimplex: Optional[ELKLayeredNodePlacementNetworkSimplex] = None
-
-
-class ELKLayeredEdgeRoutingSplines(BaseModel, extra="forbid"):
-    mode: Optional[SplineRoutingMode] = Field(
-        None,
-        description=
-        "Specifies the way control points are assembled for each individual edge."
-    )
-    sloppyLayerSpacingFactor: Optional[float] = Field(
-        None, description="Factor for sloppy spline layer spacing.")
-
-
-class ELKLayeredEdgeRouting(BaseModel, extra="forbid"):
-    selfLoopDistribution: Optional[SelfLoopDistributionStrategy] = Field(
-        None,
-        description="Alter the distribution of the loops around the node.")
-    selfLoopOrdering: Optional[SelfLoopOrderingStrategy] = Field(
-        None,
-        description=
-        "Alter the ordering of the loops they can either be stacked or sequenced."
-    )
-    splines: Optional[ELKLayeredEdgeRoutingSplines] = None
-
-
-class ELKLayered(BaseModel, extra="forbid"):
-    directionCongruency: Optional[DirectionCongruency] = Field(
-        None,
-        description=
-        "Specifies how drawings of the same graph with different layout directions compare to each other."
-    )
-    feedbackEdges: Optional[bool] = Field(
-        None,
-        description=
-        "Whether feedback edges should be highlighted by routing around the nodes."
-    )
-    interactiveReferencePoint: Optional[InteractiveReferencePoint] = Field(
-        None,
-        description=
-        "Determines which point of a node is considered by interactive layout phases."
-    )
-    mergeEdges: Optional[bool] = Field(
-        None,
-        description=
-        "Edges that have no ports are merged so they touch the connected nodes at the same points."
-    )
-    mergeHierarchyEdges: Optional[bool] = Field(
-        None,
-        description=
-        "If hierarchical layout is active, hierarchy-crossing edges use as few hierarchical ports as possible."
-    )
-    allowNonFlowPortsToSwitchSides: Optional[bool] = Field(
-        None,
-        description=
-        "Specifies whether non-flow ports may switch sides if their node's port constraints are either FIXED_SIDE or FIXED_ORDER."
-    )
-    portSortingStrategy: Optional[PortSortingStrategy] = Field(
-        None,
-        description=
-        "Determines the way a node's ports are distributed on the sides of a node if their order is not prescribed."
-    )
-    thoroughness: Optional[int] = Field(
-        None,
-        ge=1,
-        description="How much effort should be spent to produce a nice layout."
-    )
-    unnecessaryBendpoints: Optional[bool] = Field(
-        None,
-        description=
-        "Adds bend points even if an edge does not change direction.")
-    generatePositionAndLayerIds: Optional[bool] = Field(
-        None, description="If enabled position id and layer id are generated.")
-    cycleBreaking: Optional[ELKLayeredCycleBreaking] = None
-    layering: Optional[ELKLayeredLayering] = None
-    crossingMinimization: Optional[ELKLayeredCrossingMinimization] = None
-    nodePlacement: Optional[ELKLayeredNodePlacement] = None
-    edgeRouting: Optional[ELKLayeredEdgeRouting] = None
-
-
-class ELKSpacing(BaseModel, extra="forbid"):
-    edgeNode: Optional[float] = None
-    nodeNode: Optional[float] = None
-    edgeEdge: Optional[float] = None
-    edgeLabel: Optional[float] = None
-    labelLabel: Optional[float] = None
-    labelNode: Optional[float] = None
-    labelPort: Optional[float] = None
-    portPort: Optional[float] = None
-    componentComponent: Optional[float] = None
-
-
-class LayoutOptionsELK(BaseModel, extra="forbid"):
-    algorithm: Optional[ELKAlgorithm] = None
-    layered: Optional[ELKLayered] = None
-    hierarchyHandling: Optional[ELKHierarchyHandling] = None
-    alignment: Optional[ELKAlignment] = None
-    direction: Optional[ELKDirection] = None
-    aspectRatio: Optional[float] = None
-    edgeRouting: Optional[ELKEdgeRouting] = None
-    spacing: Optional[ELKSpacing] = None
-
-
-class LayoutOptionsPartitioning(BaseModel, extra="forbid"):
-    activate: Optional[bool] = None
-
-
-class LayoutOptionsBase(BaseModel, extra="forbid"):
-
-    @model_validator(mode="before")
-    @classmethod
-    def unflatten_options(cls, values: Dict[str, Any]) -> Dict[str, Any]:
-        if not isinstance(values, dict):
-            return values
-
-        result = {}
-        nested_data = {}
-
-        for key, value in values.items():
-            if "." in key:
-                parts = key.split(".")
-                current = nested_data
-
-                for part in parts[:-1]:
-                    if part not in current:
-                        current[part] = {}
-                    current = current[part]
-
-                current[parts[-1]] = value
-            else:
-                result[key] = value
-
-        result.update(nested_data)
-        return result
-
-    def flatten_for_export(self, use_dotted: bool = True) -> Dict[str, Any]:
-        if not use_dotted:
-            return self.model_dump(exclude_none=True)
-
-        data = self.model_dump(exclude_none=True)
-
-        def flatten_dict(d: Dict[str, Any],
-                         parent_key: str = "") -> Dict[str, Any]:
-            items = []
-            for k, v in d.items():
-                new_key = f"{parent_key}.{k}" if parent_key else k
-                if isinstance(v, dict):
-                    items.extend(flatten_dict(v, new_key).items())
-                else:
-                    items.append((new_key, v))
-            return dict(items)
-
-        result = {}
-        for key, value in data.items():
-            if isinstance(value, dict):
-                flattened = flatten_dict(value, key)
-                result.update(flattened)
-            else:
-                result[key] = value
-
-        return result
-
-
-class GraphLayoutNodeSizeOptions(LayoutOptionsBase, extra="forbid"):
-    constraints: Optional[List[str]] = None
-    options: Optional[List[str]] = None
-
-    @field_validator("constraints", "options", mode="before")
-    @classmethod
-    def validate_ident_list(cls, v: Any) -> Optional[List[str]]:
-        return parse_indents(v)
-
-    @field_serializer("constraints", "options")
-    def serialize_list_indentsn(self, v) -> str:
-        return serialize_indents(v)
-
-
-class GraphLayoutNodeLabels(LayoutOptionsBase, extra="forbid"):
-    placement: Optional[List[str]] = None
-
-    @field_validator("placement", mode="before")
-    @classmethod
-    def validate_ident_list(cls, v: Any) -> Optional[List[str]]:
-        return parse_indents(v)
-
-    @field_serializer("placement")
-    def serialize_list_indentsn(self, v) -> str:
-        return serialize_indents(v)
-
-
-class GraphLayoutPortLabels(LayoutOptionsBase, extra="forbid"):
-    placement: Optional[List[str]] = None
-
-    @field_validator("placement", mode="before")
-    @classmethod
-    def validate_ident_list(cls, v: Any) -> Optional[List[str]]:
-        return parse_indents(v)
-
-    @field_serializer("placement")
-    def serialize_list_indentsn(self, v) -> str:
-        return serialize_indents(v)
-
-
-class GraphLayoutOptions(LayoutOptionsBase, extra="forbid"):
-    elk: Optional[LayoutOptionsELK] = None
-    partitioning: Optional[LayoutOptionsPartitioning] = None
-    nodeFlexibility: Optional[NodeFlexibility] = None
-    resolvedAlgorithm: Optional[str] = None
-    hierarchyHandling: Optional[str] = None
-    nodeSize: Optional[GraphLayoutNodeSizeOptions] = None
-    nodeLabels: Optional[GraphLayoutNodeLabels] = None
-    portLabels: Optional[GraphLayoutPortLabels] = None
-
 
 class PortProperties(BaseModel, extra="forbid"):
     port: Optional[Dict[str, Any]] = None
@@ -658,9 +271,6 @@ class Point(BaseModel, extra="forbid"):
     y: float
 
 
-class LabelLayoutOptions(BaseModel, extra="forbid"):
-    pass
-
 
 class Label(BaseModel, extra="forbid"):
     id: Optional[Union[str, int]] = None
@@ -670,16 +280,8 @@ class Label(BaseModel, extra="forbid"):
     height: Optional[float] = None
     text: Optional[str] = None
     labels: Optional[List["Label"]] = None
-    layoutOptions: Optional[LabelLayoutOptions] = None
+    layoutOptions: Optional[Dict[str, Any]] = None
     extra: Optional[Dict[str, Any]] = None
-
-
-class PortPortLayoutOptions(LayoutOptionsBase, extra="forbid"):
-    side: Optional[PortSide] = None
-
-
-class PortLayoutOptions(LayoutOptionsBase, extra="forbid"):
-    port: Optional[PortPortLayoutOptions] = None
 
 
 class Port(BaseModel, extra="forbid"):
@@ -690,7 +292,7 @@ class Port(BaseModel, extra="forbid"):
     height: Optional[float] = None
     labels: Optional[List[Label]] = None
     properties: Optional[PortProperties] = None
-    layoutOptions: Optional[PortLayoutOptions] = None
+    layoutOptions: Optional[Dict[str, Any]] = None
     extra: Optional[Dict[str, Any]] = None
 
 
@@ -705,49 +307,6 @@ class EdgeSection(BaseModel, extra="forbid"):
     outgoingSections: Optional[List[Union[str, int]]] = None
 
 
-class EdgeLayoutOptions(LayoutOptionsBase, extra="forbid"):
-    junctionPoints: Optional[List[Point]] = None
-
-    @field_validator("junctionPoints", mode="before")
-    @classmethod
-    @beartype
-    def parse_junction_points(cls, v: Any) -> Optional[List[Point]]:
-        if v is None:
-            return None
-        if isinstance(v, str):
-            if not v.strip():
-                return None
-            points = []
-            for point_str in v.split(";"):
-                point_str = point_str.strip()
-                if point_str:
-                    coords = point_str.strip("()").split(",")
-                    if 0 < len(coords) and coords[0]:
-                        x = float(coords[0].strip())
-
-                    else:
-                        x = None
-
-                    if 1 < len(coords) and coords[1]:
-                        y = float(coords[1].strip())
-
-                    else:
-                        y = None
-
-                    if x and y:
-                        points.append(Point(x=x, y=y))
-
-            return points
-        return v
-
-    @field_serializer("junctionPoints")
-    @beartype
-    def serialize_junction_points(
-            self, value: Optional[List[Point]]) -> Optional[str]:
-        if value is None:
-            return None
-        point_strings = [f"({point.x},{point.y})" for point in value]
-        return "; ".join(point_strings)
 
 
 class Edge(BaseModel, extra="forbid"):
@@ -764,27 +323,9 @@ class Edge(BaseModel, extra="forbid"):
     sections: Optional[List[EdgeSection]] = None
     labels: Optional[List[Label]] = None
     junctionPoints: Optional[List[Point]] = None
-    layoutOptions: Optional[EdgeLayoutOptions] = None
+    layoutOptions: Optional[Dict[str, Any]] = None
     extra: Optional[Dict[str, Any]] = None
 
-
-class NodeSizeLayoutOptions(LayoutOptionsBase, extra="forbid"):
-    constraints: Optional[List[str]] = None
-
-    @field_validator("constraints", mode="before")
-    @classmethod
-    def validate_ident_list(cls, v: Any) -> Optional[List[str]]:
-        return parse_indents(v)
-
-    @field_serializer("constraints")
-    def serialize_list_indentsn(self, v) -> str:
-        return serialize_indents(v)
-
-
-class NodeLayoutOptions(LayoutOptionsBase, extra="forbid"):
-    nodeSize: Optional[NodeSizeLayoutOptions] = None
-    crossingMinimization: Optional[ELKLayeredCrossingMinimization] = None
-    layering: Optional[ELKLayeredLayering] = None
 
 
 class Node(BaseModel, extra="forbid"):
@@ -800,7 +341,7 @@ class Node(BaseModel, extra="forbid"):
     labels: Optional[List[Label]] = None
     edges: Optional[List[Edge]] = None
     properties: Optional[NodeProperties] = None
-    layoutOptions: Optional[NodeLayoutOptions] = None
+    layoutOptions: Optional[Dict[str, Any]] = None
 
 
 class Graph(BaseModel, extra="forbid"):
@@ -809,7 +350,7 @@ class Graph(BaseModel, extra="forbid"):
     y: Optional[float] = None
     width: Optional[float] = None
     height: Optional[float] = None
-    layoutOptions: Optional[GraphLayoutOptions] = None
+    layoutOptions: Dict[str, Any] = None
     children: List[Node] = Field(default_factory=list)
     edges: Optional[List[Edge]] = None
     ports: Optional[List[Port]] = None
@@ -826,37 +367,6 @@ from typing import Any, Dict, Optional
 
 
 class GraphSerializer:
-
-    @staticmethod
-    def to_dotted_json(graph: Graph) -> Dict[str, Any]:
-        data = graph.model_dump(exclude_none=True)
-
-        if "layoutOptions" in data and isinstance(data["layoutOptions"], dict):
-            layout_options = GraphLayoutOptions(**data["layoutOptions"])
-            data["layoutOptions"] = layout_options.flatten_for_export(
-                use_dotted=True)
-
-        def process_node(node: Dict[str, Any]) -> Dict[str, Any]:
-            if "layoutOptions" in node and isinstance(node["layoutOptions"],
-                                                      dict):
-                layout_options = GraphLayoutOptions(**node["layoutOptions"])
-                node["layoutOptions"] = layout_options.flatten_for_export(
-                    use_dotted=True)
-
-            if "children" in node:
-                node["children"] = [
-                    process_node(child) for child in node["children"]
-                ]
-
-            return node
-
-        if "children" in data:
-            data["children"] = [
-                process_node(child) for child in data["children"]
-            ]
-
-        return data
-
     @staticmethod
     def to_nested_json(graph: Graph) -> Dict[str, Any]:
         return graph.model_dump(exclude_none=True)
@@ -869,10 +379,7 @@ class GraphSerializer:
     def save_to_file(graph: Graph,
                      filepath: Path,
                      use_dotted: bool = True) -> None:
-        if use_dotted:
-            data = GraphSerializer.to_dotted_json(graph)
-        else:
-            data = GraphSerializer.to_nested_json(graph)
+        data = GraphSerializer.to_nested_json(graph)
 
         with open(filepath, "w") as f:
             json.dump(data, f, indent=2)
