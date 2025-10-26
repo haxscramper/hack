@@ -205,14 +205,6 @@
   }
 }
 
-#let format_content(content) = {
-  let name = content.id.split(":").at(1)
-  if "amount" in content and content.amount != none {
-    return name + " (" + format_amount(content) + ")"
-  } else {
-    return name
-  }
-}
 
 
 #let draw_slot(x, y, slot_size, slot_type, content) = {
@@ -374,6 +366,28 @@
   // )
 }
 
+#let format_content(content) = {
+  let name = content.id.split(":").at(1)
+  if "amount" in content and content.amount != none {
+    return name + " (" + format_amount(content) + ")"
+  } else {
+    return name
+  }
+}
+
+#let format_content_list(items) = {
+  if items.len() == 1 {
+    format_content(items.at(0))
+  } else {
+    list(..items.map(item => format_content(item)))
+  }
+}
+
+#let get_recipe_section(col2, items, label) = {
+  let formatted = format_content_list(items)
+  return ([*#label:*], [#formatted])
+}
+
 
 #let draw_recipe_info(data) = {
   let recipe_data = data.data
@@ -383,27 +397,37 @@
   let col2 = ()
 
   col1.push(([*Machine:*], [#machine.english_name]))
-  col1.push(([*Energy:*], [#recipe_data.eu EU/t]))
-  col1.push(([*Duration:*], [#recipe_data.duration ticks]))
-
-  if recipe_data.item_inputs.len() > 0 {
-    let items = recipe_data.item_inputs.map(format_content).join(", ")
-    col2.push(([*Input Items:*], [#items]))
+  if "eu" in recipe_data {
+    col1.push(([*Energy:*], [#recipe_data.eu EU/t]))
   }
 
-  if recipe_data.item_outputs.len() > 0 {
-    let items = recipe_data.item_outputs.map(format_content).join(", ")
-    col2.push(([*Output Items:*], [#items]))
+  if "duration" in recipe_data {
+    col1.push(([*Duration:*], [#recipe_data.duration ticks]))
   }
 
-  if recipe_data.fluid_inputs.len() > 0 {
-    let fluids = recipe_data.fluid_inputs.map(format_content).join(", ")
-    col2.push(([*Input Fluids:*], [#fluids]))
+  if 0 < recipe_data.item_inputs.len() {
+    col2.push(get_recipe_section(col2, recipe_data.item_inputs, "Input Items"))
   }
-
-  if recipe_data.fluid_outputs.len() > 0 {
-    let fluids = recipe_data.fluid_outputs.map(format_content).join(", ")
-    col2.push(([*Output Fluids:*], [#fluids]))
+  if 0 < recipe_data.item_outputs.len() {
+    col2.push(get_recipe_section(
+      col2,
+      recipe_data.item_outputs,
+      "Output Items",
+    ))
+  }
+  if 0 < recipe_data.fluid_inputs.len() {
+    col2.push(get_recipe_section(
+      col2,
+      recipe_data.fluid_inputs,
+      "Input Fluids",
+    ))
+  }
+  if 0 < recipe_data.fluid_outputs.len() {
+    col2.push(get_recipe_section(
+      col2,
+      recipe_data.fluid_outputs,
+      "Output Fluids",
+    ))
   }
 
   let max_rows = calc.max(col1.len(), col2.len())

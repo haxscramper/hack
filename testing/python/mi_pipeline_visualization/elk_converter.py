@@ -9,10 +9,10 @@ import igraph as ig
 import elk_schema as elk
 import typst_schema as typ
 from pydantic import BaseModel
-from beartype.typing import Literal, Union, List, Optional
+from beartype.typing import Literal, Union, List, Optional, Set
 from enum import Enum
 from beartype import beartype
-from recipe_gui_schema import MachineData, mi_fixed_machines
+import recipe_gui_schema as gui
 
 
 class PortData(BaseModel, extra="forbid"):
@@ -26,7 +26,7 @@ class EdgeData(BaseModel, extra="forbid"):
 
 class ElkExtra(BaseModel, extra="forbid"):
     data: Union[NodeDataUnion, EdgeData, PortData]
-    machine: Optional[MachineData] = None
+    machine: Optional[gui.MachineData] = None
     kind: Literal["fluid_node", "item_node", "recipe_node", "port", "edge"]
 
 
@@ -83,13 +83,46 @@ def graph_to_typst(graph: elk.Graph) -> typ.Document:
     return typ.Document(subnodes=subnodes)
 
 
-def get_recipe_shape(id: str) -> MachineData:
-    modid, machineid = id.split(":")
-    if machineid in mi_fixed_machines:
-        return mi_fixed_machines[machineid]
+def get_recipe_shape(id: str) -> gui.MachineData:
+    if ":" in id:
+        modid, machineid = id.split(":")
 
     else:
-        return MachineData(size=(200, 100))
+        machineid = id
+
+    if machineid in gui.mi_fixed_machines:
+        return gui.mi_fixed_machines[machineid]
+
+    else:
+        return gui.MachineData(
+            english_name=id,
+            machine=id,
+            recipe_type=id,
+            item_input_count=3,
+            item_output_count=3,
+            fluid_input_count=3,
+            fluid_output_count=3,
+            gui_params=gui.GuiParameters(),
+            progress_bar=gui.ProgressBarParameters(x=88,
+                                                   y=35,
+                                                   texture="triple_arrow"),
+            efficiency_bar=gui.RecipeEfficiencyBarParameters(x=50, y=66),
+            energy_bar=gui.EnergyBarParameters(x=12, y=35),
+            item_slots=gui.ItemSlots(positions=[
+                gui.SlotPosition(x=30, y=27, cols=3, rows=1),
+                gui.SlotPosition(x=116, y=27, cols=3, rows=1)
+            ]),
+            fluid_slots=gui.FluidSlots(positions=[
+                gui.SlotPosition(x=30, y=47, cols=3, rows=1),
+                gui.SlotPosition(x=116, y=47, cols=3, rows=1)
+            ]),
+            front_overlay=True,
+            top_overlay=False,
+            side_overlay=False,
+            tiers=16,
+            io_bucket_capacity=24,
+            size=(200, 100),
+        )
 
 
 def convert_to_elk(graph: ig.Graph) -> elk.Graph:
@@ -116,6 +149,23 @@ def convert_to_elk(graph: ig.Graph) -> elk.Graph:
     def get_resource_port_id(id: str, side: Direction) -> str:
         return f"{id}-{side.name}"
 
+    known_graph_nodes: Set[str] = set()
+
+    @beartype
+    def get_recipe_id(rec: RecipeNodeData, recipe_idx: int) -> str:
+        return f"{rec.type}-{recipe_idx}"
+
+    for recipe_idx, v in enumerate(graph.vs):
+        match v["node_type"]:
+            case "recipe":
+                known_graph_nodes.add(get_recipe_id(v["data"], recipe_idx))
+
+            case "fluid" | "item":
+                known_graph_nodes.add(v["data"].id)
+
+            case _:
+                raise RuntimeError("Unhandled node type")
+
     for recipe_idx, v in enumerate(graph.vs):
         match v["node_type"]:
             case "recipe":
@@ -124,7 +174,7 @@ def convert_to_elk(graph: ig.Graph) -> elk.Graph:
                 recipe = get_recipe_shape(rec.type)
 
                 node = elk.Node(
-                    id=f"{rec.type}-{recipe_idx}",
+                    id=get_recipe_id(rec, recipe_idx),
                     width=recipe.size[0],
                     height=recipe.size[1],
                     ports=[],
@@ -160,33 +210,42 @@ def convert_to_elk(graph: ig.Graph) -> elk.Graph:
                     if side == Direction.IN:
                         port_src = get_resource_port_id(it.id, Direction.OUT)
                         port_dst = port.id
-                        edge = elk.Edge(
-                            source=it.id,
-                            target=node.id,
-                            sourcePort=port_src,
-                            targetPort=port_dst,
-                            id=f"{port_src}-{port_dst}",
-                            extra=dict(data=ElkExtra(
-                                kind="edge",
-                                data=EdgeData(source=it, target=rec))),
-                        )
+                        if it.id in known_graph_nodes and node.id in known_graph_nodes: 
+                            edge = elk.Edge(
+                                source=it.id,
+                                target=node.id,
+                                sourcePort=port_src,
+                                targetPort=port_dst,
+                                id=f"{port_src}-{port_dst}",
+                                extra=dict(data=ElkExtra(
+                                    kind="edge",
+                                    data=EdgeData(source=it, target=rec))),
+                            )
+
+                        else:
+                            edge = None
 
                     else:
                         port_src = port.id
                         port_dst = get_resource_port_id(it.id, Direction.IN)
-                        edge = elk.Edge(
-                            source=node.id,
-                            target=it.id,
-                            sourcePort=port_src,
-                            targetPort=port_dst,
-                            id=f"{port_src}-{port_dst}",
-                            extra=dict(
-                                ElkExtra(kind="edge",
-                                         data=EdgeData(source=rec,
-                                                       target=it))),
-                        )
+                        if it.id in known_graph_nodes and node.id in known_graph_nodes: 
+                            edge = elk.Edge(
+                                source=node.id,
+                                target=it.id,
+                                sourcePort=port_src,
+                                targetPort=port_dst,
+                                id=f"{port_src}-{port_dst}",
+                                extra=dict(
+                                    ElkExtra(kind="edge",
+                                            data=EdgeData(source=rec,
+                                                        target=it))),
+                            )
+                        
+                        else:
+                            edge = None
 
-                    result.edges.append(edge)
+                    if edge: 
+                        result.edges.append(edge)
 
                 for idx, it in enumerate(rec.fluid_inputs):
                     connect_resource("fluid", idx, Direction.IN, it)
