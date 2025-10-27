@@ -43,6 +43,7 @@ igraph = "^0.11.9"
 structlog = "^25.4.0"
 graphviz = "^0.21"
 yapf = "^0.43.0"
+python-arango = "^8.2.2"
 
 
 [build-system]

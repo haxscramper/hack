@@ -1,0 +1,35 @@
+LET startNode = FIRST(
+  FOR doc IN vertices 
+  FILTER doc.data.id == "modern_industrialization:crude_oil" 
+  RETURN doc
+)
+
+LET excludeNodes = UNIQUE(FLATTEN(
+  FOR excludeId IN [
+    "modern_industrialization:sulfuric_acid", 
+    "modern_industrialization:oxygen", 
+    "modern_industrialization:lubricant", 
+    "minecraft:water"
+  ]
+    LET excludeNode = FIRST(
+      FOR doc IN vertices 
+      FILTER doc.data.id == excludeId 
+      RETURN doc
+    )
+    FOR v IN 1..1 OUTBOUND excludeNode GRAPH "mi_recipes"
+    RETURN v._id
+))
+
+LET traversal = (
+  FOR v, e, p IN 1..6 OUTBOUND startNode GRAPH "mi_recipes"
+  FILTER v._id NOT IN excludeNodes
+  LET hasIncoming = LENGTH(FOR edge IN edges FILTER edge._to == v._id RETURN 1) > 0
+  LET hasOutgoing = LENGTH(FOR edge IN edges FILTER edge._from == v._id RETURN 1) > 0
+  FILTER hasIncoming OR hasOutgoing
+  RETURN {vertex: v, edge: e}
+)
+
+RETURN {
+  vertices: UNIQUE(APPEND([startNode], traversal[*].vertex)),
+  edges: UNIQUE(traversal[*].edge)
+}
