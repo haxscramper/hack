@@ -9,8 +9,7 @@ import pickle
 from plumbum import local, CommandNotFound
 
 import igraph_builder as gbuild
-from elk_converter import convert_to_elk, graph_to_typst
-import elk_adjustment
+import elk_converter
 from typst_schema import generate_typst
 import elk_schema as elk
 from graphviz_converter import convert_igraph_to_graphviz
@@ -169,7 +168,7 @@ def filter_graph(graph: ig.Graph) -> ig.Graph:
 def main():
     init_graph = get_initial_graph()
     graph = filter_graph(init_graph)
-    result = convert_to_elk(graph)
+    result = elk_converter.convert_to_elk(graph)
 
     elk_init = Path("/tmp/elk-init.json")
     elk_init.write_text(result.model_dump_json(indent=2, exclude_none=True))
@@ -180,9 +179,14 @@ def main():
     elk_layout.write_text(
         layout.model_dump_json(indent=2, exclude_none=True, exclude_unset=False))
 
+    elk_converter.group_multi_layout(layout)
+
+    doc_grouped = Path("/tmp/elk-grouped.json")
+    doc_grouped.write_text(layout.model_dump_json(indent=2))
+
     # elk_adjustment.adjust_graph_for_non_overlapping_edges(layout)
 
-    doc = graph_to_typst(layout)
+    doc = elk_converter.graph_to_typst(layout)
     doc_json = Path("/tmp/typst-doc.json")
     doc_json.write_text(doc.model_dump_json(indent=2))
     log.info(f"Wrote doc JSON to {doc_json}")

@@ -71,7 +71,7 @@ def graph_to_typst(graph: elk.Graph) -> typ.Document:
 
     if graph.edges:
         for edge in graph.edges:
-            extra: ElkExtra = edge.extra["data"]
+            # extra: ElkExtra = edge.extra["data"]
             subnodes.append(
                 typ.Command(
                     name="edge",
@@ -134,15 +134,32 @@ def _collect_all_edges(node: elk.Graph, all_edges: List[elk.Edge]) -> None:
             _collect_all_edges(child, all_edges)
 
 
+from collections import defaultdict
+
+
 def get_edge_groups_by_shared_ports(graph: elk.Graph) -> List[List[elk.Edge]]:
-    from collections import defaultdict
     port_to_edges = defaultdict(list)
     for edge in graph.edges:
+        source_ports = []
+        target_ports = []
+
         if edge.sourcePort:
-            port_key = (edge.source, edge.sourcePort)
-            port_to_edges[port_key].append(edge)
+            source_ports.append((edge.source, edge.sourcePort))
+        elif edge.source:
+            source_ports.append((edge.source, None))
+        elif edge.sources:
+            for source in edge.sources:
+                source_ports.append((source, None))
+
         if edge.targetPort:
-            port_key = (edge.target, edge.targetPort)
+            target_ports.append((edge.target, edge.targetPort))
+        elif edge.target:
+            target_ports.append((edge.target, None))
+        elif edge.targets:
+            for target in edge.targets:
+                target_ports.append((target, None))
+
+        for port_key in source_ports + target_ports:
             port_to_edges[port_key].append(edge)
 
     edge_groups = []
@@ -321,6 +338,76 @@ def _add_fluid_item_node(graph: ig.Graph, result: elk.Graph, v: ig.Vertex):
         ])
 
     result.children.append(node)
+
+
+@beartype
+def merge_edges_into_hyperedge(edges: List[elk.Edge]) -> elk.Edge:
+    if not edges:
+        raise ValueError("Cannot merge empty list of edges")
+
+    if len(edges) == 1:
+        return edges[0]
+
+    all_sources = set()
+    all_targets = set()
+    all_source_ports = set()
+    all_target_ports = set()
+    all_sections = []
+    all_junction_points = []
+    all_labels = []
+
+    for edge in edges:
+        if edge.source:
+            all_sources.add(edge.source)
+        if edge.sources:
+            all_sources.update(edge.sources)
+
+        if edge.target:
+            all_targets.add(edge.target)
+        if edge.targets:
+            all_targets.update(edge.targets)
+
+        if edge.sourcePort:
+            all_source_ports.add((edge.source, edge.sourcePort))
+        if edge.targetPort:
+            all_target_ports.add((edge.target, edge.targetPort))
+
+        if edge.sections:
+            all_sections.extend(edge.sections)
+
+        if edge.junctionPoints:
+            all_junction_points.extend(edge.junctionPoints)
+
+        if edge.labels:
+            all_labels.extend(edge.labels)
+
+    merged_edge = elk.Edge(
+        id=f"merged_{hash(tuple(e.id for e in edges))}",
+        sources=list(all_sources) if len(all_sources) > 1 else None,
+        targets=list(all_targets) if len(all_targets) > 1 else None,
+        source=list(all_sources)[0] if len(all_sources) == 1 else None,
+        target=list(all_targets)[0] if len(all_targets) == 1 else None,
+        sections=all_sections if all_sections else None,
+        junctionPoints=all_junction_points if all_junction_points else None,
+        labels=all_labels if all_labels else None)
+
+    return merged_edge
+
+
+@beartype
+def group_multi_layout(graph: elk.Graph):
+    grouped_multi_edges: List[elk.Edge] = []
+
+    for group in get_edge_groups_by_shared_ports(graph):
+        if len(group) == 1:
+            grouped_multi_edges.append(group[0])
+
+        else:
+            grouped_multi_edges.append(merge_edges_into_hyperedge(group))
+
+    log.info(f"Len prev edges {len(graph.edges)}")
+    graph.edges = grouped_multi_edges
+    log.info(f"Len new edges {len(graph.edges)}")
 
 
 @beartype
