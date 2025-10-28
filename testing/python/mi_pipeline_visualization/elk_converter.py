@@ -9,12 +9,16 @@ import igraph as ig
 import elk_schema as elk
 import typst_schema as typ
 from pydantic import BaseModel
-from beartype.typing import Literal, Union, List, Optional, Set, Tuple
+from beartype.typing import Literal, Union, List, Optional, Set, Tuple, Any, Dict
 from enum import Enum
 from beartype import beartype
 import recipe_gui_schema as gui
 from shapely.geometry import LineString, Polygon
 from shapely.ops import unary_union
+from PIL import Image
+import numpy as np
+from sklearn.cluster import KMeans
+
 
 
 class PortData(BaseModel, extra="forbid"):
@@ -28,8 +32,10 @@ class EdgeData(BaseModel, extra="forbid"):
 
 class HyperEdgeData(BaseModel):
     polygon: List[Tuple[float, float]]
+    pattern: Optional[Dict[str, Any]] = None
 
 
+@beartype
 class ElkExtra(BaseModel, extra="forbid"):
     data: Union[NodeDataUnion, EdgeData, PortData, HyperEdgeData]
     machine: Optional[gui.MachineData] = None
@@ -280,9 +286,8 @@ def _add_recipe_node(
                     sourcePort=port_src,
                     targetPort=port_dst,
                     id=f"{port_src}-{port_dst}",
-                    extra=dict(
-                        ElkExtra(kind="edge",
-                                 data=EdgeData(source=rec, target=it))),
+                    extra=dict(data=ElkExtra(
+                        kind="edge", data=EdgeData(source=rec, target=it))),
                 )
 
             else:
@@ -374,6 +379,25 @@ def compute_hyperedge_polygon(sections: List[elk.EdgeSection],
         return []
 
 
+def extract_color_palette(texture_path: str, n_colors: int = 3) -> dict:
+    img = Image.open(texture_path).convert('RGB')
+    pixels = np.array(img).reshape(-1, 3)
+    
+    kmeans = KMeans(n_clusters=n_colors, random_state=42)
+    kmeans.fit(pixels)
+    
+    colors = []
+    for center in kmeans.cluster_centers_:
+        colors.append({
+            "r": int(center[0]),
+            "g": int(center[1]),
+            "b": int(center[2]),
+            "hex": f"#{int(center[0]):02x}{int(center[1]):02x}{int(center[2]):02x}"
+        })
+    
+    return {"palette": colors}
+
+
 @beartype
 def merge_edges_into_hyperedge(edges: List[elk.Edge]) -> elk.Edge:
     if not edges:
@@ -389,6 +413,9 @@ def merge_edges_into_hyperedge(edges: List[elk.Edge]) -> elk.Edge:
     all_sections = []
     all_junction_points = []
     all_labels = []
+
+    sources_extra: List[NodeDataUnion] = []
+    targets_extra: List[NodeDataUnion] = []
 
     for edge in edges:
         if edge.source:
@@ -415,6 +442,55 @@ def merge_edges_into_hyperedge(edges: List[elk.Edge]) -> elk.Edge:
         if edge.labels:
             all_labels.extend(edge.labels)
 
+        if edge.extra and "data" in edge.extra:
+            assert isinstance(edge, elk.Edge)
+            assert isinstance(edge.extra, dict)
+            dat: ElkExtra = edge.extra["data"]
+            assert isinstance(dat, ElkExtra), f"{type(dat)}, {dat}"
+            extra_edge: EdgeData = dat.data
+            if isinstance(extra_edge.source, (FluidNodeData, ItemNodeData)):
+                sources_extra.append(extra_edge.source)
+
+            if isinstance(extra_edge.target, (FluidNodeData, ItemNodeData)):
+                targets_extra.append(extra_edge.target)
+
+    unique_extra_sources_ids = list(set(e.id for e in sources_extra))
+    unique_extra_targets_ids = list(set(e.id for e in targets_extra))
+
+    @beartype
+    def get_texture(node: NodeDataUnion) -> Optional[str]:
+        match node:
+            case ItemNodeData():
+                return node.image
+
+            case FluidNodeData():
+                return node.image
+
+    if len(unique_extra_sources_ids) == 1:
+        source_texture = get_texture(sources_extra[0])
+
+    else:
+        source_texture = None
+
+    if len(unique_extra_targets_ids) == 1:
+        target_texture = get_texture(targets_extra[0])
+
+    else:
+        target_texture = None
+
+    if bool(source_texture) != bool(target_texture):
+        if source_texture:
+            hyperedge_texture = source_texture
+
+        else:
+            hyperedge_texture = target_texture
+
+    else:
+        hyperedge_texture = None
+
+    if hyperedge_texture:
+        log.info("Has hyper edge texture")
+
     merged_edge = elk.Edge(
         id=f"merged_{hash(tuple(e.id for e in edges))}",
         sources=list(all_sources) if len(all_sources) > 1 else None,
@@ -426,7 +502,10 @@ def merge_edges_into_hyperedge(edges: List[elk.Edge]) -> elk.Edge:
         labels=all_labels if all_labels else None,
         extra=dict(data=ElkExtra(
             data=HyperEdgeData(
-                polygon=compute_hyperedge_polygon(all_sections, width=4.0)),
+                polygon=compute_hyperedge_polygon(all_sections, width=4.0),
+                pattern=extract_color_palette(hyperedge_texture
+                                             ) if hyperedge_texture else None,
+            ),
             kind="hyperedge",
         )),
     )

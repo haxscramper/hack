@@ -462,6 +462,92 @@
   node_box(node, draw_recipe_gui(node.extra.data), 0, 20)
 }
 
+#let draw_edge_with_polygon(edge_data) = {
+  let polygon_points = edge_data.extra.data.data.polygon
+  let typst_points = ()
+
+  for point in polygon_points {
+    typst_points.push((point.at(0) * 1pt, point.at(1) * 1pt))
+  }
+
+  let fill_style = gray.lighten(80%)
+
+  if "pattern" in edge_data.extra.data.data {
+    let palette = edge_data.extra.data.data.pattern.palette
+    if palette.len() > 0 {
+      let colors = palette.map(c => rgb(c.r, c.g, c.b))
+      fill_style = if colors.len() == 1 {
+        colors.at(0)
+      } else {
+        gradient.linear(..colors)
+      }
+    }
+  }
+
+  place(
+    polygon(
+      fill: fill_style,
+      stroke: black + 1pt,
+      ..typst_points,
+    ),
+  )
+}
+
+// // Draw junction points if they exist (temporarily disabled to simplify visuals)
+// if false and "junctionPoints" in edge_data {
+//   for junction in edge_data.junctionPoints {
+//     place(
+//       dx: junction.at("x") * 1pt - 2pt,
+//       dy: junction.at("y") * 1pt - 2pt,
+//       circle(
+//         radius: 2pt,
+//         fill: black,
+//         stroke: black + 1pt,
+//       ),
+//     )
+//   }
+// }
+
+#let draw_edge_with_sections(edge_data) = {
+  for section in edge_data.sections {
+    let start = section.at("startPoint")
+    let end = section.at("endPoint")
+
+    let curve_elements = ()
+
+    if "bendPoints" in section {
+      let points = (start,) + section.at("bendPoints") + (end,)
+
+      curve_elements.push(curve.line((
+        points.at(0).at("x") * 1pt,
+        points.at(0).at("y") * 1pt,
+      )))
+
+      for i in range(1, points.len()) {
+        let point = points.at(i)
+        curve_elements.push(curve.line((
+          point.at("x") * 1pt,
+          point.at("y") * 1pt,
+        )))
+      }
+    } else {
+      curve_elements.push(curve.line((
+        start.at("x") * 1pt,
+        start.at("y") * 1pt,
+      )))
+      curve_elements.push(curve.line((end.at("x") * 1pt, end.at("y") * 1pt)))
+    }
+
+    place(
+      curve(
+        stroke: black + 1pt,
+        curve.move((start.x * 1pt, start.y * 1pt)),
+        ..curve_elements,
+      ),
+    )
+  }
+}
+
 #let edge(edge_data) = {
   // Check if hyperedge polygon is specified
   if (
@@ -470,73 +556,9 @@
       and "data" in edge_data.extra.data
       and "polygon" in edge_data.extra.data.data
   ) {
-    let polygon_points = edge_data.extra.data.data.polygon
-    let typst_points = ()
-
-    for point in polygon_points {
-      typst_points.push((point.at(0) * 1pt, point.at(1) * 1pt))
-    }
-
-    place(
-      polygon(
-        fill: gray.lighten(80%),
-        stroke: black + 1pt,
-        ..typst_points,
-      ),
-    )
-
-    // Draw junction points if they exist
-    if false and "junctionPoints" in edge_data {
-      for junction in edge_data.junctionPoints {
-        place(
-          dx: junction.at("x") * 1pt - 2pt,
-          dy: junction.at("y") * 1pt - 2pt,
-          circle(
-            radius: 2pt,
-            fill: black,
-            stroke: black + 1pt,
-          ),
-        )
-      }
-    }
+    draw_edge_with_polygon(edge_data)
   } else if "sections" in edge_data {
-    for section in edge_data.sections {
-      let start = section.at("startPoint")
-      let end = section.at("endPoint")
-
-      let curve_elements = ()
-
-      if "bendPoints" in section {
-        let points = (start,) + section.at("bendPoints") + (end,)
-
-        curve_elements.push(curve.line((
-          points.at(0).at("x") * 1pt,
-          points.at(0).at("y") * 1pt,
-        )))
-
-        for i in range(1, points.len()) {
-          let point = points.at(i)
-          curve_elements.push(curve.line((
-            point.at("x") * 1pt,
-            point.at("y") * 1pt,
-          )))
-        }
-      } else {
-        curve_elements.push(curve.line((
-          start.at("x") * 1pt,
-          start.at("y") * 1pt,
-        )))
-        curve_elements.push(curve.line((end.at("x") * 1pt, end.at("y") * 1pt)))
-      }
-
-      place(
-        curve(
-          stroke: black + 1pt,
-          curve.move((start.x * 1pt, start.y * 1pt)),
-          ..curve_elements,
-        ),
-      )
-    }
+    draw_edge_with_sections(edge_data)
   }
 }
 

@@ -2,6 +2,7 @@ import logging
 
 logging.getLogger("urllib3.connectionpool").setLevel(logging.INFO)
 logging.getLogger("graphviz._tools").setLevel(logging.INFO)
+logging.getLogger("PIL.PngImagePlugin").setLevel(logging.INFO)
 
 JSON_PATH = "/home/haxscramper/.local/share/multimc/instances/1.21.1 V2/.minecraft/kubejs/server_scripts/all_recipes.json"
 USE_GRAPH_CACHE = True
