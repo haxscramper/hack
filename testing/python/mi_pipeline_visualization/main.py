@@ -180,7 +180,7 @@ def main():
     elk_layout.write_text(
         layout.model_dump_json(indent=2, exclude_none=True, exclude_unset=False))
 
-    elk_adjustment.adjust_graph_for_non_overlapping_edges(layout)
+    # elk_adjustment.adjust_graph_for_non_overlapping_edges(layout)
 
     doc = graph_to_typst(layout)
     doc_json = Path("/tmp/typst-doc.json")

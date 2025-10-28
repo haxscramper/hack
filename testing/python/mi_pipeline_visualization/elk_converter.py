@@ -127,11 +127,17 @@ def get_recipe_shape(id: str) -> gui.MachineData:
 
 def convert_to_elk(graph: ig.Graph) -> elk.Graph:
 
-    result = elk.Graph(id="root",
-                       children=[],
-                       edges=[],
-                       ports=[],
-                       layoutOptions={})
+    result = elk.Graph(
+        id="root",
+        children=[],
+        edges=[],
+        ports=[],
+        layoutOptions={
+            "org.eclipse.elk.spacing.edgeEdge": 15,
+            "org.eclipse.elk.spacing.edgeNode": 20,
+            "org.eclipse.elk.layered.spacing.edgeNodeBetweenLayers": 30,
+            "org.eclipse.elk.layered.spacing.edgeEdgeBetweenLayers": 20
+        })
 
     @beartype
     class Direction(Enum):
@@ -210,7 +216,7 @@ def convert_to_elk(graph: ig.Graph) -> elk.Graph:
                     if side == Direction.IN:
                         port_src = get_resource_port_id(it.id, Direction.OUT)
                         port_dst = port.id
-                        if it.id in known_graph_nodes and node.id in known_graph_nodes: 
+                        if it.id in known_graph_nodes and node.id in known_graph_nodes:
                             edge = elk.Edge(
                                 source=it.id,
                                 target=node.id,
@@ -228,7 +234,7 @@ def convert_to_elk(graph: ig.Graph) -> elk.Graph:
                     else:
                         port_src = port.id
                         port_dst = get_resource_port_id(it.id, Direction.IN)
-                        if it.id in known_graph_nodes and node.id in known_graph_nodes: 
+                        if it.id in known_graph_nodes and node.id in known_graph_nodes:
                             edge = elk.Edge(
                                 source=node.id,
                                 target=it.id,
@@ -237,14 +243,14 @@ def convert_to_elk(graph: ig.Graph) -> elk.Graph:
                                 id=f"{port_src}-{port_dst}",
                                 extra=dict(
                                     ElkExtra(kind="edge",
-                                            data=EdgeData(source=rec,
-                                                        target=it))),
+                                             data=EdgeData(source=rec,
+                                                           target=it))),
                             )
-                        
+
                         else:
                             edge = None
 
-                    if edge: 
+                    if edge:
                         result.edges.append(edge)
 
                 for idx, it in enumerate(rec.fluid_inputs):
@@ -301,5 +307,7 @@ def convert_to_elk(graph: ig.Graph) -> elk.Graph:
 
             case _:
                 raise ValueError(f"{v['node_type']}")
+
+    
 
     return result
