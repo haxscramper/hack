@@ -270,7 +270,7 @@ class Point(BaseModel, extra="forbid"):
     y: float
 
 class Label(BaseModel, extra="forbid"):
-    id: Optional[Union[str, int]] = None
+    id: Optional[str] = None
     x: Optional[float] = None
     y: Optional[float] = None
     width: Optional[float] = None
@@ -282,7 +282,7 @@ class Label(BaseModel, extra="forbid"):
 
 
 class Port(BaseModel, extra="forbid"):
-    id: Union[str, int]
+    id: str
     x: Optional[float] = None
     y: Optional[float] = None
     width: Optional[float] = None
@@ -294,23 +294,23 @@ class Port(BaseModel, extra="forbid"):
 
 
 class EdgeSection(BaseModel, extra="forbid"):
-    id: Optional[Union[str, int]] = None
+    id: Optional[str] = None
     startPoint: Point
     endPoint: Point
     bendPoints: Optional[List[Point]] = None
-    incomingShape: Optional[Union[str, int]] = None
-    outgoingShape: Optional[Union[str, int]] = None
-    incomingSections: Optional[List[Union[str, int]]] = None
-    outgoingSections: Optional[List[Union[str, int]]] = None
+    incomingShape: Optional[str] = None
+    outgoingShape: Optional[str] = None
+    incomingSections: Optional[List[str]] = None
+    outgoingSections: Optional[List[str]] = None
 
 class Edge(BaseModel, extra="forbid"):
-    id: Union[str, int]
-    source: Optional[Union[str, int]] = None
-    sourcePort: Optional[Union[str, int]] = None
-    target: Optional[Union[str, int]] = None
-    targetPort: Optional[Union[str, int]] = None
-    sources: Optional[List[Union[str, int]]] = None
-    targets: Optional[List[Union[str, int]]] = None
+    id: str
+    source: Optional[str] = None
+    sourcePort: Optional[str] = None
+    target: Optional[str] = None
+    targetPort: Optional[str] = None
+    sources: Optional[List[str]] = None
+    targets: Optional[List[str]] = None
     sourcePoint: Optional[Point] = None
     targetPoint: Optional[Point] = None
     bendPoints: Optional[List[Point]] = None
@@ -328,7 +328,7 @@ class Edge(BaseModel, extra="forbid"):
 
 
 class Node(BaseModel, extra="forbid"):
-    id: Union[str, int]
+    id: str
     extra: Optional[Dict[str, Any]] = None
     x: Optional[float] = None
     y: Optional[float] = None
@@ -344,7 +344,7 @@ class Node(BaseModel, extra="forbid"):
 
 
 class Graph(BaseModel, extra="forbid"):
-    id: Union[str, int]
+    id: str
     x: Optional[float] = None
     y: Optional[float] = None
     width: Optional[float] = None
