@@ -179,6 +179,10 @@ def get_edge_groups_by_shared_ports(graph: elk.Graph) -> List[List[elk.Edge]]:
     processed_edges = set()
 
     for edges_list in port_to_edges.values():
+        if len(edges_list) == 1:
+            edge_groups.append(edges_list)
+
+    for edges_list in port_to_edges.values():
         if len(edges_list) <= 1:
             continue
 
@@ -190,6 +194,9 @@ def get_edge_groups_by_shared_ports(graph: elk.Graph) -> List[List[elk.Edge]]:
 
         if len(group) > 1:
             edge_groups.append(group)
+
+        else:
+            log.info(group)
 
     return edge_groups
 
@@ -487,9 +494,6 @@ def merge_edges_into_hyperedge(edges: List[elk.Edge]) -> elk.Edge:
 
     else:
         hyperedge_texture = None
-
-    if hyperedge_texture:
-        log.info("Has hyper edge texture")
 
     merged_edge = elk.Edge(
         id=f"merged_{hash(tuple(e.id for e in edges))}",

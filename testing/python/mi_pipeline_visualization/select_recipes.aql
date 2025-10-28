@@ -23,9 +23,8 @@ LET excludeNodes = UNIQUE(FLATTEN(
 LET traversal = (
   FOR v, e, p IN 1..6 OUTBOUND startNode GRAPH "mi_recipes"
   FILTER v._id NOT IN excludeNodes
-  LET hasIncoming = LENGTH(FOR edge IN edges FILTER edge._to == v._id RETURN 1) > 0
-  LET hasOutgoing = LENGTH(FOR edge IN edges FILTER edge._from == v._id RETURN 1) > 0
-  FILTER hasIncoming OR hasOutgoing
+  LET degree = LENGTH(FOR edge IN edges FILTER edge._to == v._id OR edge._from == v._id RETURN 1)
+  FILTER degree > 0
   RETURN {vertex: v, edge: e}
 )
 
