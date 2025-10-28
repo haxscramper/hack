@@ -265,12 +265,9 @@ class NodeProperties(BaseModel, extra="forbid"):
     portConstraints: Optional[PortConstraints] = None
     portAlignment: Optional[PortAlignment] = None
 
-
 class Point(BaseModel, extra="forbid"):
     x: float
     y: float
-
-
 
 class Label(BaseModel, extra="forbid"):
     id: Optional[Union[str, int]] = None
@@ -306,9 +303,6 @@ class EdgeSection(BaseModel, extra="forbid"):
     incomingSections: Optional[List[Union[str, int]]] = None
     outgoingSections: Optional[List[Union[str, int]]] = None
 
-
-
-
 class Edge(BaseModel, extra="forbid"):
     id: Union[str, int]
     source: Optional[Union[str, int]] = None
@@ -326,6 +320,11 @@ class Edge(BaseModel, extra="forbid"):
     layoutOptions: Optional[Dict[str, Any]] = None
     extra: Optional[Dict[str, Any]] = None
 
+    def __hash__(self):
+        return hash(self.id)
+    
+    def __eq__(self, other):
+        return isinstance(other, Edge) and self.id == other.id
 
 
 class Node(BaseModel, extra="forbid"):

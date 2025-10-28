@@ -10,9 +10,11 @@ from plumbum import local, CommandNotFound
 
 import igraph_builder as gbuild
 from elk_converter import convert_to_elk, graph_to_typst
+import elk_adjustment
 from typst_schema import generate_typst
 import elk_schema as elk
 from graphviz_converter import convert_igraph_to_graphviz
+
 
 
 def upload_graph_to_arango(graph: ig.Graph) -> None:
@@ -177,6 +179,8 @@ def main():
     log.info(f"Wrote graph layout JSON to {elk_layout}")
     elk_layout.write_text(
         layout.model_dump_json(indent=2, exclude_none=True, exclude_unset=False))
+
+    elk_adjustment.adjust_graph_for_non_overlapping_edges(layout)
 
     doc = graph_to_typst(layout)
     doc_json = Path("/tmp/typst-doc.json")
