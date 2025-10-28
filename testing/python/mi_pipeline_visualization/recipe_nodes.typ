@@ -463,7 +463,43 @@
 }
 
 #let edge(edge_data) = {
-  if "sections" in edge_data {
+  // Check if hyperedge polygon is specified
+  if (
+    "extra" in edge_data
+      and "data" in edge_data.extra
+      and "data" in edge_data.extra.data
+      and "polygon" in edge_data.extra.data.data
+  ) {
+    let polygon_points = edge_data.extra.data.data.polygon
+    let typst_points = ()
+
+    for point in polygon_points {
+      typst_points.push((point.at(0) * 1pt, point.at(1) * 1pt))
+    }
+
+    place(
+      polygon(
+        fill: gray.lighten(80%),
+        stroke: black + 1pt,
+        ..typst_points,
+      ),
+    )
+
+    // Draw junction points if they exist
+    if false and "junctionPoints" in edge_data {
+      for junction in edge_data.junctionPoints {
+        place(
+          dx: junction.at("x") * 1pt - 2pt,
+          dy: junction.at("y") * 1pt - 2pt,
+          circle(
+            radius: 2pt,
+            fill: black,
+            stroke: black + 1pt,
+          ),
+        )
+      }
+    }
+  } else if "sections" in edge_data {
     for section in edge_data.sections {
       let start = section.at("startPoint")
       let end = section.at("endPoint")
@@ -492,9 +528,6 @@
         )))
         curve_elements.push(curve.line((end.at("x") * 1pt, end.at("y") * 1pt)))
       }
-
-      // debug_abs_point(start.x, start.y, blue)
-      // debug_abs_point(end.x, end.y, blue)
 
       place(
         curve(

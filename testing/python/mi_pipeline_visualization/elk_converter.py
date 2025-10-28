@@ -9,10 +9,12 @@ import igraph as ig
 import elk_schema as elk
 import typst_schema as typ
 from pydantic import BaseModel
-from beartype.typing import Literal, Union, List, Optional, Set
+from beartype.typing import Literal, Union, List, Optional, Set, Tuple
 from enum import Enum
 from beartype import beartype
 import recipe_gui_schema as gui
+from shapely.geometry import LineString, Polygon
+from shapely.ops import unary_union
 
 
 class PortData(BaseModel, extra="forbid"):
@@ -24,10 +26,15 @@ class EdgeData(BaseModel, extra="forbid"):
     target: NodeDataUnion
 
 
+class HyperEdgeData(BaseModel):
+    polygon: List[Tuple[float, float]]
+
+
 class ElkExtra(BaseModel, extra="forbid"):
-    data: Union[NodeDataUnion, EdgeData, PortData]
+    data: Union[NodeDataUnion, EdgeData, PortData, HyperEdgeData]
     machine: Optional[gui.MachineData] = None
-    kind: Literal["fluid_node", "item_node", "recipe_node", "port", "edge"]
+    kind: Literal["fluid_node", "item_node", "recipe_node", "port", "edge",
+                  "hyperedge"]
 
 
 def graph_to_typst(graph: elk.Graph) -> typ.Document:
@@ -341,6 +348,33 @@ def _add_fluid_item_node(graph: ig.Graph, result: elk.Graph, v: ig.Vertex):
 
 
 @beartype
+def compute_hyperedge_polygon(sections: List[elk.EdgeSection],
+                              width: float) -> List[Tuple[float, float]]:
+    buffered_lines = []
+
+    for section in sections:
+        points = [(section.startPoint.x, section.startPoint.y)]
+        if section.bendPoints:
+            points.extend([(bp.x, bp.y) for bp in section.bendPoints])
+        points.append((section.endPoint.x, section.endPoint.y))
+
+        if len(points) >= 2:
+            line = LineString(points)
+            buffered_line = line.buffer(width / 2, cap_style=2, join_style=2)
+            buffered_lines.append(buffered_line)
+
+    if not buffered_lines:
+        return []
+
+    combined_polygon = unary_union(buffered_lines)
+
+    if hasattr(combined_polygon, 'exterior'):
+        return list(combined_polygon.exterior.coords)
+    else:
+        return []
+
+
+@beartype
 def merge_edges_into_hyperedge(edges: List[elk.Edge]) -> elk.Edge:
     if not edges:
         raise ValueError("Cannot merge empty list of edges")
@@ -387,9 +421,15 @@ def merge_edges_into_hyperedge(edges: List[elk.Edge]) -> elk.Edge:
         targets=list(all_targets) if len(all_targets) > 1 else None,
         source=list(all_sources)[0] if len(all_sources) == 1 else None,
         target=list(all_targets)[0] if len(all_targets) == 1 else None,
-        sections=all_sections if all_sections else None,
+        sections=all_sections,
         junctionPoints=all_junction_points if all_junction_points else None,
-        labels=all_labels if all_labels else None)
+        labels=all_labels if all_labels else None,
+        extra=dict(data=ElkExtra(
+            data=HyperEdgeData(
+                polygon=compute_hyperedge_polygon(all_sections, width=4.0)),
+            kind="hyperedge",
+        )),
+    )
 
     return merged_edge
 
