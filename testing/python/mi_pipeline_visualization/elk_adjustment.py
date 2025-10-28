@@ -39,15 +39,17 @@ def _collect_all_edges(node: Graph, all_edges: List[Edge]) -> None:
 
 def _extract_edge_segments(edge: Edge) -> List[Tuple[Point, Point, Edge, int]]:
     segments = []
-
+    
     if edge.sections:
         for section in edge.sections:
             points = [section.startPoint]
             if section.bendPoints:
                 points.extend(section.bendPoints)
             points.append(section.endPoint)
-
+            
             for i in range(len(points) - 1):
+                if i == 0 or i == len(points) - 2:
+                    continue
                 segments.append((points[i], points[i + 1], edge, i))
     else:
         if edge.sourcePoint and edge.targetPoint:
@@ -55,10 +57,12 @@ def _extract_edge_segments(edge: Edge) -> List[Tuple[Point, Point, Edge, int]]:
             if edge.bendPoints:
                 points.extend(edge.bendPoints)
             points.append(edge.targetPoint)
-
+            
             for i in range(len(points) - 1):
+                if i == 0 or i == len(points) - 2:
+                    continue
                 segments.append((points[i], points[i + 1], edge, i))
-
+    
     return segments
 
 
@@ -274,72 +278,6 @@ def _adjust_port_positions(
 
     all_nodes = []
     _collect_all_nodes(graph, all_nodes)
-
-    for edge in all_edges:
-        if not edge.sourcePort or not edge.targetPort:
-            continue
-
-        source_node = _find_node_by_id(all_nodes, edge.source)
-        target_node = _find_node_by_id(all_nodes, edge.target)
-
-        if source_node and source_node.ports:
-            source_port = _find_port_by_id(source_node.ports, edge.sourcePort)
-            if source_port:
-                _adjust_port_for_edge(source_port, edge, adjustments, True)
-
-        if target_node and target_node.ports:
-            target_port = _find_port_by_id(target_node.ports, edge.targetPort)
-            if target_port:
-                _adjust_port_for_edge(target_port, edge, adjustments, False)
-
-
-def _find_port_by_id(ports: List[Port], port_id: str) -> Port:
-    for port in ports:
-        if port.id == port_id:
-            return port
-    return None
-
-
-def _adjust_port_for_edge(port: Port, edge: Edge,
-                          adjustments: Dict[Tuple[Edge, int], Tuple[float,
-                                                                    float]],
-                          is_source: bool) -> None:
-    for segment_idx in range(10):
-        adjustment_key = (edge, segment_idx)
-        if adjustment_key in adjustments:
-            dx, dy = adjustments[adjustment_key]
-
-            if segment_idx == 0 and is_source:
-                if port.x is not None:
-                    port.x += dx
-                if port.y is not None:
-                    port.y += dy
-                break
-            elif not is_source:
-                max_segment_idx = _get_max_segment_index_for_edge(edge)
-                if segment_idx == max_segment_idx:
-                    if port.x is not None:
-                        port.x += dx
-                    if port.y is not None:
-                        port.y += dy
-                    break
-
-
-def _get_max_segment_index_for_edge(edge: Edge) -> int:
-    if edge.sections:
-        max_idx = 0
-        for section in edge.sections:
-            points_count = 2
-            if section.bendPoints:
-                points_count += len(section.bendPoints)
-            max_idx = max(max_idx, points_count - 2)
-        return max_idx
-    else:
-        points_count = 2
-        if edge.bendPoints:
-            points_count += len(edge.bendPoints)
-        return points_count - 2
-
 
 def adjust_graph_for_non_overlapping_edges(graph: Graph,
                                            edge_width: float = 4) -> None:
