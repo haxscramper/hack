@@ -1,34 +1,44 @@
 LET startNode = FIRST(
-  FOR doc IN vertices 
-  FILTER doc.data.id == "modern_industrialization:crude_oil" 
-  RETURN doc
+  FOR doc IN vertices
+    FILTER doc.data.id == "modern_industrialization:crude_oil"
+    RETURN doc
 )
 
 LET excludeNodes = UNIQUE(FLATTEN(
   FOR excludeId IN [
-    "modern_industrialization:sulfuric_acid", 
-    "modern_industrialization:oxygen", 
-    "modern_industrialization:lubricant", 
+    "modern_industrialization:sulfuric_acid",
+    "modern_industrialization:oxygen",
+    // "modern_industrialization:hydrogen",
+    "modern_industrialization:lubricant",
+    "modern_industrialization:benzene",
     "minecraft:water"
   ]
     LET excludeNode = FIRST(
-      FOR doc IN vertices 
-      FILTER doc.data.id == excludeId 
-      RETURN doc
+      FOR doc IN vertices
+        FILTER doc.data.id == excludeId
+        RETURN doc
     )
     FOR v IN 1..1 OUTBOUND excludeNode GRAPH "mi_recipes"
-    RETURN v._id
+      RETURN v._id
 ))
 
 LET traversal = (
-  FOR v, e, p IN 1..6 OUTBOUND startNode GRAPH "mi_recipes"
-  FILTER v._id NOT IN excludeNodes
-  LET degree = LENGTH(FOR edge IN edges FILTER edge._to == v._id OR edge._from == v._id RETURN 1)
-  FILTER degree > 0
-  RETURN {vertex: v, edge: e}
+  FOR v, e, p IN 1..9 OUTBOUND startNode GRAPH "mi_recipes"
+    PRUNE v._id IN excludeNodes
+    FILTER v._id NOT IN excludeNodes
+    RETURN { v, e }
 )
 
+LET edgesOut = UNIQUE(traversal[*].e)
+
+LET vertexIds = UNIQUE(FLATTEN(
+  FOR e IN edgesOut
+    RETURN [e._from, e._to]
+))
+
+LET verticesOut = DOCUMENT(vertices, vertexIds)
+
 RETURN {
-  vertices: UNIQUE(APPEND([startNode], traversal[*].vertex)),
-  edges: UNIQUE(traversal[*].edge)
+  vertices: verticesOut,
+  edges: edgesOut
 }

@@ -20,7 +20,6 @@ import numpy as np
 from sklearn.cluster import KMeans
 
 
-
 class PortData(BaseModel, extra="forbid"):
     direction: Literal["in", "out"]
 
@@ -319,7 +318,12 @@ def _add_recipe_node(
 
 
 @beartype
-def _add_fluid_item_node(graph: ig.Graph, result: elk.Graph, v: ig.Vertex):
+def _add_fluid_item_node(
+    graph: ig.Graph,
+    result: elk.Graph,
+    v: ig.Vertex,
+    known_graph_nodes: Set[str],
+):
     if v["node_type"] == "fluid":
         fluid: FluidNodeData = v["data"]
         id = fluid.id
@@ -327,6 +331,9 @@ def _add_fluid_item_node(graph: ig.Graph, result: elk.Graph, v: ig.Vertex):
     else:
         item: FluidNodeData = v["data"]
         id = item.id
+
+    assert 0 < graph.outdegree(v) + graph.indegree(v), f"{id}"
+
 
     node = elk.Node(
         id=f"{id}",
@@ -389,19 +396,23 @@ def compute_hyperedge_polygon(sections: List[elk.EdgeSection],
 def extract_color_palette(texture_path: str, n_colors: int = 3) -> dict:
     img = Image.open(texture_path).convert('RGB')
     pixels = np.array(img).reshape(-1, 3)
-    
+
     kmeans = KMeans(n_clusters=n_colors, random_state=42)
     kmeans.fit(pixels)
-    
+
     colors = []
     for center in kmeans.cluster_centers_:
         colors.append({
-            "r": int(center[0]),
-            "g": int(center[1]),
-            "b": int(center[2]),
-            "hex": f"#{int(center[0]):02x}{int(center[1]):02x}{int(center[2]):02x}"
+            "r":
+            int(center[0]),
+            "g":
+            int(center[1]),
+            "b":
+            int(center[2]),
+            "hex":
+            f"#{int(center[0]):02x}{int(center[1]):02x}{int(center[2]):02x}"
         })
-    
+
     return {"palette": colors}
 
 
@@ -508,7 +519,7 @@ def merge_edges_into_hyperedge(edges: List[elk.Edge]) -> elk.Edge:
             data=HyperEdgeData(
                 polygon=compute_hyperedge_polygon(all_sections, width=4.0),
                 pattern=extract_color_palette(hyperedge_texture
-                                             ) if hyperedge_texture else None,
+                                              ) if hyperedge_texture else None,
             ),
             kind="hyperedge",
         )),
@@ -568,7 +579,7 @@ def convert_to_elk(graph: ig.Graph) -> elk.Graph:
                                  known_graph_nodes)
 
             case "fluid" | "item":
-                _add_fluid_item_node(graph, result, v)
+                _add_fluid_item_node(graph, result, v, known_graph_nodes)
 
             case _:
                 raise ValueError(f"{v['node_type']}")

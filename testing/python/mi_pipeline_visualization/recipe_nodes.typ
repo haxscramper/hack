@@ -187,6 +187,7 @@
 #let item_node(node) = {
   node_box(node, draw_node_base(node, orange.lighten(80%)), 0, 0)
   node_box(node, draw_node_image(node), 0, 0)
+  // node_box(node, debug_text(repr(node), red), 0, 0)
 }
 
 #let format_amount(content) = {
