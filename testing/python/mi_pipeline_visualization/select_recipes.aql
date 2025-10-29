@@ -8,7 +8,6 @@ LET excludeNodes = UNIQUE(FLATTEN(
   FOR excludeId IN [
     "modern_industrialization:sulfuric_acid",
     "modern_industrialization:oxygen",
-    // "modern_industrialization:hydrogen",
     "modern_industrialization:lubricant",
     "modern_industrialization:benzene",
     "minecraft:water"
@@ -23,7 +22,7 @@ LET excludeNodes = UNIQUE(FLATTEN(
 ))
 
 LET traversal = (
-  FOR v, e, p IN 1..9 OUTBOUND startNode GRAPH "mi_recipes"
+  FOR v, e, p IN 1..8 OUTBOUND startNode GRAPH "mi_recipes"
     PRUNE v._id IN excludeNodes
     FILTER v._id NOT IN excludeNodes
     RETURN { v, e }

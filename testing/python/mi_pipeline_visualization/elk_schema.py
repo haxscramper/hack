@@ -261,10 +261,6 @@ class PortProperties(BaseModel, extra="forbid"):
         return data
 
 
-class NodeProperties(BaseModel, extra="forbid"):
-    portConstraints: Optional[PortConstraints] = None
-    portAlignment: Optional[PortAlignment] = None
-
 class Point(BaseModel, extra="forbid"):
     x: float
     y: float
@@ -339,7 +335,7 @@ class Node(BaseModel, extra="forbid"):
     ports: Optional[List[Port]] = None
     labels: Optional[List[Label]] = None
     edges: Optional[List[Edge]] = None
-    properties: Optional[NodeProperties] = None
+    properties: Optional[Dict[str, Any]] = None
     layoutOptions: Optional[Dict[str, Any]] = None
 
 

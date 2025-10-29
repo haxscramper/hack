@@ -10,6 +10,7 @@ import elk_schema as elk
 import typst_schema as typ
 from pydantic import BaseModel
 from beartype.typing import Literal, Union, List, Optional, Set, Tuple, Any, Dict
+from numbers import Number
 from enum import Enum
 from beartype import beartype
 import recipe_gui_schema as gui
@@ -200,6 +201,83 @@ def get_edge_groups_by_shared_ports(graph: elk.Graph) -> List[List[elk.Edge]]:
     return edge_groups
 
 
+from pathlib import Path
+from typing import List, Tuple
+from dataclasses import dataclass
+from beartype import beartype
+import matplotlib.font_manager as fm
+from fontTools.ttLib import TTFont
+from fontTools.pens.boundsPen import BoundsPen
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+
+_font_cache = {}
+
+@dataclass
+class SplitResult:
+    lines: List[str]
+    height: Number
+
+@beartype
+def get_font_metrics(font_path: str) -> Tuple[TTFont, Number]:
+    if font_path in _font_cache:
+        return _font_cache[font_path]
+    
+    ttfont = TTFont(font_path)
+    units_per_em = ttfont["head"].unitsPerEm
+    _font_cache[font_path] = (ttfont, units_per_em)
+    return ttfont, units_per_em
+
+@beartype
+def get_text_width(text: str, font_path: str, font_size: Number) -> Number:
+    ttfont, units_per_em = get_font_metrics(font_path)
+    cmap = ttfont.getBestCmap()
+    glyf = ttfont["glyf"]
+    hmtx = ttfont["hmtx"]
+    
+    total_width = 0
+    for char in text:
+        if ord(char) in cmap:
+            glyph_name = cmap[ord(char)]
+            advance_width, _ = hmtx[glyph_name]
+            total_width += advance_width
+    
+    return (total_width / units_per_em) * font_size
+
+@beartype
+def get_line_height(font_path: str, font_size: Number) -> Number:
+    ttfont, units_per_em = get_font_metrics(font_path)
+    hhea = ttfont["hhea"]
+    line_height = hhea.ascent - hhea.descent + hhea.lineGap
+    return (line_height / units_per_em) * font_size
+
+@beartype
+def split_text_to_fit(text: str, expected_width: Number, font_path: str, font_size: Number) -> SplitResult:
+    words = text.split()
+    lines = []
+    current_line = ""
+    
+    for word in words:
+        test_line = current_line + (" " if current_line else "") + word
+        test_width = get_text_width(test_line, font_path, font_size)
+        
+        if test_width <= expected_width:
+            current_line = test_line
+        else:
+            if current_line:
+                lines.append(current_line)
+                current_line = word
+            else:
+                lines.append(word)
+    
+    if current_line:
+        lines.append(current_line)
+    
+    line_height = get_line_height(font_path, font_size)
+    total_height = len(lines) * line_height
+    
+    return SplitResult(lines=lines, height=total_height)
+
 @beartype
 class Direction(Enum):
     IN = 0
@@ -334,6 +412,13 @@ def _add_fluid_item_node(
 
     assert 0 < graph.outdegree(v) + graph.indegree(v), f"{id}"
 
+    expected_width = 50.0
+    font_size = 12.0
+
+    font_path = fm.findfont(fm.FontProperties(family="DejaVu Sans"))
+
+    label_split = split_text_to_fit(id, expected_width, font_path, font_size)
+
 
     node = elk.Node(
         id=f"{id}",
@@ -341,6 +426,9 @@ def _add_fluid_item_node(
         height=50,
         extra=dict(data=ElkExtra(data=v["data"], kind=v["node_type"] +
                                  "_node")),
+        properties={
+            "nodeLabels.placement": "[H_LEFT, V_TOP, OUTSIDE]",
+        },
         ports=[
             elk.Port(
                 id=get_resource_port_id(id, Direction.IN),
@@ -361,7 +449,17 @@ def _add_fluid_item_node(
                     data=ElkExtra(kind="port", data=PortData(
                         direction="out"))),
             ),
+        ],
+        labels=[
+            elk.Label(
+                text=it,
+                width=expected_width,
+                height=label_split.height,
+            ) for it in label_split.lines
         ])
+
+    if node.labels:
+        log.info(f"{node.labels}")
 
     result.children.append(node)
 

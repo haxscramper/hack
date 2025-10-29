@@ -121,6 +121,40 @@
   )
 }
 
+#let draw_label(label) = {
+  let label_x = if "x" in label { label.x * 1pt } else { 0pt }
+  let label_y = if "y" in label { label.y * 1pt } else { 0pt }
+  let label_width = if "width" in label { label.width * 1pt } else { auto }
+  let label_height = if "height" in label { label.height * 1pt } else { auto }
+  let label_text = if "text" in label { label.text } else { "" }
+
+  place(
+    dx: label_x,
+    dy: label_y,
+    rect(
+      width: label_width,
+      height: label_height,
+      fill: rgb("#F5F5DC"), // beige
+      stroke: rgb("#8B4513") + 1pt, // darker brown
+      radius: 2pt,
+      inset: 2pt,
+      text(
+        size: 8pt,
+        fill: black,
+        label_text,
+      ),
+    ),
+  )
+
+  // Handle nested labels if they exist
+  if "labels" in label and label.labels != none {
+    for nested_label in label.labels {
+      draw_label(nested_label)
+    }
+  }
+}
+
+
 #let draw_node_base(node, fill_color) = {
   rect(
     width: 100%,
@@ -128,12 +162,19 @@
     stroke: black + 2pt,
     fill: fill_color,
     radius: 5pt,
-    // Place ports inside this rectangle
-    if "ports" in node {
-      for port in node.ports {
-        draw_port(port)
-      }
-    },
+    stack(
+      // Place ports inside this rectangle
+      if "ports" in node {
+        for port in node.ports {
+          draw_port(port)
+        }
+      },
+      if "labels" in node {
+        for label in node.labels {
+          draw_label(label)
+        }
+      },
+    ),
   )
 }
 
