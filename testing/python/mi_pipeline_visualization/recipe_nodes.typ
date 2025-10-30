@@ -58,6 +58,64 @@
   }
 }
 
+
+#let draw_label(label) = {
+  let label_x = if "x" in label { label.x * 1pt } else { 0pt }
+  let label_y = if "y" in label { label.y * 1pt } else { 0pt }
+  let label_width = if "width" in label { label.width * 1pt } else { auto }
+  let label_height = if "height" in label { label.height * 1pt } else { auto }
+  let label_text = if "text" in label { label.text } else { "" }
+
+  let breakable-text(str) = str.clusters().join("\u{200B}")
+
+  let fill-res = rgb("#F5F5DC")
+
+  if "extra" in label and "kind" in label.extra {
+    if label.extra.kind == "fluid" {
+      fill-res = blue.lighten(80%)
+    } else if label.extra.kind == "fluid-in" {
+      fill-res = gradient.linear(blue.lighten(80%), green)
+    } else if label.extra.kind == "fluid-out" {
+      fill-res = gradient.linear(blue.lighten(80%), red)
+    } else if label.extra.kind == "item" {
+      fill-res = rgb("#F5F5DC")
+    } else if label.extra.kind == "item-in" {
+      fill-res = gradient.linear(rgb("#F5F5DC"), green)
+    } else if label.extra.kind == "item-out" {
+      fill-res = gradient.linear(rgb("#F5F5DC"), red)
+    } else {
+      debug_text(repr(label.extra), red)
+    }
+  }
+
+  place(
+    dx: label_x,
+    dy: label_y,
+    rect(
+      width: label_width,
+      height: label_height,
+      fill: fill-res,
+      radius: 2pt,
+      inset: 2pt,
+      place(
+        center + horizon,
+        text(
+          size: label.extra.font_size * 1pt,
+          fill: black,
+          breakable-text(label_text),
+        ),
+      ),
+    ),
+  )
+
+  // Handle nested labels if they exist
+  if "labels" in label and label.labels != none {
+    for nested_label in label.labels {
+      draw_label(nested_label)
+    }
+  }
+}
+
 #let draw_port(port) = {
   let port_x = port.at("x", default: 0)
   let port_y = port.at("y", default: 0)
@@ -119,45 +177,19 @@
       // Draw direction arrow inside the rectangle
     ),
   )
-}
-
-#let draw_label(label) = {
-  let label_x = if "x" in label { label.x * 1pt } else { 0pt }
-  let label_y = if "y" in label { label.y * 1pt } else { 0pt }
-  let label_width = if "width" in label { label.width * 1pt } else { auto }
-  let label_height = if "height" in label { label.height * 1pt } else { auto }
-  let label_text = if "text" in label { label.text } else { "" }
-
-  let breakable-text(str) = str.clusters().join("\u{200B}")
 
 
-  place(
-    dx: label_x,
-    dy: label_y,
-    rect(
-      width: label_width,
-      height: label_height,
-      fill: rgb("#F5F5DC"),
-      radius: 2pt,
-      inset: 2pt,
+  if "labels" in port {
+    for label in port.labels {
       place(
-        center + horizon,
-        text(
-          size: label.extra.font_size * 1pt,
-          fill: black,
-          breakable-text(label_text),
-        ),
-      ),
-    ),
-  )
-
-  // Handle nested labels if they exist
-  if "labels" in label and label.labels != none {
-    for nested_label in label.labels {
-      draw_label(nested_label)
+        dx: port_x * 1pt,
+        dy: port_y * 1pt,
+        draw_label(label),
+      )
     }
   }
 }
+
 
 
 #let draw_node_base(node, fill_color) = {

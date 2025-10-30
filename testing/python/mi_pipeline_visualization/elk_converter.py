@@ -71,6 +71,18 @@ def graph_to_typst(graph: elk.Graph) -> typ.Document:
                     )),
                 )))
 
+    if graph.edges:
+        for edge in graph.edges:
+            # extra: ElkExtra = edge.extra["data"]
+            subnodes.append(
+                typ.Command(
+                    name="edge",
+                    args=[
+                        typ.Literal(value=edge.model_dump(exclude_none=True))
+                    ],
+                ))
+
+
     if graph.children:
         for node in graph.children:
             extra: ElkExtra = node.extra["data"]
@@ -82,16 +94,6 @@ def graph_to_typst(graph: elk.Graph) -> typ.Document:
                     ],
                 ))
 
-    if graph.edges:
-        for edge in graph.edges:
-            # extra: ElkExtra = edge.extra["data"]
-            subnodes.append(
-                typ.Command(
-                    name="edge",
-                    args=[
-                        typ.Literal(value=edge.model_dump(exclude_none=True))
-                    ],
-                ))
 
     return typ.Document(subnodes=subnodes)
 
@@ -383,9 +385,20 @@ def _add_recipe_node(
             width=8,
             height=8,
             properties=elk.PortProperties(side=side.to_port_side()),
-            extra=dict(data=ElkExtra(kind="port",
-                                     data=PortData(direction="in" if side ==
-                                                   Direction.IN else "out"))),
+            extra=dict(data=ElkExtra(
+                kind="port",
+                data=PortData(
+                    direction="in" if side == Direction.IN else "out"),
+            )),
+            labels=[
+                _single_line_label(
+                    f"port-{get_port_id(kind, idx, side)}",
+                    text=it.id.split(":")[-1].replace("_", " "),
+                    font_size=4,
+                    extra_extra=dict(
+                        kind=kind + "-" +
+                        ("in" if side == Direction.IN else "out")))
+            ],
         )
 
         node.ports.append(port)
@@ -443,6 +456,30 @@ def _add_recipe_node(
 
 
 @beartype
+def _single_line_label(
+    id: str,
+    text: str,
+    font_size: Number,
+    extra_extra: Dict[str, Any] = dict()) -> elk.Label:
+    font_path = fm.findfont(fm.FontProperties(family="DejaVu Sans"))
+    expected_width = get_text_width(text, font_path, font_size) + 4
+    expected_height = get_line_height(font_path, font_size)
+
+    return elk.Label(
+        id=id,
+        text=text,
+        width=expected_width,
+        height=expected_height,
+        extra=dict(
+            expected_width=expected_width,
+            expected_height=expected_height,
+            font_size=font_size,
+            **extra_extra,
+        ),
+    )
+
+
+@beartype
 def _add_fluid_item_node(
     graph: ig.Graph,
     result: elk.Graph,
@@ -459,12 +496,6 @@ def _add_fluid_item_node(
 
     assert 0 < graph.outdegree(v) + graph.indegree(v), f"{id}"
 
-    font_size = 8.0
-    font_path = fm.findfont(fm.FontProperties(family="DejaVu Sans"))
-    node_name = id.split(":")[-1].replace("_", " ")
-    expected_width = get_text_width(node_name, font_path, font_size)
-    expected_height = get_line_height(font_path, font_size)
-
     node = elk.Node(
         id=f"{id}",
         width=50,
@@ -473,6 +504,7 @@ def _add_fluid_item_node(
                                  "_node")),
         properties={
             "nodeLabels.placement": "[H_CENTER, V_TOP, OUTSIDE]",
+            "portLabels.placement": "NEXT_TO_PORT_OF_POSSIBLE",
         },
         ports=[
             elk.Port(
@@ -496,17 +528,12 @@ def _add_fluid_item_node(
             ),
         ],
         labels=[
-            elk.Label(
+            _single_line_label(
                 id=f"resource-label-{id}",
-                text=node_name,
-                width=expected_width,
-                height=expected_height,
-                extra=dict(
-                    expected_width=expected_width,
-                    expected_height=expected_height,
-                    font_size=font_size,
-                )
-            ) 
+                text=id.split(":")[-1].replace("_", " "),
+                font_size=8.0,
+                extra_extra=dict(type=v["node_type"]),
+            )
         ])
 
     result.children.append(node)
@@ -704,6 +731,7 @@ def convert_to_elk(graph: ig.Graph) -> elk.Graph:
             "org.eclipse.elk.spacing.labelNode": 10,
             "org.eclipse.elk.layered.spacing.edgeNodeBetweenLayers": 30,
             "org.eclipse.elk.layered.spacing.edgeEdgeBetweenLayers": 20,
+            "org.eclipse.elk.spacing.labelPortVertical": 0,
         })
 
     known_graph_nodes: Set[str] = set()

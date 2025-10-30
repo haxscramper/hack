@@ -406,6 +406,8 @@ def validate_graph_structure(graph: Graph) -> bool:
             raise ValueError(f"Duplicate node id: {node.id}")
         node_ids.add(node.id)
 
+
+
         if node.labels:
             for l in node.labels:
                 validate_label(l)
@@ -415,6 +417,10 @@ def validate_graph_structure(graph: Graph) -> bool:
                 if port.id in port_ids:
                     raise ValueError(f"Duplicate port id: {port.id}")
                 port_ids.add(port.id)
+
+            if port.labels:
+                for l in port.labels:
+                    validate_label(l)
 
         if node.children:
             for child in node.children:
