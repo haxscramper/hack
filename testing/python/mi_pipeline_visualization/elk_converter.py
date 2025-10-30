@@ -213,36 +213,39 @@ import matplotlib.patches as patches
 
 _font_cache = {}
 
+
 @dataclass
 class SplitResult:
     lines: List[str]
     height: Number
 
+
 @beartype
 def get_font_metrics(font_path: str) -> Tuple[TTFont, Number]:
     if font_path in _font_cache:
         return _font_cache[font_path]
-    
+
     ttfont = TTFont(font_path)
     units_per_em = ttfont["head"].unitsPerEm
     _font_cache[font_path] = (ttfont, units_per_em)
     return ttfont, units_per_em
 
+
 @beartype
 def get_text_width(text: str, font_path: str, font_size: Number) -> Number:
     ttfont, units_per_em = get_font_metrics(font_path)
     cmap = ttfont.getBestCmap()
-    glyf = ttfont["glyf"]
     hmtx = ttfont["hmtx"]
-    
+
     total_width = 0
     for char in text:
         if ord(char) in cmap:
             glyph_name = cmap[ord(char)]
             advance_width, _ = hmtx[glyph_name]
             total_width += advance_width
-    
+
     return (total_width / units_per_em) * font_size
+
 
 @beartype
 def get_line_height(font_path: str, font_size: Number) -> Number:
@@ -251,32 +254,76 @@ def get_line_height(font_path: str, font_size: Number) -> Number:
     line_height = hhea.ascent - hhea.descent + hhea.lineGap
     return (line_height / units_per_em) * font_size
 
+
 @beartype
-def split_text_to_fit(text: str, expected_width: Number, font_path: str, font_size: Number) -> SplitResult:
-    words = text.split()
+def get_break_priority(char: str) -> int:
+    if char == " ":
+        return 0
+    elif char in ".,;!?":
+        return 1
+    elif char in ":_-/\\|":
+        return 2
+    elif char.isalnum():
+        return 4
+    else:
+        return 3
+
+
+@beartype
+def split_text_to_fit(text: str, expected_width: Number, font_path: str,
+                      font_size: Number) -> SplitResult:
+    if not text:
+        return SplitResult(lines=[], height=0.0)
+
+    n = len(text)
+    char_widths = []
+    for char in text:
+        char_widths.append(get_text_width(char, font_path, font_size))
+
+    dp = [float("inf")] * (n + 1)
+    parent = [-1] * (n + 1)
+    dp[0] = 0
+
+    for i in range(n):
+        if dp[i] == float("inf"):
+            continue
+
+        current_width = 0
+        for j in range(i, n):
+            current_width += char_widths[j]
+            if current_width > expected_width:
+                break
+
+            break_penalty = 0
+            if j < n - 1:
+                break_penalty = get_break_priority(text[j])
+
+            new_cost = dp[i] + break_penalty
+            if new_cost < dp[j + 1]:
+                dp[j + 1] = new_cost
+                parent[j + 1] = i
+
+    breaks = []
+    current = n
+    while parent[current] != -1:
+        breaks.append(parent[current])
+        current = parent[current]
+    breaks.reverse()
+
     lines = []
-    current_line = ""
-    
-    for word in words:
-        test_line = current_line + (" " if current_line else "") + word
-        test_width = get_text_width(test_line, font_path, font_size)
-        
-        if test_width <= expected_width:
-            current_line = test_line
-        else:
-            if current_line:
-                lines.append(current_line)
-                current_line = word
-            else:
-                lines.append(word)
-    
-    if current_line:
-        lines.append(current_line)
-    
+    start = 0
+    for break_point in breaks:
+        if break_point > start:
+            lines.append(text[start:break_point])
+            start = break_point
+    if start < n:
+        lines.append(text[start:])
+
     line_height = get_line_height(font_path, font_size)
     total_height = len(lines) * line_height
-    
+
     return SplitResult(lines=lines, height=total_height)
+
 
 @beartype
 class Direction(Enum):
@@ -412,13 +459,11 @@ def _add_fluid_item_node(
 
     assert 0 < graph.outdegree(v) + graph.indegree(v), f"{id}"
 
-    expected_width = 50.0
-    font_size = 12.0
-
+    font_size = 8.0
     font_path = fm.findfont(fm.FontProperties(family="DejaVu Sans"))
-
-    label_split = split_text_to_fit(id, expected_width, font_path, font_size)
-
+    node_name = id.split(":")[-1].replace("_", " ")
+    expected_width = get_text_width(node_name, font_path, font_size)
+    expected_height = get_line_height(font_path, font_size)
 
     node = elk.Node(
         id=f"{id}",
@@ -427,7 +472,7 @@ def _add_fluid_item_node(
         extra=dict(data=ElkExtra(data=v["data"], kind=v["node_type"] +
                                  "_node")),
         properties={
-            "nodeLabels.placement": "[H_LEFT, V_TOP, OUTSIDE]",
+            "nodeLabels.placement": "[H_CENTER, V_TOP, OUTSIDE]",
         },
         ports=[
             elk.Port(
@@ -452,14 +497,17 @@ def _add_fluid_item_node(
         ],
         labels=[
             elk.Label(
-                text=it,
+                id=f"resource-label-{id}",
+                text=node_name,
                 width=expected_width,
-                height=label_split.height,
-            ) for it in label_split.lines
+                height=expected_height,
+                extra=dict(
+                    expected_width=expected_width,
+                    expected_height=expected_height,
+                    font_size=font_size,
+                )
+            ) 
         ])
-
-    if node.labels:
-        log.info(f"{node.labels}")
 
     result.children.append(node)
 
@@ -653,8 +701,9 @@ def convert_to_elk(graph: ig.Graph) -> elk.Graph:
         layoutOptions={
             "org.eclipse.elk.spacing.edgeEdge": 15,
             "org.eclipse.elk.spacing.edgeNode": 20,
+            "org.eclipse.elk.spacing.labelNode": 10,
             "org.eclipse.elk.layered.spacing.edgeNodeBetweenLayers": 30,
-            "org.eclipse.elk.layered.spacing.edgeEdgeBetweenLayers": 20
+            "org.eclipse.elk.layered.spacing.edgeEdgeBetweenLayers": 20,
         })
 
     known_graph_nodes: Set[str] = set()

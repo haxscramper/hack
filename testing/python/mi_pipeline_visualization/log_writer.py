@@ -1,8 +1,13 @@
 import structlog
 import logging
 
-logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
 
+if not logger.handlers:
+    handler = logging.StreamHandler()
+    handler.setLevel(logging.DEBUG)
+    logger.addHandler(handler)
 
 def format_callsite(logger, method_name, event_dict):
     if "filename" in event_dict and "lineno" in event_dict:
@@ -38,4 +43,4 @@ structlog.configure(
     cache_logger_on_first_use=True,
 )
 
-log: structlog.PrintLogger = structlog.get_logger()
+log: structlog.PrintLogger = structlog.get_logger(__name__)

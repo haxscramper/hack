@@ -128,20 +128,25 @@
   let label_height = if "height" in label { label.height * 1pt } else { auto }
   let label_text = if "text" in label { label.text } else { "" }
 
+  let breakable-text(str) = str.clusters().join("\u{200B}")
+
+
   place(
     dx: label_x,
     dy: label_y,
     rect(
       width: label_width,
       height: label_height,
-      fill: rgb("#F5F5DC"), // beige
-      stroke: rgb("#8B4513") + 1pt, // darker brown
+      fill: rgb("#F5F5DC"),
       radius: 2pt,
       inset: 2pt,
-      text(
-        size: 8pt,
-        fill: black,
-        label_text,
+      place(
+        center + horizon,
+        text(
+          size: label.extra.font_size * 1pt,
+          fill: black,
+          breakable-text(label_text),
+        ),
       ),
     ),
   )

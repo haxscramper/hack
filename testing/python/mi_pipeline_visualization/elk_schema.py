@@ -266,7 +266,7 @@ class Point(BaseModel, extra="forbid"):
     y: float
 
 class Label(BaseModel, extra="forbid"):
-    id: Optional[str] = None
+    id: str
     x: Optional[float] = None
     y: Optional[float] = None
     width: Optional[float] = None
@@ -390,11 +390,25 @@ def validate_graph_structure(graph: Graph) -> bool:
     node_ids = set()
     port_ids = set()
     edge_ids = set()
+    label_ids = set()
 
-    def collect_node_ids(node: Node) -> None:
+    def validate_label(label: Label): 
+        if label.extra and not label.id:
+            raise ValueError(f"Label {label} has 'extra' field, but not ID")
+
+        if label.id and label.id in label_ids:
+            raise ValueError(f"Duplicate label ID: {label.id}")
+
+        label_ids.add(label.id)
+
+    def validate_nodes(node: Node) -> None:
         if node.id in node_ids:
             raise ValueError(f"Duplicate node id: {node.id}")
         node_ids.add(node.id)
+
+        if node.labels:
+            for l in node.labels:
+                validate_label(l)
 
         if node.ports:
             for port in node.ports:
@@ -404,11 +418,13 @@ def validate_graph_structure(graph: Graph) -> bool:
 
         if node.children:
             for child in node.children:
-                collect_node_ids(child)
+                validate_nodes(child)
+
+
 
     if graph.children:
         for node in graph.children:
-            collect_node_ids(node)
+            validate_nodes(node)
 
     if graph.ports:
         for port in graph.ports:
@@ -424,6 +440,10 @@ def validate_graph_structure(graph: Graph) -> bool:
             if edge.id in edge_ids:
                 raise ValueError(f"Duplicate edge id: {edge.id}")
             edge_ids.add(edge.id)
+
+            if edge.labels:
+                for l in edge.labels:
+                    validate_label(l)
 
             if edge.source is not None:
                 if edge.source not in node_ids and edge.source not in port_ids:
@@ -806,7 +826,6 @@ def extract_extra_data(graph: Graph) -> Dict[str, Dict[str, Any]]:
 
     def collect_extra(obj: Any) -> None:
         if hasattr(obj, "id"):
-
             def get_property(name: str):
                 if hasattr(obj, name) and getattr(obj, name) is not None:
                     extra_map[obj.id][name] = getattr(obj, name)
@@ -815,7 +834,6 @@ def extract_extra_data(graph: Graph) -> Dict[str, Dict[str, Any]]:
 
             if isinstance(obj, Port):
                 get_property("properties")
-
 
     def traverse_node(node: Node) -> None:
         collect_extra(node)
