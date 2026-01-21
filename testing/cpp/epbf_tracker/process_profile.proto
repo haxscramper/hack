@@ -1,0 +1,32 @@
+// File: proto/process_profile.proto
+syntax = "proto3";
+
+package epbf_tracker;
+
+message ProcessStarted {
+  uint32 pid = 1;
+  uint32 ppid = 2;
+  uint64 start_ns = 3;
+  string comm = 4;
+  string cwd = 5;
+  string cmdline = 6;
+}
+
+message ProcessEnded {
+  uint32 pid = 1;
+  uint64 end_ns = 2;
+}
+
+message ProcessMemory {
+  uint32 pid = 1;
+  uint64 ts_ns = 2;
+  uint64 rss_bytes = 3;
+}
+
+message ProcessEvent {
+  oneof kind {
+    ProcessStarted started = 1;
+    ProcessEnded ended = 2;
+    ProcessMemory memory = 3;
+  }
+}
