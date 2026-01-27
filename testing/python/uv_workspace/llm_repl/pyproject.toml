@@ -1,0 +1,43 @@
+[project]
+name = "llm-repl"
+version = "0.1.0"
+description = "An AI-based REPL with RAG, function calling, and agent features"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "beartype>=0.22.9",
+    "chromadb>=1.4.1",
+    "click>=8.3.1",
+    "httpx>=0.28.1",
+    "mcp>=1.26.0",
+    "openrouter>=0.1.3",
+    "pydantic>=2.12.5",
+    "rich>=14.3.1",
+]
+
+[project.scripts]
+llm-repl = "llm_repl.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+    "pytest-asyncio>=1.3.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+markers = [
+    "integration: marks tests as integration tests (require API access)",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
+]
