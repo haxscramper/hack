@@ -29,6 +29,8 @@
 #include <google/protobuf/io/coded_stream.h>
 #include <google/protobuf/io/zero_copy_stream_impl.h>
 
+#include "debug.hpp"
+
 #ifndef BPF_OBJECT
 #error "BPF_OBJECT" path must be provided at the build time
 #endif
@@ -90,11 +92,14 @@ struct Writer {
   }
 };
 
+enum class TrackerMode { WAITING_FOR_ROOT, TRACKING };
+
 struct TrackerState {
   std::mutex mutex;
 
   std::uint32_t rootPid{0U};
   bool rootExited{false};
+  TrackerMode mode{TrackerMode::WAITING_FOR_ROOT};
 
   std::unordered_map<std::uint32_t, bool> trackedPids{};
   std::unordered_map<std::uint32_t, ProcessSnapshot> processes{};
@@ -334,6 +339,7 @@ static int handleRingEvent(void *ctxVoid, void *data, std::size_t size) {
   TrackerState &state = *ctx.state;
 
   BpfEvent const &ev = *static_cast<BpfEvent const *>(data);
+  INFO("Handle ring event trigger event type '{}'", ev.type);
 
   if (ev.type == 1U) {
     std::uint32_t const pid = ev.pid;
@@ -362,24 +368,37 @@ static int handleRingEvent(void *ctxVoid, void *data, std::size_t size) {
     {
       std::lock_guard<std::mutex> lock{state.mutex};
 
-      if (state.rootPid == 0U) {
+      if (state.mode == TrackerMode::WAITING_FOR_ROOT) {
         if (matchesRootPattern(snapshot.cmdline)) {
+          INFO("Started tracking root process {}", pid);
+          state.mode = TrackerMode::TRACKING;
           state.rootPid = pid;
           state.trackedPids.insert_or_assign(pid, true);
           state.processes.insert_or_assign(pid, snapshot);
           shouldTrack = true;
         }
-      } else {
-        auto const itParent = state.trackedPids.find(ppid);
-        if (itParent != state.trackedPids.end()) {
-          state.trackedPids.insert_or_assign(pid, true);
-          state.processes.insert_or_assign(pid, snapshot);
-          shouldTrack = true;
+        // Ignore all other processes while waiting for root
+      } else if (state.mode == TrackerMode::TRACKING) {
+        if (state.rootPid == 0U) {
+          if (matchesRootPattern(snapshot.cmdline)) {
+            state.rootPid = pid;
+            state.trackedPids.insert_or_assign(pid, true);
+            state.processes.insert_or_assign(pid, snapshot);
+            shouldTrack = true;
+          }
+        } else {
+          auto const itParent = state.trackedPids.find(ppid);
+          if (itParent != state.trackedPids.end()) {
+            state.trackedPids.insert_or_assign(pid, true);
+            state.processes.insert_or_assign(pid, snapshot);
+            shouldTrack = true;
+          }
         }
       }
     }
 
     if (shouldTrack) {
+      INFO("Started process {} '{}'", pid, cmdline);
       emitStarted(writer, snapshot);
     }
   }
@@ -392,19 +411,24 @@ static int handleRingEvent(void *ctxVoid, void *data, std::size_t size) {
     {
       std::lock_guard<std::mutex> lock{state.mutex};
 
-      auto const it = state.trackedPids.find(pid);
-      if (it != state.trackedPids.end()) {
-        shouldEmit = true;
-        state.trackedPids.erase(pid);
-        state.processes.erase(pid);
-      }
+      // Only handle exits if we're in tracking mode
+      if (state.mode == TrackerMode::TRACKING) {
+        auto const it = state.trackedPids.find(pid);
+        if (it != state.trackedPids.end()) {
+          shouldEmit = true;
+          state.trackedPids.erase(pid);
+          state.processes.erase(pid);
+        }
 
-      if (pid == state.rootPid) {
-        state.rootExited = true;
-      }
+        if (pid == state.rootPid) {
+          INFO("Root process exited");
+          state.rootExited = true;
+        }
 
-      if (state.rootExited && state.trackedPids.empty()) {
-        done = true;
+        if (state.rootExited && state.trackedPids.empty()) {
+          INFO("No more PIDs to track, exiting the process");
+          done = true;
+        }
       }
     }
 
@@ -413,6 +437,7 @@ static int handleRingEvent(void *ctxVoid, void *data, std::size_t size) {
     }
 
     if (done) {
+      INFO("Done processing, returning 1");
       return 1;
     }
   }
@@ -424,33 +449,41 @@ static void memorySampler(Writer &writer, TrackerState &state,
                           std::atomic_bool &stopFlag) {
   while (!stopFlag.load()) {
     std::vector<std::uint32_t> pids{};
+    bool isTracking{false};
+
     {
       std::lock_guard<std::mutex> lock{state.mutex};
-      pids.reserve(state.trackedPids.size());
-      for (auto const &kv : state.trackedPids) {
-        pids.insert(pids.end(), kv.first);
+      isTracking = (state.mode == TrackerMode::TRACKING);
+      if (isTracking) {
+        pids.reserve(state.trackedPids.size());
+        for (auto const &kv : state.trackedPids) {
+          pids.insert(pids.end(), kv.first);
+        }
       }
     }
 
-    std::uint64_t const tsNs = monotonicNs();
+    // Only sample memory if we're in tracking mode and have processes to track
+    if (isTracking && !pids.empty()) {
+      std::uint64_t const tsNs = monotonicNs();
 
-    for (std::uint32_t const pid : pids) {
-      std::optional<std::uint64_t> rssOpt = readRssBytes(pid);
-      if (!rssOpt.has_value()) {
-        continue;
-      }
+      for (std::uint32_t const pid : pids) {
+        std::optional<std::uint64_t> rssOpt = readRssBytes(pid);
+        if (!rssOpt.has_value()) {
+          continue;
+        }
 
-      bool stillTracked{false};
-      {
-        std::lock_guard<std::mutex> lock{state.mutex};
-        auto const it = state.trackedPids.find(pid);
-        stillTracked = it != state.trackedPids.end();
-      }
-      if (!stillTracked) {
-        continue;
-      }
+        bool stillTracked{false};
+        {
+          std::lock_guard<std::mutex> lock{state.mutex};
+          auto const it = state.trackedPids.find(pid);
+          stillTracked = it != state.trackedPids.end();
+        }
+        if (!stillTracked) {
+          continue;
+        }
 
-      emitMemory(writer, pid, tsNs, rssOpt.value());
+        emitMemory(writer, pid, tsNs, rssOpt.value());
+      }
     }
 
     std::this_thread::sleep_for(std::chrono::milliseconds{250});
@@ -469,6 +502,8 @@ static void throwLibbpfError(std::string const &what, int err) {
 }
 
 int main() {
+  INFO("Logger setup");
+
   ::libbpf_set_strict_mode(LIBBPF_STRICT_ALL);
 
   fs::path const bpfObjectPath = BPF_OBJECT;
@@ -517,6 +552,7 @@ int main() {
     throw std::runtime_error{"failed to get ringbuf fd"};
   }
 
+  INFO("Started writer");
   Writer writer{"ebpf_process_profile.bin"};
   TrackerState state{};
   Context cbCtx{.writer = &writer, .state = &state};
@@ -527,6 +563,7 @@ int main() {
     throw std::runtime_error{"ring_buffer__new failed"};
   }
 
+  INFO("Started memory thread");
   std::atomic_bool stopFlag{false};
   std::thread memThread{[&writer, &state, &stopFlag]() {
     memorySampler(writer, state, stopFlag);
@@ -541,6 +578,7 @@ int main() {
           std::format("ring_buffer__poll: {} ({})", std::strerror(e), e)};
     }
     if (rc == 1) {
+      INFO("Ring buffer poll result is 1, process done");
       done = true;
     }
   }

@@ -1,25 +1,28 @@
 #!/usr/bin/env python
 
-import pandas as pd
-from beartype import beartype
-from beartype.typing import List, Optional, Dict, Any
-from notion_client import Client
-from collections import defaultdict
-from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Boolean
-from sqlalchemy import create_engine, MetaData, Table as SATable, Engine, inspect
-from pathlib import Path
-
-from sqlalchemy.orm import declarative_base, sessionmaker, Session
-from sqlalchemy import Column, select
-from datetime import datetime, timedelta
-from pydantic import validator, field_validator, BaseModel, Field
-from sqlalchemy.types import TypeDecorator
-import click
-import re
-import logging
 import json
-from pprint import pformat, pprint
+import logging
+import re
 import sys
+from collections import defaultdict
+from datetime import datetime, timedelta
+from pathlib import Path
+from pprint import pformat, pprint
+from typing import Dict, List, Optional
+
+import click
+import pandas as pd
+import yaml
+from beartype import beartype
+from beartype.typing import Any, Dict, List, Optional, Type
+from notion_client import Client
+from pydantic import BaseModel, Field, field_validator, validator
+from sqlalchemy import (Boolean, Column, DateTime, Engine, ForeignKey, Integer,
+                        MetaData, String)
+from sqlalchemy import Table as SATable
+from sqlalchemy import create_engine, inspect, select
+from sqlalchemy.orm import Session, declarative_base, sessionmaker
+from sqlalchemy.types import TypeDecorator
 
 logging.basicConfig(stream=sys.stdout)
 
@@ -132,7 +135,7 @@ class BookRecord(BaseModel, extra="forbid"):
 
     @field_validator("read_time", mode="before")
     def parse_timedelta(cls, v: Optional[int]):
-        return timedelta(seconds=int(v / 1000))
+        return timedelta(seconds=int(v / 1000))  # type: ignore
 
 
 class ReadingRecord(BaseModel, extra="forbid"):
@@ -140,13 +143,16 @@ class ReadingRecord(BaseModel, extra="forbid"):
     books: List[BookRecord]
 
 
-Base = declarative_base()
+from sqlalchemy.ext.declarative import DeclarativeMeta
+
+Base: Type[Any] = declarative_base()
 
 
 class Bookmarks(Base):
     __tablename__ = "bookmarks"
     id = IdColumn()
     idbook = IntColumn()
+    num = Column(Integer, default=0)
     dateadd = Column(MillisecondsUnixTimestamp)
     dateedit = Column(MillisecondsUnixTimestamp)
     filename = StrColumn()
@@ -154,9 +160,19 @@ class Bookmarks(Base):
     crc = StrColumn()
     start = IntColumn()
     stop = IntColumn()
+    color = Column(Integer, default=0)
+    typebmk = Column(Integer, default=0)
     name = StrColumn()
     text = StrColumn()
     lowtext = StrColumn()
+    param0 = Column(Integer, nullable=False, default=-1)
+    param1 = StrColumn()
+    shiftpos = Column(Integer, nullable=False, default=-1)
+    shiftstart = Column(Integer, nullable=False, default=-1)
+    shiftstop = Column(Integer, nullable=False, default=-1)
+    textpos = Column(Integer, nullable=False, default=-1)
+    textstart = Column(Integer, nullable=False, default=-1)
+    textstop = Column(Integer, nullable=False, default=-1)
 
 
 class Recent(Base):
@@ -173,7 +189,70 @@ class Recent(Base):
     author = StrColumn()
     series = StrColumn()
     otherdata = StrColumn()
-    param0 = IntColumn()
+    lowtitle = StrColumn()
+    lowauthor = StrColumn()
+    lowseries = StrColumn()
+    lowotherdata = StrColumn()
+    cpopen = IntColumn()
+    cpdef = IntColumn()
+    param = IntColumn()
+    crc = StrColumn()
+    param0 = Column(Integer, nullable=False, default=-1)
+    param1 = Column(Integer, nullable=False, default=-1)
+    param2 = Column(Integer, nullable=False, default=-1)
+    param3 = Column(Integer, nullable=False, default=-1)
+    param4 = Column(Integer, nullable=False, default=-1)
+    param5 = StrColumn()
+    param6 = StrColumn()
+
+
+class Stack(Base):
+    __tablename__ = "stack"
+    id = IdColumn()
+    idbook = IntColumn()
+    stackpos = IntColumn()
+    stacksize = IntColumn()
+    allpos = StrColumn()
+    alltext = StrColumn()
+    crc = StrColumn()
+    param0 = Column(Integer, nullable=False, default=-1)
+    param1 = StrColumn()
+
+
+class Tmstat(Base):
+    __tablename__ = "tmstat"
+    id = IdColumn()
+    idbook = IntColumn()
+    s0 = StrColumn()
+    s1 = StrColumn()
+    s2 = StrColumn()
+    t0 = Column(Integer, default=0)
+    t1 = Column(Integer, default=0)
+    t2 = Column(Integer, default=0)
+    t3 = Column(Integer, default=0)
+    t4 = Column(Integer, default=0)
+    t5 = Column(Integer, default=0)
+    t6 = Column(Integer, default=0)
+    t7 = Column(Integer, default=0)
+    t8 = Column(Integer, default=0)
+    t9 = Column(Integer, default=0)
+
+
+class Filebmk(Base):
+    __tablename__ = "filebmk"
+    id = IdColumn()
+    type = IntColumn()
+    path = StrColumn()
+    card = StrColumn()
+    datefirst = Column(MillisecondsUnixTimestamp)
+    title = StrColumn()
+    param0 = Column(Integer, nullable=False, default=-1)
+    param1 = Column(Integer, nullable=False, default=-1)
+    param2 = Column(Integer, nullable=False, default=-1)
+    param3 = Column(Integer, nullable=False, default=-1)
+    param4 = Column(Integer, nullable=False, default=-1)
+    param5 = StrColumn()
+    param6 = StrColumn()
 
 
 @beartype
@@ -274,7 +353,9 @@ class NotionSyncManager:
                 if title:
                     book_title = title[0].get("plain_text", "")
                     if book_title in books:
-                        logger.warning(f"Notion database has duplicate data, '{book_title}' is already present")
+                        logger.warning(
+                            f"Notion database has duplicate data, '{book_title}' is already present"
+                        )
 
                     if book_title:
                         books[book_title] = {
@@ -296,8 +377,8 @@ class NotionSyncManager:
         existing_books = self.get_existing_books()
 
         if self.dry_run:
-            for idx, book in enumerate(existing_books):
-                logger.info(f"Existing book [{idx}] '{book}'")
+            for idx, existing_book in enumerate(existing_books):
+                logger.info(f"Existing book [{idx}] '{existing_book}'")
 
         for book in books:
             reading_progress = book.bookpos / book.booksize if book.booksize > 0 else 0
@@ -305,25 +386,26 @@ class NotionSyncManager:
             # Skip books with less than 2% progress if they're not already in the database
             if reading_progress < 0.02 and book.title not in existing_books:
                 logger.info(
-                    f"Skipping new book with less than 2% progress: {book.title}"
+                    f"Skipping new book with less than 2% progress: '{book.title}'"
                 )
                 continue
 
             if book.title in existing_books:
                 # Check if reading progress has changed
-                current_page = existing_books[book.title]
+                current_page = existing_books[book.title]  # type: ignore
                 current_progress = current_page["properties"].get(
                     "Reading progress", {}).get("number", 0) or 0
 
-                if int(reading_progress) <= int(
-                        current_progress
-                ):  # I can go back on reading some books
-                    logger.info(f"No progress change for book: {book.title}")
+                # I can go back on reading some books again
+                if int(reading_progress * 100) <= int(current_progress * 100):
+                    logger.info(
+                        f"No progress change for book: '{book.title}', current progress is {current_progress:.2%}, DB store is {reading_progress:.2%}"
+                    )
                     continue
 
                 # Update existing book
                 logger.info(
-                    f"Updating book: {book.title} with new progress: {reading_progress:.2%} < {current_progress:.2%}"
+                    f"Updating book: '{book.title}' with new progress: {reading_progress:.2%} < {current_progress:.2%}"
                 )
 
                 if not self.dry_run:
@@ -401,7 +483,7 @@ def sync_books_to_notion(
 @click.option("--import_offset")
 @click.option("--notion_token")
 @click.option("--notion_database")
-@click.option("--notion_access_dry_run")
+@click.option("--notion_access_dry_run", type=click.BOOL)
 def main(
     infile: str,
     outfile: str,
@@ -410,10 +492,11 @@ def main(
     notion_database: Optional[str] = None,
     notion_access_dry_run: bool = True,
 ) -> None:
+
     opts = AlXreaderImportOptions(
         infile=Path(infile),
         outfile=Path(outfile),
-        import_offset=import_offset,
+        import_offset=import_offset,  # type: ignore
     )
     engine = open_sqlite(opts.infile)
     session = sessionmaker()(bind=engine)

@@ -44,6 +44,8 @@ add_custom_target(ebpf_tracker_bpf ALL DEPENDS ${BPF_OBJECT})
 
 add_executable(epbf_tracker
   main.cpp
+  debug.hpp
+  debug.cpp
   ${PROTO_SRCS}
 )
 

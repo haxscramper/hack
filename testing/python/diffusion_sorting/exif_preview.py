@@ -900,13 +900,18 @@ def extract_artist(prompt: str) -> str:
     match = re.search(r"by ([^,\n]+)", prompt)
     if match:
         return match.group(1).strip()
+
+    match = re.search(r"([^,\n]+?)\s+[sS]tyle", prompt)
+    if match:
+        return f"FLYX3 {match.group(1).strip()}"
+
     return "Unknown Artist"
 
 
 import hashlib
 
 
-def generate_artist_galleries():
+def generate_artist_galleries() -> None:
     artists: List[str] = []
     for dir, images in get_artist_prompt_galleries():
         gallery_dir = workspace_root.joinpath(dir)
