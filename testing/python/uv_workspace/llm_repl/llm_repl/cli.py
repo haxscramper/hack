@@ -46,18 +46,17 @@ def setup_logging(debug: Optional[str], verbose: bool) -> None:
     root_logger.handlers = []
 
     # File handler - always logs everything
-    file_handler = logging.FileHandler("llm_repl.log")
+    file_handler = logging.FileHandler("llm_repl.log", mode="w")
     file_handler.setLevel(logging.DEBUG)
     file_handler.setFormatter(
-        logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-    )
+        logging.Formatter(
+            "%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
     root_logger.addHandler(file_handler)
 
     # Console handler - respects debug/verbose settings
     console_handler = logging.StreamHandler(sys.stderr)
     console_handler.setFormatter(
-        logging.Formatter("%(name)s - %(levelname)s - %(message)s")
-    )
+        logging.Formatter("%(name)s - %(levelname)s - %(message)s"))
 
     if debug is not None:
         # Debug mode enabled
@@ -90,9 +89,10 @@ def setup_logging(debug: Optional[str], verbose: bool) -> None:
 
 
 @click.command()
-@click.option(
-    "--session", "-s", default="default", help="Name of the session to load or create"
-)
+@click.option("--session",
+              "-s",
+              default="default",
+              help="Name of the session to load or create")
 @click.option(
     "--role",
     "-r",
@@ -107,26 +107,41 @@ def setup_logging(debug: Optional[str], verbose: bool) -> None:
     type=click.Choice(list(AGENT_CONFIGS.keys()) + [None]),
     help="Agent to use (enables agent mode)",
 )
-@click.option(
-    "--model", "-m", default=DEFAULT_MODEL, help="Model to use for the conversation"
-)
-@click.option("--rag-dir", "-d", default=None, help="Directory to index for RAG")
-@click.option(
-    "--functions/--no-functions", "-f/-F", default=False, help="Enable function calling"
-)
-@click.option("--list-sessions", is_flag=True, help="List available sessions and exit")
-@click.option("--list-roles", is_flag=True, help="List available roles and exit")
-@click.option("--list-agents", is_flag=True, help="List available agents and exit")
-@click.option(
-    "--verbose", "-v", is_flag=True, help="Enable verbose (INFO level) logging"
-)
+@click.option("--model",
+              "-m",
+              default=DEFAULT_MODEL,
+              help="Model to use for the conversation")
+@click.option("--rag-dir",
+              "-d",
+              default=None,
+              help="Directory to index for RAG")
+@click.option("--functions/--no-functions",
+              "-f/-F",
+              default=False,
+              help="Enable function calling")
+@click.option("--list-sessions",
+              is_flag=True,
+              help="List available sessions and exit")
+@click.option("--list-roles",
+              is_flag=True,
+              help="List available roles and exit")
+@click.option("--list-agents",
+              is_flag=True,
+              help="List available agents and exit")
+@click.option("--verbose",
+              "-v",
+              is_flag=True,
+              help="Enable verbose (INFO level) logging")
 @click.option(
     "--debug",
     default=None,
     required=False,
-    help="Enable debug logging. Specify comma-separated logger names (e.g., --debug=llm,rag) or use --debug-all for all",
+    help=
+    "Enable debug logging. Specify comma-separated logger names (e.g., --debug=llm,rag) or use --debug-all for all",
 )
-@click.option("--debug-all", is_flag=True, help="Enable debug logging for all modules")
+@click.option("--debug-all",
+              is_flag=True,
+              help="Enable debug logging for all modules")
 def main(
     session: str,
     role: str,

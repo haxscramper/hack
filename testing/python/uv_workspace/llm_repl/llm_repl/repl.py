@@ -71,6 +71,7 @@ class REPL:
             augmented_query = self.rag_manager.augment_query(query)
             if augmented_query != query:
                 logger.debug("Query augmented with RAG context")
+                query = augmented_query
 
         # Add user message
         self.session.add_message("user", query)
@@ -91,6 +92,10 @@ class REPL:
         # Stream response with spinner
         full_content = ""
         tool_calls = None
+
+        logger.debug(f"Sending request with {len(messages)}")
+        # for message in messages:
+
 
         # Show spinner while waiting for first token
         with Live(

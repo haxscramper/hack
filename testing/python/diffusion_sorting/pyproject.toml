@@ -1,27 +1,28 @@
-[tool.poetry]
-name = "grabber"
+[project]
+name = "diffusion-sorting"
 version = "0.1.0"
 description = ""
-authors = ["haxscramper <haxscramper@gmail.com>"]
+authors = [{ name = "haxscramper", email = "haxscramper@gmail.com" }]
+requires-python = ">=3.12,<4"
 readme = "README.md"
-
-[tool.poetry.dependencies]
-python = "^3.12"
-dominate = "^2.9.1"
-imagehash = "^4.3.1"
-pdfkit = "^1.0.0"
-requests = "^2.31.0"
-beartype = "^0.18.5"
-pydantic = "^2.8.2"
-geopandas = "^1.0.1"
-more-itertools = "^10.4.0"
-scikit-learn = "^1.6.1"
-pywebio = "^1.8.3"
-altair = "^5.5.0"
-vispy = "^0.14.3"
-pyside6 = "^6.8.2.1"
-
-
-[build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+]
+dependencies = [
+    "dominate>=2.9.1,<3",
+    "imagehash>=4.3.1,<5",
+    "pdfkit>=1.0.0,<2",
+    "requests>=2.31.0,<3",
+    "beartype>=0.18.5,<0.19",
+    "pydantic>=2.8.2,<3",
+    "geopandas>=1.0.1,<2",
+    "more-itertools>=10.4.0,<11",
+    "scikit-learn>=1.6.1,<2",
+    "pywebio>=1.8.3,<2",
+    "altair>=5.5.0,<6",
+    "vispy>=0.14.3,<0.15",
+    "pyside6>=6.8.2.1,<7",
+]

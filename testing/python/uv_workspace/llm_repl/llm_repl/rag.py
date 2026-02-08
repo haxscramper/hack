@@ -2,7 +2,7 @@
 
 import os
 import logging
-from beartype.typing import Optional
+from beartype.typing import Optional, List
 import hashlib
 from pathlib import Path
 from beartype import beartype
@@ -15,6 +15,7 @@ from openrouter import OpenRouter
 from .config import RAG_DIR, API_KEY, DEFAULT_EMBEDDING_MODEL
 
 logger = logging.getLogger(__name__)
+
 
 
 class OpenRouterEmbeddingFunction(EmbeddingFunction):
@@ -83,6 +84,7 @@ class OpenRouterEmbeddingFunction(EmbeddingFunction):
                 logger.debug(
                     f"Total embeddings generated: {len(all_embeddings)}")
                 return all_embeddings
+                
         except Exception as e:
             logger.error(f"Error generating embeddings: {e}", exc_info=True)
             # Return zero embeddings as fallback
@@ -125,7 +127,7 @@ class RAGManager:
         )
         logger.info(f"Using embedding model: {embedding_model}")
 
-    def _compute_file_hash(self, filepath: str) -> str:
+    def _compute_file_hash(self, filepath: Path) -> str:
         """Compute MD5 hash of a file for change detection."""
         with open(filepath, "rb") as f:
             return hashlib.md5(f.read()).hexdigest()
@@ -135,7 +137,7 @@ class RAGManager:
                     chunk_size: int = 1000,
                     overlap: int = 200) -> list[str]:
         """Split text into overlapping chunks."""
-        chunks = []
+        chunks: List[str] = []
         start = 0
         while start < len(text):
             end = start + chunk_size
@@ -148,19 +150,20 @@ class RAGManager:
         )
         return chunks
 
-    def index_file(self, filepath: str, force: bool = False) -> int:
+    def index_file(self, filepath: Path, force: bool = False) -> int:
         """Index a file and return number of chunks added."""
         if not os.path.exists(filepath):
             logger.warning(f"File not found: {filepath}")
             return 0
 
-        filepath = os.path.abspath(filepath)
         file_hash = self._compute_file_hash(filepath)
         logger.debug(f"Indexing file: {filepath} (hash={file_hash[:8]}...)")
 
         # Check if already indexed with same hash
-        existing = self.collection.get(where={"source": filepath},
-                                       include=["metadatas"])
+        existing = self.collection.get(
+            where={"source": str(filepath)},
+            include=["metadatas"],
+        )
 
         if existing["ids"] and not force:
             # Check if hash matches
@@ -194,7 +197,7 @@ class RAGManager:
         # Add chunks to collection (embeddings are generated automatically)
         ids = [f"{filepath}:{i}" for i in range(len(chunks))]
         metadatas = [{
-            "source": filepath,
+            "source": str(filepath),
             "chunk_index": i,
             "hash": file_hash
         } for i in range(len(chunks))]
@@ -219,12 +222,15 @@ class RAGManager:
 
         total_chunks = 0
         file_count = 0
-        for root, _, files in os.walk(dirpath):
-            for filename in files:
-                if any(filename.endswith(ext) for ext in extensions):
-                    filepath = os.path.join(root, filename)
+        path = Path(dirpath)
+        if path.is_file():
+            total_chunks += self.index_file(path)
+
+        else:
+            for file in Path(dirpath).rglob("*"):
+                if file.suffix in extensions:
                     file_count += 1
-                    total_chunks += self.index_file(filepath)
+                    total_chunks += self.index_file(file)
 
         logger.info(
             f"Indexed {total_chunks} total chunks from {file_count} files in: {dirpath}"
@@ -294,6 +300,7 @@ User query: {query}"""
 
         logger.debug(
             f"Augmented query with {len(relevant_docs)} context documents")
+
         return augmented
 
     def get_stats(self) -> dict:
