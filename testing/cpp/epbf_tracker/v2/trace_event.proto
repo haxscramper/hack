@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+package procmon;
+
+message ProcessStart {
+  uint64 timestamp_ns = 1;
+  int32 pid = 2;
+  int32 ppid = 3;
+  int32 uid = 4;
+  int32 root_shell_pid = 5;
+  string comm = 6;
+  string cwd = 7;
+  repeated string args = 8;
+  string parent_cwd = 9;
+  repeated string parent_args = 10;
+}
+
+message ProcessStop {
+  uint64 timestamp_ns = 1;
+  int32 pid = 2;
+  string comm = 3;
+  int32 exit_code = 4;
+  uint64 duration_ns = 5;
+}
+
+message MemorySample {
+  uint64 timestamp_ns = 1;
+  int32 pid = 2;
+  string comm = 3;
+  uint64 rss_kb = 4;
+}
+
+message Event {
+  oneof event {
+    ProcessStart start = 1;
+    ProcessStop stop = 2;
+    MemorySample memory = 3;
+  }
+}
