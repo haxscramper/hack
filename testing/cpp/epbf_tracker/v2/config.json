@@ -1,3 +1,4 @@
 {
-  "target_pids": [4545]
+  "target_pids": [4545],
+  "output_file": "/tmp/tracking.bin"
 }

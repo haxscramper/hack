@@ -1,3 +1,4 @@
 builddir
 build
 trace_event_pb2.py
+.vscode

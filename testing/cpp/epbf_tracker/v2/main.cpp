@@ -17,12 +17,18 @@
 #include <filesystem>
 #include <optional>
 #include <vector>
+#include <atomic>
+#include <iostream>
+#include <fmt/ranges.h>
+
+#include <google/protobuf/util/delimited_message_util.h>
 
 #include <spdlog/spdlog.h>
 
 #include <libproc2/pids.h>
 
 #include "trace.skel.h"
+#include "trace_event.pb.h"
 
 struct Event {
     std::uint32_t type;
@@ -56,12 +62,16 @@ struct State {
     std::unordered_map<int, ProcInfo> processes;
     std::mutex                        mutex;
     std::atomic_bool                  running;
+    std::unique_ptr<std::ofstream>    outputStream;
+    std::mutex                        outputMutex;
+    bool                              trackMemory;
 };
 
 static std::atomic_bool* runningRef = nullptr;
 
 static void onSignal(int sig) {
     if (sig == SIGINT || sig == SIGTERM) {
+        SPDLOG_INFO("Stopping process tracking");
         if (runningRef != nullptr) { runningRef->store(false); }
     }
 }
@@ -290,47 +300,51 @@ static void forEachProcSnapshot(
     procps_pids_unref(&info);
 }
 
-// -------------------------- logging helpers --------------------------
+// -------------------------- protobuf output --------------------------
 
-static std::string joinArgs(std::vector<std::string> const& args) {
-    std::string out;
-    for (int i = 0; i < static_cast<int>(args.size()); i += 1) {
-        if (i) { out.append(" "); }
-        out.append(args.at(i));
+static void writeEvent(State& state, const procmon::Event& event) {
+    std::scoped_lock lock(state.outputMutex);
+    if (!google::protobuf::util::SerializeDelimitedToOstream(
+            event, state.outputStream.get())) {
+        throw std::runtime_error(
+            "Failed to serialize event to output stream");
     }
-    return out;
+    state.outputStream->flush();
 }
 
-static void logStart(ProcInfo const& info) {
-    SPDLOG_INFO(
-        "{}",
-        std::format(
-            "start pid={} ppid={} root={} comm={} cwd={} "
-            "argv={} parent_cwd={} parent_argv={}",
-            info.pid,
-            info.ppid,
-            info.rootShellPid,
-            info.comm,
-            info.cwd,
-            joinArgs(info.args),
-            info.parentCwd,
-            joinArgs(info.parentArgs)));
+static void recordStart(State& state, ProcInfo const& info) {
+    procmon::Event event;
+    auto*          start = event.mutable_start();
+    start->set_timestamp_ns(info.startNs);
+    start->set_pid(info.pid);
+    start->set_ppid(info.ppid);
+    start->set_uid(info.uid);
+    start->set_root_shell_pid(info.rootShellPid);
+    start->set_comm(info.comm);
+    start->set_cwd(info.cwd);
+    for (const auto& arg : info.args) { start->add_args(arg); }
+    start->set_parent_cwd(info.parentCwd);
+    for (const auto& arg : info.parentArgs) {
+        start->add_parent_args(arg);
+    }
+    writeEvent(state, event);
+    SPDLOG_TRACE(
+        "Started process {} {} {}", info.pid, info.comm, info.args);
 }
 
-static void logStop(
+static void recordStop(
+    State&          state,
     ProcInfo const& info,
     std::uint64_t   stopNs,
     std::int32_t    exitCode) {
-    double seconds = static_cast<double>(stopNs - info.startNs)
-                   / 1000000000.0;
-    SPDLOG_INFO(
-        "{}",
-        std::format(
-            "stop pid={} comm={} seconds={:.6f} exit_code={}",
-            info.pid,
-            info.comm,
-            seconds,
-            exitCode));
+    procmon::Event event;
+    auto*          stop = event.mutable_stop();
+    stop->set_timestamp_ns(stopNs);
+    stop->set_pid(info.pid);
+    stop->set_comm(info.comm);
+    stop->set_exit_code(exitCode);
+    stop->set_duration_ns(stopNs - info.startNs);
+    writeEvent(state, event);
 }
 
 // -------------------------- bootstrap --------------------------
@@ -426,7 +440,7 @@ static void bootstrap(
         };
 
         state.processes.insert_or_assign(pid, std::move(info));
-        logStart(state.processes.at(pid));
+        recordStart(state, state.processes.at(pid));
     }
 }
 
@@ -450,10 +464,6 @@ static int handleEvent(void* ctx, void* data, size_t dataSize) {
     if (e.type == 0) {
         std::scoped_lock<std::mutex> lock{state.mutex};
 
-        if (comm == "elvish") {
-            state.shellPids.insert(pid);
-            return 0;
-        }
 
         int root = 0;
         if (state.shellPids.contains(ppid)) {
@@ -462,6 +472,8 @@ static int handleEvent(void* ctx, void* data, size_t dataSize) {
             root = state.processes.at(ppid).rootShellPid;
         }
         if (root <= 0) { return 0; }
+
+        SPDLOG_TRACE("Launched process {} under {}", pid, ppid);
 
         auto childSnapOpt = readProcSnapshotForPid(
             pid, state, ProcQueryKind::Full);
@@ -486,8 +498,9 @@ static int handleEvent(void* ctx, void* data, size_t dataSize) {
             .parentArgs   = parent.args,
         };
 
+        SPDLOG_TRACE("Added process to tracking {}", pid);
         state.processes.insert_or_assign(pid, std::move(info));
-        logStart(state.processes.at(pid));
+        recordStart(state, state.processes.at(pid));
         return 0;
     }
 
@@ -495,7 +508,8 @@ static int handleEvent(void* ctx, void* data, size_t dataSize) {
         std::scoped_lock<std::mutex> lock{state.mutex};
         if (!state.processes.contains(pid)) { return 0; }
         ProcInfo info = state.processes.at(pid);
-        logStop(info, static_cast<std::uint64_t>(e.ts), e.exit_code);
+        recordStop(
+            state, info, static_cast<std::uint64_t>(e.ts), e.exit_code);
         state.processes.erase(pid);
         return 0;
     }
@@ -506,6 +520,8 @@ static int handleEvent(void* ctx, void* data, size_t dataSize) {
 // -------------------------- sampler --------------------------
 
 static void samplerThread(State& state) {
+    if (!state.trackMemory) { return; }
+
     while (state.running.load()) {
         std::this_thread::sleep_for(
             std::chrono::milliseconds{state.sampleMs});
@@ -519,24 +535,36 @@ static void samplerThread(State& state) {
             }
         }
 
+        auto now   = std::chrono::steady_clock::now();
+        auto nowNs = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                         now.time_since_epoch())
+                         .count();
+
         for (int pid : pids) {
             auto snapOpt = readProcSnapshotForPid(
                 pid, state, ProcQueryKind::Mem);
             if (!snapOpt) { continue; }
 
             std::uint64_t rssKb = snapOpt->rssKb;
+            std::string   comm;
 
-            std::scoped_lock<std::mutex> lock{state.mutex};
-            if (state.processes.contains(pid)) {
-                ProcInfo const& info = state.processes.at(pid);
-                // SPDLOG_INFO(
-                //     "{}",
-                //     std::format(
-                //         "mem pid={} comm={} rss_kb={}",
-                //         pid,
-                //         info.comm,
-                //         rssKb));
+            {
+                std::scoped_lock<std::mutex> lock{state.mutex};
+                if (state.processes.contains(pid)) {
+                    comm = state.processes.at(pid).comm;
+                } else {
+                    continue;
+                }
             }
+
+            procmon::Event event;
+            auto*          mem = event.mutable_memory();
+            mem->set_timestamp_ns(static_cast<uint64_t>(nowNs));
+            mem->set_pid(pid);
+            mem->set_comm(comm);
+            mem->set_rss_kb(rssKb);
+
+            writeEvent(state, event);
         }
     }
 }
@@ -547,14 +575,17 @@ int main(int argc, char* argv[]) {
     libbpf_set_strict_mode(LIBBPF_STRICT_ALL);
 
     State state{
-        .userUid   = getRealUserUid(),
-        .pageSize  = static_cast<int>(::getpagesize()),
-        .hz        = static_cast<int>(::sysconf(_SC_CLK_TCK)),
-        .sampleMs  = 1000,
-        .shellPids = {},
-        .processes = {},
-        .mutex     = {},
-        .running   = true,
+        .userUid      = getRealUserUid(),
+        .pageSize     = static_cast<int>(::getpagesize()),
+        .hz           = static_cast<int>(::sysconf(_SC_CLK_TCK)),
+        .sampleMs     = 1000,
+        .shellPids    = {},
+        .processes    = {},
+        .mutex        = {},
+        .running      = true,
+        .outputStream = nullptr,
+        .outputMutex  = {},
+        .trackMemory  = false,
     };
 
     runningRef = &state.running;
@@ -565,25 +596,44 @@ int main(int argc, char* argv[]) {
     spdlog::set_pattern("[%l] [%g:%#] %v");
     SPDLOG_INFO("Started main execution");
 
+    if (argc < 2) {
+        throw std::runtime_error(
+            "Configuration required as first argument (JSON file or "
+            "literal)");
+    }
+
+    std::string    arg = argv[1];
+    nlohmann::json j;
+
+    if (std::filesystem::exists(arg)) {
+        std::ifstream file(arg);
+        if (!file) {
+            throw std::runtime_error(
+                std::format("Failed to open file: {}", arg));
+        }
+        file >> j;
+    } else {
+        j = nlohmann::json::parse(arg);
+    }
+
+    if (!j.contains("output_file")) {
+        throw std::runtime_error(
+            "Configuration must contain 'output_file' field");
+    }
+
+    std::string outputPath = j["output_file"];
+    state.outputStream     = std::make_unique<std::ofstream>(
+        outputPath, std::ios::binary);
+    if (!state.outputStream->is_open()) {
+        throw std::runtime_error(
+            std::format("Failed to open output file: {}", outputPath));
+    }
+
+    state.trackMemory = j.value("track_memory", false);
+
     std::optional<std::vector<int>> target_pids;
-    if (argc > 1) {
-        std::string    arg = argv[1];
-        nlohmann::json j;
-
-        if (std::filesystem::exists(arg)) {
-            std::ifstream file(arg);
-            if (!file) {
-                throw std::runtime_error(
-                    std::format("Failed to open file: {}", arg));
-            }
-            file >> j;
-        } else {
-            j = nlohmann::json::parse(arg);
-        }
-
-        if (j.contains("target_pids") && j["target_pids"].is_array()) {
-            target_pids = j["target_pids"].get<std::vector<int>>();
-        }
+    if (j.contains("target_pids") && j["target_pids"].is_array()) {
+        target_pids = j["target_pids"].get<std::vector<int>>();
     }
 
     trace_bpf* skel = trace_bpf__open_and_load();
@@ -625,5 +675,9 @@ int main(int argc, char* argv[]) {
     ring_buffer__free(rb);
     trace_bpf__destroy(skel);
     sampler.join();
+
+    if (state.outputStream) { state.outputStream->close(); }
+    SPDLOG_INFO("Closed output stream");
+
     return 0;
 }

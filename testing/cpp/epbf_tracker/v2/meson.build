@@ -9,6 +9,15 @@ clang = find_program('clang', required: true)
 spdlog_dep = dependency('spdlog', method: 'pkg-config', required: true)
 procps_dep = dependency('libproc2', required: true)
 nlohmann_json_dep = dependency('nlohmann_json')
+protobuf_dep = dependency('protobuf', required: true)
+protoc = find_program('protoc', required: true)
+
+protobuf_gen = generator(protoc,
+  output: ['@BASENAME@.pb.cc', '@BASENAME@.pb.h'],
+  arguments: ['--proto_path=@CURRENT_SOURCE_DIR@', '--cpp_out=@BUILD_DIR@', '@INPUT@']
+)
+
+trace_event_proto = protobuf_gen.process('trace_event.proto')
 
 libbpf_dep = cc.find_library('bpf', required: true)
 libelf_dep = cc.find_library('elf', required: true)
@@ -50,9 +59,9 @@ skel_h = custom_target(
 
 executable(
   'elvish_ebpf',
-  [meson.project_source_root() / 'main.cpp', skel_h],
+  [meson.project_source_root() / 'main.cpp', skel_h, trace_event_proto],
   include_directories: include_directories('.'),
-  dependencies: [spdlog_dep, libbpf_dep, libelf_dep, libz_dep, procps_dep, nlohmann_json_dep],
+  dependencies: [spdlog_dep, libbpf_dep, libelf_dep, libz_dep, procps_dep, nlohmann_json_dep, protobuf_dep],
   cpp_args: ['-DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE'],
   link_args: ['-pthread'],
   install: true,
