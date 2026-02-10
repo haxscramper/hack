@@ -3,4 +3,4 @@ set -euo pipefail
 
 meson setup build --wipe
 meson compile -C build
-sudo ./build/elvish_ebpf
+sudo ./build/elvish_ebpf config.json

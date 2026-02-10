@@ -7,6 +7,8 @@ bpftool = find_program('bpftool', required: true)
 clang = find_program('clang', required: true)
 
 spdlog_dep = dependency('spdlog', method: 'pkg-config', required: true)
+procps_dep = dependency('libproc2', required: true)
+nlohmann_json_dep = dependency('nlohmann_json')
 
 libbpf_dep = cc.find_library('bpf', required: true)
 libelf_dep = cc.find_library('elf', required: true)
@@ -50,7 +52,7 @@ executable(
   'elvish_ebpf',
   [meson.project_source_root() / 'main.cpp', skel_h],
   include_directories: include_directories('.'),
-  dependencies: [spdlog_dep, libbpf_dep, libelf_dep, libz_dep],
+  dependencies: [spdlog_dep, libbpf_dep, libelf_dep, libz_dep, procps_dep, nlohmann_json_dep],
   cpp_args: ['-DSPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_TRACE'],
   link_args: ['-pthread'],
   install: true,
