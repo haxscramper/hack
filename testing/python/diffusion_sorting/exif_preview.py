@@ -1,5 +1,7 @@
 #!/usr/bin/env python
 
+import base64
+
 from dominate import document
 import dominate.tags as tags
 from dominate.util import text
@@ -10,7 +12,7 @@ import json
 from pathlib import Path
 from datetime import datetime
 from dataclasses import dataclass, field, replace
-from beartype.typing import List, Union, Set, Tuple, Optional, Dict
+from beartype.typing import List, Union, Set, Tuple, Optional, Dict, Any, no_type_check
 from beartype import beartype
 import functools
 import sys
@@ -26,6 +28,9 @@ import numpy as np
 from sklearn.preprocessing import normalize
 from scipy.sparse import csr_matrix
 from collections import defaultdict
+import hashlib
+from concurrent.futures import ThreadPoolExecutor
+import shutil
 
 import logging
 
@@ -71,6 +76,7 @@ class TagCategory():
     aliases: Dict[str, str] = field(default_factory=dict)
 
     @beartype
+    @staticmethod
     def clean_text(tag: str) -> str:
         return re.sub(RX_DELETE, "", tag).lower()
 
@@ -240,6 +246,8 @@ default_negative_prompt = Path(
 @beartype
 @dataclass
 class ImageParams:
+    original_path: Path
+    reference_dir: Path
     prompt: str = ""
     negative_prompt: str = ""
     generation_data: str = ""
@@ -260,15 +268,20 @@ class ImageParams:
     sdVae: str = "Automatic"
     etaNoiseSeedDelta: int = 31337
 
+    original_metadata_full: Dict[str, Any] = field(default_factory=dict)
+
     def get_tag_formatted_prompt(self) -> str:
+        assert self.parsed_prompt
         return ",".join(it.text for it in self.parsed_prompt
                         if isinstance(it, Tag))
 
     def get_tag_formatted_negative_prompt(self) -> str:
+        assert self.parsed_negative_prompt
         return ",".join(it.text for it in self.parsed_negative_prompt
                         if isinstance(it, Tag))
 
     def get_infinite_browser_extra(self) -> dict:
+        assert self.parsed_prompt
         meta = {
             "Model":
             self.model,
@@ -445,12 +458,44 @@ categories.append(
 WARN_IDX = 0
 
 
-def get_image_params(path: Path) -> ImageParams:
+def _try_parse_json(value: Any):
+    if isinstance(value, bytes):
+        try:
+            value = value.decode("utf-8")
+        except UnicodeDecodeError:
+            return value
+
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError:
+            return value
+
+    if isinstance(value, dict):
+        return {k: _try_parse_json(v) for k, v in value.items()}
+
+    if isinstance(value, list):
+        return [_try_parse_json(v) for v in value]
+
+    return value
+
+@beartype
+def get_image_params(path: Path, reference_dir: Path) -> ImageParams:
     img = Image.open(path)
     metadata = img.info
 
-    res = ImageParams(image_time=datetime.fromtimestamp(path.stat().st_mtime))
+    res = ImageParams(
+        original_path=path,
+        reference_dir=reference_dir,
+        image_time=datetime.fromtimestamp(path.stat().st_mtime),
+    )
+
     res.ImagePath = path
+    res.original_metadata_full["exif_metadata"] = {
+        k: _try_parse_json(v)
+        for k, v in img.info.items()
+    }
+
     if path.with_suffix(".txt").exists():
         text_gen_data = path.with_suffix(".txt").read_text()
         sd = parse_parameters(text_gen_data)
@@ -555,14 +600,19 @@ def get_image_params(path: Path) -> ImageParams:
 
 @beartype
 def get_full_params() -> List[ImageParams]:
+
     result: List[ImageParams] = []
+    all_files = []
+
     for reference_dir in [
             workspace_root.joinpath("reference_tensor_art"),
             workspace_root.joinpath("tensor_saved_high_res"),
     ]:
         log.info(f"Getting files from {reference_dir}")
-        for filename in reference_dir.rglob("*.png"):
-            result.append(get_image_params(filename))
+        all_files.extend((f, reference_dir) for f in reference_dir.rglob("*.png"))
+
+    with ThreadPoolExecutor() as executor:
+        result.extend(executor.map(lambda it: get_image_params(*it), all_files))
 
     resort = []
 
@@ -589,7 +639,7 @@ def get_artist_prompt_galleries() -> List[Tuple[str, List[ImageParams]]]:
         if reference_dir.is_dir():
             result.append(
                 (reference_dir.name,
-                 [get_image_params(f) for f in reference_dir.glob("*.png")]))
+                 [get_image_params(f, reference_dir) for f in reference_dir.glob("*.png")]))
 
     return result
 
@@ -625,12 +675,17 @@ def get_thumbnail(path: Path, downscale: float = 0.2) -> Path:
 
 class FixEncouter(json.JSONEncoder):
 
-    def default(self, obj):
+    def default(self, obj):  # type: ignore
         if isinstance(obj, set):
             return sorted(obj)
 
-        else:
-            return super().default(obj)
+        if isinstance(obj, bytes):
+            try:
+                return obj.decode("utf-8")
+            except UnicodeDecodeError:
+                return base64.b64encode(obj).decode("ascii")
+
+        return super().default(obj)
 
 
 @beartype
@@ -756,10 +811,10 @@ def generate_embedding_json(images: List[ImageParams]) -> None:
     ))
 
 
-def generate_common_prompt_gallery():
+@no_type_check
+def generate_common_prompt_gallery(full_param_list: List[ImageParams]):
     output_json = output_html.with_suffix(".json")
     dump_data = {}
-    full_param_list = get_full_params()
     # generate_embedding_json(full_param_list)
     with document(title="Images and EXIF Metadata") as doc:
         doc.head.add(
@@ -896,6 +951,61 @@ def generate_common_prompt_gallery():
 
 
 @beartype
+def generate_metadata_dump(full_param_list: List[ImageParams]):
+    for image in full_param_list:
+        metadata_file = image.original_path.with_suffix(".json")
+        metadata_file.write_text(
+            json.dumps(
+                image.original_metadata_full,
+                indent=2,
+                cls=FixEncouter,
+            ))
+
+EXIF_USER_COMMENT = 37510  # Exif tag: UserComment
+
+@beartype
+def create_jpg_mirror(image: ImageParams) -> Path:
+    mirror_root = image.reference_dir.parent / f"{image.reference_dir.name}_jpg_mirror"
+    relative_png = image.original_path.relative_to(image.reference_dir)
+
+    dst_path = mirror_root / relative_png.with_suffix(".webp")
+    src_json = image.original_path.with_suffix(".json")
+    src_txt = image.original_path.with_suffix(".txt")
+
+    if dst_path.exists() and src_json.exists() and src_txt.exists():
+        return dst_path
+
+    dst_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with Image.open(image.original_path) as src:
+        exif = src.getexif()
+        rgb = src.convert("RGB")
+        dst_webp = dst_path.with_suffix(".webp")
+        rgb.save(
+            dst_webp,
+            format="WEBP",
+            quality=90,
+            method=6,
+            exif=exif.tobytes(),
+        )
+
+    
+    if src_json.exists():
+        shutil.copy2(src_json, dst_path.with_suffix(".json"))
+
+    if src_txt.exists():
+        shutil.copy2(src_txt, dst_path.with_suffix(".txt"))
+
+    return dst_path
+
+
+@beartype
+def generate_jpg_mirror(full_param_list: List[ImageParams]) -> None:
+    with ThreadPoolExecutor() as executor:
+        list(executor.map(create_jpg_mirror, full_param_list))
+
+
+@beartype
 def extract_artist(prompt: str) -> str:
     match = re.search(r"by ([^,\n]+)", prompt)
     if match:
@@ -906,9 +1016,6 @@ def extract_artist(prompt: str) -> str:
         return f"FLYX3 {match.group(1).strip()}"
 
     return "Unknown Artist"
-
-
-import hashlib
 
 
 def generate_artist_galleries() -> None:
@@ -964,7 +1071,10 @@ def generate_artist_galleries() -> None:
 
 def main_impl():
     generate_artist_galleries()
-    generate_common_prompt_gallery()
+    full_param_list = get_full_params()
+    generate_metadata_dump(full_param_list)
+    generate_jpg_mirror(full_param_list)
+    generate_common_prompt_gallery(full_param_list)
 
 
 if __name__ == "__main__":
