@@ -37,18 +37,11 @@ import logging
 log = logging.getLogger("preview")
 
 log.setLevel(logging.DEBUG)
-
-log.setLevel(logging.DEBUG)
 handler = logging.StreamHandler()
 handler.setLevel(logging.DEBUG)
 formatter = logging.Formatter("%(name)s - %(levelname)s - %(message)s")
 handler.setFormatter(formatter)
 log.addHandler(handler)
-log.info(f"Changing path to {sys.argv[1]}")
-
-if __name__ == "__main__":
-    workspace_root = Path(sys.argv[1])
-    output_html = workspace_root.joinpath("images_with_exif.html")
 
 
 @beartype
@@ -479,16 +472,29 @@ def _try_parse_json(value: Any):
 
     return value
 
+
 @beartype
-def get_image_params(path: Path, reference_dir: Path) -> ImageParams:
-    img = Image.open(path)
-    metadata = img.info
+def get_image_params(path: Path,
+                     reference_dir: Path,
+                     fast: bool = False) -> ImageParams:
+    json_path = path.with_suffix(".json")
 
     res = ImageParams(
         original_path=path,
         reference_dir=reference_dir,
         image_time=datetime.fromtimestamp(path.stat().st_mtime),
     )
+
+    if not json_path.exists() and fast:
+        return res
+
+    img = Image.open(path)
+    if json_path.exists():
+        metadata = json.loads(json_path.read_text())["exif_metadata"]
+        json_metadata = True
+    else:
+        metadata = img.info
+        json_metadata = False
 
     res.ImagePath = path
     res.original_metadata_full["exif_metadata"] = {
@@ -528,39 +534,48 @@ def get_image_params(path: Path, reference_dir: Path) -> ImageParams:
                             ))
 
     elif "generation_data" in metadata:
-        generation = metadata["generation_data"].strip('\x00')
-        try:
-            full_json = json.loads(generation)
+        if json_metadata:
+            full_json = metadata["generation_data"]
+        else:
+            generation = metadata["generation_data"].strip('\x00')
             try:
-                load = TArtV1MainData.model_validate(full_json)
-                res.prompt = load.prompt
-                res.negative_prompt = load.negativePrompt
-                res.generation_data = json.dumps(full_json)
-                res.sampler = load.samplerName
-                res.steps = load.steps
-                res.model = load.baseModel.modelFileName
-                res.clipSkip = load.clipSkip
-                res.cfgScale = float(load.cfgScale)
-                res.size = (load.width, load.height)
-                res.sdVae = load.sdVae
-                res.etaNoiseSeedDelta = load.etaNoiseSeedDelta
-                for lora in load.models:
-                    res.loras.append(
-                        ModelParam(
-                            name=lora.modelFileName,
-                            weight=lora.weight,
-                        ))
+                full_json = json.loads(generation)
 
             except Exception as e:
-                # log.warning(f"{path}", exc_info=e)
-                e.add_note(pformat(full_json, width=180))
-                raise e from None
+                return res
+
+        try:
+            load = TArtV1MainData.model_validate(full_json)
+            res.prompt = load.prompt
+            res.negative_prompt = load.negativePrompt
+            res.generation_data = json.dumps(full_json)
+            res.sampler = load.samplerName
+            res.steps = load.steps
+            res.model = load.baseModel.modelFileName
+            res.clipSkip = load.clipSkip
+            res.cfgScale = float(load.cfgScale)
+            res.size = (load.width, load.height)
+            res.sdVae = load.sdVae
+            res.etaNoiseSeedDelta = load.etaNoiseSeedDelta
+            for lora in load.models:
+                res.loras.append(
+                    ModelParam(
+                        name=lora.modelFileName,
+                        weight=lora.weight,
+                    ))
 
         except Exception as e:
+            # log.warning(f"{path}", exc_info=e)
+            e.add_note(pformat(full_json, width=180))
             return res
 
     elif "prompt" in metadata:
-        prompt = json.loads(metadata["prompt"])
+        if json_metadata:
+            prompt = metadata["prompt"]
+
+        else:
+            prompt = json.loads(metadata["prompt"])
+
         for _, node in prompt.items():
             if node["class_type"] == "BNK_CLIPTextEncodeAdvanced":
                 text = node["inputs"]["text"]
@@ -570,8 +585,8 @@ def get_image_params(path: Path, reference_dir: Path) -> ImageParams:
                 else:
                     res.prompt = text
 
-    else:
-        log.warning(f"No generation data for {path}")
+    # else:
+    #     log.warning(f"No generation data for {path}")
 
     if res.prompt:
         parser = PromptParser(category_dicts=categories)
@@ -599,20 +614,22 @@ def get_image_params(path: Path, reference_dir: Path) -> ImageParams:
 
 
 @beartype
-def get_full_params() -> List[ImageParams]:
+def get_full_params(reference_dirs: List[Path],
+                    files: str,
+                    fast: bool = False) -> List[ImageParams]:
 
     result: List[ImageParams] = []
     all_files = []
 
-    for reference_dir in [
-            workspace_root.joinpath("reference_tensor_art"),
-            workspace_root.joinpath("tensor_saved_high_res"),
-    ]:
+    for reference_dir in reference_dirs:
         log.info(f"Getting files from {reference_dir}")
-        all_files.extend((f, reference_dir) for f in reference_dir.rglob("*.png"))
+        all_files.extend(
+            (f, reference_dir) for f in reference_dir.rglob(files))
 
     with ThreadPoolExecutor() as executor:
-        result.extend(executor.map(lambda it: get_image_params(*it), all_files))
+        result.extend(
+            executor.map(lambda it: get_image_params(*it, fast=fast),
+                         all_files))
 
     resort = []
 
@@ -633,13 +650,15 @@ def get_full_params() -> List[ImageParams]:
 
 
 @beartype
-def get_artist_prompt_galleries() -> List[Tuple[str, List[ImageParams]]]:
+def get_artist_prompt_galleries(
+        workspace_root: Path) -> List[Tuple[str, List[ImageParams]]]:
     result: List[Tuple[str, List[ImageParams]]] = []
     for reference_dir in workspace_root.glob("*_artists"):
         if reference_dir.is_dir():
-            result.append(
-                (reference_dir.name,
-                 [get_image_params(f, reference_dir) for f in reference_dir.glob("*.png")]))
+            result.append((reference_dir.name, [
+                get_image_params(f, reference_dir)
+                for f in reference_dir.glob("*.png")
+            ]))
 
     return result
 
@@ -812,7 +831,8 @@ def generate_embedding_json(images: List[ImageParams]) -> None:
 
 
 @no_type_check
-def generate_common_prompt_gallery(full_param_list: List[ImageParams]):
+def generate_common_prompt_gallery(full_param_list: List[ImageParams],
+                                   output_html: Path):
     output_json = output_html.with_suffix(".json")
     dump_data = {}
     # generate_embedding_json(full_param_list)
@@ -961,11 +981,13 @@ def generate_metadata_dump(full_param_list: List[ImageParams]):
                 cls=FixEncouter,
             ))
 
+
 EXIF_USER_COMMENT = 37510  # Exif tag: UserComment
 
+
 @beartype
-def create_jpg_mirror(image: ImageParams) -> Path:
-    mirror_root = image.reference_dir.parent / f"{image.reference_dir.name}_jpg_mirror"
+def create_mirror(image: ImageParams) -> Path:
+    mirror_root = image.reference_dir.parent / f"{image.reference_dir.name}_mirror"
     relative_png = image.original_path.relative_to(image.reference_dir)
 
     dst_path = mirror_root / relative_png.with_suffix(".webp")
@@ -989,7 +1011,6 @@ def create_jpg_mirror(image: ImageParams) -> Path:
             exif=exif.tobytes(),
         )
 
-    
     if src_json.exists():
         shutil.copy2(src_json, dst_path.with_suffix(".json"))
 
@@ -1002,7 +1023,7 @@ def create_jpg_mirror(image: ImageParams) -> Path:
 @beartype
 def generate_jpg_mirror(full_param_list: List[ImageParams]) -> None:
     with ThreadPoolExecutor() as executor:
-        list(executor.map(create_jpg_mirror, full_param_list))
+        list(executor.map(create_mirror, full_param_list))
 
 
 @beartype
@@ -1018,9 +1039,10 @@ def extract_artist(prompt: str) -> str:
     return "Unknown Artist"
 
 
-def generate_artist_galleries() -> None:
+def generate_artist_galleries(workspace_root: Path) -> None:
     artists: List[str] = []
-    for dir, images in get_artist_prompt_galleries():
+    for dir, images in get_artist_prompt_galleries(
+            workspace_root=workspace_root):
         gallery_dir = workspace_root.joinpath(dir)
         log.info(f"{gallery_dir}")
         columns = 8
@@ -1070,11 +1092,32 @@ def generate_artist_galleries() -> None:
 
 
 def main_impl():
-    generate_artist_galleries()
-    full_param_list = get_full_params()
-    generate_metadata_dump(full_param_list)
-    generate_jpg_mirror(full_param_list)
-    generate_common_prompt_gallery(full_param_list)
+    log.info(f"Changing path to {sys.argv[1]}")
+
+    workspace_root = Path(sys.argv[1])
+    output_html = workspace_root.joinpath("images_with_exif.html")
+
+    generate_artist_galleries(workspace_root=workspace_root)
+    input_png_list = get_full_params(
+        reference_dirs=[
+            workspace_root.joinpath("reference_tensor_art"),
+            workspace_root.joinpath("tensor_saved_high_res"),
+        ],
+        files="*.png",
+    )
+
+    generate_metadata_dump(input_png_list)
+    generate_jpg_mirror(input_png_list)
+
+    mirror_list = get_full_params(
+        reference_dirs=[
+            workspace_root.joinpath("reference_tensor_art_mirror"),
+            workspace_root.joinpath("tensor_saved_high_res_mirror"),
+        ],
+        files="*.webp",
+    )
+
+    generate_common_prompt_gallery(mirror_list, output_html=output_html)
 
 
 if __name__ == "__main__":
