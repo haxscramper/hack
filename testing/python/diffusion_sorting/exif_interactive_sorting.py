@@ -1,16 +1,88 @@
-from beartype import beartype
-from exif_preview import ImageParams, get_full_params, log, Tag, LoRATag
+import base64
+import concurrent.futures
+import hashlib
 import logging
-import re
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
 import pandas as pd
 import plotly.express as px
 import streamlit as st
+from PIL import Image
+from beartype import beartype
 from scipy.sparse import csr_matrix
 from sklearn.decomposition import TruncatedSVD
 from sklearn.feature_extraction.text import TfidfVectorizer
+
+from exif_preview import ImageParams, get_full_params, log, Tag, LoRATag
+
+# --- Global Configurations ---
+THUMBNAIL_MAX_WIDTH = 128
+THUMBNAIL_MAX_HEIGHT = 128
+APP_CACHE_NAME = "exif_explorer_app"
+
+
+@beartype
+def _get_xdg_cache_dir() -> Path:
+    """Returns the XDG-appropriate cache directory for thumbnails."""
+    xdg_cache_home = os.environ.get("XDG_CACHE_HOME",
+                                    os.path.expanduser("~/.cache"))
+    cache_dir = Path(xdg_cache_home) / APP_CACHE_NAME / "thumbnails"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    return cache_dir
+
+
+@beartype
+def _process_thumbnail(original_path: Path) -> tuple[Path, str]:
+    """
+    Generates a thumbnail for a given image path, caches it, 
+    and returns the base64 data URI.
+    Returns: (original_path, base64_uri)
+    """
+    path_obj = Path(original_path)
+
+    # Create a unique cache filename based on the absolute path
+    file_hash = hashlib.md5(str(
+        path_obj.resolve()).encode('utf-8')).hexdigest()
+    cache_dir = _get_xdg_cache_dir()
+    thumb_path = cache_dir / f"{file_hash}.webp"
+
+    # 1. Generate and cache thumbnail if it doesn't exist
+    if not thumb_path.exists():
+        try:
+            with Image.open(path_obj) as img:
+                # thumbnail() modifies in-place and maintains aspect ratio
+                img.thumbnail((THUMBNAIL_MAX_WIDTH, THUMBNAIL_MAX_HEIGHT))
+                img.save(thumb_path, format="WEBP")
+        except Exception as e:
+            logging.warning(
+                f"Failed to generate thumbnail for {original_path}: {e}")
+            return (original_path, "")
+
+    # 2. Read the cached thumbnail and encode to Base64
+    try:
+        with open(thumb_path, "rb") as f:
+            b64_data = base64.b64encode(f.read()).decode('utf-8')
+        return (original_path, f"data:image/webp;base64,{b64_data}")
+    except Exception as e:
+        logging.warning(f"Failed to encode thumbnail {thumb_path}: {e}")
+        return (original_path, "")
+
+
+@st.cache_data(show_spinner="Generating Thumbnails...")
+def _get_all_thumbnails(paths: list[str]) -> dict[Path, str]:
+    """
+    Executes thumbnail generation in multi-threaded mode.
+    Cached by Streamlit to prevent re-running across UI interactions.
+    """
+    results_dict = {}
+    # Use ThreadPoolExecutor for I/O bound tasks (reading/saving images)
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        for original_path, b64_uri in executor.map(_process_thumbnail, paths):
+            if b64_uri:
+                results_dict[original_path] = b64_uri
+    return results_dict
 
 
 @beartype
@@ -155,17 +227,19 @@ def setup_app(image_params: list["ImageParams"]) -> None:
             working_matrix[:,
                            tag_index] = working_matrix[:, tag_index] * weight
 
-    svd = TruncatedSVD(n_components=2, random_state=42)
+    # SVD FIX: Compute 3 components to bypass the dense mean vector
+    svd = TruncatedSVD(n_components=3, random_state=42)
     coords = svd.fit_transform(working_matrix)
 
     df = pd.DataFrame({
         "id":
         range(len(image_params)),
         "basename": [Path(param.original_path).name for param in image_params],
+        # Skip component 0, map X to 1 and Y to 2 for semantic clustering
         "x":
-        coords[:, 0],
+        coords[:, 1],
         "y":
-        coords[:, 1]
+        coords[:, 2]
     })
 
     with mid_col:
@@ -183,21 +257,30 @@ def setup_app(image_params: list["ImageParams"]) -> None:
                              "basename": False
                          },
                          render_mode="webgl")
-
+                         
         if show_thumbnails:
+            # Multi-threaded loading of thumbnails
+            all_paths = [param.original_path for param in image_params]
+            b64_thumbnails = _get_all_thumbnails(all_paths)
+
             images = []
-            for param, x_val, y_val in zip(image_params, coords[:, 0],
-                                           coords[:, 1]):
-                images.append(
-                    dict(source=Path(param.original_path).as_uri(),
-                         x=x_val,
-                         y=y_val,
-                         sizex=0.05,
-                         sizey=0.05,
-                         xanchor="center",
-                         yanchor="middle",
-                         layer="below"))
+            for param, x_val, y_val in zip(image_params, df["x"], df["y"]):
+                b64_uri = b64_thumbnails.get(param.original_path)
+                if b64_uri:
+                    images.append(
+                        dict(source=b64_uri,
+                             x=x_val,
+                             y=y_val,
+                             xref="x",   # <--- FIX: Bind X position to the data axis
+                             yref="y",   # <--- FIX: Bind Y position to the data axis
+                             sizex=0.005, # <--- Reduced size based on your screenshot's axis scale
+                             sizey=0.005, 
+                             xanchor="center",
+                             yanchor="middle",
+                             layer="below"))
+                    
             fig.update_layout(images=images)
+            # Hide the scatter dots so only images show
             fig.update_traces(marker=dict(opacity=0))
 
         fig.update_layout(height=900,
