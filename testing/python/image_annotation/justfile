@@ -1,0 +1,58 @@
+# --- Variables ---
+IMAGE_NAME := "wd-tagger-rocm"
+GFX_VERSION := "11.0.0"
+HF_CACHE := env_var("HOME") + "/.cache/huggingface"
+
+# List available commands by default
+default:
+    @just --list
+
+# Build the Docker image
+build:
+    @echo "Building Docker image using uv..."
+    docker build -t {{IMAGE_NAME}} .
+
+# Run the tagger on a specified directory
+@run img_dir:
+    @if [ ! -d "{{img_dir}}" ]; then echo "Error: Directory '{{img_dir}}' does not exist."; exit 1; fi
+    echo "Running tagger on {{img_dir}}..."
+    docker run -it --rm \
+        --privileged \
+        --ulimit memlock=-1:-1 \
+        --device=/dev/kfd \
+        --device=/dev/dri \
+        --group-add=$(stat -c "%g" /dev/kfd) \
+        --group-add=$(stat -c "%g" /dev/dri/renderD128) \
+        --ipc=host \
+        -e HOME=/tmp \
+        -e XDG_CACHE_HOME=/tmp/cache \
+        -e HSA_ENABLE_SDMA=0 \
+        -e PYTHONFAULTHANDLER=1 \
+        -e ORT_CPP_LOG_LEVEL=0 \
+        -e MIGRAPHX_TRACE_ENABLE=1 \
+        -e MIGRAPHX_TRACE_COMPILE=1 \
+        -e MIOPEN_LOG_LEVEL=6 \
+        -e AMD_LOG_LEVEL=3 \
+        -u $(id -u):$(id -g) \
+        -v "{{HF_CACHE}}:/tmp/huggingface_cache" \
+        -e HF_HOME=/tmp/huggingface_cache \
+        -v "$(realpath {{img_dir}}):/images" \
+        {{IMAGE_NAME}} /images
+
+# Open a shell inside the container for debugging
+shell:
+    docker run -it --rm \
+        --device=/dev/kfd \
+        --device=/dev/dri \
+        --group-add=video \
+        --group-add=render \
+        --ipc=host \
+        -e HSA_OVERRIDE_GFX_VERSION={{GFX_VERSION}} \
+        -v "{{HF_CACHE}}:/tmp/huggingface_cache" \
+        -e HF_HOME=/tmp/huggingface_cache \
+        --entrypoint /bin/bash \
+        {{IMAGE_NAME}}
+
+# Update uv lockfile locally
+sync:
+    uv sync
