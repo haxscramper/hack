@@ -17,6 +17,8 @@ dependencies = [
     "transformers>=5.3.0",
     "timm>=1.0.25",
     "onnxruntime-migraphx",
+    "sqlalchemy>=2.0.48",
+    "pyside6>=6.10.2",
 ]
 
 [tool.uv.sources]
