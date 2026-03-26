@@ -95,10 +95,13 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 STATE_FILE = CONFIG_DIR / "state.yaml"
 
 
-class GenerationResult(BaseModel):
+class RequestResult(BaseModel):
     input_images: List[str] = Field(default_factory=list)
-    output_images: List[str] = Field(default_factory=list)
+    output_image: Optional[str] = None
     response_text: str = ""
+
+class GenerationResult(BaseModel):
+    requests: List[RequestResult] = Field(default_factory=list)
     run_index: Optional[int] = None
     batch_id: Optional[str] = None
 
@@ -131,11 +134,30 @@ def load_state() -> AppState:
                 new_history = []
                 for entry in data["history"]:
                     if isinstance(entry, dict) and "results" not in entry:
-                        res = GenerationResult(
-                            input_images=entry.get("input_images", []),
-                            output_images=entry.get("output_images", []),
-                            response_text=entry.get("response_text", "")
-                        )
+                        req_results = []
+                        out_images = entry.get("output_images", [])
+                        in_images = entry.get("input_images", [])
+                        
+                        # Best effort mapping for old data
+                        if len(out_images) >= len(in_images) and len(in_images) > 0:
+                            reps = len(out_images) // len(in_images)
+                            for i, in_img in enumerate(in_images):
+                                for r in range(reps):
+                                    out_idx = i * reps + r
+                                    req_results.append(RequestResult(
+                                        input_images=[in_img],
+                                        output_image=out_images[out_idx] if out_idx < len(out_images) else None,
+                                        response_text=entry.get("response_text", "")
+                                    ))
+                        else:
+                            for out_img in out_images:
+                                req_results.append(RequestResult(
+                                    input_images=in_images,
+                                    output_image=out_img,
+                                    response_text=entry.get("response_text", "")
+                                ))
+                        
+                        res = GenerationResult(requests=req_results)
                         new_entry = HistoryEntry(
                             timestamp=entry.get("timestamp", ""),
                             prompt=entry.get("prompt", ""),
@@ -592,44 +614,59 @@ class ResultRunWidget(QFrame):
 
         layout.addWidget(CopyableTextBox(run_data.prompt))
 
-        if run_data.prompt_mode == "batch mode" and len(run_data.results) > 1:
+        # Gather all requests from all results to see how many input images we have in total
+        all_requests = []
+        for result in run_data.results:
+            all_requests.extend(result.requests)
+
+        input_groups = {}
+        for req in all_requests:
+            key = tuple(req.input_images)
+            if key not in input_groups:
+                input_groups[key] = []
+            input_groups[key].append(req)
+
+        if run_data.prompt_mode == "batch mode" and len(input_groups) > 1:
             out_label = QLabel("Generated images (Batch):")
             layout.addWidget(out_label)
 
-            for result in run_data.results:
-                row_layout = QHBoxLayout()
-                
-                # Assume batch mode inputs are individual images
-                if result.input_images:
-                    inp_lbl = ClickableImageLabel(result.input_images[0], QSize(160, 160))
-                    row_layout.addWidget(inp_lbl)
+            # Table-like form: first row = original image, second row = results
+            for in_imgs, reqs in input_groups.items():
+                if in_imgs:
+                    # Row 1: Original image
+                    inp_flow = FlowLayout()
+                    for img in in_imgs:
+                        inp_lbl = ClickableImageLabel(img, QSize(160, 160))
+                        inp_flow.addWidget(inp_lbl)
+                    layout.addLayout(inp_flow)
 
-                flow = FlowLayout()
-                for path in result.output_images:
-                    w = ResultImageWidget(path)
-                    flow.addWidget(w)
-                
-                row_layout.addLayout(flow)
-                layout.addLayout(row_layout)
+                # Row 2: Results
+                out_flow = FlowLayout()
+                for req in reqs:
+                    if req.output_image:
+                        w = ResultImageWidget(req.output_image)
+                        out_flow.addWidget(w)
+                layout.addLayout(out_flow)
 
         else:
             # All Images Mode OR Batch with 1 Image
-            for result in run_data.results:
-                if result.input_images:
+            for in_imgs, reqs in input_groups.items():
+                if in_imgs:
                     inp_label = QLabel("Input images:")
                     layout.addWidget(inp_label)
-                    for p in result.input_images:
+                    for p in in_imgs:
                         lbl = QLabel(p)
                         lbl.setWordWrap(True)
                         lbl.setTextInteractionFlags(Qt.TextSelectableByMouse)
                         layout.addWidget(lbl)
 
-                if result.output_images:
+                out_images = [req.output_image for req in reqs if req.output_image]
+                if out_images:
                     out_label = QLabel("Generated images:")
                     layout.addWidget(out_label)
 
                     flow = FlowLayout()
-                    for path in result.output_images:
+                    for path in out_images:
                         w = ResultImageWidget(path)
                         flow.addWidget(w)
                     
@@ -1188,11 +1225,25 @@ class MainWindow(QMainWindow):
 
             results = []
             for res in self.current_batch_results:
+                reqs = []
+                out_images = res.get("output_images", [])
+                for out_img in out_images:
+                    reqs.append(RequestResult(
+                        input_images=res.get("input_images", []),
+                        output_image=out_img,
+                        response_text=res.get("response_text", "")
+                    ))
+                # Handle cases where generation failed but we want to record the attempt
+                if not out_images:
+                    reqs.append(RequestResult(
+                        input_images=res.get("input_images", []),
+                        output_image=None,
+                        response_text=res.get("response_text", "")
+                    ))
+
                 results.append(
                     GenerationResult(
-                        input_images=res.get("input_images", []),
-                        output_images=res.get("output_images", []),
-                        response_text=res.get("response_text", ""),
+                        requests=reqs,
                         run_index=res.get("run_index"),
                         batch_id=res.get("batch_id")
                     )
