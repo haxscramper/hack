@@ -909,7 +909,7 @@ class MainWindow(QMainWindow):
 
         splitter.addWidget(self.input_list)
 
-        splitter.setSizes([600, 420, 580])
+        splitter.setSizes([400, 420, 900])
 
         save_action = QAction("Save State", self)
         save_action.triggered.connect(self.save_ui_state)
@@ -1037,7 +1037,7 @@ class MainWindow(QMainWindow):
 
     def update_spinner(self):
         self.spinner_idx = (self.spinner_idx + 1) % len(self.spinner_chars)
-        self.spinner_label.setText(f" Generating... {self.spinner_chars[self.spinner_idx]}")
+        self.spinner_label.setText(f" Generating... [{self.completed_jobs}/{self.pending_jobs}] {self.spinner_chars[self.spinner_idx]}")
 
     def start_generation(self):
         prompt = self.prompt_edit.toPlainText().strip()
@@ -1072,9 +1072,6 @@ class MainWindow(QMainWindow):
 
         self.save_ui_state()
         self.generate_btn.setEnabled(False)
-        self.spinner_label.setText(" Generating... |")
-        self.spinner_label.show()
-        self.spinner_timer.start(100)
 
         prompt_mode = self.prompt_mode_combo.currentText()
         repetitions = self.repetitions_spin.value()
@@ -1116,6 +1113,10 @@ class MainWindow(QMainWindow):
         self.pending_jobs = len(jobs)
         self.completed_jobs = 0
         self.current_batch_results = []  # Store results until all finish
+
+        self.spinner_label.setText(f" Generating... [{self.completed_jobs}/{self.pending_jobs}] |")
+        self.spinner_label.show()
+        self.spinner_timer.start(100)
 
         for job in jobs:
             worker = GenerationWorker(
