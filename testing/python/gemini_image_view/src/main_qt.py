@@ -737,7 +737,7 @@ class GenerationWorker(QRunnable):
                     thinking_level="MINIMAL",
                 ),
                 image_config=types.ImageConfig(
-                    aspect_ratio=self.aspect_ratio,
+                    aspect_ratio=None if self.aspect_ratio == "auto" else self.aspect_ratio,
                     image_size=self.image_size,
                 ),
                 response_modalities=["IMAGE", "TEXT"],
@@ -887,6 +887,7 @@ class MainWindow(QMainWindow):
         self.aspect_ratio_combo = QComboBox()
         self.aspect_ratio_combo.addItems(
             [
+                "auto",
                 "1:1",
                 "3:4",
                 "4:3",
