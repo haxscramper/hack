@@ -57,6 +57,8 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QStyledItemDelegate,
     QListView,
+    QLayout,
+    QStyle,
 )
 
 from google import genai
@@ -150,6 +152,109 @@ def scan_images(directories: List[str]) -> List[Path]:
                     result.append(file)
     logging.info("Found %d images", len(result))
     return result
+
+
+class FlowLayout(QLayout):
+    def __init__(self, parent=None, margin=-1, hSpacing=-1, vSpacing=-1):
+        super().__init__(parent)
+        self._item_list = []
+        if margin >= 0:
+            self.setContentsMargins(margin, margin, margin, margin)
+        self._h_space = hSpacing
+        self._v_space = vSpacing
+
+    def __del__(self):
+        item = self.takeAt(0)
+        while item:
+            item = self.takeAt(0)
+
+    def addItem(self, item):
+        self._item_list.append(item)
+
+    def horizontalSpacing(self):
+        if self._h_space >= 0:
+            return self._h_space
+        return self.smartSpacing(QStyle.PixelMetric.PM_LayoutHorizontalSpacing)
+
+    def verticalSpacing(self):
+        if self._v_space >= 0:
+            return self._v_space
+        return self.smartSpacing(QStyle.PixelMetric.PM_LayoutVerticalSpacing)
+
+    def count(self):
+        return len(self._item_list)
+
+    def itemAt(self, index):
+        if 0 <= index < len(self._item_list):
+            return self._item_list[index]
+        return None
+
+    def takeAt(self, index):
+        if 0 <= index < len(self._item_list):
+            return self._item_list.pop(index)
+        return None
+
+    def expandingDirections(self):
+        return Qt.Orientation(0)
+
+    def hasHeightForWidth(self):
+        return True
+
+    def heightForWidth(self, width):
+        return self.doLayout(QRect(0, 0, width, 0), True)
+
+    def setGeometry(self, rect):
+        super().setGeometry(rect)
+        self.doLayout(rect, False)
+
+    def sizeHint(self):
+        return self.minimumSize()
+
+    def minimumSize(self):
+        size = QSize()
+        for item in self._item_list:
+            size = size.expandedTo(item.minimumSize())
+        margins = self.contentsMargins()
+        size += QSize(margins.left() + margins.right(), margins.top() + margins.bottom())
+        return size
+
+    def smartSpacing(self, pm):
+        parent = self.parent()
+        if not parent:
+            return -1
+        elif parent.isWidgetType():
+            return parent.style().pixelMetric(pm, None, parent)
+        else:
+            return parent.spacing()
+
+    def doLayout(self, rect, testOnly):
+        x = rect.x()
+        y = rect.y()
+        lineHeight = 0
+
+        for item in self._item_list:
+            wid = item.widget()
+            spaceX = self.horizontalSpacing()
+            if spaceX == -1:
+                spaceX = wid.style().layoutSpacing(QSizePolicy.ControlType.PushButton, QSizePolicy.ControlType.PushButton, Qt.Orientation.Horizontal) if wid else 10
+            spaceY = self.verticalSpacing()
+            if spaceY == -1:
+                spaceY = wid.style().layoutSpacing(QSizePolicy.ControlType.PushButton, QSizePolicy.ControlType.PushButton, Qt.Orientation.Vertical) if wid else 10
+
+            nextX = x + item.sizeHint().width() + spaceX
+            if nextX - spaceX > rect.right() and lineHeight > 0:
+                x = rect.x()
+                y = y + lineHeight + spaceY
+                nextX = x + item.sizeHint().width() + spaceX
+                lineHeight = 0
+
+            if not testOnly:
+                item.setGeometry(QRect(QPoint(x, y), item.sizeHint()))
+
+            x = nextX
+            lineHeight = max(lineHeight, item.sizeHint().height())
+
+        return y + lineHeight - rect.y() + self.contentsMargins().bottom()
 
 
 class ThumbnailDelegate(QStyledItemDelegate):
@@ -432,29 +537,22 @@ class ResultRunWidget(QFrame):
             out_label = QLabel("Generated images (Batch):")
             layout.addWidget(out_label)
 
-            grid = QGridLayout()
-            row = 0
-
-            # Map input to output. This assumes order is preserved.
             outputs = run_data.get("output_images", [])
             repetitions = len(outputs) // len(input_paths) if input_paths else 0
 
             for idx, inp_path in enumerate(input_paths):
                 # Input Image on left
                 inp_lbl = ClickableImageLabel(inp_path, QSize(160, 160))
-                grid.addWidget(inp_lbl, row, 0)
+                layout.addWidget(inp_lbl)
 
-                # Associated Outputs on right (in sub-grid or just columns)
-                col = 1
+                flow = FlowLayout()
                 for r in range(repetitions):
                     out_idx = idx * repetitions + r
                     if out_idx < len(outputs):
                         w = ResultImageWidget(outputs[out_idx])
-                        grid.addWidget(w, row, col)
-                        col += 1
-                row += 1
-
-            layout.addLayout(grid)
+                        flow.addWidget(w)
+                
+                layout.addLayout(flow)
 
         else:
             # All Images Mode OR Batch with 1 Image
@@ -471,17 +569,11 @@ class ResultRunWidget(QFrame):
                 out_label = QLabel("Generated images:")
                 layout.addWidget(out_label)
 
-                grid = QGridLayout()
-                row = 0
-                col = 0
+                flow = FlowLayout()
                 for idx, path in enumerate(outputs):
                     w = ResultImageWidget(path)
-                    grid.addWidget(w, row, col)
-                    col += 1
-                    if col >= 3:  # 3 column grid as requested
-                        col = 0
-                        row += 1
-                layout.addLayout(grid)
+                    flow.addWidget(w)
+                layout.addLayout(flow)
 
 
 class WorkerSignals(QObject):
