@@ -350,29 +350,52 @@ class ThumbnailDelegate(QStyledItemDelegate):
         return QSize(170, 200)
 
 
+class ScaledImageLabel(QLabel):
+    def __init__(self, pixmap, parent=None):
+        super().__init__(parent)
+        self.original_pixmap = pixmap
+        self.setAlignment(Qt.AlignCenter)
+        self.setMinimumSize(1, 1)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if not self.original_pixmap.isNull():
+            scaled = self.original_pixmap.scaled(
+                event.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation
+            )
+            super().setPixmap(scaled)
+
 class PreviewDialog(QDialog):
     def __init__(self, image_path: str, parent=None):
         super().__init__(parent)
         self.setWindowTitle(Path(image_path).name)
-        self.resize(900, 700)
 
         layout = QVBoxLayout(self)
-
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        layout.addWidget(scroll)
-
-        label = QLabel()
-        label.setAlignment(Qt.AlignCenter)
-        scroll.setWidget(label)
+        layout.setContentsMargins(0, 0, 0, 0)
 
         pix = QPixmap(image_path)
-        if not pix.isNull():
-            label.setPixmap(pix)
-            label.setScaledContents(False)
-            label.adjustSize()
+        if pix.isNull():
+            label = QLabel("Could not load image.")
+            label.setAlignment(Qt.AlignCenter)
+            layout.addWidget(label)
+            self.resize(400, 300)
+            return
+
+        label = ScaledImageLabel(pix)
+        layout.addWidget(label)
+
+        screen = QApplication.primaryScreen().availableGeometry()
+        w = pix.width()
+        h = pix.height()
+
+        max_w = int(screen.width() * 0.9)
+        max_h = int(screen.height() * 0.9)
+
+        if w > max_w or h > max_h:
+            scaled = pix.scaled(max_w, max_h, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            self.resize(scaled.width(), scaled.height())
         else:
-            label.setText("Could not load image.")
+            self.resize(w, h)
 
 
 class ClickableImageLabel(QLabel):
@@ -780,12 +803,21 @@ class MainWindow(QMainWindow):
                 "4:3",
                 "9:16",
                 "16:9",
+                "3:2",
+                "2:3",
+                "4:5",
+                "5:4",
+                "21:9",
+                "4:1",
+                "1:4",
+                "8:1",
+                "1:8",
             ]
         )
         form.addRow("Aspect ratio:", self.aspect_ratio_combo)
 
         self.image_size_combo = QComboBox()
-        self.image_size_combo.addItems(["1K", "2K"])
+        self.image_size_combo.addItems(["512", "1K", "2K", "4K"])
         form.addRow("Image size:", self.image_size_combo)
 
         out_row = QHBoxLayout()
@@ -1104,16 +1136,16 @@ class MainWindow(QMainWindow):
 
             self.current_batch_results = []  # Clear for next generation
             self.generate_btn.setEnabled(True)
-            QMessageBox.information(self, "Done", "Generation finished.")
 
     def on_generation_error(self, error_text: str):
         self.completed_jobs += 1
-        QMessageBox.critical(self, "Generation error", error_text)
         if self.completed_jobs >= self.pending_jobs:
             self.generate_btn.setEnabled(True)
 
 
 def main():
+    import signal
+    signal.signal(signal.SIGINT, signal.SIG_DFL)
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
