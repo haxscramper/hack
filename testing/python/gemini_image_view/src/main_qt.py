@@ -5,10 +5,11 @@ import yaml
 import mimetypes
 import traceback
 import logging
-from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
+
+from pydantic import BaseModel, Field
 
 from PySide6.QtCore import (
     Qt,
@@ -94,16 +95,30 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 STATE_FILE = CONFIG_DIR / "state.yaml"
 
 
-@dataclass
-class AppState:
-    input_directories: List[str] = field(default_factory=list)
+class GenerationResult(BaseModel):
+    input_images: List[str] = Field(default_factory=list)
+    output_images: List[str] = Field(default_factory=list)
+    response_text: str = ""
+    run_index: Optional[int] = None
+    batch_id: Optional[str] = None
+
+class HistoryEntry(BaseModel):
+    timestamp: str
+    prompt: str
+    prompt_mode: str
+    aspect_ratio: str
+    image_size: str
+    results: List[GenerationResult] = Field(default_factory=list)
+
+class AppState(BaseModel):
+    input_directories: List[str] = Field(default_factory=list)
     output_directory: str = str(Path.home() / "Pictures" / "gemini-output")
     prompt: str = ""
     prompt_mode: str = "all images"
     repetitions: int = 1
     aspect_ratio: str = "1:1"
     image_size: str = "1K"
-    history: List[dict] = field(default_factory=list)
+    history: List[HistoryEntry] = Field(default_factory=list)
 
 
 def load_state() -> AppState:
@@ -111,6 +126,29 @@ def load_state() -> AppState:
         try:
             with open(STATE_FILE, "r", encoding="utf-8") as f:
                 data = yaml.safe_load(f) or {}
+            
+            if "history" in data:
+                new_history = []
+                for entry in data["history"]:
+                    if isinstance(entry, dict) and "results" not in entry:
+                        res = GenerationResult(
+                            input_images=entry.get("input_images", []),
+                            output_images=entry.get("output_images", []),
+                            response_text=entry.get("response_text", "")
+                        )
+                        new_entry = HistoryEntry(
+                            timestamp=entry.get("timestamp", ""),
+                            prompt=entry.get("prompt", ""),
+                            prompt_mode=entry.get("prompt_mode", ""),
+                            aspect_ratio=entry.get("aspect_ratio", ""),
+                            image_size=entry.get("image_size", ""),
+                            results=[res]
+                        )
+                        new_history.append(new_entry.model_dump())
+                    else:
+                        new_history.append(entry)
+                data["history"] = new_history
+
             logging.info("State loaded successfully from %s", STATE_FILE)
             return AppState(**data)
         except Exception:
@@ -124,7 +162,7 @@ def load_state() -> AppState:
 def save_state(state: AppState):
     try:
         with open(STATE_FILE, "w", encoding="utf-8") as f:
-            yaml.safe_dump(asdict(state), f, sort_keys=False, allow_unicode=True)
+            yaml.safe_dump(state.model_dump(), f, sort_keys=False, allow_unicode=True)
         logging.info("State saved successfully to %s", STATE_FILE)
     except Exception:
         logging.error("Failed to save state to %s", STATE_FILE, exc_info=True)
@@ -535,7 +573,7 @@ class ResultImageWidget(QFrame):
 
 
 class ResultRunWidget(QFrame):
-    def __init__(self, run_data: dict, parent=None):
+    def __init__(self, run_data: HistoryEntry, parent=None):
         super().__init__(parent)
         self.run_data = run_data
         self.setFrameShape(QFrame.Box)
@@ -544,62 +582,58 @@ class ResultRunWidget(QFrame):
         layout = QVBoxLayout(self)
 
         meta = QLabel(
-            f"Time: {run_data.get('timestamp', '')} | "
-            f"Mode: {run_data.get('prompt_mode', '')} | "
-            f"Aspect: {run_data.get('aspect_ratio', '')} | "
-            f"Size: {run_data.get('image_size', '')}"
+            f"Time: {run_data.timestamp} | "
+            f"Mode: {run_data.prompt_mode} | "
+            f"Aspect: {run_data.aspect_ratio} | "
+            f"Size: {run_data.image_size}"
         )
         meta.setWordWrap(True)
         layout.addWidget(meta)
 
-        layout.addWidget(CopyableTextBox(run_data.get("prompt", "")))
+        layout.addWidget(CopyableTextBox(run_data.prompt))
 
-        input_paths = run_data.get("input_images", [])
-
-        # Batch Mode Multiple Images
-        if run_data.get("prompt_mode") == "batch mode" and len(input_paths) > 1:
+        if run_data.prompt_mode == "batch mode" and len(run_data.results) > 1:
             out_label = QLabel("Generated images (Batch):")
             layout.addWidget(out_label)
 
-            outputs = run_data.get("output_images", [])
-            repetitions = len(outputs) // len(input_paths) if input_paths else 0
-
-            for idx, inp_path in enumerate(input_paths):
-                # Input Image on left
-                inp_lbl = ClickableImageLabel(inp_path, QSize(160, 160))
-                layout.addWidget(inp_lbl)
+            for result in run_data.results:
+                row_layout = QHBoxLayout()
+                
+                # Assume batch mode inputs are individual images
+                if result.input_images:
+                    inp_lbl = ClickableImageLabel(result.input_images[0], QSize(160, 160))
+                    row_layout.addWidget(inp_lbl)
 
                 flow = FlowLayout()
-                for r in range(repetitions):
-                    out_idx = idx * repetitions + r
-                    if out_idx < len(outputs):
-                        w = ResultImageWidget(outputs[out_idx])
-                        flow.addWidget(w)
+                for path in result.output_images:
+                    w = ResultImageWidget(path)
+                    flow.addWidget(w)
                 
-                layout.addLayout(flow)
+                row_layout.addLayout(flow)
+                layout.addLayout(row_layout)
 
         else:
             # All Images Mode OR Batch with 1 Image
-            if input_paths:
-                inp_label = QLabel("Input images:")
-                layout.addWidget(inp_label)
-                for p in input_paths:
-                    lbl = QLabel(p)
-                    lbl.setWordWrap(True)
-                    lbl.setTextInteractionFlags(Qt.TextSelectableByMouse)
-                    layout.addWidget(lbl)
+            for result in run_data.results:
+                if result.input_images:
+                    inp_label = QLabel("Input images:")
+                    layout.addWidget(inp_label)
+                    for p in result.input_images:
+                        lbl = QLabel(p)
+                        lbl.setWordWrap(True)
+                        lbl.setTextInteractionFlags(Qt.TextSelectableByMouse)
+                        layout.addWidget(lbl)
 
-            outputs = run_data.get("output_images", [])
-            if outputs:
-                out_label = QLabel("Generated images:")
-                layout.addWidget(out_label)
+                if result.output_images:
+                    out_label = QLabel("Generated images:")
+                    layout.addWidget(out_label)
 
-                flow = FlowLayout()
-                for idx, path in enumerate(outputs):
-                    w = ResultImageWidget(path)
-                    flow.addWidget(w)
-                layout.addLayout(flow)
-
+                    flow = FlowLayout()
+                    for path in result.output_images:
+                        w = ResultImageWidget(path)
+                        flow.addWidget(w)
+                    
+                    layout.addLayout(flow)
 
 class WorkerSignals(QObject):
     finished = Signal(dict)
@@ -1149,29 +1183,30 @@ class MainWindow(QMainWindow):
 
             first_run = self.current_batch_results[0]
 
-            # Aggregate outputs
-            all_outputs = []
-
             # Sort results by run_index to maintain order
             self.current_batch_results.sort(key=lambda x: x.get("run_index", 0))
 
+            results = []
             for res in self.current_batch_results:
-                all_outputs.extend(res.get("output_images", []))
+                results.append(
+                    GenerationResult(
+                        input_images=res.get("input_images", []),
+                        output_images=res.get("output_images", []),
+                        response_text=res.get("response_text", ""),
+                        run_index=res.get("run_index"),
+                        batch_id=res.get("batch_id")
+                    )
+                )
 
             # Create a single consolidated history entry
-            consolidated_run = {
-                "timestamp": first_run.get("timestamp"),
-                "prompt": first_run.get("prompt"),
-                "prompt_mode": first_run.get("prompt_mode"),
-                "aspect_ratio": first_run.get("aspect_ratio"),
-                "image_size": first_run.get("image_size"),
-                "input_images": list(self.selection_queue),  # Use the full selection
-                "output_images": all_outputs,
-                # Optionally aggregate response text here if needed
-                "response_text": "\n---\n".join(
-                    r.get("response_text", "") for r in self.current_batch_results
-                ),
-            }
+            consolidated_run = HistoryEntry(
+                timestamp=first_run.get("timestamp"),
+                prompt=first_run.get("prompt"),
+                prompt_mode=first_run.get("prompt_mode"),
+                aspect_ratio=first_run.get("aspect_ratio"),
+                image_size=first_run.get("image_size"),
+                results=results
+            )
 
             self.state.history.append(consolidated_run)
             save_state(self.state)
