@@ -4,6 +4,7 @@ import uuid
 import yaml
 import mimetypes
 import traceback
+import logging
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from pathlib import Path
@@ -108,9 +109,13 @@ def load_state() -> AppState:
         try:
             with open(STATE_FILE, "r", encoding="utf-8") as f:
                 data = yaml.safe_load(f) or {}
+            logging.info("State loaded successfully from %s", STATE_FILE)
             return AppState(**data)
         except Exception:
+            logging.error("Failed to load state from %s", STATE_FILE, exc_info=True)
             traceback.print_exc()
+    else:
+        logging.info("State file %s does not exist, using default state", STATE_FILE)
     return AppState()
 
 
@@ -118,7 +123,9 @@ def save_state(state: AppState):
     try:
         with open(STATE_FILE, "w", encoding="utf-8") as f:
             yaml.safe_dump(asdict(state), f, sort_keys=False, allow_unicode=True)
+        logging.info("State saved successfully to %s", STATE_FILE)
     except Exception:
+        logging.error("Failed to save state to %s", STATE_FILE, exc_info=True)
         traceback.print_exc()
 
 
@@ -129,9 +136,11 @@ def is_image_file(path: Path) -> bool:
 def scan_images(directories: List[str]) -> List[Path]:
     result = []
     seen = set()
+    logging.info("Scanning directories for images: %s", directories)
     for d in directories:
         p = Path(d)
         if not p.exists() or not p.is_dir():
+            logging.warning("Directory does not exist or is not a directory: %s", d)
             continue
         for file in sorted(p.rglob("*")):
             if is_image_file(file):
@@ -139,6 +148,7 @@ def scan_images(directories: List[str]) -> List[Path]:
                 if rp not in seen:
                     seen.add(rp)
                     result.append(file)
+    logging.info("Found %d images", len(result))
     return result
 
 
@@ -508,6 +518,7 @@ class GenerationWorker(QRunnable):
 
     def run(self):
         try:
+            logging.info("Starting generation worker for run index %s, batch ID %s", self.run_index, self.batch_id)
             client = genai.Client(api_key=self.api_key)
             model = "gemini-3.1-flash-image-preview"
 
@@ -551,6 +562,7 @@ class GenerationWorker(QRunnable):
             response_text_parts = []
             file_index = 0
 
+            logging.debug("Generating content stream...")
             for chunk in client.models.generate_content_stream(
                 model=model,
                 contents=contents,
@@ -581,6 +593,7 @@ class GenerationWorker(QRunnable):
                         if txt:
                             response_text_parts.append(txt)
 
+            logging.info("Generation completed successfully. Output files: %s", output_paths)
             result = {
                 "timestamp": datetime.now().isoformat(timespec="seconds"),
                 "prompt": self.prompt,
@@ -596,6 +609,7 @@ class GenerationWorker(QRunnable):
             self.signals.finished.emit(result)
 
         except Exception as e:
+            logging.error("Generation worker error: %s", e, exc_info=True)
             self.signals.error.emit(f"{e}\n\n{traceback.format_exc()}")
 
 
@@ -1004,6 +1018,12 @@ class MainWindow(QMainWindow):
 
 
 def main():
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        handlers=[logging.StreamHandler(sys.stdout)],
+    )
+    logging.info("Starting %s", APP_NAME)
     app = QApplication(sys.argv)
     win = MainWindow()
     win.show()
