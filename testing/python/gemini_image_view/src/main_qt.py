@@ -685,7 +685,25 @@ class GenerationWorker(QRunnable):
                 contents=contents,
                 config=config,
             ):
-                if chunk.parts is None:
+                if getattr(chunk, "candidates", None):
+                    for cand in chunk.candidates:
+                        fr = getattr(cand, "finish_reason", None)
+                        if fr and str(fr) not in ["STOP", "FINISH_REASON_UNSPECIFIED", "None"]:
+                            response_text_parts.append(f"Finish Reason: {fr}")
+                        
+                        safety_ratings = getattr(cand, "safety_ratings", None)
+                        if safety_ratings:
+                            for sr in safety_ratings:
+                                if getattr(sr, "blocked", False) or str(getattr(sr, "probability", "")) in ["HIGH", "MEDIUM"]:
+                                    response_text_parts.append(f"Safety Rating - {getattr(sr, 'category', 'Unknown')}: {getattr(sr, 'probability', 'Unknown')}")
+
+                if getattr(chunk, "prompt_feedback", None):
+                    pf = chunk.prompt_feedback
+                    block_reason = getattr(pf, "block_reason", None)
+                    if block_reason:
+                        response_text_parts.append(f"Prompt Blocked: {block_reason}")
+
+                if not getattr(chunk, "parts", None):
                     continue
 
                 for part in chunk.parts:
@@ -854,7 +872,22 @@ class MainWindow(QMainWindow):
 
         self.generate_btn = QPushButton("Generate")
         self.generate_btn.clicked.connect(self.start_generation)
-        center_layout.addWidget(self.generate_btn)
+        
+        gen_layout = QHBoxLayout()
+        gen_layout.addWidget(self.generate_btn)
+        
+        from PySide6.QtCore import QTimer
+        self.spinner_timer = QTimer(self)
+        self.spinner_timer.timeout.connect(self.update_spinner)
+        self.spinner_chars = ["|", "/", "-", "\\"]
+        self.spinner_idx = 0
+        
+        self.spinner_label = QLabel("")
+        self.spinner_label.hide()
+        gen_layout.addWidget(self.spinner_label)
+        gen_layout.addStretch()
+        
+        center_layout.addLayout(gen_layout)
 
         center_layout.addStretch()
         splitter.addWidget(center_widget)
@@ -1002,6 +1035,10 @@ class MainWindow(QMainWindow):
 
         self.results_layout.addStretch()
 
+    def update_spinner(self):
+        self.spinner_idx = (self.spinner_idx + 1) % len(self.spinner_chars)
+        self.spinner_label.setText(f" Generating... {self.spinner_chars[self.spinner_idx]}")
+
     def start_generation(self):
         prompt = self.prompt_edit.toPlainText().strip()
         if not prompt:
@@ -1035,6 +1072,9 @@ class MainWindow(QMainWindow):
 
         self.save_ui_state()
         self.generate_btn.setEnabled(False)
+        self.spinner_label.setText(" Generating... |")
+        self.spinner_label.show()
+        self.spinner_timer.start(100)
 
         prompt_mode = self.prompt_mode_combo.currentText()
         repetitions = self.repetitions_spin.value()
@@ -1102,6 +1142,8 @@ class MainWindow(QMainWindow):
             # All jobs in the current batch have finished. Aggregate them.
             if not self.current_batch_results:
                 self.generate_btn.setEnabled(True)
+                self.spinner_timer.stop()
+                self.spinner_label.hide()
                 return
 
             first_run = self.current_batch_results[0]
@@ -1136,11 +1178,15 @@ class MainWindow(QMainWindow):
 
             self.current_batch_results = []  # Clear for next generation
             self.generate_btn.setEnabled(True)
+            self.spinner_timer.stop()
+            self.spinner_label.hide()
 
     def on_generation_error(self, error_text: str):
         self.completed_jobs += 1
         if self.completed_jobs >= self.pending_jobs:
             self.generate_btn.setEnabled(True)
+            self.spinner_timer.stop()
+            self.spinner_label.hide()
 
 
 def main():
