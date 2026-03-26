@@ -526,6 +526,7 @@ class ResultRunWidget(QFrame):
             f"Aspect: {run_data.get('aspect_ratio', '')} | "
             f"Size: {run_data.get('image_size', '')}"
         )
+        meta.setWordWrap(True)
         layout.addWidget(meta)
 
         layout.addWidget(CopyableTextBox(run_data.get("prompt", "")))
@@ -561,6 +562,7 @@ class ResultRunWidget(QFrame):
                 layout.addWidget(inp_label)
                 for p in input_paths:
                     lbl = QLabel(p)
+                    lbl.setWordWrap(True)
                     lbl.setTextInteractionFlags(Qt.TextSelectableByMouse)
                     layout.addWidget(lbl)
 
@@ -738,6 +740,8 @@ class MainWindow(QMainWindow):
 
         self.results_scroll = QScrollArea()
         self.results_scroll.setWidgetResizable(True)
+        self.results_scroll.setMinimumWidth(100)
+        self.results_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.results_scroll.setWidget(self.results_container)
         splitter.addWidget(self.results_scroll)
 
