@@ -111,6 +111,7 @@ class HistoryEntry(BaseModel):
     prompt_mode: str
     aspect_ratio: str
     image_size: str
+    repetitions: int = 1
     results: List[GenerationResult] = Field(default_factory=list)
 
 class AppState(BaseModel):
@@ -626,8 +627,8 @@ class ResultRunWidget(QFrame):
                 input_groups[key] = []
             input_groups[key].append(req)
 
-        if run_data.prompt_mode == "batch mode" and len(input_groups) > 1:
-            out_label = QLabel("Generated images (Batch):")
+        if (run_data.prompt_mode == "batch mode" and len(input_groups) > 1) and getattr(run_data, "repetitions", 1) > 1:
+            out_label = QLabel("Generated images (Batch/Repetitions):")
             layout.addWidget(out_label)
 
             # Table-like form: first row = original image, second row = results
@@ -690,6 +691,7 @@ class GenerationWorker(QRunnable):
         run_index: int,
         batch_id: str = "",
         total_in_batch: int = 1,
+        repetitions: int = 1,
     ):
         super().__init__()
         self.signals = WorkerSignals()
@@ -703,6 +705,7 @@ class GenerationWorker(QRunnable):
         self.run_index = run_index
         self.batch_id = batch_id
         self.total_in_batch = total_in_batch
+        self.repetitions = repetitions
 
     def run(self):
         try:
@@ -806,6 +809,7 @@ class GenerationWorker(QRunnable):
                 "prompt_mode": self.prompt_mode,
                 "aspect_ratio": self.aspect_ratio,
                 "image_size": self.image_size,
+                "repetitions": self.repetitions,
                 "input_images": list(self.input_images),
                 "output_images": output_paths,
                 "response_text": "\n".join(response_text_parts).strip(),
@@ -1202,6 +1206,7 @@ class MainWindow(QMainWindow):
                 run_index=job["run_index"],
                 batch_id=job["batch_id"],
                 total_in_batch=job["total_in_batch"],
+                repetitions=repetitions,
             )
             worker.signals.finished.connect(self.on_generation_finished)
             worker.signals.error.connect(self.on_generation_error)
@@ -1257,6 +1262,7 @@ class MainWindow(QMainWindow):
                 prompt_mode=first_run.get("prompt_mode"),
                 aspect_ratio=first_run.get("aspect_ratio"),
                 image_size=first_run.get("image_size"),
+                repetitions=first_run.get("repetitions", 1),
                 results=results
             )
 
