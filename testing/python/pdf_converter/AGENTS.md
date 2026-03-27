@@ -147,8 +147,8 @@ Output your findings as a strict JSON list of objects: [{"issue_type": "spelling
 
 ## 5. Implementation Steps & Todos
 
-- [ ] **1. Refactor configuration**: Create Pydantic schema for JSON config (input dirs, output dir). `AppConfig` will parse lists of target files/directories.
-- [ ] **2. Refactor OCR Component**: Separate headless processing logic from CLI and migrate output structure. The `call_ollama_vlm` function will securely parse the XML strings to extract the spatial logic.
+- [x] **1. Refactor configuration**: Create Pydantic schema for JSON config (input dirs, output dir). `AppConfig` will parse lists of target files/directories.
+- [x] **2. Refactor OCR Component**: Separate headless processing logic from CLI and migrate output structure. The `call_ollama_vlm` function will securely parse the XML strings to extract the spatial logic.
 - [ ] **3. Update data storage**: Implement per-page JSON dumps containing raw docling, spatial tree, and user annotations. Each PDF creates an output directory where these JSON dumps live safely.
 - [ ] **4. Implement spatial tree model**: Create classes for `Page`, `Doctag`, and nested elements with spatial geometry (using the models defined above).
 - [ ] **5. Setup PySide6 GUI**: Create main window with 3-column layout (Left: Files, Center: Preview, Right: HTML).
