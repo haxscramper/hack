@@ -105,3 +105,14 @@ Output your findings as a strict JSON list of objects: [{"issue_type": "spelling
 <|im_end|>
 <|im_start|>assistant
 ```
+
+## 6. External tools
+
+### Docling
+The application leverages the `docling_core` library to parse the VLM output. The core data models used from docling are:
+- `DocTagsDocument` and `DocTagsPage`: Used to ingest the raw XML/doctags string containing spatial `<loc_N>` tags.
+- `DoclingDocument`: The parsed, hierarchical representation of the document created via `DoclingDocument.load_from_doctags()`. 
+- `iterate_items()`: A method on `DoclingDocument` that yields items (e.g. `TextItem`, `PictureItem`, `TableItem`) across the document. We use this to extract semantic labels (like "text", "page_footer"), text content, and spatial data.
+- Spatial data in `docling_core` is accessible via the item's `prov` (provenance) attribute. The first provenance entry contains a `bbox` which provides normalized bounding box coordinates (`l`, `t`, `r`, `b`) mapped continuously between [0, 1].
+
+These structures allow the pipeline to abstract away string manipulation and safely extract a flattened or hierarchical tree of parsed page elements, which are then mapped to our custom `DocTag` and `BoundingBox` models for GUI consumption.
