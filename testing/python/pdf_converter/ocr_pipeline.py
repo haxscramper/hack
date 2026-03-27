@@ -61,20 +61,56 @@ def call_ollama_vlm(image: PILImage.Image) -> str:
     
     return response.json().get("message", {}).get("content", "")
 
+import re
+from docling_core.types.doc.document import DocTagsDocument, DocTagsPage, DoclingDocument, ContentLayer
+from models import BoundingBox
+
 def parse_spatial_tags(raw_xml: str, page_num: int) -> List[DocTag]:
     """
-    Parses the raw XML from Ollama/Docling to extract spatial tags.
-    This is a stub for the full XML parser that securely extracts bounding boxes
-    and builds the tree structure.
+    Parses the raw XML from Ollama/Docling using docling_core 
+    to extract spatial tags, bounding boxes, and hierarchical data.
     """
-    # For now, return a placeholder root tag containing everything.
-    # A full XML/HTML parser (like lxml or BeautifulSoup) would be used here
-    # to extract <doctag bbox="..."> tags and convert them to the DocTag model.
     root_tag = DocTag(
         id=f"page{page_num}-root",
         tag_name="root",
-        text=raw_xml
+        text=""
     )
+
+    try:
+        doc_tags = DocTagsDocument(pages=[DocTagsPage(tokens=raw_xml)])
+        doc = DoclingDocument.load_from_doctags(doctag_document=doc_tags)
+
+        tag_counter = 1
+        for item, level in doc.iterate_items(
+            included_content_layers=set(ContentLayer),
+            with_groups=True
+        ):
+            tag_name = str(item.label.value) if hasattr(item, 'label') and item.label else type(item).__name__
+            text_content = getattr(item, 'text', "")
+            
+            bbox = None
+            if hasattr(item, 'prov') and item.prov and len(item.prov) > 0:
+                p = item.prov[0]
+                if hasattr(p, 'bbox') and p.bbox:
+                    bbox = BoundingBox(
+                        x=p.bbox.l,
+                        y=p.bbox.t,
+                        width=p.bbox.r - p.bbox.l,
+                        height=p.bbox.b - p.bbox.t
+                    )
+            
+            child_tag = DocTag(
+                id=f"page{page_num}-{tag_name}-{tag_counter}",
+                tag_name=tag_name,
+                text=text_content,
+                bbox=bbox
+            )
+            root_tag.children.append(child_tag)
+            tag_counter += 1
+
+    except Exception as e:
+        logger.error(f"Failed to parse spatial tags using docling_core: {e}")
+        
     return [root_tag]
 
 def process_pdf(pdf_path: Path, output_dir: Path, pages: Optional[str] = None):
