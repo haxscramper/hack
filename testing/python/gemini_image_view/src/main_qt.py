@@ -65,10 +65,8 @@ from PySide6.QtWidgets import (
 from google import genai
 from google.genai import types
 
-
 APP_NAME = "gemini-image-qt"
 APP_AUTHOR = "local"
-
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"}
 
@@ -100,10 +98,12 @@ class RequestResult(BaseModel):
     output_image: Optional[str] = None
     response_text: str = ""
 
+
 class GenerationResult(BaseModel):
     requests: List[RequestResult] = Field(default_factory=list)
     run_index: Optional[int] = None
     batch_id: Optional[str] = None
+
 
 class HistoryEntry(BaseModel):
     timestamp: str
@@ -113,6 +113,7 @@ class HistoryEntry(BaseModel):
     image_size: str
     repetitions: int = 1
     results: List[GenerationResult] = Field(default_factory=list)
+
 
 class AppState(BaseModel):
     input_directories: List[str] = Field(default_factory=list)
@@ -130,7 +131,7 @@ def load_state() -> AppState:
         try:
             with open(STATE_FILE, "r", encoding="utf-8") as f:
                 data = yaml.safe_load(f) or {}
-            
+
             if "history" in data:
                 new_history = []
                 for entry in data["history"]:
@@ -138,26 +139,30 @@ def load_state() -> AppState:
                         req_results = []
                         out_images = entry.get("output_images", [])
                         in_images = entry.get("input_images", [])
-                        
+
                         # Best effort mapping for old data
-                        if len(out_images) >= len(in_images) and len(in_images) > 0:
+                        if len(out_images) >= len(in_images) and len(
+                                in_images) > 0:
                             reps = len(out_images) // len(in_images)
                             for i, in_img in enumerate(in_images):
                                 for r in range(reps):
                                     out_idx = i * reps + r
-                                    req_results.append(RequestResult(
-                                        input_images=[in_img],
-                                        output_image=out_images[out_idx] if out_idx < len(out_images) else None,
-                                        response_text=entry.get("response_text", "")
-                                    ))
+                                    req_results.append(
+                                        RequestResult(
+                                            input_images=[in_img],
+                                            output_image=out_images[out_idx]
+                                            if out_idx < len(out_images) else
+                                            None,
+                                            response_text=entry.get(
+                                                "response_text", "")))
                         else:
                             for out_img in out_images:
-                                req_results.append(RequestResult(
-                                    input_images=in_images,
-                                    output_image=out_img,
-                                    response_text=entry.get("response_text", "")
-                                ))
-                        
+                                req_results.append(
+                                    RequestResult(input_images=in_images,
+                                                  output_image=out_img,
+                                                  response_text=entry.get(
+                                                      "response_text", "")))
+
                         res = GenerationResult(requests=req_results)
                         new_entry = HistoryEntry(
                             timestamp=entry.get("timestamp", ""),
@@ -165,8 +170,7 @@ def load_state() -> AppState:
                             prompt_mode=entry.get("prompt_mode", ""),
                             aspect_ratio=entry.get("aspect_ratio", ""),
                             image_size=entry.get("image_size", ""),
-                            results=[res]
-                        )
+                            results=[res])
                         new_history.append(new_entry.model_dump())
                     else:
                         new_history.append(entry)
@@ -175,17 +179,23 @@ def load_state() -> AppState:
             logging.info("State loaded successfully from %s", STATE_FILE)
             return AppState(**data)
         except Exception:
-            logging.error("Failed to load state from %s", STATE_FILE, exc_info=True)
+            logging.error("Failed to load state from %s",
+                          STATE_FILE,
+                          exc_info=True)
             traceback.print_exc()
     else:
-        logging.info("State file %s does not exist, using default state", STATE_FILE)
+        logging.info("State file %s does not exist, using default state",
+                     STATE_FILE)
     return AppState()
 
 
 def save_state(state: AppState):
     try:
         with open(STATE_FILE, "w", encoding="utf-8") as f:
-            yaml.safe_dump(state.model_dump(), f, sort_keys=False, allow_unicode=True)
+            yaml.safe_dump(state.model_dump(),
+                           f,
+                           sort_keys=False,
+                           allow_unicode=True)
         logging.info("State saved successfully to %s", STATE_FILE)
     except Exception:
         logging.error("Failed to save state to %s", STATE_FILE, exc_info=True)
@@ -203,7 +213,8 @@ def scan_images(directories: List[str]) -> List[Path]:
     for d in directories:
         p = Path(d)
         if not p.exists() or not p.is_dir():
-            logging.warning("Directory does not exist or is not a directory: %s", d)
+            logging.warning(
+                "Directory does not exist or is not a directory: %s", d)
             continue
         for file in sorted(p.rglob("*")):
             if is_image_file(file):
@@ -216,6 +227,7 @@ def scan_images(directories: List[str]) -> List[Path]:
 
 
 class FlowLayout(QLayout):
+
     def __init__(self, parent=None, margin=-1, hSpacing=-1, vSpacing=-1):
         super().__init__(parent)
         self._item_list = []
@@ -276,7 +288,8 @@ class FlowLayout(QLayout):
         for item in self._item_list:
             size = size.expandedTo(item.minimumSize())
         margins = self.contentsMargins()
-        size += QSize(margins.left() + margins.right(), margins.top() + margins.bottom())
+        size += QSize(margins.left() + margins.right(),
+                      margins.top() + margins.bottom())
         return size
 
     def smartSpacing(self, pm):
@@ -297,10 +310,16 @@ class FlowLayout(QLayout):
             wid = item.widget()
             spaceX = self.horizontalSpacing()
             if spaceX == -1:
-                spaceX = wid.style().layoutSpacing(QSizePolicy.ControlType.PushButton, QSizePolicy.ControlType.PushButton, Qt.Orientation.Horizontal) if wid else 10
+                spaceX = wid.style().layoutSpacing(
+                    QSizePolicy.ControlType.PushButton,
+                    QSizePolicy.ControlType.PushButton,
+                    Qt.Orientation.Horizontal) if wid else 10
             spaceY = self.verticalSpacing()
             if spaceY == -1:
-                spaceY = wid.style().layoutSpacing(QSizePolicy.ControlType.PushButton, QSizePolicy.ControlType.PushButton, Qt.Orientation.Vertical) if wid else 10
+                spaceY = wid.style().layoutSpacing(
+                    QSizePolicy.ControlType.PushButton,
+                    QSizePolicy.ControlType.PushButton,
+                    Qt.Orientation.Vertical) if wid else 10
 
             nextX = x + item.sizeHint().width() + spaceX
             if nextX - spaceX > rect.right() and lineHeight > 0:
@@ -319,6 +338,7 @@ class FlowLayout(QLayout):
 
 
 class ThumbnailDelegate(QStyledItemDelegate):
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.thumb_size = QSize(160, 160)
@@ -360,7 +380,8 @@ class ThumbnailDelegate(QStyledItemDelegate):
         thumbnail = self.get_thumbnail(path)
         if not thumbnail.isNull():
             thumb_rect = QRect(
-                option.rect.x() + (option.rect.width() - self.thumb_size.width()) // 2,
+                option.rect.x() +
+                (option.rect.width() - self.thumb_size.width()) // 2,
                 option.rect.y() + 5,
                 self.thumb_size.width(),
                 self.thumb_size.height(),
@@ -394,7 +415,8 @@ class ThumbnailDelegate(QStyledItemDelegate):
         # Selection Badge
         if order is not None:
             painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-            badge_rect = QRect(option.rect.x() + 10, option.rect.y() + 10, 28, 28)
+            badge_rect = QRect(option.rect.x() + 10,
+                               option.rect.y() + 10, 28, 28)
             painter.setBrush(QColor(20, 120, 255, 220))
             painter.setPen(Qt.PenStyle.NoPen)
             painter.drawRoundedRect(badge_rect, 6, 6)
@@ -403,7 +425,8 @@ class ThumbnailDelegate(QStyledItemDelegate):
             font = QFont()
             font.setBold(True)
             painter.setFont(font)
-            painter.drawText(badge_rect, int(Qt.AlignmentFlag.AlignCenter), str(order))
+            painter.drawText(badge_rect, int(Qt.AlignmentFlag.AlignCenter),
+                             str(order))
 
         painter.restore()
 
@@ -412,6 +435,7 @@ class ThumbnailDelegate(QStyledItemDelegate):
 
 
 class ScaledImageLabel(QLabel):
+
     def __init__(self, pixmap, parent=None):
         super().__init__(parent)
         self.original_pixmap = pixmap
@@ -421,12 +445,14 @@ class ScaledImageLabel(QLabel):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         if not self.original_pixmap.isNull():
-            scaled = self.original_pixmap.scaled(
-                event.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation
-            )
+            scaled = self.original_pixmap.scaled(event.size(),
+                                                 Qt.KeepAspectRatio,
+                                                 Qt.SmoothTransformation)
             super().setPixmap(scaled)
 
+
 class PreviewDialog(QDialog):
+
     def __init__(self, image_path: str, parent=None):
         super().__init__(parent)
         self.setWindowTitle(Path(image_path).name)
@@ -453,7 +479,8 @@ class PreviewDialog(QDialog):
         max_h = int(screen.height() * 0.9)
 
         if w > max_w or h > max_h:
-            scaled = pix.scaled(max_w, max_h, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            scaled = pix.scaled(max_w, max_h, Qt.KeepAspectRatio,
+                                Qt.SmoothTransformation)
             self.resize(scaled.width(), scaled.height())
         else:
             self.resize(w, h)
@@ -463,9 +490,10 @@ class ClickableImageLabel(QLabel):
     openRequested = Signal(str)
     selectRequested = Signal(str)
 
-    def __init__(
-        self, image_path: str, thumb_size: QSize = QSize(160, 160), parent=None
-    ):
+    def __init__(self,
+                 image_path: str,
+                 thumb_size: QSize = QSize(160, 160),
+                 parent=None):
         super().__init__(parent)
         self.image_path = image_path
         self.thumb_size = thumb_size
@@ -506,17 +534,16 @@ class ClickableImageLabel(QLabel):
             font = QFont()
             font.setBold(True)
             painter.setFont(font)
-            painter.drawText(
-                4, 4, rect_w, rect_h, Qt.AlignCenter, str(self.selection_order)
-            )
+            painter.drawText(4, 4, rect_w, rect_h, Qt.AlignCenter,
+                             str(self.selection_order))
 
             pen = QPen(QColor(20, 120, 255))
             pen.setWidth(3)
             painter.setPen(pen)
             painter.setBrush(Qt.NoBrush)
-            painter.drawRect(
-                1, 1, self.thumb_size.width() - 2, self.thumb_size.height() - 2
-            )
+            painter.drawRect(1, 1,
+                             self.thumb_size.width() - 2,
+                             self.thumb_size.height() - 2)
 
         painter.end()
         self.setPixmap(canvas)
@@ -537,6 +564,7 @@ class ClickableImageLabel(QLabel):
 
 
 class CopyableTextBox(QFrame):
+
     def __init__(self, text: str, parent=None):
         super().__init__(parent)
         self.text = text
@@ -566,6 +594,7 @@ class CopyableTextBox(QFrame):
 
 
 class ResultImageWidget(QFrame):
+
     def __init__(self, image_path: str, parent=None):
         super().__init__(parent)
         self.image_path = image_path
@@ -596,6 +625,7 @@ class ResultImageWidget(QFrame):
 
 
 class ResultRunWidget(QFrame):
+
     def __init__(self, run_data: HistoryEntry, parent=None):
         super().__init__(parent)
         self.run_data = run_data
@@ -604,12 +634,10 @@ class ResultRunWidget(QFrame):
 
         layout = QVBoxLayout(self)
 
-        meta = QLabel(
-            f"Time: {run_data.timestamp} | "
-            f"Mode: {run_data.prompt_mode} | "
-            f"Aspect: {run_data.aspect_ratio} | "
-            f"Size: {run_data.image_size}"
-        )
+        meta = QLabel(f"Time: {run_data.timestamp} | "
+                      f"Mode: {run_data.prompt_mode} | "
+                      f"Aspect: {run_data.aspect_ratio} | "
+                      f"Size: {run_data.image_size}")
         meta.setWordWrap(True)
         layout.addWidget(meta)
 
@@ -627,7 +655,8 @@ class ResultRunWidget(QFrame):
                 input_groups[key] = []
             input_groups[key].append(req)
 
-        if (run_data.prompt_mode == "batch mode" and len(input_groups) > 1) and getattr(run_data, "repetitions", 1) > 1:
+        if run_data.prompt_mode == "batch mode" and len(
+                input_groups) > 1 and run_data.repetitions > 1:
             out_label = QLabel("Generated images (Batch/Repetitions):")
             layout.addWidget(out_label)
 
@@ -649,6 +678,15 @@ class ResultRunWidget(QFrame):
                         out_flow.addWidget(w)
                 layout.addLayout(out_flow)
 
+        elif run_data.prompt_mode == "batch mode" and run_data.repetitions == 1:
+            out_flow = FlowLayout()
+            for in_imgs, reqs in input_groups.items():
+                for req in reqs:
+                    if req.output_image:
+                        w = ResultImageWidget(req.output_image)
+                        out_flow.addWidget(w)
+            layout.addLayout(out_flow)
+
         else:
             # All Images Mode OR Batch with 1 Image
             for in_imgs, reqs in input_groups.items():
@@ -661,7 +699,9 @@ class ResultRunWidget(QFrame):
                         lbl.setTextInteractionFlags(Qt.TextSelectableByMouse)
                         layout.addWidget(lbl)
 
-                out_images = [req.output_image for req in reqs if req.output_image]
+                out_images = [
+                    req.output_image for req in reqs if req.output_image
+                ]
                 if out_images:
                     out_label = QLabel("Generated images:")
                     layout.addWidget(out_label)
@@ -670,8 +710,9 @@ class ResultRunWidget(QFrame):
                     for path in out_images:
                         w = ResultImageWidget(path)
                         flow.addWidget(w)
-                    
+
                     layout.addLayout(flow)
+
 
 class WorkerSignals(QObject):
     finished = Signal(dict)
@@ -679,6 +720,7 @@ class WorkerSignals(QObject):
 
 
 class GenerationWorker(QRunnable):
+
     def __init__(
         self,
         api_key: str,
@@ -709,7 +751,9 @@ class GenerationWorker(QRunnable):
 
     def run(self):
         try:
-            logging.info("Starting generation worker for run index %s, batch ID %s", self.run_index, self.batch_id)
+            logging.info(
+                "Starting generation worker for run index %s, batch ID %s",
+                self.run_index, self.batch_id)
             client = genai.Client(api_key=self.api_key)
             model = "gemini-3.1-flash-image-preview"
 
@@ -725,22 +769,19 @@ class GenerationWorker(QRunnable):
                     types.Part.from_bytes(
                         data=data,
                         mime_type=mime_type,
-                    )
-                )
+                    ))
 
-            contents = [
-                types.Content(
-                    role="user",
-                    parts=parts,
-                )
-            ]
+            contents = [types.Content(
+                role="user",
+                parts=parts,
+            )]
 
             config = types.GenerateContentConfig(
                 thinking_config=types.ThinkingConfig(
-                    thinking_level="MINIMAL",
-                ),
+                    thinking_level="MINIMAL", ),
                 image_config=types.ImageConfig(
-                    aspect_ratio=None if self.aspect_ratio == "auto" else self.aspect_ratio,
+                    aspect_ratio=None
+                    if self.aspect_ratio == "auto" else self.aspect_ratio,
                     image_size=self.image_size,
                 ),
                 response_modalities=["IMAGE", "TEXT"],
@@ -755,39 +796,44 @@ class GenerationWorker(QRunnable):
 
             logging.debug("Generating content stream...")
             for chunk in client.models.generate_content_stream(
-                model=model,
-                contents=contents,
-                config=config,
+                    model=model,
+                    contents=contents,
+                    config=config,
             ):
                 if getattr(chunk, "candidates", None):
                     for cand in chunk.candidates:
                         fr = getattr(cand, "finish_reason", None)
-                        if fr and str(fr) not in ["STOP", "FINISH_REASON_UNSPECIFIED", "None"]:
+                        if fr and str(fr) not in [
+                                "STOP", "FINISH_REASON_UNSPECIFIED", "None"
+                        ]:
                             response_text_parts.append(f"Finish Reason: {fr}")
-                        
+
                         safety_ratings = getattr(cand, "safety_ratings", None)
                         if safety_ratings:
                             for sr in safety_ratings:
-                                if getattr(sr, "blocked", False) or str(getattr(sr, "probability", "")) in ["HIGH", "MEDIUM"]:
-                                    response_text_parts.append(f"Safety Rating - {getattr(sr, 'category', 'Unknown')}: {getattr(sr, 'probability', 'Unknown')}")
+                                if getattr(sr, "blocked", False) or str(
+                                        getattr(sr, "probability",
+                                                "")) in ["HIGH", "MEDIUM"]:
+                                    response_text_parts.append(
+                                        f"Safety Rating - {getattr(sr, 'category', 'Unknown')}: {getattr(sr, 'probability', 'Unknown')}"
+                                    )
 
                 if getattr(chunk, "prompt_feedback", None):
                     pf = chunk.prompt_feedback
                     block_reason = getattr(pf, "block_reason", None)
                     if block_reason:
-                        response_text_parts.append(f"Prompt Blocked: {block_reason}")
+                        response_text_parts.append(
+                            f"Prompt Blocked: {block_reason}")
 
                 if not getattr(chunk, "parts", None):
                     continue
 
                 for part in chunk.parts:
-                    if (
-                        getattr(part, "inline_data", None)
-                        and part.inline_data
-                        and part.inline_data.data
-                    ):
+                    if (getattr(part, "inline_data", None) and part.inline_data
+                            and part.inline_data.data):
                         inline_data = part.inline_data
-                        ext = mimetypes.guess_extension(inline_data.mime_type) or ".png"
+                        ext = mimetypes.guess_extension(
+                            inline_data.mime_type) or ".png"
                         file_name = (
                             f"{datetime.now().strftime('%Y%m%d-%H%M%S')}_"
                             f"{self.run_index}_{file_index}_{uuid.uuid4().hex[:8]}{ext}"
@@ -802,7 +848,8 @@ class GenerationWorker(QRunnable):
                         if txt:
                             response_text_parts.append(txt)
 
-            logging.info("Generation completed successfully. Output files: %s", output_paths)
+            logging.info("Generation completed successfully. Output files: %s",
+                         output_paths)
             result = {
                 "timestamp": datetime.now().isoformat(timespec="seconds"),
                 "prompt": self.prompt,
@@ -824,6 +871,7 @@ class GenerationWorker(QRunnable):
 
 
 class MainWindow(QMainWindow):
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Gemini Image Generator")
@@ -870,8 +918,7 @@ class MainWindow(QMainWindow):
         self.api_key_edit = QLineEdit()
         self.api_key_edit.setEchoMode(QLineEdit.Password)
         self.api_key_edit.setPlaceholderText(
-            "Uses GEMINI_API_KEY env var if left blank"
-        )
+            "Uses GEMINI_API_KEY env var if left blank")
         form.addRow("API Key:", self.api_key_edit)
 
         self.prompt_edit = QTextEdit()
@@ -889,25 +936,23 @@ class MainWindow(QMainWindow):
         form.addRow("Repetitions:", self.repetitions_spin)
 
         self.aspect_ratio_combo = QComboBox()
-        self.aspect_ratio_combo.addItems(
-            [
-                "auto",
-                "1:1",
-                "3:4",
-                "4:3",
-                "9:16",
-                "16:9",
-                "3:2",
-                "2:3",
-                "4:5",
-                "5:4",
-                "21:9",
-                "4:1",
-                "1:4",
-                "8:1",
-                "1:8",
-            ]
-        )
+        self.aspect_ratio_combo.addItems([
+            "auto",
+            "1:1",
+            "3:4",
+            "4:3",
+            "9:16",
+            "16:9",
+            "3:2",
+            "2:3",
+            "4:5",
+            "5:4",
+            "21:9",
+            "4:1",
+            "1:4",
+            "8:1",
+            "1:8",
+        ])
         form.addRow("Aspect ratio:", self.aspect_ratio_combo)
 
         self.image_size_combo = QComboBox()
@@ -948,21 +993,21 @@ class MainWindow(QMainWindow):
 
         self.generate_btn = QPushButton("Generate")
         self.generate_btn.clicked.connect(self.start_generation)
-        
+
         gen_layout = QHBoxLayout()
         gen_layout.addWidget(self.generate_btn)
-        
+
         from PySide6.QtCore import QTimer
         self.spinner_timer = QTimer(self)
         self.spinner_timer.timeout.connect(self.update_spinner)
         self.spinner_chars = ["|", "/", "-", "\\"]
         self.spinner_idx = 0
-        
+
         self.spinner_label = QLabel("")
         self.spinner_label.hide()
         gen_layout.addWidget(self.spinner_label)
         gen_layout.addStretch()
-        
+
         center_layout.addLayout(gen_layout)
 
         center_layout.addStretch()
@@ -981,7 +1026,8 @@ class MainWindow(QMainWindow):
         self.input_list.setModel(self.input_model)
 
         self.input_list.clicked.connect(self.on_input_list_clicked)
-        self.input_list.doubleClicked.connect(self.on_input_list_double_clicked)
+        self.input_list.doubleClicked.connect(
+            self.on_input_list_double_clicked)
 
         splitter.addWidget(self.input_list)
 
@@ -1033,7 +1079,10 @@ class MainWindow(QMainWindow):
         d = QFileDialog.getExistingDirectory(self, "Select input directory")
         if not d:
             return
-        existing = {self.dir_list.item(i).text() for i in range(self.dir_list.count())}
+        existing = {
+            self.dir_list.item(i).text()
+            for i in range(self.dir_list.count())
+        }
         if d not in existing:
             self.dir_list.addItem(d)
             self.save_ui_state()
@@ -1062,7 +1111,9 @@ class MainWindow(QMainWindow):
                 self.clear_layout(child_layout)
 
     def refresh_input_images(self):
-        dirs = [self.dir_list.item(i).text() for i in range(self.dir_list.count())]
+        dirs = [
+            self.dir_list.item(i).text() for i in range(self.dir_list.count())
+        ]
         self.image_paths = scan_images(dirs)
         self.selection_queue = []
         self.selection_info.setText("Selected images: 0")
@@ -1086,14 +1137,18 @@ class MainWindow(QMainWindow):
         self.refresh_selection_badges()
 
     def refresh_selection_badges(self):
-        order_map = {path: idx + 1 for idx, path in enumerate(self.selection_queue)}
+        order_map = {
+            path: idx + 1
+            for idx, path in enumerate(self.selection_queue)
+        }
 
         for row in range(self.input_model.rowCount()):
             item = self.input_model.item(row)
             path = item.data(Qt.ItemDataRole.UserRole)
             item.setData(order_map.get(path), Qt.ItemDataRole.UserRole + 1)
 
-        self.selection_info.setText(f"Selected images: {len(self.selection_queue)}")
+        self.selection_info.setText(
+            f"Selected images: {len(self.selection_queue)}")
 
     def show_preview(self, image_path: str):
         dlg = PreviewDialog(image_path, self)
@@ -1113,12 +1168,15 @@ class MainWindow(QMainWindow):
 
     def update_spinner(self):
         self.spinner_idx = (self.spinner_idx + 1) % len(self.spinner_chars)
-        self.spinner_label.setText(f" Generating... [{self.completed_jobs}/{self.pending_jobs}] {self.spinner_chars[self.spinner_idx]}")
+        self.spinner_label.setText(
+            f" Generating... [{self.completed_jobs}/{self.pending_jobs}] {self.spinner_chars[self.spinner_idx]}"
+        )
 
     def start_generation(self):
         prompt = self.prompt_edit.toPlainText().strip()
         if not prompt:
-            QMessageBox.warning(self, "Missing prompt", "Please enter a prompt.")
+            QMessageBox.warning(self, "Missing prompt",
+                                "Please enter a prompt.")
             return
 
         if not self.selection_queue:
@@ -1129,21 +1187,17 @@ class MainWindow(QMainWindow):
             )
             return
 
-        api_key = (
-            self.api_key_edit.text().strip()
-            or os.environ.get("GEMINI_API_KEY", "").strip()
-        )
+        api_key = (self.api_key_edit.text().strip()
+                   or os.environ.get("GEMINI_API_KEY", "").strip())
         if not api_key:
-            QMessageBox.warning(
-                self, "Missing API key", "Provide an API key or set GEMINI_API_KEY."
-            )
+            QMessageBox.warning(self, "Missing API key",
+                                "Provide an API key or set GEMINI_API_KEY.")
             return
 
         output_dir = self.output_dir_edit.text().strip()
         if not output_dir:
-            QMessageBox.warning(
-                self, "Missing output directory", "Please select an output directory."
-            )
+            QMessageBox.warning(self, "Missing output directory",
+                                "Please select an output directory.")
             return
 
         self.save_ui_state()
@@ -1162,35 +1216,32 @@ class MainWindow(QMainWindow):
 
         if prompt_mode == "all images":
             for i in range(repetitions):
-                jobs.append(
-                    {
-                        "prompt": prompt,
-                        "input_images": selected,
-                        "run_index": i,
-                        "batch_id": batch_id,
-                        "total_in_batch": repetitions,
-                    }
-                )
+                jobs.append({
+                    "prompt": prompt,
+                    "input_images": selected,
+                    "run_index": i,
+                    "batch_id": batch_id,
+                    "total_in_batch": repetitions,
+                })
         else:  # batch mode
             run_index = 0
             for image_path in selected:
                 for _ in range(repetitions):
-                    jobs.append(
-                        {
-                            "prompt": prompt,
-                            "input_images": [image_path],
-                            "run_index": run_index,
-                            "batch_id": batch_id,
-                            "total_in_batch": len(selected) * repetitions,
-                        }
-                    )
+                    jobs.append({
+                        "prompt": prompt,
+                        "input_images": [image_path],
+                        "run_index": run_index,
+                        "batch_id": batch_id,
+                        "total_in_batch": len(selected) * repetitions,
+                    })
                     run_index += 1
 
         self.pending_jobs = len(jobs)
         self.completed_jobs = 0
         self.current_batch_results = []  # Store results until all finish
 
-        self.spinner_label.setText(f" Generating... [{self.completed_jobs}/{self.pending_jobs}] |")
+        self.spinner_label.setText(
+            f" Generating... [{self.completed_jobs}/{self.pending_jobs}] |")
         self.spinner_label.show()
         self.spinner_timer.start(100)
 
@@ -1227,33 +1278,31 @@ class MainWindow(QMainWindow):
             first_run = self.current_batch_results[0]
 
             # Sort results by run_index to maintain order
-            self.current_batch_results.sort(key=lambda x: x.get("run_index", 0))
+            self.current_batch_results.sort(
+                key=lambda x: x.get("run_index", 0))
 
             results = []
             for res in self.current_batch_results:
                 reqs = []
                 out_images = res.get("output_images", [])
                 for out_img in out_images:
-                    reqs.append(RequestResult(
-                        input_images=res.get("input_images", []),
-                        output_image=out_img,
-                        response_text=res.get("response_text", "")
-                    ))
+                    reqs.append(
+                        RequestResult(input_images=res.get("input_images", []),
+                                      output_image=out_img,
+                                      response_text=res.get(
+                                          "response_text", "")))
                 # Handle cases where generation failed but we want to record the attempt
                 if not out_images:
-                    reqs.append(RequestResult(
-                        input_images=res.get("input_images", []),
-                        output_image=None,
-                        response_text=res.get("response_text", "")
-                    ))
+                    reqs.append(
+                        RequestResult(input_images=res.get("input_images", []),
+                                      output_image=None,
+                                      response_text=res.get(
+                                          "response_text", "")))
 
                 results.append(
-                    GenerationResult(
-                        requests=reqs,
-                        run_index=res.get("run_index"),
-                        batch_id=res.get("batch_id")
-                    )
-                )
+                    GenerationResult(requests=reqs,
+                                     run_index=res.get("run_index"),
+                                     batch_id=res.get("batch_id")))
 
             # Create a single consolidated history entry
             consolidated_run = HistoryEntry(
@@ -1263,8 +1312,7 @@ class MainWindow(QMainWindow):
                 aspect_ratio=first_run.get("aspect_ratio"),
                 image_size=first_run.get("image_size"),
                 repetitions=first_run.get("repetitions", 1),
-                results=results
-            )
+                results=results)
 
             self.state.history.append(consolidated_run)
             save_state(self.state)
