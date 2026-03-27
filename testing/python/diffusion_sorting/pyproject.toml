@@ -25,4 +25,9 @@ dependencies = [
     "altair>=5.5.0,<6",
     "vispy>=0.14.3,<0.15",
     "pyside6>=6.8.2.1,<7",
+    "plotly>=6.6.0",
+    "streamlit>=1.55.0",
+    "llama-cpp-python>=0.3.16",
+    "umap-learn>=0.5.11",
+    "pyyaml>=6.0.3",
 ]

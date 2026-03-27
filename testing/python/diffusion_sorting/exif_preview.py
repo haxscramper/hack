@@ -1017,6 +1017,8 @@ def create_mirror(image: ImageParams) -> Path:
     if src_txt.exists():
         shutil.copy2(src_txt, dst_path.with_suffix(".txt"))
 
+    log.info(f"Created mirror file {image} -> JSON:{src_json.exists()} TXT:{src_txt.exists()} WEBP:{dst_webp.exists()}")
+
     return dst_path
 
 
