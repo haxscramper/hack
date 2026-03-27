@@ -15,10 +15,10 @@ import click
 from sqlalchemy import create_engine, Column, Integer, String, Float, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import declarative_base, sessionmaker
 
-from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
-                               QHBoxLayout, QListWidget, QLineEdit, QSplitter,
-                               QLabel, QScrollArea, QGridLayout, QPushButton,
-                               QDoubleSpinBox)
+import os
+from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
+                             QHBoxLayout, QListWidget, QLineEdit, QSplitter,
+                             QLabel, QScrollArea, QGridLayout, QPushButton, QDoubleSpinBox)
 from PySide6.QtGui import QPixmap
 from PySide6.QtCore import Qt
 
@@ -44,7 +44,7 @@ Base = declarative_base()
 
 
 class Entry(Base):
-    __tablename__ = 'entries'
+    __tablename__ = "entries"
     id = Column(Integer, primary_key=True, autoincrement=True)
     original_name = Column(String)
     full_path = Column(String, unique=True)
@@ -52,19 +52,19 @@ class Entry(Base):
 
 
 class Tag(Base):
-    __tablename__ = 'tags'
+    __tablename__ = "tags"
     id = Column(Integer, primary_key=True, autoincrement=True)
     tag_id = Column(Integer, unique=True)
     name = Column(String)
 
 
 class EntryTag(Base):
-    __tablename__ = 'entry_tags'
+    __tablename__ = "entry_tags"
     id = Column(Integer, primary_key=True, autoincrement=True)
-    entry_id = Column(Integer, ForeignKey('entries.id'))
-    tag_id = Column(Integer, ForeignKey('tags.id'))
+    entry_id = Column(Integer, ForeignKey("entries.id"))
+    tag_id = Column(Integer, ForeignKey("tags.id"))
     probability = Column(Float)
-    __table_args__ = (UniqueConstraint('entry_id', 'tag_id'), )
+    __table_args__ = (UniqueConstraint("entry_id", "tag_id"), )
 
 
 def init_db(db_path: Path):
@@ -123,11 +123,11 @@ def sync_tags(tags_df: pd.DataFrame, session):
     existing_tags = {row[0] for row in session.query(Tag.tag_id).all()}
     tags_to_add = []
     for _, row in tags_df.iterrows():
-        tag_id = int(row['tag_id'])
+        tag_id = int(row["tag_id"])
         if tag_id not in existing_tags:
-            cat_id = int(row['category'])
+            cat_id = int(row["category"])
             cat_name = CATEGORY_MAP.get(cat_id, f"cat_{cat_id}")
-            tag_name = f"infer/wd/{cat_name}/{row['name']}"
+            tag_name = f"infer/wd/{cat_name}/{row["name"]}"
             tags_to_add.append(Tag(tag_id=tag_id, name=tag_name))
 
     if tags_to_add:
@@ -155,6 +155,32 @@ def ensure_file_exists(filename: Path, url: str) -> None:
             f"File {filename} already exists locally. Skipping download.")
 
 
+def get_xdg_cache_dir() -> Path:
+    xdg_cache_home = os.environ.get("XDG_CACHE_HOME")
+    if xdg_cache_home:
+        return Path(xdg_cache_home) / "haxscramper_tagger" / "thumbnails"
+    return Path.home() / ".cache" / "haxscramper_tagger" / "thumbnails"
+
+def generate_thumbnail(args: tuple[str, str]) -> str:
+    original_path, md5_digest = args
+    cache_dir = get_xdg_cache_dir()
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    thumb_path = cache_dir / f"{md5_digest}_150x150.jpg"
+    
+    if thumb_path.exists():
+        return str(thumb_path)
+        
+    img = cv2.imread(original_path)
+    if img is not None:
+        h, w = img.shape[:2]
+        if h > 0 and w > 0:
+            scale = min(150/h, 150/w)
+            new_h, new_w = max(1, int(h*scale)), max(1, int(w*scale))
+            resized = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_AREA)
+            cv2.imwrite(str(thumb_path), resized)
+            return str(thumb_path)
+    return original_path
+
 @beartype
 def preprocess_image(image_path: Path, target_size: int = 448) -> np.ndarray:
     img = cv2.imread(str(image_path))
@@ -174,14 +200,15 @@ def cli():
 
 
 @cli.command()
-@click.argument('input_dir',
+@click.argument("input_dir",
                 type=click.Path(exists=True,
                                 file_okay=False,
                                 dir_okay=True,
                                 path_type=Path))
-@click.option('--skip-tagged',
+@click.option("--skip-tagged",
               type=click.BOOL,
-              required=True,
+              required=False,
+              default=True,
               help="Skip already tagged images (True/False)")
 def annotate(input_dir: Path, skip_tagged: bool):
     db_path = input_dir / "haxscramper_tagger.sqlite"
@@ -225,27 +252,42 @@ def annotate(input_dir: Path, skip_tagged: bool):
 
     tag_id_map = {row.tag_id: row.id for row in session.query(Tag).all()}
 
-    for image_path in image_paths:
+    seen_md5s = set()
+    total_images = len(image_paths)
+    for idx, image_path in enumerate(image_paths, start=1):
         full_path = str(image_path.absolute())
         entry = session.query(Entry).filter_by(full_path=full_path).first()
         if not entry:
             continue
 
-        if skip_tagged:
-            has_tags = session.query(EntryTag).filter_by(
-                entry_id=entry.id).first()
-            if has_tags:
-                logging.info(
-                    f"Skipping already tagged image: {image_path.name}")
-                continue
+        md5_digest = entry.md5_digest
+        if md5_digest in seen_md5s:
+            logging.warning(f"[{idx}/{total_images}] Skipping duplicate MD5 image: {image_path.name}")
+            continue
+        seen_md5s.add(md5_digest)
 
-        logging.info(f"Running inference on image: {image_path.name}")
-        input_data = preprocess_image(image_path)
-        raw_predictions = ort_session.run([output_name],
-                                          {input_name: input_data})[0]
-        probabilities = raw_predictions[0]
+        old_entry = session.query(Entry).filter(Entry.md5_digest == md5_digest).first()
+        if old_entry:
+            if skip_tagged:
+                has_tags = session.query(EntryTag).filter_by(
+                    entry_id=old_entry.id).first()
+                    
+                if has_tags:
+                    logging.info(
+                        f"[{idx}/{total_images}] Skipping already tagged image: {image_path.name}")
+                    continue
+
+        try:
+            input_data = preprocess_image(image_path)
+        except Exception as e:
+            logging.error(f"Failed to process image {image_path.name}: {e}")
+            continue
 
         entry_tags_data = []
+        raw_predictions = ort_session.run([output_name],
+                                        {input_name: input_data})[0]
+        probabilities = raw_predictions[0]
+
         for i, prob in enumerate(probabilities):
             if prob >= confidence_threshold:
                 tag_id = int(tags_df["tag_id"].iloc[i])
@@ -253,8 +295,8 @@ def annotate(input_dir: Path, skip_tagged: bool):
                 if tag_db_id is not None:
                     entry_tags_data.append(
                         EntryTag(entry_id=entry.id,
-                                 tag_id=tag_db_id,
-                                 probability=float(prob)))
+                                tag_id=tag_db_id,
+                                probability=float(prob)))
 
         if entry_tags_data:
             session.query(EntryTag).filter_by(entry_id=entry.id).delete()
@@ -262,21 +304,18 @@ def annotate(input_dir: Path, skip_tagged: bool):
             session.commit()
 
         logging.info(
-            f"Saved {len(entry_tags_data)} tags for: {image_path.name}")
+            f"[{idx}/{total_images}] Saved {len(entry_tags_data)} tags for: {image_path.name} MD5 {md5_digest}")
 
     session.close()
 
 
 class ImageLabel(QLabel):
-
-    def __init__(self, entry, click_cb):
+    def __init__(self, entry, thumb_path, click_cb):
         super().__init__()
         self.entry = entry
         self.click_cb = click_cb
-        pixmap = QPixmap(entry.full_path)
-        self.setPixmap(
-            pixmap.scaled(150, 150, Qt.AspectRatioMode.KeepAspectRatio,
-                          Qt.TransformationMode.SmoothTransformation))
+        pixmap = QPixmap(thumb_path)
+        self.setPixmap(pixmap)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
 
     def mousePressEvent(self, event):
@@ -321,24 +360,25 @@ class ViewerWindow(QMainWindow):
         self.splitter = QSplitter(Qt.Orientation.Horizontal)
         main_layout.addWidget(self.splitter)
 
-        self.left_splitter = QSplitter(Qt.Orientation.Vertical)
-        self.splitter.addWidget(self.left_splitter)
-
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
         self.grid_widget = QWidget()
         self.grid_layout = QGridLayout(self.grid_widget)
         self.scroll_area.setWidget(self.grid_widget)
-        self.left_splitter.addWidget(self.scroll_area)
+        self.splitter.addWidget(self.scroll_area)
 
-        self.tags_list = QListWidget()
-        self.left_splitter.addWidget(self.tags_list)
+        self.right_splitter = QSplitter(Qt.Orientation.Vertical)
+        self.splitter.addWidget(self.right_splitter)
 
         self.preview_label = QLabel("Select an image")
         self.preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.splitter.addWidget(self.preview_label)
+        self.right_splitter.addWidget(self.preview_label)
 
-        self.splitter.setSizes([400, 600])
+        self.tags_list = QListWidget()
+        self.right_splitter.addWidget(self.tags_list)
+        
+        self.right_splitter.setSizes([666, 333])
+        self.splitter.setSizes([512, 512])
 
         self.load_images()
 
@@ -360,10 +400,16 @@ class ViewerWindow(QMainWindow):
 
         entries = query.limit(100).all()
 
+        with ThreadPoolExecutor() as executor:
+            thumb_paths = list(executor.map(
+                generate_thumbnail, 
+                [(e.full_path, e.md5_digest) for e in entries]
+            ))
+
         row, col = 0, 0
         cols = 4
-        for entry in entries:
-            lbl = ImageLabel(entry, self.on_image_click)
+        for entry, thumb_path in zip(entries, thumb_paths):
+            lbl = ImageLabel(entry, thumb_path, self.on_image_click)
             self.grid_layout.addWidget(lbl, row, col)
             col += 1
             if col >= cols:
@@ -399,7 +445,7 @@ class ViewerWindow(QMainWindow):
 
 
 @cli.command()
-@click.argument('input_dir',
+@click.argument("input_dir",
                 type=click.Path(exists=True,
                                 file_okay=False,
                                 dir_okay=True,
@@ -408,7 +454,7 @@ def view(input_dir: Path):
     db_path = input_dir / "haxscramper_tagger.sqlite"
     if not db_path.exists():
         click.echo(
-            f"Database not found at {db_path}. Please run 'annotate' first.")
+            f"Database not found at {db_path}. Please run \"annotate\" first.")
         sys.exit(1)
 
     engine = init_db(db_path)
