@@ -99,31 +99,37 @@ class CenterPanel(QWidget):
             pixmap_item = QGraphicsPixmapItem(pixmap)
             self.scene.addItem(pixmap_item)
             
-            # Draw spatial tags bounding boxes
-            for tag in spatial_tags:
-                if tag.bbox:
-                    # In docling, bounding boxes might be normalized or pixel values.
-                    # Assuming normalized values [0, 1] based on standard Docling, scale by pixmap size:
-                    x = tag.bbox.x * pixmap.width()
-                    y = tag.bbox.y * pixmap.height()
-                    w = tag.bbox.width * pixmap.width()
-                    h = tag.bbox.height * pixmap.height()
+            # Helper to recursively draw spatial tags bounding boxes
+            def draw_tags(tags):
+                for tag in tags:
+                    if tag.bbox:
+                        # In docling, bounding boxes might be normalized or pixel values.
+                        # Assuming normalized values [0, 1] based on standard Docling, scale by pixmap size:
+                        x = tag.bbox.x * pixmap.width()
+                        y = tag.bbox.y * pixmap.height()
+                        w = tag.bbox.width * pixmap.width()
+                        h = tag.bbox.height * pixmap.height()
+                        
+                        rect_item = QGraphicsRectItem(QRectF(x, y, w, h))
+                        
+                        # Style the bounding box
+                        pen = QPen(QColor(255, 0, 0, 150))
+                        pen.setWidth(2)
+                        rect_item.setPen(pen)
+                        
+                        # Highlight removed tags
+                        if getattr(tag, 'user_removed', False):
+                            rect_item.setBrush(QBrush(QColor(100, 100, 100, 100)))
+                        
+                        rect_item.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, True)
+                        rect_item.setData(Qt.ItemDataRole.UserRole, tag) # Store reference to the DocTag
+                        
+                        self.scene.addItem(rect_item)
                     
-                    rect_item = QGraphicsRectItem(QRectF(x, y, w, h))
-                    
-                    # Style the bounding box
-                    pen = QPen(QColor(255, 0, 0, 150))
-                    pen.setWidth(2)
-                    rect_item.setPen(pen)
-                    
-                    # Highlight removed tags
-                    if getattr(tag, 'user_removed', False):
-                        rect_item.setBrush(QBrush(QColor(100, 100, 100, 100)))
-                    
-                    rect_item.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, True)
-                    rect_item.setData(Qt.ItemDataRole.UserRole, tag) # Store reference to the DocTag
-                    
-                    self.scene.addItem(rect_item)
+                    if tag.children:
+                        draw_tags(tag.children)
+
+            draw_tags(spatial_tags)
             
             self.scene.setSceneRect(pixmap_item.boundingRect())
             self.view.fitInView(self.scene.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
