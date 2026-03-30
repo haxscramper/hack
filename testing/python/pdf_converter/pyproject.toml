@@ -9,5 +9,6 @@ dependencies = [
   "docling>=2.81.0",
   "fichub-cli>=0.10.3",
   "pdf2image>=1.17.0",
+  "pyside6>=6.11.0",
   "xdg-base-dirs>=6.0.2",
 ]

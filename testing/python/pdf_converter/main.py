@@ -31,8 +31,23 @@ def headless(config: Path):
 def gui(config: Path):
     """Launch the PySide6 GUI."""
     logger.info(f"Starting GUI with config: {config}")
-    # GUI launch logic will go here
-    print("GUI implementation pending...")
+    
+    import sys
+    from PySide6.QtWidgets import QApplication
+    from gui.main_window import MainWindow
+    
+    app = QApplication(sys.argv)
+    
+    try:
+        app_config = AppConfig.load_from_json(config)
+    except Exception as e:
+        logger.error(f"Could not load config: {e}")
+        app_config = None
+        
+    window = MainWindow(config=app_config)
+    window.show()
+    
+    sys.exit(app.exec())
 
 if __name__ == '__main__':
     cli()
