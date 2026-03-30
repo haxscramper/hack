@@ -16,9 +16,18 @@ class CenterPanel(QWidget):
         # Navigation Controls
         nav_layout = QHBoxLayout()
         self.btn_prev = QPushButton("< Prev", self)
+        
+        from PySide6.QtWidgets import QLineEdit
+        self.page_input = QLineEdit(self)
+        self.page_input.setFixedWidth(50)
+        self.page_input.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.page_input.setText("1")
+        
         self.btn_next = QPushButton("Next >", self)
+        
         nav_layout.addStretch()
         nav_layout.addWidget(self.btn_prev)
+        nav_layout.addWidget(self.page_input)
         nav_layout.addWidget(self.btn_next)
         nav_layout.addStretch()
         
@@ -31,12 +40,55 @@ class CenterPanel(QWidget):
         # Signal connections (placeholders)
         self.btn_prev.clicked.connect(self.load_prev)
         self.btn_next.clicked.connect(self.load_next)
+        self.page_input.returnPressed.connect(self.on_page_input_changed)
+
+    def on_page_input_changed(self):
+        try:
+            page = int(self.page_input.text())
+            if page > 0:
+                self.current_page_idx = page
+                self.load_page_data()
+        except ValueError:
+            self.page_input.setText(str(self.current_page_idx))
 
     def load_prev(self):
-        pass
+        if self.current_page_idx > 1:
+            self.current_page_idx -= 1
+            self.load_page_data()
         
     def load_next(self):
-        pass
+        if self.page_data:
+            self.current_page_idx += 1
+            self.load_page_data()
+
+    def load_pdf(self, pdf_path, output_dir):
+        from pathlib import Path
+        self.current_pdf_path = Path(pdf_path)
+        self.output_dir = Path(output_dir)
+        self.pdf_output_dir = self.output_dir / self.current_pdf_path.stem
+        self.current_page_idx = 1
+        self.load_page_data()
+        
+    def load_page_data(self):
+        if not hasattr(self, 'pdf_output_dir'): return
+        
+        self.page_input.setText(str(self.current_page_idx))
+        json_path = self.pdf_output_dir / f"page_{self.current_page_idx:03d}.json"
+        self.scene.clear()
+        
+        if json_path.exists():
+            import json
+            from models import PageData
+            try:
+                with open(json_path, 'r') as f:
+                    data = json.load(f)
+                    self.page_data = PageData(**data)
+                    self.load_page(self.page_data.image_cache_path, self.page_data.spatial_tags)
+            except Exception as e:
+                self.scene.addText(f"Failed to load page data:\n{e}")
+        else:
+            self.page_data = None
+            self.scene.addText(f"Page {self.current_page_idx} not processed yet.")
 
     def load_page(self, image_path, spatial_tags):
         self.scene.clear()

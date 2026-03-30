@@ -34,3 +34,14 @@ class MainWindow(QMainWindow):
         splitter.setSizes([400, 400, 400])
         
         main_layout.addWidget(splitter)
+        
+        # Connect signals
+        self.left_panel.list_view.selectionModel().currentChanged.connect(self.on_pdf_selected)
+
+    def on_pdf_selected(self, current, previous):
+        if current.isValid():
+            # Get the actual index from the proxy model
+            source_index = self.left_panel.proxy_model.mapToSource(current)
+            file_path = self.left_panel.model.pdf_files[source_index.row()]
+            if self.config:
+                self.center_panel.load_pdf(file_path, self.config.output_dir)
