@@ -22,7 +22,7 @@ class MainWindow(QMainWindow):
         # Splitter for 3 columns
         splitter = QSplitter(Qt.Orientation.Horizontal, self)
         
-        self.left_panel = LeftPanel(self)
+        self.left_panel = LeftPanel(config=self.config, parent=self)
         self.center_panel = CenterPanel(self)
         self.right_panel = RightPanel(self)
         
