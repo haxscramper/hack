@@ -33,7 +33,7 @@ def get_cache_path(pdf_path: Path, page_num: int) -> Path:
     cache_dir = xdg_cache_home() / "docling-vlm-cache" / "images"
     cache_dir.mkdir(parents=True, exist_ok=True)
 
-    with open(pdf_path, 'rb') as f:
+    with open(pdf_path, "rb") as f:
         file_prefix = f.read(16).hex()[:16]
 
     name_hash = hashlib.md5(str(pdf_path.absolute()).encode()).hexdigest()[:16]
@@ -42,7 +42,8 @@ def get_cache_path(pdf_path: Path, page_num: int) -> Path:
 
 @beartype
 def format_eta(seconds: float) -> str:
-    if seconds < 0: return "00:00:00"
+    if seconds < 0:
+        return "00:00:00"
     return str(timedelta(seconds=int(seconds)))
 
 
@@ -54,18 +55,16 @@ def call_ollama_vlm(image: PILImage.Image) -> str:
     base64_image = base64.b64encode(buffered.getvalue()).decode("utf-8")
 
     payload = {
-        "model":
-        MODEL_NAME,
-        "messages": [{
-            "role": "user",
-            "content": "Convert this page to docling.",
-            "images": [base64_image]
-        }],
-        "stream":
-        False,
-        "options": {
-            "temperature": 0
-        }
+        "model": MODEL_NAME,
+        "messages": [
+            {
+                "role": "user",
+                "content": "Convert this page to docling.",
+                "images": [base64_image],
+            }
+        ],
+        "stream": False,
+        "options": {"temperature": 0},
     }
 
     response = requests.post(OLLAMA_URL, json=payload, timeout=600)
@@ -75,14 +74,19 @@ def call_ollama_vlm(image: PILImage.Image) -> str:
 
 
 import re
-from docling_core.types.doc.document import DocTagsDocument, DocTagsPage, DoclingDocument, ContentLayer
+from docling_core.types.doc.document import (
+    DocTagsDocument,
+    DocTagsPage,
+    DoclingDocument,
+    ContentLayer,
+)
 from models import BoundingBox
 
 
 @beartype
 def parse_spatial_tags(raw_xml: str, page_num: int) -> List[DocTag]:
     """
-    Parses the raw XML from Ollama/Docling using docling_core 
+    Parses the raw XML from Ollama/Docling using docling_core
     to extract spatial tags, bounding boxes, and hierarchical data.
     """
     root_tag = DocTag(id=f"page{page_num}-root", tag_name="root", text="")
@@ -93,24 +97,32 @@ def parse_spatial_tags(raw_xml: str, page_num: int) -> List[DocTag]:
 
         tag_counter = 1
         for item, level in doc.iterate_items(
-                included_content_layers=set(ContentLayer), with_groups=True):
-            tag_name = str(item.label.value) if hasattr(
-                item, 'label') and item.label else type(item).__name__
-            text_content = getattr(item, 'text', "")
+            included_content_layers=set(ContentLayer), with_groups=True
+        ):
+            tag_name = (
+                str(item.label.value)
+                if hasattr(item, "label") and item.label
+                else type(item).__name__
+            )
+            text_content = getattr(item, "text", "")
 
             bbox = None
-            if hasattr(item, 'prov') and item.prov and len(item.prov) > 0:
+            if hasattr(item, "prov") and item.prov and len(item.prov) > 0:
                 p = item.prov[0]
-                if hasattr(p, 'bbox') and p.bbox:
-                    bbox = BoundingBox(x=p.bbox.l,
-                                       y=p.bbox.t,
-                                       width=p.bbox.r - p.bbox.l,
-                                       height=p.bbox.b - p.bbox.t)
+                if hasattr(p, "bbox") and p.bbox:
+                    bbox = BoundingBox(
+                        x=p.bbox.l,
+                        y=p.bbox.t,
+                        width=p.bbox.r - p.bbox.l,
+                        height=p.bbox.b - p.bbox.t,
+                    )
 
-            child_tag = DocTag(id=f"page{page_num}-{tag_name}-{tag_counter}",
-                               tag_name=tag_name,
-                               text=text_content,
-                               bbox=bbox)
+            child_tag = DocTag(
+                id=f"page{page_num}-{tag_name}-{tag_counter}",
+                tag_name=tag_name,
+                text=text_content,
+                bbox=bbox,
+            )
             root_tag.children.append(child_tag)
             tag_counter += 1
 
@@ -144,8 +156,10 @@ def _extract_block_text(block: dict) -> str:
                 spans = line.get("spans")
                 if isinstance(spans, list):
                     span_text = "".join(
-                        str(span.get("text", "")) for span in spans
-                        if isinstance(span, dict)).strip()
+                        str(span.get("text", ""))
+                        for span in spans
+                        if isinstance(span, dict)
+                    ).strip()
                     if span_text:
                         line_texts.append(span_text)
                         continue
@@ -255,8 +269,7 @@ def _attach_table_children(
 
 
 @beartype
-def _extend_parent_bbox(parent: DocTag,
-                        child_bbox: Optional[BoundingBox]) -> None:
+def _extend_parent_bbox(parent: DocTag, child_bbox: Optional[BoundingBox]) -> None:
     if child_bbox is None:
         return
 
@@ -271,10 +284,8 @@ def _extend_parent_bbox(parent: DocTag,
 
     x0 = min(parent.bbox.x, child_bbox.x)
     y0 = min(parent.bbox.y, child_bbox.y)
-    x1 = max(parent.bbox.x + parent.bbox.width,
-             child_bbox.x + child_bbox.width)
-    y1 = max(parent.bbox.y + parent.bbox.height,
-             child_bbox.y + child_bbox.height)
+    x1 = max(parent.bbox.x + parent.bbox.width, child_bbox.x + child_bbox.width)
+    y1 = max(parent.bbox.y + parent.bbox.height, child_bbox.y + child_bbox.height)
 
     parent.bbox = BoundingBox(
         x=x0,
@@ -455,29 +466,35 @@ def _infer_tag_name_from_page_box(box: dict, page_text: str) -> str:
 
 @beartype
 def _extract_page_dimensions(
-        page_chunk: dict) -> tuple[Optional[float], Optional[float]]:
+    page_chunk: dict,
+) -> tuple[Optional[float], Optional[float]]:
     width = page_chunk.get("width")
     height = page_chunk.get("height")
 
-    if isinstance(width, (int, float)) and isinstance(
-            height, (int, float)) and width > 0 and height > 0:
+    if (
+        isinstance(width, (int, float))
+        and isinstance(height, (int, float))
+        and width > 0
+        and height > 0
+    ):
         return float(width), float(height)
 
     metadata = page_chunk.get("metadata", {})
     if isinstance(metadata, dict):
         width = metadata.get("width")
         height = metadata.get("height")
-        if isinstance(width, (int, float)) and isinstance(
-                height, (int, float)) and width > 0 and height > 0:
+        if (
+            isinstance(width, (int, float))
+            and isinstance(height, (int, float))
+            and width > 0
+            and height > 0
+        ):
             return float(width), float(height)
 
-    file_path = metadata.get("file_path") if isinstance(metadata,
-                                                        dict) else None
-    page_number = metadata.get("page_number") if isinstance(metadata,
-                                                            dict) else None
+    file_path = metadata.get("file_path") if isinstance(metadata, dict) else None
+    page_number = metadata.get("page_number") if isinstance(metadata, dict) else None
 
-    if isinstance(file_path, str) and isinstance(page_number,
-                                                 int) and page_number > 0:
+    if isinstance(file_path, str) and isinstance(page_number, int) and page_number > 0:
         with fitz.open(file_path) as pdf:
             page = pdf[page_number - 1]
             rect = page.rect
@@ -487,8 +504,9 @@ def _extract_page_dimensions(
 
 
 @beartype
-def _populate_tags_from_page_chunk(root_tag: DocTag, page_chunk: dict,
-                                   page_num: int) -> None:
+def _populate_tags_from_page_chunk(
+    root_tag: DocTag, page_chunk: dict, page_num: int
+) -> None:
     tag_counter = 1
     page_width, page_height = _extract_page_dimensions(page_chunk)
 
@@ -608,12 +626,14 @@ def _populate_tags_from_page_chunk(root_tag: DocTag, page_chunk: dict,
                 tag_name="text",
                 text=text,
                 bbox=None,
-            ))
+            )
+        )
 
 
 @beartype
-def extract_native_page_structure(pdf_path: Path,
-                                  page_num: int) -> tuple[str, List[DocTag]]:
+def extract_native_page_structure(
+    pdf_path: Path, page_num: int
+) -> tuple[str, List[DocTag]]:
     """
     Extract structured document data from a native PDF page using pymupdf4llm
     page chunk output, and convert it into a granular DocTag tree.
@@ -638,7 +658,12 @@ def extract_native_page_structure(pdf_path: Path,
 
 
 @beartype
-def process_pdf(pdf_path: Path, output_dir: Path, pages: Optional[str] = None):
+def process_pdf(
+    pdf_path: Path,
+    output_dir: Path,
+    pages: Optional[str] = None,
+    ocr_only: bool = False,
+):
     """Processes a single PDF file and saves per-page JSON dumps in the output directory."""
     if not pdf_path.exists():
         logger.error(f"Input file not found: {pdf_path}")
@@ -657,7 +682,7 @@ def process_pdf(pdf_path: Path, output_dir: Path, pages: Optional[str] = None):
 
     first_page, last_page = 1, max_pages
     if pages:
-        parts = pages.split('-')
+        parts = pages.split("-")
         first_page = max(1, int(parts[0]))
         if len(parts) > 1:
             last_page = min(max_pages, int(parts[1]))
@@ -671,9 +696,9 @@ def process_pdf(pdf_path: Path, output_dir: Path, pages: Optional[str] = None):
 
     # 2. Convert PDF to images
     logger.info("Rasterizing PDF pages to images...")
-    all_pages = convert_from_path(str(pdf_path),
-                                  first_page=first_page,
-                                  last_page=last_page)
+    all_pages = convert_from_path(
+        str(pdf_path), first_page=first_page, last_page=last_page
+    )
 
     start_time = time.perf_counter()
 
@@ -699,24 +724,22 @@ def process_pdf(pdf_path: Path, output_dir: Path, pages: Optional[str] = None):
 
         try:
             with fitz.open(str(pdf_path)) as pdf:
-
                 if json_output_file.exists():
                     logger.info(
                         f"{stats_header} | Page {current_page_num}: Using cached OCR dump (re-creating spatial tags)"
                     )
-                    with open(json_output_file, 'r') as f:
+                    with open(json_output_file, "r") as f:
                         page_data_json = json.load(f)
-                        clean_text = page_data_json.get(
-                            "raw_docling_response", "")
-                    spatial_tags = parse_spatial_tags(clean_text,
-                                                      current_page_num)
-                                                      
-                elif page_has_selectable_text(pdf, current_page_num):
+                        clean_text = page_data_json.get("raw_docling_response", "")
+                    spatial_tags = parse_spatial_tags(clean_text, current_page_num)
+
+                elif not ocr_only and page_has_selectable_text(pdf, current_page_num):
                     logger.info(
                         f"{stats_header} | Page {current_page_num}: Native text detected, extracting structure with pymupdf4llm"
                     )
                     clean_text, spatial_tags = extract_native_page_structure(
-                        pdf_path, current_page_num)
+                        pdf_path, current_page_num
+                    )
 
                 else:
                     logger.info(
@@ -727,16 +750,16 @@ def process_pdf(pdf_path: Path, output_dir: Path, pages: Optional[str] = None):
                     clean_text = response_text.strip()
                     if not clean_text.startswith("<doctag>"):
                         clean_text = f"<doctag>{clean_text}</doctag>"
-                    spatial_tags = parse_spatial_tags(clean_text,
-                                                      current_page_num)
+                    spatial_tags = parse_spatial_tags(clean_text, current_page_num)
 
-            page_data = PageData(page_number=current_page_num,
-                                 raw_docling_response=clean_text,
-                                 spatial_tags=spatial_tags,
-                                 image_cache_path=str(
-                                     image_cache_file.absolute()))
+            page_data = PageData(
+                page_number=current_page_num,
+                raw_docling_response=clean_text,
+                spatial_tags=spatial_tags,
+                image_cache_path=str(image_cache_file.absolute()),
+            )
 
-            with open(json_output_file, 'w') as f:
+            with open(json_output_file, "w") as f:
                 f.write(page_data.model_dump_json(indent=2))
 
         except Exception as e:
@@ -748,8 +771,16 @@ def run_headless_pipeline(config: AppConfig):
     """Entry point for the headless OCR pipeline."""
     for input_path in config.input_dirs:
         input_path = Path(input_path)
-        if input_path.is_file() and input_path.suffix.lower() == '.pdf':
-            process_pdf(input_path, config.output_dir)
+        if input_path.is_file() and input_path.suffix.lower() == ".pdf":
+            ocr_only = (
+                str(input_path.absolute()) in config.ocr_only_files
+                or str(input_path) in config.ocr_only_files
+            )
+            process_pdf(input_path, config.output_dir, ocr_only=ocr_only)
         elif input_path.is_dir():
-            for pdf_file in input_path.rglob('*.pdf'):
-                process_pdf(pdf_file, config.output_dir)
+            for pdf_file in input_path.rglob("*.pdf"):
+                ocr_only = (
+                    str(pdf_file.absolute()) in config.ocr_only_files
+                    or str(pdf_file) in config.ocr_only_files
+                )
+                process_pdf(pdf_file, config.output_dir, ocr_only=ocr_only)
