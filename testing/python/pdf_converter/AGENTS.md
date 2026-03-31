@@ -156,6 +156,6 @@ Output your findings as a strict JSON list of objects: [{"issue_type": "spelling
 - [x] **7. Implement Center Panel (Single View)**: Add PDF page rendering (`QGraphicsPixmapItem`), `<`/`>` navigation, and doctag bounding box overlays (`QGraphicsRectItem`).
 - [x] **8. Implement Center Panel (Overlay View)**: Load page into `QImage` and mask out white pixels to make them transparent. Stack multiple images using `QGraphicsPixmapItem` transparency. Add page range slider and multi-tag overlay rendering.
 - [x] **9. Implement Interaction**: Configure `QGraphicsScene` to handle click/drag selection (using `QGraphicsView.RubberBandDrag`). Add context actions to toggle `user_removed` (visually graying out or reddening the tags).
-- [ ] **10. Implement Right Panel (HTML)**: Add HTML preview widget (`QTextBrowser`) and an "Update" HTML generation button.
+- [x] **10. Implement Right Panel (HTML)**: Add HTML preview widget (`QTextBrowser`) and an "Update" HTML generation button.
 - [ ] **11. Implement LLM Integration**: Add llama.cpp prompts (qwen 3.5) for paragraph merging and issue flagging. Include a mechanical fallback that skips the LLM if disabled.
 - [ ] **12. Wire application state**: Connect GUI annotations to persistent JSON data, ensuring UI updates trigger file saves and HTML rebuilds.

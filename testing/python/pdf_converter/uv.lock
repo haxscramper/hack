@@ -3158,6 +3158,7 @@ dependencies = [
     { name = "fichub-cli" },
     { name = "pdf2image" },
     { name = "pyside6" },
+    { name = "requests" },
     { name = "xdg-base-dirs" },
 ]
 
@@ -3168,6 +3169,7 @@ requires-dist = [
     { name = "fichub-cli", specifier = ">=0.10.3" },
     { name = "pdf2image", specifier = ">=1.17.0" },
     { name = "pyside6", specifier = ">=6.11.0" },
+    { name = "requests", specifier = ">=2.33.0" },
     { name = "xdg-base-dirs", specifier = ">=6.0.2" },
 ]
 
