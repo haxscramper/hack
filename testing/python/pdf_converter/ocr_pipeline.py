@@ -5,7 +5,8 @@ import logging
 import hashlib
 import time
 from pathlib import Path
-from typing import List, Optional
+from beartype.typing import List, Optional
+from beartype import beartype
 from datetime import timedelta
 
 import requests
@@ -25,6 +26,7 @@ MODEL_NAME = "ibm/granite-docling"  # Name as it appears in 'ollama list'
 logger = logging.getLogger(__name__)
 
 
+@beartype
 def get_cache_path(pdf_path: Path, page_num: int) -> Path:
     """Generates an XDG-compliant cache path for the specific page image."""
     cache_dir = xdg_cache_home() / "docling-vlm-cache" / "images"
@@ -37,11 +39,13 @@ def get_cache_path(pdf_path: Path, page_num: int) -> Path:
     return cache_dir / f"{file_prefix}_{name_hash}_{page_num}.png"
 
 
+@beartype
 def format_eta(seconds: float) -> str:
     if seconds < 0: return "00:00:00"
     return str(timedelta(seconds=int(seconds)))
 
 
+@beartype
 def call_ollama_vlm(image: PILImage.Image) -> str:
     """Sends image to Ollama API and returns the response text."""
     buffered = io.BytesIO()
@@ -74,6 +78,7 @@ from docling_core.types.doc.document import DocTagsDocument, DocTagsPage, Doclin
 from models import BoundingBox
 
 
+@beartype
 def parse_spatial_tags(raw_xml: str, page_num: int) -> List[DocTag]:
     """
     Parses the raw XML from Ollama/Docling using docling_core 
@@ -114,6 +119,7 @@ def parse_spatial_tags(raw_xml: str, page_num: int) -> List[DocTag]:
     return [root_tag]
 
 
+@beartype
 def page_has_selectable_text(pdf: pdfplumber.PDF, page_num: int) -> bool:
     """Check if a given page (1-indexed) has selectable text."""
     page = pdf.pages[page_num - 1]
@@ -122,10 +128,11 @@ def page_has_selectable_text(pdf: pdfplumber.PDF, page_num: int) -> bool:
         # Heuristic: if we get at least some meaningful characters, it's selectable
         non_whitespace = len(text.strip())
         return non_whitespace > 20
-        
+
     return False
 
 
+@beartype
 def extract_native_page_structure(pdf: pdfplumber.PDF,
                                   page_num: int) -> List[DocTag]:
     """
@@ -225,6 +232,7 @@ def extract_native_page_structure(pdf: pdfplumber.PDF,
     return [root_tag]
 
 
+@beartype
 def _merge_line_words(words: List[dict]) -> dict:
     """Merge a list of words on the same line into a single line dict."""
     words_sorted = sorted(words, key=lambda w: float(w["x0"]))
@@ -252,6 +260,7 @@ def _merge_line_words(words: List[dict]) -> dict:
     }
 
 
+@beartype
 def _classify_line(line: dict, page_width: float, page_height: float) -> dict:
     """Classify a line into a tag type based on heuristics."""
     text = line["text"].strip()
@@ -282,6 +291,7 @@ def _classify_line(line: dict, page_width: float, page_height: float) -> dict:
     return line
 
 
+@beartype
 def _is_numbered_list_item(text: str) -> bool:
     """Check if text starts with a numbered list pattern like '1.' or '(a)'."""
     import re
@@ -290,6 +300,7 @@ def _is_numbered_list_item(text: str) -> bool:
                  text))
 
 
+@beartype
 def _looks_like_formula(text: str) -> bool:
     """Heuristic: high ratio of math-related characters."""
     if len(text) < 3:
@@ -299,6 +310,7 @@ def _looks_like_formula(text: str) -> bool:
     return count / len(text) > 0.3
 
 
+@beartype
 def _group_lines_into_blocks(classified_lines: List[dict]) -> List[dict]:
     """Group consecutive lines of the same tag type into blocks."""
     if not classified_lines:
@@ -348,6 +360,7 @@ def _group_lines_into_blocks(classified_lines: List[dict]) -> List[dict]:
     return final_blocks
 
 
+@beartype
 def process_pdf(pdf_path: Path, output_dir: Path, pages: Optional[str] = None):
     """Processes a single PDF file and saves per-page JSON dumps in the output directory."""
     if not pdf_path.exists():
@@ -417,7 +430,7 @@ def process_pdf(pdf_path: Path, output_dir: Path, pages: Optional[str] = None):
                     page_data_json = json.load(f)
                     clean_text = page_data_json.get("raw_docling_response", "")
                 spatial_tags = parse_spatial_tags(clean_text, current_page_num)
-            elif page_has_selectable_text(pdf_path, current_page_num):
+            elif page_has_selectable_text(pdf, current_page_num):
                 logger.info(
                     f"{stats_header} | Page {current_page_num}: Native text detected, extracting structure directly"
                 )
@@ -449,6 +462,7 @@ def process_pdf(pdf_path: Path, output_dir: Path, pages: Optional[str] = None):
             logger.error(f"Error processing page {current_page_num}: {e}")
 
 
+@beartype
 def run_headless_pipeline(config: AppConfig):
     """Entry point for the headless OCR pipeline."""
     for input_path in config.input_dirs:
