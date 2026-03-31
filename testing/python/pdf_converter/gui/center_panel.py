@@ -26,6 +26,14 @@ TAG_COLORS = {
 
 USER_REMOVED_COLOR = QColor(128, 128, 128, 150)
 
+class CustomGraphicsView(QGraphicsView):
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.RightButton:
+            # Don't let QGraphicsView handle right click to prevent selection clearing
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
 class CenterPanel(QWidget):
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -33,7 +41,7 @@ class CenterPanel(QWidget):
         
         # Graphics View for displaying the page and bounding boxes
         self.scene = QGraphicsScene(self)
-        self.view = QGraphicsView(self.scene, self)
+        self.view = CustomGraphicsView(self.scene, self)
         self.view.setDragMode(QGraphicsView.DragMode.RubberBandDrag)
         self.view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.view.customContextMenuRequested.connect(self.on_context_menu)
