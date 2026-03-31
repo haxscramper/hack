@@ -50,7 +50,12 @@ class MainWindow(QMainWindow):
         if hasattr(self.center_panel, 'get_all_pages_data'):
             pages = self.center_panel.get_all_pages_data()
             if pages:
-                self.right_panel.generate_html(pages)
+                import os
+                output_epub_path = None
+                if hasattr(self, 'current_pdf_path') and self.config:
+                    base_name = os.path.splitext(os.path.basename(self.current_pdf_path))[0]
+                    output_epub_path = os.path.join(self.config.output_dir, f"{base_name}.epub")
+                self.right_panel.generate_html(pages, output_epub_path)
             else:
                 logging.warning("MainWindow: No pages data found for HTML generation.")
 
@@ -59,6 +64,7 @@ class MainWindow(QMainWindow):
             # Get the actual index from the proxy model
             source_index = self.left_panel.proxy_model.mapToSource(current)
             file_path = self.left_panel.model.pdf_files[source_index.row()]
+            self.current_pdf_path = file_path
             logging.info(f"MainWindow: User selected PDF: {file_path}")
             if self.config:
                 self.center_panel.load_pdf(file_path, self.config.output_dir)

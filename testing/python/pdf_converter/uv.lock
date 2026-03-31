@@ -453,6 +453,19 @@ wheels = [
 ]
 
 [[package]]
+name = "ebooklib"
+version = "0.20"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "lxml" },
+    { name = "six" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/77/85/322e8882a582d4b707220d1929cfb74c125f2ba513991edbce40dbc462de/ebooklib-0.20.tar.gz", hash = "sha256:35e2f9d7d39907be8d39ae2deb261b19848945903ae3dbb6577b187ead69e985", size = 127066, upload-time = "2025-10-26T20:56:20.968Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/bf/ee/aa015c5de8b0dc42a8e507eae8c2de5d1c0e068c896858fec6d502402ed6/ebooklib-0.20-py3-none-any.whl", hash = "sha256:fff5322517a37e31c972d27be7d982cc3928c16b3dcc5fd7e8f7c0f5d7bcf42b", size = 40995, upload-time = "2025-10-26T20:56:19.104Z" },
+]
+
+[[package]]
 name = "et-xmlfile"
 version = "2.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -3155,6 +3168,7 @@ source = { virtual = "." }
 dependencies = [
     { name = "click" },
     { name = "docling" },
+    { name = "ebooklib" },
     { name = "fichub-cli" },
     { name = "pdf2image" },
     { name = "pyside6" },
@@ -3166,6 +3180,7 @@ dependencies = [
 requires-dist = [
     { name = "click", specifier = ">=8.3.1" },
     { name = "docling", specifier = ">=2.81.0" },
+    { name = "ebooklib", specifier = ">=0.20" },
     { name = "fichub-cli", specifier = ">=0.10.3" },
     { name = "pdf2image", specifier = ">=1.17.0" },
     { name = "pyside6", specifier = ">=6.11.0" },
