@@ -124,9 +124,14 @@ class CenterPanel(QWidget):
         if image.isNull(): return QPixmap()
         
         from PySide6.QtGui import QBitmap
+        image = image.convertToFormat(QImage.Format.Format_Mono)
         image = image.convertToFormat(QImage.Format.Format_ARGB32)
         mask = image.createMaskFromColor(QColor(255, 255, 255).rgb(), Qt.MaskMode.MaskOutColor)
-        pixmap = QPixmap.fromImage(image)
+        
+        black_image = QImage(image.size(), QImage.Format.Format_ARGB32)
+        black_image.fill(QColor(0, 0, 0, 80)) # Semi-transparent black
+        
+        pixmap = QPixmap.fromImage(black_image)
         pixmap.setMask(QBitmap.fromImage(mask))
         return pixmap
 
@@ -152,6 +157,7 @@ class CenterPanel(QWidget):
                         pixmap = self._create_transparent_pixmap(p_data.image_cache_path)
                         if not pixmap.isNull():
                             pixmap_item = QGraphicsPixmapItem(pixmap)
+                            pixmap_item.setZValue(-1)
                             self.scene.addItem(pixmap_item)
                             
                             if first_pixmap is None:
