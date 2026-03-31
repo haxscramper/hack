@@ -8,6 +8,7 @@ from PySide6.QtGui import QPixmap, QPen, QColor, QBrush, QImage
 from PySide6.QtCore import Qt, QRectF
 
 from models import DocTag, PageData
+from gui.range_slider import RangeSlider
 
 class CenterPanel(QWidget):
     def __init__(self, parent: Optional[QWidget] = None) -> None:
@@ -54,18 +55,13 @@ class CenterPanel(QWidget):
         overlay_layout = QHBoxLayout(self.overlay_widget)
         overlay_layout.setContentsMargins(0, 0, 0, 0)
         
-        self.slider_start = QSlider(Qt.Orientation.Horizontal, self)
-        self.slider_start.valueChanged.connect(self.on_overlay_changed)
-        
-        self.slider_end = QSlider(Qt.Orientation.Horizontal, self)
-        self.slider_end.valueChanged.connect(self.on_overlay_changed)
+        self.slider = RangeSlider(self)
+        self.slider.rangeChanged.connect(self.on_overlay_changed)
         
         self.lbl_overlay_range = QLabel("Range: 1 - 1", self)
         
-        overlay_layout.addWidget(QLabel("Start:", self))
-        overlay_layout.addWidget(self.slider_start)
-        overlay_layout.addWidget(QLabel("End:", self))
-        overlay_layout.addWidget(self.slider_end)
+        overlay_layout.addWidget(QLabel("Pages to overlay:", self))
+        overlay_layout.addWidget(self.slider)
         overlay_layout.addWidget(self.lbl_overlay_range)
         layout.addWidget(self.overlay_widget)
         self.overlay_widget.hide()
@@ -87,12 +83,13 @@ class CenterPanel(QWidget):
         self.overlay_widget.setVisible(self.overlay_mode)
         self.load_page_data()
 
-    def on_overlay_changed(self) -> None:
-        start = self.slider_start.value()
-        end = self.slider_end.value()
-        
-        if start > end:
-            start, end = end, start
+    def on_overlay_changed(self, lower: int = -1, upper: int = -1) -> None:
+        if lower == -1 or upper == -1:
+            start = self.slider.lowerValue()
+            end = self.slider.upperValue()
+        else:
+            start = lower
+            end = upper
             
         self.lbl_overlay_range.setText(f"Range: {start} - {end}")
         
@@ -145,32 +142,55 @@ class CenterPanel(QWidget):
         if self.pdf_output_dir.exists():
             total = len(list(self.pdf_output_dir.glob("page_*.json")))
         if total > 0:
-            self.slider_start.setMinimum(1)
-            self.slider_start.setMaximum(total)
-            self.slider_start.setValue(1)
-            
-            self.slider_end.setMinimum(1)
-            self.slider_end.setMaximum(total)
-            self.slider_end.setValue(min(3, total))
+            self.slider.setRange(1, total)
+            self.slider.setLowerValue(1)
+            self.slider.setUpperValue(min(3, total))
             
         self.load_page_data()
         
     def _create_transparent_pixmap(self, image_path: str) -> QPixmap:
-        image = QImage(image_path)
-        if image.isNull(): return QPixmap()
-        
-        from PySide6.QtGui import QBitmap
-        image = image.convertToFormat(QImage.Format.Format_Mono)
-        image = image.convertToFormat(QImage.Format.Format_ARGB32)
-        mask = image.createMaskFromColor(QColor(255, 255, 255).rgb(), Qt.MaskMode.MaskOutColor)
-        
-        black_image = QImage(image.size(), QImage.Format.Format_ARGB32)
-        black_image.fill(QColor(0, 0, 0, 80)) # Semi-transparent black
-        
-        pixmap = QPixmap.fromImage(black_image)
-        pixmap.setMask(QBitmap.fromImage(mask))
-        return pixmap
+        import numpy as np
+        from PySide6.QtCore import Qt
+        from PySide6.QtGui import QColor, QImage, QPainter, QPixmap
 
+        image = QImage(image_path).convertToFormat(QImage.Format.Format_RGBA8888)
+
+        width = image.width()
+        height = image.height()
+        ptr = image.bits()
+        array = np.frombuffer(ptr, dtype=np.uint8).reshape((height, width, 4))
+
+        rgb = array[:, :, :3].astype(np.float32)
+        gray = 0.299 * rgb[:, :, 0] + 0.587 * rgb[:, :, 1] + 0.114 * rgb[:, :, 2]
+
+        contrast = 2.5
+        contrasted = (gray - 128.0) * contrast + 128.0
+        contrasted = np.clip(contrasted, 0, 255).astype(np.uint8)
+
+        alpha = (255 - contrasted).astype(np.uint8)
+
+        mask_data = np.zeros((height, width, 4), dtype=np.uint8)
+        mask_data[:, :, 3] = alpha
+
+        mask = QImage(
+            mask_data.data,
+            width,
+            height,
+            width * 4,
+            QImage.Format.Format_RGBA8888,
+        ).copy()
+
+        result = QPixmap(width, height)
+        result.fill(Qt.GlobalColor.transparent)
+
+        painter = QPainter(result)
+        painter.fillRect(result.rect(), QColor(0, 0, 0))
+        painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationIn)
+        painter.drawImage(0, 0, mask)
+        painter.end()
+
+        return result
+        
     def pre_load_overlays(self) -> None:
         self.scene.clear()
         self.overlay_items = []
@@ -221,6 +241,7 @@ class CenterPanel(QWidget):
                 self.on_overlay_changed()
         else:
             self.scene.clear()
+            self.overlay_items = []
             self.page_input.setText(str(self.current_page_idx))
             json_path = self.pdf_output_dir / f"page_{self.current_page_idx:03d}.json"
             
