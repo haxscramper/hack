@@ -24,6 +24,8 @@ TAG_COLORS = {
     "unspecified": QColor(150, 150, 150, 150)
 }
 
+USER_REMOVED_COLOR = QColor(128, 128, 128, 150)
+
 class CenterPanel(QWidget):
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -137,17 +139,68 @@ class CenterPanel(QWidget):
             self.page_input.setText(str(self.current_page_idx))
 
     def on_context_menu(self, pos) -> None:
-        from PySide6.QtWidgets import QMenu
+        from PySide6.QtWidgets import QMenu, QInputDialog
+        item = self.view.itemAt(pos)
         selected_items = self.scene.selectedItems()
+        if not selected_items and item:
+            item.setSelected(True)
+            selected_items = [item]
+
         if not selected_items:
             return
             
         menu = QMenu(self)
         toggle_action = menu.addAction("Toggle Removed Status")
+        edit_text_action = menu.addAction("Edit Text")
+        change_tag_action = menu.addAction("Change Tag")
         
         action = menu.exec(self.view.viewport().mapToGlobal(pos))
         if action == toggle_action:
             self.toggle_selected_items(selected_items)
+        elif action == edit_text_action:
+            first_item = next((item for item in selected_items if isinstance(item, QGraphicsRectItem)), None)
+            if first_item:
+                tag = first_item.data(Qt.ItemDataRole.UserRole)
+                if tag:
+                    current_text = tag.user_edited_text if getattr(tag, 'user_edited_text', None) is not None else tag.text
+                    new_text, ok = QInputDialog.getText(self, "Edit Text", "Text:", QLineEdit.EchoMode.Normal, current_text or "")
+                    if ok:
+                        self.edit_text_selected_items(selected_items, new_text)
+        elif action == change_tag_action:
+            tags = ["h1", "h2", "h3", "p", "table", "list", "picture", "footnote", "formula"]
+            first_item = next((item for item in selected_items if isinstance(item, QGraphicsRectItem)), None)
+            current_tag = ""
+            if first_item:
+                tag = first_item.data(Qt.ItemDataRole.UserRole)
+                if tag:
+                    current_tag = tag.user_tag_override if getattr(tag, 'user_tag_override', None) else tag.tag_name
+
+            current_idx = tags.index(current_tag) if current_tag in tags else 0
+            new_tag, ok = QInputDialog.getItem(self, "Change Tag", "Tag:", tags, current_idx, True)
+            if ok and new_tag:
+                self.change_tag_selected_items(selected_items, new_tag)
+
+    def edit_text_selected_items(self, items: List[QGraphicsItem], new_text: str) -> None:
+        modified_pages = set()
+        for item in items:
+            if isinstance(item, QGraphicsRectItem):
+                tag = item.data(Qt.ItemDataRole.UserRole)
+                page_meta = item.data(Qt.ItemDataRole.UserRole + 1)
+                if tag and page_meta:
+                    tag.user_edited_text = new_text
+                    modified_pages.add(page_meta)
+        self.save_modified_pages(modified_pages)
+
+    def change_tag_selected_items(self, items: List[QGraphicsItem], new_tag: str) -> None:
+        modified_pages = set()
+        for item in items:
+            if isinstance(item, QGraphicsRectItem):
+                tag = item.data(Qt.ItemDataRole.UserRole)
+                page_meta = item.data(Qt.ItemDataRole.UserRole + 1)
+                if tag and page_meta:
+                    tag.user_tag_override = new_tag
+                    modified_pages.add(page_meta)
+        self.save_modified_pages(modified_pages)
 
     def toggle_selected_items(self, items: List[QGraphicsItem]) -> None:
         modified_pages = set()
@@ -160,12 +213,17 @@ class CenterPanel(QWidget):
                 if tag and page_meta:
                     tag.user_removed = not getattr(tag, 'user_removed', False)
                     if tag.user_removed:
-                        item.setBrush(QBrush(QColor(100, 100, 100, 100)))
+                        brush = QBrush(USER_REMOVED_COLOR)
+                        brush.setStyle(Qt.BrushStyle.BDiagPattern)
+                        item.setBrush(brush)
                     else:
                         item.setBrush(QBrush(Qt.BrushStyle.NoBrush))
                     
                     modified_pages.add(page_meta)
 
+        self.save_modified_pages(modified_pages)
+
+    def save_modified_pages(self, modified_pages: set) -> None:
         for page_data, json_path in modified_pages:
             try:
                 with open(json_path, 'w') as f:
@@ -323,6 +381,11 @@ class CenterPanel(QWidget):
             self.scene.setSceneRect(pixmap_item.boundingRect())
             self.view.fitInView(self.scene.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
 
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        if not self.scene.sceneRect().isEmpty():
+            self.view.fitInView(self.scene.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
+
     def draw_spatial_tags(self, spatial_tags: List[DocTag], p_width: float, p_height: float, page_data: Optional[PageData], json_path: Path) -> List[QGraphicsRectItem]:
         items: List[QGraphicsRectItem] = []
         def draw_tags(tags: List[DocTag]) -> None:
@@ -341,7 +404,9 @@ class CenterPanel(QWidget):
                     rect_item.setPen(pen)
                     
                     if getattr(tag, 'user_removed', False):
-                        rect_item.setBrush(QBrush(QColor(100, 100, 100, 100)))
+                        brush = QBrush(USER_REMOVED_COLOR)
+                        brush.setStyle(Qt.BrushStyle.BDiagPattern)
+                        rect_item.setBrush(brush)
                     
                     rect_item.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, True)
                     rect_item.setData(Qt.ItemDataRole.UserRole, tag)
