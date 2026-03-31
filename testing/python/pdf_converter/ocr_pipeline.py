@@ -137,7 +137,6 @@ def page_has_selectable_text(pdf: fitz.Document, page_num: int) -> bool:
     """Check if a given page (1-indexed) has selectable text."""
     page = pdf[page_num - 1]
     text = page.get_text("text")
-    logging.info(f"Found selectable text on page {page_num}: {text}")
     return len(text.strip()) > 20
 
 
@@ -703,6 +702,7 @@ def process_pdf(
     start_time = time.perf_counter()
 
     # 3. Processing Loop
+    pdf = fitz.open(str(pdf_path))
     for i, page_img in enumerate(all_pages):
         current_page_idx = i + 1
         current_page_num = first_page + i
@@ -723,34 +723,30 @@ def process_pdf(
         stats_header = f"[{current_page_idx}/{total_to_convert}] PPS: {pps:.2f} | ETA: {format_eta(eta_seconds)}"
 
         try:
-            with fitz.open(str(pdf_path)) as pdf:
-                if json_output_file.exists():
-                    logger.info(
-                        f"{stats_header} | Page {current_page_num}: Using cached OCR dump (re-creating spatial tags)"
-                    )
-                    with open(json_output_file, "r") as f:
-                        page_data_json = json.load(f)
-                        clean_text = page_data_json.get("raw_docling_response", "")
-                    spatial_tags = parse_spatial_tags(clean_text, current_page_num)
+            if json_output_file.exists():
+                logger.info(
+                    f"{stats_header} | Page {current_page_num}: Using cached OCR dump"
+                )
+                continue
 
-                elif not ocr_only and page_has_selectable_text(pdf, current_page_num):
-                    logger.info(
-                        f"{stats_header} | Page {current_page_num}: Native text detected, extracting structure with pymupdf4llm"
-                    )
-                    clean_text, spatial_tags = extract_native_page_structure(
-                        pdf_path, current_page_num
-                    )
+            elif not ocr_only and page_has_selectable_text(pdf, current_page_num):
+                logger.info(
+                    f"{stats_header} | Page {current_page_num}: Native text detected, extracting structure with pymupdf4llm"
+                )
+                clean_text, spatial_tags = extract_native_page_structure(
+                    pdf_path, current_page_num
+                )
 
-                else:
-                    logger.info(
-                        f"{stats_header} | Page {current_page_num}: Requesting VLM"
-                    )
-                    response_text = call_ollama_vlm(page_img)
+            else:
+                logger.info(
+                    f"{stats_header} | Page {current_page_num}: Requesting VLM"
+                )
+                response_text = call_ollama_vlm(page_img)
 
-                    clean_text = response_text.strip()
-                    if not clean_text.startswith("<doctag>"):
-                        clean_text = f"<doctag>{clean_text}</doctag>"
-                    spatial_tags = parse_spatial_tags(clean_text, current_page_num)
+                clean_text = response_text.strip()
+                if not clean_text.startswith("<doctag>"):
+                    clean_text = f"<doctag>{clean_text}</doctag>"
+                spatial_tags = parse_spatial_tags(clean_text, current_page_num)
 
             page_data = PageData(
                 page_number=current_page_num,
