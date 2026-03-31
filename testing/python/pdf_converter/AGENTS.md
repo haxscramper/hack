@@ -154,7 +154,7 @@ Output your findings as a strict JSON list of objects: [{"issue_type": "spelling
 - [x] **5. Setup PySide6 GUI**: Create main window with 3-column layout (Left: Files, Center: Preview, Right: HTML).
 - [x] **6. Implement Left Panel**: Build file list/grid model using `QAbstractListModel`. Thumbnails are generated via `pdf2image` and saved to `xdg_cache_home()`. Add search filtering and green completion status highlights.
 - [x] **7. Implement Center Panel (Single View)**: Add PDF page rendering (`QGraphicsPixmapItem`), `<`/`>` navigation, and doctag bounding box overlays (`QGraphicsRectItem`).
-- [ ] **8. Implement Center Panel (Overlay View)**: Load page into `QImage` and mask out white pixels to make them transparent. Stack multiple images using `QGraphicsPixmapItem` transparency. Add page range slider and multi-tag overlay rendering.
+- [x] **8. Implement Center Panel (Overlay View)**: Load page into `QImage` and mask out white pixels to make them transparent. Stack multiple images using `QGraphicsPixmapItem` transparency. Add page range slider and multi-tag overlay rendering.
 - [ ] **9. Implement Interaction**: Configure `QGraphicsScene` to handle click/drag selection (using `QGraphicsView.RubberBandDrag`). Add context actions to toggle `user_removed` (visually graying out or reddening the tags).
 - [ ] **10. Implement Right Panel (HTML)**: Add HTML preview widget (`QTextBrowser`) and an "Update" HTML generation button.
 - [ ] **11. Implement LLM Integration**: Add llama.cpp prompts (qwen 3.5) for paragraph merging and issue flagging. Include a mechanical fallback that skips the LLM if disabled.

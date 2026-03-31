@@ -1,5 +1,7 @@
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QGraphicsView, QGraphicsScene, QGraphicsPixmapItem, QGraphicsRectItem, QGraphicsItem
-from PySide6.QtGui import QPixmap, QPen, QColor, QBrush
+import json
+from pathlib import Path
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QGraphicsView, QGraphicsScene, QGraphicsPixmapItem, QGraphicsRectItem, QGraphicsItem, QCheckBox, QSlider, QLabel, QLineEdit
+from PySide6.QtGui import QPixmap, QPen, QColor, QBrush, QImage
 from PySide6.QtCore import Qt, QRectF
 
 class CenterPanel(QWidget):
@@ -13,11 +15,20 @@ class CenterPanel(QWidget):
         self.view.setDragMode(QGraphicsView.DragMode.RubberBandDrag)
         layout.addWidget(self.view)
         
-        # Navigation Controls
-        nav_layout = QHBoxLayout()
+        # Top Controls (Mode toggle)
+        top_layout = QHBoxLayout()
+        self.cb_overlay = QCheckBox("Overlay Mode", self)
+        self.cb_overlay.stateChanged.connect(self.on_mode_changed)
+        top_layout.addWidget(self.cb_overlay)
+        top_layout.addStretch()
+        layout.addLayout(top_layout)
+
+        # Navigation Controls (Single Mode)
+        self.nav_widget = QWidget(self)
+        nav_layout = QHBoxLayout(self.nav_widget)
+        nav_layout.setContentsMargins(0, 0, 0, 0)
         self.btn_prev = QPushButton("< Prev", self)
         
-        from PySide6.QtWidgets import QLineEdit
         self.page_input = QLineEdit(self)
         self.page_input.setFixedWidth(50)
         self.page_input.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -31,16 +42,48 @@ class CenterPanel(QWidget):
         nav_layout.addWidget(self.btn_next)
         nav_layout.addStretch()
         
-        layout.addLayout(nav_layout)
+        layout.addWidget(self.nav_widget)
+        
+        # Overlay Controls (Overlay Mode)
+        self.overlay_widget = QWidget(self)
+        overlay_layout = QHBoxLayout(self.overlay_widget)
+        overlay_layout.setContentsMargins(0, 0, 0, 0)
+        
+        self.slider = QSlider(Qt.Orientation.Horizontal, self)
+        self.slider.setMinimum(1)
+        self.slider.setMaximum(10)
+        self.slider.setValue(3)
+        self.slider.valueChanged.connect(self.on_overlay_changed)
+        
+        self.lbl_overlay_range = QLabel("Range: 3", self)
+        
+        overlay_layout.addWidget(QLabel("Pages to overlay:", self))
+        overlay_layout.addWidget(self.slider)
+        overlay_layout.addWidget(self.lbl_overlay_range)
+        layout.addWidget(self.overlay_widget)
+        self.overlay_widget.hide()
         
         # State variables
         self.current_page_idx = 0
         self.page_data = None
+        self.overlay_mode = False
         
-        # Signal connections (placeholders)
+        # Signal connections
         self.btn_prev.clicked.connect(self.load_prev)
         self.btn_next.clicked.connect(self.load_next)
         self.page_input.returnPressed.connect(self.on_page_input_changed)
+
+    def on_mode_changed(self, state):
+        self.overlay_mode = (state == Qt.CheckState.Checked.value or state == 2)
+        self.nav_widget.setVisible(not self.overlay_mode)
+        self.overlay_widget.setVisible(self.overlay_mode)
+        self.load_page_data()
+
+    def on_overlay_changed(self):
+        val = self.slider.value()
+        self.lbl_overlay_range.setText(f"Range: {val}")
+        if self.overlay_mode:
+            self.load_page_data()
 
     def on_page_input_changed(self):
         try:
@@ -62,75 +105,115 @@ class CenterPanel(QWidget):
             self.load_page_data()
 
     def load_pdf(self, pdf_path, output_dir):
-        from pathlib import Path
         self.current_pdf_path = Path(pdf_path)
         self.output_dir = Path(output_dir)
         self.pdf_output_dir = self.output_dir / self.current_pdf_path.stem
         self.current_page_idx = 1
+        
+        total = 0
+        if self.pdf_output_dir.exists():
+            total = len(list(self.pdf_output_dir.glob("page_*.json")))
+        if total > 0:
+            self.slider.setMaximum(total)
+            self.slider.setValue(min(3, total))
+            
         self.load_page_data()
         
+    def _create_transparent_pixmap(self, image_path):
+        image = QImage(image_path)
+        if image.isNull(): return QPixmap()
+        
+        from PySide6.QtGui import QBitmap
+        image = image.convertToFormat(QImage.Format.Format_ARGB32)
+        mask = image.createMaskFromColor(QColor(255, 255, 255).rgb(), Qt.MaskMode.MaskOutColor)
+        pixmap = QPixmap.fromImage(image)
+        pixmap.setMask(QBitmap.fromImage(mask))
+        return pixmap
+
     def load_page_data(self):
         if not hasattr(self, 'pdf_output_dir'): return
-        
-        self.page_input.setText(str(self.current_page_idx))
-        json_path = self.pdf_output_dir / f"page_{self.current_page_idx:03d}.json"
         self.scene.clear()
         
-        if json_path.exists():
-            import json
-            from models import PageData
-            try:
-                with open(json_path, 'r') as f:
-                    data = json.load(f)
-                    self.page_data = PageData(**data)
-                    self.load_page(self.page_data.image_cache_path, self.page_data.spatial_tags)
-            except Exception as e:
-                self.scene.addText(f"Failed to load page data:\n{e}")
+        from models import PageData
+        
+        if self.overlay_mode:
+            pages_to_load = self.slider.value()
+            first_pixmap = None
+            
+            for p_idx in range(1, pages_to_load + 1):
+                json_path = self.pdf_output_dir / f"page_{p_idx:03d}.json"
+                if not json_path.exists(): continue
+                
+                try:
+                    with open(json_path, 'r') as f:
+                        data = json.load(f)
+                        p_data = PageData(**data)
+                        
+                        pixmap = self._create_transparent_pixmap(p_data.image_cache_path)
+                        if not pixmap.isNull():
+                            pixmap_item = QGraphicsPixmapItem(pixmap)
+                            self.scene.addItem(pixmap_item)
+                            
+                            if first_pixmap is None:
+                                first_pixmap = pixmap
+                                
+                            self.draw_spatial_tags(p_data.spatial_tags, pixmap.width(), pixmap.height())
+                except Exception as e:
+                    print(f"Error loading overlay page {p_idx}: {e}")
+            
+            if first_pixmap:
+                rect = QRectF(0, 0, first_pixmap.width(), first_pixmap.height())
+                self.scene.setSceneRect(rect)
+                self.view.fitInView(self.scene.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
         else:
-            self.page_data = None
-            self.scene.addText(f"Page {self.current_page_idx} not processed yet.")
+            self.page_input.setText(str(self.current_page_idx))
+            json_path = self.pdf_output_dir / f"page_{self.current_page_idx:03d}.json"
+            
+            if json_path.exists():
+                try:
+                    with open(json_path, 'r') as f:
+                        data = json.load(f)
+                        self.page_data = PageData(**data)
+                        self.load_page(self.page_data.image_cache_path, self.page_data.spatial_tags)
+                except Exception as e:
+                    self.scene.addText(f"Failed to load page data:\n{e}")
+            else:
+                self.page_data = None
+                self.scene.addText(f"Page {self.current_page_idx} not processed yet.")
 
     def load_page(self, image_path, spatial_tags):
-        self.scene.clear()
-        
-        # Add Image
         pixmap = QPixmap(image_path)
         if not pixmap.isNull():
             pixmap_item = QGraphicsPixmapItem(pixmap)
             self.scene.addItem(pixmap_item)
-            
-            # Helper to recursively draw spatial tags bounding boxes
-            def draw_tags(tags):
-                for tag in tags:
-                    if tag.bbox:
-                        # In docling, bounding boxes might be normalized or pixel values.
-                        # Assuming normalized values [0, 1] based on standard Docling, scale by pixmap size:
-                        x = tag.bbox.x * pixmap.width()
-                        y = tag.bbox.y * pixmap.height()
-                        w = tag.bbox.width * pixmap.width()
-                        h = tag.bbox.height * pixmap.height()
-                        
-                        rect_item = QGraphicsRectItem(QRectF(x, y, w, h))
-                        
-                        # Style the bounding box
-                        pen = QPen(QColor(255, 0, 0, 150))
-                        pen.setWidth(2)
-                        rect_item.setPen(pen)
-                        
-                        # Highlight removed tags
-                        if getattr(tag, 'user_removed', False):
-                            rect_item.setBrush(QBrush(QColor(100, 100, 100, 100)))
-                        
-                        rect_item.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, True)
-                        rect_item.setData(Qt.ItemDataRole.UserRole, tag) # Store reference to the DocTag
-                        
-                        self.scene.addItem(rect_item)
-                    
-                    if tag.children:
-                        draw_tags(tag.children)
-
-            draw_tags(spatial_tags)
+            self.draw_spatial_tags(spatial_tags, pixmap.width(), pixmap.height())
             
             self.scene.setSceneRect(pixmap_item.boundingRect())
             self.view.fitInView(self.scene.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
 
+    def draw_spatial_tags(self, spatial_tags, p_width, p_height):
+        def draw_tags(tags):
+            for tag in tags:
+                if tag.bbox:
+                    x = tag.bbox.x * p_width
+                    y = tag.bbox.y * p_height
+                    w = tag.bbox.width * p_width
+                    h = tag.bbox.height * p_height
+                    
+                    rect_item = QGraphicsRectItem(QRectF(x, y, w, h))
+                    
+                    pen = QPen(QColor(255, 0, 0, 150))
+                    pen.setWidth(2)
+                    rect_item.setPen(pen)
+                    
+                    if getattr(tag, 'user_removed', False):
+                        rect_item.setBrush(QBrush(QColor(100, 100, 100, 100)))
+                    
+                    rect_item.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, True)
+                    rect_item.setData(Qt.ItemDataRole.UserRole, tag)
+                    
+                    self.scene.addItem(rect_item)
+                
+                if tag.children:
+                    draw_tags(tag.children)
+        draw_tags(spatial_tags)
