@@ -1,28 +1,33 @@
+import logging
 from pathlib import Path
+from typing import Optional, List, Any
+
 from PySide6.QtCore import Qt, QAbstractListModel, QModelIndex, QSortFilterProxyModel
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QListView, QLineEdit, QLabel
 
-class PdfListModel(QAbstractListModel):
-    def __init__(self, pdf_files=None, parent=None):
-        super().__init__(parent)
-        self.pdf_files = pdf_files or []
+from config import AppConfig
 
-    def rowCount(self, parent=None):
+class PdfListModel(QAbstractListModel):
+    def __init__(self, pdf_files: Optional[List[Path]] = None, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self.pdf_files: List[Path] = pdf_files or []
+
+    def rowCount(self, parent: Optional[QModelIndex] = None) -> int:
         return len(self.pdf_files)
 
-    def data(self, index, role=0):
+    def data(self, index: QModelIndex, role: int = 0) -> Any:
         if not index.isValid() or not (0 <= index.row() < len(self.pdf_files)):
             return None
             
         file_path = self.pdf_files[index.row()]
         
-        if role == 0: # DisplayRole
+        if role == 0: # Qt.ItemDataRole.DisplayRole
             return file_path.name
         
         return None
 
 class LeftPanel(QWidget):
-    def __init__(self, config=None, parent=None):
+    def __init__(self, config: Optional[AppConfig] = None, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.config = config
         layout = QVBoxLayout(self)
@@ -34,7 +39,9 @@ class LeftPanel(QWidget):
         
         # List View
         self.list_view = QListView(self)
-        self.model = PdfListModel(self._get_files_from_config())
+        files = self._get_files_from_config()
+        logging.info(f"LeftPanel: Found {len(files)} PDFs in config.")
+        self.model = PdfListModel(files)
         
         # Setup Filtering
         self.proxy_model = QSortFilterProxyModel(self)
@@ -46,8 +53,8 @@ class LeftPanel(QWidget):
         
         self.search_input.textChanged.connect(self.proxy_model.setFilterWildcard)
 
-    def _get_files_from_config(self):
-        pdf_files = []
+    def _get_files_from_config(self) -> List[Path]:
+        pdf_files: List[Path] = []
         if self.config:
             for path in self.config.input_dirs:
                 if path.is_dir():

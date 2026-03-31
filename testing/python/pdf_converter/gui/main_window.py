@@ -1,16 +1,22 @@
+import logging
+from typing import Optional
+
 from PySide6.QtWidgets import QMainWindow, QWidget, QHBoxLayout, QSplitter
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QModelIndex
 
 from .left_panel import LeftPanel
 from .center_panel import CenterPanel
 from .right_panel import RightPanel
+from config import AppConfig
 
 class MainWindow(QMainWindow):
-    def __init__(self, config=None):
+    def __init__(self, config: Optional[AppConfig] = None) -> None:
         super().__init__()
         self.config = config
         self.setWindowTitle("PDF OCR & Post-Processing Tool")
         self.resize(1200, 800)
+        
+        logging.info("MainWindow: Initializing GUI.")
         
         # Central Widget
         central_widget = QWidget(self)
@@ -38,10 +44,11 @@ class MainWindow(QMainWindow):
         # Connect signals
         self.left_panel.list_view.selectionModel().currentChanged.connect(self.on_pdf_selected)
 
-    def on_pdf_selected(self, current, previous):
+    def on_pdf_selected(self, current: QModelIndex, previous: QModelIndex) -> None:
         if current.isValid():
             # Get the actual index from the proxy model
             source_index = self.left_panel.proxy_model.mapToSource(current)
             file_path = self.left_panel.model.pdf_files[source_index.row()]
+            logging.info(f"MainWindow: User selected PDF: {file_path}")
             if self.config:
                 self.center_panel.load_pdf(file_path, self.config.output_dir)

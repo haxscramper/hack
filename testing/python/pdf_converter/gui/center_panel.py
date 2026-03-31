@@ -1,11 +1,16 @@
 import json
+import logging
 from pathlib import Path
+from typing import Optional, List
+
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QGraphicsView, QGraphicsScene, QGraphicsPixmapItem, QGraphicsRectItem, QGraphicsItem, QCheckBox, QSlider, QLabel, QLineEdit
 from PySide6.QtGui import QPixmap, QPen, QColor, QBrush, QImage
 from PySide6.QtCore import Qt, QRectF
 
+from models import DocTag, PageData
+
 class CenterPanel(QWidget):
-    def __init__(self, parent=None):
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         layout = QVBoxLayout(self)
         
@@ -66,23 +71,23 @@ class CenterPanel(QWidget):
         self.overlay_widget.hide()
         
         # State variables
-        self.current_page_idx = 1
-        self.page_data = None
-        self.overlay_mode = False
-        self.overlay_items = []
+        self.current_page_idx: int = 1
+        self.page_data: Optional[PageData] = None
+        self.overlay_mode: bool = False
+        self.overlay_items: List[dict] = []
         
         # Signal connections
         self.btn_prev.clicked.connect(self.load_prev)
         self.btn_next.clicked.connect(self.load_next)
         self.page_input.returnPressed.connect(self.on_page_input_changed)
 
-    def on_mode_changed(self, state):
+    def on_mode_changed(self, state: int) -> None:
         self.overlay_mode = (state == Qt.CheckState.Checked.value or state == 2)
         self.nav_widget.setVisible(not self.overlay_mode)
         self.overlay_widget.setVisible(self.overlay_mode)
         self.load_page_data()
 
-    def on_overlay_changed(self):
+    def on_overlay_changed(self) -> None:
         start = self.slider_start.value()
         end = self.slider_end.value()
         
@@ -109,7 +114,7 @@ class CenterPanel(QWidget):
                 self.scene.setSceneRect(rect)
                 self.view.fitInView(self.scene.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
 
-    def on_page_input_changed(self):
+    def on_page_input_changed(self) -> None:
         try:
             page = int(self.page_input.text())
             if page > 0:
@@ -118,21 +123,23 @@ class CenterPanel(QWidget):
         except ValueError:
             self.page_input.setText(str(self.current_page_idx))
 
-    def load_prev(self):
+    def load_prev(self) -> None:
         if self.current_page_idx > 1:
             self.current_page_idx -= 1
             self.load_page_data()
         
-    def load_next(self):
+    def load_next(self) -> None:
         if self.page_data:
             self.current_page_idx += 1
             self.load_page_data()
 
-    def load_pdf(self, pdf_path, output_dir):
+    def load_pdf(self, pdf_path: Path, output_dir: Path) -> None:
         self.current_pdf_path = Path(pdf_path)
         self.output_dir = Path(output_dir)
         self.pdf_output_dir = self.output_dir / self.current_pdf_path.stem
         self.current_page_idx = 1
+        
+        logging.info(f"CenterPanel: Loading PDF: {self.current_pdf_path}")
         
         total = 0
         if self.pdf_output_dir.exists():
@@ -148,7 +155,7 @@ class CenterPanel(QWidget):
             
         self.load_page_data()
         
-    def _create_transparent_pixmap(self, image_path):
+    def _create_transparent_pixmap(self, image_path: str) -> QPixmap:
         image = QImage(image_path)
         if image.isNull(): return QPixmap()
         
@@ -164,14 +171,15 @@ class CenterPanel(QWidget):
         pixmap.setMask(QBitmap.fromImage(mask))
         return pixmap
 
-    def pre_load_overlays(self):
-        from models import PageData
+    def pre_load_overlays(self) -> None:
         self.scene.clear()
         self.overlay_items = []
         
         total = 0
         if self.pdf_output_dir.exists():
             total = len(list(self.pdf_output_dir.glob("page_*.json")))
+            
+        logging.info(f"CenterPanel: Preloading {total} overlay pages...")
             
         for p_idx in range(1, total + 1):
             json_path = self.pdf_output_dir / f"page_{p_idx:03d}.json"
@@ -192,18 +200,18 @@ class CenterPanel(QWidget):
                         pixmap_item.setZValue(-1)
                         self.scene.addItem(pixmap_item)
                         
-                        tag_items = self.draw_spatial_tags_overlay(p_data.spatial_tags, pixmap.width(), pixmap.height())
+                        tag_items = self.draw_spatial_tags_overlay(p_data.spatial_tags, float(pixmap.width()), float(pixmap.height()))
                         
                         self.overlay_items.append({'pixmap_item': pixmap_item, 'tag_items': tag_items})
                     else:
                         self.overlay_items.append({'pixmap_item': None, 'tag_items': []})
             except Exception as e:
-                print(f"Error loading overlay page {p_idx}: {e}")
+                logging.error(f"Error loading overlay page {p_idx}: {e}")
                 self.overlay_items.append({'pixmap_item': None, 'tag_items': []})
         
         self.on_overlay_changed() # Update visibility based on sliders
 
-    def load_page_data(self):
+    def load_page_data(self) -> None:
         if not hasattr(self, 'pdf_output_dir'): return
         
         if self.overlay_mode:
@@ -217,30 +225,31 @@ class CenterPanel(QWidget):
             json_path = self.pdf_output_dir / f"page_{self.current_page_idx:03d}.json"
             
             if json_path.exists():
-                from models import PageData
                 try:
                     with open(json_path, 'r') as f:
                         data = json.load(f)
                         self.page_data = PageData(**data)
+                        logging.info(f"CenterPanel: Loaded page {self.current_page_idx}")
                         self.load_page(self.page_data.image_cache_path, self.page_data.spatial_tags)
                 except Exception as e:
+                    logging.error(f"Failed to load page data: {e}")
                     self.scene.addText(f"Failed to load page data:\n{e}")
             else:
                 self.page_data = None
                 self.scene.addText(f"Page {self.current_page_idx} not processed yet.")
 
-    def load_page(self, image_path, spatial_tags):
+    def load_page(self, image_path: str, spatial_tags: List[DocTag]) -> None:
         pixmap = QPixmap(image_path)
         if not pixmap.isNull():
             pixmap_item = QGraphicsPixmapItem(pixmap)
             self.scene.addItem(pixmap_item)
-            self.draw_spatial_tags(spatial_tags, pixmap.width(), pixmap.height())
+            self.draw_spatial_tags(spatial_tags, float(pixmap.width()), float(pixmap.height()))
             
             self.scene.setSceneRect(pixmap_item.boundingRect())
             self.view.fitInView(self.scene.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
 
-    def draw_spatial_tags(self, spatial_tags, p_width, p_height):
-        def draw_tags(tags):
+    def draw_spatial_tags(self, spatial_tags: List[DocTag], p_width: float, p_height: float) -> None:
+        def draw_tags(tags: List[DocTag]) -> None:
             for tag in tags:
                 if tag.bbox:
                     x = tag.bbox.x * p_width
@@ -266,9 +275,9 @@ class CenterPanel(QWidget):
                     draw_tags(tag.children)
         draw_tags(spatial_tags)
 
-    def draw_spatial_tags_overlay(self, spatial_tags, p_width, p_height):
-        items = []
-        def draw_tags(tags):
+    def draw_spatial_tags_overlay(self, spatial_tags: List[DocTag], p_width: float, p_height: float) -> List[QGraphicsRectItem]:
+        items: List[QGraphicsRectItem] = []
+        def draw_tags(tags: List[DocTag]) -> None:
             for tag in tags:
                 if tag.bbox:
                     x = tag.bbox.x * p_width
