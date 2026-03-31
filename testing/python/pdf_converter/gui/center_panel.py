@@ -89,6 +89,7 @@ class CenterPanel(QWidget):
         self.page_data: Optional[PageData] = None
         self.overlay_mode: bool = False
         self.overlay_items: List[dict] = []
+        self.pdf_output_dir: Optional[Path] = None
         
         # Signal connections
         self.btn_prev.clicked.connect(self.load_prev)
@@ -261,7 +262,7 @@ class CenterPanel(QWidget):
         logging.info(f"CenterPanel: Loading PDF: {self.current_pdf_path}")
         
         total = 0
-        if self.pdf_output_dir.exists():
+        if self.pdf_output_dir and self.pdf_output_dir.exists():
             total = len(list(self.pdf_output_dir.glob("page_*.json")))
         if total > 0:
             self.slider.setRange(1, total)
@@ -270,6 +271,20 @@ class CenterPanel(QWidget):
             
         self.load_page_data()
         
+    def get_all_pages_data(self) -> List[PageData]:
+        pages = []
+        if not self.pdf_output_dir or not self.pdf_output_dir.exists():
+            return pages
+            
+        for p in sorted(self.pdf_output_dir.glob("page_*.json")):
+            try:
+                with open(p, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    pages.append(PageData(**data))
+            except Exception as e:
+                logging.error(f"Failed to load {p}: {e}")
+        return pages
+
     def _create_transparent_pixmap(self, image_path: str) -> QPixmap:
         import numpy as np
         from PySide6.QtCore import Qt
@@ -318,12 +333,13 @@ class CenterPanel(QWidget):
         self.overlay_items = []
         
         total = 0
-        if self.pdf_output_dir.exists():
+        if self.pdf_output_dir and self.pdf_output_dir.exists():
             total = len(list(self.pdf_output_dir.glob("page_*.json")))
             
         logging.info(f"CenterPanel: Preloading {total} overlay pages...")
             
         for p_idx in range(1, total + 1):
+            if not self.pdf_output_dir: continue
             json_path = self.pdf_output_dir / f"page_{p_idx:03d}.json"
             if not json_path.exists():
                 self.overlay_items.append({'pixmap_item': None, 'tag_items': []})
@@ -354,7 +370,7 @@ class CenterPanel(QWidget):
         self.on_overlay_changed() # Update visibility based on sliders
 
     def load_page_data(self) -> None:
-        if not hasattr(self, 'pdf_output_dir'): return
+        if not self.pdf_output_dir: return
         
         if self.overlay_mode:
             if not self.overlay_items:

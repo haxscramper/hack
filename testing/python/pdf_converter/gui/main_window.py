@@ -43,6 +43,16 @@ class MainWindow(QMainWindow):
         
         # Connect signals
         self.left_panel.list_view.selectionModel().currentChanged.connect(self.on_pdf_selected)
+        self.right_panel.update_btn.clicked.connect(self.on_update_html_clicked)
+
+    def on_update_html_clicked(self) -> None:
+        logging.info("MainWindow: Update HTML clicked.")
+        if hasattr(self.center_panel, 'get_all_pages_data'):
+            pages = self.center_panel.get_all_pages_data()
+            if pages:
+                self.right_panel.generate_html(pages)
+            else:
+                logging.warning("MainWindow: No pages data found for HTML generation.")
 
     def on_pdf_selected(self, current: QModelIndex, previous: QModelIndex) -> None:
         if current.isValid():
