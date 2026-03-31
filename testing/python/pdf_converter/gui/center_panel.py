@@ -150,13 +150,16 @@ class CenterPanel(QWidget):
             return
             
         menu = QMenu(self)
-        toggle_action = menu.addAction("Toggle Removed Status")
+        mark_removed_action = menu.addAction("Mark as Removed")
+        unmark_removed_action = menu.addAction("Unmark as Removed")
         edit_text_action = menu.addAction("Edit Text")
         change_tag_action = menu.addAction("Change Tag")
         
         action = menu.exec(self.view.viewport().mapToGlobal(pos))
-        if action == toggle_action:
-            self.toggle_selected_items(selected_items)
+        if action == mark_removed_action:
+            self.set_removed_status(selected_items, True)
+        elif action == unmark_removed_action:
+            self.set_removed_status(selected_items, False)
         elif action == edit_text_action:
             first_item = next((item for item in selected_items if isinstance(item, QGraphicsRectItem)), None)
             if first_item:
@@ -181,29 +184,29 @@ class CenterPanel(QWidget):
                 self.change_tag_selected_items(selected_items, new_tag)
 
     def edit_text_selected_items(self, items: List[QGraphicsItem], new_text: str) -> None:
-        modified_pages = set()
+        modified_pages = {}
         for item in items:
             if isinstance(item, QGraphicsRectItem):
                 tag = item.data(Qt.ItemDataRole.UserRole)
                 page_meta = item.data(Qt.ItemDataRole.UserRole + 1)
                 if tag and page_meta:
                     tag.user_edited_text = new_text
-                    modified_pages.add(page_meta)
+                    modified_pages[page_meta[1]] = page_meta[0]
         self.save_modified_pages(modified_pages)
 
     def change_tag_selected_items(self, items: List[QGraphicsItem], new_tag: str) -> None:
-        modified_pages = set()
+        modified_pages = {}
         for item in items:
             if isinstance(item, QGraphicsRectItem):
                 tag = item.data(Qt.ItemDataRole.UserRole)
                 page_meta = item.data(Qt.ItemDataRole.UserRole + 1)
                 if tag and page_meta:
                     tag.user_tag_override = new_tag
-                    modified_pages.add(page_meta)
+                    modified_pages[page_meta[1]] = page_meta[0]
         self.save_modified_pages(modified_pages)
 
-    def toggle_selected_items(self, items: List[QGraphicsItem]) -> None:
-        modified_pages = set()
+    def set_removed_status(self, items: List[QGraphicsItem], status: bool) -> None:
+        modified_pages = {}
         
         for item in items:
             if isinstance(item, QGraphicsRectItem):
@@ -211,20 +214,27 @@ class CenterPanel(QWidget):
                 page_meta = item.data(Qt.ItemDataRole.UserRole + 1)
                 
                 if tag and page_meta:
-                    tag.user_removed = not getattr(tag, 'user_removed', False)
+                    tag.user_removed = status
                     if tag.user_removed:
                         brush = QBrush(USER_REMOVED_COLOR)
                         brush.setStyle(Qt.BrushStyle.BDiagPattern)
                         item.setBrush(brush)
+                        pen = QPen(USER_REMOVED_COLOR)
+                        pen.setWidth(2)
+                        item.setPen(pen)
                     else:
                         item.setBrush(QBrush(Qt.BrushStyle.NoBrush))
+                        pen_color = TAG_COLORS.get(tag.tag_name, QColor(255, 0, 0, 150))
+                        pen = QPen(pen_color)
+                        pen.setWidth(2)
+                        item.setPen(pen)
                     
-                    modified_pages.add(page_meta)
+                    modified_pages[page_meta[1]] = page_meta[0]
 
         self.save_modified_pages(modified_pages)
 
-    def save_modified_pages(self, modified_pages: set) -> None:
-        for page_data, json_path in modified_pages:
+    def save_modified_pages(self, modified_pages: dict) -> None:
+        for json_path, page_data in modified_pages.items():
             try:
                 with open(json_path, 'w') as f:
                     f.write(page_data.model_dump_json(indent=2))
@@ -255,8 +265,8 @@ class CenterPanel(QWidget):
             total = len(list(self.pdf_output_dir.glob("page_*.json")))
         if total > 0:
             self.slider.setRange(1, total)
-            self.slider.setLowerValue(1)
-            self.slider.setUpperValue(min(3, total))
+            self.slider.setLowerValue(5) # skip first few pages that contain title etc. 
+            self.slider.setUpperValue(min(20, total))
             
         self.load_page_data()
         
@@ -407,6 +417,9 @@ class CenterPanel(QWidget):
                         brush = QBrush(USER_REMOVED_COLOR)
                         brush.setStyle(Qt.BrushStyle.BDiagPattern)
                         rect_item.setBrush(brush)
+                        pen = QPen(USER_REMOVED_COLOR)
+                        pen.setWidth(2)
+                        rect_item.setPen(pen)
                     
                     rect_item.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, True)
                     rect_item.setData(Qt.ItemDataRole.UserRole, tag)
