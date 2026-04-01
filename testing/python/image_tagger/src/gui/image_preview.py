@@ -11,12 +11,17 @@ class ImageThumbWidget(QWidget):
         layout = QVBoxLayout(self)
 
         self.image_label = QLabel()
-        self.image_label.setAlignment(Qt.AlignCenter)
+        self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.image_label.setFixedSize(QSize(size, size))
 
         pix = QPixmap(str(image_path))
         if not pix.isNull():
-            pix = pix.scaled(size, size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            pix = pix.scaled(
+                size,
+                size,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
             self.image_label.setPixmap(pix)
         else:
             self.image_label.setText(image_path.name)

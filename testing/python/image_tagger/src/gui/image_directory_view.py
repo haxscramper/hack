@@ -183,17 +183,17 @@ class MixedTreeTileView(QAbstractScrollArea):
         self.thumb_signals.loaded.connect(self.on_thumbnail_loaded)
 
         self.setMouseTracking(True)
-        self.setFocusPolicy(Qt.StrongFocus)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
         pal = self.palette()
-        self.bg = pal.color(QPalette.Base)
-        self.fg = pal.color(QPalette.Text)
-        self.alt_bg = pal.color(QPalette.AlternateBase)
-        self.hl = pal.color(QPalette.Highlight)
-        self.hl_text = pal.color(QPalette.HighlightedText)
-        self.mid = pal.color(QPalette.Mid)
-        self.placeholder_bg = pal.color(QPalette.Button)
-        self.placeholder_fg = pal.color(QPalette.ButtonText)
+        self.bg = pal.color(QPalette.ColorRole.Base)
+        self.fg = pal.color(QPalette.ColorRole.Text)
+        self.alt_bg = pal.color(QPalette.ColorRole.AlternateBase)
+        self.hl = pal.color(QPalette.ColorRole.Highlight)
+        self.hl_text = pal.color(QPalette.ColorRole.HighlightedText)
+        self.mid = pal.color(QPalette.ColorRole.Mid)
+        self.placeholder_bg = pal.color(QPalette.ColorRole.Button)
+        self.placeholder_fg = pal.color(QPalette.ColorRole.ButtonText)
 
         self._update_timer = QTimer(self)
         self._update_timer.setSingleShot(True)
@@ -267,7 +267,7 @@ class MixedTreeTileView(QAbstractScrollArea):
 
         if image.isNull():
             pix = QPixmap(self.thumb_size, self.thumb_size)
-            pix.fill(Qt.lightGray)
+            pix.fill(Qt.GlobalColor.lightGray)
         else:
             pix = QPixmap.fromImage(image)
 
@@ -354,7 +354,7 @@ class MixedTreeTileView(QAbstractScrollArea):
         painter.setPen(QPen(self.mid))
         painter.drawLine(rect.bottomLeft(), rect.bottomRight())
 
-        painter.setPen(Qt.NoPen)
+        painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(self.fg)
         cx = toggle_rect.center().x()
         cy = toggle_rect.center().y()
@@ -393,7 +393,11 @@ class MixedTreeTileView(QAbstractScrollArea):
             count_text = (
                 f"  [{len(node.child_dirs)} dirs, {len(node.image_files)} images]"
             )
-        painter.drawText(text_rect, Qt.AlignVCenter | Qt.AlignLeft, label + count_text)
+        painter.drawText(
+            text_rect,
+            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+            label + count_text,
+        )
 
         painter.restore()
 
@@ -407,7 +411,9 @@ class MixedTreeTileView(QAbstractScrollArea):
 
         painter.setPen(self.placeholder_fg)
         painter.drawText(
-            thumb_rect, Qt.AlignCenter, file_path.suffix.lower().lstrip(".") or "img"
+            thumb_rect,
+            Qt.AlignmentFlag.AlignCenter,
+            file_path.suffix.lower().lstrip(".") or "img",
         )
         painter.restore()
 
@@ -442,8 +448,8 @@ class MixedTreeTileView(QAbstractScrollArea):
         else:
             scaled = pix.scaled(
                 thumb_rect.size(),
-                Qt.KeepAspectRatio,
-                Qt.SmoothTransformation,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
             )
             px = thumb_rect.x() + (thumb_rect.width() - scaled.width()) // 2
             py = thumb_rect.y() + (thumb_rect.height() - scaled.height()) // 2
@@ -462,7 +468,9 @@ class MixedTreeTileView(QAbstractScrollArea):
             painter.setPen(QColor(0, 0, 0))
             painter.drawText(
                 text_rect,
-                Qt.AlignHCenter | Qt.AlignTop | Qt.TextWordWrap,
+                Qt.AlignmentFlag.AlignHCenter
+                | Qt.AlignmentFlag.AlignTop
+                | Qt.TextFlag.TextWordWrap,
                 file_path.name,
             )
 

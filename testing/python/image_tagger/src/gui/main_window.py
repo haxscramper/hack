@@ -27,7 +27,7 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
         layout = QHBoxLayout(central)
 
-        splitter = QSplitter(Qt.Horizontal)
+        splitter = QSplitter(Qt.Orientation.Horizontal)
 
         self.left_panel = MixedTreeTileView(root_dir)
         self.center_panel = CenterPanel()

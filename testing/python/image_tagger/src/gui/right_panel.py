@@ -44,7 +44,11 @@ class DirectorySelectorWidget(QWidget):
             if item.widget():
                 item.widget().deleteLater()
 
-        rel_parts = self.current_dir.relative_to(self.root_dir).parts if self.current_dir != self.root_dir else ()
+        rel_parts = (
+            self.current_dir.relative_to(self.root_dir).parts
+            if self.current_dir != self.root_dir
+            else ()
+        )
         accumulated = self.root_dir
 
         root_btn = QPushButton(self.root_dir.name)
@@ -65,7 +69,7 @@ class DirectorySelectorWidget(QWidget):
         for child in sorted(self.current_dir.iterdir()):
             if child.is_dir():
                 item = QListWidgetItem(child.name)
-                item.setData(Qt.UserRole, str(child))
+                item.setData(Qt.ItemDataRole.UserRole, str(child))
                 self.subdir_list.addItem(item)
 
     def _set_dir(self, path: Path):
@@ -74,7 +78,7 @@ class DirectorySelectorWidget(QWidget):
         self.directoryChanged.emit(self.current_dir)
 
     def _on_subdir_clicked(self, item: QListWidgetItem):
-        self._set_dir(Path(item.data(Qt.UserRole)))
+        self._set_dir(Path(item.data(Qt.ItemDataRole.UserRole)))
 
 
 class DirectoryPreviewWidget(QFrame):
@@ -84,7 +88,7 @@ class DirectoryPreviewWidget(QFrame):
         super().__init__(parent)
         self.root_dir = root_dir
         self.current_dir = root_dir
-        self.setFrameShape(QFrame.StyledPanel)
+        self.setFrameShape(QFrame.Shape.StyledPanel)
 
         layout = QVBoxLayout(self)
 
@@ -115,14 +119,17 @@ class DirectoryPreviewWidget(QFrame):
                 item.widget().deleteLater()
 
         images = [
-            p for p in sorted(path.iterdir())
+            p
+            for p in sorted(path.iterdir())
             if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS
         ]
 
         for idx, image_path in enumerate(images):
             row = idx // PREVIEW_GRID_COLUMNS
             col = idx % PREVIEW_GRID_COLUMNS
-            self.preview_grid.addWidget(ImageThumbWidget(image_path, size=100), row, col)
+            self.preview_grid.addWidget(
+                ImageThumbWidget(image_path, size=100), row, col
+            )
 
 
 class RightPanel(QWidget):
