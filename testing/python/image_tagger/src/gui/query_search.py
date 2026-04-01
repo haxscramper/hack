@@ -12,10 +12,54 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox,
     QLineEdit,
     QHBoxLayout,
+    QSplitter,
+    QAbstractItemView,
+    QListWidget,
+    QListWidgetItem,
+    QCompleter,
+    QFileDialog,
 )
-
-
 from PySide6.QtCore import Qt, Signal, QSize, QStringListModel
+from PySide6.QtGui import QPixmap, QIcon
+from pathlib import Path
+import os
+
+...
+
+
+class ImageThumbnailList(QListWidget):
+    """Displays image thumbnails in an icon-mode list."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setViewMode(QListWidget.ViewMode.IconMode)
+        self.setIconSize(QSize(160, 160))
+        self.setResizeMode(QListWidget.ResizeMode.Adjust)
+        self.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.setSpacing(8)
+
+    def set_images(self, paths: list[str]):
+        self.clear()
+        for path in paths:
+            pixmap = QPixmap(path)
+            if pixmap.isNull():
+                continue
+            item = QListWidgetItem(
+                QIcon(
+                    pixmap.scaled(
+                        160,
+                        160,
+                        Qt.AspectRatioMode.KeepAspectRatio,
+                        Qt.TransformationMode.SmoothTransformation,
+                    )
+                ),
+                Path(path).name,
+            )
+            item.setData(Qt.ItemDataRole.UserRole, path)
+            item.setToolTip(path)
+            self.addItem(item)
+
+
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 
@@ -417,12 +461,16 @@ class SearchTab(QWidget):
 
     results_found = Signal(list)
 
-    def __init__(self, session: Session, parent=None):
+    def __init__(self, session: Session, base_dir: str, parent=None):
         super().__init__(parent)
         self.session = session
+        self.base_dir = base_dir
 
         layout = QVBoxLayout(self)
 
+        splitter = QSplitter(Qt.Orientation.Vertical)
+
+        # Expression builder area
         expr_container = QWidget()
         expr_layout = QVBoxLayout(expr_container)
         expr_layout.setContentsMargins(0, 0, 0, 0)
@@ -431,6 +479,7 @@ class SearchTab(QWidget):
         scroll.setWidgetResizable(True)
 
         self.root_node = ExpressionNode(session, is_root=True)
+        # self.root_node.changed.connect(self._on_expression_changed)
         scroll.setWidget(self.root_node)
         expr_layout.addWidget(scroll)
 
@@ -441,13 +490,24 @@ class SearchTab(QWidget):
         self.status_label = QLabel("")
         expr_layout.addWidget(self.status_label)
 
-        layout.addWidget(expr_container)
+        splitter.addWidget(expr_container)
+
+        # Results area
+        self.thumbnail_list = ImageThumbnailList()
+        splitter.addWidget(self.thumbnail_list)
+
+        splitter.setStretchFactor(0, 1)
+        splitter.setStretchFactor(1, 2)
+        layout.addWidget(splitter)
+
+    def _on_expression_changed(self):
+        pass
 
     def _execute_search(self):
         spec = self.root_node.to_filter_spec()
         if spec is None:
             self.status_label.setText("No valid filter conditions specified.")
-            self.results_found.emit([])
+            self.thumbnail_list.set_images([])
             return
 
         query = build_query(self.session, spec)
@@ -455,8 +515,18 @@ class SearchTab(QWidget):
 
         if not image_ids:
             self.status_label.setText("No images found.")
-            self.results_found.emit([])
+            self.thumbnail_list.set_images([])
             return
 
-        self.status_label.setText(f"Found {len(image_ids)} images.")
-        self.results_found.emit(image_ids)
+        images = self.session.execute(
+            select(ImageEntry.relative_path).where(ImageEntry.id.in_(image_ids))
+        ).all()
+
+        paths = []
+        for (rel_path,) in images:
+            full_path = os.path.join(self.base_dir, rel_path)
+            if os.path.isfile(full_path):
+                paths.append(full_path)
+
+        self.status_label.setText(f"Found {len(paths)} images.")
+        self.thumbnail_list.set_images(paths)

@@ -122,7 +122,7 @@ class MainWindow(QMainWindow):
         self.left_panel = MixedTreeTileView(root_dir)
         self.center_panel = CenterPanel()
         self.right_panel = RightPanel(root_dir)
-        self.search_tab = SearchTab(self.repository.session)
+        self.search_tab = SearchTab(self.repository.session, root_dir)
 
         self._update_fully_annotated()
 
@@ -220,8 +220,10 @@ class MainWindow(QMainWindow):
             .scalars()
             .all()
         )
-        full_paths = [str(self.root_dir / p) for p in rel_paths]
-        self.left_panel.set_files(full_paths)
+
+        # Highlight selected files in the existing tree
+        self.left_panel.selected_files = {self.root_dir / p for p in rel_paths}
+        self.left_panel.viewport().update()
 
     def on_file_selected(self, file_path: str):
         logging.debug(f"File selected in GUI: {file_path}")
