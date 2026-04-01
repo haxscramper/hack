@@ -13,7 +13,7 @@ from PySide6.QtCore import (
     QObject,
     QSize,
 )
-from PySide6.QtGui import QImage, QPixmap, QImageReader
+from PySide6.QtGui import QImage, QPixmap, QImageReader, QColor
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -150,6 +150,11 @@ class DirectorySelectorWidget(QWidget):
         self.top_layout.setContentsMargins(0, 0, 0, 0)
         self.top_layout.setSpacing(0)
 
+        self.index_label = QLabel()
+        self.index_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.index_label.setFixedSize(24, 24)
+        self.index_label.hide()
+
         self.path_bar = QHBoxLayout()
         self.path_bar.setContentsMargins(0, 0, 0, 0)
         self.path_bar.setSpacing(0)
@@ -162,6 +167,7 @@ class DirectorySelectorWidget(QWidget):
         )
         self.remove_btn.clicked.connect(self.removeRequested.emit)
 
+        self.top_layout.addWidget(self.index_label, 0)
         self.top_layout.addLayout(self.path_bar, 1)
         self.top_layout.addWidget(self.remove_btn, 0)
 
@@ -184,6 +190,13 @@ class DirectorySelectorWidget(QWidget):
 
         self.subdir_list.itemClicked.connect(self._on_subdir_clicked)
         self.refresh()
+
+    def set_index(self, index: int, color: str):
+        self.index_label.setText(str(index))
+        self.index_label.setStyleSheet(
+            f"background-color: {color}; color: black; border-radius: 4px; font-weight: bold; margin-right: 4px;"
+        )
+        self.index_label.show()
 
     def refresh(self):
         while self.path_bar.count():
@@ -282,6 +295,9 @@ class DirectoryPreviewWidget(QFrame):
         self.selector.removeRequested.connect(lambda: self.removeRequested.emit(self))
         self.set_directory(root_dir)
 
+    def set_index(self, index: int, color: str):
+        self.selector.set_index(index, color)
+
     def set_directory(self, path: Path):
         self.current_dir = path
 
@@ -308,11 +324,21 @@ class RightPanel(QWidget):
 
         self.add_preview_widget()
 
+    def _update_indices(self):
+        for i in range(self.splitter.count()):
+            widget = self.splitter.widget(i)
+            if isinstance(widget, DirectoryPreviewWidget):
+                hue = (i * 137) % 360
+                color = QColor.fromHsv(hue, 120, 255).name()
+                widget.set_index(i + 1, color)
+
     def add_preview_widget(self):
         widget = DirectoryPreviewWidget(self.root_dir)
         widget.removeRequested.connect(self.remove_preview_widget)
         self.splitter.addWidget(widget)
+        self._update_indices()
 
     def remove_preview_widget(self, widget):
         widget.setParent(None)
         widget.deleteLater()
+        self._update_indices()
