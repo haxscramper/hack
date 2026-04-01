@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from image_tagger.db.repository import Repository
+from db.repository import Repository
 from .chroma_store import ChromaDescriptionStore
 from .wd_tagger import WdTagger
 from .ollama_tagger import OllamaTagger

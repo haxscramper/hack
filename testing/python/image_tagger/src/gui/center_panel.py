@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
     QScrollArea,
 )
 
-from image_tagger.gui.flow_layout import FlowLayout
+from gui.flow_layout import FlowLayout
 
 
 class RegularTagsContainer(QWidget):

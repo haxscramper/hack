@@ -5,10 +5,10 @@ from pathlib import Path
 from PySide6.QtWidgets import QMainWindow, QWidget, QHBoxLayout, QSplitter
 from PySide6.QtCore import Qt
 
-from image_tagger.db.repository import Repository
-from image_tagger.gui.image_directory_view import MixedTreeTileView
-from image_tagger.gui.center_panel import CenterPanel
-from image_tagger.gui.right_panel import RightPanel
+from db.repository import Repository
+from gui.image_directory_view import MixedTreeTileView
+from gui.center_panel import CenterPanel
+from gui.right_panel import RightPanel
 
 
 class MainWindow(QMainWindow):

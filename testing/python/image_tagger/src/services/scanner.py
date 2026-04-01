@@ -1,5 +1,5 @@
 from pathlib import Path
-from image_tagger.config import IMAGE_EXTENSIONS
+from config import IMAGE_EXTENSIONS
 
 
 def scan_images(root_dir: Path) -> list[Path]:

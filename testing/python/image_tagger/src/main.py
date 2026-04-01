@@ -1,4 +1,4 @@
-from image_tagger.cli.commands import cli
+from cli.commands import cli
 
 
 def main():

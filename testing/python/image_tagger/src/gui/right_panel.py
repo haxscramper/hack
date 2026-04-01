@@ -16,8 +16,8 @@ from PySide6.QtWidgets import (
     QFrame,
 )
 
-from image_tagger.gui.image_preview import ImageThumbWidget
-from image_tagger.config import IMAGE_EXTENSIONS, PREVIEW_GRID_COLUMNS
+from gui.image_preview import ImageThumbWidget
+from config import IMAGE_EXTENSIONS, PREVIEW_GRID_COLUMNS
 
 
 class DirectorySelectorWidget(QWidget):

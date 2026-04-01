@@ -1,8 +1,8 @@
 from pathlib import Path
 
-from image_tagger.db.session import init_db, make_session_factory
-from image_tagger.db.repository import Repository
-from image_tagger.config import SQLITE_FILENAME, CHROMA_DIRNAME
+from db.session import init_db, make_session_factory
+from db.repository import Repository
+from config import SQLITE_FILENAME, CHROMA_DIRNAME
 from .scanner import scan_images
 from .annotation_service import AnnotationService
 from .chroma_store import ChromaDescriptionStore
