@@ -82,7 +82,7 @@ class DirNode:
                 self.path.iterdir(),
                 key=lambda p: (not p.is_dir(), p.name.lower()),
             )
-        except (PermissionError, FileNotFoundError, OSError):
+        except PermissionError, FileNotFoundError, OSError:
             entries = []
 
         for entry in entries:
@@ -91,7 +91,7 @@ class DirNode:
                     child_dirs.append(DirNode(entry, expanded=False))
                 elif is_image_file(entry):
                     image_files.append(entry)
-            except (PermissionError, OSError):
+            except PermissionError, OSError:
                 pass
 
         self.child_dirs = child_dirs
@@ -144,6 +144,7 @@ class ThumbTask(QRunnable):
 
 class MixedTreeTileView(QAbstractScrollArea):
     imageClicked = Signal(object)
+    fileSelected = Signal(object)
 
     HEADER_HEIGHT = 28
     INDENT = 20
@@ -400,7 +401,7 @@ class MixedTreeTileView(QAbstractScrollArea):
         self, painter: QPainter, thumb_rect: QRect, file_path: Path
     ) -> None:
         painter.save()
-        painter.setPen(QPen(self.mid, 1, Qt.DashLine))
+        painter.setPen(QPen(self.mid, 1, Qt.PenStyle.DashLine))
         painter.setBrush(self.placeholder_bg)
         painter.drawRoundedRect(thumb_rect, 4, 4)
 
@@ -579,7 +580,7 @@ class MixedTreeTileView(QAbstractScrollArea):
             if hit.rect.contains(pos):
                 self.selected_files = {hit.file_path}
                 self.last_clicked_file = hit.file_path
-                print(str(hit.file_path))
+                self.fileSelected.emit(str(hit.file_path))
                 self.viewport().update()
                 return
 
