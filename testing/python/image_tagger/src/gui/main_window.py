@@ -22,7 +22,8 @@ from sqlalchemy import select
 import shutil
 
 from db.repository import Repository
-from gui.image_directory_view import MixedTreeTileView
+from gui.left_panel import LeftPanel
+
 from gui.center_panel import CenterPanel
 from gui.right_panel import RightPanel
 from gui.query_search import SearchTab
@@ -119,20 +120,16 @@ class MainWindow(QMainWindow):
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
 
-        self.left_panel = MixedTreeTileView(root_dir)
+        self.left_panel = LeftPanel(root_dir, self.repository.session)
         self.center_panel = CenterPanel()
         self.right_panel = RightPanel(root_dir)
-        self.search_tab = SearchTab(self.repository.session, root_dir)
 
         self._update_fully_annotated()
 
         splitter.addWidget(self.left_panel)
         splitter.addWidget(self.center_panel)
         splitter.addWidget(self.right_panel)
-        splitter.addWidget(self.search_tab)
-        splitter.setSizes([350, 700, 550, 400])
-
-        self.search_tab.results_found.connect(self.on_search_results)
+        splitter.setSizes([350, 700, 550])
 
         layout.addWidget(splitter)
 
@@ -211,19 +208,6 @@ class MainWindow(QMainWindow):
                 self,
             )
             self.undo_stack.push(command)
-
-    def on_search_results(self, image_ids: list[int]):
-        rel_paths = (
-            self.repository.session.execute(
-                select(ImageEntry.relative_path).where(ImageEntry.id.in_(image_ids))
-            )
-            .scalars()
-            .all()
-        )
-
-        # Highlight selected files in the existing tree
-        self.left_panel.selected_files = {self.root_dir / p for p in rel_paths}
-        self.left_panel.viewport().update()
 
     def on_file_selected(self, file_path: str):
         logging.debug(f"File selected in GUI: {file_path}")
