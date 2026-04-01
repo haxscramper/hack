@@ -1,5 +1,5 @@
 from pathlib import Path
-from config import IMAGE_EXTENSIONS, config
+import config
 
 
 def scan_images(root_dir: Path) -> list[Path]:
@@ -7,11 +7,11 @@ def scan_images(root_dir: Path) -> list[Path]:
     for p in root_dir.rglob("*"):
         if not p.is_file():
             continue
-        if p.suffix.lower() not in IMAGE_EXTENSIONS:
+        if p.suffix.lower() not in config.config.IMAGE_EXTENSIONS:
             continue
 
         excluded = False
-        for excl in config.excluded_directories:
+        for excl in config.config.excluded_directories:
             try:
                 if Path(excl) in p.parents or p == Path(excl):
                     excluded = True

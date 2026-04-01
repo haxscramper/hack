@@ -28,7 +28,9 @@ from PySide6.QtWidgets import (
     QSizePolicy,
 )
 
-from config import IMAGE_EXTENSIONS
+from config import config
+
+IMAGE_EXTENSIONS = config.IMAGE_EXTENSIONS
 
 
 class ImageLoadSignals(QObject):

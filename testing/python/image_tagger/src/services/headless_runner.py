@@ -5,7 +5,10 @@ from pathlib import Path
 
 from db.session import init_db, make_session_factory
 from db.repository import Repository
-from config import SQLITE_FILENAME, CHROMA_DIRNAME
+from config import config
+
+SQLITE_FILENAME = config.SQLITE_FILENAME
+CHROMA_DIRNAME = config.CHROMA_DIRNAME
 from .scanner import scan_images
 from .annotation_service import AnnotationService
 from .chroma_store import ChromaDescriptionStore

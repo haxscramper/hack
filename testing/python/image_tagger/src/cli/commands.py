@@ -3,7 +3,7 @@ from pathlib import Path
 import click
 from PySide6.QtWidgets import QApplication
 
-from config import SQLITE_FILENAME, CHROMA_DIRNAME
+import config
 from db.session import init_db, make_session_factory
 from db.repository import Repository
 from gui.main_window import MainWindow
@@ -22,7 +22,9 @@ def cli():
 def gui(root_dir: Path):
     logging.info(f"Starting GUI for directory: {root_dir}")
     root_dir = root_dir.resolve()
-    engine = init_db(root_dir / SQLITE_FILENAME)
+    config.init_config(root_dir)
+
+    engine = init_db(root_dir / config.config.SQLITE_FILENAME)
     session_factory = make_session_factory(engine)
     session = session_factory()
     try:
@@ -43,6 +45,9 @@ def gui(root_dir: Path):
 )
 def headless(root_dir: Path):
     logging.info(f"Running in headless mode with root_dir={root_dir}")
+    root_dir = root_dir.resolve()
+    config.init_config(root_dir)
+
     run_headless(
         root_dir=root_dir,
     )

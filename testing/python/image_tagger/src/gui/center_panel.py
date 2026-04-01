@@ -13,9 +13,49 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox,
     QTextEdit,
     QScrollArea,
+    QFrame,
 )
 
 from gui.flow_layout import FlowLayout
+
+
+class TagWidget(QFrame):
+    def __init__(self, category: str, name: str, parent=None):
+        super().__init__(parent)
+        self.category = category
+        self.name_ = name
+
+        self.setFrameShape(QFrame.Shape.StyledPanel)
+        self.setStyleSheet(
+            "TagWidget { background-color: #e0e0e0; border-radius: 4px; border: 1px solid #ccc; }"
+        )
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(6, 2, 6, 2)
+        layout.setSpacing(4)
+
+        self.label = QLabel(f"{category}:{name}")
+        self.label.setStyleSheet("border: none; background: transparent;")
+        layout.addWidget(self.label)
+
+        self.close_btn = QPushButton("x")
+        self.close_btn.setFixedSize(16, 16)
+        self.close_btn.setStyleSheet(
+            "QPushButton { color: white; background-color: #ff4444; border: none; border-radius: 8px; font-weight: bold; padding-bottom: 2px; }"
+            "QPushButton:hover { background-color: #cc0000; }"
+        )
+        self.close_btn.hide()
+        layout.addWidget(self.close_btn)
+
+        self.setAttribute(Qt.WidgetAttribute.WA_Hover)
+
+    def enterEvent(self, event):
+        self.close_btn.show()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self.close_btn.hide()
+        super().leaveEvent(event)
 
 
 class RegularTagsContainer(QWidget):
@@ -36,14 +76,15 @@ class RegularTagsContainer(QWidget):
                 item.widget().deleteLater()
 
     def set_tags(self, tags: list[tuple[str, str]]):
-        from PySide6.QtWidgets import QPushButton
         self.clear_tags()
         for category, name in tags:
-            btn = QPushButton(f"{category}:{name}")
-            btn.clicked.connect(
-                lambda checked=False, c=category, n=name: self.tagRemoveRequested.emit(c, n)
+            tag_widget = TagWidget(category, name)
+            tag_widget.close_btn.clicked.connect(
+                lambda checked=False, c=category, n=name: self.tagRemoveRequested.emit(
+                    c, n
+                )
             )
-            self.flow.addWidget(btn)
+            self.flow.addWidget(tag_widget)
 
 
 class CenterPanel(QWidget):

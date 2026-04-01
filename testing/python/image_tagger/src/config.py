@@ -1,8 +1,6 @@
 from pathlib import Path
 from pydantic import BaseModel, Field
 
-CONFIG_FILE = Path("config.json")
-
 
 class AppConfig(BaseModel):
     IMAGE_EXTENSIONS: set[str] = {".jpg", ".jpeg", ".png", ".bmp", ".webp", ".gif"}
@@ -12,21 +10,21 @@ class AppConfig(BaseModel):
     PREVIEW_GRID_COLUMNS: int = 3
     excluded_directories: set[str] = Field(default_factory=set)
 
-    @classmethod
-    def load(cls) -> "AppConfig":
-        if CONFIG_FILE.exists():
-            return cls.model_validate_json(CONFIG_FILE.read_text())
-        return cls()
 
-    def save(self):
-        CONFIG_FILE.write_text(self.model_dump_json(indent=4))
+config = AppConfig()
+_config_file: Path | None = None
 
 
-config = AppConfig.load()
+def init_config(root_dir: Path):
+    global config, _config_file
+    _config_file = root_dir / "config.json"
+    if _config_file.exists():
+        config = AppConfig.model_validate_json(_config_file.read_text())
+    else:
+        config = AppConfig()
+        _config_file.write_text(config.model_dump_json(indent=4))
 
-# Provide global aliases for compatibility
-IMAGE_EXTENSIONS = config.IMAGE_EXTENSIONS
-SQLITE_FILENAME = config.SQLITE_FILENAME
-CHROMA_DIRNAME = config.CHROMA_DIRNAME
-THUMBNAIL_SIZE = config.THUMBNAIL_SIZE
-PREVIEW_GRID_COLUMNS = config.PREVIEW_GRID_COLUMNS
+
+def save_config():
+    if _config_file:
+        _config_file.write_text(config.model_dump_json(indent=4))
