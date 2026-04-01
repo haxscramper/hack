@@ -25,6 +25,7 @@ from db.repository import Repository
 from gui.image_directory_view import MixedTreeTileView
 from gui.center_panel import CenterPanel
 from gui.right_panel import RightPanel
+from gui.query_search import SearchTab
 
 
 class MoveFilesCommand(QUndoCommand):
@@ -121,13 +122,17 @@ class MainWindow(QMainWindow):
         self.left_panel = MixedTreeTileView(root_dir)
         self.center_panel = CenterPanel()
         self.right_panel = RightPanel(root_dir)
+        self.search_tab = SearchTab(self.repository.session)
 
         self._update_fully_annotated()
 
         splitter.addWidget(self.left_panel)
         splitter.addWidget(self.center_panel)
         splitter.addWidget(self.right_panel)
-        splitter.setSizes([350, 700, 550])
+        splitter.addWidget(self.search_tab)
+        splitter.setSizes([350, 700, 550, 400])
+
+        self.search_tab.results_found.connect(self.on_search_results)
 
         layout.addWidget(splitter)
 
@@ -206,6 +211,17 @@ class MainWindow(QMainWindow):
                 self,
             )
             self.undo_stack.push(command)
+
+    def on_search_results(self, image_ids: list[int]):
+        rel_paths = (
+            self.repository.session.execute(
+                select(ImageEntry.relative_path).where(ImageEntry.id.in_(image_ids))
+            )
+            .scalars()
+            .all()
+        )
+        full_paths = [str(self.root_dir / p) for p in rel_paths]
+        self.left_panel.set_files(full_paths)
 
     def on_file_selected(self, file_path: str):
         logging.debug(f"File selected in GUI: {file_path}")
