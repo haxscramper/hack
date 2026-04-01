@@ -24,6 +24,8 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QListView,
     QFrame,
+    QSplitter,
+    QSizePolicy,
 )
 
 from config import IMAGE_EXTENSIONS
@@ -140,7 +142,11 @@ class DirectorySelectorWidget(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        self.top_layout = QHBoxLayout()
+        self.top_widget = QWidget()
+        self.top_widget.setSizePolicy(
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed
+        )
+        self.top_layout = QHBoxLayout(self.top_widget)
         self.top_layout.setContentsMargins(0, 0, 0, 0)
         self.top_layout.setSpacing(0)
 
@@ -149,16 +155,32 @@ class DirectorySelectorWidget(QWidget):
         self.path_bar.setSpacing(0)
 
         self.remove_btn = QPushButton("x")
-        self.remove_btn.setFixedWidth(30)
+        self.remove_btn.setFixedWidth(24)
+        self.remove_btn.setFlat(True)
+        self.remove_btn.setStyleSheet(
+            "QPushButton { border: none; padding: 2px; margin: 0px; } QPushButton:hover { background: rgba(255, 0, 0, 0.2); border-radius: 2px; }"
+        )
         self.remove_btn.clicked.connect(self.removeRequested.emit)
 
         self.top_layout.addLayout(self.path_bar, 1)
         self.top_layout.addWidget(self.remove_btn, 0)
 
         self.subdir_list = QListWidget()
+        self.subdir_list.setFrameShape(QFrame.Shape.NoFrame)
+        self.subdir_list.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        self.subdir_list.setStyleSheet(
+            "QListWidget { background: transparent; } QListWidget::item { padding: 2px; }"
+        )
+        self.subdir_list.setSizePolicy(
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum
+        )
 
-        layout.addLayout(self.top_layout)
+        layout.addWidget(self.top_widget)
         layout.addWidget(self.subdir_list)
+
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
 
         self.subdir_list.itemClicked.connect(self._on_subdir_clicked)
         self.refresh()
@@ -178,26 +200,45 @@ class DirectorySelectorWidget(QWidget):
         )
         accumulated = self.root_dir
 
+        btn_style = "QPushButton { border: none; padding: 2px 4px; margin: 0px; background: transparent; } QPushButton:hover { background: rgba(128, 128, 128, 0.2); border-radius: 2px; }"
+
         root_btn = QPushButton(self.root_dir.name)
+        root_btn.setFlat(True)
+        root_btn.setStyleSheet(btn_style)
         root_btn.clicked.connect(lambda: self._set_dir(self.root_dir))
         self.path_bar.addWidget(root_btn)
 
         for part in rel_parts:
             arrow = QLabel(">")
+            arrow.setStyleSheet("margin: 0px 2px; padding: 0px; color: gray;")
             self.path_bar.addWidget(arrow)
             accumulated = accumulated / part
             btn = QPushButton(part)
+            btn.setFlat(True)
+            btn.setStyleSheet(btn_style)
             btn.clicked.connect(lambda checked=False, p=accumulated: self._set_dir(p))
             self.path_bar.addWidget(btn)
 
         self.path_bar.addStretch(1)
 
         self.subdir_list.clear()
+        count = 0
         for child in sorted(self.current_dir.iterdir()):
             if child.is_dir():
                 item = QListWidgetItem(child.name)
                 item.setData(Qt.ItemDataRole.UserRole, str(child))
                 self.subdir_list.addItem(item)
+                count += 1
+
+        if count > 0:
+            self.subdir_list.show()
+            self.subdir_list.doItemsLayout()
+            row_height = self.subdir_list.sizeHintForRow(0)
+            if row_height <= 0:
+                row_height = 20
+            self.subdir_list.setFixedHeight(row_height * count)
+        else:
+            self.subdir_list.hide()
 
     def _set_dir(self, path: Path):
         self.current_dir = path
@@ -258,8 +299,8 @@ class RightPanel(QWidget):
         super().__init__(parent)
         self.root_dir = root_dir
         self.main_layout = QVBoxLayout(self)
-        self.widgets_layout = QVBoxLayout()
-        self.main_layout.addLayout(self.widgets_layout)
+        self.splitter = QSplitter(Qt.Orientation.Vertical)
+        self.main_layout.addWidget(self.splitter)
 
         self.add_btn = QPushButton("+")
         self.add_btn.clicked.connect(self.add_preview_widget)
@@ -270,8 +311,8 @@ class RightPanel(QWidget):
     def add_preview_widget(self):
         widget = DirectoryPreviewWidget(self.root_dir)
         widget.removeRequested.connect(self.remove_preview_widget)
-        self.widgets_layout.addWidget(widget)
+        self.splitter.addWidget(widget)
 
     def remove_preview_widget(self, widget):
-        self.widgets_layout.removeWidget(widget)
+        widget.setParent(None)
         widget.deleteLater()
