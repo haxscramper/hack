@@ -129,6 +129,7 @@ class ImageListModel(QAbstractListModel):
 
 class DirectorySelectorWidget(QWidget):
     directoryChanged = Signal(Path)
+    removeRequested = Signal()
 
     def __init__(self, root_dir: Path, initial_dir: Path | None = None, parent=None):
         super().__init__(parent)
@@ -138,12 +139,25 @@ class DirectorySelectorWidget(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
+
+        self.top_layout = QHBoxLayout()
+        self.top_layout.setContentsMargins(0, 0, 0, 0)
+        self.top_layout.setSpacing(0)
+
         self.path_bar = QHBoxLayout()
         self.path_bar.setContentsMargins(0, 0, 0, 0)
         self.path_bar.setSpacing(0)
+
+        self.remove_btn = QPushButton("x")
+        self.remove_btn.setFixedWidth(30)
+        self.remove_btn.clicked.connect(self.removeRequested.emit)
+
+        self.top_layout.addLayout(self.path_bar, 1)
+        self.top_layout.addWidget(self.remove_btn, 0)
+
         self.subdir_list = QListWidget()
 
-        layout.addLayout(self.path_bar)
+        layout.addLayout(self.top_layout)
         layout.addWidget(self.subdir_list)
 
         self.subdir_list.itemClicked.connect(self._on_subdir_clicked)
@@ -207,15 +221,8 @@ class DirectoryPreviewWidget(QFrame):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        top_row = QHBoxLayout()
-        top_row.setContentsMargins(0, 0, 0, 0)
-        top_row.setSpacing(0)
         self.selector = DirectorySelectorWidget(root_dir)
-        self.remove_btn = QPushButton("x")
-        self.remove_btn.setFixedWidth(30)
-        top_row.addWidget(self.selector, 1)
-        top_row.addWidget(self.remove_btn, 0)
-        layout.addLayout(top_row)
+        layout.addWidget(self.selector)
 
         self.list_view = QListView()
         self.list_view.setViewMode(QListView.ViewMode.IconMode)
@@ -231,7 +238,7 @@ class DirectoryPreviewWidget(QFrame):
         layout.addWidget(self.list_view)
 
         self.selector.directoryChanged.connect(self.set_directory)
-        self.remove_btn.clicked.connect(lambda: self.removeRequested.emit(self))
+        self.selector.removeRequested.connect(lambda: self.removeRequested.emit(self))
         self.set_directory(root_dir)
 
     def set_directory(self, path: Path):
