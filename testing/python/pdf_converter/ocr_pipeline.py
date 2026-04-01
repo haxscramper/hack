@@ -4,6 +4,7 @@ import base64
 import logging
 import hashlib
 import time
+import subprocess
 from pathlib import Path
 from beartype.typing import List, Optional
 from beartype import beartype
@@ -774,8 +775,46 @@ def process_pdf(
 
 
 @beartype
+def ensure_ollama_running() -> None:
+    """Ensures that ollama serve is running and the model is pulled."""
+    try:
+        # Check if we can connect to the API
+        requests.get("http://localhost:11434/api/tags", timeout=2)
+    except requests.exceptions.RequestException:
+        logger.info("Ollama is not running. Starting 'ollama serve'...")
+        # Start ollama serve in the background
+        subprocess.Popen(
+            ["ollama", "serve"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        # Wait for it to become available
+        for _ in range(15):
+            try:
+                requests.get("http://localhost:11434/api/tags", timeout=2)
+                break
+            except requests.exceptions.RequestException:
+                time.sleep(1)
+        else:
+            logger.error("Failed to start or connect to 'ollama serve'.")
+            return
+
+    # Check if the model is available
+    logger.info(f"Checking if model {MODEL_NAME} is available...")
+    result = subprocess.run(["ollama", "list"], capture_output=True, text=True)
+    if MODEL_NAME not in result.stdout:
+        logger.info(
+            f"Model {MODEL_NAME} not found. Pulling (this might take a while)..."
+        )
+        subprocess.run(["ollama", "pull", MODEL_NAME], check=True)
+        logger.info(f"Model {MODEL_NAME} pulled successfully.")
+
+
+@beartype
 def run_headless_pipeline(config: AppConfig):
     """Entry point for the headless OCR pipeline."""
+    ensure_ollama_running()
+
     for input_path in config.input_dirs:
         input_path = Path(input_path)
         if input_path.is_file() and input_path.suffix.lower() == ".pdf":
