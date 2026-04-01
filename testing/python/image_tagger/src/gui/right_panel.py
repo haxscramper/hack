@@ -30,7 +30,7 @@ from config import IMAGE_EXTENSIONS
 
 
 class ImageLoadSignals(QObject):
-    loaded = Signal(int, QImage)
+    loaded = Signal(int, Path, QImage)
 
 
 class ImageLoadTask(QRunnable):
@@ -55,7 +55,7 @@ class ImageLoadTask(QRunnable):
                 target = QSize(max(1, int(w * scale)), max(1, int(h * scale)))
                 reader.setScaledSize(target)
         image = reader.read()
-        self.signals.loaded.emit(self.row, image)
+        self.signals.loaded.emit(self.row, self.path, image)
 
 
 class ImageListModel(QAbstractListModel):
@@ -109,7 +109,10 @@ class ImageListModel(QAbstractListModel):
             return str(self.images[row])
         return None
 
-    def on_image_loaded(self, row, image):
+    def on_image_loaded(self, row: int, path: Path, image: QImage):
+        if row >= len(self.images) or self.images[row] != path:
+            return
+
         if row in self.loading:
             self.loading.remove(row)
         if not image.isNull():
@@ -120,7 +123,8 @@ class ImageListModel(QAbstractListModel):
             self.cache[row] = pix
 
         index = self.index(row, 0)
-        self.dataChanged.emit(index, index, [Qt.ItemDataRole.DecorationRole])
+        if index.isValid():
+            self.dataChanged.emit(index, index, [Qt.ItemDataRole.DecorationRole])
 
 
 class DirectorySelectorWidget(QWidget):
