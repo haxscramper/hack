@@ -136,7 +136,11 @@ class DirectorySelectorWidget(QWidget):
         self.current_dir = initial_dir or root_dir
 
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
         self.path_bar = QHBoxLayout()
+        self.path_bar.setContentsMargins(0, 0, 0, 0)
+        self.path_bar.setSpacing(0)
         self.subdir_list = QListWidget()
 
         layout.addLayout(self.path_bar)
@@ -200,8 +204,12 @@ class DirectoryPreviewWidget(QFrame):
         self.setFrameShape(QFrame.Shape.StyledPanel)
 
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
 
         top_row = QHBoxLayout()
+        top_row.setContentsMargins(0, 0, 0, 0)
+        top_row.setSpacing(0)
         self.selector = DirectorySelectorWidget(root_dir)
         self.remove_btn = QPushButton("x")
         self.remove_btn.setFixedWidth(30)
