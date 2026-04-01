@@ -66,9 +66,9 @@ class ImageListModel(QAbstractListModel):
         self.signals.loaded.connect(self.on_image_loaded)
         self.thread_pool = QThreadPool.globalInstance()
 
-    def set_images(self, images):
+    def set_images(self, images: list[Path | str]):
         self.beginResetModel()
-        self.images = images
+        self.images = [Path(p) if isinstance(p, str) else p for p in images]
         self.cache.clear()
         self.loading.clear()
         self.endResetModel()
@@ -134,6 +134,8 @@ class ImageListWidget(QWidget):
         self.list_view = QListView()
         self.list_view.setViewMode(QListView.ViewMode.IconMode)
         self.list_view.setResizeMode(QListView.ResizeMode.Adjust)
+        self.list_view.setSelectionMode(QListView.SelectionMode.ExtendedSelection)
+        self.list_view.setSelectionBehavior(QListView.SelectionBehavior.SelectItems)
         self.list_view.setWordWrap(True)
         self.list_view.setUniformItemSizes(True)
         self.list_view.setGridSize(QSize(120, 140))
@@ -144,5 +146,5 @@ class ImageListWidget(QWidget):
 
         layout.addWidget(self.list_view)
 
-    def set_images(self, images: list[Path]):
-        self.model.set_images(images)
+    def set_images(self, images: list[Path | str]):
+        self.model.set_images(list(images))

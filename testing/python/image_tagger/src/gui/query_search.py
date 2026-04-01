@@ -28,37 +28,27 @@ import os
 ...
 
 
-class ImageThumbnailList(QListWidget):
+from gui.image_list_widget import ImageListWidget
+
+...
+
+
+class ImageThumbnailList(ImageListWidget):
     """Displays image thumbnails in an icon-mode list."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setViewMode(QListWidget.ViewMode.IconMode)
-        self.setIconSize(QSize(160, 160))
-        self.setResizeMode(QListWidget.ResizeMode.Adjust)
-        self.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
-        self.setSpacing(8)
+        self.list_view.setSelectionMode(
+            QAbstractItemView.SelectionMode.ExtendedSelection
+        )
 
     def set_images(self, paths: list[str]):
-        self.clear()
-        for path in paths:
-            pixmap = QPixmap(path)
-            if pixmap.isNull():
-                continue
-            item = QListWidgetItem(
-                QIcon(
-                    pixmap.scaled(
-                        160,
-                        160,
-                        Qt.AspectRatioMode.KeepAspectRatio,
-                        Qt.TransformationMode.SmoothTransformation,
-                    )
-                ),
-                Path(path).name,
-            )
-            item.setData(Qt.ItemDataRole.UserRole, path)
-            item.setToolTip(path)
-            self.addItem(item)
+        self.model.set_images([Path(p) for p in paths])
+        self.list_view.clearSelection()
+
+    def get_selected_images(self) -> list[str]:
+        indexes = self.list_view.selectedIndexes()
+        return [self.model.images[idx.row()].as_posix() for idx in indexes]
 
 
 from sqlalchemy.orm import Session
@@ -74,7 +64,7 @@ from db.models import (
 )
 
 
-class TagCompleter(QLineEdit): 
+class TagCompleter(QLineEdit):
     """A line edit with auto-completion for tag names."""
 
     def __init__(self, suggestions: list[str], parent=None):
@@ -82,8 +72,8 @@ class TagCompleter(QLineEdit):
         from PySide6.QtWidgets import QCompleter
 
         self._completer = QCompleter(suggestions)
-        self._completer.setCaseSensitivity(Qt.CaseInsensitive)
-        self._completer.setFilterMode(Qt.MatchContains)
+        self._completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self._completer.setFilterMode(Qt.MatchFlag.MatchContains)
         self.setCompleter(self._completer)
 
     def set_suggestions(self, suggestions: list[str]):
@@ -99,7 +89,7 @@ class ConditionWidget(QFrame):
     def __init__(self, session: Session, parent=None):
         super().__init__(parent)
         self.session = session
-        self.setFrameStyle(QFrame.StyledPanel | QFrame.Raised)
+        self.setFrameStyle(QFrame.Shape.StyledPanel | QFrame.Shadow.Raised)
         self._build_ui()
 
     def _build_ui(self):
@@ -286,7 +276,7 @@ class ExpressionNode(QFrame):
         self.condition: Optional[ConditionWidget] = None
         self.is_group = True
 
-        self.setFrameStyle(QFrame.Box | QFrame.Plain)
+        self.setFrameStyle(QFrame.Shape.Box | QFrame.Shadow.Plain)
         self._build_ui()
 
     def _build_ui(self):
