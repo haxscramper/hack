@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox,
     QLineEdit,
     QHBoxLayout,
+    QFormLayout,
     QSplitter,
     QAbstractItemView,
     QListWidget,
@@ -102,8 +103,9 @@ class ConditionWidget(QFrame):
         self._build_ui()
 
     def _build_ui(self):
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(4, 4, 4, 4)
+        layout = QFormLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(2)
 
         self.condition_type = QComboBox()
         self.condition_type.addItems(
@@ -114,44 +116,40 @@ class ConditionWidget(QFrame):
             ]
         )
         self.condition_type.currentIndexChanged.connect(self._on_type_changed)
-        layout.addWidget(self.condition_type)
+        layout.addRow("type:", self.condition_type)
 
-        self.category_label = QLabel("category:")
-        layout.addWidget(self.category_label)
         self.category_combo = QComboBox()
         self.category_combo.setEditable(True)
         self.category_combo.setMinimumWidth(100)
         self.category_combo.currentTextChanged.connect(self._on_category_changed)
-        layout.addWidget(self.category_combo)
+        layout.addRow("category:", self.category_combo)
+        self.category_label = layout.labelForField(self.category_combo)
 
-        self.tag_label = QLabel("tag:")
-        layout.addWidget(self.tag_label)
         self.tag_input = TagCompleter([])
         self.tag_input.setMinimumWidth(200)
         self.tag_input.textChanged.connect(lambda: self.changed.emit())
-        layout.addWidget(self.tag_input)
+        layout.addRow("tag:", self.tag_input)
+        self.tag_label = layout.labelForField(self.tag_input)
 
-        self.prob_label = QLabel("confidence ≥")
-        layout.addWidget(self.prob_label)
         self.prob_spin = QDoubleSpinBox()
         self.prob_spin.setRange(0.0, 1.0)
         self.prob_spin.setSingleStep(0.05)
         self.prob_spin.setValue(0.5)
         self.prob_spin.setDecimals(2)
         self.prob_spin.valueChanged.connect(lambda: self.changed.emit())
-        layout.addWidget(self.prob_spin)
+        layout.addRow("confidence ≥", self.prob_spin)
+        self.prob_label = layout.labelForField(self.prob_spin)
 
-        self.desc_label = QLabel("text:")
-        layout.addWidget(self.desc_label)
         self.desc_input = QLineEdit()
         self.desc_input.setMinimumWidth(200)
         self.desc_input.textChanged.connect(lambda: self.changed.emit())
-        layout.addWidget(self.desc_input)
+        layout.addRow("text:", self.desc_input)
+        self.desc_label = layout.labelForField(self.desc_input)
 
         remove_btn = QPushButton("✕")
         remove_btn.setFixedWidth(30)
         remove_btn.clicked.connect(self.remove_requested.emit)
-        layout.addWidget(remove_btn)
+        layout.addRow(remove_btn)
 
         self._load_suggestions()
         self._on_type_changed(0)
@@ -198,6 +196,21 @@ class ConditionWidget(QFrame):
         self.prob_spin.setVisible(is_prob)
         self.desc_label.setVisible(is_desc)
         self.desc_input.setVisible(is_desc)
+
+        if is_prob or is_reg:
+            self.category_label.show()
+            self.tag_label.show()
+        else:
+            self.category_label.hide()
+            self.tag_label.hide()
+        if is_prob:
+            self.prob_label.show()
+        else:
+            self.prob_label.hide()
+        if is_desc:
+            self.desc_label.show()
+        else:
+            self.desc_label.hide()
 
         self._update_categories()
         self._on_category_changed()
@@ -278,11 +291,14 @@ class ExpressionNode(QFrame):
 
     def _build_ui(self):
         self.main_layout = QVBoxLayout(self)
-        self.main_layout.setContentsMargins(8, 8, 8, 8)
-        self.main_layout.setSpacing(4)
+        self.main_layout.setContentsMargins(4, 4, 4, 4)
+        self.main_layout.setSpacing(2)
 
         header = QVBoxLayout()
+        header.setContentsMargins(0, 0, 0, 0)
         h_row = QHBoxLayout()
+        h_row.setContentsMargins(0, 0, 0, 0)
+        h_row.setSpacing(4)
 
         self.operator_combo = QComboBox()
         self.operator_combo.addItems(["AND", "OR", "NOT"])
@@ -309,7 +325,8 @@ class ExpressionNode(QFrame):
         self.main_layout.addLayout(header)
 
         self.children_layout = QVBoxLayout()
-        self.children_layout.setContentsMargins(16, 0, 0, 0)
+        self.children_layout.setContentsMargins(8, 0, 0, 0)
+        self.children_layout.setSpacing(2)
         self.main_layout.addLayout(self.children_layout)
 
     def _on_operator_changed(self):
