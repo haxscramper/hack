@@ -15,22 +15,23 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QSplitter,
     QAbstractItemView,
-    QListWidget,
-    QListWidgetItem,
     QCompleter,
-    QFileDialog,
 )
-from PySide6.QtCore import Qt, Signal, QSize, QStringListModel
-from PySide6.QtGui import QPixmap, QIcon
+from PySide6.QtCore import Qt, Signal, QStringListModel
 from pathlib import Path
 import os
 
-...
-
-
 from gui.image_list_widget import ImageListWidget
-
-...
+from sqlalchemy.orm import Session
+from sqlalchemy import select
+from db.models import (
+    ImageEntry,
+    ProbabilisticTag,
+    ImageProbabilisticTag,
+    RegularTag,
+    ImageRegularTag,
+    ImageDescription,
+)
 
 
 class ImageThumbnailList(ImageListWidget):
@@ -42,26 +43,37 @@ class ImageThumbnailList(ImageListWidget):
             QAbstractItemView.SelectionMode.ExtendedSelection
         )
 
-    def set_images(self, paths: list[str]):
-        self.model.set_images([Path(p) for p in paths])
+    def set_images(self, images: list):
+        """Set the images to display in the thumbnail list."""
+        from pathlib import Path
+
+        # Accept list or sequence of paths
+        image_paths = [Path(p) if isinstance(p, str) else p for p in images]
+        self.model.set_images(image_paths)
         self.list_view.clearSelection()
 
-    def get_selected_images(self) -> list[str]:
+    def get_selected_images(self) -> list[Path]:
+        """Return the selected images as a list of Path objects."""
         indexes = self.list_view.selectedIndexes()
-        return [self.model.images[idx.row()].as_posix() for idx in indexes]
+        return [self.model.images[idx.row()] for idx in indexes]
 
+    def set_selection(self, paths: set[Path]) -> None:
+        """Set the selection to the given set of file paths."""
+        from PySide6.QtCore import QItemSelectionModel
 
-from sqlalchemy.orm import Session
-from sqlalchemy import select
+        self.list_view.clearSelection()
+        selection_model = self.list_view.selectionModel()
 
-from db.models import (
-    ImageEntry,
-    ProbabilisticTag,
-    ImageProbabilisticTag,
-    RegularTag,
-    ImageRegularTag,
-    ImageDescription,
-)
+        for path in paths:
+            # Convert to string for comparison if needed
+            path_str = str(path)
+            for idx, img_path in enumerate(self.model.images):
+                if img_path == path or str(img_path) == path_str:
+                    index = self.model.index(idx, 0)
+                    selection_model.select(
+                        index, QItemSelectionModel.SelectionFlag.Select
+                    )
+                    break
 
 
 class TagCompleter(QLineEdit):
@@ -69,7 +81,6 @@ class TagCompleter(QLineEdit):
 
     def __init__(self, suggestions: list[str], parent=None):
         super().__init__(parent)
-        from PySide6.QtWidgets import QCompleter
 
         self._completer = QCompleter(suggestions)
         self._completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)

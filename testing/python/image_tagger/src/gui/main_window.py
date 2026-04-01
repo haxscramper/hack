@@ -26,7 +26,6 @@ from gui.left_panel import LeftPanel
 
 from gui.center_panel import CenterPanel
 from gui.right_panel import RightPanel
-from gui.query_search import SearchTab
 
 
 class MoveFilesCommand(QUndoCommand):
@@ -168,7 +167,7 @@ class MainWindow(QMainWindow):
         if not selected_files:
             return
 
-        from gui.right_panel import ImageListModel
+        from gui.image_list_widget import ImageListModel
 
         dialog = QDialog(self)
         dialog.setWindowTitle(f"Move to {target_dir.name}?")
