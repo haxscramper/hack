@@ -159,6 +159,8 @@ class MixedTreeTileView(QAbstractScrollArea):
 
     def __init__(self, root_path: Path, parent=None):
         super().__init__(parent)
+        self.zoom_factor = 1.0
+
         self.root_node = DirNode(root_path.resolve(), expanded=True)
         self.root_node.load()
 
@@ -196,14 +198,26 @@ class MixedTreeTileView(QAbstractScrollArea):
 
         self._update_scrollbars()
 
+    @property
+    def tile_w(self) -> int:
+        return int(self.TILE_W * self.zoom_factor)
+
+    @property
+    def tile_h(self) -> int:
+        return int(self.TILE_H * self.zoom_factor)
+
+    @property
+    def thumb_size(self) -> int:
+        return int(self.THUMB_SIZE * self.zoom_factor)
+
     def visible_width(self) -> int:
         return max(1, self.viewport().width())
 
     def flow_columns(self, depth: int) -> int:
         available = self.visible_width() - 2 * self.CONTENT_MARGIN - depth * self.INDENT
-        available = max(available, self.TILE_W)
+        available = max(available, self.tile_w)
         return max(
-            1, (available + self.TILE_SPACING_X) // (self.TILE_W + self.TILE_SPACING_X)
+            1, (available + self.TILE_SPACING_X) // (self.tile_w + self.TILE_SPACING_X)
         )
 
     def layout_height_for_images(self, count: int, depth: int) -> int:
@@ -211,7 +225,7 @@ class MixedTreeTileView(QAbstractScrollArea):
             return 0
         cols = self.flow_columns(depth)
         rows = math.ceil(count / cols)
-        return rows * self.TILE_H + max(0, rows - 1) * self.TILE_SPACING_Y
+        return rows * self.tile_h + max(0, rows - 1) * self.TILE_SPACING_Y
 
     def total_content_height(self) -> int:
         self.header_hits.clear()
@@ -242,14 +256,14 @@ class MixedTreeTileView(QAbstractScrollArea):
         if path in self.thumb_cache or path in self.loading_paths:
             return
         self.loading_paths.add(path)
-        self.thread_pool.start(ThumbTask(path, self.THUMB_SIZE, self.thumb_signals))
+        self.thread_pool.start(ThumbTask(path, self.thumb_size, self.thumb_signals))
 
     def on_thumbnail_loaded(self, path_str: str, image: QImage) -> None:
         path = Path(path_str)
         self.loading_paths.discard(path)
 
         if image.isNull():
-            pix = QPixmap(self.THUMB_SIZE, self.THUMB_SIZE)
+            pix = QPixmap(self.thumb_size, self.thumb_size)
             pix.fill(Qt.lightGray)
         else:
             pix = QPixmap.fromImage(image)
@@ -292,9 +306,9 @@ class MixedTreeTileView(QAbstractScrollArea):
                 for idx, file_path in enumerate(node.image_files):
                     row = idx // cols
                     col = idx % cols
-                    tx = vx + col * (self.TILE_W + self.TILE_SPACING_X)
-                    ty = y + row * (self.TILE_H + self.TILE_SPACING_Y)
-                    rect = QRect(tx, ty, self.TILE_W, self.TILE_H)
+                    tx = vx + col * (self.tile_w + self.TILE_SPACING_X)
+                    ty = y + row * (self.tile_h + self.TILE_SPACING_Y)
+                    rect = QRect(tx, ty, self.tile_w, self.tile_h)
                     self.tile_hits.append(
                         TileHit(file_path=file_path, rect=rect, depth=depth)
                     )
@@ -407,10 +421,10 @@ class MixedTreeTileView(QAbstractScrollArea):
         painter.drawRoundedRect(rect, 6, 6)
 
         thumb_rect = QRect(
-            rect.x() + (rect.width() - self.THUMB_SIZE) // 2,
+            rect.x() + (rect.width() - self.thumb_size) // 2,
             rect.y() + 8,
-            self.THUMB_SIZE,
-            self.THUMB_SIZE,
+            self.thumb_size,
+            self.thumb_size,
         )
 
         visible_rect = self.visible_content_rect()
@@ -448,7 +462,28 @@ class MixedTreeTileView(QAbstractScrollArea):
         super().resizeEvent(event)
         self._update_scrollbars()
 
+    def zoom_in(self) -> None:
+        self.zoom_factor *= 1.2
+        self.zoom_factor = min(self.zoom_factor, 5.0)
+        self.thumb_cache.clear()
+        self._update_scrollbars()
+
+    def zoom_out(self) -> None:
+        self.zoom_factor /= 1.2
+        self.zoom_factor = max(self.zoom_factor, 0.2)
+        self.thumb_cache.clear()
+        self._update_scrollbars()
+
     def wheelEvent(self, event: QWheelEvent) -> None:
+        if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+            delta = event.angleDelta().y()
+            if delta > 0:
+                self.zoom_in()
+            elif delta < 0:
+                self.zoom_out()
+            event.accept()
+            return
+
         delta = event.angleDelta().y()
         sb = self.verticalScrollBar()
         sb.setValue(sb.value() - delta // 2)
