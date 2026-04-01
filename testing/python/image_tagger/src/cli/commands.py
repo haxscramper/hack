@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 import click
 from PySide6.QtWidgets import QApplication
@@ -15,27 +16,48 @@ def cli():
 
 
 @cli.command()
-@click.argument("root_dir", type=click.Path(exists=True, file_okay=False, path_type=Path))
+@click.argument(
+    "root_dir", type=click.Path(exists=True, file_okay=False, path_type=Path)
+)
 def gui(root_dir: Path):
+    logging.info(f"Starting GUI for directory: {root_dir}")
     root_dir = root_dir.resolve()
     engine = init_db(root_dir / SQLITE_FILENAME)
     session_factory = make_session_factory(engine)
     session = session_factory()
-    repo = Repository(session)
+    try:
+        repo = Repository(session)
 
-    app = QApplication([])
-    window = MainWindow(root_dir, repo)
-    window.show()
-    app.exec()
-    session.close()
+        app = QApplication([])
+        window = MainWindow(root_dir, repo)
+        window.show()
+        app.exec()
+    finally:
+        session.close()
+    logging.info("GUI closed")
 
 
 @cli.command()
-@click.argument("root_dir", type=click.Path(exists=True, file_okay=False, path_type=Path))
-@click.option("--wd-model", type=click.Path(exists=True, dir_okay=False, path_type=Path), default=None)
-@click.option("--wd-tags-csv", type=click.Path(exists=True, dir_okay=False, path_type=Path), default=None)
+@click.argument(
+    "root_dir", type=click.Path(exists=True, file_okay=False, path_type=Path)
+)
+@click.option(
+    "--wd-model",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=None,
+)
+@click.option(
+    "--wd-tags-csv",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=None,
+)
 @click.option("--use-ollama/--no-ollama", default=True)
-def headless(root_dir: Path, wd_model: Path | None, wd_tags_csv: Path | None, use_ollama: bool):
+def headless(
+    root_dir: Path, wd_model: Path | None, wd_tags_csv: Path | None, use_ollama: bool
+):
+    logging.info(
+        f"Running in headless mode with root_dir={root_dir}, wd_model={wd_model}, use_ollama={use_ollama}"
+    )
     run_headless(
         root_dir=root_dir,
         wd_model_path=wd_model,

@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 
 from db.repository import Repository
@@ -20,19 +21,24 @@ class AnnotationService:
         self.ollama_tagger = ollama_tagger
 
     def annotate_image(self, root_dir: Path, image_path: Path):
+        logging.info(f"Annotating image: {image_path}")
         entry = self.repository.upsert_image(root_dir, image_path)
 
         if self.wd_tagger:
+            logging.debug(f"Running WD tagger for {image_path}")
             prob_tags = self.wd_tagger.tag_image(image_path)
             self.repository.replace_probabilistic_annotations(entry.id, prob_tags)
 
         if self.ollama_tagger:
+            logging.debug(f"Running Ollama tagger for {image_path}")
             reg_tags = self.ollama_tagger.regular_tags(image_path)
             self.repository.replace_regular_annotations(entry.id, reg_tags)
 
             description = self.ollama_tagger.describe(image_path)
             if description:
-                self.repository.set_description(entry.id, description, self.ollama_tagger.model_name)
+                self.repository.set_description(
+                    entry.id, description, self.ollama_tagger.model_name
+                )
                 self.chroma_store.upsert_description(
                     image_path=str(image_path.resolve()),
                     description=description,

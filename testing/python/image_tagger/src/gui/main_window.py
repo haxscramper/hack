@@ -1,4 +1,5 @@
 from __future__ import annotations
+import logging
 
 from pathlib import Path
 
@@ -17,6 +18,7 @@ class MainWindow(QMainWindow):
         self.root_dir = root_dir
         self.repository = repository
         self.current_image = None
+        logging.info(f"MainWindow initialized with root_dir={root_dir}")
 
         self.setWindowTitle("Image Tagger")
         self.resize(1600, 900)
@@ -45,6 +47,7 @@ class MainWindow(QMainWindow):
         self.center_panel.descriptionSaved.connect(self.on_description_saved)
 
     def on_file_selected(self, file_path: str):
+        logging.debug(f"File selected in GUI: {file_path}")
         entry = self.repository.get_image_by_path(file_path)
         if entry is None:
             entry = self.repository.upsert_image(self.root_dir, Path(file_path))
@@ -65,22 +68,32 @@ class MainWindow(QMainWindow):
     def on_prob_tag_added(self, name: str, probability: float):
         if not self.current_image:
             return
+        logging.info(
+            f"Adding prob tag '{name}' with prob {probability} to image {self.current_image.id}"
+        )
         self.repository.set_probabilistic_tag(self.current_image.id, name, probability)
         self.on_file_selected(self.current_image.full_path)
 
     def on_regular_tag_added(self, category: str, name: str):
         if not self.current_image:
             return
+        logging.info(
+            f"Adding regular tag '{category}:{name}' to image {self.current_image.id}"
+        )
         self.repository.add_regular_tag(self.current_image.id, category, name)
         self.on_file_selected(self.current_image.full_path)
 
     def on_regular_tag_deleted(self, category: str, name: str):
         if not self.current_image:
             return
+        logging.info(
+            f"Deleting regular tag '{category}:{name}' from image {self.current_image.id}"
+        )
         self.repository.delete_regular_tag(self.current_image.id, category, name)
         self.on_file_selected(self.current_image.full_path)
 
     def on_description_saved(self, text: str):
         if not self.current_image:
             return
+        logging.info(f"Saving description for image {self.current_image.id}")
         self.repository.set_description(self.current_image.id, text)
