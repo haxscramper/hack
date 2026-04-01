@@ -3,13 +3,102 @@ import logging
 
 from pathlib import Path
 
-from PySide6.QtWidgets import QMainWindow, QWidget, QHBoxLayout, QSplitter
-from PySide6.QtCore import Qt
+from PySide6.QtWidgets import (
+    QMainWindow,
+    QWidget,
+    QHBoxLayout,
+    QSplitter,
+    QDialog,
+    QVBoxLayout,
+    QDialogButtonBox,
+    QLabel,
+    QListView,
+)
+from PySide6.QtCore import Qt, QSize
+from PySide6.QtGui import QUndoStack, QUndoCommand, QKeySequence, QShortcut, QAction
+
+from db.models import ImageEntry
+from sqlalchemy import select
+import shutil
 
 from db.repository import Repository
 from gui.image_directory_view import MixedTreeTileView
 from gui.center_panel import CenterPanel
 from gui.right_panel import RightPanel
+
+
+class MoveFilesCommand(QUndoCommand):
+    def __init__(
+        self,
+        repository,
+        source_files: list[Path],
+        target_dir: Path,
+        root_dir: Path,
+        main_window,
+        parent=None,
+    ):
+        super().__init__(parent)
+        self.repository = repository
+        self.source_files = source_files
+        self.target_dir = target_dir
+        self.root_dir = root_dir
+        self.main_window = main_window
+
+        self.moves = []
+        for src in self.source_files:
+            dest = self.target_dir / src.name
+            if src != dest and not dest.exists():
+                self.moves.append((src, dest))
+
+        self.setText(f"Move {len(self.moves)} files to {self.target_dir.name}")
+
+    def _update_db(self, old_path: Path, new_path: Path):
+        entry = self.repository.session.scalar(
+            select(ImageEntry).where(ImageEntry.full_path == str(old_path.resolve()))
+        )
+        if entry:
+            entry.full_path = str(new_path.resolve())
+            entry.relative_path = str(
+                new_path.resolve().relative_to(self.root_dir.resolve())
+            )
+            entry.original_name = new_path.name
+            self.repository.session.commit()
+
+    def _refresh_ui(self):
+        def _refresh_node(node):
+            node.children_loaded = False
+            if node.expanded:
+                node.load()
+                for child in node.child_dirs:
+                    _refresh_node(child)
+
+        _refresh_node(self.main_window.left_panel.root_node)
+        self.main_window.left_panel.selected_files = {dest for src, dest in self.moves}
+        self.main_window.left_panel._update_scrollbars()
+        self.main_window.left_panel.viewport().update()
+
+        for i in range(self.main_window.right_panel.splitter.count()):
+            w = self.main_window.right_panel.splitter.widget(i)
+            if hasattr(w, "current_dir"):
+                w.set_directory(w.current_dir)
+
+    def redo(self):
+        for src, dest in self.moves:
+            try:
+                shutil.move(str(src), str(dest))
+                self._update_db(src, dest)
+            except Exception as e:
+                logging.error(f"Failed to move {src} to {dest}: {e}")
+        self._refresh_ui()
+
+    def undo(self):
+        for src, dest in self.moves:
+            try:
+                shutil.move(str(dest), str(src))
+                self._update_db(dest, src)
+            except Exception as e:
+                logging.error(f"Failed to move back {dest} to {src}: {e}")
+        self._refresh_ui()
 
 
 class MainWindow(QMainWindow):
@@ -45,6 +134,70 @@ class MainWindow(QMainWindow):
         self.center_panel.regularTagAdded.connect(self.on_regular_tag_added)
         self.center_panel.regularTagDeleted.connect(self.on_regular_tag_deleted)
         self.center_panel.descriptionSaved.connect(self.on_description_saved)
+
+        self.undo_stack = QUndoStack(self)
+        undo_action = self.undo_stack.createUndoAction(self, "Undo")
+        undo_action.setShortcut(QKeySequence("Ctrl+Z"))
+        self.addAction(undo_action)
+
+        for i in range(1, 10):
+            shortcut = QShortcut(QKeySequence(f"Ctrl+{i}"), self)
+            shortcut.activated.connect(lambda idx=i: self.on_move_shortcut(idx))
+
+    def on_move_shortcut(self, idx: int):
+        if idx - 1 >= self.right_panel.splitter.count():
+            return
+
+        widget = self.right_panel.splitter.widget(idx - 1)
+        if not widget or not hasattr(widget, "current_dir"):
+            return
+
+        target_dir = getattr(widget, "current_dir")
+        selected_files = list(self.left_panel.selected_files)
+
+        if not selected_files:
+            return
+
+        from gui.right_panel import ImageListModel
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle(f"Move to {target_dir.name}?")
+        dialog.resize(600, 400)
+        layout = QVBoxLayout(dialog)
+
+        label = QLabel(f"Move {len(selected_files)} items to {target_dir}?")
+        layout.addWidget(label)
+
+        list_view = QListView()
+        list_view.setViewMode(QListView.ViewMode.IconMode)
+        list_view.setResizeMode(QListView.ResizeMode.Adjust)
+        list_view.setWordWrap(True)
+        list_view.setUniformItemSizes(True)
+        list_view.setGridSize(QSize(120, 140))
+        list_view.setIconSize(QSize(100, 100))
+
+        model = ImageListModel()
+        model.set_images(selected_files)
+        list_view.setModel(model)
+
+        layout.addWidget(list_view)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            command = MoveFilesCommand(
+                self.repository,
+                selected_files,
+                target_dir,
+                self.root_dir,
+                self,
+            )
+            self.undo_stack.push(command)
 
     def on_file_selected(self, file_path: str):
         logging.debug(f"File selected in GUI: {file_path}")
