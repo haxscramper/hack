@@ -156,6 +156,7 @@ class MixedTreeTileView(QAbstractScrollArea):
     THUMB_SIZE = 72
     CONTENT_MARGIN = 8
     PREFETCH_MARGIN = 300
+    TILE_MARGIN = 4
 
     def __init__(self, root_path: Path, parent=None):
         super().__init__(parent)
@@ -168,6 +169,7 @@ class MixedTreeTileView(QAbstractScrollArea):
         self.tile_hits: list[TileHit] = []
         self.selected_files: set[Path] = set()
         self.last_clicked_file: Path | None = None
+        self.hovered_file_path: Path | None = None
 
         self.thumb_cache: dict[Path, QPixmap] = {}
         self.loading_paths: set[Path] = set()
@@ -200,11 +202,11 @@ class MixedTreeTileView(QAbstractScrollArea):
 
     @property
     def tile_w(self) -> int:
-        return int(self.TILE_W * self.zoom_factor)
+        return self.thumb_size + self.TILE_MARGIN * 2
 
     @property
     def tile_h(self) -> int:
-        return int(self.TILE_H * self.zoom_factor)
+        return self.thumb_size + self.TILE_MARGIN * 2
 
     @property
     def thumb_size(self) -> int:
@@ -420,9 +422,10 @@ class MixedTreeTileView(QAbstractScrollArea):
         painter.setBrush(bg)
         painter.drawRoundedRect(rect, 6, 6)
 
+        margin = self.TILE_MARGIN
         thumb_rect = QRect(
-            rect.x() + (rect.width() - self.thumb_size) // 2,
-            rect.y() + 8,
+            rect.x() + margin,
+            rect.y() + margin,
             self.thumb_size,
             self.thumb_size,
         )
@@ -445,16 +448,22 @@ class MixedTreeTileView(QAbstractScrollArea):
             py = thumb_rect.y() + (thumb_rect.height() - scaled.height()) // 2
             painter.drawPixmap(px, py, scaled)
 
-        text_rect = QRect(
-            rect.x() + 6,
-            rect.bottom() - self.TILE_TEXT_H - 6,
-            rect.width() - 12,
-            self.TILE_TEXT_H,
-        )
-        painter.setPen(self.hl_text if selected else self.fg)
-        painter.drawText(
-            text_rect, Qt.AlignHCenter | Qt.AlignTop | Qt.TextWordWrap, file_path.name
-        )
+        is_hovered = getattr(self, "hovered_file_path", None) == file_path
+
+        if selected or is_hovered:
+            text_rect = QRect(
+                rect.x() + 4,
+                rect.bottom() - self.TILE_TEXT_H - 4,
+                rect.width() - 8,
+                self.TILE_TEXT_H,
+            )
+            painter.fillRect(text_rect, QColor(255, 255, 255, 220))
+            painter.setPen(QColor(0, 0, 0))
+            painter.drawText(
+                text_rect,
+                Qt.AlignHCenter | Qt.AlignTop | Qt.TextWordWrap,
+                file_path.name,
+            )
 
         painter.restore()
 
@@ -488,6 +497,26 @@ class MixedTreeTileView(QAbstractScrollArea):
         sb = self.verticalScrollBar()
         sb.setValue(sb.value() - delta // 2)
         event.accept()
+
+    def mouseMoveEvent(self, event: QMouseEvent) -> None:
+        pos = self.content_pos(event.position().toPoint())
+        new_hover = None
+        for hit in self.tile_hits:
+            if hit.rect.contains(pos):
+                new_hover = hit.file_path
+                break
+
+        if new_hover != self.hovered_file_path:
+            self.hovered_file_path = new_hover
+            self.viewport().update()
+
+        super().mouseMoveEvent(event)
+
+    def leaveEvent(self, event) -> None:
+        if getattr(self, "hovered_file_path", None) is not None:
+            self.hovered_file_path = None
+            self.viewport().update()
+        super().leaveEvent(event)
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         pos = self.content_pos(event.position().toPoint())
