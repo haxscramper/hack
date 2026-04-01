@@ -2,7 +2,18 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Signal, Qt
+from PySide6.QtCore import (
+    Signal,
+    Qt,
+    QAbstractListModel,
+    QModelIndex,
+    QPersistentModelIndex,
+    QThreadPool,
+    QRunnable,
+    QObject,
+    QSize,
+)
+from PySide6.QtGui import QImage, QPixmap, QImageReader
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -11,13 +22,105 @@ from PySide6.QtWidgets import (
     QPushButton,
     QListWidget,
     QListWidgetItem,
-    QGridLayout,
-    QScrollArea,
+    QListView,
     QFrame,
 )
 
-from gui.image_preview import ImageThumbWidget
-from config import IMAGE_EXTENSIONS, PREVIEW_GRID_COLUMNS
+from config import IMAGE_EXTENSIONS
+
+
+class ImageLoadSignals(QObject):
+    loaded = Signal(int, QImage)
+
+
+class ImageLoadTask(QRunnable):
+    def __init__(
+        self, row: int, path: Path, thumb_size: int, signals: ImageLoadSignals
+    ):
+        super().__init__()
+        self.row = row
+        self.path = path
+        self.thumb_size = thumb_size
+        self.signals = signals
+
+    def run(self):
+        reader = QImageReader(str(self.path))
+        reader.setAutoTransform(True)
+        size = reader.size()
+        if size.isValid():
+            w = size.width()
+            h = size.height()
+            if w > 0 and h > 0:
+                scale = min(self.thumb_size / w, self.thumb_size / h)
+                target = QSize(max(1, int(w * scale)), max(1, int(h * scale)))
+                reader.setScaledSize(target)
+        image = reader.read()
+        self.signals.loaded.emit(self.row, image)
+
+
+class ImageListModel(QAbstractListModel):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.images = []
+        self.cache = {}
+        self.loading = set()
+        self.thumb_size = 100
+        self.signals = ImageLoadSignals()
+        self.signals.loaded.connect(self.on_image_loaded)
+        self.thread_pool = QThreadPool.globalInstance()
+
+    def set_images(self, images):
+        self.beginResetModel()
+        self.images = images
+        self.cache.clear()
+        self.loading.clear()
+        self.endResetModel()
+
+    def rowCount(
+        self, parent: QModelIndex | QPersistentModelIndex = QModelIndex()
+    ) -> int:
+        return len(self.images)
+
+    def data(
+        self,
+        index: QModelIndex | QPersistentModelIndex,
+        role: int = Qt.ItemDataRole.DisplayRole.value,
+    ):
+        if not index.isValid():
+            return None
+        row = index.row()
+        if role == Qt.ItemDataRole.DisplayRole:
+            return self.images[row].name
+        elif role == Qt.ItemDataRole.DecorationRole:
+            if row in self.cache:
+                return self.cache[row]
+            else:
+                if row not in self.loading:
+                    self.loading.add(row)
+                    task = ImageLoadTask(
+                        row, self.images[row], self.thumb_size, self.signals
+                    )
+                    self.thread_pool.start(task)
+
+                pix = QPixmap(self.thumb_size, self.thumb_size)
+                pix.fill(Qt.GlobalColor.lightGray)
+                return pix
+        elif role == Qt.ItemDataRole.UserRole:
+            return str(self.images[row])
+        return None
+
+    def on_image_loaded(self, row, image):
+        if row in self.loading:
+            self.loading.remove(row)
+        if not image.isNull():
+            self.cache[row] = QPixmap.fromImage(image)
+        else:
+            pix = QPixmap(self.thumb_size, self.thumb_size)
+            pix.fill(Qt.GlobalColor.darkGray)
+            self.cache[row] = pix
+
+        index = self.index(row, 0)
+        self.dataChanged.emit(index, index, [Qt.ItemDataRole.DecorationRole])
 
 
 class DirectorySelectorWidget(QWidget):
@@ -41,8 +144,10 @@ class DirectorySelectorWidget(QWidget):
     def refresh(self):
         while self.path_bar.count():
             item = self.path_bar.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+            assert item
+            w = item.widget()
+            if w is not None:
+                w.deleteLater()  # type: ignore
 
         rel_parts = (
             self.current_dir.relative_to(self.root_dir).parts
@@ -100,12 +205,18 @@ class DirectoryPreviewWidget(QFrame):
         top_row.addWidget(self.remove_btn, 0)
         layout.addLayout(top_row)
 
-        self.preview_container = QWidget()
-        self.preview_grid = QGridLayout(self.preview_container)
-        self.preview_scroll = QScrollArea()
-        self.preview_scroll.setWidgetResizable(True)
-        self.preview_scroll.setWidget(self.preview_container)
-        layout.addWidget(self.preview_scroll)
+        self.list_view = QListView()
+        self.list_view.setViewMode(QListView.ViewMode.IconMode)
+        self.list_view.setResizeMode(QListView.ResizeMode.Adjust)
+        self.list_view.setWordWrap(True)
+        self.list_view.setUniformItemSizes(True)
+        self.list_view.setGridSize(QSize(120, 140))
+        self.list_view.setIconSize(QSize(100, 100))
+
+        self.model = ImageListModel()
+        self.list_view.setModel(self.model)
+
+        layout.addWidget(self.list_view)
 
         self.selector.directoryChanged.connect(self.set_directory)
         self.remove_btn.clicked.connect(lambda: self.removeRequested.emit(self))
@@ -113,10 +224,6 @@ class DirectoryPreviewWidget(QFrame):
 
     def set_directory(self, path: Path):
         self.current_dir = path
-        while self.preview_grid.count():
-            item = self.preview_grid.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
 
         images = [
             p
@@ -124,25 +231,20 @@ class DirectoryPreviewWidget(QFrame):
             if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS
         ]
 
-        for idx, image_path in enumerate(images):
-            row = idx // PREVIEW_GRID_COLUMNS
-            col = idx % PREVIEW_GRID_COLUMNS
-            self.preview_grid.addWidget(
-                ImageThumbWidget(image_path, size=100), row, col
-            )
+        self.model.set_images(images)
 
 
 class RightPanel(QWidget):
     def __init__(self, root_dir: Path, parent=None):
         super().__init__(parent)
         self.root_dir = root_dir
-        self.layout = QVBoxLayout(self)
+        self.main_layout = QVBoxLayout(self)
         self.widgets_layout = QVBoxLayout()
-        self.layout.addLayout(self.widgets_layout)
+        self.main_layout.addLayout(self.widgets_layout)
 
         self.add_btn = QPushButton("+")
         self.add_btn.clicked.connect(self.add_preview_widget)
-        self.layout.addWidget(self.add_btn)
+        self.main_layout.addWidget(self.add_btn)
 
         self.add_preview_widget()
 
