@@ -53,11 +53,11 @@ class MoveFilesCommand(QUndoCommand):
         self.setText(f"Move {len(self.moves)} files to {self.target_dir.name}")
 
     def _update_db(self, old_path: Path, new_path: Path):
+        old_rel = str(old_path.resolve().relative_to(self.root_dir.resolve()))
         entry = self.repository.session.scalar(
-            select(ImageEntry).where(ImageEntry.full_path == str(old_path.resolve()))
+            select(ImageEntry).where(ImageEntry.relative_path == old_rel)
         )
         if entry:
-            entry.full_path = str(new_path.resolve())
             entry.relative_path = str(
                 new_path.resolve().relative_to(self.root_dir.resolve())
             )
@@ -201,7 +201,15 @@ class MainWindow(QMainWindow):
 
     def on_file_selected(self, file_path: str):
         logging.debug(f"File selected in GUI: {file_path}")
-        entry = self.repository.get_image_by_path(file_path)
+        try:
+            rel_path = str(
+                Path(file_path).resolve().relative_to(self.root_dir.resolve())
+            )
+        except ValueError:
+            # Fallback if somehow it's already a relative path string
+            rel_path = file_path
+
+        entry = self.repository.get_image_by_path(rel_path)
         if entry is None:
             entry = self.repository.upsert_image(self.root_dir, Path(file_path))
 
@@ -225,7 +233,7 @@ class MainWindow(QMainWindow):
             f"Adding prob tag '{name}' with prob {probability} to image {self.current_image.id}"
         )
         self.repository.set_probabilistic_tag(self.current_image.id, name, probability)
-        self.on_file_selected(self.current_image.full_path)
+        self.on_file_selected(str(self.root_dir / self.current_image.relative_path))
 
     def on_regular_tag_added(self, category: str, name: str):
         if not self.current_image:
@@ -234,7 +242,7 @@ class MainWindow(QMainWindow):
             f"Adding regular tag '{category}:{name}' to image {self.current_image.id}"
         )
         self.repository.add_regular_tag(self.current_image.id, category, name)
-        self.on_file_selected(self.current_image.full_path)
+        self.on_file_selected(str(self.root_dir / self.current_image.relative_path))
 
     def on_regular_tag_deleted(self, category: str, name: str):
         if not self.current_image:
@@ -243,7 +251,7 @@ class MainWindow(QMainWindow):
             f"Deleting regular tag '{category}:{name}' from image {self.current_image.id}"
         )
         self.repository.delete_regular_tag(self.current_image.id, category, name)
-        self.on_file_selected(self.current_image.full_path)
+        self.on_file_selected(str(self.root_dir / self.current_image.relative_path))
 
     def on_description_saved(self, text: str):
         if not self.current_image:

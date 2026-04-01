@@ -17,12 +17,13 @@ class ImageEntry(Base):
     __tablename__ = "image_entries"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    full_path = Column(String, unique=True, nullable=False, index=True)
-    relative_path = Column(String, nullable=False, index=True)
+    relative_path = Column(String, unique=True, nullable=False, index=True)
     original_name = Column(String, nullable=False)
     md5_digest = Column(String, nullable=False, index=True)
 
-    probabilistic_tags = relationship("ImageProbabilisticTag", cascade="all, delete-orphan")
+    probabilistic_tags = relationship(
+        "ImageProbabilisticTag", cascade="all, delete-orphan"
+    )
     regular_tags = relationship("ImageRegularTag", cascade="all, delete-orphan")
     descriptions = relationship("ImageDescription", cascade="all, delete-orphan")
 
@@ -71,6 +72,8 @@ class ImageDescription(Base):
     __tablename__ = "image_descriptions"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    image_id = Column(Integer, ForeignKey("image_entries.id"), nullable=False, unique=True)
+    image_id = Column(
+        Integer, ForeignKey("image_entries.id"), nullable=False, unique=True
+    )
     description = Column(Text, nullable=False)
     model_name = Column(String, nullable=True)
