@@ -143,6 +143,8 @@ class ThumbTask(QRunnable):
 
 
 class MixedTreeTileView(QAbstractScrollArea):
+    imageClicked = Signal(object)
+
     HEADER_HEIGHT = 28
     INDENT = 20
     SECTION_SPACING = 8
@@ -162,7 +164,8 @@ class MixedTreeTileView(QAbstractScrollArea):
 
         self.header_hits: list[HeaderHit] = []
         self.tile_hits: list[TileHit] = []
-        self.selected_file: Path | None = None
+        self.selected_files: set[Path] = set()
+        self.last_clicked_file: Path | None = None
 
         self.thumb_cache: dict[Path, QPixmap] = {}
         self.loading_paths: set[Path] = set()
@@ -199,7 +202,9 @@ class MixedTreeTileView(QAbstractScrollArea):
     def flow_columns(self, depth: int) -> int:
         available = self.visible_width() - 2 * self.CONTENT_MARGIN - depth * self.INDENT
         available = max(available, self.TILE_W)
-        return max(1, (available + self.TILE_SPACING_X) // (self.TILE_W + self.TILE_SPACING_X))
+        return max(
+            1, (available + self.TILE_SPACING_X) // (self.TILE_W + self.TILE_SPACING_X)
+        )
 
     def layout_height_for_images(self, count: int, depth: int) -> int:
         if count == 0:
@@ -253,7 +258,9 @@ class MixedTreeTileView(QAbstractScrollArea):
         if not self._update_timer.isActive():
             self._update_timer.start(10)
 
-    def _build_layout(self, painter: QPainter | None, depth: int, y: int, node: DirNode | None = None) -> tuple[int, int]:
+    def _build_layout(
+        self, painter: QPainter | None, depth: int, y: int, node: DirNode | None = None
+    ) -> tuple[int, int]:
         if node is None:
             node = self.root_node
 
@@ -263,7 +270,9 @@ class MixedTreeTileView(QAbstractScrollArea):
 
         header_rect = QRect(vx, y, vw, self.HEADER_HEIGHT)
         toggle_rect = QRect(vx, y + 6, 16, 16)
-        self.header_hits.append(HeaderHit(node=node, rect=header_rect, toggle_rect=toggle_rect, depth=depth))
+        self.header_hits.append(
+            HeaderHit(node=node, rect=header_rect, toggle_rect=toggle_rect, depth=depth)
+        )
 
         if painter is not None:
             self._paint_header(painter, node, header_rect, toggle_rect, depth)
@@ -286,9 +295,16 @@ class MixedTreeTileView(QAbstractScrollArea):
                     tx = vx + col * (self.TILE_W + self.TILE_SPACING_X)
                     ty = y + row * (self.TILE_H + self.TILE_SPACING_Y)
                     rect = QRect(tx, ty, self.TILE_W, self.TILE_H)
-                    self.tile_hits.append(TileHit(file_path=file_path, rect=rect, depth=depth))
+                    self.tile_hits.append(
+                        TileHit(file_path=file_path, rect=rect, depth=depth)
+                    )
                     if painter is not None:
-                        self._paint_tile(painter, file_path, rect, selected=(self.selected_file == file_path))
+                        self._paint_tile(
+                            painter,
+                            file_path,
+                            rect,
+                            selected=(file_path in self.selected_files),
+                        )
 
                 y += self.layout_height_for_images(len(node.image_files), depth)
                 y += self.SECTION_SPACING
@@ -305,7 +321,14 @@ class MixedTreeTileView(QAbstractScrollArea):
 
         self._build_layout(painter, 0, self.CONTENT_MARGIN)
 
-    def _paint_header(self, painter: QPainter, node: DirNode, rect: QRect, toggle_rect: QRect, depth: int) -> None:
+    def _paint_header(
+        self,
+        painter: QPainter,
+        node: DirNode,
+        rect: QRect,
+        toggle_rect: QRect,
+        depth: int,
+    ) -> None:
         painter.save()
 
         bg = self.alt_bg if depth % 2 == 0 else self.bg
@@ -320,17 +343,21 @@ class MixedTreeTileView(QAbstractScrollArea):
         cy = toggle_rect.center().y()
 
         if node.expanded:
-            poly = QPolygon([
-                QPoint(cx - 4, cy - 2),
-                QPoint(cx + 4, cy - 2),
-                QPoint(cx, cy + 4),
-            ])
+            poly = QPolygon(
+                [
+                    QPoint(cx - 4, cy - 2),
+                    QPoint(cx + 4, cy - 2),
+                    QPoint(cx, cy + 4),
+                ]
+            )
         else:
-            poly = QPolygon([
-                QPoint(cx - 2, cy - 4),
-                QPoint(cx - 2, cy + 4),
-                QPoint(cx + 4, cy),
-            ])
+            poly = QPolygon(
+                [
+                    QPoint(cx - 2, cy - 4),
+                    QPoint(cx - 2, cy + 4),
+                    QPoint(cx + 4, cy),
+                ]
+            )
 
         painter.drawPolygon(poly)
 
@@ -340,26 +367,36 @@ class MixedTreeTileView(QAbstractScrollArea):
         painter.setFont(font)
 
         text_x = toggle_rect.right() + 6
-        text_rect = QRect(text_x, rect.y(), rect.width() - (text_x - rect.x()), rect.height())
+        text_rect = QRect(
+            text_x, rect.y(), rect.width() - (text_x - rect.x()), rect.height()
+        )
         label = node.path.name if node.path.name else str(node.path)
         count_text = ""
         if node.children_loaded:
-            count_text = f"  [{len(node.child_dirs)} dirs, {len(node.image_files)} images]"
+            count_text = (
+                f"  [{len(node.child_dirs)} dirs, {len(node.image_files)} images]"
+            )
         painter.drawText(text_rect, Qt.AlignVCenter | Qt.AlignLeft, label + count_text)
 
         painter.restore()
 
-    def _paint_placeholder_thumb(self, painter: QPainter, thumb_rect: QRect, file_path: Path) -> None:
+    def _paint_placeholder_thumb(
+        self, painter: QPainter, thumb_rect: QRect, file_path: Path
+    ) -> None:
         painter.save()
         painter.setPen(QPen(self.mid, 1, Qt.DashLine))
         painter.setBrush(self.placeholder_bg)
         painter.drawRoundedRect(thumb_rect, 4, 4)
 
         painter.setPen(self.placeholder_fg)
-        painter.drawText(thumb_rect, Qt.AlignCenter, file_path.suffix.lower().lstrip(".") or "img")
+        painter.drawText(
+            thumb_rect, Qt.AlignCenter, file_path.suffix.lower().lstrip(".") or "img"
+        )
         painter.restore()
 
-    def _paint_tile(self, painter: QPainter, file_path: Path, rect: QRect, selected: bool) -> None:
+    def _paint_tile(
+        self, painter: QPainter, file_path: Path, rect: QRect, selected: bool
+    ) -> None:
         painter.save()
 
         border = self.hl if selected else self.mid
@@ -394,9 +431,16 @@ class MixedTreeTileView(QAbstractScrollArea):
             py = thumb_rect.y() + (thumb_rect.height() - scaled.height()) // 2
             painter.drawPixmap(px, py, scaled)
 
-        text_rect = QRect(rect.x() + 6, rect.bottom() - self.TILE_TEXT_H - 6, rect.width() - 12, self.TILE_TEXT_H)
+        text_rect = QRect(
+            rect.x() + 6,
+            rect.bottom() - self.TILE_TEXT_H - 6,
+            rect.width() - 12,
+            self.TILE_TEXT_H,
+        )
         painter.setPen(self.hl_text if selected else self.fg)
-        painter.drawText(text_rect, Qt.AlignHCenter | Qt.AlignTop | Qt.TextWordWrap, file_path.name)
+        painter.drawText(
+            text_rect, Qt.AlignHCenter | Qt.AlignTop | Qt.TextWordWrap, file_path.name
+        )
 
         painter.restore()
 
@@ -412,6 +456,7 @@ class MixedTreeTileView(QAbstractScrollArea):
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         pos = self.content_pos(event.position().toPoint())
+        modifiers = event.modifiers()
 
         for hit in self.header_hits:
             if hit.toggle_rect.contains(pos) or hit.rect.contains(pos):
@@ -423,7 +468,35 @@ class MixedTreeTileView(QAbstractScrollArea):
 
         for hit in self.tile_hits:
             if hit.rect.contains(pos):
-                self.selected_file = hit.file_path
+                if modifiers & Qt.KeyboardModifier.ControlModifier:
+                    if hit.file_path in self.selected_files:
+                        self.selected_files.remove(hit.file_path)
+                    else:
+                        self.selected_files.add(hit.file_path)
+                    self.last_clicked_file = hit.file_path
+                elif (
+                    modifiers & Qt.KeyboardModifier.ShiftModifier
+                    and self.last_clicked_file
+                ):
+                    paths = [th.file_path for th in self.tile_hits]
+                    try:
+                        start_idx = paths.index(self.last_clicked_file)
+                        end_idx = paths.index(hit.file_path)
+                        if start_idx > end_idx:
+                            start_idx, end_idx = end_idx, start_idx
+                        for p in paths[start_idx : end_idx + 1]:
+                            self.selected_files.add(p)
+                    except ValueError:
+                        self.selected_files = {hit.file_path}
+                    # Keep last_clicked_file unchanged for range extension, or update? usually update
+                    self.last_clicked_file = hit.file_path
+                else:
+                    self.selected_files = {hit.file_path}
+                    self.last_clicked_file = hit.file_path
+
+                if event.button() == Qt.MouseButton.LeftButton:
+                    self.imageClicked.emit(hit.file_path)
+
                 self.viewport().update()
                 return
 
@@ -440,7 +513,8 @@ class MixedTreeTileView(QAbstractScrollArea):
 
         for hit in self.tile_hits:
             if hit.rect.contains(pos):
-                self.selected_file = hit.file_path
+                self.selected_files = {hit.file_path}
+                self.last_clicked_file = hit.file_path
                 print(str(hit.file_path))
                 self.viewport().update()
                 return
