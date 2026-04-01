@@ -74,7 +74,7 @@ from db.models import (
 )
 
 
-class TagCompleter(QLineEdit):
+class TagCompleter(QLineEdit): 
     """A line edit with auto-completion for tag names."""
 
     def __init__(self, suggestions: list[str], parent=None):
