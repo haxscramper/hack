@@ -3,7 +3,9 @@ from pathlib import Path
 from typing import Optional, List, Any
 
 from PySide6.QtCore import Qt, QAbstractListModel, QModelIndex, QSortFilterProxyModel
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QListView, QLineEdit, QLabel
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QListView, QLineEdit, QLabel, QMenu
+from PySide6.QtGui import QAction
+import shutil
 
 from config import AppConfig
 
@@ -101,6 +103,38 @@ class LeftPanel(QWidget):
         layout.addWidget(self.list_view)
 
         self.search_input.textChanged.connect(self.proxy_model.setFilterWildcard)
+
+        # Context Menu
+        self.list_view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.list_view.customContextMenuRequested.connect(self._show_context_menu)
+
+    def _show_context_menu(self, position):
+        index = self.list_view.indexAt(position)
+        if not index.isValid():
+            return
+
+        menu = QMenu()
+        clear_cache_action = QAction("Delete cached pages", self)
+        clear_cache_action.triggered.connect(lambda: self._delete_cached_pages(index))
+        menu.addAction(clear_cache_action)
+        menu.exec_(self.list_view.viewport().mapToGlobal(position))
+
+    def _delete_cached_pages(self, proxy_index):
+        source_index = self.proxy_model.mapToSource(proxy_index)
+        if not source_index.isValid() or not self.config:
+            return
+
+        file_path = self.model.pdf_files[source_index.row()]
+        pdf_output_dir = self.config.output_dir / file_path.stem
+
+        if pdf_output_dir.exists() and pdf_output_dir.is_dir():
+            try:
+                shutil.rmtree(pdf_output_dir)
+                logging.info(f"Deleted cached pages directory: {pdf_output_dir}")
+            except Exception as e:
+                logging.error(f"Failed to delete {pdf_output_dir}: {e}")
+        else:
+            logging.info(f"No cached pages found for {file_path.name}")
 
     def _get_files_from_config(self) -> List[Path]:
         pdf_files: List[Path] = []
