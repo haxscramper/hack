@@ -169,6 +169,7 @@ class MixedTreeTileView(QAbstractScrollArea):
         self.header_hits: list[HeaderHit] = []
         self.tile_hits: list[TileHit] = []
         self.selected_files: set[Path] = set()
+        self.fully_annotated_files: set[Path] = set()
         self.last_clicked_file: Path | None = None
         self.hovered_file_path: Path | None = None
 
@@ -348,7 +349,17 @@ class MixedTreeTileView(QAbstractScrollArea):
     ) -> None:
         painter.save()
 
-        bg = self.alt_bg if depth % 2 == 0 else self.bg
+        try:
+            from config import config
+
+            is_excluded = str(node.path) in config.excluded_directories
+        except ImportError:
+            is_excluded = False
+
+        if is_excluded:
+            bg = QColor(255, 200, 200)
+        else:
+            bg = self.alt_bg if depth % 2 == 0 else self.bg
         painter.fillRect(rect, bg)
 
         painter.setPen(QPen(self.mid))
@@ -422,8 +433,17 @@ class MixedTreeTileView(QAbstractScrollArea):
     ) -> None:
         painter.save()
 
-        border = self.hl if selected else self.mid
-        bg = self.hl.lighter(165) if selected else QColor(self.alt_bg)
+        is_fully_annotated = file_path in self.fully_annotated_files
+
+        if selected:
+            border = self.hl
+            bg = self.hl.lighter(165)
+        else:
+            border = self.mid
+            if is_fully_annotated:
+                bg = QColor(200, 255, 200)  # Pale green
+            else:
+                bg = QColor(self.alt_bg)
 
         painter.setPen(QPen(border, 1))
         painter.setBrush(bg)
@@ -530,6 +550,23 @@ class MixedTreeTileView(QAbstractScrollArea):
     def mousePressEvent(self, event: QMouseEvent) -> None:
         pos = self.content_pos(event.position().toPoint())
         modifiers = event.modifiers()
+
+        if event.button() == Qt.MouseButton.RightButton:
+            for hit in self.header_hits:
+                if hit.rect.contains(pos):
+                    try:
+                        from config import config
+
+                        path_str = str(hit.node.path)
+                        if path_str in config.excluded_directories:
+                            config.excluded_directories.remove(path_str)
+                        else:
+                            config.excluded_directories.add(path_str)
+                        config.save()
+                        self.viewport().update()
+                    except ImportError:
+                        pass
+                    return
 
         for hit in self.header_hits:
             if hit.toggle_rect.contains(pos) or hit.rect.contains(pos):

@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
     QListView,
 )
 from PySide6.QtCore import Qt, QSize
-from PySide6.QtGui import QUndoStack, QUndoCommand, QKeySequence, QShortcut, QAction
+from PySide6.QtGui import QUndoStack, QUndoCommand, QKeySequence, QShortcut
 
 from db.models import ImageEntry
 from sqlalchemy import select
@@ -122,6 +122,8 @@ class MainWindow(QMainWindow):
         self.center_panel = CenterPanel()
         self.right_panel = RightPanel(root_dir)
 
+        self._update_fully_annotated()
+
         splitter.addWidget(self.left_panel)
         splitter.addWidget(self.center_panel)
         splitter.addWidget(self.right_panel)
@@ -143,6 +145,12 @@ class MainWindow(QMainWindow):
         for i in range(1, 10):
             shortcut = QShortcut(QKeySequence(f"Ctrl+{i}"), self)
             shortcut.activated.connect(lambda idx=i: self.on_move_shortcut(idx))
+
+    def _update_fully_annotated(self):
+        rel_paths = self.repository.get_fully_annotated_paths()
+        full_paths = {self.root_dir / p for p in rel_paths}
+        self.left_panel.fully_annotated_files = full_paths
+        self.left_panel.viewport().update()
 
     def on_move_shortcut(self, idx: int):
         if idx - 1 >= self.right_panel.splitter.count():
@@ -233,6 +241,7 @@ class MainWindow(QMainWindow):
             f"Adding prob tag '{name}' with prob {probability} to image {self.current_image.id}"
         )
         self.repository.set_probabilistic_tag(self.current_image.id, name, probability)
+        self._update_fully_annotated()
         self.on_file_selected(str(self.root_dir / self.current_image.relative_path))
 
     def on_regular_tag_added(self, category: str, name: str):
@@ -242,6 +251,7 @@ class MainWindow(QMainWindow):
             f"Adding regular tag '{category}:{name}' to image {self.current_image.id}"
         )
         self.repository.add_regular_tag(self.current_image.id, category, name)
+        self._update_fully_annotated()
         self.on_file_selected(str(self.root_dir / self.current_image.relative_path))
 
     def on_regular_tag_deleted(self, category: str, name: str):
@@ -251,6 +261,7 @@ class MainWindow(QMainWindow):
             f"Deleting regular tag '{category}:{name}' from image {self.current_image.id}"
         )
         self.repository.delete_regular_tag(self.current_image.id, category, name)
+        self._update_fully_annotated()
         self.on_file_selected(str(self.root_dir / self.current_image.relative_path))
 
     def on_description_saved(self, text: str):
@@ -258,3 +269,4 @@ class MainWindow(QMainWindow):
             return
         logging.info(f"Saving description for image {self.current_image.id}")
         self.repository.set_description(self.current_image.id, text)
+        self._update_fully_annotated()

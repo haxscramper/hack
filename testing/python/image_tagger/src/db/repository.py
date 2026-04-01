@@ -57,6 +57,20 @@ class Repository:
             select(ImageEntry).where(ImageEntry.relative_path == relative_path)
         )
 
+    def get_fully_annotated_paths(self) -> set[str]:
+        stmt = (
+            select(ImageEntry.relative_path)
+            .join(
+                ImageProbabilisticTag, ImageEntry.id == ImageProbabilisticTag.image_id
+            )
+            .join(ImageRegularTag, ImageEntry.id == ImageRegularTag.image_id)
+            .join(ImageDescription, ImageEntry.id == ImageDescription.image_id)
+            .where(ImageDescription.description != "")
+            .where(ImageDescription.description.is_not(None))
+            .distinct()
+        )
+        return set(self.session.scalars(stmt).all())
+
     def list_probabilistic_tags(self, image_id: int):
         rows = self.session.execute(
             select(ImageProbabilisticTag, ProbabilisticTag)
