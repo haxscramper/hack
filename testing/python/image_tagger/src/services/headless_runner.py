@@ -1,0 +1,57 @@
+import logging
+from pathlib import Path
+
+from db.session import init_db, make_session_factory
+from db.repository import Repository
+from config import SQLITE_FILENAME, CHROMA_DIRNAME
+from .scanner import scan_images
+from .annotation_service import AnnotationService
+from .chroma_store import ChromaDescriptionStore
+from .wd_tagger import WdTagger
+from .ollama_tagger import OllamaTagger
+
+
+def run_headless(
+    root_dir: Path,
+    wd_model_path: Path | None = None,
+    wd_tags_csv: Path | None = None,
+    use_ollama: bool = True,
+):
+    logging.info(f"Starting headless run for directory: {root_dir}")
+    root_dir = root_dir.resolve()
+    sqlite_path = root_dir / SQLITE_FILENAME
+    chroma_path = root_dir / CHROMA_DIRNAME
+    logging.debug(f"SQLite path: {sqlite_path}, Chroma path: {chroma_path}")
+
+    engine = init_db(sqlite_path)
+    Session = make_session_factory(engine)
+    session = Session()
+
+    try:
+        repo = Repository(session)
+        chroma_store = ChromaDescriptionStore(chroma_path)
+
+        wd_tagger = None
+        if wd_model_path and wd_tags_csv:
+            logging.info(f"Initializing WdTagger with model {wd_model_path}")
+            wd_tagger = WdTagger(wd_model_path, wd_tags_csv)
+
+        ollama_tagger = OllamaTagger() if use_ollama else None
+        if use_ollama:
+            logging.info("Ollama tagger enabled")
+
+        service = AnnotationService(
+            repository=repo,
+            chroma_store=chroma_store,
+            wd_tagger=wd_tagger,
+            ollama_tagger=ollama_tagger,
+        )
+
+        image_count = 0
+        for image_path in scan_images(root_dir):
+            service.annotate_image(root_dir, image_path)
+            image_count += 1
+
+        logging.info(f"Headless run completed. Annotated {image_count} images.")
+    finally:
+        session.close()

@@ -1,0 +1,135 @@
+from __future__ import annotations
+
+from PySide6.QtCore import Signal, Qt
+from PySide6.QtWidgets import (
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QLabel,
+    QTableWidget,
+    QTableWidgetItem,
+    QPushButton,
+    QLineEdit,
+    QDoubleSpinBox,
+    QTextEdit,
+    QScrollArea,
+)
+
+from gui.flow_layout import FlowLayout
+
+
+class RegularTagsContainer(QWidget):
+    tagRemoveRequested = Signal(str, str)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.root_layout = QVBoxLayout(self)
+        self.flow_host = QWidget()
+        self.flow = FlowLayout(self.flow_host)
+        self.flow_host.setLayout(self.flow)
+        self.root_layout.addWidget(self.flow_host)
+
+    def clear_tags(self):
+        while self.flow.count():
+            item = self.flow.takeAt(0)
+            if item and item.widget():
+                item.widget().deleteLater()
+
+    def set_tags(self, tags: list[tuple[str, str]]):
+        from PySide6.QtWidgets import QPushButton
+        self.clear_tags()
+        for category, name in tags:
+            btn = QPushButton(f"{category}:{name}")
+            btn.clicked.connect(
+                lambda checked=False, c=category, n=name: self.tagRemoveRequested.emit(c, n)
+            )
+            self.flow.addWidget(btn)
+
+
+class CenterPanel(QWidget):
+    probabilisticTagAdded = Signal(str, float)
+    probabilisticTagDeleted = Signal(str)
+    regularTagAdded = Signal(str, str)
+    regularTagDeleted = Signal(str, str)
+    descriptionSaved = Signal(str)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        layout = QVBoxLayout(self)
+
+        layout.addWidget(QLabel("Probabilistic tags"))
+        self.prob_table = QTableWidget(0, 2)
+        self.prob_table.setHorizontalHeaderLabels(["Tag", "Probability"])
+        self.prob_table.horizontalHeader().setStretchLastSection(True)
+        layout.addWidget(self.prob_table)
+
+        prob_add_row = QHBoxLayout()
+        self.prob_name_edit = QLineEdit()
+        self.prob_name_edit.setPlaceholderText("tag name")
+        self.prob_value_spin = QDoubleSpinBox()
+        self.prob_value_spin.setRange(0.0, 1.0)
+        self.prob_value_spin.setSingleStep(0.01)
+        self.prob_value_spin.setValue(0.5)
+        self.prob_add_btn = QPushButton("Add probabilistic tag")
+        prob_add_row.addWidget(self.prob_name_edit)
+        prob_add_row.addWidget(self.prob_value_spin)
+        prob_add_row.addWidget(self.prob_add_btn)
+        layout.addLayout(prob_add_row)
+
+        layout.addWidget(QLabel("Regular tags"))
+        self.regular_tags = RegularTagsContainer()
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(self.regular_tags)
+        layout.addWidget(scroll)
+
+        reg_add_row = QHBoxLayout()
+        self.reg_category_edit = QLineEdit()
+        self.reg_category_edit.setPlaceholderText("category")
+        self.reg_name_edit = QLineEdit()
+        self.reg_name_edit.setPlaceholderText("tag")
+        self.reg_add_btn = QPushButton("Add regular tag")
+        reg_add_row.addWidget(self.reg_category_edit)
+        reg_add_row.addWidget(self.reg_name_edit)
+        reg_add_row.addWidget(self.reg_add_btn)
+        layout.addLayout(reg_add_row)
+
+        layout.addWidget(QLabel("Description"))
+        self.description_edit = QTextEdit()
+        layout.addWidget(self.description_edit)
+
+        self.save_description_btn = QPushButton("Save description")
+        layout.addWidget(self.save_description_btn)
+
+        self.prob_add_btn.clicked.connect(self._on_prob_add)
+        self.reg_add_btn.clicked.connect(self._on_reg_add)
+        self.save_description_btn.clicked.connect(self._on_save_desc)
+        self.regular_tags.tagRemoveRequested.connect(self.regularTagDeleted)
+
+    def _on_prob_add(self):
+        name = self.prob_name_edit.text().strip()
+        if name:
+            self.probabilisticTagAdded.emit(name, self.prob_value_spin.value())
+            self.prob_name_edit.clear()
+
+    def _on_reg_add(self):
+        category = self.reg_category_edit.text().strip()
+        name = self.reg_name_edit.text().strip()
+        if category and name:
+            self.regularTagAdded.emit(category, name)
+            self.reg_name_edit.clear()
+
+    def _on_save_desc(self):
+        self.descriptionSaved.emit(self.description_edit.toPlainText())
+
+    def set_probabilistic_tags(self, tags: list[tuple[str, float]]):
+        self.prob_table.setRowCount(len(tags))
+        for row, (tag_name, probability) in enumerate(tags):
+            self.prob_table.setItem(row, 0, QTableWidgetItem(tag_name))
+            self.prob_table.setItem(row, 1, QTableWidgetItem(f"{probability:.4f}"))
+
+    def set_regular_tags(self, tags: list[tuple[str, str]]):
+        self.regular_tags.set_tags(tags)
+
+    def set_description(self, text: str):
+        self.description_edit.setPlainText(text)
