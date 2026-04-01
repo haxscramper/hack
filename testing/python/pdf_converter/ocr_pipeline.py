@@ -693,6 +693,19 @@ def process_pdf(
         f"Processing PDF: {pdf_path.name} | Range: {first_page}-{last_page} ({total_to_convert} pages)"
     )
 
+    # Check if all pages are already cached
+    all_cached = True
+    for current_page_num in range(first_page, last_page + 1):
+        if not (pdf_output_dir / f"page_{current_page_num:03d}.json").exists():
+            all_cached = False
+            break
+
+    if all_cached:
+        logger.info(
+            f"Skipping PDF {pdf_path.name}: All {total_to_convert} pages are already cached."
+        )
+        return
+
     # 2. Convert PDF to images
     logger.info("Rasterizing PDF pages to images...")
     all_pages = convert_from_path(
@@ -738,9 +751,7 @@ def process_pdf(
                 )
 
             else:
-                logger.info(
-                    f"{stats_header} | Page {current_page_num}: Requesting VLM"
-                )
+                logger.info(f"{stats_header} | Page {current_page_num}: Requesting VLM")
                 response_text = call_ollama_vlm(page_img)
 
                 clean_text = response_text.strip()
