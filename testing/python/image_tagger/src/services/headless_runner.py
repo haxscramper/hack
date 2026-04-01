@@ -1,4 +1,6 @@
 import logging
+import os
+import urllib.request
 from pathlib import Path
 
 from db.session import init_db, make_session_factory
@@ -11,17 +13,41 @@ from .wd_tagger import WdTagger
 from .ollama_tagger import OllamaTagger
 
 
+def get_xdg_cache_dir() -> Path:
+    xdg_cache_home = os.environ.get("XDG_CACHE_HOME")
+    if xdg_cache_home:
+        return Path(xdg_cache_home) / "haxscramper_tagger" / "models"
+    return Path.home() / ".cache" / "haxscramper_tagger" / "models"
+
+
+def ensure_file_exists(filename: Path, url: str) -> None:
+    if not filename.exists():
+        logging.info(f"File {filename} not found. Downloading from Hugging Face...")
+        urllib.request.urlretrieve(url, str(filename))
+        logging.info(f"Successfully downloaded {filename}")
+    else:
+        logging.info(f"File {filename} already exists locally. Skipping download.")
+
+
 def run_headless(
     root_dir: Path,
-    wd_model_path: Path | None = None,
-    wd_tags_csv: Path | None = None,
-    use_ollama: bool = True,
 ):
     logging.info(f"Starting headless run for directory: {root_dir}")
     root_dir = root_dir.resolve()
     sqlite_path = root_dir / SQLITE_FILENAME
     chroma_path = root_dir / CHROMA_DIRNAME
     logging.debug(f"SQLite path: {sqlite_path}, Chroma path: {chroma_path}")
+
+    # Setup WD Tagger model paths
+    repo_url = "https://huggingface.co/SmilingWolf/wd-vit-tagger-v3/resolve/main/"
+    cache_dir = get_xdg_cache_dir()
+    cache_dir.mkdir(parents=True, exist_ok=True)
+
+    wd_model_path = cache_dir / "model.onnx"
+    wd_tags_csv = cache_dir / "selected_tags.csv"
+
+    ensure_file_exists(wd_model_path, repo_url + "model.onnx")
+    ensure_file_exists(wd_tags_csv, repo_url + "selected_tags.csv")
 
     engine = init_db(sqlite_path)
     Session = make_session_factory(engine)
@@ -31,14 +57,11 @@ def run_headless(
         repo = Repository(session)
         chroma_store = ChromaDescriptionStore(chroma_path)
 
-        wd_tagger = None
-        if wd_model_path and wd_tags_csv:
-            logging.info(f"Initializing WdTagger with model {wd_model_path}")
-            wd_tagger = WdTagger(wd_model_path, wd_tags_csv)
+        logging.info(f"Initializing WdTagger with model {wd_model_path}")
+        wd_tagger = WdTagger(wd_model_path, wd_tags_csv)
 
-        ollama_tagger = OllamaTagger() if use_ollama else None
-        if use_ollama:
-            logging.info("Ollama tagger enabled")
+        logging.info("Initializing Ollama tagger")
+        ollama_tagger = OllamaTagger()
 
         service = AnnotationService(
             repository=repo,
