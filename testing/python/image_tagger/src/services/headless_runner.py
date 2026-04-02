@@ -1,5 +1,6 @@
 import logging
 import os
+import time
 import urllib.request
 from pathlib import Path
 
@@ -73,11 +74,14 @@ def run_headless(
             ollama_tagger=ollama_tagger,
         )
 
-        image_count = 0
-        for image_path in scan_images(root_dir):
+        images = scan_images(root_dir)
+        service.total_images = len(images)
+        service.start_time = time.time()
+        for image_path in images:
             service.annotate_image(root_dir, image_path)
-            image_count += 1
 
-        logging.info(f"Headless run completed. Annotated {image_count} images.")
+        logging.info(
+            f"Headless run completed. Annotated {service.total_images} images."
+        )
     finally:
         session.close()
