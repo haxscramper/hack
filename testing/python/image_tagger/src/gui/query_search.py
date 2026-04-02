@@ -33,7 +33,6 @@ from db.models import (
     ImageRegularTag,
     ImageDescription,
 )
-import config
 
 
 class ImageThumbnailList(ImageListWidget):
@@ -563,19 +562,11 @@ class SearchTab(QWidget):
         expr_layout.setContentsMargins(0, 0, 0, 0)
 
         logging.info(f"Root dir for search tab: {base_dir}")
-        logging.info(f"Config loaded: {config}")
 
         self.scroll_view = QScrollArea()
         self.scroll_view.setWidgetResizable(True)
 
         self.root_node = ExpressionNode(session, is_root=True)
-        search_config = getattr(config.config, "SEARCH_CONFIG", None)
-        if search_config:
-            logging.info(f"Loading search config: {search_config}")
-            self.root_node.load_from_spec(search_config)
-        else:
-            logging.info("No search config found or attribute missing.")
-
         self.root_node.changed.connect(self._adjust_scroll_area)
         self.scroll_view.setWidget(self.root_node)
         expr_layout.addWidget(self.scroll_view)
@@ -616,10 +607,6 @@ class SearchTab(QWidget):
             self.status_label.setText("No valid filter conditions specified.")
             self.thumbnail_list.set_images([])
             return
-
-        # Save search configuration
-        config.config.SEARCH_CONFIG = spec
-        config.save_config()
 
         query = build_query(self.session, spec)
         image_ids = [r[0] for r in self.session.execute(query).all()]
