@@ -1,5 +1,6 @@
 import logging
 import time
+from collections import deque
 from pathlib import Path
 
 from db.repository import Repository
@@ -22,10 +23,10 @@ class AnnotationService:
         self.ollama_tagger = ollama_tagger
         self.processed_count = 0
         self.total_images = 0
-        self.start_time: float | None = None
+        self.processing_times = deque(maxlen=20)
 
     def annotate_image(self, root_dir: Path, image_path: Path):
-        self.processed_count += 1
+        start_time = time.time()
         entry = self.repository.upsert_image(root_dir, image_path)
         image_id = int(entry.id)  # type: ignore
 
@@ -37,13 +38,19 @@ class AnnotationService:
             logging.debug(f"Skipping {image_path}, all annotations exist.")
             return
 
-        if self.start_time and self.processed_count > 0 and self.total_images > 0:
-            elapsed = time.time() - self.start_time
-            if elapsed > 0:
-                images_per_sec = self.processed_count / elapsed
+        self.processed_count += 1
+
+        if self.processing_times:
+            avg_time = sum(self.processing_times) / len(self.processing_times)
+            if avg_time > 0:
+                images_per_sec = 1 / avg_time
                 remaining = self.total_images - self.processed_count
-                eta = remaining / images_per_sec if images_per_sec > 0 else 0
-                h, m, s = int(eta // 3600), int((eta % 3600) // 60), int(eta % 60)
+                eta_seconds = remaining * avg_time
+                h, m, s = (
+                    int(eta_seconds // 3600),
+                    int((eta_seconds % 3600) // 60),
+                    int(eta_seconds % 60),
+                )
                 progress_str = f"[{self.processed_count}/{self.total_images}] {images_per_sec:.2f} images/sec ETA:{h:02}:{m:02}:{s:02} "
             else:
                 progress_str = ""
@@ -76,11 +83,13 @@ class AnnotationService:
                     image_id, description, self.ollama_tagger.model_name
                 )
                 self.chroma_store.upsert_description(
-                    relative_path=entry.relative_path,
+                    relative_path=str(entry.relative_path),
                     description=description,
-                    metadata={"relative_path": entry.relative_path},
+                    metadata={"relative_path": str(entry.relative_path)},
                 )
         else:
             logging.debug(
                 f"Skipping Ollama description for {image_path}, description already exists."
             )
+
+        self.processing_times.append(time.time() - start_time)

@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 from pydantic import BaseModel, Field
 
@@ -9,6 +10,7 @@ class AppConfig(BaseModel):
     THUMBNAIL_SIZE: int = 160
     PREVIEW_GRID_COLUMNS: int = 3
     excluded_directories: set[str] = Field(default_factory=set)
+    SEARCH_CONFIG: dict = Field(default_factory=dict)
 
 
 config = AppConfig()
@@ -19,7 +21,10 @@ def init_config(root_dir: Path):
     global config, _config_file
     _config_file = root_dir / "config.json"
     if _config_file.exists():
-        config = AppConfig.model_validate_json(_config_file.read_text())
+        loaded_data = _config_file.read_text()
+        logging.info(f"Loading config from {_config_file}")
+        config = AppConfig.model_validate_json(loaded_data)
+        logging.info(f"Loaded config SEARCH_CONFIG: {config.SEARCH_CONFIG}")
     else:
         config = AppConfig()
         _config_file.write_text(config.model_dump_json(indent=4))

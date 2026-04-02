@@ -348,13 +348,8 @@ class MixedTreeTileView(QAbstractScrollArea):
         depth: int,
     ) -> None:
         painter.save()
-
-        try:
-            from config import config
-
-            is_excluded = str(node.path) in config.excluded_directories
-        except ImportError:
-            is_excluded = False
+        from config import config
+        is_excluded = str(node.path) in config.excluded_directories
 
         if is_excluded:
             bg = QColor(255, 200, 200)
@@ -554,18 +549,15 @@ class MixedTreeTileView(QAbstractScrollArea):
         if event.button() == Qt.MouseButton.RightButton:
             for hit in self.header_hits:
                 if hit.rect.contains(pos):
-                    try:
-                        from config import config
+                    from config import config, save_config
 
-                        path_str = str(hit.node.path)
-                        if path_str in config.excluded_directories:
-                            config.excluded_directories.remove(path_str)
-                        else:
-                            config.excluded_directories.add(path_str)
-                        config.save()
-                        self.viewport().update()
-                    except ImportError:
-                        pass
+                    path_str = str(hit.node.path)
+                    if path_str in config.excluded_directories:
+                        config.excluded_directories.remove(path_str)
+                    else:
+                        config.excluded_directories.add(path_str)
+                    save_config()
+                    self.viewport().update()
                     return
 
         for hit in self.header_hits:

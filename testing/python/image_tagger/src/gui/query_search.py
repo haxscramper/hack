@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal, QStringListModel
 from pathlib import Path
 import os
+import logging
 
 from gui.image_list_widget import ImageListWidget
 from sqlalchemy.orm import Session
@@ -32,6 +33,7 @@ from db.models import (
     ImageRegularTag,
     ImageDescription,
 )
+import config
 
 
 class ImageThumbnailList(ImageListWidget):
@@ -106,7 +108,10 @@ class ConditionWidget(QFrame):
     def _build_ui(self):
         layout = QFormLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(2)
+        layout.setSpacing(0)
+        self.setStyleSheet(
+            "QComboBox, QDoubleSpinBox, QLineEdit { border: none; } QPushButton { border: none; }"
+        )
 
         self.condition_type = QComboBox()
         self.condition_type.addItems(
@@ -150,10 +155,31 @@ class ConditionWidget(QFrame):
         remove_btn = QPushButton("✕")
         remove_btn.setFixedWidth(30)
         remove_btn.clicked.connect(self.remove_requested.emit)
-        layout.addRow(remove_btn)
+
+        # Move to upper right: Wrap in layout with alignment
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()
+        button_layout.addWidget(remove_btn)
+        layout.addRow(button_layout)
 
         self._load_suggestions()
         self._on_type_changed(0)
+
+    def load_from_spec(self, spec: dict):
+        t = spec["type"]
+        if t == "probabilistic_tag":
+            self.condition_type.setCurrentIndex(0)
+            self.category_combo.setCurrentText(spec["category"])
+            self.tag_input.setText(spec["name"])
+            self.prob_spin.setValue(spec["min_probability"])
+        elif t == "regular_tag":
+            self.condition_type.setCurrentIndex(1)
+            self.category_combo.setCurrentText(spec["category"])
+            self.tag_input.setText(spec["name"])
+        elif t == "description":
+            self.condition_type.setCurrentIndex(2)
+            self.desc_input.setText(spec["text"])
+        self._on_type_changed(self.condition_type.currentIndex())
 
     def _load_suggestions(self):
         prob_cats = sorted(
@@ -283,28 +309,29 @@ class ExpressionNode(QFrame):
         super().__init__(parent)
         self.session = session
         self.is_root = is_root
-        self.children: list[ExpressionNode] = []
+        self.child_nodes: list[ExpressionNode] = []
         self.condition: Optional[ConditionWidget] = None
         self.is_group = True
 
-        self.setFrameStyle(QFrame.Shape.Box | QFrame.Shadow.Plain)
         self._build_ui()
 
     def _build_ui(self):
         self.main_layout = QVBoxLayout(self)
-        self.main_layout.setContentsMargins(4, 4, 4, 4)
-        self.main_layout.setSpacing(2)
+        self.main_layout.setContentsMargins(0, 0, 0, 0)
+        self.main_layout.setSpacing(0)
+
+        self.setStyleSheet("QPushButton { border: none; } QComboBox { border: none; }")
 
         header = QVBoxLayout()
         header.setContentsMargins(0, 0, 0, 0)
         h_row = QHBoxLayout()
         h_row.setContentsMargins(0, 0, 0, 0)
-        h_row.setSpacing(4)
+        h_row.setSpacing(0)  # Remove spacing
 
         self.operator_combo = QComboBox()
         self.operator_combo.addItems(["AND", "OR", "NOT"])
         self.operator_combo.currentIndexChanged.connect(self._on_operator_changed)
-        h_row.addWidget(QLabel("Operator:"))
+        # Removed QLabel("Operator:")
         h_row.addWidget(self.operator_combo)
 
         add_cond_btn = QPushButton("+ Condition")
@@ -327,7 +354,7 @@ class ExpressionNode(QFrame):
 
         self.children_layout = QVBoxLayout()
         self.children_layout.setContentsMargins(8, 0, 0, 0)
-        self.children_layout.setSpacing(2)
+        self.children_layout.setSpacing(0)
         self.main_layout.addLayout(self.children_layout)
 
     def _on_operator_changed(self):
@@ -339,7 +366,7 @@ class ExpressionNode(QFrame):
         node._convert_to_condition()
         node.changed.connect(self.changed.emit)
         node.remove_requested.connect(lambda n=node: self._remove_child(n))
-        self.children.append(node)
+        self.child_nodes.append(node)
         self.children_layout.addWidget(node)
         self.changed.emit()
 
@@ -347,18 +374,59 @@ class ExpressionNode(QFrame):
         node = ExpressionNode(self.session, is_root=False)
         node.changed.connect(self.changed.emit)
         node.remove_requested.connect(lambda n=node: self._remove_child(n))
-        self.children.append(node)
+        self.child_nodes.append(node)
         self.children_layout.addWidget(node)
         self.changed.emit()
 
     def _remove_child(self, child: "ExpressionNode"):
-        if child in self.children:
-            self.children.remove(child)
+        if child in self.child_nodes:
+            self.child_nodes.remove(child)
             self.children_layout.removeWidget(child)
             child.deleteLater()
             self.changed.emit()
 
+    def _add_child_from_spec(self, spec: dict):
+        node = ExpressionNode(self.session, is_root=False)
+        node.load_from_spec(spec)
+        node.changed.connect(self.changed.emit)
+        node.remove_requested.connect(lambda n=node: self._remove_child(n))
+        self.child_nodes.append(node)
+        self.children_layout.addWidget(node)
+        return node
+
+    def load_from_spec(self, spec: dict):
+        logging.info(f"Loading node from spec: {spec}")
+        t = spec.get("type")
+        if not t:
+            logging.error(f"Spec missing type: {spec}")
+            return
+
+        if t in ["probabilistic_tag", "regular_tag", "description"]:
+            if self.is_root and not self.child_nodes:
+                self._add_child_from_spec(spec)
+            else:
+                self._convert_to_condition()
+                if self.condition:
+                    self.condition.load_from_spec(spec)
+                else:
+                    logging.error("Condition not created after _convert_to_condition")
+        else:
+            self.is_group = True
+            self.operator_combo.setCurrentText(t.upper())
+            if t == "not":
+                child = spec.get("child")
+                if child:
+                    self._add_child_from_spec(child)
+            elif t in ["and", "or"]:
+                children = spec.get("children")
+                if children:
+                    for child_spec in children:
+                        self._add_child_from_spec(child_spec)
+                else:
+                    logging.error(f"Spec {t} missing children: {spec}")
+
     def _convert_to_condition(self):
+        logging.info("Converting to condition")
         while self.main_layout.count():
             item = self.main_layout.takeAt(0)
             if item.widget():
@@ -370,6 +438,7 @@ class ExpressionNode(QFrame):
         self.condition.changed.connect(self.changed.emit)
         self.condition.remove_requested.connect(self.remove_requested.emit)
         self.main_layout.addWidget(self.condition)
+        logging.info(f"Condition created: {self.condition}")
 
     def _clear_layout(self, layout):
         while layout.count():
@@ -385,7 +454,7 @@ class ExpressionNode(QFrame):
 
         op = self.operator_combo.currentText()
         child_specs = []
-        for child in self.children:
+        for child in self.child_nodes:
             spec = child.to_filter_spec()
             if spec is not None:
                 child_specs.append(spec)
@@ -493,13 +562,23 @@ class SearchTab(QWidget):
         expr_layout = QVBoxLayout(expr_container)
         expr_layout.setContentsMargins(0, 0, 0, 0)
 
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
+        logging.info(f"Root dir for search tab: {base_dir}")
+        logging.info(f"Config loaded: {config}")
+
+        self.scroll_view = QScrollArea()
+        self.scroll_view.setWidgetResizable(True)
 
         self.root_node = ExpressionNode(session, is_root=True)
-        # self.root_node.changed.connect(self._on_expression_changed)
-        scroll.setWidget(self.root_node)
-        expr_layout.addWidget(scroll)
+        search_config = getattr(config.config, "SEARCH_CONFIG", None)
+        if search_config:
+            logging.info(f"Loading search config: {search_config}")
+            self.root_node.load_from_spec(search_config)
+        else:
+            logging.info("No search config found or attribute missing.")
+
+        self.root_node.changed.connect(self._adjust_scroll_area)
+        self.scroll_view.setWidget(self.root_node)
+        expr_layout.addWidget(self.scroll_view)
 
         search_btn = QPushButton("Search")
         search_btn.clicked.connect(self._execute_search)
@@ -521,12 +600,26 @@ class SearchTab(QWidget):
     def _on_expression_changed(self):
         pass
 
+    def _adjust_scroll_area(self):
+        from PySide6.QtCore import QTimer
+
+        QTimer.singleShot(
+            0,
+            lambda: self.scroll_view.setMinimumHeight(
+                min(self.root_node.sizeHint().height() + 20, 500)
+            ),
+        )
+
     def _execute_search(self):
         spec = self.root_node.to_filter_spec()
         if spec is None:
             self.status_label.setText("No valid filter conditions specified.")
             self.thumbnail_list.set_images([])
             return
+
+        # Save search configuration
+        config.config.SEARCH_CONFIG = spec
+        config.save_config()
 
         query = build_query(self.session, spec)
         image_ids = [r[0] for r in self.session.execute(query).all()]

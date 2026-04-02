@@ -1,6 +1,5 @@
 import logging
 import os
-import time
 import urllib.request
 from pathlib import Path
 
@@ -76,12 +75,11 @@ def run_headless(
 
         images = scan_images(root_dir)
         service.total_images = len(images)
-        service.start_time = time.time()
         for image_path in images:
             service.annotate_image(root_dir, image_path)
 
         logging.info(
-            f"Headless run completed. Annotated {service.total_images} images."
+            f"Headless run completed. Annotated {service.processed_count} images."
         )
     finally:
         session.close()
