@@ -15,6 +15,7 @@ from PySide6.QtCore import (
 )
 from PySide6.QtGui import QImage, QPixmap, QImageReader
 from PySide6.QtWidgets import (
+    QMenu,
     QWidget,
     QVBoxLayout,
     QListView,
@@ -144,7 +145,40 @@ class ImageListWidget(QWidget):
         self.model = ImageListModel()
         self.list_view.setModel(self.model)
 
+        self.list_view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.list_view.customContextMenuRequested.connect(self._show_context_menu)
+
         layout.addWidget(self.list_view)
+
+    def _show_context_menu(self, pos):
+        index = self.list_view.indexAt(pos)
+        if not index.isValid():
+            return
+
+        selection_model = self.list_view.selectionModel()
+        if not selection_model.isSelected(index):
+            from PySide6.QtCore import QItemSelectionModel
+
+            selection_model.clearSelection()
+            selection_model.select(
+                index,
+                QItemSelectionModel.SelectionFlag.Select
+                | QItemSelectionModel.SelectionFlag.Current,
+            )
+
+        indexes = selection_model.selectedIndexes()
+
+        menu = QMenu(self)
+        sxiv_action = menu.addAction("open in sxiv")
+
+        def open_sxiv():
+            import subprocess
+
+            paths = [str(self.model.images[idx.row()]) for idx in indexes]
+            subprocess.Popen(["sxiv"] + paths)
+
+        sxiv_action.triggered.connect(open_sxiv)
+        menu.exec(self.list_view.viewport().mapToGlobal(pos))
 
     def set_images(self, images: list[Path | str]):
         self.model.set_images(list(images))

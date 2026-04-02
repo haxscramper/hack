@@ -42,6 +42,7 @@ from PySide6.QtWidgets import (
     QAbstractScrollArea,
     QMainWindow,
     QMessageBox,
+    QMenu,
 )
 
 
@@ -349,6 +350,7 @@ class MixedTreeTileView(QAbstractScrollArea):
     ) -> None:
         painter.save()
         from config import config
+
         is_excluded = str(node.path) in config.excluded_directories
 
         if is_excluded:
@@ -558,6 +560,27 @@ class MixedTreeTileView(QAbstractScrollArea):
                         config.excluded_directories.add(path_str)
                     save_config()
                     self.viewport().update()
+                    return
+
+            for hit in self.tile_hits:
+                if hit.rect.contains(pos):
+                    if hit.file_path not in self.selected_files:
+                        self.selected_files = {hit.file_path}
+                        self.last_clicked_file = hit.file_path
+                        self.viewport().update()
+
+                    menu = QMenu(self)
+                    sxiv_action = menu.addAction("open in sxiv")
+
+                    def open_sxiv():
+                        import subprocess
+
+                        subprocess.Popen(
+                            ["sxiv"] + [str(p) for p in self.selected_files]
+                        )
+
+                    sxiv_action.triggered.connect(open_sxiv)
+                    menu.exec(event.globalPosition().toPoint())
                     return
 
         for hit in self.header_hits:
