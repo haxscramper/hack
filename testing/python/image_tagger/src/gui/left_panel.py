@@ -1,10 +1,13 @@
 from pathlib import Path
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QTabWidget
+from PySide6.QtCore import Signal
 from gui.image_directory_view import MixedTreeTileView
 from gui.query_search import SearchTab
 
 
 class LeftPanel(QWidget):
+    fileSelected = Signal(object)
+
     def __init__(self, root_dir, session, parent=None):
         super().__init__(parent)
         layout = QVBoxLayout(self)
@@ -20,8 +23,24 @@ class LeftPanel(QWidget):
 
         layout.addWidget(self.tabs)
 
-        # Expose important attributes/signals to maintain API compatibility
-        self.fileSelected = self.tree_view.fileSelected
+        # Connect signals
+        self.tree_view.fileSelected.connect(self.fileSelected.emit)
+        self.search_view.thumbnail_list.list_view.doubleClicked.connect(
+            self._on_search_double_clicked
+        )
+        self.search_view.thumbnail_list.list_view.clicked.connect(
+            self._on_search_clicked
+        )
+
+    def _on_search_clicked(self, index):
+        if index.isValid():
+            img_path = self.search_view.thumbnail_list.model.images[index.row()]
+            self.fileSelected.emit(str(img_path))
+
+    def _on_search_double_clicked(self, index):
+        if index.isValid():
+            img_path = self.search_view.thumbnail_list.model.images[index.row()]
+            self.fileSelected.emit(str(img_path))
 
     @property
     def root_node(self):
