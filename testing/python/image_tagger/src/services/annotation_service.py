@@ -66,30 +66,31 @@ class AnnotationService:
         else:
             logging.debug(f"Skipping WD tagger for {image_path}, tags already exist.")
 
-        if not existing_reg_tags:
-            logging.debug(f"Running Ollama tagger for {image_path}")
-            reg_tags = self.ollama_tagger.regular_tags(image_path)
-            self.repository.replace_regular_annotations(image_id, reg_tags)
-        else:
-            logging.debug(
-                f"Skipping Ollama regular tags for {image_path}, tags already exist."
-            )
+        if False: 
+            if not existing_reg_tags:
+                logging.debug(f"Running Ollama tagger for {image_path}")
+                reg_tags = self.ollama_tagger.regular_tags(image_path)
+                self.repository.replace_regular_annotations(image_id, reg_tags)
+            else:
+                logging.debug(
+                    f"Skipping Ollama regular tags for {image_path}, tags already exist."
+                )
 
-        if not existing_desc:
-            logging.debug(f"Running Ollama description tagger for {image_path}")
-            description = self.ollama_tagger.describe(image_path)
-            if description:
-                self.repository.set_description(
-                    image_id, description, self.ollama_tagger.model_name
+            if not existing_desc:
+                logging.debug(f"Running Ollama description tagger for {image_path}")
+                description = self.ollama_tagger.describe(image_path)
+                if description:
+                    self.repository.set_description(
+                        image_id, description, self.ollama_tagger.model_name
+                    )
+                    self.chroma_store.upsert_description(
+                        relative_path=str(entry.relative_path),
+                        description=description,
+                        metadata={"relative_path": str(entry.relative_path)},
+                    )
+            else:
+                logging.debug(
+                    f"Skipping Ollama description for {image_path}, description already exists."
                 )
-                self.chroma_store.upsert_description(
-                    relative_path=str(entry.relative_path),
-                    description=description,
-                    metadata={"relative_path": str(entry.relative_path)},
-                )
-        else:
-            logging.debug(
-                f"Skipping Ollama description for {image_path}, description already exists."
-            )
 
         self.processing_times.append(time.time() - start_time)

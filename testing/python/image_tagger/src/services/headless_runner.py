@@ -76,7 +76,10 @@ def run_headless(
         images = scan_images(root_dir)
         service.total_images = len(images)
         for image_path in images:
-            service.annotate_image(root_dir, image_path)
+            try: 
+                service.annotate_image(root_dir, image_path)
+            except FileNotFoundError as e:
+                logging.error("image load error", exc_info=e)
 
         logging.info(
             f"Headless run completed. Annotated {service.processed_count} images."
