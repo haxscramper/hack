@@ -2,9 +2,8 @@ import logging
 from cli.commands import cli
 
 logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    level=logging.DEBUG, format="%(levelname)s %(filename)s:%(lineno)d: %(message)s"
 )
-
 
 def main():
     logging.info("Application starting")

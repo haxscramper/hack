@@ -784,7 +784,7 @@ dependencies = [
     { name = "protobuf" },
 ]
 wheels = [
-    { filename = "onnxruntime_migraphx-1.25.0-cp314-cp314-linux_x86_64.whl", hash = "sha256:79b28c6bceb7505d35e875e6dc099f59dbb1ff6a04f091f75a1f779d21c2726a" },
+    { filename = "onnxruntime_migraphx-1.25.0-cp314-cp314-linux_x86_64.whl", hash = "sha256:116b01b13b8ba8906d8555f254425104f1859ba4cc45782421fb09fa2b650928" },
 ]
 
 [package.metadata]

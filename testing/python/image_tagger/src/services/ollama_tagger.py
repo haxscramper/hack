@@ -48,8 +48,14 @@ class OllamaTagger:
         )
 
     def _generate(self, image_path: Path, prompt: str) -> str:
-        with open(image_path, "rb") as f:
-            b64_img = base64.b64encode(f.read()).decode("utf-8")
+        from PIL import Image
+        import io
+
+        with Image.open(image_path) as img:
+            img = img.convert("RGB")
+            buf = io.BytesIO()
+            img.save(buf, format="PNG")
+            b64_img = base64.b64encode(buf.getvalue()).decode("utf-8")
 
         payload = {
             "model": self.model_name,
@@ -61,16 +67,19 @@ class OllamaTagger:
         response = requests.post(
             "http://127.0.0.1:11434/api/generate", json=payload, timeout=300
         )
-        response.raise_for_status()
+        try:
+            response.raise_for_status()
+
+        except Exception as e:
+            e.add_note(f"prompt: {prompt}")
+            e.add_note(f"image_path: {image_path}")
+            raise e from None
+
         return response.json().get("response", "")
 
     def regular_tags(self, image_path: Path) -> list[tuple[str, str]]:
         prompt = "Write a long comma-separated list of rule34 tags in alphabetical order for this image. Start with the artist, copyright, character, and meta tags (if any), prefixed by 'artist:', 'copyright:', 'character:', and 'meta:'. Then all the general tags."
-        try:
-            response_text = self._generate(image_path, prompt)
-        except Exception as e:
-            logging.error(f"Failed to generate regular tags for {image_path}: {e}")
-            return []
+        response_text = self._generate(image_path, prompt)
 
         # Parse tags
         tags = []
@@ -90,8 +99,4 @@ class OllamaTagger:
 
     def describe(self, image_path: Path, word_count: int = 100) -> str:
         prompt = f"Write a detailed description for this image in {word_count} words or less."
-        try:
-            return self._generate(image_path, prompt)
-        except Exception as e:
-            logging.error(f"Failed to generate description for {image_path}: {e}")
-            return ""
+        return self._generate(image_path, prompt)
