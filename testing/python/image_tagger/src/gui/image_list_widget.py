@@ -19,7 +19,6 @@ from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
     QListView,
-    QSizePolicy,
 )
 
 from config import config
@@ -178,6 +177,19 @@ class ImageListWidget(QWidget):
             subprocess.Popen(["sxiv"] + paths)
 
         sxiv_action.triggered.connect(open_sxiv)
+
+        copy_path_action = menu.addAction("copy path")
+
+        def copy_path():
+            from PySide6.QtWidgets import QApplication
+
+            paths = "\n".join(
+                str(self.model.images[idx.row()].resolve()) for idx in indexes
+            )
+            QApplication.clipboard().setText(paths)
+
+        copy_path_action.triggered.connect(copy_path)
+
         menu.exec(self.list_view.viewport().mapToGlobal(pos))
 
     def set_images(self, images: list[Path | str]):

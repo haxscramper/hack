@@ -580,6 +580,15 @@ class MixedTreeTileView(QAbstractScrollArea):
                         )
 
                     sxiv_action.triggered.connect(open_sxiv)
+
+                    copy_path_action = menu.addAction("copy path")
+
+                    def copy_path():
+                        paths = "\n".join(str(p.resolve()) for p in self.selected_files)
+                        QApplication.clipboard().setText(paths)
+
+                    copy_path_action.triggered.connect(copy_path)
+
                     menu.exec(event.globalPosition().toPoint())
                     return
 
