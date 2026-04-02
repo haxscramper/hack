@@ -216,7 +216,11 @@ class Repository:
         self.session.query(ImageProbabilisticTag).filter_by(image_id=image_id).delete()
         self.session.commit()
 
+        seen = set()
         for category, name, probability in items:
+            if (category, name) in seen:
+                continue
+            seen.add((category, name))
             tag = self.get_or_create_probabilistic_tag(name=name, category=category)
             self.session.add(
                 ImageProbabilisticTag(
@@ -235,7 +239,11 @@ class Repository:
         self.session.query(ImageRegularTag).filter_by(image_id=image_id).delete()
         self.session.commit()
 
+        seen = set()
         for category, name in items:
+            if (category, name) in seen:
+                continue
+            seen.add((category, name))
             tag = self.get_or_create_regular_tag(category=category, name=name)
             self.session.add(ImageRegularTag(image_id=image_id, tag_id=tag.id))
         self.session.commit()
