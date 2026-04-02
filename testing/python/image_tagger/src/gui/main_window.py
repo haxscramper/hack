@@ -137,6 +137,12 @@ class MainWindow(QMainWindow):
         self.center_panel.regularTagAdded.connect(self.on_regular_tag_added)
         self.center_panel.regularTagDeleted.connect(self.on_regular_tag_deleted)
         self.center_panel.descriptionSaved.connect(self.on_description_saved)
+        self.center_panel.probTagSearchRequested.connect(
+            self.on_prob_tag_search_requested
+        )
+        self.center_panel.regTagSearchRequested.connect(
+            self.on_reg_tag_search_requested
+        )
 
         self.undo_stack = QUndoStack(self)
         undo_action = self.undo_stack.createUndoAction(self, "Undo")
@@ -225,7 +231,9 @@ class MainWindow(QMainWindow):
         self.current_image = entry
 
         prob_rows = self.repository.list_probabilistic_tags(entry.id)
-        prob_tags = [(tag.name, rel.probability) for rel, tag in prob_rows]
+        prob_tags = [
+            (tag.category, tag.name, rel.probability) for rel, tag in prob_rows
+        ]
         self.center_panel.set_probabilistic_tags(prob_tags)
 
         reg_rows = self.repository.list_regular_tags(entry.id)
@@ -271,3 +279,13 @@ class MainWindow(QMainWindow):
         logging.info(f"Saving description for image {self.current_image.id}")
         self.repository.set_description(self.current_image.id, text)
         self._update_fully_annotated()
+
+    def on_prob_tag_search_requested(self, category: str, name: str):
+        self.left_panel.tabs.setCurrentIndex(1)
+        self.left_panel.search_view.add_tag_to_query(
+            "probabilistic_tag", category, name
+        )
+
+    def on_reg_tag_search_requested(self, category: str, name: str):
+        self.left_panel.tabs.setCurrentIndex(1)
+        self.left_panel.search_view.add_tag_to_query("regular_tag", category, name)

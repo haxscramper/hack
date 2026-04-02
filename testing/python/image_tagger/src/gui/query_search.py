@@ -24,7 +24,7 @@ import logging
 
 from gui.image_list_widget import ImageListWidget
 from sqlalchemy.orm import Session
-from sqlalchemy import select
+from sqlalchemy import select, text
 from db.models import (
     ImageEntry,
     ProbabilisticTag,
@@ -203,11 +203,18 @@ class ConditionWidget(QFrame):
 
     def _update_categories(self):
         idx = self.condition_type.currentIndex()
+        current_text = self.category_combo.currentText()
+
+        self.category_combo.blockSignals(True)
         self.category_combo.clear()
         if idx == 0:
             self.category_combo.addItems(self._prob_categories)
         elif idx == 1:
             self.category_combo.addItems(self._reg_categories)
+
+        if current_text:
+            self.category_combo.setCurrentText(current_text)
+        self.category_combo.blockSignals(False)
 
     def _on_type_changed(self, idx):
         is_prob = idx == 0
@@ -426,12 +433,18 @@ class ExpressionNode(QFrame):
 
     def _convert_to_condition(self):
         logging.info("Converting to condition")
+        self.is_group = False
         while self.main_layout.count():
             item = self.main_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
-            elif item.layout():
-                self._clear_layout(item.layout())
+            if item is None:
+                continue
+            widget = item.widget()
+            if widget:
+                widget.deleteLater()
+            else:
+                child_layout = item.layout()
+                if child_layout:
+                    self._clear_layout(child_layout)
 
         self.condition = ConditionWidget(self.session)
         self.condition.changed.connect(self.changed.emit)
@@ -442,10 +455,15 @@ class ExpressionNode(QFrame):
     def _clear_layout(self, layout):
         while layout.count():
             item = layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
-            elif item.layout():
-                self._clear_layout(item.layout())
+            if item is None:
+                continue
+            widget = item.widget()
+            if widget:
+                widget.deleteLater()
+            else:
+                child_layout = item.layout()
+                if child_layout:
+                    self._clear_layout(child_layout)
 
     def to_filter_spec(self) -> Optional[dict]:
         if not self.is_group and self.condition:
@@ -485,7 +503,7 @@ def build_query(session: Session, spec: dict):
             )
         ).scalar()
         if tag is None:
-            return select(ImageEntry.id).where(False)
+            return select(ImageEntry.id).where(text("0"))
         return select(ImageProbabilisticTag.image_id).where(
             ImageProbabilisticTag.tag_id == tag,
             ImageProbabilisticTag.probability >= spec["min_probability"],
@@ -499,7 +517,7 @@ def build_query(session: Session, spec: dict):
             )
         ).scalar()
         if tag is None:
-            return select(ImageEntry.id).where(False)
+            return select(ImageEntry.id).where(text("0"))
         return select(ImageRegularTag.image_id).where(ImageRegularTag.tag_id == tag)
 
     elif t == "description":
@@ -510,7 +528,7 @@ def build_query(session: Session, spec: dict):
     elif t == "and":
         subqueries = [build_query(session, c) for c in spec["children"]]
         if not subqueries:
-            return select(ImageEntry.id).where(False)
+            return select(ImageEntry.id).where(text("0"))
         result = subqueries[0].subquery()
         for sq in subqueries[1:]:
             sq_sub = sq.subquery()
@@ -524,7 +542,7 @@ def build_query(session: Session, spec: dict):
     elif t == "or":
         subqueries = [build_query(session, c) for c in spec["children"]]
         if not subqueries:
-            return select(ImageEntry.id).where(False)
+            return select(ImageEntry.id).where(text("0"))
         result = subqueries[0].subquery()
         for sq in subqueries[1:]:
             sq_sub = sq.subquery()
@@ -587,6 +605,20 @@ class SearchTab(QWidget):
         splitter.setStretchFactor(0, 1)
         splitter.setStretchFactor(1, 2)
         layout.addWidget(splitter)
+
+    def add_tag_to_query(self, tag_type: str, category: str, name: str):
+        from typing import Any
+
+        spec: dict[str, Any] = {
+            "type": tag_type,
+            "category": category,
+            "name": name,
+        }
+        if tag_type == "probabilistic_tag":
+            spec["min_probability"] = 0.5
+
+        if self.root_node.is_group:
+            self.root_node._add_child_from_spec(spec)
 
     def _on_expression_changed(self):
         pass
