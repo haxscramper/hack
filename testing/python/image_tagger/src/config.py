@@ -9,6 +9,7 @@ class AppConfig(BaseModel):
     CHROMA_DIRNAME: str = ".image_tagger_chroma"
     THUMBNAIL_SIZE: int = 160
     PREVIEW_GRID_COLUMNS: int = 3
+    LLM_BACKEND: str = "llama-cpp"  # ollama or llama-cpp
     excluded_directories: set[str] = Field(default_factory=set)
 
 

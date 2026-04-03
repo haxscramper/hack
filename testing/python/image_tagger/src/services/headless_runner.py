@@ -13,7 +13,7 @@ from .scanner import scan_images
 from .annotation_service import AnnotationService
 from .chroma_store import ChromaDescriptionStore
 from .wd_tagger import WdTagger
-from .ollama_tagger import OllamaTagger
+from .joy_tagger import Joytagger
 
 
 def get_xdg_cache_dir() -> Path:
@@ -63,20 +63,20 @@ def run_headless(
         logging.info(f"Initializing WdTagger with model {wd_model_path}")
         wd_tagger = WdTagger(wd_model_path, wd_tags_csv)
 
-        logging.info("Initializing Ollama tagger")
-        ollama_tagger = OllamaTagger()
+        logging.info("Initializing Joytagger tagger")
+        joy_tagger = Joytagger(backend=config.LLM_BACKEND)
 
         service = AnnotationService(
             repository=repo,
             chroma_store=chroma_store,
             wd_tagger=wd_tagger,
-            ollama_tagger=ollama_tagger,
+            joy_tagger=joy_tagger,
         )
 
         images = scan_images(root_dir)
         service.total_images = len(images)
         for image_path in images:
-            try: 
+            try:
                 service.annotate_image(root_dir, image_path)
             except FileNotFoundError as e:
                 logging.error("image load error", exc_info=e)
