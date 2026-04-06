@@ -1,5 +1,5 @@
 {
-  "entries": [
+  "entries"     : [
     {
       "id": "cf90fcc4-0268-4cfc-b67a-e2c3a8ae3883",
       "name": "Sun",
@@ -10,13 +10,7 @@
       "show_name": true,
       "show_short_desc": false,
       "entry_type": "star",
-      "ra_h": 0,
-      "ra_m": 0,
-      "ra_s": 0.0,
-      "dec_d": 0,
-      "dec_m": 0,
-      "dec_s": 0.0,
-      "distance": 0.0,
+      "location": { "ra": {"h": 0, "m": 0, "s": 0.0}, "dec": {"d": 0, "m": 0, "s": 0.0}, "distance": 0.0 },
       "radius": 0.1
     },
     {
@@ -29,20 +23,9 @@
       "show_name": true,
       "show_short_desc": false,
       "entry_type": "star",
-      "ra_h": 3,
-      "ra_m": 32,
-      "ra_s": 55.8,
-      "dec_d": -9,
-      "dec_m": 27,
-      "dec_s": 29.0,
-      "distance": 3.2,
+      "location": { "ra": {"h": 3, "m": 32, "s": 55.8}, "dec": {"d": 0, "m": 0, "s": 0.0}, "distance": 3.2 },
       "radius": 0.01
     }
   ],
-  "camera_state": {
-    "zoom": 14.333569598566894,
-    "rotation": -90.0,
-    "center_x": 2.4418202150774353,
-    "center_y": -19.115963969463348
-  }
+  "camera_state": {"zoom": 50.0, "rotation": -90.0, "center_x": 2.82, "center_y": -5.44}
 }

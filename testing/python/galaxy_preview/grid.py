@@ -8,6 +8,7 @@ class GalacticGridItem(QtWidgets.QGraphicsItem):
         self.scene = scene
         self.setZValue(-2)
         self.labels = []
+        self.inner_rings = [1, 2, 5, 10, 50, 100, 500]
 
     def boundingRect(self):
         return QtCore.QRectF(-16000, -16000, 32000, 32000)
@@ -18,8 +19,7 @@ class GalacticGridItem(QtWidgets.QGraphicsItem):
             self.scene.removeItem(label)
         self.labels = []
 
-        inner_rings = [10, 50, 100, 500]
-        for r in inner_rings:
+        for r in self.inner_rings:
             text = QtWidgets.QGraphicsTextItem(f"{r}pc")
             text.setFont(QtGui.QFont("Arial", 8))
             text.setDefaultTextColor(QtCore.Qt.white)
@@ -36,10 +36,9 @@ class GalacticGridItem(QtWidgets.QGraphicsItem):
         pen.setCosmetic(True) 
         painter.setPen(pen)
 
-        inner_rings = [10, 50, 100, 500]
         outer_rings = range(1000, 16000, 1000)
         
-        for r in list(outer_rings) + inner_rings:
+        for r in list(outer_rings) + self.inner_rings:
             painter.drawEllipse(QtCore.QRectF(-r, -r, 2 * r, 2 * r))
 
         # Radial lines
