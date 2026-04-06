@@ -1,23 +1,36 @@
 import sys
 import json
+import os
+import click
 from PySide6 import QtWidgets, QtCore, QtGui
 from models import GalacticMap, Star, Planet, Shape, ImageOverlay, GalacticEntry, EntryType
 from canvas import GalacticCanvas
 from properties import PropertiesPanel
 
 class MainWindow(QtWidgets.QMainWindow):
-    def __init__(self):
+    def __init__(self, state_file=None):
         super().__init__()
+        self.state_file = state_file
         self.setWindowTitle("Galactic Map Editor")
         self.resize(1200, 800)
         
         self.galactic_map = GalacticMap()
+        
+        # Auto-load state if it exists
+        if self.state_file and os.path.exists(self.state_file):
+            try:
+                with open(self.state_file, 'r') as f:
+                    data = json.load(f)
+                    self.galactic_map = GalacticMap.model_validate(data)
+            except Exception as e:
+                print(f"Error loading state file: {e}")
         
         # UI Setup
         self.splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
         self.setCentralWidget(self.splitter)
         
         self.canvas = GalacticCanvas()
+        self.canvas.update_from_model(self.galactic_map)
         self.splitter.addWidget(self.canvas.native)
 
         self.tree = QtWidgets.QTreeWidget()
@@ -60,19 +73,25 @@ class MainWindow(QtWidgets.QMainWindow):
         
         draw_action = self.toolbar.addAction("Draw Shape (2D)")
         draw_action.triggered.connect(self.canvas.start_drawing)
-
-        self.toolbar.addSeparator()
-        
-        save_action = self.toolbar.addAction("Save")
-        save_action.triggered.connect(self._save_map)
-        
-        load_action = self.toolbar.addAction("Load")
-        load_action.triggered.connect(self._load_map)
         
         # Connections
         self.canvas.pyside_signals.selected_entry.connect(self._on_entry_selected)
         self.canvas.pyside_signals.shape_drawn.connect(self._on_shape_drawn)
         self.properties_panel.entry_changed.connect(self._on_entry_changed)
+
+        self._refresh_tree()
+
+    def _auto_save(self):
+        if self.state_file:
+            try:
+                with open(self.state_file, 'w') as f:
+                    f.write(self.galactic_map.model_dump_json(indent=2))
+            except Exception as e:
+                print(f"Failed to auto-save to {self.state_file}: {e}")
+
+    def closeEvent(self, event):
+        self._auto_save()
+        super().closeEvent(event)
 
     def _refresh_tree(self):
         self.tree.blockSignals(True)
@@ -131,6 +150,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.canvas.add_entry_visual(new_star, self.galactic_map)
         self._refresh_tree()
         self._on_entry_selected(new_star.id)
+        self._auto_save()
 
     def _add_planet(self):
         stars = self.galactic_map.get_stars()
@@ -155,6 +175,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.canvas.add_entry_visual(new_planet, self.galactic_map)
         self._refresh_tree()
         self._on_entry_selected(new_planet.id)
+        self._auto_save()
 
     def _add_image(self):
         path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Select Image", "", "Images (*.png *.jpg *.jpeg *.bmp)")
@@ -167,6 +188,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.canvas.add_entry_visual(new_image, self.galactic_map)
             self._refresh_tree()
             self._on_entry_selected(new_image.id)
+            self._auto_save()
 
     def _add_shape(self):
         new_shape = Shape(
@@ -177,6 +199,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.canvas.add_entry_visual(new_shape, self.galactic_map)
         self._refresh_tree()
         self._on_entry_selected(new_shape.id)
+        self._auto_save()
 
     def _delete_selected(self):
         entry = self.properties_panel.current_entry
@@ -191,6 +214,7 @@ class MainWindow(QtWidgets.QMainWindow):
                     del self.canvas.entry_to_visual[entry.id]
                 self._refresh_tree()
                 self._on_entry_selected(None)
+                self._auto_save()
 
     def _on_shape_drawn(self, points):
         new_shape = Shape(
@@ -201,6 +225,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.canvas.add_entry_visual(new_shape, self.galactic_map)
         self._refresh_tree()
         self._on_entry_selected(new_shape.id)
+        self._auto_save()
 
     def _on_entry_selected(self, entry_id, from_tree=False):
         if entry_id is None:
@@ -242,25 +267,15 @@ class MainWindow(QtWidgets.QMainWindow):
                             del self.canvas.entry_to_visual[planet.id]
                         self.canvas.add_entry_visual(planet, self.galactic_map)
             self._refresh_tree()
+            self._auto_save()
 
-    def _save_map(self):
-        path, _ = QtWidgets.QFileDialog.getSaveFileName(self, "Save Galactic Map", "", "JSON Files (*.json)")
-        if path:
-            with open(path, 'w') as f:
-                f.write(self.galactic_map.model_dump_json(indent=2))
-
-    def _load_map(self):
-        path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Open Galactic Map", "", "JSON Files (*.json)")
-        if path:
-            with open(path, 'r') as f:
-                data = json.load(f)
-                self.galactic_map = GalacticMap.model_validate(data)
-                self.canvas.update_from_model(self.galactic_map)
-                self._refresh_tree()
-                self.properties_panel.set_entry(None, self.galactic_map)
-
-if __name__ == "__main__":
+@click.command()
+@click.option('--state', type=click.Path(), default=None, help='Path to the JSON state file to load and auto-save.')
+def main(state):
     app = QtWidgets.QApplication(sys.argv)
-    window = MainWindow()
+    window = MainWindow(state_file=state)
     window.show()
     sys.exit(app.exec())
+
+if __name__ == "__main__":
+    main()
