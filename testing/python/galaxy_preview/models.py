@@ -50,6 +50,14 @@ class Shape(BaseGalacticEntry):
     points: List[Tuple[float, float, float]] = [] # (x, y, z) in parsecs
     closed: bool = False
 
+class CameraState(BaseModel):
+    scale_factor: Optional[float] = None
+    center: Tuple[float, float, float] = (0.0, 0.0, 0.0)
+    fov: float = 45.0
+    elevation: float = 30.0
+    azimuth: float = 30.0
+    roll: float = 0.0
+
 GalacticEntry = Annotated[
     Union[Star, Planet, ImageOverlay, Shape],
     Field(discriminator='entry_type')
@@ -57,6 +65,7 @@ GalacticEntry = Annotated[
 
 class GalacticMap(BaseModel):
     entries: List[GalacticEntry] = []
+    camera_state: Optional[CameraState] = None
 
     # Helper methods to get specific types
     def get_stars(self) -> List[Star]:

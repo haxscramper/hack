@@ -31,6 +31,10 @@ class MainWindow(QtWidgets.QMainWindow):
         
         self.canvas = GalacticCanvas()
         self.canvas.update_from_model(self.galactic_map)
+        if self.galactic_map.camera_state:
+            state_dict = self.galactic_map.camera_state.model_dump()
+            state_dict = {k: v for k, v in state_dict.items() if v is not None}
+            self.canvas.turntable_camera.set_state(state_dict)
         self.splitter.addWidget(self.canvas.native)
 
         self.tree = QtWidgets.QTreeWidget()
@@ -73,6 +77,11 @@ class MainWindow(QtWidgets.QMainWindow):
         
         draw_action = self.toolbar.addAction("Draw Shape (2D)")
         draw_action.triggered.connect(self.canvas.start_drawing)
+
+        self.toolbar.addSeparator()
+        
+        recenter_action = self.toolbar.addAction("Re-center View")
+        recenter_action.triggered.connect(self._recenter_view)
         
         # Connections
         self.canvas.pyside_signals.selected_entry.connect(self._on_entry_selected)
@@ -81,9 +90,18 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self._refresh_tree()
 
+    def _recenter_view(self):
+        self.canvas.turntable_camera.center = (0.0, 0.0, 0.0)
+        self.canvas.pan_zoom_camera.center = (0.0, 0.0, 0.0)
+        self.canvas.update()
+        self._auto_save()
+
     def _auto_save(self):
         if self.state_file:
             try:
+                state_dict = self.canvas.turntable_camera.get_state()
+                from models import CameraState
+                self.galactic_map.camera_state = CameraState(**state_dict)
                 with open(self.state_file, 'w') as f:
                     f.write(self.galactic_map.model_dump_json(indent=2))
             except Exception as e:

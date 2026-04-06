@@ -1,3 +1,15 @@
 {
-  "entries": []
+  "entries": [],
+  "camera_state": {
+    "scale_factor": 9.98535542956413e22,
+    "center": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "fov": 45.0,
+    "elevation": 48.5,
+    "azimuth": 55.0,
+    "roll": 0.0
+  }
 }
