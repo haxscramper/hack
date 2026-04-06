@@ -34,6 +34,18 @@ class GalacticCanvas(scene.SceneCanvas):
         # Background map group
         self.bg_group = scene.Node(parent=self.view.scene)
         
+        # Coordinate grid (XY plane, centered at 0,0,0)
+        self.grid = visuals.GridLines(color=(1, 1, 1, 0.2), parent=self.bg_group)
+        self.grid.transform = scene.transforms.STTransform(scale=(1000, 1000, 1))
+
+        # Milky Way Outline
+        # Earth is at (0,0,0). Galactic center is at ~8000 pc towards +X (l=0). Radius ~ 15000 pc.
+        mw_points = []
+        for theta in np.linspace(0, 2*np.pi, 200):
+            mw_points.append([8000 + 15000 * np.cos(theta), 15000 * np.sin(theta), 0])
+        self.mw_outline = visuals.Line(pos=np.array(mw_points), color=(0.5, 0.8, 1.0, 0.4), parent=self.bg_group)
+
+        
         # Systems group
         self.systems_group = scene.Node(parent=self.view.scene)
         

@@ -204,13 +204,13 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _on_entry_selected(self, entry_id, from_tree=False):
         if entry_id is None:
-            self.properties_panel.set_entry(None)
+            self.properties_panel.set_entry(None, self.galactic_map)
             if not from_tree:
                 self.tree.clearSelection()
             return
             
         entry = next((e for e in self.galactic_map.entries if e.id == entry_id), None)
-        self.properties_panel.set_entry(entry)
+        self.properties_panel.set_entry(entry, self.galactic_map)
         if not from_tree:
             self.tree.blockSignals(True)
             self.tree.clearSelection()
@@ -257,7 +257,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.galactic_map = GalacticMap.model_validate(data)
                 self.canvas.update_from_model(self.galactic_map)
                 self._refresh_tree()
-                self.properties_panel.set_entry(None)
+                self.properties_panel.set_entry(None, self.galactic_map)
 
 if __name__ == "__main__":
     app = QtWidgets.QApplication(sys.argv)

@@ -1,5 +1,6 @@
 from PySide6 import QtWidgets, QtCore, QtGui
-from models import Star, Planet, ImageOverlay, Shape, GalacticEntry, EntryType
+from models import Star, Planet, ImageOverlay, Shape, GalacticEntry, EntryType, GalacticMap
+import math
 
 class PropertiesPanel(QtWidgets.QWidget):
     entry_changed = QtCore.Signal(str) # Emits the ID of the changed entry
@@ -8,7 +9,13 @@ class PropertiesPanel(QtWidgets.QWidget):
         super().__init__(parent)
         self.layout = QtWidgets.QVBoxLayout(self)
         self.current_entry = None
+        self.galactic_map = None
         
+        # Coordinates Display
+        self.coord_label = QtWidgets.QLabel("")
+        self.coord_label.setStyleSheet("font-weight: bold; color: #555;")
+        self.layout.addWidget(self.coord_label)
+
         # Name
         self.layout.addWidget(QtWidgets.QLabel("Name:"))
         self.name_edit = QtWidgets.QLineEdit()
@@ -79,10 +86,12 @@ class PropertiesPanel(QtWidgets.QWidget):
             fmt.setFontItalic(not fmt.fontItalic())
             editor.setCurrentCharFormat(fmt)
 
-    def set_entry(self, entry: GalacticEntry):
+    def set_entry(self, entry: GalacticEntry, galactic_map: GalacticMap = None):
         self.current_entry = entry
+        self.galactic_map = galactic_map
         if not entry:
             self.setEnabled(False)
+            self.coord_label.setText("")
             return
             
         self.setEnabled(True)
@@ -138,6 +147,39 @@ class PropertiesPanel(QtWidgets.QWidget):
             self._add_float_field("Z", entry.z, lambda v: setattr(entry, 'z', v))
             self._add_float_field("Width", entry.width, lambda v: setattr(entry, 'width', v))
             self._add_float_field("Height", entry.height, lambda v: setattr(entry, 'height', v))
+            
+        self._update_coord_label()
+
+    def _update_coord_label(self):
+        if not self.current_entry or not self.galactic_map:
+            self.coord_label.setText("")
+            return
+            
+        abs_x, abs_y, abs_z = 0.0, 0.0, 0.0
+        if isinstance(self.current_entry, Star) or isinstance(self.current_entry, ImageOverlay):
+            abs_x, abs_y, abs_z = self.current_entry.x, self.current_entry.y, self.current_entry.z
+        elif isinstance(self.current_entry, Planet):
+            parent_star = next((e for e in self.galactic_map.entries if e.id == self.current_entry.parent_star_id), None)
+            abs_x, abs_y, abs_z = self.current_entry.rel_x, self.current_entry.rel_y, self.current_entry.rel_z
+            if parent_star and isinstance(parent_star, Star):
+                abs_x += parent_star.x
+                abs_y += parent_star.y
+                abs_z += parent_star.z
+        else:
+            self.coord_label.setText("")
+            return
+
+        distance = math.sqrt(abs_x**2 + abs_y**2 + abs_z**2)
+        ra_rad = math.atan2(abs_y, abs_x)
+        ra_deg = math.degrees(ra_rad)
+        if ra_deg < 0:
+            ra_deg += 360
+            
+        dec_rad = math.asin(abs_z / distance) if distance > 0 else 0
+        dec_deg = math.degrees(dec_rad)
+        
+        self.coord_label.setText(f"RA: {ra_deg:.2f}° | Dec: {dec_deg:.2f}° | Dist: {distance:.2f} pc")
+
 
     def _select_image(self):
         path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Select Image", "", "Images (*.png *.jpg *.jpeg *.bmp)")
@@ -147,9 +189,10 @@ class PropertiesPanel(QtWidgets.QWidget):
 
     def _add_float_field(self, label, value, setter):
         spin = QtWidgets.QDoubleSpinBox()
-        spin.setRange(-10000, 10000)
+        spin.setRange(-100000, 100000)
         spin.setValue(value)
         spin.valueChanged.connect(setter)
+        spin.valueChanged.connect(lambda _: self._update_coord_label())
         spin.valueChanged.connect(lambda _: self.entry_changed.emit(self.current_entry.id))
         self.specific_layout.addRow(label, spin)
 
