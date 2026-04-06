@@ -24,7 +24,7 @@ import logging
 
 from gui.image_list_widget import ImageListWidget
 from sqlalchemy.orm import Session
-from sqlalchemy import select, text
+from sqlalchemy import select, text, func
 from db.models import (
     ImageEntry,
     ProbabilisticTag,
@@ -118,6 +118,7 @@ class ConditionWidget(QFrame):
                 "has probabilistic tag",
                 "has regular tag",
                 "has description containing",
+                "has path containing",
             ]
         )
         self.condition_type.currentIndexChanged.connect(self._on_type_changed)
@@ -151,6 +152,12 @@ class ConditionWidget(QFrame):
         layout.addRow("text:", self.desc_input)
         self.desc_label = layout.labelForField(self.desc_input)
 
+        self.path_input = QLineEdit()
+        self.path_input.setMinimumWidth(200)
+        self.path_input.textChanged.connect(lambda: self.changed.emit())
+        layout.addRow("path:", self.path_input)
+        self.path_label = layout.labelForField(self.path_input)
+
         remove_btn = QPushButton("✕")
         remove_btn.setFixedWidth(30)
         remove_btn.clicked.connect(self.remove_requested.emit)
@@ -178,6 +185,9 @@ class ConditionWidget(QFrame):
         elif t == "description":
             self.condition_type.setCurrentIndex(2)
             self.desc_input.setText(spec["text"])
+        elif t == "path_contains":
+            self.condition_type.setCurrentIndex(3)
+            self.path_input.setText(spec["text"])
         self._on_type_changed(self.condition_type.currentIndex())
 
     def _load_suggestions(self):
@@ -220,6 +230,7 @@ class ConditionWidget(QFrame):
         is_prob = idx == 0
         is_reg = idx == 1
         is_desc = idx == 2
+        is_path = idx == 3
 
         self.category_label.setVisible(is_prob or is_reg)
         self.category_combo.setVisible(is_prob or is_reg)
@@ -229,6 +240,8 @@ class ConditionWidget(QFrame):
         self.prob_spin.setVisible(is_prob)
         self.desc_label.setVisible(is_desc)
         self.desc_input.setVisible(is_desc)
+        self.path_label.setVisible(is_path)
+        self.path_input.setVisible(is_path)
 
         if is_prob or is_reg:
             self.category_label.show()
@@ -244,6 +257,10 @@ class ConditionWidget(QFrame):
             self.desc_label.show()
         else:
             self.desc_label.hide()
+        if is_path:
+            self.path_label.show()
+        else:
+            self.path_label.hide()
 
         self._update_categories()
         self._on_category_changed()
@@ -300,6 +317,14 @@ class ConditionWidget(QFrame):
                 return None
             return {
                 "type": "description",
+                "text": text,
+            }
+        elif idx == 3:
+            text = self.path_input.text().strip()
+            if not text:
+                return None
+            return {
+                "type": "path_contains",
                 "text": text,
             }
         return None
@@ -407,7 +432,7 @@ class ExpressionNode(QFrame):
             logging.error(f"Spec missing type: {spec}")
             return
 
-        if t in ["probabilistic_tag", "regular_tag", "description"]:
+        if t in ["probabilistic_tag", "regular_tag", "description", "path_contains"]:
             if self.is_root and not self.child_nodes:
                 self._add_child_from_spec(spec)
             else:
@@ -523,6 +548,11 @@ def build_query(session: Session, spec: dict):
     elif t == "description":
         return select(ImageDescription.image_id).where(
             ImageDescription.description.contains(spec["text"])
+        )
+
+    elif t == "path_contains":
+        return select(ImageEntry.id).where(
+            func.instr(ImageEntry.relative_path, spec["text"]) > 0
         )
 
     elif t == "and":

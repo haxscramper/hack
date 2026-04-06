@@ -10,9 +10,10 @@ import requests
 
 
 class Joytagger:
-    def __init__(
-        self, backend: str = "ollama", model_name: str = "user-v4/joycaption-beta"
-    ):
+
+    def __init__(self,
+                 backend: str = "ollama",
+                 model_name: str = "user-v4/joycaption-beta"):
         self.backend = backend
         self.model_name = model_name
         self._server_process = None
@@ -41,6 +42,9 @@ class Joytagger:
                     "Llama-Joycaption-Beta-One-Hf-Llava-Q4_K.gguf",
                     "--mmproj-url",
                     "https://huggingface.co/concedo/llama-joycaption-beta-one-hf-llava-mmproj-gguf/resolve/main/llama-joycaption-beta-one-llava-mmproj-model-f16.gguf",
+                    "--cache-prompt",
+                    "-c",
+                    "8192",
                 ],
                 cwd=llama_dir,
                 stdout=subprocess.DEVNULL,
@@ -90,16 +94,32 @@ class Joytagger:
         )
 
     def __del__(self):
-        if hasattr(self, "_server_process") and self._server_process is not None:
+        if hasattr(self,
+                   "_server_process") and self._server_process is not None:
             self._server_process.terminate()
             self._server_process.wait(timeout=5)
 
     def _generate(self, image_path: Path, prompt: str) -> str:
-        from PIL import Image
+        from PIL import Image, ImageFile
+        ImageFile.LOAD_TRUNCATED_IMAGES = True
         import io
+        import math
 
         with Image.open(image_path) as img:
             img = img.convert("RGB")
+
+            max_pixels = 1280 * 720
+            width, height = img.size
+            pixel_count = width * height
+
+            if pixel_count > max_pixels:
+                scale = math.sqrt(max_pixels / pixel_count)
+                new_size = (
+                    max(1, int(width * scale)),
+                    max(1, int(height * scale)),
+                )
+                img = img.resize(new_size, Image.Resampling.LANCZOS)
+
             buf = io.BytesIO()
             img.save(buf, format="PNG")
             b64_img = base64.b64encode(buf.getvalue()).decode("utf-8")
@@ -112,9 +132,9 @@ class Joytagger:
                 "images": [b64_img],
             }
 
-            response = requests.post(
-                "http://127.0.0.1:11434/api/generate", json=payload, timeout=300
-            )
+            response = requests.post("http://127.0.0.1:11434/api/generate",
+                                     json=payload,
+                                     timeout=300)
             try:
                 response.raise_for_status()
 
@@ -127,30 +147,32 @@ class Joytagger:
 
         elif self.backend == "llama-cpp":
             payload = {
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": f"data:image/png;base64,{b64_img}",
-                                },
+                "messages": [{
+                    "role":
+                    "user",
+                    "content": [
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/png;base64,{b64_img}",
                             },
-                            {
-                                "type": "text",
-                                "text": prompt,
-                            },
-                        ],
-                    }
-                ],
-                "temperature": 0,
-                "top_p": 1,
+                        },
+                        {
+                            "type": "text",
+                            "text": prompt,
+                        },
+                    ],
+                }],
+                "temperature":
+                0,
+                "top_p":
+                1,
             }
 
             response = requests.post(
-                "http://localhost:8080/v1/chat/completions", json=payload, timeout=300
-            )
+                "http://localhost:8080/v1/chat/completions",
+                json=payload,
+                timeout=300)
             try:
                 response.raise_for_status()
 
@@ -164,7 +186,7 @@ class Joytagger:
         return ""
 
     def regular_tags(self, image_path: Path) -> list[tuple[str, str]]:
-        prompt = "Write a long comma-separated list of rule34 tags in alphabetical order for this image. Start with the artist, copyright, character, and meta tags (if any), prefixed by 'artist:', 'copyright:', 'character:', and 'meta:'. Then all the general tags."
+        prompt = "Write a medium comma-separated list of rule34 tags in alphabetical order for this image. Start with the artist, copyright, character, and meta tags (if any), prefixed by 'artist:', 'copyright:', 'character:', and 'meta:'. Then all the general tags."
         response_text = self._generate(image_path, prompt)
 
         # Parse tags

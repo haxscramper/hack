@@ -57,9 +57,15 @@ class AnnotationService:
         else:
             progress_str = ""
 
-        logging.info(f"{progress_str}Annotating image: {image_path}")
+        need_wd_tagger = not existing_prob_tags and False
+        need_joycaption_tagger =not existing_reg_tags and False
+        need_joycaption_description = not existing_desc and True
+        need_any_processing = need_wd_tagger or need_joycaption_tagger or need_joycaption_description
 
-        if True:
+        if need_any_processing:
+            logging.info(f"{progress_str}Annotating image: {image_path}")
+
+        if need_wd_tagger:
             if not existing_prob_tags:
                 logging.debug(f"Running WD tagger for {image_path}")
                 prob_tags = self.wd_tagger.tag_image(image_path)
@@ -67,7 +73,7 @@ class AnnotationService:
             else:
                 logging.debug(f"Skipping WD tagger for {image_path}, tags already exist.")
 
-        if True: 
+        if need_joycaption_tagger: 
             if not existing_reg_tags:
                 logging.debug(f"Running Ollama tagger for {image_path}")
                 reg_tags = self.joy_tagger.regular_tags(image_path)
@@ -77,7 +83,7 @@ class AnnotationService:
                     f"Skipping Ollama regular tags for {image_path}, tags already exist."
                 )
 
-        if True:
+        if need_joycaption_description:
             if not existing_desc:
                 logging.debug(f"Running Ollama description tagger for {image_path}")
                 description = self.joy_tagger.describe(image_path)
@@ -90,9 +96,12 @@ class AnnotationService:
                         description=description,
                         metadata={"relative_path": str(entry.relative_path)},
                     )
+
+                    logging.info(f"Description: '{description}'")
             else:
                 logging.debug(
                     f"Skipping Ollama description for {image_path}, description already exists."
                 )
 
-        self.processing_times.append(time.time() - start_time)
+        if need_any_processing:
+            self.processing_times.append(time.time() - start_time)
