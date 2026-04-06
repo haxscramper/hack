@@ -45,6 +45,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.canvas.update_from_model(self.galactic_map)
         if self.galactic_map.camera_state:
             self.canvas.set_camera_state(self.galactic_map.camera_state.model_dump())
+        else:
+            QtCore.QTimer.singleShot(0, self._recenter_view)
         
         self.canvas.show()
         self.splitter.addWidget(self.canvas)

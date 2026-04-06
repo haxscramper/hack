@@ -27,8 +27,9 @@ class GalacticCanvas(QtWidgets.QGraphicsView):
         self.entry_to_visual = {}
 
         self.setBackgroundBrush(QtGui.QBrush(QtCore.Qt.black))
-        self.grid = GalacticGridItem()
+        self.grid = GalacticGridItem(self.scene)
         self.scene.addItem(self.grid)
+        self.grid.update_labels()
 
     def wheelEvent(self, event):
         factor = 1.1 if event.angleDelta().y() > 0 else 0.9

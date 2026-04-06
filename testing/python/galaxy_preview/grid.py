@@ -3,25 +3,43 @@ import numpy as np
 
 
 class GalacticGridItem(QtWidgets.QGraphicsItem):
-    def __init__(self, parent=None):
+    def __init__(self, scene, parent=None):
         super().__init__(parent)
+        self.scene = scene
         self.setZValue(-2)
+        self.labels = []
 
     def boundingRect(self):
         return QtCore.QRectF(-16000, -16000, 32000, 32000)
 
+    def update_labels(self):
+        # Remove existing labels
+        for label in self.labels:
+            self.scene.removeItem(label)
+        self.labels = []
+
+        inner_rings = [10, 50, 100, 500]
+        for r in inner_rings:
+            text = QtWidgets.QGraphicsTextItem(f"{r}pc")
+            text.setFont(QtGui.QFont("Arial", 8))
+            text.setDefaultTextColor(QtCore.Qt.white)
+            text.setPos(r, 0)
+            text.setFlag(QtWidgets.QGraphicsItem.ItemIgnoresTransformations)
+            self.scene.addItem(text)
+            self.labels.append(text)
+
     def paint(self, painter, option, widget):
-        # Adaptive pen width based on zoom
-        zoom = option.levelOfDetailFromTransform(painter.worldTransform())
-        pen_width = max(0.5, 1.0 / zoom) if zoom > 1e-6 else 1.0
+        painter.setRenderHint(QtGui.QPainter.Antialiasing)
         
         pen = QtGui.QPen(QtGui.QColor(255, 255, 255, 60))
-        pen.setWidthF(pen_width)
-        pen.setCosmetic(True)  # Keeps pen width constant in pixel-space
+        pen.setWidth(1)
+        pen.setCosmetic(True) 
         painter.setPen(pen)
 
-        # Concentric circles
-        for r in range(1000, 16000, 1000):
+        inner_rings = [10, 50, 100, 500]
+        outer_rings = range(1000, 16000, 1000)
+        
+        for r in list(outer_rings) + inner_rings:
             painter.drawEllipse(QtCore.QRectF(-r, -r, 2 * r, 2 * r))
 
         # Radial lines
