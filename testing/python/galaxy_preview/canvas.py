@@ -1,8 +1,7 @@
 import numpy as np
-from vispy import scene
-from vispy.scene import visuals
-from vispy.visuals.filters import TextureFilter
-from PySide6 import QtCore
+import pyvista as pv
+from pyvistaqt import QtInteractor
+from PySide6 import QtCore, QtWidgets
 from models import (
     Star,
     Planet,
@@ -12,7 +11,6 @@ from models import (
     EntryType,
     GalacticMap,
 )
-from vispy.scene.cameras import TurntableCamera
 
 
 def _hex_to_rgba(hex_color: str) -> tuple:
@@ -30,154 +28,96 @@ class GalacticSignals(QtCore.QObject):
     shape_drawn = QtCore.Signal(list)  # Emits list of (x, y, z) points
 
 
-class GalacticCanvas(scene.SceneCanvas):
-    def __init__(self, **kwargs):
-        super().__init__(keys="interactive", **kwargs)
-        self.unfreeze()
+class GalacticCanvas(QtInteractor):
+    def __init__(self, parent=None, **kwargs):
+        super().__init__(parent=parent, **kwargs)
         self.pyside_signals = GalacticSignals()
 
-        self.view = self.central_widget.add_view()
-
-        # Cameras
-        self.turntable_camera = TurntableCamera(fov=45, distance=1000, up="z")
-        self.pan_zoom_camera = scene.cameras.PanZoomCamera(
-            aspect=1,
-            up="y",  # Top-down view (x, y plane)
-        )
-
-        self.view.camera = self.turntable_camera
-
         # Storage for visuals keyed by entry ID
-        self.visual_to_entry = {}
-        self.entry_to_visual = {}
+        self.visual_to_entry = {}  # Actor to entry ID
+        self.entry_to_visual = {}  # entry ID to Actor
+        self.entry_to_label = {}   # entry ID to Label Actor (if any)
         self.use_markers = False
         self.galactic_map = None
-
-        # Background map group
-        self.bg_group = scene.Node(parent=self.view.scene)
-
-        # Radial Coordinate grid (XY plane, centered at 0,0,0)
-        grid_points = []
-        grid_connect = []
-        point_idx = 0
-
-        # Concentric circles every 1000 pc up to 15000 pc
-        for r in range(1000, 16000, 1000):
-            circle_points = []
-            for theta in np.linspace(0, 2 * np.pi, 100, endpoint=False):
-                circle_points.append([r * np.cos(theta), r * np.sin(theta), 0])
-            grid_points.extend(circle_points)
-            for i in range(100):
-                grid_connect.append([point_idx + i, point_idx + ((i + 1) % 100)])
-            point_idx += 100
-
-        # 12 radial lines
-        for angle in np.linspace(0, 2 * np.pi, 12, endpoint=False):
-            grid_points.extend(
-                [[0, 0, 0], [15000 * np.cos(angle), 15000 * np.sin(angle), 0]]
-            )
-            grid_connect.append([point_idx, point_idx + 1])
-            point_idx += 2
-
-        self.grid = visuals.Line(
-            pos=np.array(grid_points),
-            connect=np.array(grid_connect),
-            color=(1, 1, 1, 0.2),
-            parent=self.bg_group,
-        )
-
-        # Milky Way Outline
-        # Earth is at (0,0,0). Galactic center is at ~8000 pc towards +X (l=0). Radius ~ 15000 pc.
-        mw_points = []
-        for theta in np.linspace(0, 2 * np.pi, 200):
-            mw_points.append([8000 + 15000 * np.cos(theta), 15000 * np.sin(theta), 0])
-        self.mw_outline = visuals.Line(
-            pos=np.array(mw_points), color=(0.5, 0.8, 1.0, 0.4), parent=self.bg_group
-        )
-
-        # Systems group
-        self.systems_group = scene.Node(parent=self.view.scene)
-
-        # Shapes group
-        self.shapes_group = scene.Node(parent=self.view.scene)
 
         # Drawing state
         self.is_drawing = False
         self.current_draw_points = []
-        self.temp_draw_visual = None
+        self.temp_draw_actor = None
 
-        self.freeze()
+        # Initialize scene
+        self.set_background("black")
+        self._add_grid()
+        self._add_milky_way_outline()
+
+        # Enable picking
+        self.enable_mesh_picking(callback=self._on_picked, show=False, left_clicking=True)
+
+    def _add_grid(self):
+        # Radial Coordinate grid (XY plane, centered at 0,0,0)
+        # Concentric circles every 1000 pc up to 15000 pc
+        for r in range(1000, 16000, 1000):
+            circle = pv.Circle(radius=r)
+            self.add_mesh(circle, color="white", opacity=0.2, line_width=1, pickable=False)
+
+        # 12 radial lines
+        for angle in np.linspace(0, 2 * np.pi, 12, endpoint=False):
+            line = pv.Line([0, 0, 0], [15000 * np.cos(angle), 15000 * np.sin(angle), 0])
+            self.add_mesh(line, color="white", opacity=0.2, line_width=1, pickable=False)
+
+    def _add_milky_way_outline(self):
+        # Milky Way Outline
+        # Earth is at (0,0,0). Galactic center is at ~8000 pc towards +X (l=0). Radius ~ 15000 pc.
+        center = [8000, 0, 0]
+        radius = 15000
+        outline = pv.Circle(radius=radius)
+        outline.points += center
+        self.add_mesh(outline, color=(0.5, 0.8, 1.0), opacity=0.4, line_width=2, pickable=False)
 
     def set_3d_mode(self):
         self.is_drawing = False
-        self.view.camera = self.turntable_camera
-        self.update()
+        self.view_isometric()
+        self.render()
 
     def set_top_down_mode(self):
-        self.view.camera = self.pan_zoom_camera
-        # Reset camera to see the plane
-        self.pan_zoom_camera.set_range(x=(-10, 10), y=(-10, 10))
-        self.update()
+        self.is_drawing = False
+        self.view_xy()
+        self.render()
 
     def set_marker_mode(self, enabled: bool):
         self.use_markers = enabled
         if self.galactic_map:
-            self.galactic_map.use_markers = enabled
             self.update_from_model(self.galactic_map)
 
     def start_drawing(self):
-        if self.view.camera == self.pan_zoom_camera:
-            self.is_drawing = True
-            self.current_draw_points = []
-            if self.temp_draw_visual:
-                self.temp_draw_visual.parent = None
-                self.temp_draw_visual = None
+        # For drawing in PyVista, we might want to use a more native way or stick to event handling
+        # Since we are in 3D, "top-down" drawing needs to project mouse to the XY plane.
+        self.is_drawing = True
+        self.current_draw_points = []
+        if self.temp_draw_actor:
+            self.remove_actor(self.temp_draw_actor)
+            self.temp_draw_actor = None
+        
+        # We can use the plotter's track_click_position or similar, but let's try to override mouse events
+        # or use a widget. For now, let's use a simple plane picker for drawing.
+        pass
 
-    def on_mouse_press(self, event):
-        if self.is_drawing:
-            if event.button == 1:
-                pos = self.view.camera.transform.imap(event.pos)
-                self.current_draw_points.append((pos[0], pos[1], 0))
-                self._update_temp_draw()
-            elif event.button == 2:  # Finish drawing
-                if len(self.current_draw_points) > 1:
-                    self.pyside_signals.shape_drawn.emit(self.current_draw_points)
-                self.is_drawing = False
-                if self.temp_draw_visual:
-                    self.temp_draw_visual.parent = None
-                    self.temp_draw_visual = None
-            return
-
-        if event.button == 1:  # Left click for selection
-            visual = self.visual_at(event.pos)
-            if visual in self.visual_to_entry:
-                entry_id = self.visual_to_entry[visual]
-                self.pyside_signals.selected_entry.emit(entry_id)
-            else:
-                self.pyside_signals.selected_entry.emit(None)
-
-    def on_mouse_move(self, event):
-        if self.is_drawing and event.button == 1:
-            pos = self.view.camera.transform.imap(event.pos)
-            self.current_draw_points.append((pos[0], pos[1], 0))
-            self._update_temp_draw()
-
-    def _update_temp_draw(self):
-        if len(self.current_draw_points) > 1:
-            if not self.temp_draw_visual:
-                self.temp_draw_visual = visuals.Line(
-                    pos=np.array(self.current_draw_points),
-                    color="yellow",
-                    parent=self.view.scene,
-                )
-            else:
-                self.temp_draw_visual.set_data(pos=np.array(self.current_draw_points))
+    def _on_picked(self, actor):
+        if actor in self.visual_to_entry:
+            entry_id = self.visual_to_entry[actor]
+            self.pyside_signals.selected_entry.emit(entry_id)
+        else:
+            self.pyside_signals.selected_entry.emit(None)
 
     def clear_scene(self):
-        for visual in self.entry_to_visual.values():
-            visual.parent = None
+        for actor in self.entry_to_visual.values():
+            self.remove_actor(actor)
+        for actor in self.entry_to_label.values():
+            self.remove_actor(actor)
+            
         self.entry_to_visual.clear()
         self.visual_to_entry.clear()
+        self.entry_to_label.clear()
 
     def update_from_model(self, galactic_map):
         self.galactic_map = galactic_map
@@ -185,92 +125,64 @@ class GalacticCanvas(scene.SceneCanvas):
         self.clear_scene()
         for entry in galactic_map.entries:
             self.add_entry_visual(entry, galactic_map)
+        self.render()
 
     def add_entry_visual(self, entry: GalacticEntry, galactic_map: GalacticMap):
-        visual = None
         if not entry.visible:
             return
 
+        actor = None
+        pos = [entry.x, entry.y, entry.z]
+
         if isinstance(entry, Star):
             if self.use_markers:
-                rgba = _hex_to_rgba(entry.color)
-                visual = visuals.Markers(
-                    pos=np.array([[entry.x, entry.y, entry.z]]),
-                    face_color=rgba,
-                    edge_color=rgba,
-                    size=max(entry.radius * 200, 8),
-                    parent=self.systems_group,
-                )
+                # Use a small sphere or a point as marker
+                sphere = pv.Sphere(radius=max(entry.radius * 20, 50), center=pos)
+                actor = self.add_mesh(sphere, color=entry.color)
             else:
-                visual = visuals.Sphere(
-                    radius=entry.radius,
-                    color=entry.color,
-                    parent=self.systems_group,
-                    shading="smooth",
-                )
-                visual.transform = scene.transforms.STTransform(
-                    translate=(entry.x, entry.y, entry.z)
-                )
+                sphere = pv.Sphere(radius=entry.radius, center=pos)
+                actor = self.add_mesh(sphere, color=entry.color, smooth_shading=True)
 
         elif isinstance(entry, Planet):
             parent_star = next(
                 (e for e in galactic_map.entries if e.id == entry.parent_star_id), None
             )
-            abs_x, abs_y, abs_z = entry.rel_x, entry.rel_y, entry.rel_z
+            abs_pos = [entry.rel_x, entry.rel_y, entry.rel_z]
             if parent_star and isinstance(parent_star, Star):
-                abs_x += parent_star.x
-                abs_y += parent_star.y
-                abs_z += parent_star.z
-
+                abs_pos[0] += parent_star.x
+                abs_pos[1] += parent_star.y
+                abs_pos[2] += parent_star.z
+            
             if self.use_markers:
-                rgba = _hex_to_rgba(entry.color)
-                visual = visuals.Markers(
-                    pos=np.array([[abs_x, abs_y, abs_z]]),
-                    face_color=rgba,
-                    edge_color=rgba,
-                    size=max(entry.radius * 200, 5),
-                    parent=self.systems_group,
-                )
+                sphere = pv.Sphere(radius=max(entry.radius * 20, 30), center=abs_pos)
+                actor = self.add_mesh(sphere, color=entry.color)
             else:
-                visual = visuals.Sphere(
-                    radius=entry.radius,
-                    color=entry.color,
-                    parent=self.systems_group,
-                    shading="smooth",
-                )
-                visual.transform = scene.transforms.STTransform(
-                    translate=(abs_x, abs_y, abs_z)
-                )
+                sphere = pv.Sphere(radius=entry.radius, center=abs_pos)
+                actor = self.add_mesh(sphere, color=entry.color, smooth_shading=True)
 
         elif isinstance(entry, ImageOverlay):
             try:
-                from PIL import Image as PILImage
-
-                img_data = np.array(PILImage.open(entry.file_path))
-                visual = visuals.Image(img_data, parent=self.bg_group)
-                h, w = img_data.shape[:2]
-                visual.transform = scene.transforms.STTransform(
-                    scale=(entry.width / w, entry.height / h, 1),
-                    translate=(
-                        entry.x - entry.width / 2,
-                        entry.y - entry.height / 2,
-                        entry.z,
-                    ),
+                plane = pv.Plane(
+                    center=[entry.x, entry.y, entry.z],
+                    direction=[0, 0, 1],
+                    i_size=entry.width,
+                    j_size=entry.height
                 )
+                texture = pv.read_texture(entry.file_path)
+                actor = self.add_mesh(plane, texture=texture)
             except Exception as e:
                 print(f"Failed to load image {entry.file_path}: {e}")
 
         elif isinstance(entry, Shape):
             if len(entry.points) > 1:
                 pts = np.array(entry.points)
-                visual = visuals.Line(
-                    pos=pts, color=entry.color, parent=self.shapes_group
-                )
+                # Create a PolyData line
+                line = pv.lines_from_points(pts)
+                actor = self.add_mesh(line, color=entry.color, line_width=3)
 
-        if visual:
-            visual.interactive = True
-            self.entry_to_visual[entry.id] = visual
-            self.visual_to_entry[visual] = entry.id
+        if actor:
+            self.entry_to_visual[entry.id] = actor
+            self.visual_to_entry[actor] = entry.id
 
             # Add labels if requested
             labels = []
@@ -278,20 +190,92 @@ class GalacticCanvas(scene.SceneCanvas):
                 labels.append(entry.name)
             if entry.show_short_desc:
                 import re
-
                 clean = re.sub("<[^<]+?>", "", entry.short_description)
                 labels.append(clean)
 
             if labels:
                 txt = "\n".join(labels)
-                label_visual = visuals.Text(
-                    txt,
-                    pos=(0, 0, 0),
-                    color="white",
-                    font_size=8,
-                    anchor_x="left",
-                    anchor_y="bottom",
-                    parent=visual,
+                label_actor = self.add_point_labels(
+                    [pos], [txt],
+                    font_size=10,
+                    show_points=False,
+                    text_color="white",
+                    always_visible=True
                 )
-                # Label shouldn't be interactive to avoid interfering with picking the object
-                label_visual.interactive = False
+                self.entry_to_label[entry.id] = label_actor
+
+    # Overriding mouse events for custom drawing if needed
+    def mousePressEvent(self, event):
+        if self.is_drawing:
+            if event.button() == QtCore.Qt.LeftButton:
+                # Project click to XY plane
+                click_pos = self.pick_mouse_position() # This might not be exactly what we want for XY plane
+                # Better: intersect ray with XY plane
+                pos = self._get_xy_plane_pos(event.pos())
+                if pos:
+                    self.current_draw_points.append(pos)
+                    self._update_temp_draw()
+            elif event.button() == QtCore.Qt.RightButton:
+                if len(self.current_draw_points) > 1:
+                    self.pyside_signals.shape_drawn.emit(self.current_draw_points)
+                self.is_drawing = False
+                if self.temp_draw_actor:
+                    self.remove_actor(self.temp_draw_actor)
+                    self.temp_draw_actor = None
+            return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self.is_drawing and event.buttons() & QtCore.Qt.LeftButton:
+            pos = self._get_xy_plane_pos(event.pos())
+            if pos:
+                self.current_draw_points.append(pos)
+                self._update_temp_draw()
+        super().mouseMoveEvent(event)
+
+    def _get_xy_plane_pos(self, qpoint):
+        # PyVista/VTK ray-plane intersection
+        near, far = self._get_ray(qpoint)
+        # XY plane: z=0. Intersection of line (near, far) with z=0
+        # P = near + t * (far - near)
+        # P.z = near.z + t * (far.z - near.z) = 0
+        # t = -near.z / (far.z - near.z)
+        if abs(far[2] - near[2]) < 1e-6:
+            return None
+        t = -near[2] / (far[2] - near[2])
+        intersect = near + t * (far - near)
+        return intersect.tolist()
+
+    def _get_ray(self, qpoint):
+        # Convert QPoint to normalized device coordinates
+        width = self.width()
+        height = self.height()
+        x = (2.0 * qpoint.x() / width) - 1.0
+        y = 1.0 - (2.0 * qpoint.y() / height)
+        
+        # This is a bit low-level for PyVista, but let's use the renderer
+        renderer = self.renderer
+        camera = renderer.GetActiveCamera()
+        
+        # Using VTK methods to get world coordinates
+        from vtkmodules.vtkRenderingCore import vtkCoordinate
+        coord = vtkCoordinate()
+        coord.SetCoordinateSystemToDisplay()
+        coord.SetValue(qpoint.x(), height - qpoint.y(), 0)
+        world_near = coord.GetComputedWorldValue(renderer)
+        
+        coord.SetValue(qpoint.x(), height - qpoint.y(), 1)
+        world_far = coord.GetComputedWorldValue(renderer)
+        
+        return np.array(world_near), np.array(world_far)
+
+    def _update_temp_draw(self):
+        if len(self.current_draw_points) > 1:
+            pts = np.array(self.current_draw_points)
+            line = pv.lines_from_points(pts)
+            if not self.temp_draw_actor:
+                self.temp_draw_actor = self.add_mesh(line, color="yellow", line_width=2)
+            else:
+                # Update existing actor's mapper
+                self.temp_draw_actor.mapper.dataset = line
+        self.render()

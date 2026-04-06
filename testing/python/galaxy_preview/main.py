@@ -43,14 +43,9 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.canvas = GalacticCanvas()
         self.canvas.update_from_model(self.galactic_map)
-        if self.galactic_map.camera_state:
-            state_dict = self.galactic_map.camera_state.model_dump()
-            distance = state_dict.pop("distance", None)
-            state_dict = {k: v for k, v in state_dict.items() if v is not None}
-            self.canvas.turntable_camera.set_state(state_dict)
-            if distance is not None:
-                self.canvas.turntable_camera.distance = distance
-        self.splitter.addWidget(self.canvas.native)
+        # Note: Camera state handling for PyVista would differ. 
+        # For now we'll let it use defaults or we could implement a basic mapping.
+        self.splitter.addWidget(self.canvas)
 
         self.tree = QtWidgets.QTreeWidget()
         self.tree.setHeaderLabels(["Scene Entries"])
@@ -113,9 +108,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._refresh_tree()
 
     def _recenter_view(self):
-        self.canvas.turntable_camera.center = (0.0, 0.0, 0.0)
-        self.canvas.pan_zoom_camera.center = (0.0, 0.0, 0.0)
-        self.canvas.update()
+        self.canvas.view_isometric()
+        self.canvas.render()
         self._auto_save()
 
     def _on_marker_toggled(self, checked):
@@ -126,14 +120,11 @@ class MainWindow(QtWidgets.QMainWindow):
     def _auto_save(self):
         if self.state_file:
             try:
-                state_dict = self.canvas.turntable_camera.get_state()
-                state_dict["distance"] = self.canvas.turntable_camera.distance
-                from models import CameraState
-
-                self.galactic_map.camera_state = CameraState(**state_dict)
+                # Store the simple PyVista camera position if desired
+                # pos, focal, up = self.canvas.camera_position
+                # ... update model ...
                 with open(self.state_file, "w") as f:
                     f.write(self.galactic_map.model_dump_json(indent=2))
-                logging.info(f"Camera state {state_dict}")
                 logging.info(f"Auto-saved state to {self.state_file}")
             except Exception as e:
                 logging.error(f"Failed to auto-save to {self.state_file}: {e}")
@@ -273,11 +264,19 @@ class MainWindow(QtWidgets.QMainWindow):
                     e for e in self.galactic_map.entries if e.id != entry.id
                 ]
                 if entry.id in self.canvas.entry_to_visual:
-                    visual = self.canvas.entry_to_visual[entry.id]
-                    visual.parent = None
-                    del self.canvas.visual_to_entry[visual]
+                    actor = self.canvas.entry_to_visual[entry.id]
+                    self.canvas.remove_actor(actor)
+                    del self.canvas.visual_to_entry[actor]
                     del self.canvas.entry_to_visual[entry.id]
+                
+                # Also remove label
+                if entry.id in self.canvas.entry_to_label:
+                    label_actor = self.canvas.entry_to_label[entry.id]
+                    self.canvas.remove_actor(label_actor)
+                    del self.canvas.entry_to_label[entry.id]
+
                 logging.info(f"Deleted entry: {entry.name} (ID: {entry.id})")
+                self.canvas.render()
                 self._refresh_tree()
                 self._on_entry_selected(None)
                 self._auto_save()
@@ -312,30 +311,37 @@ class MainWindow(QtWidgets.QMainWindow):
             self.tree.blockSignals(False)
 
     def _on_entry_changed(self, entry_id):
-        # Full refresh of visuals for simplicity, or just update the specific one
-        # For now, let's just re-sync the visual for that entry
         entry = next((e for e in self.galactic_map.entries if e.id == entry_id), None)
         if entry:
             logging.info(f"Properties changed for entry: {entry.name} (ID: {entry.id})")
+            # Remove and re-add for both entry and its labels
             if entry_id in self.canvas.entry_to_visual:
-                # Remove and re-add (simple approach)
-                visual = self.canvas.entry_to_visual[entry_id]
-                visual.parent = None
-                del self.canvas.visual_to_entry[visual]
+                actor = self.canvas.entry_to_visual[entry_id]
+                self.canvas.remove_actor(actor)
+                del self.canvas.visual_to_entry[actor]
                 del self.canvas.entry_to_visual[entry_id]
+            
+            if entry_id in self.canvas.entry_to_label:
+                self.canvas.remove_actor(self.canvas.entry_to_label[entry_id])
+                del self.canvas.entry_to_label[entry_id]
 
             self.canvas.add_entry_visual(entry, self.galactic_map)
 
-            # If it's a star, we might need to update its planets
+            # If it's a star, update planets
             if isinstance(entry, Star):
                 for planet in self.galactic_map.get_planets():
                     if planet.parent_star_id == entry.id:
                         if planet.id in self.canvas.entry_to_visual:
-                            visual = self.canvas.entry_to_visual[planet.id]
-                            visual.parent = None
-                            del self.canvas.visual_to_entry[visual]
+                            actor = self.canvas.entry_to_visual[planet.id]
+                            self.canvas.remove_actor(actor)
+                            del self.canvas.visual_to_entry[actor]
                             del self.canvas.entry_to_visual[planet.id]
+                        if planet.id in self.canvas.entry_to_label:
+                            self.canvas.remove_actor(self.canvas.entry_to_label[planet.id])
+                            del self.canvas.entry_to_label[planet.id]
                         self.canvas.add_entry_visual(planet, self.galactic_map)
+            
+            self.canvas.render()
             self._refresh_tree()
             self._auto_save()
 
