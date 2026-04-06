@@ -43,12 +43,13 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.canvas = GalacticCanvas()
         self.canvas.update_from_model(self.galactic_map)
-        if self.galactic_map.camera_state:
+        if self.galactic_map.camera_state and self.galactic_map.camera_state.zoom > 1e-4:
+            logging.info("Restoring camera state from model")
             self.canvas.set_camera_state(self.galactic_map.camera_state.model_dump())
         else:
-            QtCore.QTimer.singleShot(0, self._recenter_view)
+            logging.info("No valid camera state found, scheduling initial re-center")
+            QtCore.QTimer.singleShot(100, self._recenter_view)
         
-        self.canvas.show()
         self.splitter.addWidget(self.canvas)
 
         self.tree = QtWidgets.QTreeWidget()
@@ -62,6 +63,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.splitter.setStretchFactor(0, 4)
         self.splitter.setStretchFactor(1, 1)
         self.splitter.setStretchFactor(2, 2)
+        self.splitter.setSizes([800, 200, 200])
 
         # Toolbar
         self.toolbar = self.addToolBar("Main")

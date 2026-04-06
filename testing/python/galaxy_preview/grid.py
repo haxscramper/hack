@@ -31,7 +31,7 @@ class GalacticGridItem(QtWidgets.QGraphicsItem):
     def paint(self, painter, option, widget):
         painter.setRenderHint(QtGui.QPainter.Antialiasing)
         
-        pen = QtGui.QPen(QtGui.QColor(255, 255, 255, 60))
+        pen = QtGui.QPen(QtGui.QColor(255, 255, 255, 120))
         pen.setWidth(1)
         pen.setCosmetic(True) 
         painter.setPen(pen)

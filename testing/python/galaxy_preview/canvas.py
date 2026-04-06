@@ -7,6 +7,7 @@ from models import (
     GalacticMap,
 )
 from grid import GalacticGridItem
+import logging
 
 
 class GalacticSignals(QtCore.QObject):
@@ -30,6 +31,10 @@ class GalacticCanvas(QtWidgets.QGraphicsView):
         self.grid = GalacticGridItem(self.scene)
         self.scene.addItem(self.grid)
         self.grid.update_labels()
+        
+        # Ensure scene rect is initialized
+        self.setSceneRect(-16000, -16000, 32000, 32000)
+        self.centerOn(0, 0)
 
     def wheelEvent(self, event):
         factor = 1.1 if event.angleDelta().y() > 0 else 0.9
@@ -38,16 +43,39 @@ class GalacticCanvas(QtWidgets.QGraphicsView):
         self.grid.update()
 
     def get_camera_state(self):
+        import math
         transform = self.transform()
+        m11 = transform.m11()
+        m12 = transform.m12()
+        
+        # If the view hasn't been shown yet, the center might be wrong.
+        # But we still want to save something.
+        center = self.viewport().rect().center()
+        if center.x() == 0 and center.y() == 0:
+            # Fallback to (0,0) scene coordinates if viewport is not yet sized
+            # or use current scene center
+            scene_center = self.mapToScene(center)
+            center_x = scene_center.x()
+            center_y = scene_center.y()
+        else:
+            scene_center = self.mapToScene(center)
+            center_x = scene_center.x()
+            center_y = scene_center.y()
+
         return {
-            "zoom": transform.m11(),
-            "center_x": self.mapToScene(self.viewport().rect().center()).x(),
-            "center_y": self.mapToScene(self.viewport().rect().center()).y(),
+            "zoom": math.sqrt(m11**2 + m12**2),
+            "rotation": math.degrees(math.atan2(m12, m11)),
+            "center_x": center_x,
+            "center_y": center_y,
         }
 
     def set_camera_state(self, state):
         self.resetTransform()
-        self.scale(state["zoom"], state["zoom"])
+        zoom = state.get("zoom", 1.0)
+        if zoom < 1e-4:
+            zoom = 1.0
+        self.scale(zoom, zoom)
+        self.rotate(state.get("rotation", 0))
         self.centerOn(state["center_x"], state["center_y"])
         self.scene.update()
 
@@ -64,8 +92,10 @@ class GalacticCanvas(QtWidgets.QGraphicsView):
     def update_from_model(self, galactic_map):
         self.galactic_map = galactic_map
         self.clear_scene()
+        logging.info(f"Loading {len(galactic_map.entries)} entries into scene.")
         for entry in galactic_map.entries:
             self.add_entry_visual(entry, galactic_map)
+        logging.info(f"Scene has {len(self.scene.items())} items after update.")
 
     def add_entry_visual(self, entry: GalacticEntry, galactic_map: GalacticMap):
         if not entry.visible:

@@ -242,6 +242,7 @@ class Shape(BaseGalacticEntry):
 
 class CameraState(BaseModel):
     zoom: float = 1.0
+    rotation: float = 0.0
     center_x: float = 0.0
     center_y: float = 0.0
 
