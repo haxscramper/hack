@@ -36,7 +36,7 @@ class GalacticCanvas(QtInteractor):
         # Storage for visuals keyed by entry ID
         self.visual_to_entry = {}  # Actor to entry ID
         self.entry_to_visual = {}  # entry ID to Actor
-        self.entry_to_label = {}   # entry ID to Label Actor (if any)
+        self.entry_to_label = {}  # entry ID to Label Actor (if any)
         self.use_markers = False
         self.galactic_map = None
 
@@ -51,19 +51,30 @@ class GalacticCanvas(QtInteractor):
         self._add_milky_way_outline()
 
         # Enable picking
-        self.enable_mesh_picking(callback=self._on_picked, show=False, left_clicking=True)
+        self.enable_mesh_picking(
+            callback=self._on_picked, show=False, left_clicking=True
+        )
 
     def _add_grid(self):
         # Concentric circles every 1000 pc up to 15000 pc
         for r in range(1000, 16000, 1000):
             # pv.Circle creates a polygon, adding it as wireframe ensures it's hollow
             circle = pv.Circle(radius=r, resolution=100)
-            self.add_mesh(circle, color="white", opacity=0.2, style='wireframe', line_width=1, pickable=False)
+            self.add_mesh(
+                circle,
+                color="white",
+                opacity=0.2,
+                style="wireframe",
+                line_width=1,
+                pickable=False,
+            )
 
         # 12 radial lines
         for angle in np.linspace(0, 2 * np.pi, 12, endpoint=False):
             line = pv.Line([0, 0, 0], [15000 * np.cos(angle), 15000 * np.sin(angle), 0])
-            self.add_mesh(line, color="white", opacity=0.2, line_width=1, pickable=False)
+            self.add_mesh(
+                line, color="white", opacity=0.2, line_width=1, pickable=False
+            )
 
     def _add_milky_way_outline(self):
         # Galactic center is at ~8000 pc towards +X (l=0). Radius ~ 15000 pc.
@@ -71,7 +82,14 @@ class GalacticCanvas(QtInteractor):
         radius = 15000
         outline = pv.Circle(radius=radius, resolution=200)
         outline.points += center
-        self.add_mesh(outline, color=(0.5, 0.8, 1.0), opacity=0.4, style='wireframe', line_width=2, pickable=False)
+        self.add_mesh(
+            outline,
+            color=(0.5, 0.8, 1.0),
+            opacity=0.4,
+            style="wireframe",
+            line_width=2,
+            pickable=False,
+        )
 
     def set_3d_mode(self):
         self.is_drawing = False
@@ -80,7 +98,14 @@ class GalacticCanvas(QtInteractor):
 
     def set_top_down_mode(self):
         self.is_drawing = False
-        self.view_xy()
+
+        # Re-center view so RA=0 line (origin) is centered
+        # and galactic center (+X direction) appears at top of screen
+        camera = self.camera
+        camera.position = [0, 0, 20000]
+        camera.focal_point = [0, 0, 0]
+        camera.up = [1, 0, 0]
+
         self.render()
 
     def set_marker_mode(self, enabled: bool):
@@ -96,7 +121,7 @@ class GalacticCanvas(QtInteractor):
         if self.temp_draw_actor:
             self.remove_actor(self.temp_draw_actor)
             self.temp_draw_actor = None
-        
+
         # We can use the plotter's track_click_position or similar, but let's try to override mouse events
         # or use a widget. For now, let's use a simple plane picker for drawing.
         pass
@@ -115,12 +140,12 @@ class GalacticCanvas(QtInteractor):
     def remove_entry_visual(self, entry_id):
         if entry_id in self.entry_to_visual:
             actor = self.entry_to_visual.pop(entry_id)
-            if hasattr(actor, 'mapper') and actor.mapper.dataset:
+            if hasattr(actor, "mapper") and actor.mapper.dataset:
                 mesh_id = id(actor.mapper.dataset)
                 if mesh_id in self.visual_to_entry:
                     del self.visual_to_entry[mesh_id]
             self.remove_actor(actor)
-        
+
         if entry_id in self.entry_to_label:
             label_actor = self.entry_to_label.pop(entry_id)
             self.remove_actor(label_actor)
@@ -158,7 +183,7 @@ class GalacticCanvas(QtInteractor):
                 abs_pos[0] += parent_star.x
                 abs_pos[1] += parent_star.y
                 abs_pos[2] += parent_star.z
-            
+
             if self.use_markers:
                 sphere = pv.Sphere(radius=max(entry.radius * 20, 30), center=abs_pos)
                 actor = self.add_mesh(sphere, color=entry.color)
@@ -172,7 +197,7 @@ class GalacticCanvas(QtInteractor):
                     center=[entry.x, entry.y, entry.z],
                     direction=[0, 0, 1],
                     i_size=entry.width,
-                    j_size=entry.height
+                    j_size=entry.height,
                 )
                 texture = pv.read_texture(entry.file_path)
                 actor = self.add_mesh(plane, texture=texture)
@@ -196,17 +221,19 @@ class GalacticCanvas(QtInteractor):
                 labels.append(entry.name)
             if entry.show_short_desc:
                 import re
+
                 clean = re.sub("<[^<]+?>", "", entry.short_description)
                 labels.append(clean)
 
             if labels:
                 txt = "\n".join(labels)
                 label_actor = self.add_point_labels(
-                    [pos], [txt],
+                    [pos],
+                    [txt],
                     font_size=10,
                     show_points=False,
                     text_color="white",
-                    always_visible=True
+                    always_visible=True,
                 )
                 self.entry_to_label[entry.id] = label_actor
 
@@ -215,7 +242,9 @@ class GalacticCanvas(QtInteractor):
         if self.is_drawing:
             if event.button() == QtCore.Qt.LeftButton:
                 # Project click to XY plane
-                click_pos = self.pick_mouse_position() # This might not be exactly what we want for XY plane
+                click_pos = (
+                    self.pick_mouse_position()
+                )  # This might not be exactly what we want for XY plane
                 # Better: intersect ray with XY plane
                 pos = self._get_xy_plane_pos(event.pos())
                 if pos:
@@ -258,21 +287,22 @@ class GalacticCanvas(QtInteractor):
         height = self.height()
         x = (2.0 * qpoint.x() / width) - 1.0
         y = 1.0 - (2.0 * qpoint.y() / height)
-        
+
         # This is a bit low-level for PyVista, but let's use the renderer
         renderer = self.renderer
         camera = renderer.GetActiveCamera()
-        
+
         # Using VTK methods to get world coordinates
         from vtkmodules.vtkRenderingCore import vtkCoordinate
+
         coord = vtkCoordinate()
         coord.SetCoordinateSystemToDisplay()
         coord.SetValue(qpoint.x(), height - qpoint.y(), 0)
         world_near = coord.GetComputedWorldValue(renderer)
-        
+
         coord.SetValue(qpoint.x(), height - qpoint.y(), 1)
         world_far = coord.GetComputedWorldValue(renderer)
-        
+
         return np.array(world_near), np.array(world_far)
 
     def _update_temp_draw(self):
