@@ -35,21 +35,18 @@ class Star(BaseGalacticEntry):
     distance: float = Field(default=0.0, ge=0.0)
     radius: float = Field(default=0.1, gt=0.0)
 
-    @computed_field
     @property
     def x(self) -> float:
         ra_deg = self._ra_to_degrees()
         dec_deg = self._dec_to_degrees()
         return self._to_cartesian(ra_deg, dec_deg)[0]
 
-    @computed_field
     @property
     def y(self) -> float:
         ra_deg = self._ra_to_degrees()
         dec_deg = self._dec_to_degrees()
         return self._to_cartesian(ra_deg, dec_deg)[1]
 
-    @computed_field
     @property
     def z(self) -> float:
         ra_deg = self._ra_to_degrees()
@@ -104,21 +101,18 @@ class Planet(BaseGalacticEntry):
     rel_distance: float = Field(default=0.0, ge=0.0)
     radius: float = Field(default=0.05, gt=0.0)
 
-    @computed_field
     @property
     def rel_x(self) -> float:
         ra_deg = self._ra_to_degrees()
         dec_deg = self._dec_to_degrees()
         return self._to_cartesian(ra_deg, dec_deg)[0]
 
-    @computed_field
     @property
     def rel_y(self) -> float:
         ra_deg = self._ra_to_degrees()
         dec_deg = self._dec_to_degrees()
         return self._to_cartesian(ra_deg, dec_deg)[1]
 
-    @computed_field
     @property
     def rel_z(self) -> float:
         ra_deg = self._ra_to_degrees()
@@ -177,21 +171,18 @@ class ImageOverlay(BaseGalacticEntry):
     height: float = Field(default=10.0, gt=0.0)
     rotation: float = 0.0
 
-    @computed_field
     @property
     def x(self) -> float:
         ra_deg = self._ra_to_degrees()
         dec_deg = self._dec_to_degrees()
         return self._to_cartesian(ra_deg, dec_deg)[0]
 
-    @computed_field
     @property
     def y(self) -> float:
         ra_deg = self._ra_to_degrees()
         dec_deg = self._dec_to_degrees()
         return self._to_cartesian(ra_deg, dec_deg)[1]
 
-    @computed_field
     @property
     def z(self) -> float:
         ra_deg = self._ra_to_degrees()

@@ -26,27 +26,22 @@ class PropertiesPanel(QtWidgets.QWidget):
         self.name_edit.textChanged.connect(self._on_field_changed)
         self.layout.addWidget(self.name_edit)
 
-        # Toolbar for rich text
-        rt_toolbar = QtWidgets.QToolBar()
-        bold_action = rt_toolbar.addAction("B")
-        bold_action.setFont(QtGui.QFont("Arial", 10, QtGui.QFont.Bold))
-        bold_action.triggered.connect(self._toggle_bold)
-        italic_action = rt_toolbar.addAction("I")
-        italic_action.setFont(QtGui.QFont("Arial", 10, -1, True))
-        italic_action.triggered.connect(self._toggle_italic)
-        self.layout.addWidget(rt_toolbar)
-
-        # Short Description (Rich Text)
+        # Short Description (Plain Text)
         self.layout.addWidget(QtWidgets.QLabel("Short Description:"))
-        self.short_desc_edit = QtWidgets.QTextEdit()
+        self.short_desc_edit = QtWidgets.QPlainTextEdit()
         self.short_desc_edit.textChanged.connect(self._on_field_changed)
         self.layout.addWidget(self.short_desc_edit)
 
-        # Detailed Description (Rich Text)
+        # Detailed Description (Plain Text)
         self.layout.addWidget(QtWidgets.QLabel("Detailed Description:"))
-        self.detailed_desc_edit = QtWidgets.QTextEdit()
+        self.detailed_desc_edit = QtWidgets.QPlainTextEdit()
         self.detailed_desc_edit.textChanged.connect(self._on_field_changed)
         self.layout.addWidget(self.detailed_desc_edit)
+
+        # Toolbar for rich text
+        rt_toolbar = QtWidgets.QToolBar()
+        # Note: B/I actions are disabled as we switched to plain text
+        self.layout.addWidget(rt_toolbar)
 
         # Visibility
         self.visible_check = QtWidgets.QCheckBox("Visible")
@@ -75,24 +70,17 @@ class PropertiesPanel(QtWidgets.QWidget):
         self.layout.addStretch()
 
         self.setEnabled(False)
+    def _on_field_changed(self):
+        if not self.current_entry:
+            return
 
-    def _toggle_bold(self):
-        editor = self.focusWidget()
-        if isinstance(editor, QtWidgets.QTextEdit):
-            fmt = editor.currentCharFormat()
-            fmt.setFontWeight(
-                QtGui.QFont.Normal
-                if fmt.fontWeight() == QtGui.QFont.Bold
-                else QtGui.QFont.Bold
-            )
-            editor.setCurrentCharFormat(fmt)
-
-    def _toggle_italic(self):
-        editor = self.focusWidget()
-        if isinstance(editor, QtWidgets.QTextEdit):
-            fmt = editor.currentCharFormat()
-            fmt.setFontItalic(not fmt.fontItalic())
-            editor.setCurrentCharFormat(fmt)
+        self.current_entry.name = self.name_edit.text()
+        self.current_entry.short_description = self.short_desc_edit.toPlainText()
+        self.current_entry.detailed_description = self.detailed_desc_edit.toPlainText()
+        self.current_entry.visible = self.visible_check.isChecked()
+        self.current_entry.show_name = self.show_name_check.isChecked()
+        self.current_entry.show_short_desc = self.show_desc_check.isChecked()
+        self.entry_changed.emit(self.current_entry.id)
 
     def _add_hms_dms_fields(self, entry, is_relative=False):
         if is_relative:
@@ -223,8 +211,8 @@ class PropertiesPanel(QtWidgets.QWidget):
         self.show_desc_check.blockSignals(True)
 
         self.name_edit.setText(entry.name)
-        self.short_desc_edit.setHtml(entry.short_description)
-        self.detailed_desc_edit.setHtml(entry.detailed_description)
+        self.short_desc_edit.setPlainText(entry.short_description)
+        self.detailed_desc_edit.setPlainText(entry.detailed_description)
         self.visible_check.setChecked(entry.visible)
         self.show_name_check.setChecked(entry.show_name)
         self.show_desc_check.setChecked(entry.show_short_desc)
@@ -296,8 +284,8 @@ class PropertiesPanel(QtWidgets.QWidget):
             return
 
         self.current_entry.name = self.name_edit.text()
-        self.current_entry.short_description = self.short_desc_edit.toHtml()
-        self.current_entry.detailed_description = self.detailed_desc_edit.toHtml()
+        self.current_entry.short_description = self.short_desc_edit.toPlainText()
+        self.current_entry.detailed_description = self.detailed_desc_edit.toPlainText()
         self.current_entry.visible = self.visible_check.isChecked()
         self.current_entry.show_name = self.show_name_check.isChecked()
         self.current_entry.show_short_desc = self.show_desc_check.isChecked()

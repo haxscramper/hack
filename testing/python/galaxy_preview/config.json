@@ -3,8 +3,8 @@
     {
       "id": "cf90fcc4-0268-4cfc-b67a-e2c3a8ae3883",
       "name": "Sun",
-      "short_description": "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.0//EN\" \"http://www.w3.org/TR/REC-html40/strict.dtd\">\n<html><head><meta name=\"qrichtext\" content=\"1\" /><meta charset=\"utf-8\" /><style type=\"text/css\">\np, li { white-space: pre-wrap; }\nhr { height: 1px; border-width: 0; }\nli.unchecked::marker { content: \"\\2610\"; }\nli.checked::marker { content: \"\\2612\"; }\n</style></head><body style=\" font-family:'Sans Serif'; font-size:9pt; font-weight:400; font-style:normal;\">\n<p style=\"-qt-paragraph-type:empty; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><br /></p></body></html>",
-      "detailed_description": "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.0//EN\" \"http://www.w3.org/TR/REC-html40/strict.dtd\">\n<html><head><meta name=\"qrichtext\" content=\"1\" /><meta charset=\"utf-8\" /><style type=\"text/css\">\np, li { white-space: pre-wrap; }\nhr { height: 1px; border-width: 0; }\nli.unchecked::marker { content: \"\\2610\"; }\nli.checked::marker { content: \"\\2612\"; }\n</style></head><body style=\" font-family:'Sans Serif'; font-size:9pt; font-weight:400; font-style:normal;\">\n<p style=\"-qt-paragraph-type:empty; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><br /></p></body></html>",
+      "short_description": "",
+      "detailed_description": "",
       "color": "#ffffff",
       "visible": true,
       "show_name": true,
@@ -17,16 +17,13 @@
       "dec_m": 0,
       "dec_s": 0.0,
       "distance": 0.0,
-      "radius": 0.1,
-      "x": 0.0,
-      "y": 0.0,
-      "z": 0.0
+      "radius": 0.1
     },
     {
       "id": "d50848fd-86b9-458a-b24a-cc3e7b5df566",
       "name": "Epsilon Eridani",
-      "short_description": "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.0//EN\" \"http://www.w3.org/TR/REC-html40/strict.dtd\">\n<html><head><meta name=\"qrichtext\" content=\"1\" /><meta charset=\"utf-8\" /><style type=\"text/css\">\np, li { white-space: pre-wrap; }\nhr { height: 1px; border-width: 0; }\nli.unchecked::marker { content: \"\\2610\"; }\nli.checked::marker { content: \"\\2612\"; }\n</style></head><body style=\" font-family:'Sans Serif'; font-size:9pt; font-weight:400; font-style:normal;\">\n<p style=\"-qt-paragraph-type:empty; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><br /></p></body></html>",
-      "detailed_description": "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.0//EN\" \"http://www.w3.org/TR/REC-html40/strict.dtd\">\n<html><head><meta name=\"qrichtext\" content=\"1\" /><meta charset=\"utf-8\" /><style type=\"text/css\">\np, li { white-space: pre-wrap; }\nhr { height: 1px; border-width: 0; }\nli.unchecked::marker { content: \"\\2610\"; }\nli.checked::marker { content: \"\\2612\"; }\n</style></head><body style=\" font-family:'Sans Serif'; font-size:9pt; font-weight:400; font-style:normal;\">\n<p style=\"-qt-paragraph-type:empty; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><br /></p></body></html>",
+      "short_description": "",
+      "detailed_description": "",
       "color": "#ffffff",
       "visible": true,
       "show_name": true,
@@ -39,16 +36,13 @@
       "dec_m": 27,
       "dec_s": 29.0,
       "distance": 3.2,
-      "radius": 0.01,
-      "x": 1.8893838350039711,
-      "y": 2.5285804762636523,
-      "z": -0.525841705348644
+      "radius": 0.01
     }
   ],
   "camera_state": {
-    "zoom": 38.51509702095003,
+    "zoom": 14.333569598566894,
     "rotation": -90.0,
-    "center_x": 3.08969752653799,
-    "center_y": -4.1022874722101035
+    "center_x": 2.4418202150774353,
+    "center_y": -19.115963969463348
   }
 }
