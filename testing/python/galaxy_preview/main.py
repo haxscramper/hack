@@ -43,25 +43,10 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.canvas = GalacticCanvas()
         self.canvas.update_from_model(self.galactic_map)
-        if self.galactic_map.camera_state:
-            # Map simplified camera state back to PyVista
-            state = self.galactic_map.camera_state
-            logging.info(
-                f"Loading camera state: center={state.center}, distance={state.distance}"
-            )
-            self.canvas.camera.position = (
-                state.center[0],
-                state.center[1],
-                state.center[2] + state.distance,
-            )
-            self.canvas.camera.focal_point = state.center
-            self.canvas.camera.up = (0.0, 0.0, 1.0)
-            self.canvas.reset_camera()
-            self.canvas.render()
-
-            logging.info(
-                f"Camera state loaded. Position: {self.canvas.camera.position}, Focal Point: {self.canvas.camera.focal_point}, Up: {self.canvas.camera.up}, Clipping Range: {self.canvas.camera.clipping_range}"
-            )
+        
+        # In 2D, we don't have a 3D camera to load.
+        # But we can set initial zoom or view if needed, or simply render.
+        self.canvas.show()
         self.splitter.addWidget(self.canvas)
 
         self.tree = QtWidgets.QTreeWidget()
@@ -96,60 +81,26 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.toolbar.addSeparator()
 
-        view_3d_action = self.toolbar.addAction("3D View")
-        view_3d_action.triggered.connect(self.canvas.set_3d_mode)
-
-        view_top_action = self.toolbar.addAction("Top-Down View")
-        view_top_action.triggered.connect(self.canvas.set_top_down_mode)
-
-        draw_action = self.toolbar.addAction("Draw Shape (2D)")
-        draw_action.triggered.connect(self.canvas.start_drawing)
-
-        self.toolbar.addSeparator()
-
         recenter_action = self.toolbar.addAction("Re-center View")
         recenter_action.triggered.connect(self._recenter_view)
 
-        # Status bar with marker mode checkbox
-        self.statusBar()
-        self.marker_checkbox = QtWidgets.QCheckBox("Use Markers")
-        self.marker_checkbox.setChecked(self.galactic_map.use_markers)
-        self.marker_checkbox.toggled.connect(self._on_marker_toggled)
-        self.statusBar().addPermanentWidget(self.marker_checkbox)
-
         # Connections
         self.canvas.pyside_signals.selected_entry.connect(self._on_entry_selected)
-        self.canvas.pyside_signals.shape_drawn.connect(self._on_shape_drawn)
         self.properties_panel.entry_changed.connect(self._on_entry_changed)
 
         self._refresh_tree()
 
     def _recenter_view(self):
-        self.canvas.view_isometric()
+        self.canvas.resetTransform()
         self.canvas.render()
-        self._auto_save()
 
     def _on_marker_toggled(self, checked):
-        self.galactic_map.use_markers = checked
-        self.canvas.set_marker_mode(checked)
-        self._auto_save()
+        # Marker mode is now always enabled, this method can be removed or emptied
+        pass
 
     def _auto_save(self):
         if self.state_file:
             try:
-                # Update camera state from PyVista
-                from models import CameraState
-
-                pos = self.canvas.camera.position
-                focal = self.canvas.camera.focal_point
-                # distance as the Z-offset from the focal point
-                dist = pos[2] - focal[2]
-
-                self.galactic_map.camera_state = CameraState(
-                    center=focal, distance=dist
-                )
-                logging.info(f"Auto-saving state: center={focal}, distance={dist}")
-
                 with open(self.state_file, "w") as f:
                     f.write(self.galactic_map.model_dump_json(indent=2))
                 logging.info(f"Auto-saved state to {self.state_file}")
@@ -290,24 +241,9 @@ class MainWindow(QtWidgets.QMainWindow):
                 ]
                 self.canvas.remove_entry_visual(entry.id)
                 logging.info(f"Deleted entry: {entry.name} (ID: {entry.id})")
-                self.canvas.render()
                 self._refresh_tree()
                 self._on_entry_selected(None)
                 self._auto_save()
-
-    def _on_shape_drawn(self, points):
-        new_shape = Shape(
-            name=f"Freeform Shape {len([e for e in self.galactic_map.entries if isinstance(e, Shape)]) + 1}",
-            points=points,
-        )
-        self.galactic_map.entries.append(new_shape)
-        self.canvas.add_entry_visual(new_shape, self.galactic_map)
-        logging.info(
-            f"Added freeform shape: {new_shape.name} (ID: {new_shape.id}) with {len(points)} points"
-        )
-        self._refresh_tree()
-        self._on_entry_selected(new_shape.id)
-        self._auto_save()
 
     def _on_entry_selected(self, entry_id, from_tree=False):
         if entry_id is None:
@@ -338,7 +274,6 @@ class MainWindow(QtWidgets.QMainWindow):
                         self.canvas.remove_entry_visual(planet.id)
                         self.canvas.add_entry_visual(planet, self.galactic_map)
 
-            self.canvas.render()
             self._refresh_tree()
             self._auto_save()
 

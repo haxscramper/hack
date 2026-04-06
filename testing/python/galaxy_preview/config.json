@@ -45,18 +45,5 @@
       "z": -0.525841705348644
     }
   ],
-  "camera_state": {
-    "scale_factor": null,
-    "center": [
-      -0.5142959507256402,
-      0.3611014122116203,
-      0.0
-    ],
-    "fov": 45.0,
-    "elevation": 30.0,
-    "azimuth": 30.0,
-    "roll": 0.0,
-    "distance": 19.133845884516294
-  },
   "use_markers": true
 }
