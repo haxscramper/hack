@@ -57,6 +57,7 @@ class CameraState(BaseModel):
     elevation: float = 30.0
     azimuth: float = 30.0
     roll: float = 0.0
+    distance: Optional[float] = 1000.0
 
 GalacticEntry = Annotated[
     Union[Star, Planet, ImageOverlay, Shape],

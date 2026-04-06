@@ -36,8 +36,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.canvas.update_from_model(self.galactic_map)
         if self.galactic_map.camera_state:
             state_dict = self.galactic_map.camera_state.model_dump()
+            distance = state_dict.pop('distance', None)
             state_dict = {k: v for k, v in state_dict.items() if v is not None}
             self.canvas.turntable_camera.set_state(state_dict)
+            if distance is not None:
+                self.canvas.turntable_camera.distance = distance
         self.splitter.addWidget(self.canvas.native)
 
         self.tree = QtWidgets.QTreeWidget()
@@ -103,6 +106,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if self.state_file:
             try:
                 state_dict = self.canvas.turntable_camera.get_state()
+                state_dict['distance'] = self.canvas.turntable_camera.distance
                 from models import CameraState
                 self.galactic_map.camera_state = CameraState(**state_dict)
                 with open(self.state_file, 'w') as f:
