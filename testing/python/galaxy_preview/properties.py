@@ -11,11 +11,6 @@ class PropertiesPanel(QtWidgets.QWidget):
         self.current_entry = None
         self.galactic_map = None
         
-        # Coordinates Display
-        self.coord_label = QtWidgets.QLabel("")
-        self.coord_label.setStyleSheet("font-weight: bold; color: #555;")
-        self.layout.addWidget(self.coord_label)
-
         # Name
         self.layout.addWidget(QtWidgets.QLabel("Name:"))
         self.name_edit = QtWidgets.QLineEdit()
@@ -86,12 +81,56 @@ class PropertiesPanel(QtWidgets.QWidget):
             fmt.setFontItalic(not fmt.fontItalic())
             editor.setCurrentCharFormat(fmt)
 
+    def _add_spherical_fields(self, entry, is_relative=False):
+        x = getattr(entry, 'rel_x' if is_relative else 'x')
+        y = getattr(entry, 'rel_y' if is_relative else 'y')
+        z = getattr(entry, 'rel_z' if is_relative else 'z')
+        
+        dist = math.sqrt(x**2 + y**2 + z**2)
+        ra_rad = math.atan2(y, x)
+        ra_deg = math.degrees(ra_rad)
+        if ra_deg < 0:
+            ra_deg += 360
+        dec_rad = math.asin(z / dist) if dist > 0 else 0
+        dec_deg = math.degrees(dec_rad)
+        
+        state = {'ra': ra_deg, 'dec': dec_deg, 'dist': dist}
+        
+        def _update_coords():
+            r = state['dist']
+            ra = math.radians(state['ra'])
+            dec = math.radians(state['dec'])
+            
+            new_x = r * math.cos(dec) * math.cos(ra)
+            new_y = r * math.cos(dec) * math.sin(ra)
+            new_z = r * math.sin(dec)
+            
+            setattr(entry, 'rel_x' if is_relative else 'x', new_x)
+            setattr(entry, 'rel_y' if is_relative else 'y', new_y)
+            setattr(entry, 'rel_z' if is_relative else 'z', new_z)
+
+        def set_ra(v):
+            state['ra'] = v
+            _update_coords()
+            
+        def set_dec(v):
+            state['dec'] = v
+            _update_coords()
+            
+        def set_dist(v):
+            state['dist'] = v
+            _update_coords()
+
+        prefix = "Rel " if is_relative else ""
+        self._add_float_field(f"{prefix}RA (deg)", state['ra'], set_ra, 0, 360)
+        self._add_float_field(f"{prefix}Dec (deg)", state['dec'], set_dec, -90, 90)
+        self._add_float_field(f"{prefix}Dist (pc)", state['dist'], set_dist, 0, 1000000)
+
     def set_entry(self, entry: GalacticEntry, galactic_map: GalacticMap = None):
         self.current_entry = entry
         self.galactic_map = galactic_map
         if not entry:
             self.setEnabled(False)
-            self.coord_label.setText("")
             return
             
         self.setEnabled(True)
@@ -127,59 +166,20 @@ class PropertiesPanel(QtWidgets.QWidget):
                 item.widget().deleteLater()
                 
         if isinstance(entry, Star):
-            self._add_float_field("X", entry.x, lambda v: setattr(entry, 'x', v))
-            self._add_float_field("Y", entry.y, lambda v: setattr(entry, 'y', v))
-            self._add_float_field("Z", entry.z, lambda v: setattr(entry, 'z', v))
+            self._add_spherical_fields(entry, is_relative=False)
             self._add_float_field("Radius", entry.radius, lambda v: setattr(entry, 'radius', v))
             
         elif isinstance(entry, Planet):
-            self._add_float_field("Rel X", entry.rel_x, lambda v: setattr(entry, 'rel_x', v))
-            self._add_float_field("Rel Y", entry.rel_y, lambda v: setattr(entry, 'rel_y', v))
-            self._add_float_field("Rel Z", entry.rel_z, lambda v: setattr(entry, 'rel_z', v))
+            self._add_spherical_fields(entry, is_relative=True)
             self._add_float_field("Radius", entry.radius, lambda v: setattr(entry, 'radius', v))
 
         elif isinstance(entry, ImageOverlay):
             file_btn = QtWidgets.QPushButton("Select Image")
             file_btn.clicked.connect(self._select_image)
             self.specific_layout.addRow("File:", file_btn)
-            self._add_float_field("X", entry.x, lambda v: setattr(entry, 'x', v))
-            self._add_float_field("Y", entry.y, lambda v: setattr(entry, 'y', v))
-            self._add_float_field("Z", entry.z, lambda v: setattr(entry, 'z', v))
+            self._add_spherical_fields(entry, is_relative=False)
             self._add_float_field("Width", entry.width, lambda v: setattr(entry, 'width', v))
             self._add_float_field("Height", entry.height, lambda v: setattr(entry, 'height', v))
-            
-        self._update_coord_label()
-
-    def _update_coord_label(self):
-        if not self.current_entry or not self.galactic_map:
-            self.coord_label.setText("")
-            return
-            
-        abs_x, abs_y, abs_z = 0.0, 0.0, 0.0
-        if isinstance(self.current_entry, Star) or isinstance(self.current_entry, ImageOverlay):
-            abs_x, abs_y, abs_z = self.current_entry.x, self.current_entry.y, self.current_entry.z
-        elif isinstance(self.current_entry, Planet):
-            parent_star = next((e for e in self.galactic_map.entries if e.id == self.current_entry.parent_star_id), None)
-            abs_x, abs_y, abs_z = self.current_entry.rel_x, self.current_entry.rel_y, self.current_entry.rel_z
-            if parent_star and isinstance(parent_star, Star):
-                abs_x += parent_star.x
-                abs_y += parent_star.y
-                abs_z += parent_star.z
-        else:
-            self.coord_label.setText("")
-            return
-
-        distance = math.sqrt(abs_x**2 + abs_y**2 + abs_z**2)
-        ra_rad = math.atan2(abs_y, abs_x)
-        ra_deg = math.degrees(ra_rad)
-        if ra_deg < 0:
-            ra_deg += 360
-            
-        dec_rad = math.asin(abs_z / distance) if distance > 0 else 0
-        dec_deg = math.degrees(dec_rad)
-        
-        self.coord_label.setText(f"RA: {ra_deg:.2f}° | Dec: {dec_deg:.2f}° | Dist: {distance:.2f} pc")
-
 
     def _select_image(self):
         path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Select Image", "", "Images (*.png *.jpg *.jpeg *.bmp)")
@@ -187,12 +187,13 @@ class PropertiesPanel(QtWidgets.QWidget):
             self.current_entry.file_path = path
             self.entry_changed.emit(self.current_entry.id)
 
-    def _add_float_field(self, label, value, setter):
+    def _add_float_field(self, label, value, setter, min_val=-100000.0, max_val=100000.0):
         spin = QtWidgets.QDoubleSpinBox()
-        spin.setRange(-100000, 100000)
+        spin.setRange(min_val, max_val)
+        spin.setDecimals(2)
+        spin.setSingleStep(0.1)
         spin.setValue(value)
         spin.valueChanged.connect(setter)
-        spin.valueChanged.connect(lambda _: self._update_coord_label())
         spin.valueChanged.connect(lambda _: self.entry_changed.emit(self.current_entry.id))
         self.specific_layout.addRow(label, spin)
 
