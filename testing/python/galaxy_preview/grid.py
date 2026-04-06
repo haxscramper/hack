@@ -13,7 +13,7 @@ class GalacticGridItem(QtWidgets.QGraphicsItem):
     def paint(self, painter, option, widget):
         # Adaptive pen width based on zoom
         zoom = option.levelOfDetailFromTransform(painter.worldTransform())
-        pen_width = max(0.5, 1.0 / zoom)
+        pen_width = max(0.5, 1.0 / zoom) if zoom > 1e-6 else 1.0
         
         pen = QtGui.QPen(QtGui.QColor(255, 255, 255, 60))
         pen.setWidthF(pen_width)

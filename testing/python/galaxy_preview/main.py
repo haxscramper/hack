@@ -43,9 +43,9 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.canvas = GalacticCanvas()
         self.canvas.update_from_model(self.galactic_map)
+        if self.galactic_map.camera_state:
+            self.canvas.set_camera_state(self.galactic_map.camera_state.model_dump())
         
-        # In 2D, we don't have a 3D camera to load.
-        # But we can set initial zoom or view if needed, or simply render.
         self.canvas.show()
         self.splitter.addWidget(self.canvas)
 
@@ -92,7 +92,17 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _recenter_view(self):
         self.canvas.resetTransform()
-        self.canvas.render()
+        # Scale to zoom in: ~10pc view scale
+        # A view area of roughly 10pc x 10pc given viewport size.
+        # factor 50-100 gives a reasonable zoom.
+        self.canvas.scale(50, 50)
+        # Point Galactic Center (+X axis) UP (towards negative Y)
+        # Clockwise rotation: positive values
+        # Counter-clockwise rotation: negative values
+        # Align +X to -Y: -90 degrees
+        self.canvas.rotate(-90)
+        self.canvas.centerOn(0, 0)
+        self._auto_save()
 
     def _on_marker_toggled(self, checked):
         # Marker mode is now always enabled, this method can be removed or emptied
@@ -101,6 +111,9 @@ class MainWindow(QtWidgets.QMainWindow):
     def _auto_save(self):
         if self.state_file:
             try:
+                from models import CameraState
+                state = self.canvas.get_camera_state()
+                self.galactic_map.camera_state = CameraState(**state)
                 with open(self.state_file, "w") as f:
                     f.write(self.galactic_map.model_dump_json(indent=2))
                 logging.info(f"Auto-saved state to {self.state_file}")

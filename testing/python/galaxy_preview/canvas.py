@@ -33,7 +33,22 @@ class GalacticCanvas(QtWidgets.QGraphicsView):
     def wheelEvent(self, event):
         factor = 1.1 if event.angleDelta().y() > 0 else 0.9
         self.scale(factor, factor)
-        self.scene.update()  # Redraw grid lines as scale changes
+        self.scene.update()
+        self.grid.update()
+
+    def get_camera_state(self):
+        transform = self.transform()
+        return {
+            "zoom": transform.m11(),
+            "center_x": self.mapToScene(self.viewport().rect().center()).x(),
+            "center_y": self.mapToScene(self.viewport().rect().center()).y(),
+        }
+
+    def set_camera_state(self, state):
+        self.resetTransform()
+        self.scale(state["zoom"], state["zoom"])
+        self.centerOn(state["center_x"], state["center_y"])
+        self.scene.update()
 
     def clear_scene(self):
         for entry_id in list(self.entry_to_visual.keys()):

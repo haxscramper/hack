@@ -240,6 +240,11 @@ class Shape(BaseGalacticEntry):
     closed: bool = False
 
 
+class CameraState(BaseModel):
+    zoom: float = 1.0
+    center_x: float = 0.0
+    center_y: float = 0.0
+
 
 GalacticEntry = Annotated[
     Union[Star, Planet, ImageOverlay, Shape], Field(discriminator="entry_type")
@@ -248,7 +253,7 @@ GalacticEntry = Annotated[
 
 class GalacticMap(BaseModel):
     entries: List[GalacticEntry] = []
-    use_markers: bool = False
+    camera_state: Optional[CameraState] = None
 
     def get_stars(self) -> List[Star]:
         return [e for e in self.entries if isinstance(e, Star)]
