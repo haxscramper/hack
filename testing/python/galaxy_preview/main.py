@@ -263,18 +263,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.galactic_map.entries = [
                     e for e in self.galactic_map.entries if e.id != entry.id
                 ]
-                if entry.id in self.canvas.entry_to_visual:
-                    actor = self.canvas.entry_to_visual[entry.id]
-                    self.canvas.remove_actor(actor)
-                    del self.canvas.visual_to_entry[actor]
-                    del self.canvas.entry_to_visual[entry.id]
-                
-                # Also remove label
-                if entry.id in self.canvas.entry_to_label:
-                    label_actor = self.canvas.entry_to_label[entry.id]
-                    self.canvas.remove_actor(label_actor)
-                    del self.canvas.entry_to_label[entry.id]
-
+                self.canvas.remove_entry_visual(entry.id)
                 logging.info(f"Deleted entry: {entry.name} (ID: {entry.id})")
                 self.canvas.render()
                 self._refresh_tree()
@@ -314,31 +303,14 @@ class MainWindow(QtWidgets.QMainWindow):
         entry = next((e for e in self.galactic_map.entries if e.id == entry_id), None)
         if entry:
             logging.info(f"Properties changed for entry: {entry.name} (ID: {entry.id})")
-            # Remove and re-add for both entry and its labels
-            if entry_id in self.canvas.entry_to_visual:
-                actor = self.canvas.entry_to_visual[entry_id]
-                self.canvas.remove_actor(actor)
-                del self.canvas.visual_to_entry[actor]
-                del self.canvas.entry_to_visual[entry_id]
-            
-            if entry_id in self.canvas.entry_to_label:
-                self.canvas.remove_actor(self.canvas.entry_to_label[entry_id])
-                del self.canvas.entry_to_label[entry_id]
-
+            self.canvas.remove_entry_visual(entry_id)
             self.canvas.add_entry_visual(entry, self.galactic_map)
 
             # If it's a star, update planets
             if isinstance(entry, Star):
                 for planet in self.galactic_map.get_planets():
                     if planet.parent_star_id == entry.id:
-                        if planet.id in self.canvas.entry_to_visual:
-                            actor = self.canvas.entry_to_visual[planet.id]
-                            self.canvas.remove_actor(actor)
-                            del self.canvas.visual_to_entry[actor]
-                            del self.canvas.entry_to_visual[planet.id]
-                        if planet.id in self.canvas.entry_to_label:
-                            self.canvas.remove_actor(self.canvas.entry_to_label[planet.id])
-                            del self.canvas.entry_to_label[planet.id]
+                        self.canvas.remove_entry_visual(planet.id)
                         self.canvas.add_entry_visual(planet, self.galactic_map)
             
             self.canvas.render()

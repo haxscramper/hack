@@ -102,22 +102,29 @@ class GalacticCanvas(QtInteractor):
         # or use a widget. For now, let's use a simple plane picker for drawing.
         pass
 
-    def _on_picked(self, actor):
-        if actor in self.visual_to_entry:
-            entry_id = self.visual_to_entry[actor]
+    def _on_picked(self, mesh):
+        if id(mesh) in self.visual_to_entry:
+            entry_id = self.visual_to_entry[id(mesh)]
             self.pyside_signals.selected_entry.emit(entry_id)
         else:
             self.pyside_signals.selected_entry.emit(None)
 
     def clear_scene(self):
-        for actor in self.entry_to_visual.values():
+        for entry_id in list(self.entry_to_visual.keys()):
+            self.remove_entry_visual(entry_id)
+
+    def remove_entry_visual(self, entry_id):
+        if entry_id in self.entry_to_visual:
+            actor = self.entry_to_visual.pop(entry_id)
+            if hasattr(actor, 'mapper') and actor.mapper.dataset:
+                mesh_id = id(actor.mapper.dataset)
+                if mesh_id in self.visual_to_entry:
+                    del self.visual_to_entry[mesh_id]
             self.remove_actor(actor)
-        for actor in self.entry_to_label.values():
-            self.remove_actor(actor)
-            
-        self.entry_to_visual.clear()
-        self.visual_to_entry.clear()
-        self.entry_to_label.clear()
+        
+        if entry_id in self.entry_to_label:
+            label_actor = self.entry_to_label.pop(entry_id)
+            self.remove_actor(label_actor)
 
     def update_from_model(self, galactic_map):
         self.galactic_map = galactic_map
@@ -182,7 +189,7 @@ class GalacticCanvas(QtInteractor):
 
         if actor:
             self.entry_to_visual[entry.id] = actor
-            self.visual_to_entry[actor] = entry.id
+            self.visual_to_entry[id(actor.mapper.dataset)] = entry.id
 
             # Add labels if requested
             labels = []
