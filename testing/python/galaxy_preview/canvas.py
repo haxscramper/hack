@@ -103,9 +103,33 @@ class GalacticCanvas(scene.SceneCanvas):
         # Background map group
         self.bg_group = scene.Node(parent=self.view.scene)
         
-        # Coordinate grid (XY plane, centered at 0,0,0)
-        self.grid = visuals.GridLines(color=(1, 1, 1, 0.2), parent=self.bg_group)
-        self.grid.transform = scene.transforms.STTransform(scale=(1000, 1000, 1))
+        # Radial Coordinate grid (XY plane, centered at 0,0,0)
+        grid_points = []
+        grid_connect = []
+        point_idx = 0
+        
+        # Concentric circles every 1000 pc up to 15000 pc
+        for r in range(1000, 16000, 1000):
+            circle_points = []
+            for theta in np.linspace(0, 2*np.pi, 100, endpoint=False):
+                circle_points.append([r * np.cos(theta), r * np.sin(theta), 0])
+            grid_points.extend(circle_points)
+            for i in range(100):
+                grid_connect.append([point_idx + i, point_idx + ((i + 1) % 100)])
+            point_idx += 100
+            
+        # 12 radial lines
+        for angle in np.linspace(0, 2*np.pi, 12, endpoint=False):
+            grid_points.extend([[0, 0, 0], [15000 * np.cos(angle), 15000 * np.sin(angle), 0]])
+            grid_connect.append([point_idx, point_idx + 1])
+            point_idx += 2
+            
+        self.grid = visuals.Line(
+            pos=np.array(grid_points), 
+            connect=np.array(grid_connect),
+            color=(1, 1, 1, 0.2), 
+            parent=self.bg_group
+        )
 
         # Milky Way Outline
         # Earth is at (0,0,0). Galactic center is at ~8000 pc towards +X (l=0). Radius ~ 15000 pc.
