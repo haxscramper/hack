@@ -167,9 +167,13 @@ class GalacticCanvas(QtInteractor):
 
         if isinstance(entry, Star):
             if self.use_markers:
-                # Use a small sphere or a point as marker
-                sphere = pv.Sphere(radius=max(entry.radius * 20, 50), center=pos)
-                actor = self.add_mesh(sphere, color=entry.color)
+                actor = self.add_points(
+                    np.array([pos]),
+                    color=entry.color,
+                    point_size=15,
+                    render_points_as_spheres=True,
+                    pickable=True,
+                )
             else:
                 sphere = pv.Sphere(radius=entry.radius, center=pos)
                 actor = self.add_mesh(sphere, color=entry.color, smooth_shading=True)
@@ -185,8 +189,35 @@ class GalacticCanvas(QtInteractor):
                 abs_pos[2] += parent_star.z
 
             if self.use_markers:
-                sphere = pv.Sphere(radius=max(entry.radius * 20, 30), center=abs_pos)
-                actor = self.add_mesh(sphere, color=entry.color)
+                actor = self.add_points(
+                    np.array([abs_pos]),
+                    color=entry.color,
+                    point_size=10,
+                    render_points_as_spheres=True,
+                    pickable=True,
+                )
+            else:
+                sphere = pv.Sphere(radius=entry.radius, center=abs_pos)
+                actor = self.add_mesh(sphere, color=entry.color, smooth_shading=True)
+
+        elif isinstance(entry, Planet):
+            parent_star = next(
+                (e for e in galactic_map.entries if e.id == entry.parent_star_id), None
+            )
+            abs_pos = [entry.rel_x, entry.rel_y, entry.rel_z]
+            if parent_star and isinstance(parent_star, Star):
+                abs_pos[0] += parent_star.x
+                abs_pos[1] += parent_star.y
+                abs_pos[2] += parent_star.z
+
+            if self.use_markers:
+                actor = self.add_points(
+                    np.array([abs_pos]),
+                    color=entry.color,
+                    point_size=10,
+                    render_points_as_spheres=True,
+                    pickable=True,
+                )
             else:
                 sphere = pv.Sphere(radius=entry.radius, center=abs_pos)
                 actor = self.add_mesh(sphere, color=entry.color, smooth_shading=True)
