@@ -2,9 +2,9 @@
   "entries": [
     {
       "id": "35c0f729-0001-4cf1-af21-6dcd4170ea7c",
-      "name": "Star 1",
-      "short_description": "",
-      "detailed_description": "",
+      "name": "Sun",
+      "short_description": "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.0//EN\" \"http://www.w3.org/TR/REC-html40/strict.dtd\">\n<html><head><meta name=\"qrichtext\" content=\"1\" /><meta charset=\"utf-8\" /><style type=\"text/css\">\np, li { white-space: pre-wrap; }\nhr { height: 1px; border-width: 0; }\nli.unchecked::marker { content: \"\\2610\"; }\nli.checked::marker { content: \"\\2612\"; }\n</style></head><body style=\" font-family:'Sans Serif'; font-size:9pt; font-weight:400; font-style:normal;\">\n<p style=\"-qt-paragraph-type:empty; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><br /></p></body></html>",
+      "detailed_description": "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.0//EN\" \"http://www.w3.org/TR/REC-html40/strict.dtd\">\n<html><head><meta name=\"qrichtext\" content=\"1\" /><meta charset=\"utf-8\" /><style type=\"text/css\">\np, li { white-space: pre-wrap; }\nhr { height: 1px; border-width: 0; }\nli.unchecked::marker { content: \"\\2610\"; }\nli.checked::marker { content: \"\\2612\"; }\n</style></head><body style=\" font-family:'Sans Serif'; font-size:9pt; font-weight:400; font-style:normal;\">\n<p style=\"-qt-paragraph-type:empty; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><br /></p></body></html>",
       "color": "#ffffff",
       "visible": true,
       "show_name": true,
@@ -17,17 +17,17 @@
     }
   ],
   "camera_state": {
-    "scale_factor": 2909607723572616.0,
+    "scale_factor": null,
     "center": [
-      0.0,
+      4000.0,
       0.0,
       0.0
     ],
     "fov": 45.0,
-    "elevation": 35.0,
-    "azimuth": -3.0,
+    "elevation": 30.0,
+    "azimuth": 30.0,
     "roll": 0.0,
-    "distance": 3452.2712143931076
+    "distance": 126.99932122203116
   },
   "use_markers": true
 }

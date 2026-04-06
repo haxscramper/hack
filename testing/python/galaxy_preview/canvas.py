@@ -54,11 +54,11 @@ class GalacticCanvas(QtInteractor):
         self.enable_mesh_picking(callback=self._on_picked, show=False, left_clicking=True)
 
     def _add_grid(self):
-        # Radial Coordinate grid (XY plane, centered at 0,0,0)
         # Concentric circles every 1000 pc up to 15000 pc
         for r in range(1000, 16000, 1000):
-            circle = pv.Circle(radius=r)
-            self.add_mesh(circle, color="white", opacity=0.2, line_width=1, pickable=False)
+            # pv.Circle creates a polygon, adding it as wireframe ensures it's hollow
+            circle = pv.Circle(radius=r, resolution=100)
+            self.add_mesh(circle, color="white", opacity=0.2, style='wireframe', line_width=1, pickable=False)
 
         # 12 radial lines
         for angle in np.linspace(0, 2 * np.pi, 12, endpoint=False):
@@ -66,13 +66,12 @@ class GalacticCanvas(QtInteractor):
             self.add_mesh(line, color="white", opacity=0.2, line_width=1, pickable=False)
 
     def _add_milky_way_outline(self):
-        # Milky Way Outline
-        # Earth is at (0,0,0). Galactic center is at ~8000 pc towards +X (l=0). Radius ~ 15000 pc.
+        # Galactic center is at ~8000 pc towards +X (l=0). Radius ~ 15000 pc.
         center = [8000, 0, 0]
         radius = 15000
-        outline = pv.Circle(radius=radius)
+        outline = pv.Circle(radius=radius, resolution=200)
         outline.points += center
-        self.add_mesh(outline, color=(0.5, 0.8, 1.0), opacity=0.4, line_width=2, pickable=False)
+        self.add_mesh(outline, color=(0.5, 0.8, 1.0), opacity=0.4, style='wireframe', line_width=2, pickable=False)
 
     def set_3d_mode(self):
         self.is_drawing = False

@@ -43,8 +43,17 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.canvas = GalacticCanvas()
         self.canvas.update_from_model(self.galactic_map)
-        # Note: Camera state handling for PyVista would differ. 
-        # For now we'll let it use defaults or we could implement a basic mapping.
+        if self.galactic_map.camera_state:
+            # Map simplified camera state back to PyVista
+            state = self.galactic_map.camera_state
+            logging.info(f"Loading camera state: center={state.center}, distance={state.distance}")
+            self.canvas.camera.position = (state.center[0], state.center[1], state.center[2] + state.distance)
+            self.canvas.camera.focal_point = state.center
+            self.canvas.camera.up = (0.0, 0.0, 1.0)
+            self.canvas.reset_camera()
+            self.canvas.render()
+            
+            logging.info(f"Camera state loaded. Position: {self.canvas.camera.position}, Focal Point: {self.canvas.camera.focal_point}, Up: {self.canvas.camera.up}, Clipping Range: {self.canvas.camera.clipping_range}")
         self.splitter.addWidget(self.canvas)
 
         self.tree = QtWidgets.QTreeWidget()
@@ -120,9 +129,20 @@ class MainWindow(QtWidgets.QMainWindow):
     def _auto_save(self):
         if self.state_file:
             try:
-                # Store the simple PyVista camera position if desired
-                # pos, focal, up = self.canvas.camera_position
-                # ... update model ...
+                # Update camera state from PyVista
+                from models import CameraState
+                
+                pos = self.canvas.camera.position
+                focal = self.canvas.camera.focal_point
+                # distance as the Z-offset from the focal point
+                dist = pos[2] - focal[2]
+                
+                self.galactic_map.camera_state = CameraState(
+                    center=focal,
+                    distance=dist
+                )
+                logging.info(f"Auto-saving state: center={focal}, distance={dist}")
+                
                 with open(self.state_file, "w") as f:
                     f.write(self.galactic_map.model_dump_json(indent=2))
                 logging.info(f"Auto-saved state to {self.state_file}")
