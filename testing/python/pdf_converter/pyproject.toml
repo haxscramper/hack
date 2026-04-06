@@ -5,9 +5,15 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
+  "beartype>=0.22.9",
   "click>=8.3.1",
   "docling>=2.81.0",
+  "ebooklib>=0.20",
   "fichub-cli>=0.10.3",
   "pdf2image>=1.17.0",
+  "pdfplumber>=0.11.9",
+  "pymupdf4llm>=1.27.2.2",
+  "pyside6>=6.11.0",
+  "requests>=2.33.0",
   "xdg-base-dirs>=6.0.2",
 ]

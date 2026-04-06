@@ -44,6 +44,7 @@ class WdTagger:
         img = cv2.imread(str(image_path))
         if img is None:
             raise FileNotFoundError(f"Could not load image: {image_path}")
+            
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         img = cv2.resize(img, (target_size, target_size), interpolation=cv2.INTER_AREA)
         img = img.astype(np.float32)

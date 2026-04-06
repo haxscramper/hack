@@ -7,9 +7,11 @@ class ChromaDescriptionStore:
         self.client = chromadb.PersistentClient(path=str(base_dir))
         self.collection = self.client.get_or_create_collection("image_descriptions")
 
-    def upsert_description(self, image_path: str, description: str, metadata: dict | None = None):
+    def upsert_description(
+        self, relative_path: str, description: str, metadata: dict | None = None
+    ):
         self.collection.upsert(
-            ids=[image_path],
+            ids=[relative_path],
             documents=[description],
             metadatas=[metadata or {}],
         )

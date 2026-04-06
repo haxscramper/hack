@@ -13,13 +13,71 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox,
     QTextEdit,
     QScrollArea,
+    QFrame,
 )
 
 from gui.flow_layout import FlowLayout
 
 
+class TagWidget(QFrame):
+    addSearchRequested = Signal(str, str)
+
+    def __init__(self, category: str, name: str, parent=None):
+        super().__init__(parent)
+        self.category = category
+        self.name_ = name
+
+        self.setFrameShape(QFrame.Shape.StyledPanel)
+        self.setStyleSheet(
+            "TagWidget { background-color: #e0e0e0; border-radius: 4px; border: 1px solid #ccc; }"
+        )
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(6, 2, 6, 2)
+        layout.setSpacing(4)
+
+        self.label = QLabel(f"{category}:{name}")
+        self.label.setStyleSheet("border: none; background: transparent;")
+        layout.addWidget(self.label)
+
+        self.add_btn = QPushButton("+")
+        self.add_btn.setFixedSize(16, 16)
+        self.add_btn.setStyleSheet(
+            "QPushButton { color: white; background-color: #4CAF50; border: none; border-radius: 8px; font-weight: bold; padding-bottom: 2px; }"
+            "QPushButton:hover { background-color: #45a049; }"
+        )
+        self.add_btn.hide()
+        self.add_btn.clicked.connect(self._on_add_clicked)
+        layout.addWidget(self.add_btn)
+
+        self.close_btn = QPushButton("x")
+        self.close_btn.setFixedSize(16, 16)
+        self.close_btn.setStyleSheet(
+            "QPushButton { color: white; background-color: #ff4444; border: none; border-radius: 8px; font-weight: bold; padding-bottom: 2px; }"
+            "QPushButton:hover { background-color: #cc0000; }"
+        )
+        self.close_btn.hide()
+        layout.addWidget(self.close_btn)
+
+        self.setAttribute(Qt.WidgetAttribute.WA_Hover)
+
+    def _on_add_clicked(self):
+        self.addSearchRequested.emit(self.category, self.name_)
+
+    def enterEvent(self, event):
+        self.add_btn.show()
+        self.close_btn.show()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self.add_btn.hide()
+        self.close_btn.hide()
+        super().leaveEvent(event)
+
+
 class RegularTagsContainer(QWidget):
     tagRemoveRequested = Signal(str, str)
+    tagAddSearchRequested = Signal(str, str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -36,14 +94,18 @@ class RegularTagsContainer(QWidget):
                 item.widget().deleteLater()
 
     def set_tags(self, tags: list[tuple[str, str]]):
-        from PySide6.QtWidgets import QPushButton
         self.clear_tags()
         for category, name in tags:
-            btn = QPushButton(f"{category}:{name}")
-            btn.clicked.connect(
-                lambda checked=False, c=category, n=name: self.tagRemoveRequested.emit(c, n)
+            tag_widget = TagWidget(category, name)
+            tag_widget.close_btn.clicked.connect(
+                lambda checked=False, c=category, n=name: self.tagRemoveRequested.emit(
+                    c, n
+                )
             )
-            self.flow.addWidget(btn)
+            tag_widget.addSearchRequested.connect(
+                lambda c, n: self.tagAddSearchRequested.emit(c, n)
+            )
+            self.flow.addWidget(tag_widget)
 
 
 class CenterPanel(QWidget):
@@ -53,14 +115,18 @@ class CenterPanel(QWidget):
     regularTagDeleted = Signal(str, str)
     descriptionSaved = Signal(str)
 
+    probTagSearchRequested = Signal(str, str)
+    regTagSearchRequested = Signal(str, str)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         layout = QVBoxLayout(self)
 
         layout.addWidget(QLabel("Probabilistic tags"))
-        self.prob_table = QTableWidget(0, 2)
-        self.prob_table.setHorizontalHeaderLabels(["Tag", "Probability"])
+        self.prob_table = QTableWidget(0, 3)
+        self.prob_table.setHorizontalHeaderLabels(["+", "Tag", "Probability"])
         self.prob_table.horizontalHeader().setStretchLastSection(True)
+        self.prob_table.setColumnWidth(0, 30)
         layout.addWidget(self.prob_table)
 
         prob_add_row = QHBoxLayout()
@@ -105,6 +171,7 @@ class CenterPanel(QWidget):
         self.reg_add_btn.clicked.connect(self._on_reg_add)
         self.save_description_btn.clicked.connect(self._on_save_desc)
         self.regular_tags.tagRemoveRequested.connect(self.regularTagDeleted)
+        self.regular_tags.tagAddSearchRequested.connect(self.regTagSearchRequested)
 
     def _on_prob_add(self):
         name = self.prob_name_edit.text().strip()
@@ -122,11 +189,23 @@ class CenterPanel(QWidget):
     def _on_save_desc(self):
         self.descriptionSaved.emit(self.description_edit.toPlainText())
 
-    def set_probabilistic_tags(self, tags: list[tuple[str, float]]):
+    def set_probabilistic_tags(self, tags: list[tuple[str, str, float]]):
         self.prob_table.setRowCount(len(tags))
-        for row, (tag_name, probability) in enumerate(tags):
-            self.prob_table.setItem(row, 0, QTableWidgetItem(tag_name))
-            self.prob_table.setItem(row, 1, QTableWidgetItem(f"{probability:.4f}"))
+        for row, (category, tag_name, probability) in enumerate(tags):
+            add_btn = QPushButton("+")
+            add_btn.setStyleSheet(
+                "QPushButton { color: white; background-color: #4CAF50; border: none; font-weight: bold; margin: 2px; }"
+                "QPushButton:hover { background-color: #45a049; }"
+            )
+            add_btn.clicked.connect(
+                lambda checked=False,
+                c=category,
+                t=tag_name: self.probTagSearchRequested.emit(c, t)
+            )
+
+            self.prob_table.setCellWidget(row, 0, add_btn)
+            self.prob_table.setItem(row, 1, QTableWidgetItem(tag_name))
+            self.prob_table.setItem(row, 2, QTableWidgetItem(f"{probability:.4f}"))
 
     def set_regular_tags(self, tags: list[tuple[str, str]]):
         self.regular_tags.set_tags(tags)

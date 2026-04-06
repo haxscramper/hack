@@ -441,7 +441,6 @@ dependencies = [
     { name = "numpy" },
     { name = "onnx" },
     { name = "onnx2torch" },
-    { name = "onnxruntime" },
     { name = "onnxruntime-migraphx" },
     { name = "opencv-python" },
     { name = "opencv-python-headless" },
@@ -452,41 +451,32 @@ dependencies = [
     { name = "requests" },
     { name = "sqlalchemy" },
     { name = "timm" },
-    { name = "torch", version = "2.10.0", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version < '3.15' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux') or sys_platform == 'darwin' or sys_platform == 'win32'" },
-    { name = "torch", version = "2.10.0+rocm7.0", source = { registry = "https://download.pytorch.org/whl/rocm7.0" }, marker = "(python_full_version >= '3.15' and sys_platform == 'linux') or (platform_machine != 'aarch64' and sys_platform == 'linux') or (platform_python_implementation != 'CPython' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux' and sys_platform != 'win32')" },
-    { name = "torchvision", version = "0.25.0", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version < '3.15' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux') or sys_platform == 'darwin' or sys_platform == 'win32'" },
-    { name = "torchvision", version = "0.25.0+rocm7.0", source = { registry = "https://download.pytorch.org/whl/rocm7.0" }, marker = "(python_full_version >= '3.15' and sys_platform == 'linux') or (platform_machine != 'aarch64' and sys_platform == 'linux') or (platform_python_implementation != 'CPython' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux' and sys_platform != 'win32')" },
+    { name = "torch" },
+    { name = "torchvision" },
     { name = "transformers" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "beartype" },
-    { name = "beartype", specifier = ">=0.18" },
     { name = "chromadb", specifier = ">=0.5" },
     { name = "click", specifier = ">=8.1" },
     { name = "huggingface-hub" },
     { name = "numpy" },
-    { name = "numpy", specifier = ">=1.26" },
     { name = "onnx", specifier = ">=1.20.1" },
     { name = "onnx2torch", specifier = ">=1.5.15" },
-    { name = "onnxruntime", specifier = ">=1.18" },
-    { name = "onnxruntime-migraphx" },
-    { name = "opencv-python", specifier = ">=4.10" },
+    { name = "onnxruntime-migraphx", path = "../../../../onnxruntime/build/Linux/Release/dist/onnxruntime_migraphx-1.25.0-cp314-cp314-linux_x86_64.whl" },
     { name = "opencv-python", specifier = ">=4.13.0.92" },
     { name = "opencv-python-headless" },
     { name = "pandas" },
-    { name = "pandas", specifier = ">=2.2" },
-    { name = "pillow", specifier = ">=10.0" },
     { name = "pillow", specifier = ">=12.1.1" },
     { name = "pydantic", specifier = ">=2.0" },
     { name = "pyside6", specifier = ">=6.10.2" },
     { name = "requests", specifier = ">=2.32" },
-    { name = "sqlalchemy", specifier = ">=2.0" },
     { name = "sqlalchemy", specifier = ">=2.0.48" },
     { name = "timm", specifier = ">=1.0.25" },
-    { name = "torch", specifier = ">=2.10.0" },
-    { name = "torchvision", specifier = ">=0.25.0" },
+    { name = "torch", specifier = ">=2.10.0", index = "https://download.pytorch.org/whl/rocm7.0" },
+    { name = "torchvision", specifier = ">=0.25.0", index = "https://download.pytorch.org/whl/rocm7.0" },
     { name = "transformers", specifier = ">=5.3.0" },
 ]
 
@@ -754,10 +744,8 @@ source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy" },
     { name = "onnx" },
-    { name = "torch", version = "2.10.0", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version < '3.15' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux') or sys_platform == 'darwin' or sys_platform == 'win32'" },
-    { name = "torch", version = "2.10.0+rocm7.0", source = { registry = "https://download.pytorch.org/whl/rocm7.0" }, marker = "(python_full_version >= '3.15' and sys_platform == 'linux') or (platform_machine != 'aarch64' and sys_platform == 'linux') or (platform_python_implementation != 'CPython' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux' and sys_platform != 'win32')" },
-    { name = "torchvision", version = "0.25.0", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version < '3.15' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux') or sys_platform == 'darwin' or sys_platform == 'win32'" },
-    { name = "torchvision", version = "0.25.0+rocm7.0", source = { registry = "https://download.pytorch.org/whl/rocm7.0" }, marker = "(python_full_version >= '3.15' and sys_platform == 'linux') or (platform_machine != 'aarch64' and sys_platform == 'linux') or (platform_python_implementation != 'CPython' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux' and sys_platform != 'win32')" },
+    { name = "torch" },
+    { name = "torchvision" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/06/51/bb56a5dfee431aa61f13a297e33f6ae0654e55d3ba93d62b88b673182af3/onnx2torch-1.5.15.tar.gz", hash = "sha256:d2a239cf0871cbbeec13d43e2a72ac2f8b3c8dcf80695e4d1040c3deed2b14a2", size = 49786, upload-time = "2024-08-07T14:04:01.076Z" }
 wheels = [
@@ -787,18 +775,28 @@ wheels = [
 
 [[package]]
 name = "onnxruntime-migraphx"
-version = "1.24.2"
-source = { registry = "https://pypi.org/simple" }
+version = "1.25.0"
+source = { path = "../../../../onnxruntime/build/Linux/Release/dist/onnxruntime_migraphx-1.25.0-cp314-cp314-linux_x86_64.whl" }
 dependencies = [
     { name = "flatbuffers" },
     { name = "numpy" },
     { name = "packaging" },
     { name = "protobuf" },
-    { name = "sympy" },
 ]
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/76/44/db9035204a3363f9c0a4822c68e9a7520c13ef8d261f96b89b1375106dab/onnxruntime_migraphx-1.24.2-cp314-cp314-manylinux_2_34_x86_64.whl", hash = "sha256:9d7f1b1a2b9651143a2080b4f42ee99eead02023de1855d1b8a02199a9c179aa", size = 20343783, upload-time = "2026-02-21T07:25:29.155Z" },
+    { filename = "onnxruntime_migraphx-1.25.0-cp314-cp314-linux_x86_64.whl", hash = "sha256:116b01b13b8ba8906d8555f254425104f1859ba4cc45782421fb09fa2b650928" },
 ]
+
+[package.metadata]
+requires-dist = [
+    { name = "flatbuffers" },
+    { name = "ml-dtypes", marker = "extra == 'quantization'" },
+    { name = "numpy", specifier = ">=1.21.6" },
+    { name = "packaging" },
+    { name = "protobuf" },
+    { name = "sympy", marker = "extra == 'symbolic'" },
+]
+provides-extras = ["symbolic", "quantization"]
 
 [[package]]
 name = "opencv-python"
@@ -1524,10 +1522,8 @@ dependencies = [
     { name = "huggingface-hub" },
     { name = "pyyaml" },
     { name = "safetensors" },
-    { name = "torch", version = "2.10.0", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version < '3.15' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux') or sys_platform == 'darwin' or sys_platform == 'win32'" },
-    { name = "torch", version = "2.10.0+rocm7.0", source = { registry = "https://download.pytorch.org/whl/rocm7.0" }, marker = "(python_full_version >= '3.15' and sys_platform == 'linux') or (platform_machine != 'aarch64' and sys_platform == 'linux') or (platform_python_implementation != 'CPython' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux' and sys_platform != 'win32')" },
-    { name = "torchvision", version = "0.25.0", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version < '3.15' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux') or sys_platform == 'darwin' or sys_platform == 'win32'" },
-    { name = "torchvision", version = "0.25.0+rocm7.0", source = { registry = "https://download.pytorch.org/whl/rocm7.0" }, marker = "(python_full_version >= '3.15' and sys_platform == 'linux') or (platform_machine != 'aarch64' and sys_platform == 'linux') or (platform_python_implementation != 'CPython' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux' and sys_platform != 'win32')" },
+    { name = "torch" },
+    { name = "torchvision" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/d7/2c/593109822fe735e637382aca6640c1102c19797f7791f1fd1dab2d6c3cb1/timm-1.0.25.tar.gz", hash = "sha256:47f59fc2754725735cc81bb83bcbfce5bec4ebd5d4bb9e69da57daa92fcfa768", size = 2414743, upload-time = "2026-02-23T16:49:00.137Z" }
 wheels = [
@@ -1562,47 +1558,17 @@ wheels = [
 
 [[package]]
 name = "torch"
-version = "2.10.0"
-source = { registry = "https://pypi.org/simple" }
-resolution-markers = [
-    "sys_platform == 'win32'",
-    "(python_full_version < '3.15' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux') or sys_platform == 'darwin'",
-]
-dependencies = [
-    { name = "filelock", marker = "(python_full_version < '3.15' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux') or sys_platform == 'darwin' or sys_platform == 'win32'" },
-    { name = "fsspec", marker = "(python_full_version < '3.15' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux') or sys_platform == 'darwin' or sys_platform == 'win32'" },
-    { name = "jinja2", marker = "(python_full_version < '3.15' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux') or sys_platform == 'darwin' or sys_platform == 'win32'" },
-    { name = "networkx", marker = "(python_full_version < '3.15' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux') or sys_platform == 'darwin' or sys_platform == 'win32'" },
-    { name = "setuptools", marker = "(python_full_version < '3.15' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux') or sys_platform == 'darwin' or sys_platform == 'win32'" },
-    { name = "sympy", marker = "(python_full_version < '3.15' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux') or sys_platform == 'darwin' or sys_platform == 'win32'" },
-    { name = "typing-extensions", marker = "(python_full_version < '3.15' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux') or sys_platform == 'darwin' or sys_platform == 'win32'" },
-]
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/4f/93/716b5ac0155f1be70ed81bacc21269c3ece8dba0c249b9994094110bfc51/torch-2.10.0-cp314-cp314-macosx_14_0_arm64.whl", hash = "sha256:bf0d9ff448b0218e0433aeb198805192346c4fd659c852370d5cc245f602a06a", size = 79464992, upload-time = "2026-01-21T16:23:05.162Z" },
-    { url = "https://files.pythonhosted.org/packages/69/2b/51e663ff190c9d16d4a8271203b71bc73a16aa7619b9f271a69b9d4a936b/torch-2.10.0-cp314-cp314-manylinux_2_28_aarch64.whl", hash = "sha256:233aed0659a2503b831d8a67e9da66a62c996204c0bba4f4c442ccc0c68a3f60", size = 146018567, upload-time = "2026-01-21T16:22:23.393Z" },
-    { url = "https://files.pythonhosted.org/packages/56/97/078a007208f8056d88ae43198833469e61a0a355abc0b070edd2c085eb9a/torch-2.10.0-cp314-cp314-win_amd64.whl", hash = "sha256:6528f13d2a8593a1a412ea07a99812495bec07e9224c28b2a25c0a30c7da025c", size = 113752373, upload-time = "2026-01-21T16:22:13.471Z" },
-    { url = "https://files.pythonhosted.org/packages/d8/94/71994e7d0d5238393df9732fdab607e37e2b56d26a746cb59fdb415f8966/torch-2.10.0-cp314-cp314t-macosx_14_0_arm64.whl", hash = "sha256:f5ab4ba32383061be0fb74bda772d470140a12c1c3b58a0cfbf3dae94d164c28", size = 79850324, upload-time = "2026-01-21T16:22:09.494Z" },
-    { url = "https://files.pythonhosted.org/packages/e2/65/1a05346b418ea8ccd10360eef4b3e0ce688fba544e76edec26913a8d0ee0/torch-2.10.0-cp314-cp314t-manylinux_2_28_aarch64.whl", hash = "sha256:716b01a176c2a5659c98f6b01bf868244abdd896526f1c692712ab36dbaf9b63", size = 146006482, upload-time = "2026-01-21T16:22:18.42Z" },
-    { url = "https://files.pythonhosted.org/packages/66/4d/35352043ee0eaffdeff154fad67cd4a31dbed7ff8e3be1cc4549717d6d51/torch-2.10.0-cp314-cp314t-win_amd64.whl", hash = "sha256:71283a373f0ee2c89e0f0d5f446039bdabe8dbc3c9ccf35f0f784908b0acd185", size = 113995816, upload-time = "2026-01-21T16:22:05.312Z" },
-]
-
-[[package]]
-name = "torch"
 version = "2.10.0+rocm7.0"
 source = { registry = "https://download.pytorch.org/whl/rocm7.0" }
-resolution-markers = [
-    "sys_platform == 'emscripten'",
-    "(python_full_version >= '3.15' and sys_platform == 'linux') or (platform_machine != 'aarch64' and sys_platform == 'linux') or (platform_python_implementation != 'CPython' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'emscripten' and sys_platform != 'linux' and sys_platform != 'win32')",
-]
 dependencies = [
-    { name = "filelock", marker = "(python_full_version >= '3.15' and sys_platform == 'linux') or (platform_machine != 'aarch64' and sys_platform == 'linux') or (platform_python_implementation != 'CPython' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux' and sys_platform != 'win32')" },
-    { name = "fsspec", marker = "(python_full_version >= '3.15' and sys_platform == 'linux') or (platform_machine != 'aarch64' and sys_platform == 'linux') or (platform_python_implementation != 'CPython' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux' and sys_platform != 'win32')" },
-    { name = "jinja2", marker = "(python_full_version >= '3.15' and sys_platform == 'linux') or (platform_machine != 'aarch64' and sys_platform == 'linux') or (platform_python_implementation != 'CPython' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux' and sys_platform != 'win32')" },
-    { name = "networkx", marker = "(python_full_version >= '3.15' and sys_platform == 'linux') or (platform_machine != 'aarch64' and sys_platform == 'linux') or (platform_python_implementation != 'CPython' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux' and sys_platform != 'win32')" },
-    { name = "setuptools", marker = "(python_full_version >= '3.15' and sys_platform == 'linux') or (platform_machine != 'aarch64' and sys_platform == 'linux') or (platform_python_implementation != 'CPython' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux' and sys_platform != 'win32')" },
-    { name = "sympy", marker = "(python_full_version >= '3.15' and sys_platform == 'linux') or (platform_machine != 'aarch64' and sys_platform == 'linux') or (platform_python_implementation != 'CPython' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux' and sys_platform != 'win32')" },
-    { name = "triton-rocm", marker = "(python_full_version >= '3.15' and sys_platform == 'linux') or (platform_machine != 'aarch64' and sys_platform == 'linux') or (platform_python_implementation != 'CPython' and sys_platform == 'linux')" },
-    { name = "typing-extensions", marker = "(python_full_version >= '3.15' and sys_platform == 'linux') or (platform_machine != 'aarch64' and sys_platform == 'linux') or (platform_python_implementation != 'CPython' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux' and sys_platform != 'win32')" },
+    { name = "filelock" },
+    { name = "fsspec" },
+    { name = "jinja2" },
+    { name = "networkx" },
+    { name = "setuptools" },
+    { name = "sympy" },
+    { name = "triton-rocm", marker = "sys_platform == 'linux'" },
+    { name = "typing-extensions" },
 ]
 wheels = [
     { url = "https://download.pytorch.org/whl/rocm7.0/torch-2.10.0%2Brocm7.0-cp314-cp314-manylinux_2_28_x86_64.whl", hash = "sha256:dfea469505885c9cc028036584c8691094dba55402f39bb89d18197268afd910" },
@@ -1611,38 +1577,12 @@ wheels = [
 
 [[package]]
 name = "torchvision"
-version = "0.25.0"
-source = { registry = "https://pypi.org/simple" }
-resolution-markers = [
-    "sys_platform == 'win32'",
-    "(python_full_version < '3.15' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux') or sys_platform == 'darwin'",
-]
-dependencies = [
-    { name = "numpy", marker = "(python_full_version < '3.15' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux') or sys_platform == 'darwin' or sys_platform == 'win32'" },
-    { name = "pillow", marker = "(python_full_version < '3.15' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux') or sys_platform == 'darwin' or sys_platform == 'win32'" },
-    { name = "torch", version = "2.10.0", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version < '3.15' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux') or sys_platform == 'darwin' or sys_platform == 'win32'" },
-]
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/9e/1f/fa839532660e2602b7e704d65010787c5bb296258b44fa8b9c1cd6175e7d/torchvision-0.25.0-cp314-cp314-macosx_11_0_arm64.whl", hash = "sha256:620a236288d594dcec7634c754484542dc0a5c1b0e0b83a34bda5e91e9b7c3a1", size = 1896193, upload-time = "2026-01-21T16:27:24.785Z" },
-    { url = "https://files.pythonhosted.org/packages/80/ed/d51889da7ceaf5ff7a0574fb28f9b6b223df19667265395891f81b364ab3/torchvision-0.25.0-cp314-cp314-manylinux_2_28_aarch64.whl", hash = "sha256:0b5e7f50002a8145a98c5694a018e738c50e2972608310c7e88e1bd4c058f6ce", size = 2309331, upload-time = "2026-01-21T16:27:19.97Z" },
-    { url = "https://files.pythonhosted.org/packages/1f/eb/d0096eed5690d962853213f2ee00d91478dfcb586b62dbbb449fb8abc3a6/torchvision-0.25.0-cp314-cp314-win_amd64.whl", hash = "sha256:d1abd5ed030c708f5dbf4812ad5f6fbe9384b63c40d6bd79f8df41a4a759a917", size = 4325058, upload-time = "2026-01-21T16:27:26.165Z" },
-    { url = "https://files.pythonhosted.org/packages/97/36/96374a4c7ab50dea9787ce987815614ccfe988a42e10ac1a2e3e5b60319a/torchvision-0.25.0-cp314-cp314t-macosx_11_0_arm64.whl", hash = "sha256:ad9a8a5877782944d99186e4502a614770fe906626d76e9cd32446a0ac3075f2", size = 1896207, upload-time = "2026-01-21T16:27:23.383Z" },
-    { url = "https://files.pythonhosted.org/packages/b5/e2/7abb10a867db79b226b41da419b63b69c0bd5b82438c4a4ed50e084c552f/torchvision-0.25.0-cp314-cp314t-manylinux_2_28_aarch64.whl", hash = "sha256:40a122c3cf4d14b651f095e0f672b688dde78632783fc5cd3d4d5e4f6a828563", size = 2310741, upload-time = "2026-01-21T16:27:18.712Z" },
-    { url = "https://files.pythonhosted.org/packages/b6/37/e7ca4ec820d434c0f23f824eb29f0676a0c3e7a118f1514f5b949c3356da/torchvision-0.25.0-cp314-cp314t-win_amd64.whl", hash = "sha256:f07f01d27375ad89d72aa2b3f2180f07da95dd9d2e4c758e015c0acb2da72977", size = 4425879, upload-time = "2026-01-21T16:27:12.579Z" },
-]
-
-[[package]]
-name = "torchvision"
 version = "0.25.0+rocm7.0"
 source = { registry = "https://download.pytorch.org/whl/rocm7.0" }
-resolution-markers = [
-    "sys_platform == 'emscripten'",
-    "(python_full_version >= '3.15' and sys_platform == 'linux') or (platform_machine != 'aarch64' and sys_platform == 'linux') or (platform_python_implementation != 'CPython' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'emscripten' and sys_platform != 'linux' and sys_platform != 'win32')",
-]
 dependencies = [
-    { name = "numpy", marker = "(python_full_version >= '3.15' and sys_platform == 'linux') or (platform_machine != 'aarch64' and sys_platform == 'linux') or (platform_python_implementation != 'CPython' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux' and sys_platform != 'win32')" },
-    { name = "pillow", marker = "(python_full_version >= '3.15' and sys_platform == 'linux') or (platform_machine != 'aarch64' and sys_platform == 'linux') or (platform_python_implementation != 'CPython' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux' and sys_platform != 'win32')" },
-    { name = "torch", version = "2.10.0+rocm7.0", source = { registry = "https://download.pytorch.org/whl/rocm7.0" }, marker = "(python_full_version >= '3.15' and sys_platform == 'linux') or (platform_machine != 'aarch64' and sys_platform == 'linux') or (platform_python_implementation != 'CPython' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux' and sys_platform != 'win32')" },
+    { name = "numpy" },
+    { name = "pillow" },
+    { name = "torch" },
 ]
 wheels = [
     { url = "https://download-r2.pytorch.org/whl/rocm7.0/torchvision-0.25.0%2Brocm7.0-cp314-cp314-manylinux_2_28_x86_64.whl", hash = "sha256:9907e15b8b437b508c8511ee7bc7dbbaf94479190707fa7cf9fe2ab67cab1585" },

@@ -42,6 +42,7 @@ from PySide6.QtWidgets import (
     QAbstractScrollArea,
     QMainWindow,
     QMessageBox,
+    QMenu,
 )
 
 
@@ -169,6 +170,7 @@ class MixedTreeTileView(QAbstractScrollArea):
         self.header_hits: list[HeaderHit] = []
         self.tile_hits: list[TileHit] = []
         self.selected_files: set[Path] = set()
+        self.fully_annotated_files: set[Path] = set()
         self.last_clicked_file: Path | None = None
         self.hovered_file_path: Path | None = None
 
@@ -347,8 +349,14 @@ class MixedTreeTileView(QAbstractScrollArea):
         depth: int,
     ) -> None:
         painter.save()
+        from config import config
 
-        bg = self.alt_bg if depth % 2 == 0 else self.bg
+        is_excluded = str(node.path) in config.excluded_directories
+
+        if is_excluded:
+            bg = QColor(255, 200, 200)
+        else:
+            bg = self.alt_bg if depth % 2 == 0 else self.bg
         painter.fillRect(rect, bg)
 
         painter.setPen(QPen(self.mid))
@@ -422,8 +430,17 @@ class MixedTreeTileView(QAbstractScrollArea):
     ) -> None:
         painter.save()
 
-        border = self.hl if selected else self.mid
-        bg = self.hl.lighter(165) if selected else QColor(self.alt_bg)
+        is_fully_annotated = file_path in self.fully_annotated_files
+
+        if selected:
+            border = self.hl
+            bg = self.hl.lighter(165)
+        else:
+            border = self.mid
+            if is_fully_annotated:
+                bg = QColor(200, 255, 200)  # Pale green
+            else:
+                bg = QColor(self.alt_bg)
 
         painter.setPen(QPen(border, 1))
         painter.setBrush(bg)
@@ -530,6 +547,50 @@ class MixedTreeTileView(QAbstractScrollArea):
     def mousePressEvent(self, event: QMouseEvent) -> None:
         pos = self.content_pos(event.position().toPoint())
         modifiers = event.modifiers()
+
+        if event.button() == Qt.MouseButton.RightButton:
+            for hit in self.header_hits:
+                if hit.rect.contains(pos):
+                    from config import config, save_config
+
+                    path_str = str(hit.node.path)
+                    if path_str in config.excluded_directories:
+                        config.excluded_directories.remove(path_str)
+                    else:
+                        config.excluded_directories.add(path_str)
+                    save_config()
+                    self.viewport().update()
+                    return
+
+            for hit in self.tile_hits:
+                if hit.rect.contains(pos):
+                    if hit.file_path not in self.selected_files:
+                        self.selected_files = {hit.file_path}
+                        self.last_clicked_file = hit.file_path
+                        self.viewport().update()
+
+                    menu = QMenu(self)
+                    sxiv_action = menu.addAction("open in sxiv")
+
+                    def open_sxiv():
+                        import subprocess
+
+                        subprocess.Popen(
+                            ["sxiv"] + [str(p) for p in self.selected_files]
+                        )
+
+                    sxiv_action.triggered.connect(open_sxiv)
+
+                    copy_path_action = menu.addAction("copy path")
+
+                    def copy_path():
+                        paths = "\n".join(str(p.resolve()) for p in self.selected_files)
+                        QApplication.clipboard().setText(paths)
+
+                    copy_path_action.triggered.connect(copy_path)
+
+                    menu.exec(event.globalPosition().toPoint())
+                    return
 
         for hit in self.header_hits:
             if hit.toggle_rect.contains(pos) or hit.rect.contains(pos):

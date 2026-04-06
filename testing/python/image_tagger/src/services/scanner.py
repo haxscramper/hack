@@ -1,9 +1,25 @@
 from pathlib import Path
-from config import IMAGE_EXTENSIONS
+import config
 
 
 def scan_images(root_dir: Path) -> list[Path]:
-    return sorted(
-        p for p in root_dir.rglob("*")
-        if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS
-    )
+    res = []
+    for p in root_dir.rglob("*"):
+        if not p.is_file():
+            continue
+        if p.suffix.lower() not in config.config.IMAGE_EXTENSIONS:
+            continue
+
+        excluded = False
+        for excl in config.config.excluded_directories:
+            try:
+                if Path(excl) in p.parents or p == Path(excl):
+                    excluded = True
+                    break
+            except Exception:
+                pass
+
+        if not excluded:
+            res.append(p)
+
+    return sorted(res)

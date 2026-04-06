@@ -3,7 +3,7 @@ from pathlib import Path
 import click
 from PySide6.QtWidgets import QApplication
 
-from config import SQLITE_FILENAME, CHROMA_DIRNAME
+import config
 from db.session import init_db, make_session_factory
 from db.repository import Repository
 from gui.main_window import MainWindow
@@ -22,7 +22,9 @@ def cli():
 def gui(root_dir: Path):
     logging.info(f"Starting GUI for directory: {root_dir}")
     root_dir = root_dir.resolve()
-    engine = init_db(root_dir / SQLITE_FILENAME)
+    config.init_config(root_dir)
+
+    engine = init_db(root_dir / config.config.SQLITE_FILENAME)
     session_factory = make_session_factory(engine)
     session = session_factory()
     try:
@@ -41,26 +43,11 @@ def gui(root_dir: Path):
 @click.argument(
     "root_dir", type=click.Path(exists=True, file_okay=False, path_type=Path)
 )
-@click.option(
-    "--wd-model",
-    type=click.Path(exists=True, dir_okay=False, path_type=Path),
-    default=None,
-)
-@click.option(
-    "--wd-tags-csv",
-    type=click.Path(exists=True, dir_okay=False, path_type=Path),
-    default=None,
-)
-@click.option("--use-ollama/--no-ollama", default=True)
-def headless(
-    root_dir: Path, wd_model: Path | None, wd_tags_csv: Path | None, use_ollama: bool
-):
-    logging.info(
-        f"Running in headless mode with root_dir={root_dir}, wd_model={wd_model}, use_ollama={use_ollama}"
-    )
+def headless(root_dir: Path):
+    logging.info(f"Running in headless mode with root_dir={root_dir}")
+    root_dir = root_dir.resolve()
+    config.init_config(root_dir)
+
     run_headless(
         root_dir=root_dir,
-        wd_model_path=wd_model,
-        wd_tags_csv=wd_tags_csv,
-        use_ollama=use_ollama,
     )

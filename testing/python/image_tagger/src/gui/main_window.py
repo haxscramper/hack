@@ -15,14 +15,15 @@ from PySide6.QtWidgets import (
     QListView,
 )
 from PySide6.QtCore import Qt, QSize
-from PySide6.QtGui import QUndoStack, QUndoCommand, QKeySequence, QShortcut, QAction
+from PySide6.QtGui import QUndoStack, QUndoCommand, QKeySequence, QShortcut
 
 from db.models import ImageEntry
 from sqlalchemy import select
 import shutil
 
 from db.repository import Repository
-from gui.image_directory_view import MixedTreeTileView
+from gui.left_panel import LeftPanel
+
 from gui.center_panel import CenterPanel
 from gui.right_panel import RightPanel
 
@@ -53,11 +54,11 @@ class MoveFilesCommand(QUndoCommand):
         self.setText(f"Move {len(self.moves)} files to {self.target_dir.name}")
 
     def _update_db(self, old_path: Path, new_path: Path):
+        old_rel = str(old_path.resolve().relative_to(self.root_dir.resolve()))
         entry = self.repository.session.scalar(
-            select(ImageEntry).where(ImageEntry.full_path == str(old_path.resolve()))
+            select(ImageEntry).where(ImageEntry.relative_path == old_rel)
         )
         if entry:
-            entry.full_path = str(new_path.resolve())
             entry.relative_path = str(
                 new_path.resolve().relative_to(self.root_dir.resolve())
             )
@@ -118,9 +119,11 @@ class MainWindow(QMainWindow):
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
 
-        self.left_panel = MixedTreeTileView(root_dir)
+        self.left_panel = LeftPanel(root_dir, self.repository.session)
         self.center_panel = CenterPanel()
         self.right_panel = RightPanel(root_dir)
+
+        self._update_fully_annotated()
 
         splitter.addWidget(self.left_panel)
         splitter.addWidget(self.center_panel)
@@ -134,6 +137,12 @@ class MainWindow(QMainWindow):
         self.center_panel.regularTagAdded.connect(self.on_regular_tag_added)
         self.center_panel.regularTagDeleted.connect(self.on_regular_tag_deleted)
         self.center_panel.descriptionSaved.connect(self.on_description_saved)
+        self.center_panel.probTagSearchRequested.connect(
+            self.on_prob_tag_search_requested
+        )
+        self.center_panel.regTagSearchRequested.connect(
+            self.on_reg_tag_search_requested
+        )
 
         self.undo_stack = QUndoStack(self)
         undo_action = self.undo_stack.createUndoAction(self, "Undo")
@@ -143,6 +152,12 @@ class MainWindow(QMainWindow):
         for i in range(1, 10):
             shortcut = QShortcut(QKeySequence(f"Ctrl+{i}"), self)
             shortcut.activated.connect(lambda idx=i: self.on_move_shortcut(idx))
+
+    def _update_fully_annotated(self):
+        rel_paths = self.repository.get_fully_annotated_paths()
+        full_paths = {self.root_dir / p for p in rel_paths}
+        self.left_panel.fully_annotated_files = full_paths
+        self.left_panel.viewport().update()
 
     def on_move_shortcut(self, idx: int):
         if idx - 1 >= self.right_panel.splitter.count():
@@ -158,7 +173,7 @@ class MainWindow(QMainWindow):
         if not selected_files:
             return
 
-        from gui.right_panel import ImageListModel
+        from gui.image_list_widget import ImageListModel
 
         dialog = QDialog(self)
         dialog.setWindowTitle(f"Move to {target_dir.name}?")
@@ -201,14 +216,24 @@ class MainWindow(QMainWindow):
 
     def on_file_selected(self, file_path: str):
         logging.debug(f"File selected in GUI: {file_path}")
-        entry = self.repository.get_image_by_path(file_path)
+        try:
+            rel_path = str(
+                Path(file_path).resolve().relative_to(self.root_dir.resolve())
+            )
+        except ValueError:
+            # Fallback if somehow it's already a relative path string
+            rel_path = file_path
+
+        entry = self.repository.get_image_by_path(rel_path)
         if entry is None:
             entry = self.repository.upsert_image(self.root_dir, Path(file_path))
 
         self.current_image = entry
 
         prob_rows = self.repository.list_probabilistic_tags(entry.id)
-        prob_tags = [(tag.name, rel.probability) for rel, tag in prob_rows]
+        prob_tags = [
+            (tag.category, tag.name, rel.probability) for rel, tag in prob_rows
+        ]
         self.center_panel.set_probabilistic_tags(prob_tags)
 
         reg_rows = self.repository.list_regular_tags(entry.id)
@@ -225,7 +250,8 @@ class MainWindow(QMainWindow):
             f"Adding prob tag '{name}' with prob {probability} to image {self.current_image.id}"
         )
         self.repository.set_probabilistic_tag(self.current_image.id, name, probability)
-        self.on_file_selected(self.current_image.full_path)
+        self._update_fully_annotated()
+        self.on_file_selected(str(self.root_dir / self.current_image.relative_path))
 
     def on_regular_tag_added(self, category: str, name: str):
         if not self.current_image:
@@ -234,7 +260,8 @@ class MainWindow(QMainWindow):
             f"Adding regular tag '{category}:{name}' to image {self.current_image.id}"
         )
         self.repository.add_regular_tag(self.current_image.id, category, name)
-        self.on_file_selected(self.current_image.full_path)
+        self._update_fully_annotated()
+        self.on_file_selected(str(self.root_dir / self.current_image.relative_path))
 
     def on_regular_tag_deleted(self, category: str, name: str):
         if not self.current_image:
@@ -243,10 +270,22 @@ class MainWindow(QMainWindow):
             f"Deleting regular tag '{category}:{name}' from image {self.current_image.id}"
         )
         self.repository.delete_regular_tag(self.current_image.id, category, name)
-        self.on_file_selected(self.current_image.full_path)
+        self._update_fully_annotated()
+        self.on_file_selected(str(self.root_dir / self.current_image.relative_path))
 
     def on_description_saved(self, text: str):
         if not self.current_image:
             return
         logging.info(f"Saving description for image {self.current_image.id}")
         self.repository.set_description(self.current_image.id, text)
+        self._update_fully_annotated()
+
+    def on_prob_tag_search_requested(self, category: str, name: str):
+        self.left_panel.tabs.setCurrentIndex(1)
+        self.left_panel.search_view.add_tag_to_query(
+            "probabilistic_tag", category, name
+        )
+
+    def on_reg_tag_search_requested(self, category: str, name: str):
+        self.left_panel.tabs.setCurrentIndex(1)
+        self.left_panel.search_view.add_tag_to_query("regular_tag", category, name)

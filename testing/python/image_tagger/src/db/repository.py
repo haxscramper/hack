@@ -30,27 +30,46 @@ class Repository:
         self.session = session
 
     def upsert_image(self, root_dir: Path, file_path: Path) -> ImageEntry:
-        full_path = str(file_path.resolve())
+        md5_digest = get_md5(file_path)
         relative_path = str(file_path.resolve().relative_to(root_dir.resolve()))
         entry = self.session.scalar(
-            select(ImageEntry).where(ImageEntry.full_path == full_path)
+            select(ImageEntry).where(ImageEntry.md5_digest == md5_digest)
         )
         if entry is None:
             entry = ImageEntry(
-                full_path=full_path,
                 relative_path=relative_path,
                 original_name=file_path.name,
-                md5_digest=get_md5(file_path),
+                md5_digest=md5_digest,
             )
             self.session.add(entry)
             self.session.commit()
             self.session.refresh(entry)
+        else:
+            if entry.relative_path != relative_path:
+                entry.relative_path = relative_path
+                entry.original_name = file_path.name
+                self.session.commit()
+                self.session.refresh(entry)
         return entry
 
-    def get_image_by_path(self, file_path: str) -> ImageEntry | None:
+    def get_image_by_path(self, relative_path: str) -> ImageEntry | None:
         return self.session.scalar(
-            select(ImageEntry).where(ImageEntry.full_path == file_path)
+            select(ImageEntry).where(ImageEntry.relative_path == relative_path)
         )
+
+    def get_fully_annotated_paths(self) -> set[str]:
+        stmt = (
+            select(ImageEntry.relative_path)
+            .join(
+                ImageProbabilisticTag, ImageEntry.id == ImageProbabilisticTag.image_id
+            )
+            .join(ImageRegularTag, ImageEntry.id == ImageRegularTag.image_id)
+            .join(ImageDescription, ImageEntry.id == ImageDescription.image_id)
+            .where(ImageDescription.description != "")
+            .where(ImageDescription.description.is_not(None))
+            .distinct()
+        )
+        return set(self.session.scalars(stmt).all())
 
     def list_probabilistic_tags(self, image_id: int):
         rows = self.session.execute(
@@ -95,7 +114,9 @@ class Repository:
             self.session.refresh(tag)
         return tag
 
-    def set_probabilistic_tag(self, image_id: int, tag_name: str, probability: float, category: str = "user"):
+    def set_probabilistic_tag(
+        self, image_id: int, tag_name: str, probability: float, category: str = "user"
+    ):
         tag = self.get_or_create_probabilistic_tag(tag_name, category=category)
         rel = self.session.scalar(
             select(ImageProbabilisticTag)
@@ -169,7 +190,9 @@ class Repository:
             self.session.delete(rel)
             self.session.commit()
 
-    def set_description(self, image_id: int, description: str, model_name: str | None = None):
+    def set_description(
+        self, image_id: int, description: str, model_name: str | None = None
+    ):
         row = self.session.scalar(
             select(ImageDescription).where(ImageDescription.image_id == image_id)
         )
@@ -193,7 +216,11 @@ class Repository:
         self.session.query(ImageProbabilisticTag).filter_by(image_id=image_id).delete()
         self.session.commit()
 
+        seen = set()
         for category, name, probability in items:
+            if (category, name) in seen:
+                continue
+            seen.add((category, name))
             tag = self.get_or_create_probabilistic_tag(name=name, category=category)
             self.session.add(
                 ImageProbabilisticTag(
@@ -212,7 +239,11 @@ class Repository:
         self.session.query(ImageRegularTag).filter_by(image_id=image_id).delete()
         self.session.commit()
 
+        seen = set()
         for category, name in items:
+            if (category, name) in seen:
+                continue
+            seen.add((category, name))
             tag = self.get_or_create_regular_tag(category=category, name=name)
             self.session.add(ImageRegularTag(image_id=image_id, tag_id=tag.id))
         self.session.commit()
