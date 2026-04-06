@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "click>=8.3.2",
+    "matplotlib>=3.10.8",
     "numpy>=2.4.4",
     "pillow>=12.2.0",
     "pydantic>=2.12.5",
