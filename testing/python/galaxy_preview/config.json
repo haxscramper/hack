@@ -1,15 +1,31 @@
 {
-  "entries": [],
+  "entries": [
+    {
+      "id": "35c0f729-0001-4cf1-af21-6dcd4170ea7c",
+      "name": "Star 1",
+      "short_description": "",
+      "detailed_description": "",
+      "color": "#ffffff",
+      "visible": true,
+      "show_name": true,
+      "show_short_desc": false,
+      "entry_type": "star",
+      "x": 0.0,
+      "y": 0.0,
+      "z": 0.0,
+      "radius": 0.1
+    }
+  ],
   "camera_state": {
-    "scale_factor": 9.98535542956413e22,
+    "scale_factor": 4.208550099596123e35,
     "center": [
       0.0,
       0.0,
       0.0
     ],
     "fov": 45.0,
-    "elevation": 48.5,
-    "azimuth": 55.0,
+    "elevation": 69.5,
+    "azimuth": -114.0,
     "roll": 0.0
   }
 }

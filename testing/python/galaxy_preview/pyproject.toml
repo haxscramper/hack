@@ -11,5 +11,6 @@ dependencies = [
     "pydantic>=2.12.5",
     "pyside6>=6.11.0",
     "pyside6-addons>=6.11.0",
+    "rich>=14.3.3",
     "vispy>=0.16.1",
 ]

@@ -2,6 +2,8 @@ import sys
 import json
 import os
 import click
+import logging
+from rich.logging import RichHandler
 from PySide6 import QtWidgets, QtCore, QtGui
 from models import GalacticMap, Star, Planet, Shape, ImageOverlay, GalacticEntry, EntryType
 from canvas import GalacticCanvas
@@ -22,8 +24,9 @@ class MainWindow(QtWidgets.QMainWindow):
                 with open(self.state_file, 'r') as f:
                     data = json.load(f)
                     self.galactic_map = GalacticMap.model_validate(data)
+                logging.info(f"Successfully loaded state from {self.state_file}")
             except Exception as e:
-                print(f"Error loading state file: {e}")
+                logging.error(f"Error loading state file: {e}")
         
         # UI Setup
         self.splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
@@ -104,8 +107,10 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.galactic_map.camera_state = CameraState(**state_dict)
                 with open(self.state_file, 'w') as f:
                     f.write(self.galactic_map.model_dump_json(indent=2))
+                logging.info(f"Camera state {state_dict}")
+                logging.info(f"Auto-saved state to {self.state_file}")
             except Exception as e:
-                print(f"Failed to auto-save to {self.state_file}: {e}")
+                logging.error(f"Failed to auto-save to {self.state_file}: {e}")
 
     def closeEvent(self, event):
         self._auto_save()
@@ -166,6 +171,7 @@ class MainWindow(QtWidgets.QMainWindow):
         new_star = Star(name=f"Star {len(self.galactic_map.get_stars()) + 1}")
         self.galactic_map.entries.append(new_star)
         self.canvas.add_entry_visual(new_star, self.galactic_map)
+        logging.info(f"Added star: {new_star.name} (ID: {new_star.id})")
         self._refresh_tree()
         self._on_entry_selected(new_star.id)
         self._auto_save()
@@ -191,6 +197,7 @@ class MainWindow(QtWidgets.QMainWindow):
         )
         self.galactic_map.entries.append(new_planet)
         self.canvas.add_entry_visual(new_planet, self.galactic_map)
+        logging.info(f"Added planet: {new_planet.name} (ID: {new_planet.id}) to parent star {parent_star.name}")
         self._refresh_tree()
         self._on_entry_selected(new_planet.id)
         self._auto_save()
@@ -204,6 +211,7 @@ class MainWindow(QtWidgets.QMainWindow):
             )
             self.galactic_map.entries.append(new_image)
             self.canvas.add_entry_visual(new_image, self.galactic_map)
+            logging.info(f"Added image overlay: {new_image.name} (ID: {new_image.id}) from {path}")
             self._refresh_tree()
             self._on_entry_selected(new_image.id)
             self._auto_save()
@@ -215,6 +223,7 @@ class MainWindow(QtWidgets.QMainWindow):
         )
         self.galactic_map.entries.append(new_shape)
         self.canvas.add_entry_visual(new_shape, self.galactic_map)
+        logging.info(f"Added new default shape: {new_shape.name} (ID: {new_shape.id})")
         self._refresh_tree()
         self._on_entry_selected(new_shape.id)
         self._auto_save()
@@ -230,6 +239,7 @@ class MainWindow(QtWidgets.QMainWindow):
                     visual.parent = None
                     del self.canvas.visual_to_entry[visual]
                     del self.canvas.entry_to_visual[entry.id]
+                logging.info(f"Deleted entry: {entry.name} (ID: {entry.id})")
                 self._refresh_tree()
                 self._on_entry_selected(None)
                 self._auto_save()
@@ -241,6 +251,7 @@ class MainWindow(QtWidgets.QMainWindow):
         )
         self.galactic_map.entries.append(new_shape)
         self.canvas.add_entry_visual(new_shape, self.galactic_map)
+        logging.info(f"Added freeform shape: {new_shape.name} (ID: {new_shape.id}) with {len(points)} points")
         self._refresh_tree()
         self._on_entry_selected(new_shape.id)
         self._auto_save()
@@ -265,6 +276,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # For now, let's just re-sync the visual for that entry
         entry = next((e for e in self.galactic_map.entries if e.id == entry_id), None)
         if entry:
+            logging.info(f"Properties changed for entry: {entry.name} (ID: {entry.id})")
             if entry_id in self.canvas.entry_to_visual:
                 # Remove and re-add (simple approach)
                 visual = self.canvas.entry_to_visual[entry_id]
@@ -290,6 +302,7 @@ class MainWindow(QtWidgets.QMainWindow):
 @click.command()
 @click.option('--state', type=click.Path(), default=None, help='Path to the JSON state file to load and auto-save.')
 def main(state):
+    logging.basicConfig(level="INFO", format="%(message)s", datefmt="[%X]", handlers=[RichHandler()])
     app = QtWidgets.QApplication(sys.argv)
     window = MainWindow(state_file=state)
     window.show()
