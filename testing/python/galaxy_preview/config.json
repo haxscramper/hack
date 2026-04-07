@@ -1,0 +1,48 @@
+{
+  "viewport": {
+    "position": [0, 0, 15],
+    "zoom": 1
+  },
+  "celestialObjects": [
+    {
+      "id": "earth",
+      "name": "Earth (Sol)",
+      "location": {
+        "ra": { "h": 0, "m": 0, "s": 0 },
+        "dec": { "deg": 0, "m": 0, "s": 0 },
+        "distance": 0
+      },
+      "planets": []
+    },
+    {
+      "id": "alpha-centauri",
+      "name": "Alpha Centauri",
+      "location": {
+        "ra": { "h": 14, "m": 39, "s": 36.5 },
+        "dec": { "deg": -60, "m": 50, "s": 2 },
+        "distance": 4.37
+      },
+      "planets": [{ "name": "Proxima b", "distance": 0.05 }]
+    },
+    {
+      "id": "epsilon-eridani",
+      "name": "Epsilon Eridani",
+      "location": {
+        "ra": { "h": 3, "m": 32, "s": 55.8 },
+        "dec": { "deg": -9, "m": 27, "s": 29 },
+        "distance": 10.5
+      },
+      "planets": [{ "name": "Epsilon Eridani b", "distance": 3.4 }]
+    },
+    {
+      "id": "tau-ceti",
+      "name": "Tau Ceti",
+      "location": {
+        "ra": { "h": 1, "m": 44, "s": 4.1 },
+        "dec": { "deg": -15, "m": 56, "s": 15 },
+        "distance": 11.9
+      },
+      "planets": [{ "name": "Tau Ceti e", "distance": 0.5 }]
+    }
+  ]
+}
