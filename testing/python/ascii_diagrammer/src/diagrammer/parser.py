@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from lark import Lark, Transformer, Tree, Token
+from lark import Lark, Transformer, Token
 
 from diagrammer.ir import (
     Expr,
@@ -29,7 +29,21 @@ def get_parser() -> Lark:
     )
 
 
+def _split_args(items: list) -> tuple[list[Expr], dict[str, Expr | str]]:
+    positional: list[Expr] = []
+    keyword: dict[str, Expr | str] = {}
+    for item in items:
+        if isinstance(item, tuple):
+            keyword[item[0]] = item[1]
+        elif isinstance(item, Expr):
+            positional.append(item)
+        elif isinstance(item, str):
+            positional.append(item)
+    return positional, keyword
+
+
 class DslTransformer(Transformer):
+
     def start(self, items: list) -> list[Statement]:
         return [item for item in items if item is not None]
 
@@ -55,9 +69,10 @@ class DslTransformer(Transformer):
         for i in range(idx, len(items)):
             if items[i] is not None:
                 body.append(items[i])
-        return FunctionDef(
-            name=name, params=params, keyword_params=keyword_params, body=body
-        )
+        return FunctionDef(name=name,
+                           params=params,
+                           keyword_params=keyword_params,
+                           body=body)
 
     def param_list(self, items: list) -> dict:
         positional: list[str] = []
@@ -80,18 +95,19 @@ class DslTransformer(Transformer):
 
     def function_call_expr(self, items: list) -> FunctionCall:
         name = str(items[0])
+        idx = 1
         positional_args: list[Expr] = []
         keyword_args: dict[str, Expr | str] = {}
         subnodes: list[Statement] = []
-        idx = 1
-        if idx < len(items) and isinstance(items[idx], dict):
-            arg_data = items[idx]
-            positional_args = arg_data.get("positional", [])
-            keyword_args = arg_data.get("keyword", {})
+
+        if idx < len(items) and isinstance(items[idx], list):
+            positional_args, keyword_args = _split_args(items[idx])
             idx += 1
+
         for i in range(idx, len(items)):
             if items[i] is not None:
                 subnodes.append(items[i])
+
         return FunctionCall(
             name=name,
             positional_args=positional_args,
@@ -102,22 +118,18 @@ class DslTransformer(Transformer):
     def shape_stmt(self, items: list) -> Shape:
         return items[0]
 
-    def shape_expr(self, items: list) -> Shape:
+    def shape_basic(self, items: list) -> Shape:
         kind_str = str(items[0])
         kind = ShapeKind(kind_str)
+        idx = 1
         positional_args: list[Expr] = []
         keyword_args: dict[str, Expr | str] = {}
-        line_commands = []
         subnodes: list[Statement] = []
-        idx = 1
-        if idx < len(items) and isinstance(items[idx], dict):
-            arg_data = items[idx]
-            positional_args = arg_data.get("positional", [])
-            keyword_args = arg_data.get("keyword", {})
+
+        if idx < len(items) and isinstance(items[idx], list):
+            positional_args, keyword_args = _split_args(items[idx])
             idx += 1
-        if idx < len(items) and isinstance(items[idx], list) and len(items[idx]) > 0 and isinstance(items[idx][0], (LineToCommand, MoveToCommand, HorizontalToCommand, VerticalToCommand)):
-            line_commands = items[idx]
-            idx += 1
+
         for i in range(idx, len(items)):
             if items[i] is not None:
                 subnodes.append(items[i])
@@ -127,8 +139,42 @@ class DslTransformer(Transformer):
             cs = keyword_args.pop("charset")
             if isinstance(cs, str):
                 charset_override = cs
-            elif isinstance(cs, Expr):
-                charset_override = None  # dynamic not supported yet
+
+        return Shape(
+            kind=kind,
+            positional_args=positional_args,
+            keyword_args=keyword_args,
+            subnodes=subnodes,
+            charset_override=charset_override,
+        )
+
+    def shape_with_lines(self, items: list) -> Shape:
+        kind_str = str(items[0])
+        kind = ShapeKind(kind_str)
+        idx = 1
+        positional_args: list[Expr] = []
+        keyword_args: dict[str, Expr | str] = {}
+        line_commands = []
+        subnodes: list[Statement] = []
+
+        if idx < len(items) and isinstance(items[idx], list):
+            # This is the positional_args before the line commands
+            positional_args, keyword_args = _split_args(items[idx])
+            idx += 1
+
+        if idx < len(items) and isinstance(items[idx], list):
+            line_commands = items[idx]
+            idx += 1
+
+        for i in range(idx, len(items)):
+            if items[i] is not None:
+                subnodes.append(items[i])
+
+        charset_override = None
+        if "charset" in keyword_args:
+            cs = keyword_args.pop("charset")
+            if isinstance(cs, str):
+                charset_override = cs
 
         return Shape(
             kind=kind,
@@ -139,22 +185,24 @@ class DslTransformer(Transformer):
             charset_override=charset_override,
         )
 
-    def arg_list(self, items: list) -> dict:
+    def arg_list(self, items: list) -> list:
+        return list(items)
+
+    def positional_arg(self, items: list):
         return items[0]
 
-    def positional_args(self, items: list) -> dict:
-        return {"positional": list(items), "keyword": {}}
+    def keyword_arg(self, items: list) -> tuple[str, Expr]:
+        return (str(items[0]), items[1])
 
-    def keyword_arg_list(self, items: list) -> dict:
-        keyword: dict[str, Expr | str] = {}
-        for k, v in items:
-            keyword[k] = v
-        return {"positional": [], "keyword": keyword}
-
-    def keyword_arg(self, items: list) -> tuple[str, Expr | str]:
+    def keyword_arg_str(self, items: list) -> tuple[str, str]:
         name = str(items[0])
-        value = items[1]
-        return (name, value)
+        val = str(items[1])
+        if val.startswith('"') and val.endswith('"'):
+            val = val[1:-1]
+        return (name, val)
+
+    def positional_args(self, items: list) -> list:
+        return list(items)
 
     def line_command_list(self, items: list) -> list:
         return list(items)
@@ -213,13 +261,13 @@ class DslTransformer(Transformer):
             return raw[1:-1]
         return raw
 
-    def term(self, items: list) -> Expr:
+    def term(self, items: list):
         return items[0]
 
     def atom(self, items: list):
         return items[0]
 
-    def expr(self, items: list) -> Expr:
+    def expr(self, items: list):
         return items[0]
 
 

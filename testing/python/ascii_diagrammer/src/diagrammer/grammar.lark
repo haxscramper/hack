@@ -17,21 +17,17 @@ function_call_stmt: function_call_expr
 function_call_expr: "#" NAME "(" arg_list? ")" ("{" statement* "}")?
 
 shape_stmt: shape_expr
-shape_expr: SHAPE_NAME "(" arg_list? ")" ("{" statement* "}")?
-          | SHAPE_NAME "(" positional_args "," "[" line_command_list "]" ")" ("{" statement* "}")?
+shape_expr: SHAPE_NAME "(" positional_args "," "[" line_command_list "]" ")" ("{" statement* "}")?  -> shape_with_lines
+          | SHAPE_NAME "(" arg_list? ")" ("{" statement* "}")?                                      -> shape_basic
 
 SHAPE_NAME: "rect" | "circle" | "ellipse" | "group" | "line" | "text"
 
-arg_list: mixed_arg_list
-        | keyword_arg_list
-        | positional_args
-
-mixed_arg_list: positional_args "," keyword_arg_list
+arg_list: arg ("," arg)*
+arg: NAME "=" expr    -> keyword_arg
+   | NAME "=" STRING  -> keyword_arg_str
+   | expr             -> positional_arg
 
 positional_args: expr ("," expr)*
-keyword_arg_list: keyword_arg ("," keyword_arg)*
-keyword_arg: NAME "=" expr
-           | NAME "=" STRING
 
 line_command_list: line_command ("," line_command)*
 line_command: "lineTo" "(" expr "," expr ")"     -> line_to
