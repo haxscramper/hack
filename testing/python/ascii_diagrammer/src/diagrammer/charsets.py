@@ -1,7 +1,8 @@
 from dataclasses import dataclass
-
+from beartype import beartype
 
 @dataclass(frozen=True)
+@beartype
 class BoxCharset:
     top_left: str
     top_right: str
@@ -32,6 +33,7 @@ ASCII_CHARSET = BoxCharset(
 
 
 @dataclass(frozen=True)
+@beartype
 class LineCharset:
     horizontal: str
     vertical: str
@@ -60,6 +62,7 @@ ASCII_LINE_CHARSET = LineCharset(
 )
 
 
+@beartype
 def make_single_char_box_charset(ch: str) -> BoxCharset:
     return BoxCharset(
         top_left=ch,
@@ -71,6 +74,7 @@ def make_single_char_box_charset(ch: str) -> BoxCharset:
     )
 
 
+@beartype
 def make_single_char_line_charset(ch: str) -> LineCharset:
     return LineCharset(
         horizontal=ch,

@@ -1,3 +1,4 @@
+from beartype import beartype
 import pytest
 
 from diagrammer.parser import parse
@@ -5,6 +6,7 @@ from diagrammer.resolver import resolve, ResolveError
 from diagrammer.ir import ShapeKind, ResolvedShape
 
 
+@beartype
 class TestBasicResolution:
 
     def test_rect_absolute(self):
@@ -39,6 +41,7 @@ class TestBasicResolution:
         assert scene.shapes[1].box.x == 10.0
 
 
+@beartype
 class TestPercentResolution:
 
     def test_percent_position(self):
@@ -60,6 +63,7 @@ class TestPercentResolution:
         assert inner.box.height == 20.0
 
 
+@beartype
 class TestRelationalPositioning:
 
     def test_right_of(self):
@@ -111,6 +115,7 @@ class TestRelationalPositioning:
         assert b.box.x == base_x - 3.0
 
 
+@beartype
 class TestSubnodeResolution:
 
     def test_subnodes_relative_to_parent(self):
@@ -135,6 +140,7 @@ class TestSubnodeResolution:
         assert inner.box.y == 17.0
 
 
+@beartype
 class TestVecExpression:
 
     def test_vec_position(self):
@@ -152,6 +158,7 @@ class TestVecExpression:
         assert s.box.y == 8.0
 
 
+@beartype
 class TestLetBinding:
 
     def test_let_creates_binding(self):
@@ -172,6 +179,7 @@ class TestLetBinding:
             resolve(stmts)
 
 
+@beartype
 class TestCanvasInference:
 
     def test_canvas_inferred(self):
@@ -194,6 +202,7 @@ class TestCanvasInference:
         assert scene.height == 15.0  # 5 + 10
 
 
+@beartype
 class TestTextResolution:
 
     def test_text_size_inferred(self):
@@ -212,6 +221,7 @@ class TestTextResolution:
         assert s.box.height >= 2.0
 
 
+@beartype
 class TestLineResolution:
 
     def test_line_points(self):

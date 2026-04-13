@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from beartype import beartype
 import logging
 from pathlib import Path
 
@@ -7,6 +8,7 @@ from lark import Lark, Transformer, Token
 
 from diagrammer.ir import (
     Expr,
+    ExprType,
     FunctionCall,
     FunctionDef,
     HorizontalToCommand,
@@ -22,6 +24,7 @@ from diagrammer.ir import (
 _GRAMMAR_PATH = Path(__file__).parent / "grammar.lark"
 
 
+@beartype
 def get_parser() -> Lark:
     logging.debug("Loading grammar from %s", _GRAMMAR_PATH)
     return Lark(
@@ -31,6 +34,7 @@ def get_parser() -> Lark:
     )
 
 
+@beartype
 def _split_args(items: list) -> tuple[list[Expr], dict[str, Expr | str]]:
     positional: list[Expr] = []
     keyword: dict[str, Expr | str] = {}
@@ -44,6 +48,7 @@ def _split_args(items: list) -> tuple[list[Expr], dict[str, Expr | str]]:
     return positional, keyword
 
 
+@beartype
 class DslTransformer(Transformer):
     def start(self, items: list) -> list[Statement]:
         return [item for item in items if item is not None]
@@ -97,7 +102,7 @@ class DslTransformer(Transformer):
         name = str(items[0])
         idx = 1
         positional_args: list[Expr] = []
-        keyword_args: dict[str, Expr | str] = {}
+        keyword_args: dict[str, Expr] = {}
         subnodes: list[Statement] = []
 
         if idx < len(items) and isinstance(items[idx], list):
@@ -123,7 +128,7 @@ class DslTransformer(Transformer):
         kind = ShapeKind(kind_str)
         idx = 1
         positional_args: list[Expr] = []
-        keyword_args: dict[str, Expr | str] = {}
+        keyword_args: dict[str, Expr] = {}
         subnodes: list[Statement] = []
 
         if idx < len(items) and isinstance(items[idx], list):
@@ -137,8 +142,12 @@ class DslTransformer(Transformer):
         charset_override = None
         if "charset" in keyword_args:
             cs = keyword_args.pop("charset")
-            if isinstance(cs, str):
-                charset_override = cs
+            if (
+                isinstance(cs, Expr)
+                and cs.type == ExprType.LITERAL
+                and isinstance(cs.value, str)
+            ):
+                charset_override = cs.value
 
         return Shape(
             kind=kind,
@@ -153,7 +162,7 @@ class DslTransformer(Transformer):
         kind = ShapeKind(kind_str)
         idx = 1
         positional_args: list[Expr] = []
-        keyword_args: dict[str, Expr | str] = {}
+        keyword_args: dict[str, Expr] = {}
         line_commands = []
         subnodes: list[Statement] = []
 
@@ -173,8 +182,12 @@ class DslTransformer(Transformer):
         charset_override = None
         if "charset" in keyword_args:
             cs = keyword_args.pop("charset")
-            if isinstance(cs, str):
-                charset_override = cs
+            if (
+                isinstance(cs, Expr)
+                and cs.type == ExprType.LITERAL
+                and isinstance(cs.value, str)
+            ):
+                charset_override = cs.value
 
         return Shape(
             kind=kind,
@@ -194,12 +207,12 @@ class DslTransformer(Transformer):
     def keyword_arg(self, items: list) -> tuple[str, Expr]:
         return (str(items[0]), items[1])
 
-    def keyword_arg_str(self, items: list) -> tuple[str, str]:
+    def keyword_arg_str(self, items: list) -> tuple[str, Expr]:
         name = str(items[0])
         val = str(items[1])
         if val.startswith('"') and val.endswith('"'):
             val = val[1:-1]
-        return (name, val)
+        return (name, Expr.literal(val))
 
     def positional_args(self, items: list) -> list:
         return list(items)
@@ -273,6 +286,7 @@ class DslTransformer(Transformer):
         return items[0]
 
 
+@beartype
 def parse(source: str) -> list[Statement]:
     logging.debug("Parsing source (length=%d)", len(source))
     parser = get_parser()

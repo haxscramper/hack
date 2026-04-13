@@ -8,8 +8,14 @@ from pathlib import Path
 from diagrammer.parser import parse
 from diagrammer.resolver import resolve
 from diagrammer.renderer import render
+from beartype import beartype
 
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(levelname)s %(filename)s:%(lineno)d: %(message)s",
+)
 
+@beartype
 def main() -> None:
     ap = argparse.ArgumentParser(
         description="DSL to ASCII/Unicode diagram renderer")

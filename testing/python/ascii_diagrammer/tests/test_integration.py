@@ -1,3 +1,4 @@
+from beartype import beartype
 import subprocess
 import tempfile
 from pathlib import Path
@@ -5,6 +6,7 @@ from pathlib import Path
 import pytest
 
 
+@beartype
 class TestCLI:
 
     def test_basic_cli(self, tmp_path: Path):
@@ -101,6 +103,7 @@ class TestCLI:
         assert result.returncode == 0
 
 
+@beartype
 class TestEndToEnd:
 
     def test_complex_diagram(self, tmp_path: Path):

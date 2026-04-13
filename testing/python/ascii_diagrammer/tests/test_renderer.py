@@ -1,7 +1,9 @@
+from beartype import beartype
 import pytest
 import logging
 
 
+@beartype
 class TestRectRendering:
 
     def test_simple_rect_unicode(self, pipeline):
@@ -43,6 +45,7 @@ class TestRectRendering:
         assert lines[1] == "└┘"
 
 
+@beartype
 class TestNestedRects:
 
     def test_rect_inside_rect(self, pipeline):
@@ -69,6 +72,7 @@ class TestNestedRects:
         assert len(lines) >= 5
 
 
+@beartype
 class TestCharsetOverride:
 
     def test_rect_single_char_override(self, pipeline):
@@ -79,6 +83,7 @@ class TestCharsetOverride:
         assert lines[2] == "@@@@"
 
 
+@beartype
 class TestTextRendering:
 
     def test_simple_text(self, pipeline):
@@ -112,6 +117,7 @@ class TestTextRendering:
         assert len(lines[0].rstrip()) <= 8, lines
 
 
+@beartype
 class TestLineRendering:
 
     def test_horizontal_line(self, pipeline):
@@ -136,6 +142,7 @@ class TestLineRendering:
             assert lines[i][0] in ("│", "|")
 
 
+@beartype
 class TestRelationalRendering:
 
     def test_two_rects_side_by_side(self, pipeline):
@@ -155,6 +162,7 @@ class TestRelationalRendering:
         assert lines[3][0] == "┌"
 
 
+@beartype
 class TestScaling:
 
     def test_scale_2x(self, pipeline):
@@ -168,6 +176,7 @@ class TestScaling:
         assert len(lines) == 4
 
 
+@beartype
 class TestEllipseRendering:
 
     def test_ellipse_renders(self, pipeline):
@@ -184,6 +193,7 @@ class TestEllipseRendering:
         assert any(c != " " for c in all_content)
 
 
+@beartype
 class TestEmptyCanvas:
 
     def test_empty_input(self, pipeline):
@@ -192,6 +202,7 @@ class TestEmptyCanvas:
         assert isinstance(output, str)
 
 
+@beartype
 class TestComplexScene:
 
     def test_multiple_shapes(self, pipeline):

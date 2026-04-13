@@ -1,3 +1,4 @@
+from beartype import beartype
 import pytest
 
 from diagrammer.parser import parse
@@ -16,6 +17,7 @@ from diagrammer.ir import (
 )
 
 
+@beartype
 class TestBasicShapes:
 
     def test_rect_positional(self):
@@ -50,6 +52,7 @@ class TestBasicShapes:
         assert stmts[0].positional_args[1].value == 5
         assert stmts[0].positional_args[2].value == "hello world"
 
+@beartype
 class TestExpressions:
 
     def test_percent(self):
@@ -123,6 +126,7 @@ class TestExpressions:
         assert s.positional_args[0].type == ExprType.SUB
 
 
+@beartype
 class TestLetBinding:
 
     def test_let_rect(self):
@@ -139,6 +143,7 @@ class TestLetBinding:
         assert len(stmts) == 2
 
 
+@beartype
 class TestSubnodes:
 
     def test_rect_with_subnodes(self):
@@ -167,6 +172,7 @@ class TestSubnodes:
         assert isinstance(inner, Shape)
 
 
+@beartype
 class TestLineCommands:
 
     def test_line_with_lineto(self):
@@ -193,6 +199,7 @@ class TestLineCommands:
         assert isinstance(s.line_commands[1], VerticalToCommand)
 
 
+@beartype
 class TestFunctionDef:
 
     def test_simple_function(self):
@@ -224,6 +231,7 @@ class TestFunctionDef:
         assert isinstance(stmts[1], FunctionCall)
 
 
+@beartype
 class TestCharsetOverride:
 
     def test_charset_single_char(self):
@@ -241,6 +249,7 @@ class TestCharsetOverride:
         assert s.charset_override == "@"
 
 
+@beartype
 class TestComments:
 
     def test_line_comment(self):

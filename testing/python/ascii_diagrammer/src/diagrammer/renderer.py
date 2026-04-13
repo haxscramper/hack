@@ -14,8 +14,10 @@ from diagrammer.charsets import (
     make_single_char_line_charset,
 )
 from diagrammer.ir import ResolvedShape, Scene, ShapeKind
+from beartype import beartype
 
 
+@beartype
 class Grid:
 
     def __init__(self, width: int, height: int):
@@ -44,6 +46,7 @@ class Grid:
         return "\n".join(lines) + "\n"
 
 
+@beartype
 def _get_box_charset(shape: ResolvedShape, default: BoxCharset) -> BoxCharset:
     if shape.charset_override is not None:
         if len(shape.charset_override) == 1:
@@ -51,6 +54,7 @@ def _get_box_charset(shape: ResolvedShape, default: BoxCharset) -> BoxCharset:
     return default
 
 
+@beartype
 def _get_line_charset(shape: ResolvedShape,
                       default: LineCharset) -> LineCharset:
     if shape.charset_override is not None:
@@ -59,6 +63,7 @@ def _get_line_charset(shape: ResolvedShape,
     return default
 
 
+@beartype
 def _draw_rect(grid: Grid, shape: ResolvedShape, box_charset: BoxCharset,
                scale: float) -> None:
     x = round(shape.box.x * scale)
@@ -93,6 +98,7 @@ def _draw_rect(grid: Grid, shape: ResolvedShape, box_charset: BoxCharset,
             grid.set(x + w - 1, y + j, cs.vertical)
 
 
+@beartype
 def _draw_ellipse(grid: Grid, shape: ResolvedShape, box_charset: BoxCharset,
                   scale: float) -> None:
     x = round(shape.box.x * scale)
@@ -126,6 +132,7 @@ def _draw_ellipse(grid: Grid, shape: ResolvedShape, box_charset: BoxCharset,
                     grid.set(px, py, cs.horizontal)
 
 
+@beartype
 def _draw_line(grid: Grid, shape: ResolvedShape, line_charset: LineCharset,
                scale: float) -> None:
     cs = _get_line_charset(shape, line_charset)
@@ -152,6 +159,7 @@ def _draw_line(grid: Grid, shape: ResolvedShape, line_charset: LineCharset,
         i += 1
 
 
+@beartype
 def _bresenham_line(grid: Grid, x0: int, y0: int, x1: int, y1: int,
                     cs: LineCharset) -> None:
     dx = abs(x1 - x0)
@@ -180,6 +188,7 @@ def _bresenham_line(grid: Grid, x0: int, y0: int, x1: int, y1: int,
             y0 += sy
 
 
+@beartype
 def _draw_text(grid: Grid, shape: ResolvedShape, scale: float) -> None:
     logging.debug("Draw text")
     assert shape.text is not None, str(shape)
@@ -198,6 +207,7 @@ def _draw_text(grid: Grid, shape: ResolvedShape, scale: float) -> None:
             grid.set(x + col_idx, y + row_idx, ch)
 
 
+@beartype
 def _wrap_text(text: str, width: int) -> list[str]:
     words = text.split()
     lines: list[str] = []
@@ -216,6 +226,7 @@ def _wrap_text(text: str, width: int) -> list[str]:
     return lines
 
 
+@beartype
 def _draw_shape(
     grid: Grid,
     shape: ResolvedShape,
@@ -244,6 +255,7 @@ def _draw_shape(
         _draw_shape(grid, subnode, box_charset, line_charset, scale)
 
 
+@beartype
 def render(scene: Scene, charset: str = "unicode", scale: float = 1.0) -> str:
     logging.debug("Rendering scene with charset=%s scale=%f", charset, scale)
     if charset == "unicode":
