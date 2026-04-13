@@ -44,8 +44,11 @@ class TestBasicShapes:
     def test_text(self):
         stmts = parse('text(5, 5, "hello world")')
         assert len(stmts) == 1
+        assert isinstance(stmts[0], Shape), type(stmts[0])
         assert stmts[0].kind == ShapeKind.TEXT
-
+        assert stmts[0].positional_args[0].value == 5
+        assert stmts[0].positional_args[1].value == 5
+        assert stmts[0].positional_args[2].value == "hello world"
 
 class TestExpressions:
 

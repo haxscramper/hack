@@ -1,4 +1,5 @@
 import pytest
+import logging
 
 
 class TestRectRendering:
@@ -23,8 +24,9 @@ class TestRectRendering:
             canvas_width=10,
             canvas_height=5,
         )
-        lines = output.strip().split("\n")
+        lines = output.split("\n")
         # Row 0 should be empty or spaces
+        logging.info(lines)
         assert lines[0].strip() == ""
         # Row 1 should have rect starting at col 2
         assert lines[1][2:7] == "┌───┐"
@@ -85,6 +87,7 @@ class TestTextRendering:
             canvas_width=10,
             canvas_height=2,
         )
+        logging.info(output)
         lines = output.strip().split("\n")
         assert "hello" in lines[0]
 
@@ -94,8 +97,8 @@ class TestTextRendering:
             canvas_width=10,
             canvas_height=3,
         )
-        lines = output.strip().split("\n")
-        assert lines[1][3:5] == "hi"
+        lines = output.split("\n")
+        assert lines[1][3:5] == "hi", output
 
     def test_text_wrap(self, pipeline):
         output = pipeline(
@@ -103,10 +106,10 @@ class TestTextRendering:
             canvas_width=20,
             canvas_height=5,
         )
-        lines = output.strip().split("\n")
+        lines = output.split("\n")
         assert len(lines) >= 2
         # First line should be within wrap width
-        assert len(lines[0].rstrip()) <= 8
+        assert len(lines[0].rstrip()) <= 8, lines
 
 
 class TestLineRendering:

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from diagrammer.ir import (
     Expr,
     ExprType,
@@ -36,7 +38,7 @@ class Scope:
             return self.variables[name]
         if self.parent is not None:
             return self.parent.lookup_var(name)
-        raise ResolveError(f"Undefined variable: {name}")
+        raise ResolveError(f"Undefined variable: {name}, known variables {self.variables}")
 
     def lookup_func(self, name: str) -> FunctionDef:
         if name in self.functions:
@@ -60,26 +62,39 @@ def _resolve_expr_scalar(
     parent_size: float | None,
     axis: str,
 ) -> float:
+    logging.debug("Resolving scalar expr type=%s axis=%s", expr.type, axis)
     match expr.type:
         case ExprType.LITERAL:
-            return expr.value
+            if expr.value is None:
+                raise ResolveError("Literal expression has no value")
+            return float(expr.value)
         case ExprType.PERCENT:
             if parent_size is None:
                 raise ResolveError(
                     "Cannot use % without a parent with known size")
-            return (expr.value / 100.0) * parent_size
+            if expr.value is None:
+                raise ResolveError("Percent expression has no value")
+            return (float(expr.value) / 100.0) * parent_size
         case ExprType.ADD:
+            if expr.left is None or expr.right is None:
+                raise ResolveError("ADD expression missing operands")
             l = _resolve_expr_scalar(expr.left, scope, parent_size, axis)
             r = _resolve_expr_scalar(expr.right, scope, parent_size, axis)
             return l + r
         case ExprType.SUB:
+            if expr.left is None or expr.right is None:
+                raise ResolveError("SUB expression missing operands")
             l = _resolve_expr_scalar(expr.left, scope, parent_size, axis)
             r = _resolve_expr_scalar(expr.right, scope, parent_size, axis)
             return l - r
         case ExprType.NEG:
+            if expr.left is None:
+                raise ResolveError("NEG expression missing operand")
             v = _resolve_expr_scalar(expr.left, scope, parent_size, axis)
             return -v
         case ExprType.REF:
+            if expr.name is None:
+                raise ResolveError("REF expression missing name")
             resolved = scope.lookup_var(expr.name)
             if axis == "x":
                 return resolved.box.x
@@ -97,24 +112,33 @@ def _resolve_expr_xy(
     parent_width: float | None,
     parent_height: float | None,
 ) -> tuple[float, float]:
+    logging.debug("Resolving XY expr type=%s", expr.type)
     match expr.type:
         case ExprType.VEC:
+            if expr.left is None or expr.right is None:
+                raise ResolveError("VEC expression missing operands")
             x = _resolve_expr_scalar(expr.left, scope, parent_width, "x")
             y = _resolve_expr_scalar(expr.right, scope, parent_height, "y")
             return (x, y)
         case ExprType.ADD:
+            if expr.left is None or expr.right is None:
+                raise ResolveError("ADD expression missing operands")
             lx, ly = _resolve_expr_xy(expr.left, scope, parent_width,
                                       parent_height)
             rx, ry = _resolve_expr_xy(expr.right, scope, parent_width,
                                       parent_height)
             return (lx + rx, ly + ry)
         case ExprType.SUB:
+            if expr.left is None or expr.right is None:
+                raise ResolveError("SUB expression missing operands")
             lx, ly = _resolve_expr_xy(expr.left, scope, parent_width,
                                       parent_height)
             rx, ry = _resolve_expr_xy(expr.right, scope, parent_width,
                                       parent_height)
             return (lx - rx, ly - ry)
         case ExprType.NEG:
+            if expr.left is None:
+                raise ResolveError("NEG expression missing operand")
             vx, vy = _resolve_expr_xy(expr.left, scope, parent_width,
                                       parent_height)
             return (-vx, -vy)
@@ -134,51 +158,130 @@ def _resolve_position_expr(
 ) -> float:
     match expr.type:
         case ExprType.LEFT_OF:
+            if expr.name is None:
+                raise ResolveError("LEFT_OF expression missing name")
             target = scope.lookup_var(expr.name)
             x = target.box.x - own_width
             y = target.box.y + (target.box.height - own_height) / 2.0
             return x if axis == "x" else y
         case ExprType.RIGHT_OF:
+            if expr.name is None:
+                raise ResolveError("RIGHT_OF expression missing name")
             target = scope.lookup_var(expr.name)
             x = target.box.x + target.box.width
             y = target.box.y + (target.box.height - own_height) / 2.0
             return x if axis == "x" else y
         case ExprType.ABOVE:
+            if expr.name is None:
+                raise ResolveError("ABOVE expression missing name")
             target = scope.lookup_var(expr.name)
             x = target.box.x + (target.box.width - own_width) / 2.0
             y = target.box.y - own_height
             return x if axis == "x" else y
         case ExprType.BELOW:
+            if expr.name is None:
+                raise ResolveError("BELOW expression missing name")
             target = scope.lookup_var(expr.name)
             x = target.box.x + (target.box.width - own_width) / 2.0
             y = target.box.y + target.box.height
             return x if axis == "x" else y
         case ExprType.ADD:
+            if expr.left is None or expr.right is None:
+                raise ResolveError("ADD expression missing operands")
             if _is_relational(expr.left):
-                base = _resolve_position_expr(expr.left, scope, parent_width,
-                                              parent_height, own_width,
-                                              own_height, axis)
+                base = _resolve_position_expr(
+                    expr.left,
+                    scope,
+                    parent_width,
+                    parent_height,
+                    own_width,
+                    own_height,
+                    axis,
+                )
                 if expr.right.type == ExprType.VEC:
                     offset_x, offset_y = _resolve_expr_xy(
                         expr.right, scope, parent_width, parent_height)
                     return base + (offset_x if axis == "x" else offset_y)
                 else:
                     offset = _resolve_expr_scalar(
-                        expr.right, scope,
-                        parent_width if axis == "x" else parent_height, axis)
+                        expr.right,
+                        scope,
+                        parent_width if axis == "x" else parent_height,
+                        axis,
+                    )
                     return base + offset
             elif _is_relational(expr.right):
-                base = _resolve_position_expr(expr.right, scope, parent_width,
-                                              parent_height, own_width,
-                                              own_height, axis)
+                base = _resolve_position_expr(
+                    expr.right,
+                    scope,
+                    parent_width,
+                    parent_height,
+                    own_width,
+                    own_height,
+                    axis,
+                )
                 if expr.left.type == ExprType.VEC:
                     offset_x, offset_y = _resolve_expr_xy(
                         expr.left, scope, parent_width, parent_height)
                     return base + (offset_x if axis == "x" else offset_y)
                 else:
                     offset = _resolve_expr_scalar(
-                        expr.left, scope,
-                        parent_width if axis == "x" else parent_height, axis)
+                        expr.left,
+                        scope,
+                        parent_width if axis == "x" else parent_height,
+                        axis,
+                    )
+                    return base + offset
+            else:
+                return _resolve_expr_scalar(
+                    expr, scope,
+                    parent_width if axis == "x" else parent_height, axis)
+        case ExprType.SUB:
+            if expr.left is None or expr.right is None:
+                raise ResolveError("SUB expression missing operands")
+            if _is_relational(expr.left):
+                base = _resolve_position_expr(
+                    expr.left,
+                    scope,
+                    parent_width,
+                    parent_height,
+                    own_width,
+                    own_height,
+                    axis,
+                )
+                if expr.right.type == ExprType.VEC:
+                    offset_x, offset_y = _resolve_expr_xy(
+                        expr.right, scope, parent_width, parent_height)
+                    return base - (offset_x if axis == "x" else offset_y)
+                else:
+                    offset = _resolve_expr_scalar(
+                        expr.right,
+                        scope,
+                        parent_width if axis == "x" else parent_height,
+                        axis,
+                    )
+                    return base - offset
+            elif _is_relational(expr.right):
+                base = _resolve_position_expr(
+                    expr.right,
+                    scope,
+                    parent_width,
+                    parent_height,
+                    own_width,
+                    own_height,
+                    axis,
+                )
+                if expr.left.type == ExprType.VEC:
+                    offset_x, offset_y = _resolve_expr_xy(
+                        expr.left, scope, parent_width, parent_height)
+                    return base + (offset_x if axis == "x" else offset_y)
+                else:
+                    offset = _resolve_expr_scalar(
+                        expr.left,
+                        scope,
+                        parent_width if axis == "x" else parent_height,
+                        axis,
+                    )
                     return base + offset
             else:
                 return _resolve_expr_scalar(
@@ -186,17 +289,26 @@ def _resolve_position_expr(
                     parent_width if axis == "x" else parent_height, axis)
         case ExprType.SUB:
             if _is_relational(expr.left):
-                base = _resolve_position_expr(expr.left, scope, parent_width,
-                                              parent_height, own_width,
-                                              own_height, axis)
+                base = _resolve_position_expr(
+                    expr.left,
+                    scope,
+                    parent_width,
+                    parent_height,
+                    own_width,
+                    own_height,
+                    axis,
+                )
                 if expr.right.type == ExprType.VEC:
                     offset_x, offset_y = _resolve_expr_xy(
                         expr.right, scope, parent_width, parent_height)
                     return base - (offset_x if axis == "x" else offset_y)
                 else:
                     offset = _resolve_expr_scalar(
-                        expr.right, scope,
-                        parent_width if axis == "x" else parent_height, axis)
+                        expr.right,
+                        scope,
+                        parent_width if axis == "x" else parent_height,
+                        axis,
+                    )
                     return base - offset
             else:
                 return _resolve_expr_scalar(
@@ -209,8 +321,12 @@ def _resolve_position_expr(
 
 
 def _is_relational(expr: Expr) -> bool:
-    return expr.type in (ExprType.LEFT_OF, ExprType.RIGHT_OF, ExprType.ABOVE,
-                         ExprType.BELOW)
+    return expr.type in (
+        ExprType.LEFT_OF,
+        ExprType.RIGHT_OF,
+        ExprType.ABOVE,
+        ExprType.BELOW,
+    )
 
 
 def _contains_relational(expr: Expr) -> bool:
@@ -254,7 +370,11 @@ def _get_kwarg_int(kwargs: dict[str, Expr | str], key: str) -> int | None:
     if isinstance(val, str):
         return int(val)
     if isinstance(val, Expr) and val.type == ExprType.LITERAL:
-        return int(val.value)
+        if val.value is not None:
+            try:
+                return int(val.value)
+            except (ValueError, TypeError):
+                return None
     return None
 
 
@@ -271,6 +391,10 @@ def _resolve_shape(
     width = _get_kwarg_float(kwargs, "width", scope, parent_width, "x")
     height = _get_kwarg_float(kwargs, "height", scope, parent_height, "y")
 
+    if shape.kind in [ShapeKind.RECT]:
+        assert width is not None
+        assert height is not None
+
     if shape.kind == ShapeKind.CIRCLE:
         if width is not None and height is None:
             height = width
@@ -278,9 +402,9 @@ def _resolve_shape(
             width = height
 
     if width is None:
-        width = 0.0
+        width = 1.0
     if height is None:
-        height = 0.0
+        height = 1.0
 
     x: float = 0.0
     y: float = 0.0
@@ -366,21 +490,21 @@ def _resolve_shape(
     wrap_width: int | None = None
     if shape.kind == ShapeKind.TEXT:
         # Try to get text from positional args
-        for arg in pos_args:
-            if isinstance(arg, str):
-                text_content_final = arg
-                break
-        if text_content_final is None:
-            text_content_final = _get_kwarg_str(kwargs, "content")
+        assert isinstance(pos_args[2], Expr) and isinstance(
+            pos_args[2].value, str
+        ), (f"Second argument for the `text()` command is expected to be a string, but got {pos_args[2]}"
+            )
+
+        text_content_final = pos_args[2].value
         wrap_width = _get_kwarg_int(kwargs, "wrap")
-        if text_content_final and width == 0.0:
-            if wrap_width:
-                lines = _wrap_text(text_content_final, wrap_width)
-                width = float(max(len(l) for l in lines)) if lines else 0.0
-                height = float(len(lines))
-            else:
-                width = float(len(text_content_final))
-                height = 1.0
+        if wrap_width:
+            logging.debug("Wrap width specified")
+            lines = _wrap_text(text_content_final, wrap_width)
+            width = float(max(len(l) for l in lines)) if lines else 0.0
+            height = float(len(lines))
+        else:
+            width = float(len(text_content_final))
+            height = 1.0
 
     return ResolvedShape(
         kind=shape.kind,
@@ -422,6 +546,8 @@ def _resolve_function_call(
     func_def = scope.lookup_func(call.name)
     func_scope = Scope(parent=scope)
 
+    logging.info(f"Resolving call to function {func_def.name}")
+
     # Bind positional args
     for i, param_name in enumerate(func_def.params):
         if i < len(call.positional_args):
@@ -434,30 +560,34 @@ def _resolve_function_call(
         if param_name in call.keyword_args:
             val = call.keyword_args[param_name]
             if isinstance(val, Expr) and val.type == ExprType.LITERAL:
-                func_scope.define_var(
-                    param_name,
-                    ResolvedShape(
-                        kind=ShapeKind.GROUP,
-                        box=ResolvedBox(x=val.value,
-                                        y=val.value,
-                                        width=0,
-                                        height=0),
-                    ),
-                )
+                if val.value is not None:
+                    func_scope.define_var(
+                        param_name,
+                        ResolvedShape(
+                            kind=ShapeKind.GROUP,
+                            box=ResolvedBox(
+                                x=float(val.value),
+                                y=float(val.value),
+                                width=0,
+                                height=0,
+                            ),
+                        ),
+                    )
         else:
             if default_expr.type == ExprType.LITERAL:
-                func_scope.define_var(
-                    param_name,
-                    ResolvedShape(
-                        kind=ShapeKind.GROUP,
-                        box=ResolvedBox(
-                            x=default_expr.value,
-                            y=default_expr.value,
-                            width=0,
-                            height=0,
+                if default_expr.value is not None:
+                    func_scope.define_var(
+                        param_name,
+                        ResolvedShape(
+                            kind=ShapeKind.GROUP,
+                            box=ResolvedBox(
+                                x=float(default_expr.value),
+                                y=float(default_expr.value),
+                                width=0,
+                                height=0,
+                            ),
                         ),
-                    ),
-                )
+                    )
 
     # Store NODE_ARGS
     if call.subnodes:
@@ -553,6 +683,12 @@ def resolve(
     canvas_width: float | None = None,
     canvas_height: float | None = None,
 ) -> Scene:
+    logging.debug(
+        "Resolving %d statements (canvas: %sx%s)",
+        len(statements),
+        canvas_width,
+        canvas_height,
+    )
     scope = Scope()
     all_shapes: list[ResolvedShape] = []
 
@@ -571,6 +707,12 @@ def resolve(
             canvas_height = max(s.box.y + s.box.height
                                 for s in _flatten(all_shapes))
 
+    logging.debug(
+        "Resolved scene with %d shapes, canvas %sx%s",
+        len(all_shapes),
+        canvas_width,
+        canvas_height,
+    )
     return Scene(shapes=all_shapes, width=canvas_width, height=canvas_height)
 
 

@@ -15,3 +15,10 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/diagrammer"]
+
+[project.scripts]
+diagrammer = "diagrammer.cli:main"
+
+[tool.pytest.ini_options]
+addopts = "--color=yes"
+console_output_style = "classic"

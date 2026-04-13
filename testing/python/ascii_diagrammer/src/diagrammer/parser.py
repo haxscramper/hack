@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from lark import Lark, Transformer, Token
@@ -22,6 +23,7 @@ _GRAMMAR_PATH = Path(__file__).parent / "grammar.lark"
 
 
 def get_parser() -> Lark:
+    logging.debug("Loading grammar from %s", _GRAMMAR_PATH)
     return Lark(
         _GRAMMAR_PATH.read_text(),
         parser="earley",
@@ -43,7 +45,6 @@ def _split_args(items: list) -> tuple[list[Expr], dict[str, Expr | str]]:
 
 
 class DslTransformer(Transformer):
-
     def start(self, items: list) -> list[Statement]:
         return [item for item in items if item is not None]
 
@@ -69,10 +70,9 @@ class DslTransformer(Transformer):
         for i in range(idx, len(items)):
             if items[i] is not None:
                 body.append(items[i])
-        return FunctionDef(name=name,
-                           params=params,
-                           keyword_params=keyword_params,
-                           body=body)
+        return FunctionDef(
+            name=name, params=params, keyword_params=keyword_params, body=body
+        )
 
     def param_list(self, items: list) -> dict:
         positional: list[str] = []
@@ -253,7 +253,9 @@ class DslTransformer(Transformer):
         return Expr.below(str(items[0]))
 
     def node_args(self, items: list) -> Expr:
-        return Expr(type="ref", name="NODE_ARGS")
+        from diagrammer.ir import ExprType
+
+        return Expr(type=ExprType.REF, name="NODE_ARGS")
 
     def string_literal(self, items: list) -> str:
         raw = str(items[0])
@@ -272,7 +274,11 @@ class DslTransformer(Transformer):
 
 
 def parse(source: str) -> list[Statement]:
+    logging.debug("Parsing source (length=%d)", len(source))
     parser = get_parser()
     tree = parser.parse(source)
+    logging.debug("Parse tree: %s", tree.pretty())
     transformer = DslTransformer()
-    return transformer.transform(tree)
+    result = transformer.transform(tree)
+    logging.debug("Parsed statements: %s", result)
+    return result

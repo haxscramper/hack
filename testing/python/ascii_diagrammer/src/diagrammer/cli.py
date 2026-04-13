@@ -1,12 +1,13 @@
 #!/usr/bin/env python
 
 import argparse
+import logging
 import sys
 from pathlib import Path
 
-from src.diagrammer.parser import parse
-from src.diagrammer.resolver import resolve
-from src.diagrammer.renderer import render
+from diagrammer.parser import parse
+from diagrammer.resolver import resolve
+from diagrammer.renderer import render
 
 
 def main() -> None:
@@ -16,7 +17,8 @@ def main() -> None:
     ap.add_argument("-o",
                     "--output",
                     type=Path,
-                    required=True,
+                    default=None,
+                    required=False,
                     help="Output file")
     ap.add_argument(
         "--charset",
@@ -42,15 +44,35 @@ def main() -> None:
         default=None,
         help="Canvas height (inferred if not set)",
     )
+    ap.add_argument(
+        "--log-level",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        default="INFO",
+        help="Logging level (default: INFO)",
+    )
     args = ap.parse_args()
 
+    logging.basicConfig(
+        level=getattr(logging, args.log_level),
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        stream=sys.stderr,
+    )
+
     source = args.input.read_text()
+    logging.debug("Read source file: %s", args.input)
     statements = parse(source)
+    logging.debug("Parsed %d statements", len(statements))
+    logging.info("Statements: %s", statements)
     scene = resolve(statements,
                     canvas_width=args.canvas_width,
                     canvas_height=args.canvas_height)
     output = render(scene, charset=args.charset, scale=args.scale)
-    args.output.write_text(output)
+    if args.output:
+        args.output.write_text(output)
+    else:
+        print(output)
+
+    logging.info("Output written to %s", args.output)
 
 
 if __name__ == "__main__":

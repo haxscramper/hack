@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import math
 
 from diagrammer.charsets import (
@@ -16,10 +17,12 @@ from diagrammer.ir import ResolvedShape, Scene, ShapeKind
 
 
 class Grid:
+
     def __init__(self, width: int, height: int):
         self.width = width
         self.height = height
-        self.cells: list[list[str]] = [[" " for _ in range(width)] for _ in range(height)]
+        self.cells: list[list[str]] = [[" " for _ in range(width)]
+                                       for _ in range(height)]
 
     def set(self, x: int, y: int, ch: str) -> None:
         if 0 <= x < self.width and 0 <= y < self.height:
@@ -48,14 +51,16 @@ def _get_box_charset(shape: ResolvedShape, default: BoxCharset) -> BoxCharset:
     return default
 
 
-def _get_line_charset(shape: ResolvedShape, default: LineCharset) -> LineCharset:
+def _get_line_charset(shape: ResolvedShape,
+                      default: LineCharset) -> LineCharset:
     if shape.charset_override is not None:
         if len(shape.charset_override) == 1:
             return make_single_char_line_charset(shape.charset_override)
     return default
 
 
-def _draw_rect(grid: Grid, shape: ResolvedShape, box_charset: BoxCharset, scale: float) -> None:
+def _draw_rect(grid: Grid, shape: ResolvedShape, box_charset: BoxCharset,
+               scale: float) -> None:
     x = round(shape.box.x * scale)
     y = round(shape.box.y * scale)
     w = round(shape.box.width * scale)
@@ -88,7 +93,8 @@ def _draw_rect(grid: Grid, shape: ResolvedShape, box_charset: BoxCharset, scale:
             grid.set(x + w - 1, y + j, cs.vertical)
 
 
-def _draw_ellipse(grid: Grid, shape: ResolvedShape, box_charset: BoxCharset, scale: float) -> None:
+def _draw_ellipse(grid: Grid, shape: ResolvedShape, box_charset: BoxCharset,
+                  scale: float) -> None:
     x = round(shape.box.x * scale)
     y = round(shape.box.y * scale)
     w = round(shape.box.width * scale)
@@ -120,7 +126,8 @@ def _draw_ellipse(grid: Grid, shape: ResolvedShape, box_charset: BoxCharset, sca
                     grid.set(px, py, cs.horizontal)
 
 
-def _draw_line(grid: Grid, shape: ResolvedShape, line_charset: LineCharset, scale: float) -> None:
+def _draw_line(grid: Grid, shape: ResolvedShape, line_charset: LineCharset,
+               scale: float) -> None:
     cs = _get_line_charset(shape, line_charset)
     points = shape.line_points
 
@@ -145,9 +152,8 @@ def _draw_line(grid: Grid, shape: ResolvedShape, line_charset: LineCharset, scal
         i += 1
 
 
-def _bresenham_line(
-    grid: Grid, x0: int, y0: int, x1: int, y1: int, cs: LineCharset
-) -> None:
+def _bresenham_line(grid: Grid, x0: int, y0: int, x1: int, y1: int,
+                    cs: LineCharset) -> None:
     dx = abs(x1 - x0)
     dy = abs(y1 - y0)
     sx = 1 if x0 < x1 else -1
@@ -175,11 +181,12 @@ def _bresenham_line(
 
 
 def _draw_text(grid: Grid, shape: ResolvedShape, scale: float) -> None:
-    if shape.text is None:
-        return
-
+    logging.debug("Draw text")
+    assert shape.text is not None, str(shape)
     x = round(shape.box.x * scale)
     y = round(shape.box.y * scale)
+
+    logging.debug(f"Drawing text at {(x, y)}")
 
     if shape.wrap_width is not None:
         lines = _wrap_text(shape.text, shape.wrap_width)
@@ -216,6 +223,7 @@ def _draw_shape(
     line_charset: LineCharset,
     scale: float,
 ) -> None:
+    logging.debug(f"Draw shape {shape.kind}")
     match shape.kind:
         case ShapeKind.RECT:
             _draw_rect(grid, shape, box_charset, scale)
@@ -228,12 +236,16 @@ def _draw_shape(
         case ShapeKind.GROUP:
             pass  # invisible, just a container
 
+        case _:
+            raise RuntimeError(f"Unexpected shape kidn {shape.kind}")
+
     # Draw subnodes on top
     for subnode in shape.subnodes:
         _draw_shape(grid, subnode, box_charset, line_charset, scale)
 
 
 def render(scene: Scene, charset: str = "unicode", scale: float = 1.0) -> str:
+    logging.debug("Rendering scene with charset=%s scale=%f", charset, scale)
     if charset == "unicode":
         box_cs = UNICODE_CHARSET
         line_cs = UNICODE_LINE_CHARSET
@@ -251,6 +263,7 @@ def render(scene: Scene, charset: str = "unicode", scale: float = 1.0) -> str:
     grid_w = max(grid_w, 1)
     grid_h = max(grid_h, 1)
 
+    logging.debug("Creating grid size=%dx%d", grid_w, grid_h)
     grid = Grid(grid_w, grid_h)
 
     for shape in scene.shapes:

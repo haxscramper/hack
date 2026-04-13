@@ -3,7 +3,15 @@ import pytest
 from diagrammer.parser import parse
 from diagrammer.resolver import resolve
 from diagrammer.renderer import render
+from typing import Any
+import logging
 
+
+def pytest_configure(config: Any) -> None:
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format="%(levelname)s %(filename)s:%(lineno)d: %(message)s",
+    )
 
 @pytest.fixture
 def pipeline():
