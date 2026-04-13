@@ -38,7 +38,7 @@ def _split_args(items: list) -> tuple[list[Expr], dict[str, Expr | str]]:
         elif isinstance(item, Expr):
             positional.append(item)
         elif isinstance(item, str):
-            positional.append(item)
+            positional.append(Expr.literal(item))
     return positional, keyword
 
 

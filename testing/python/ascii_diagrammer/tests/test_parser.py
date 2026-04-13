@@ -224,7 +224,7 @@ class TestFunctionDef:
 class TestCharsetOverride:
 
     def test_charset_single_char(self):
-        stmts = parse("rect(0, 0, width=5, height=5, charset=@)")
+        stmts = parse("rect(0, 0, width=5, height=5, charset=\"@\")")
         # charset=@ is parsed as keyword_arg with name "charset" and value "@" ref
         # The parser should handle this - but our grammar treats @ as ref prefix
         # For single char override, let's test with a string

@@ -22,13 +22,13 @@ class ExprType(str, Enum):
 
 class Expr(BaseModel):
     type: ExprType
-    value: float | None = None
+    value: float | str | None = None
     name: str | None = None
     left: Expr | None = None
     right: Expr | None = None
 
     @staticmethod
-    def literal(v: float) -> Expr:
+    def literal(v: float | str) -> Expr:
         return Expr(type=ExprType.LITERAL, value=v)
 
     @staticmethod

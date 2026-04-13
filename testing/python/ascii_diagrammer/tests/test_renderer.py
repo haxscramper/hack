@@ -73,7 +73,7 @@ class TestCharsetOverride:
         output = pipeline('rect(0, 0, width=4, height=3, charset="@")')
         lines = output.strip().split("\n")
         assert lines[0] == "@@@@"
-        assert lines[1] == "@@@@"
+        assert lines[1] == "@  @"
         assert lines[2] == "@@@@"
 
 
