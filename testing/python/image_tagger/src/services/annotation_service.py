@@ -84,20 +84,25 @@ class AnnotationService:
                 )
 
         if need_joycaption_description:
+            from PIL import UnidentifiedImageError
             if not existing_desc:
                 logging.debug(f"Running Ollama description tagger for {image_path}")
-                description = self.joy_tagger.describe(image_path)
-                if description:
-                    self.repository.set_description(
-                        image_id, description, self.joy_tagger.model_name
-                    )
-                    self.chroma_store.upsert_description(
-                        relative_path=str(entry.relative_path),
-                        description=description,
-                        metadata={"relative_path": str(entry.relative_path)},
-                    )
+                try:
+                    description = self.joy_tagger.describe(image_path)
 
-                    logging.info(f"Description: '{description}'")
+                    if description:
+                        self.repository.set_description(
+                            image_id, description, self.joy_tagger.model_name
+                        )
+                        self.chroma_store.upsert_description(
+                            relative_path=str(entry.relative_path),
+                            description=description,
+                            metadata={"relative_path": str(entry.relative_path)},
+                        )
+                except UnidentifiedImageError as err:
+                    logging.error(str(err))
+
+
             else:
                 logging.debug(
                     f"Skipping Ollama description for {image_path}, description already exists."
