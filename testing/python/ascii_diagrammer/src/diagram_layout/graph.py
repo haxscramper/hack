@@ -29,24 +29,25 @@ def build_dependency_graph(expanded: ExpandedDiagram) -> dict[str, set[str]]:
 
     def collect_position(expr) -> set[str]:
         refs: set[str] = set()
-        if isinstance(expr, PercentOfRefPos) and expr.ref is not None:
-            refs.add(expr.ref)
-        elif isinstance(expr, RelativePlacement):
-            refs.add(expr.target.shape_id)
-        elif expr.type == "inside-of":
-            refs.add(expr.target)
-        elif expr.type == "align-with":
-            refs.update(a.shape_id for a in expr.anchors)
-        elif isinstance(expr, VecOffset):
-            refs.update(collect_position(expr.base))
-        elif isinstance(expr, Add | Sub):
-            refs.update(collect_position(expr.left))
-            refs.update(collect_position(expr.right))
-        elif isinstance(expr, Scale):
-            refs.update(collect_position(expr.expr))
-        elif isinstance(expr, Conjunction):
-            for sub in expr.exprs:
-                refs.update(collect_position(sub))
+        match expr:
+            case PercentOfRefPos(ref=ref) if ref is not None:
+                refs.add(ref)
+            case RelativePlacement():
+                refs.add(expr.target.shape_id)
+            case _ if expr.type == "inside-of":
+                refs.add(expr.target)
+            case _ if expr.type == "align-with":
+                refs.update(a.shape_id for a in expr.anchors)
+            case VecOffset():
+                refs.update(collect_position(expr.base))
+            case Add() | Sub():
+                refs.update(collect_position(expr.left))
+                refs.update(collect_position(expr.right))
+            case Scale():
+                refs.update(collect_position(expr.expr))
+            case Conjunction():
+                for sub in expr.exprs:
+                    refs.update(collect_position(sub))
         return refs
 
     for shape_id, shape in expanded.shapes.items():
