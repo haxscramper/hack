@@ -1,0 +1,11 @@
+#function ex_rect(x_pos, y_pos, message, width, height) {
+  text(@x_pos, @y_pos, @message)
+  rect(@x_pos, @y_pos, width=@width, height=@height)
+}
+
+#ex_rect(10, 10, "10, 10", 10, 10)
+#ex_rect(0, 12, "0, 12", 5, 5)
+#ex_rect(25, 12, "25, 12", 5, 5)
+#ex_rect(12, 0, "12, 0", 5, 5)
+#ex_rect(12, 25, "12, 25", 5, 5)
+#ex_rect(15, 15, "15, 15", 5, 5)

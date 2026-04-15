@@ -1,0 +1,65 @@
+start: statement*
+
+statement: let_statement
+         | function_def
+         | function_call_stmt
+         | shape_stmt
+
+let_statement: "let" NAME "=" (shape_expr | function_call_expr)
+
+function_def: "#function" NAME "(" param_list? ")" "{" statement* "}"
+
+param_list: param ("," param)*
+param: NAME "=" expr -> keyword_param
+     | NAME          -> positional_param
+
+function_call_stmt: function_call_expr
+function_call_expr: "#" NAME "(" arg_list? ")" ("{" statement* "}")?
+
+shape_stmt: shape_expr
+shape_expr: SHAPE_NAME "(" positional_args "," "[" line_command_list "]" ")" ("{" statement* "}")?  -> shape_with_lines
+          | SHAPE_NAME "(" arg_list? ")" ("{" statement* "}")?                                      -> shape_basic
+
+SHAPE_NAME: "rect" | "circle" | "ellipse" | "group" | "line" | "text"
+
+arg_list: arg ("," arg)*
+arg: NAME "=" expr    -> keyword_arg
+   | NAME "=" STRING  -> keyword_arg_str
+   | expr             -> positional_arg
+
+positional_args: expr ("," expr)*
+
+line_command_list: line_command ("," line_command)*
+line_command: "lineTo" "(" expr "," expr ")"     -> line_to
+            | "moveTo" "(" expr "," expr ")"     -> move_to
+            | "horizontalTo" "(" expr ")"        -> horizontal_to
+            | "verticalTo" "(" expr ")"          -> vertical_to
+
+expr: expr "+" term       -> add
+    | expr "-" term       -> sub
+    | term
+
+term: "-" atom            -> neg
+    | atom
+
+atom: NUMBER              -> number
+    | NUMBER "%"          -> percent
+    | "@vec" "(" expr "," expr ")" -> vec
+    | "@" NAME            -> ref
+    | "@left-of" "(" NAME ")"  -> left_of
+    | "@right-of" "(" NAME ")" -> right_of
+    | "@above" "(" NAME ")"    -> above_expr
+    | "@below" "(" NAME ")"    -> below_expr
+    | "#NODE_ARGS"        -> node_args
+    | STRING              -> string_literal
+    | "(" expr ")"
+
+STRING: "\"" /[^"]*/ "\""
+NAME: /[a-zA-Z_][a-zA-Z0-9_]*/
+NUMBER: /[0-9]+(\.[0-9]+)?/
+
+%import common.WS
+%ignore WS
+
+COMMENT: "//" /[^\n]*/
+%ignore COMMENT

@@ -1,0 +1,25 @@
+[project]
+name = "diagrammer"
+version = "0.1.0"
+description = "DSL to ASCII/Unicode diagram renderer"
+requires-python = ">=3.12"
+dependencies = [
+    "beartype>=0.22.9",
+    "lark>=1.2.2",
+    "pydantic>=2.9",
+    "pytest>=9.0.3",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/diagrammer"]
+
+[project.scripts]
+diagrammer = "diagrammer.cli:main"
+
+[tool.pytest.ini_options]
+addopts = "--color=yes"
+console_output_style = "classic"
