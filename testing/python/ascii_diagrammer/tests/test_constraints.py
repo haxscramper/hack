@@ -1,11 +1,14 @@
 from diagram_layout.resolver import resolve_diagram
+from beartype import beartype
 from diagram_layout.schema import DiagramInput
 
 
+@beartype
 def shape_map(resolved):
     return {shape.id: shape for shape in resolved.shapes}
 
 
+@beartype
 def test_spaced_by_anchors():
     diagram = DiagramInput.model_validate({
         "canvas_width":
@@ -106,6 +109,7 @@ def test_spaced_by_anchors():
     assert shapes["a"].y == shapes["b"].y == shapes["c"].y
 
 
+@beartype
 def test_vertical_align_with_tolerance():
     diagram = DiagramInput.model_validate({
         "canvas_width":

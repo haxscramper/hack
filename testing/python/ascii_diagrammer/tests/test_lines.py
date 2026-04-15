@@ -1,11 +1,14 @@
 from diagram_layout.resolver import resolve_diagram
 from diagram_layout.schema import DiagramInput
+from beartype import beartype
 
 
+@beartype
 def shape_map(resolved):
     return {shape.id: shape for shape in resolved.shapes}
 
 
+@beartype
 def test_line_points_are_resolved_to_absolute_coordinates():
     diagram = DiagramInput.model_validate(
         {
@@ -43,6 +46,7 @@ def test_line_points_are_resolved_to_absolute_coordinates():
     ]
 
 
+@beartype
 def test_line_end_point_anchor_can_be_used():
     diagram = DiagramInput.model_validate(
         {

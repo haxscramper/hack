@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, TypeAlias
+from beartype import beartype
+from beartype.typing import Optional, TypeAlias
 
 import kiwisolver as kiwi
 
@@ -73,6 +74,8 @@ class AxisExpr:
 class ConstraintBuilder:
     """Compiles expanded diagram expressions into kiwi constraints."""
 
+
+    @beartype
     def __init__(self, expanded: ExpandedDiagram) -> None:
         self.expanded = expanded
         self.solver = kiwi.Solver()
@@ -81,6 +84,8 @@ class ConstraintBuilder:
             shape_id: set() for shape_id in expanded.shapes
         }
 
+
+    @beartype
     def build(self) -> None:
         """Allocate variables and emit all constraints."""
         self._allocate_canvas()
@@ -90,6 +95,8 @@ class ConstraintBuilder:
         self._compile_multi_constraints()
         self._add_weak_defaults()
 
+
+    @beartype
     def _make_shape_vars(self, prefix: str) -> ShapeVars:
         """Create a full variable set for a shape."""
         return ShapeVars(
@@ -103,10 +110,14 @@ class ConstraintBuilder:
             center_y=kiwi.Variable(f"{prefix}.center_y"),
         )
 
+
+    @beartype
     def _add(self, constraint) -> None:
         """Add a kiwi constraint to the solver."""
         self.solver.addConstraint(constraint)
 
+
+    @beartype
     def _allocate_canvas(self) -> None:
         """Create a fixed implicit canvas parent rectangle."""
         sv = self._make_shape_vars(CANVAS_ID)
@@ -118,6 +129,8 @@ class ConstraintBuilder:
         self._add((sv.h == self.expanded.canvas_height) | REQUIRED)
         self._emit_structural_constraints(sv)
 
+
+    @beartype
     def _allocate_shapes(self) -> None:
         """Allocate variables and structural constraints for all user shapes."""
         for shape_id in self.expanded.shapes:
@@ -125,6 +138,8 @@ class ConstraintBuilder:
             self.vars[shape_id] = sv
             self._emit_structural_constraints(sv)
 
+
+    @beartype
     def _emit_structural_constraints(self, sv: ShapeVars) -> None:
         """Emit invariant bbox relationships."""
         self._add((sv.right == sv.x + sv.w) | REQUIRED)
@@ -134,6 +149,8 @@ class ConstraintBuilder:
         self._add((sv.w >= 0) | REQUIRED)
         self._add((sv.h >= 0) | REQUIRED)
 
+
+    @beartype
     def _compile_sizes(self) -> None:
         """Compile all size expressions."""
         for shape_id, shape in self.expanded.shapes.items():
@@ -148,19 +165,22 @@ class ConstraintBuilder:
                     self._compile_axis_size(sv.w, size.w, "w", shape_id)
                     self._compile_axis_size(sv.h, size.h, "h", shape_id)
                 case _:
-                    raise ValidationError(
-                        f"Unsupported size expression for '{shape_id}'.")
+                    raise ValidationError(f"Unsupported size expression for '{shape_id}'.")
 
+
+    @beartype
     def _compile_axis_value_fixed(self, var: kiwi.Variable, axis_value, axis_name: str,
-                                  shape_id: str) -> None:
+                                shape_id: str) -> None:
         """Compile a fixed-size axis."""
         if axis_value.fixed is None or axis_value.ref is not None or axis_value.pct is not None:
             raise ValidationError(
                 f"Fixed size for '{shape_id}' {axis_name} must use fixed only.")
         self._add((var == axis_value.fixed) | REQUIRED)
 
+
+    @beartype
     def _compile_axis_size(self, var: kiwi.Variable, axis_value, dim: str,
-                           shape_id: str) -> None:
+                        shape_id: str) -> None:
         """Compile one size axis from fixed or percentage-of-reference."""
         if axis_value.fixed is not None:
             self._add((var == axis_value.fixed) | REQUIRED)
@@ -178,6 +198,8 @@ class ConstraintBuilder:
 
         raise ValidationError(f"Size axis for '{shape_id}' is incomplete.")
 
+
+    @beartype
     def _compile_positions(self) -> None:
         """Compile all shape position expressions."""
         for shape_id, shape in self.expanded.shapes.items():
@@ -190,12 +212,14 @@ class ConstraintBuilder:
                 self._add((sv.y == compiled.y) | REQUIRED)
                 self.axis_constrained[shape_id].add("y")
 
+
+    @beartype
     def _compile_position_expr(self, shape_id: str, expr) -> AxisExpr:
         """Compile a position expression recursively into coordinate expressions.
 
-        Some expressions emit direct constraints and return no axis expression.
-        Others synthesize x and/or y expressions to attach to the current shape origin.
-        """
+            Some expressions emit direct constraints and return no axis expression.
+            Others synthesize x and/or y expressions to attach to the current shape origin.
+            """
         match expr:
             case AbsolutePos():
                 return AxisExpr(x=expr.x, y=expr.y)
@@ -211,9 +235,9 @@ class ConstraintBuilder:
                 ref = self.vars[expr.ref]
                 return AxisExpr(
                     x=(ref.x + ref.w *
-                       (expr.x_pct / 100.0)) if expr.x_pct is not None else None,
+                    (expr.x_pct / 100.0)) if expr.x_pct is not None else None,
                     y=(ref.y + ref.h *
-                       (expr.y_pct / 100.0)) if expr.y_pct is not None else None,
+                    (expr.y_pct / 100.0)) if expr.y_pct is not None else None,
                 )
             case RelativePlacement():
                 return self._compile_relative(shape_id, expr)
@@ -242,9 +266,9 @@ class ConstraintBuilder:
                 right = self._compile_position_expr(shape_id, expr.right)
                 return AxisExpr(
                     x=(left.x -
-                       right.x) if left.x is not None and right.x is not None else left.x,
+                    right.x) if left.x is not None and right.x is not None else left.x,
                     y=(left.y -
-                       right.y) if left.y is not None and right.y is not None else left.y,
+                    right.y) if left.y is not None and right.y is not None else left.y,
                 )
             case Scale():
                 inner = self._compile_position_expr(shape_id, expr.expr)
@@ -262,9 +286,10 @@ class ConstraintBuilder:
                         merged.y = part.y if merged.y is None else merged.y
                 return merged
             case _:
-                raise ValidationError(
-                    f"Unsupported position expression for '{shape_id}'.")
+                raise ValidationError(f"Unsupported position expression for '{shape_id}'.")
 
+
+    @beartype
     def _anchor_component(self, anchor: AnchorRef, axis: str) -> CoordExpr:
         """Resolve a single anchor coordinate component."""
         sv = self.vars[anchor.shape_id]
@@ -297,22 +322,25 @@ class ConstraintBuilder:
                 shape = self.expanded.shapes.get(anchor.shape_id)
                 if shape is None or shape.shape_type.value != "line" or shape.line is None:
                     raise ValidationError(
-                        f"Point anchor '{a.value}' requires LINE target '{anchor.shape_id}'."
-                    )
+                        f"Point anchor '{a.value}' requires LINE target '{anchor.shape_id}'.")
                 point = self._eval_point_expr(shape.line.points[-1])
                 return (sv.x + point.x) if axis == "x" else (sv.y + point.y)
             case _:
                 raise ValidationError(f"Unsupported anchor {anchor} for axis {axis}.")
 
+
+    @beartype
     def _validate_axis_for_anchor(self, anchor_name: str, axis: str,
-                                  expected_axis: str) -> None:
+                                expected_axis: str) -> None:
         """Validate that the requested axis matches the anchor's coordinate type."""
         if axis != expected_axis:
             raise ValidationError(
                 f"{anchor_name} does not provide {expected_axis.upper()} coordinate.")
 
+
+    @beartype
     def _anchor_default_for_relation(self, anchor: AnchorRef,
-                                     relation: SpatialRelation) -> CoordExpr:
+                                    relation: SpatialRelation) -> CoordExpr:
         """Resolve anchor coordinates for relative placement semantics."""
         a = anchor.anchor
 
@@ -321,13 +349,12 @@ class ConstraintBuilder:
                 return self._anchor_component(anchor, "x")
             case (SpatialRelation.LEFT_OF | SpatialRelation.RIGHT_OF, BBoxAnchor.RIGHT):
                 return self._anchor_component(anchor, "x")
-            case (SpatialRelation.LEFT_OF | SpatialRelation.RIGHT_OF,
-                  BBoxAnchor.CENTER_X):
+            case (SpatialRelation.LEFT_OF | SpatialRelation.RIGHT_OF, BBoxAnchor.CENTER_X):
                 return self._anchor_component(anchor, "x")
             case (SpatialRelation.LEFT_OF | SpatialRelation.RIGHT_OF, BBoxAnchor.CENTER):
                 return self._anchor_component(anchor, "x")
             case (SpatialRelation.LEFT_OF | SpatialRelation.RIGHT_OF,
-                  BBoxAnchor.TOP | BBoxAnchor.BOTTOM | BBoxAnchor.CENTER_Y):
+                BBoxAnchor.TOP | BBoxAnchor.BOTTOM | BBoxAnchor.CENTER_Y):
                 raise ValidationError(
                     f"Anchor '{a.value}' is not compatible with horizontal relation '{relation.value}'."
                 )
@@ -340,7 +367,7 @@ class ConstraintBuilder:
             case (SpatialRelation.ABOVE | SpatialRelation.BELOW, BBoxAnchor.CENTER):
                 return self._anchor_component(anchor, "y")
             case (SpatialRelation.ABOVE | SpatialRelation.BELOW,
-                  BBoxAnchor.LEFT | BBoxAnchor.RIGHT | BBoxAnchor.CENTER_X):
+                BBoxAnchor.LEFT | BBoxAnchor.RIGHT | BBoxAnchor.CENTER_X):
                 raise ValidationError(
                     f"Anchor '{a.value}' is not compatible with vertical relation '{relation.value}'."
                 )
@@ -349,6 +376,8 @@ class ConstraintBuilder:
                     anchor, "x" if relation in (SpatialRelation.LEFT_OF,
                                                 SpatialRelation.RIGHT_OF) else "y")
 
+
+    @beartype
     def _compile_relative(self, shape_id: str, expr: RelativePlacement) -> AxisExpr:
         """Compile a relative placement expression."""
         target = self._anchor_default_for_relation(expr.target, expr.relation)
@@ -371,6 +400,8 @@ class ConstraintBuilder:
             case _:
                 raise ValidationError(f"Unsupported relation '{expr.relation.value}'.")
 
+
+    @beartype
     def _compile_align_with(self, expr: AlignWith) -> None:
         """Compile pairwise anchor equality along the requested axis."""
         if len(expr.anchors) < 2:
@@ -381,6 +412,8 @@ class ConstraintBuilder:
         for coord in coords[1:]:
             self._add((coord == first) | REQUIRED)
 
+
+    @beartype
     def _compile_multi_constraints(self) -> None:
         """Compile diagram-level multi-shape constraints."""
         for idx, constraint in enumerate(self.expanded.constraints):
@@ -395,6 +428,8 @@ class ConstraintBuilder:
                     raise ValidationError(
                         f"Unsupported multi-shape constraint '{constraint}'.")
 
+
+    @beartype
     def _compile_spaced_by(self, constraint: SpacedBy) -> None:
         """Compile fixed step spacing between consecutive anchors."""
         for left, right in zip(constraint.anchors, constraint.anchors[1:]):
@@ -405,6 +440,8 @@ class ConstraintBuilder:
             self._add((rx == lx + constraint.spacing.x) | REQUIRED)
             self._add((ry == ly + constraint.spacing.y) | REQUIRED)
 
+
+    @beartype
     def _compile_horizontal_align(self, constraint: HorizontalAlign, idx: int) -> None:
         """Compile alignment to a common horizontal line."""
         ys = [self._anchor_component(anchor, "y") for anchor in constraint.anchors]
@@ -422,6 +459,8 @@ class ConstraintBuilder:
             self._add((y <= line_y + constraint.max_offset) | REQUIRED)
             self._add((y == line_y) | WEAK)
 
+
+    @beartype
     def _compile_vertical_align(self, constraint: VerticalAlign, idx: int) -> None:
         """Compile alignment to a common vertical line."""
         xs = [self._anchor_component(anchor, "x") for anchor in constraint.anchors]
@@ -439,6 +478,8 @@ class ConstraintBuilder:
             self._add((x <= line_x + constraint.max_offset) | REQUIRED)
             self._add((x == line_x) | WEAK)
 
+
+    @beartype
     def _add_weak_defaults(self) -> None:
         """Add weak defaults for unconstrained position axes."""
         for shape_id in self.expanded.shapes:
@@ -454,13 +495,15 @@ class ConstraintBuilder:
                 target = 0 if parent_id == CANVAS_ID else parent.y
                 self._add((sv.y == target) | WEAK)
 
+
+    @beartype
     def _eval_point_expr(self, expr: PointExpr):
         """Evaluate a line-local point expression numerically.
 
-        Line point expressions are purely local arithmetic and do not depend on
-        solver variables, so they are evaluated after parsing rather than
-        compiled into solver constraints.
-        """
+            Line point expressions are purely local arithmetic and do not depend on
+            solver variables, so they are evaluated after parsing rather than
+            compiled into solver constraints.
+            """
         match expr:
             case PointLiteral():
                 return expr
@@ -478,6 +521,8 @@ class ConstraintBuilder:
             case _:
                 raise ValidationError(f"Unsupported point expression '{expr}'.")
 
+
+    @beartype
     def solve(self) -> ResolvedDiagram:
         """Solve the full system and produce resolved absolute geometry."""
         try:

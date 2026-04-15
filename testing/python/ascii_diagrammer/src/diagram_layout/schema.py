@@ -8,7 +8,8 @@ validates against these models.
 from __future__ import annotations
 
 from enum import Enum
-from typing import Annotated, Literal, Optional, Union
+from beartype import beartype
+from beartype.typing import Annotated, Literal, Optional, Union
 
 from pydantic import BaseModel, Field
 

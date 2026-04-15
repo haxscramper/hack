@@ -8,7 +8,8 @@ implicit parent references, and validates reference legality.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from typing import Iterable
+from beartype import beartype
+from beartype.typing import Iterable
 
 from .errors import ValidationError
 from .schema import (
@@ -51,6 +52,7 @@ class ExpandedDiagram:
     constraints: list[MultiShapeConstraint]
 
 
+@beartype
 def _resolve_axis_value(axis: AxisValue, parent_id: str) -> AxisValue:
     """Resolve implicit parent references in axis values."""
     count = sum(v is not None for v in (axis.fixed, axis.ref, axis.pct))
@@ -63,6 +65,7 @@ def _resolve_axis_value(axis: AxisValue, parent_id: str) -> AxisValue:
     return axis
 
 
+@beartype
 def _resolve_size_expr(shape: ShapeDefinition, parent_id: str) -> ShapeDefinition:
     """Resolve implicit parent references in size expressions."""
     size = shape.size
@@ -73,6 +76,7 @@ def _resolve_size_expr(shape: ShapeDefinition, parent_id: str) -> ShapeDefinitio
     return shape.model_copy(update={"size": size})
 
 
+@beartype
 def _resolve_position_expr(expr: PositionExpr, parent_id: str) -> PositionExpr:
     """Recursively resolve implicit parent references in position expressions."""
     if isinstance(expr, PercentOfRefPos):
@@ -104,6 +108,7 @@ def _resolve_position_expr(expr: PositionExpr, parent_id: str) -> PositionExpr:
     return expr
 
 
+@beartype
 def _inject_inside_of(position: PositionExpr, parent_id: str) -> PositionExpr:
     """Inject containment for nested children as a conjunction."""
     inside = InsideOf(target=parent_id)
@@ -112,6 +117,7 @@ def _inject_inside_of(position: PositionExpr, parent_id: str) -> PositionExpr:
     return Conjunction(exprs=[inside, position])
 
 
+@beartype
 def _collect_refs_from_position(expr: PositionExpr) -> set[str]:
     """Collect referenced shape ids from a position expression tree."""
     refs: set[str] = set()
@@ -137,6 +143,7 @@ def _collect_refs_from_position(expr: PositionExpr) -> set[str]:
     return refs
 
 
+@beartype
 def _collect_refs_from_size(shape: ShapeDefinition) -> set[str]:
     """Collect referenced shape ids from a size expression tree."""
     refs: set[str] = set()
@@ -149,6 +156,7 @@ def _collect_refs_from_size(shape: ShapeDefinition) -> set[str]:
     return refs
 
 
+@beartype
 def _collect_refs_from_multi(constraint: MultiShapeConstraint) -> set[str]:
     """Collect referenced shape ids from multi-shape constraints."""
     if isinstance(constraint, SpacedBy | HorizontalAlign | VerticalAlign):
@@ -156,6 +164,7 @@ def _collect_refs_from_multi(constraint: MultiShapeConstraint) -> set[str]:
     return set()
 
 
+@beartype
 def _iter_descendants(children_of: dict[str, list[str]], shape_id: str) -> Iterable[str]:
     """Yield all descendants of a shape using the flattened child mapping."""
     for child in children_of.get(shape_id, []):
@@ -163,6 +172,7 @@ def _iter_descendants(children_of: dict[str, list[str]], shape_id: str) -> Itera
         yield from _iter_descendants(children_of, child)
 
 
+@beartype
 def _ancestor_chain(parent_of: dict[str, str], shape_id: str) -> list[str]:
     """Return ancestors from immediate parent upward."""
     chain: list[str] = []
@@ -175,6 +185,7 @@ def _ancestor_chain(parent_of: dict[str, str], shape_id: str) -> list[str]:
     return chain
 
 
+@beartype
 def _validate_scope(
     owner_id: str,
     ref_id: str,
@@ -215,12 +226,14 @@ def _validate_scope(
         f"Shape '{owner_id}' may not reference out-of-scope shape '{ref_id}'.")
 
 
+@beartype
 def _validate_anchor_ref(anchor: AnchorRef, known_ids: set[str]) -> None:
     """Validate that an anchor target exists."""
     if anchor.shape_id not in known_ids:
         raise ValidationError(f"Unknown shape reference '{anchor.shape_id}'.")
 
 
+@beartype
 def _validate_position_refs(
     owner_id: str,
     expr: PositionExpr,
@@ -262,6 +275,7 @@ def _validate_position_refs(
                 _validate_position_refs(owner_id, sub, known_ids, parent_of, children_of)
 
 
+@beartype
 def _validate_shape_semantics(shape: ShapeDefinition) -> None:
     """Validate shape-local semantic invariants."""
     if shape.children and shape.shape_type is not ShapeType.GROUP:
@@ -276,12 +290,14 @@ def _validate_shape_semantics(shape: ShapeDefinition) -> None:
                 f"Non-LINE shape '{shape.id}' must not define line data.")
 
 
+@beartype
 def expand_diagram(diagram: DiagramInput) -> ExpandedDiagram:
     """Expand nested diagram input into a validated flattened representation."""
     shapes: dict[str, ShapeDefinition] = {}
     parent_of: dict[str, str] = {}
     children_of: dict[str, list[str]] = {CANVAS_ID: []}
 
+    @beartype
     def visit(shape: ShapeDefinition, parent_id: str) -> None:
         if shape.id in shapes or shape.id == CANVAS_ID:
             raise ValidationError(f"Duplicate shape id '{shape.id}'.")

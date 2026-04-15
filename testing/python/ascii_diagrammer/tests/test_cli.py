@@ -1,7 +1,7 @@
 import json
 import subprocess
 import sys
-
+from beartype import beartype
 
 def test_cli_outputs_resolved_json(tmp_path):
     input_path = tmp_path / "input.json"
@@ -30,8 +30,9 @@ def test_cli_outputs_resolved_json(tmp_path):
         [sys.executable, "-m", "diagram_layout", str(input_path)],
         capture_output=True,
         text=True,
-        check=True,
     )
+
+    assert proc.returncode == 0, f"{proc.stdout}, {proc.stderr}"
 
     payload = json.loads(proc.stdout)
     shape = {s["id"]: s for s in payload["shapes"]}["a"]

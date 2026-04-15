@@ -3,8 +3,10 @@ import pytest
 from diagram_layout.errors import ValidationError
 from diagram_layout.expand import expand_diagram
 from diagram_layout.schema import DiagramInput
+from beartype import beartype
 
 
+@beartype
 def test_duplicate_shape_ids_fail():
     diagram = DiagramInput.model_validate(
         {
@@ -38,6 +40,7 @@ def test_duplicate_shape_ids_fail():
         expand_diagram(diagram)
 
 
+@beartype
 def test_non_group_with_children_fails():
     diagram = DiagramInput.model_validate(
         {
@@ -73,6 +76,7 @@ def test_non_group_with_children_fails():
         expand_diagram(diagram)
 
 
+@beartype
 def test_descendant_reference_fails():
     diagram = DiagramInput.model_validate(
         {

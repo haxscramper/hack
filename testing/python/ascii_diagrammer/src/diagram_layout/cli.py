@@ -12,8 +12,9 @@ import argparse
 import sys
 
 from .resolver import resolve_json_file, resolved_to_json
+from beartype import beartype
 
-
+@beartype
 def main(argv: list[str] | None = None) -> int:
     """CLI entrypoint."""
     parser = argparse.ArgumentParser(prog="diagram-layout")

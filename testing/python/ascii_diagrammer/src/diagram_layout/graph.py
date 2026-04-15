@@ -5,6 +5,7 @@ Cycles are allowed and are not treated as invalid by themselves.
 """
 
 from __future__ import annotations
+from beartype import beartype
 
 from .expand import ExpandedDiagram
 from .schema import (
@@ -23,10 +24,12 @@ from .schema import (
 )
 
 
+@beartype
 def build_dependency_graph(expanded: ExpandedDiagram) -> dict[str, set[str]]:
     """Build a shape->dependencies graph from shape expressions and global constraints."""
     graph: dict[str, set[str]] = {shape_id: set() for shape_id in expanded.shapes}
 
+    @beartype
     def collect_position(expr) -> set[str]:
         refs: set[str] = set()
         match expr:
