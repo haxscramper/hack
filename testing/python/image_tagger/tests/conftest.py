@@ -8,7 +8,7 @@ from pathlib import Path
 from PIL import Image
 from image_tagger.db.repository import Repository
 from image_tagger.gui.main_window import MainWindow
-from typing import Generator
+from beartype.typing import Generator
 from sqlalchemy.orm.session import Session
 from dataclasses import dataclass
 from pytestqt.qtbot import QtBot
@@ -131,11 +131,12 @@ def _count_specified_images(structure: dict) -> int:
 
 def _populate_template_directory(
         template_dir: Path,
-        num_images: int = 48,
+        num_images: int = 32,
         size: tuple[int, int] = (512, 512),
 ):
     """Populate the template directory with monotone color images."""
     import shutil
+
     if template_dir.exists():
         shutil.rmtree(template_dir)
     template_dir.mkdir(parents=True)
@@ -166,14 +167,18 @@ def _populate_template_directory(
         if dest is not None:
             dest.mkdir(parents=True, exist_ok=True)
             hue = i / num_images
-            color = tuple(int(c * 255) for c in colorsys.hsv_to_rgb(hue, 1.0, 1.0))
-            _generate_monotone_image(dest / f"image_{color[0]}_{color[1]}_{color[2]}.png", size, color)
+            color = tuple(
+                int(c * 255) for c in colorsys.hsv_to_rgb(hue, 1.0, 1.0))
+            _generate_monotone_image(
+                dest / f"image_{color[0]}_{color[1]}_{color[2]}.png", size,
+                color)
 
 
 @pytest.fixture(scope="session", autouse=True)
 def setup_session():
     if TEMPLATE_DIR.exists():
         shutil.rmtree(TEMPLATE_DIR)
+
 
 @pytest.fixture
 def image_directory(request: pytest.FixtureRequest):
@@ -201,6 +206,7 @@ def image_directory(request: pytest.FixtureRequest):
 def qapp():
     """Fixture providing QApplication instance."""
     from PySide6.QtWidgets import QApplication
+
     app = QApplication.instance() or QApplication([])
     yield app
     app.quit()
@@ -215,7 +221,7 @@ def screenshot_dir(request: pytest.FixtureRequest):
 
 
 @dataclass
-class AppInstanceRes():
+class AppInstanceRes:
     window: MainWindow
     repo: Repository
     session: Session

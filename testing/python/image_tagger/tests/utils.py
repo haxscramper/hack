@@ -1,3 +1,4 @@
+from beartype import beartype
 from pathlib import Path
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication, QWidget
@@ -6,15 +7,13 @@ from PySide6.QtGui import QPixmap, QScreen
 
 def take_screenshot(widget: QWidget, filepath: Path) -> Path:
     """Capture screenshot of a widget and save to file."""
-    pixmap = widget.grab() if hasattr(widget,
-                                      'grab') else QPixmap.grabWidget(widget)
+    pixmap = widget.grab() if hasattr(widget, "grab") else QPixmap.grabWidget(widget)
     pixmap.save(str(filepath))
 
     return filepath
 
 
-def test_gui_starts_and_captures_screenshot(gui_app_instance, screenshot_dir,
-                                            qtbot):
+def test_gui_starts_and_captures_screenshot(gui_app_instance, screenshot_dir, qtbot):
     """
     Test that the GUI application starts, loads images, and capture a screenshot.
     """
@@ -40,8 +39,7 @@ def test_gui_starts_and_captures_screenshot(gui_app_instance, screenshot_dir,
     print(f"Image size: {pixmap.width()}x{pixmap.height()}")
 
 
-def test_gui_with_interaction_and_screenshot(gui_app_instance, screenshot_dir,
-                                             qtbot):
+def test_gui_with_interaction_and_screenshot(gui_app_instance, screenshot_dir, qtbot):
     """
     Test that interacts with GUI elements and captures a screenshot of the result.
     """

@@ -9,6 +9,7 @@ import math
 import os
 import sys
 from dataclasses import dataclass, field
+from beartype import beartype
 from pathlib import Path
 
 from PySide6.QtCore import (

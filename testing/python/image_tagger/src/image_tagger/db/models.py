@@ -1,3 +1,4 @@
+from beartype import beartype
 from sqlalchemy import (
     Column,
     Integer,

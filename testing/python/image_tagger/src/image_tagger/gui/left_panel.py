@@ -1,3 +1,4 @@
+from beartype import beartype
 from pathlib import Path
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QTabWidget
 from PySide6.QtCore import Signal

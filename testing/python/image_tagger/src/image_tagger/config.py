@@ -1,3 +1,4 @@
+from beartype import beartype
 import logging
 from pathlib import Path
 from pydantic import BaseModel, Field

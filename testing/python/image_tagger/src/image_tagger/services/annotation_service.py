@@ -1,3 +1,4 @@
+from beartype import beartype
 import logging
 import time
 from collections import deque
@@ -58,9 +59,11 @@ class AnnotationService:
             progress_str = ""
 
         need_wd_tagger = not existing_prob_tags and False
-        need_joycaption_tagger =not existing_reg_tags and False
+        need_joycaption_tagger = not existing_reg_tags and False
         need_joycaption_description = not existing_desc and True
-        need_any_processing = need_wd_tagger or need_joycaption_tagger or need_joycaption_description
+        need_any_processing = (
+            need_wd_tagger or need_joycaption_tagger or need_joycaption_description
+        )
 
         if need_any_processing:
             logging.info(f"{progress_str}Annotating image: {image_path}")
@@ -71,9 +74,11 @@ class AnnotationService:
                 prob_tags = self.wd_tagger.tag_image(image_path)
                 self.repository.replace_probabilistic_annotations(image_id, prob_tags)
             else:
-                logging.debug(f"Skipping WD tagger for {image_path}, tags already exist.")
+                logging.debug(
+                    f"Skipping WD tagger for {image_path}, tags already exist."
+                )
 
-        if need_joycaption_tagger: 
+        if need_joycaption_tagger:
             if not existing_reg_tags:
                 logging.debug(f"Running Ollama tagger for {image_path}")
                 reg_tags = self.joy_tagger.regular_tags(image_path)
@@ -85,6 +90,7 @@ class AnnotationService:
 
         if need_joycaption_description:
             from PIL import UnidentifiedImageError
+
             if not existing_desc:
                 logging.debug(f"Running Ollama description tagger for {image_path}")
                 try:
@@ -101,7 +107,6 @@ class AnnotationService:
                         )
                 except UnidentifiedImageError as err:
                     logging.error(str(err))
-
 
             else:
                 logging.debug(

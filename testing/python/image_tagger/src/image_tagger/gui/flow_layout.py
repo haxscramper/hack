@@ -1,3 +1,4 @@
+from beartype import beartype
 from PySide6.QtCore import QPoint, QRect, QSize, Qt
 from PySide6.QtWidgets import QLayout, QSizePolicy
 
@@ -42,7 +43,9 @@ class FlowLayout(QLayout):
         for item in self._items:
             size = size.expandedTo(item.minimumSize())
         margins = self.contentsMargins()
-        size += QSize(margins.left() + margins.right(), margins.top() + margins.bottom())
+        size += QSize(
+            margins.left() + margins.right(), margins.top() + margins.bottom()
+        )
         return size
 
     def _do_layout(self, rect, test_only):

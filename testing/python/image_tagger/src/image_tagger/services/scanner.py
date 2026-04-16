@@ -1,3 +1,4 @@
+from beartype import beartype
 from pathlib import Path
 import image_tagger.config as config
 

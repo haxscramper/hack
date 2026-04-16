@@ -1,3 +1,4 @@
+from beartype import beartype
 from dataclasses import dataclass
 from pathlib import Path
 

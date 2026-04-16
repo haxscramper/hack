@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from beartype import beartype
 from pathlib import Path
 
 from PySide6.QtCore import Signal, Qt, QSize

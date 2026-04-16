@@ -1,9 +1,11 @@
+from beartype import beartype
 import logging
 from image_tagger.cli.commands import cli
 
 logging.basicConfig(
     level=logging.INFO, format="%(levelname)s %(filename)s:%(lineno)d: %(message)s"
 )
+
 
 def main():
     logging.info("Application starting")

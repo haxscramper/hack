@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from beartype import beartype
 import base64
 import logging
 import subprocess
@@ -10,10 +11,9 @@ import requests
 
 
 class Joytagger:
-
-    def __init__(self,
-                 backend: str = "ollama",
-                 model_name: str = "user-v4/joycaption-beta"):
+    def __init__(
+        self, backend: str = "ollama", model_name: str = "user-v4/joycaption-beta"
+    ):
         self.backend = backend
         self.model_name = model_name
         self._server_process = None
@@ -94,13 +94,13 @@ class Joytagger:
         )
 
     def __del__(self):
-        if hasattr(self,
-                   "_server_process") and self._server_process is not None:
+        if hasattr(self, "_server_process") and self._server_process is not None:
             self._server_process.terminate()
             self._server_process.wait(timeout=5)
 
     def _generate(self, image_path: Path, prompt: str) -> str:
         from PIL import Image, ImageFile
+
         ImageFile.LOAD_TRUNCATED_IMAGES = True
         import io
         import math
@@ -132,9 +132,9 @@ class Joytagger:
                 "images": [b64_img],
             }
 
-            response = requests.post("http://127.0.0.1:11434/api/generate",
-                                     json=payload,
-                                     timeout=300)
+            response = requests.post(
+                "http://127.0.0.1:11434/api/generate", json=payload, timeout=300
+            )
             try:
                 response.raise_for_status()
 
@@ -147,32 +147,30 @@ class Joytagger:
 
         elif self.backend == "llama-cpp":
             payload = {
-                "messages": [{
-                    "role":
-                    "user",
-                    "content": [
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/png;base64,{b64_img}",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/png;base64,{b64_img}",
+                                },
                             },
-                        },
-                        {
-                            "type": "text",
-                            "text": prompt,
-                        },
-                    ],
-                }],
-                "temperature":
-                0,
-                "top_p":
-                1,
+                            {
+                                "type": "text",
+                                "text": prompt,
+                            },
+                        ],
+                    }
+                ],
+                "temperature": 0,
+                "top_p": 1,
             }
 
             response = requests.post(
-                "http://localhost:8080/v1/chat/completions",
-                json=payload,
-                timeout=300)
+                "http://localhost:8080/v1/chat/completions", json=payload, timeout=300
+            )
             try:
                 response.raise_for_status()
 

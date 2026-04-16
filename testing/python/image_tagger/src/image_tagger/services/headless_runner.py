@@ -1,3 +1,4 @@
+from beartype import beartype
 import logging
 import os
 import urllib.request

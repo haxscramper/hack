@@ -1,5 +1,6 @@
 from __future__ import annotations
-from typing import Optional
+from beartype.typing import Optional, Any
+from beartype import beartype
 
 from PySide6.QtWidgets import (
     QWidget,
@@ -637,8 +638,6 @@ class SearchTab(QWidget):
         layout.addWidget(splitter)
 
     def add_tag_to_query(self, tag_type: str, category: str, name: str):
-        from typing import Any
-
         spec: dict[str, Any] = {
             "type": tag_type,
             "category": category,

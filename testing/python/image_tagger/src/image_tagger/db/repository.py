@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
-from typing import Iterable
+from beartype.typing import Iterable
+from beartype import beartype
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session

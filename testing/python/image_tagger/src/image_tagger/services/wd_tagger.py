@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from beartype import beartype
 import logging
 from pathlib import Path
 import cv2
@@ -29,7 +30,9 @@ class WdTagger:
         available = ort.get_available_providers()
         if target_ep not in available:
             target_ep = "CPUExecutionProvider"
-            logging.warning("MIGraphXExecutionProvider not found, falling back to CPUExecutionProvider")
+            logging.warning(
+                "MIGraphXExecutionProvider not found, falling back to CPUExecutionProvider"
+            )
 
         sess_options = ort.SessionOptions()
         self.session = ort.InferenceSession(
@@ -44,7 +47,7 @@ class WdTagger:
         img = cv2.imread(str(image_path))
         if img is None:
             raise FileNotFoundError(f"Could not load image: {image_path}")
-            
+
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         img = cv2.resize(img, (target_size, target_size), interpolation=cv2.INTER_AREA)
         img = img.astype(np.float32)
@@ -59,7 +62,9 @@ class WdTagger:
         for i, prob in enumerate(probs):
             if prob >= self.threshold:
                 row = self.tags_df.iloc[i]
-                category = CATEGORY_MAP.get(int(row["category"]), f"cat_{int(row['category'])}")
+                category = CATEGORY_MAP.get(
+                    int(row["category"]), f"cat_{int(row['category'])}"
+                )
                 result.append((category, str(row["name"]), float(prob)))
         result.sort(key=lambda x: x[2], reverse=True)
         return result
