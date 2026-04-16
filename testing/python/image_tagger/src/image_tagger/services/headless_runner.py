@@ -3,9 +3,9 @@ import os
 import urllib.request
 from pathlib import Path
 
-from db.session import init_db, make_session_factory
-from db.repository import Repository
-from config import config
+from image_tagger.db.session import init_db, make_session_factory
+from image_tagger.db.repository import Repository
+from image_tagger.config import config
 
 SQLITE_FILENAME = config.SQLITE_FILENAME
 CHROMA_DIRNAME = config.CHROMA_DIRNAME

@@ -1,5 +1,5 @@
 import logging
-from cli.commands import cli
+from image_tagger.cli.commands import cli
 
 logging.basicConfig(
     level=logging.INFO, format="%(levelname)s %(filename)s:%(lineno)d: %(message)s"

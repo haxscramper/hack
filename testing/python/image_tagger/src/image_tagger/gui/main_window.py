@@ -17,15 +17,15 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QSize
 from PySide6.QtGui import QUndoStack, QUndoCommand, QKeySequence, QShortcut
 
-from db.models import ImageEntry
+from image_tagger.db.models import ImageEntry
 from sqlalchemy import select
 import shutil
 
-from db.repository import Repository
-from gui.left_panel import LeftPanel
+from image_tagger.db.repository import Repository
+from image_tagger.gui.left_panel import LeftPanel
 
-from gui.center_panel import CenterPanel
-from gui.right_panel import RightPanel
+from image_tagger.gui.center_panel import CenterPanel
+from image_tagger.gui.right_panel import RightPanel
 
 
 class MoveFilesCommand(QUndoCommand):
@@ -173,7 +173,7 @@ class MainWindow(QMainWindow):
         if not selected_files:
             return
 
-        from gui.image_list_widget import ImageListModel
+        from image_tagger.gui.image_list_widget import ImageListModel
 
         dialog = QDialog(self)
         dialog.setWindowTitle(f"Move to {target_dir.name}?")

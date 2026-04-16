@@ -1,2 +1,3 @@
 *.onnx
 selected_tags.csv
+*/**/__pycache__

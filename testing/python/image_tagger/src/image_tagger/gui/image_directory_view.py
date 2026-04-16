@@ -349,7 +349,7 @@ class MixedTreeTileView(QAbstractScrollArea):
         depth: int,
     ) -> None:
         painter.save()
-        from config import config
+        from image_tagger.config import config
 
         is_excluded = str(node.path) in config.excluded_directories
 
@@ -551,7 +551,7 @@ class MixedTreeTileView(QAbstractScrollArea):
         if event.button() == Qt.MouseButton.RightButton:
             for hit in self.header_hits:
                 if hit.rect.contains(pos):
-                    from config import config, save_config
+                    from image_tagger.config import config, save_config
 
                     path_str = str(hit.node.path)
                     if path_str in config.excluded_directories:

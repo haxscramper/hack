@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
     QFrame,
 )
 
-from gui.flow_layout import FlowLayout
+from image_tagger.gui.flow_layout import FlowLayout
 
 
 class TagWidget(QFrame):

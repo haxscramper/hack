@@ -1,8 +1,8 @@
 from pathlib import Path
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QTabWidget
 from PySide6.QtCore import Signal
-from gui.image_directory_view import MixedTreeTileView
-from gui.query_search import SearchTab
+from image_tagger.gui.image_directory_view import MixedTreeTileView
+from image_tagger.gui.query_search import SearchTab
 
 
 class LeftPanel(QWidget):

@@ -22,10 +22,10 @@ from pathlib import Path
 import os
 import logging
 
-from gui.image_list_widget import ImageListWidget
+from image_tagger.gui.image_list_widget import ImageListWidget
 from sqlalchemy.orm import Session
 from sqlalchemy import select, text, func
-from db.models import (
+from image_tagger.db.models import (
     ImageEntry,
     ProbabilisticTag,
     ImageProbabilisticTag,

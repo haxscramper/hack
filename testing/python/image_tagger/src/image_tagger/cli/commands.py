@@ -3,11 +3,11 @@ from pathlib import Path
 import click
 from PySide6.QtWidgets import QApplication
 
-import config
-from db.session import init_db, make_session_factory
-from db.repository import Repository
-from gui.main_window import MainWindow
-from services.headless_runner import run_headless
+import image_tagger.config as config
+from image_tagger.db.session import init_db, make_session_factory
+from image_tagger.db.repository import Repository
+from image_tagger.gui.main_window import MainWindow
+from image_tagger.services.headless_runner import run_headless
 
 
 @click.group()

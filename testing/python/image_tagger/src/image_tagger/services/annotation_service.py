@@ -3,7 +3,7 @@ import time
 from collections import deque
 from pathlib import Path
 
-from db.repository import Repository
+from image_tagger.db.repository import Repository
 from .chroma_store import ChromaDescriptionStore
 from .wd_tagger import WdTagger
 from .joy_tagger import Joytagger

@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
     QListView,
 )
 
-from config import config
+from image_tagger.config import config
 
 IMAGE_EXTENSIONS = config.IMAGE_EXTENSIONS
 
