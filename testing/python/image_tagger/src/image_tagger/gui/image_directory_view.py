@@ -654,6 +654,43 @@ class MixedTreeTileView(QAbstractScrollArea):
                 self.viewport().update()
                 return
 
+    def get_tile_rect(self, file_path: Path) -> QRect | None:
+        """Return tile rectangle in content coordinates, None if not currently laid out."""
+        for hit in self.tile_hits:
+            if hit.file_path == file_path:
+                return hit.rect
+        return None
+
+    def get_header_rect(self, node_path: Path) -> QRect | None:
+        """Return header rectangle in content coordinates, None if not found."""
+        for hit in self.header_hits:
+            if hit.node.path == node_path:
+                return hit.rect
+        return None
+
+    def get_toggle_rect(self, node_path: Path) -> QRect | None:
+        """Return the expand/collapse toggle button rect for a directory."""
+        for hit in self.header_hits:
+            if hit.node.path == node_path:
+                return hit.toggle_rect
+        return None
+
+    def scroll_to_content_y(self, y: int, center: bool = True) -> None:
+        """Scroll vertically to bring content y-coordinate into view."""
+        sb = self.verticalScrollBar()
+        if center:
+            target = max(0, y - self.viewport().height() // 2)
+        else:
+            target = max(0, y - self.HEADER_HEIGHT)
+        sb.setValue(min(target, sb.maximum()))
+
+    def is_element_visible(self, rect: QRect) -> bool:
+        """Check if the content rect is currently within the viewport."""
+        if not rect:
+            return False
+        visible = self.visible_content_rect()
+        return visible.intersects(rect)
+
 
 class MainWindow(QMainWindow):
     def __init__(self, root_dir: Path):
