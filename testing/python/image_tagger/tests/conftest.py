@@ -93,14 +93,17 @@ TEMPLATE_DIR = Path("/tmp/image_tagger_tests/image_template_directory")
 
 DIRECTORY_STRUCTURE = {
     "sub1": {
+        ".": 3,  # 3 images in sub1 itself
         "sub11": 0,
         "sub12": 8,
         "sub13": 2,
     },
     "sub2": {
+        ".": 1,  # 1 image in sub2 itself
         "sub21": 0,
         "sub22": 0,
         "sub23": {
+            ".": 4,  # 4 images in sub23 itself
             "sub231": 2,
             "sub232": 2,
         },
@@ -136,6 +139,7 @@ def _populate_template_directory(
 ):
     """Populate the template directory with monotone color images."""
     import shutil
+    import colorsys
 
     if template_dir.exists():
         shutil.rmtree(template_dir)
@@ -146,32 +150,35 @@ def _populate_template_directory(
     root_level_count = num_images - specified_count
 
     # Define where each image should go
-    image_destinations: list[Path | None] = []
+    image_destinations: list[Path] = []
 
     def collect_destinations(structure: dict, parent: Path):
         for name, value in structure.items():
-            subdir = parent / name
-            if isinstance(value, dict):
+            if name == ".":
+                # Images go directly in current directory
+                for _ in range(value):
+                    image_destinations.append(parent)
+            elif isinstance(value, dict):
+                subdir = parent / name
                 collect_destinations(value, subdir)
             else:
+                subdir = parent / name
                 for _ in range(value):
                     image_destinations.append(subdir)
 
     collect_destinations(DIRECTORY_STRUCTURE, template_dir)
+
     # Fill rest with root level images
     for _ in range(root_level_count):
         image_destinations.append(template_dir)
 
     # Generate and place images
     for i, dest in enumerate(image_destinations):
-        if dest is not None:
-            dest.mkdir(parents=True, exist_ok=True)
-            hue = i / num_images
-            color = tuple(
-                int(c * 255) for c in colorsys.hsv_to_rgb(hue, 1.0, 1.0))
-            _generate_monotone_image(
-                dest / f"image_{color[0]}_{color[1]}_{color[2]}.png", size,
-                color)
+        dest.mkdir(parents=True, exist_ok=True)
+        hue = i / num_images
+        color = tuple(int(c * 255) for c in colorsys.hsv_to_rgb(hue, 1.0, 1.0))
+        _generate_monotone_image(
+            dest / f"image_{color[0]}_{color[1]}_{color[2]}.png", size, color)
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -221,10 +228,17 @@ def screenshot_dir(request: pytest.FixtureRequest):
 
 
 @dataclass
+@beartype
 class AppInstanceRes:
     window: MainWindow
     repo: Repository
     session: Session
+    root_dir: Path
+
+    @beartype
+    def get_image_id(self, path: Path) -> int:
+        assert path.exists()
+        return self.repo.upsert_image(self.root_dir, path).id
 
 
 @pytest.fixture
@@ -250,7 +264,12 @@ def gui_app_instance(image_directory: Path,
     window.show()
     qtbot.waitExposed(window)
 
-    yield AppInstanceRes(window=window, repo=repo, session=session)
+    yield AppInstanceRes(
+        window=window,
+        repo=repo,
+        session=session,
+        root_dir=root_dir,
+    )
 
     # Cleanup
     window.close()

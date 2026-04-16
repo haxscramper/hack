@@ -97,9 +97,7 @@ def test_mixed_view_expand_directory_reveals_tiles(
     qtbot.waitExposed(widget)
 
     # Find first subdirectory containing images
-    subdirs = [d for d in image_directory.iterdir() if d.is_dir()]
-
-    subdir = subdirs[0]
+    subdir = image_directory.joinpath("sub1")
     toggle_rect = widget.get_toggle_rect(subdir)
 
     # If not found, scroll to make header visible
@@ -107,9 +105,10 @@ def test_mixed_view_expand_directory_reveals_tiles(
         header_rect = widget.get_header_rect(subdir)
         if header_rect:
             widget.scroll_to_content_y(header_rect.center().y())
-            qtbot.wait(50)
+            qtbot.wait(150)
             toggle_rect = widget.get_toggle_rect(subdir)
 
+    qtbot.wait(150)
     assert toggle_rect is not None, f"Could not find toggle for directory {subdir}"
 
     # Verify children are not visible (directory collapsed)
@@ -268,6 +267,9 @@ def test_mixed_view_double_click_emits_file_selected(
     image_directory: Path,
 ):
     """Test double-clicking a tile emits fileSelected signal."""
+
+    # gui_app_instance.repo.replace_probabilistic_annotations()
+
     qtbot.waitExposed(gui_app_instance.window)
     central_widget = gui_app_instance.window.centralWidget()
 
@@ -275,6 +277,14 @@ def test_mixed_view_double_click_emits_file_selected(
     qtbot.waitExposed(widget)
 
     target = widget.tile_hits[0].file_path
+    image_id = gui_app_instance.get_image_id(target)
+    gui_app_instance.repo.replace_probabilistic_annotations(image_id=image_id, items=[
+        ("general", "mixed", 0.45),
+        ("general", "random", 0.5),
+        ("general", "castle", 0.4),
+    ])
+
+
     rect = widget.get_tile_rect(target)
     assert rect
 
@@ -300,3 +310,14 @@ def test_mixed_view_double_click_emits_file_selected(
     assert spy.count() == 1
     assert spy.at(0)[0] == str(target)
     assert target in widget.selected_files
+
+    prob_table = gui_app_instance.window.get_probability_tags_table()
+
+    assert prob_table.rowCount() == 3
+    assert prob_table.item(0, 1).text() == "random" # type: ignore
+    assert prob_table.item(1, 1).text() == "mixed" # type: ignore
+    assert prob_table.item(2, 1).text() == "castle" # type: ignore
+
+    assert "0.5" in prob_table.item(0, 2).text() # type: ignore
+    assert "0.45" in prob_table.item(1, 2).text() # type: ignore
+    assert "0.4" in prob_table.item(2, 2).text() # type: ignore

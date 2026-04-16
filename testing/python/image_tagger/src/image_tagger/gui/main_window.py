@@ -6,6 +6,7 @@ from pathlib import Path
 
 from PySide6.QtWidgets import (
     QMainWindow,
+    QTableWidget,
     QWidget,
     QHBoxLayout,
     QSplitter,
@@ -111,6 +112,9 @@ class MainWindow(QMainWindow):
 
     def get_mixed_view(self) -> MixedTreeTileView:
         return self.left_panel.tree_view
+
+    def get_probability_tags_table(self) -> QTableWidget:
+        return self.center_panel.prob_table
 
     def __init__(self, root_dir: Path, repository: Repository):
         super().__init__()
