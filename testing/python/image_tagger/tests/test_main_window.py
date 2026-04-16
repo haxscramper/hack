@@ -19,4 +19,13 @@ def test_capture_specific_widget(gui_app_instance: AppInstanceRes, screenshot_di
 
     logging.info(f"saved screenshot to {screenshot_path}")
     
+    # Wait for images to load
+    qtbot.wait(2000)
+    
+    screenshot_path2 = screenshot_dir / "status_panel_after_load.png"
+    take_screenshot(central_widget, screenshot_path2)
+
+    logging.info(f"saved screenshot to {screenshot_path2}")
+    
     assert screenshot_path.exists()
+    assert screenshot_path2.exists()

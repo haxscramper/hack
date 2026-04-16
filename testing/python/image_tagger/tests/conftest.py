@@ -1,4 +1,5 @@
 import pytest
+import colorsys
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QPixmap, QScreen
@@ -130,7 +131,7 @@ def _count_specified_images(structure: dict) -> int:
 
 def _populate_template_directory(
         template_dir: Path,
-        num_images: int = 256,
+        num_images: int = 48,
         size: tuple[int, int] = (512, 512),
 ):
     """Populate the template directory with monotone color images."""
@@ -164,10 +165,15 @@ def _populate_template_directory(
     for i, dest in enumerate(image_destinations):
         if dest is not None:
             dest.mkdir(parents=True, exist_ok=True)
-            color_value = (i * 256 // num_images) % 256
-            color = (color_value, color_value, color_value)
-            _generate_monotone_image(dest / f"image_{i:04d}.png", size, color)
+            hue = i / num_images
+            color = tuple(int(c * 255) for c in colorsys.hsv_to_rgb(hue, 1.0, 1.0))
+            _generate_monotone_image(dest / f"image_{color[0]}_{color[1]}_{color[2]}.png", size, color)
 
+
+@pytest.fixture(scope="session", autouse=True)
+def setup_session():
+    if TEMPLATE_DIR.exists():
+        shutil.rmtree(TEMPLATE_DIR)
 
 @pytest.fixture
 def image_directory(request: pytest.FixtureRequest):
@@ -185,7 +191,7 @@ def image_directory(request: pytest.FixtureRequest):
     dest_dir = get_test_dir(request) / "images"
     if dest_dir.exists():
         shutil.rmtree(dest_dir)
-        
+
     shutil.copytree(TEMPLATE_DIR, dest_dir)
 
     yield dest_dir
