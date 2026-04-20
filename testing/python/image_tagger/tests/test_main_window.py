@@ -164,6 +164,10 @@ def test_mixed_view_expand_directory_reveals_tiles(
     qtbot.wait(150)
     take_screenshot(central_widget, screenshot_dir / "after_move.png")
 
+    assert not widget.get_tile_rect(subdir / image_files[0])
+    assert widget.get_element_click_pos(subdir / image_files[1])
+    assert widget.get_element_click_pos(subdir / image_files[2])
+
 
 
 

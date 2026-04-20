@@ -3,6 +3,7 @@ from __future__ import annotations
 from beartype import beartype
 from PySide6.QtCore import Signal, Qt
 from PySide6.QtWidgets import (
+    QSplitter,
     QWidget,
     QVBoxLayout,
     QHBoxLayout,
@@ -45,8 +46,7 @@ class TagWidget(QFrame):
         self.add_btn.setFixedSize(16, 16)
         self.add_btn.setStyleSheet(
             "QPushButton { color: white; background-color: #4CAF50; border: none; border-radius: 8px; font-weight: bold; padding-bottom: 2px; }"
-            "QPushButton:hover { background-color: #45a049; }"
-        )
+            "QPushButton:hover { background-color: #45a049; }")
         self.add_btn.hide()
         self.add_btn.clicked.connect(self._on_add_clicked)
         layout.addWidget(self.add_btn)
@@ -55,8 +55,7 @@ class TagWidget(QFrame):
         self.close_btn.setFixedSize(16, 16)
         self.close_btn.setStyleSheet(
             "QPushButton { color: white; background-color: #ff4444; border: none; border-radius: 8px; font-weight: bold; padding-bottom: 2px; }"
-            "QPushButton:hover { background-color: #cc0000; }"
-        )
+            "QPushButton:hover { background-color: #cc0000; }")
         self.close_btn.hide()
         layout.addWidget(self.close_btn)
 
@@ -99,13 +98,10 @@ class RegularTagsContainer(QWidget):
         for category, name in tags:
             tag_widget = TagWidget(category, name)
             tag_widget.close_btn.clicked.connect(
-                lambda checked=False, c=category, n=name: self.tagRemoveRequested.emit(
-                    c, n
-                )
-            )
+                lambda checked=False, c=category, n=name: self.
+                tagRemoveRequested.emit(c, n))
             tag_widget.addSearchRequested.connect(
-                lambda c, n: self.tagAddSearchRequested.emit(c, n)
-            )
+                lambda c, n: self.tagAddSearchRequested.emit(c, n))
             self.flow.addWidget(tag_widget)
 
 
@@ -122,15 +118,24 @@ class CenterPanel(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
 
-        layout.addWidget(QLabel("Probabilistic tags"))
+        splitter = QSplitter(Qt.Vertical)
+        layout.addWidget(splitter)
+
+        # Pane 1: Probabilistic tags
+        prob_pane = QWidget()
+        prob_layout = QVBoxLayout(prob_pane)
+        prob_layout.setContentsMargins(0, 0, 0, 0)
+        prob_layout.addWidget(QLabel("Probabilistic tags"))
         self.prob_table = QTableWidget(0, 3)
         self.prob_table.setHorizontalHeaderLabels(["+", "Tag", "Probability"])
         self.prob_table.horizontalHeader().setStretchLastSection(True)
         self.prob_table.setColumnWidth(0, 30)
-        layout.addWidget(self.prob_table)
+        prob_layout.addWidget(self.prob_table)
 
         prob_add_row = QHBoxLayout()
+        prob_add_row.setContentsMargins(0, 0, 0, 0)
         self.prob_name_edit = QLineEdit()
         self.prob_name_edit.setPlaceholderText("tag name")
         self.prob_value_spin = QDoubleSpinBox()
@@ -141,16 +146,21 @@ class CenterPanel(QWidget):
         prob_add_row.addWidget(self.prob_name_edit)
         prob_add_row.addWidget(self.prob_value_spin)
         prob_add_row.addWidget(self.prob_add_btn)
-        layout.addLayout(prob_add_row)
+        prob_layout.addLayout(prob_add_row)
 
-        layout.addWidget(QLabel("Regular tags"))
+        # Pane 2: Regular tags
+        reg_pane = QWidget()
+        reg_layout = QVBoxLayout(reg_pane)
+        reg_layout.setContentsMargins(0, 0, 0, 0)
+        reg_layout.addWidget(QLabel("Regular tags"))
         self.regular_tags = RegularTagsContainer()
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setWidget(self.regular_tags)
-        layout.addWidget(scroll)
+        reg_layout.addWidget(scroll)
 
         reg_add_row = QHBoxLayout()
+        reg_add_row.setContentsMargins(0, 0, 0, 0)
         self.reg_category_edit = QLineEdit()
         self.reg_category_edit.setPlaceholderText("category")
         self.reg_name_edit = QLineEdit()
@@ -159,20 +169,29 @@ class CenterPanel(QWidget):
         reg_add_row.addWidget(self.reg_category_edit)
         reg_add_row.addWidget(self.reg_name_edit)
         reg_add_row.addWidget(self.reg_add_btn)
-        layout.addLayout(reg_add_row)
+        reg_layout.addLayout(reg_add_row)
 
-        layout.addWidget(QLabel("Description"))
+        # Pane 3: Description
+        desc_pane = QWidget()
+        desc_layout = QVBoxLayout(desc_pane)
+        desc_layout.setContentsMargins(0, 0, 0, 0)
+        desc_layout.addWidget(QLabel("Description"))
         self.description_edit = QTextEdit()
-        layout.addWidget(self.description_edit)
-
+        desc_layout.addWidget(self.description_edit)
         self.save_description_btn = QPushButton("Save description")
-        layout.addWidget(self.save_description_btn)
+        desc_layout.addWidget(self.save_description_btn)
+
+        splitter.addWidget(prob_pane)
+        splitter.addWidget(reg_pane)
+        splitter.addWidget(desc_pane)
+        splitter.setSizes([4, 4, 3])
 
         self.prob_add_btn.clicked.connect(self._on_prob_add)
         self.reg_add_btn.clicked.connect(self._on_reg_add)
         self.save_description_btn.clicked.connect(self._on_save_desc)
         self.regular_tags.tagRemoveRequested.connect(self.regularTagDeleted)
-        self.regular_tags.tagAddSearchRequested.connect(self.regTagSearchRequested)
+        self.regular_tags.tagAddSearchRequested.connect(
+            self.regTagSearchRequested)
 
     def _on_prob_add(self):
         name = self.prob_name_edit.text().strip()
@@ -196,17 +215,15 @@ class CenterPanel(QWidget):
             add_btn = QPushButton("+")
             add_btn.setStyleSheet(
                 "QPushButton { color: white; background-color: #4CAF50; border: none; font-weight: bold; margin: 2px; }"
-                "QPushButton:hover { background-color: #45a049; }"
-            )
+                "QPushButton:hover { background-color: #45a049; }")
             add_btn.clicked.connect(
-                lambda checked=False,
-                c=category,
-                t=tag_name: self.probTagSearchRequested.emit(c, t)
-            )
+                lambda checked=False, c=category, t=tag_name: self.
+                probTagSearchRequested.emit(c, t))
 
             self.prob_table.setCellWidget(row, 0, add_btn)
             self.prob_table.setItem(row, 1, QTableWidgetItem(tag_name))
-            self.prob_table.setItem(row, 2, QTableWidgetItem(f"{probability:.4f}"))
+            self.prob_table.setItem(row, 2,
+                                    QTableWidgetItem(f"{probability:.4f}"))
 
     def set_regular_tags(self, tags: list[tuple[str, str]]):
         self.regular_tags.set_tags(tags)
