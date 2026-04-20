@@ -649,6 +649,26 @@ class SearchTab(QWidget):
         if self.root_node.is_group:
             self.root_node._add_child_from_spec(spec)
 
+    def set_search_spec(self, spec: dict) -> None:
+        self.root_node = ExpressionNode(self.session, is_root=True)
+        self.root_node.changed.connect(self._adjust_scroll_area)
+        self.scroll_view.setWidget(self.root_node)
+        self.root_node.load_from_spec(spec)
+        self.root_node.changed.emit()
+
+    def execute_search(self) -> None:
+        self._execute_search()
+
+    def get_result_images(self) -> list[Path]:
+        return list(self.thumbnail_list.model.images)
+
+    def clear_search(self) -> None:
+        self.root_node = ExpressionNode(self.session, is_root=True)
+        self.root_node.changed.connect(self._adjust_scroll_area)
+        self.scroll_view.setWidget(self.root_node)
+        self.thumbnail_list.set_images([])
+        self.status_label.setText("")
+
     def _on_expression_changed(self):
         pass
 

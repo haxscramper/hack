@@ -9,8 +9,9 @@ from PySide6.QtTest import QTest, QSignalSpy
 from PySide6.QtWidgets import QApplication, QDialog, QDialogButtonBox, QLabel, QListView
 
 
-def test_capture_specific_widget(gui_app_instance: AppInstanceRes,
-                                 screenshot_dir: Path, qtbot: QtBot):
+def test_capture_specific_widget(
+    gui_app_instance: AppInstanceRes, screenshot_dir: Path, qtbot: QtBot
+):
     """Capture screenshot of a specific nested widget."""
     qtbot.waitExposed(gui_app_instance.window)
 
@@ -66,9 +67,7 @@ def test_mixed_view_content_acces(
 
     # Click and verify signal
     spy = QSignalSpy(widget.imageClicked)
-    QTest.mouseClick(widget.viewport(),
-                     Qt.MouseButton.LeftButton,
-                     pos=click_pos)
+    QTest.mouseClick(widget.viewport(), Qt.MouseButton.LeftButton, pos=click_pos)
 
     screenshot_path = screenshot_dir / "status_panel.png"
     take_screenshot(central_widget, screenshot_path)
@@ -108,16 +107,14 @@ def test_mixed_view_expand_directory_reveals_tiles(
 
     # Verify files are not visible (directory collapsed)
     image_files = list(subdir.glob("*.png"))
-    assert widget.get_tile_rect(
-        image_files[0]) is None, "Directory should start collapsed"
+    assert widget.get_tile_rect(image_files[0]) is None, (
+        "Directory should start collapsed"
+    )
 
     # Click toggle to expand
     scroll_y = widget.verticalScrollBar().value()
-    click_pos = QPoint(toggle_rect.center().x(),
-                       toggle_rect.center().y() - scroll_y)
-    QTest.mouseClick(widget.viewport(),
-                     Qt.MouseButton.LeftButton,
-                     pos=click_pos)
+    click_pos = QPoint(toggle_rect.center().x(), toggle_rect.center().y() - scroll_y)
+    QTest.mouseClick(widget.viewport(), Qt.MouseButton.LeftButton, pos=click_pos)
     qtbot.wait(50)
 
     take_screenshot(central_widget, screenshot_dir / "directory_expanded.png")
@@ -130,14 +127,12 @@ def test_mixed_view_expand_directory_reveals_tiles(
     file_to_move = subdir / image_files[0]
     first_image_rect = widget.get_element_click_pos(file_to_move)
 
-    QTest.mouseClick(widget.viewport(),
-                     Qt.MouseButton.LeftButton,
-                     pos=first_image_rect)
+    QTest.mouseClick(widget.viewport(), Qt.MouseButton.LeftButton, pos=first_image_rect)
 
+    QTest.keyClick(
+        gui_app_instance.window, Qt.Key.Key_1, Qt.KeyboardModifier.ControlModifier, 100
+    )
 
-    QTest.keyClick(gui_app_instance.window, Qt.Key.Key_1,
-                   Qt.KeyboardModifier.ControlModifier, 100)
-                   
     dialog = next(
         widget
         for widget in QApplication.topLevelWidgets()
@@ -169,8 +164,6 @@ def test_mixed_view_expand_directory_reveals_tiles(
     assert widget.get_element_click_pos(subdir / image_files[2])
 
 
-
-
 def test_mixed_view_ctrl_click_multi_select(
     gui_app_instance: AppInstanceRes,
     screenshot_dir: Path,
@@ -193,11 +186,10 @@ def test_mixed_view_ctrl_click_multi_select(
                 toggle = widget.get_toggle_rect(d)
                 if toggle:
                     scroll_y = widget.verticalScrollBar().value()
-                    pos = QPoint(toggle.center().x(),
-                                 toggle.center().y() - scroll_y)
-                    QTest.mouseClick(widget.viewport(),
-                                     Qt.MouseButton.LeftButton,
-                                     pos=pos)
+                    pos = QPoint(toggle.center().x(), toggle.center().y() - scroll_y)
+                    QTest.mouseClick(
+                        widget.viewport(), Qt.MouseButton.LeftButton, pos=pos
+                    )
                     qtbot.wait(50)
         images = [hit.file_path for hit in widget.tile_hits][:2]
 
@@ -222,8 +214,12 @@ def test_mixed_view_ctrl_click_multi_select(
         scroll_y = widget.verticalScrollBar().value()
 
     pos2 = QPoint(rect2.center().x(), rect2.center().y() - scroll_y)
-    QTest.mouseClick(widget.viewport(), Qt.MouseButton.LeftButton,
-                     Qt.KeyboardModifier.ControlModifier, pos2)
+    QTest.mouseClick(
+        widget.viewport(),
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.ControlModifier,
+        pos2,
+    )
     qtbot.wait(50)
 
     screenshot_path = screenshot_dir / "multi_select.png"
@@ -266,8 +262,7 @@ def test_mixed_view_scroll_to_offscreen_element(
 
     rect = widget.get_tile_rect(target)
     assert rect
-    assert widget.is_element_visible(
-        rect), "Tile should be visible after scroll"
+    assert widget.is_element_visible(rect), "Tile should be visible after scroll"
 
     # Take screenshot of scrolled state
     screenshot_path = screenshot_dir / "scrolled_to_tile.png"
@@ -278,9 +273,7 @@ def test_mixed_view_scroll_to_offscreen_element(
     click_pos = QPoint(rect.center().x(), rect.center().y() - scroll_y)
 
     spy = QSignalSpy(widget.imageClicked)
-    QTest.mouseClick(widget.viewport(),
-                     Qt.MouseButton.LeftButton,
-                     pos=click_pos)
+    QTest.mouseClick(widget.viewport(), Qt.MouseButton.LeftButton, pos=click_pos)
 
     assert spy.count() == 1
     assert spy.at(0)[0] == target
@@ -314,7 +307,8 @@ def test_mixed_view_double_click_emits_file_selected(
             ("general", "mixed", 0.45),
             ("general", "random", 0.5),
             ("general", "castle", 0.4),
-        ])
+        ],
+    )
 
     rect = widget.get_tile_rect(target)
     assert rect
@@ -329,9 +323,7 @@ def test_mixed_view_double_click_emits_file_selected(
     click_pos = QPoint(rect.center().x(), rect.center().y() - scroll_y)
 
     spy = QSignalSpy(widget.fileSelected)
-    QTest.mouseDClick(widget.viewport(),
-                      Qt.MouseButton.LeftButton,
-                      pos=click_pos)
+    QTest.mouseDClick(widget.viewport(), Qt.MouseButton.LeftButton, pos=click_pos)
     qtbot.wait(50)
 
     screenshot_path = screenshot_dir / "double_click_selection.png"
@@ -351,3 +343,537 @@ def test_mixed_view_double_click_emits_file_selected(
     assert "0.5" in prob_table.item(0, 2).text()  # type: ignore
     assert "0.45" in prob_table.item(1, 2).text()  # type: ignore
     assert "0.4" in prob_table.item(2, 2).text()  # type: ignore
+
+
+def _setup_search_tab(gui_app_instance: AppInstanceRes, qtbot: QtBot):
+    """Switch to the search tab and return the SearchTab widget."""
+    left_panel = gui_app_instance.window.left_panel
+    left_panel.tabs.setCurrentIndex(1)
+    qtbot.wait(50)
+    return left_panel.search_view
+
+
+def test_search_by_probabilistic_tag(
+    gui_app_instance: AppInstanceRes,
+    screenshot_dir: Path,
+    qtbot: QtBot,
+    image_directory: Path,
+):
+    """Test searching images by probabilistic tag."""
+    qtbot.waitExposed(gui_app_instance.window)
+    central_widget = gui_app_instance.window.centralWidget()
+
+    target = image_directory / "image_255_0_239.png"
+    image_id = gui_app_instance.get_image_id(target)
+    gui_app_instance.repo.replace_probabilistic_annotations(
+        image_id=image_id,
+        items=[
+            ("general", "castle", 0.8),
+            ("general", "random", 0.3),
+        ],
+    )
+
+    target2 = image_directory / "sub1" / "image_255_0_0.png"
+    image_id2 = gui_app_instance.get_image_id(target2)
+    gui_app_instance.repo.replace_probabilistic_annotations(
+        image_id=image_id2,
+        items=[
+            ("general", "castle", 0.6),
+        ],
+    )
+
+    target3 = image_directory / "sub2" / "sub23" / "image_0_255_255.png"
+    image_id3 = gui_app_instance.get_image_id(target3)
+    gui_app_instance.repo.replace_probabilistic_annotations(
+        image_id=image_id3,
+        items=[
+            ("general", "castle", 0.4),
+        ],
+    )
+
+    search_tab = _setup_search_tab(gui_app_instance, qtbot)
+    search_tab.clear_search()
+
+    spec = {
+        "type": "probabilistic_tag",
+        "category": "general",
+        "name": "castle",
+        "min_probability": 0.5,
+    }
+    search_tab.set_search_spec(spec)
+    qtbot.wait(50)
+
+    search_tab.execute_search()
+    qtbot.wait(100)
+
+    take_screenshot(central_widget, screenshot_dir / "search_prob_tag.png")
+
+    results = search_tab.get_result_images()
+    assert len(results) == 2
+    assert str(target) in [str(r) for r in results]
+    assert str(target2) in [str(r) for r in results]
+    assert str(target3) not in [str(r) for r in results]
+    assert "Found 2 images" in search_tab.status_label.text()
+
+
+def test_search_by_regular_tag(
+    gui_app_instance: AppInstanceRes,
+    screenshot_dir: Path,
+    qtbot: QtBot,
+    image_directory: Path,
+):
+    """Test searching images by regular tag."""
+    qtbot.waitExposed(gui_app_instance.window)
+    central_widget = gui_app_instance.window.centralWidget()
+
+    target1 = image_directory / "image_255_0_239.png"
+    image_id1 = gui_app_instance.get_image_id(target1)
+    gui_app_instance.repo.replace_regular_annotations(
+        image_id=image_id1,
+        items=[("category1", "tag_a"), ("category2", "tag_b")],
+    )
+
+    target2 = image_directory / "sub1" / "image_255_47_0.png"
+    image_id2 = gui_app_instance.get_image_id(target2)
+    gui_app_instance.repo.replace_regular_annotations(
+        image_id=image_id2,
+        items=[("category1", "tag_a")],
+    )
+
+    target3 = image_directory / "sub2" / "sub23" / "image_0_255_159.png"
+    image_id3 = gui_app_instance.get_image_id(target3)
+    gui_app_instance.repo.replace_regular_annotations(
+        image_id=image_id3,
+        items=[("category1", "tag_c")],
+    )
+
+    search_tab = _setup_search_tab(gui_app_instance, qtbot)
+    search_tab.clear_search()
+
+    spec = {
+        "type": "regular_tag",
+        "category": "category1",
+        "name": "tag_a",
+    }
+    search_tab.set_search_spec(spec)
+    qtbot.wait(50)
+
+    search_tab.execute_search()
+    qtbot.wait(100)
+
+    take_screenshot(central_widget, screenshot_dir / "search_regular_tag.png")
+
+    results = search_tab.get_result_images()
+    assert len(results) == 2
+    assert str(target1) in [str(r) for r in results]
+    assert str(target2) in [str(r) for r in results]
+    assert str(target3) not in [str(r) for r in results]
+    assert "Found 2 images" in search_tab.status_label.text()
+
+
+def test_search_by_description(
+    gui_app_instance: AppInstanceRes,
+    screenshot_dir: Path,
+    qtbot: QtBot,
+    image_directory: Path,
+):
+    """Test searching images by description text."""
+    qtbot.waitExposed(gui_app_instance.window)
+    central_widget = gui_app_instance.window.centralWidget()
+
+    target1 = image_directory / "image_255_0_239.png"
+    image_id1 = gui_app_instance.get_image_id(target1)
+    gui_app_instance.repo.set_description(
+        image_id=image_id1, description="a beautiful sunset over the ocean"
+    )
+
+    target2 = image_directory / "sub1" / "sub12" / "image_31_255_0.png"
+    image_id2 = gui_app_instance.get_image_id(target2)
+    gui_app_instance.repo.set_description(
+        image_id=image_id2, description="a beautiful mountain landscape"
+    )
+
+    target3 = image_directory / "sub2" / "sub23" / "image_0_255_207.png"
+    image_id3 = gui_app_instance.get_image_id(target3)
+    gui_app_instance.repo.set_description(
+        image_id=image_id3, description="just a random picture"
+    )
+
+    search_tab = _setup_search_tab(gui_app_instance, qtbot)
+    search_tab.clear_search()
+
+    spec = {
+        "type": "description",
+        "text": "beautiful",
+    }
+    search_tab.set_search_spec(spec)
+    qtbot.wait(50)
+
+    search_tab.execute_search()
+    qtbot.wait(100)
+
+    take_screenshot(central_widget, screenshot_dir / "search_description.png")
+
+    results = search_tab.get_result_images()
+    assert len(results) == 2
+    assert str(target1) in [str(r) for r in results]
+    assert str(target2) in [str(r) for r in results]
+    assert str(target3) not in [str(r) for r in results]
+    assert "Found 2 images" in search_tab.status_label.text()
+
+
+def test_search_by_path_contains(
+    gui_app_instance: AppInstanceRes,
+    screenshot_dir: Path,
+    qtbot: QtBot,
+    image_directory: Path,
+):
+    """Test searching images by path containing a substring."""
+    qtbot.waitExposed(gui_app_instance.window)
+    central_widget = gui_app_instance.window.centralWidget()
+
+    search_tab = _setup_search_tab(gui_app_instance, qtbot)
+    search_tab.clear_search()
+
+    spec = {
+        "type": "path_contains",
+        "text": "sub12",
+    }
+    search_tab.set_search_spec(spec)
+    qtbot.wait(50)
+
+    search_tab.execute_search()
+    qtbot.wait(100)
+
+    take_screenshot(central_widget, screenshot_dir / "search_path.png")
+
+    results = search_tab.get_result_images()
+    assert len(results) == 8
+
+    subdir = image_directory / "sub1" / "sub12"
+    for img in subdir.glob("*.png"):
+        assert str(img) in [str(r) for r in results]
+
+    assert "Found 8 images" in search_tab.status_label.text()
+
+
+def test_search_and_combination(
+    gui_app_instance: AppInstanceRes,
+    screenshot_dir: Path,
+    qtbot: QtBot,
+    image_directory: Path,
+):
+    """Test searching with AND combination of conditions."""
+    qtbot.waitExposed(gui_app_instance.window)
+    central_widget = gui_app_instance.window.centralWidget()
+
+    target1 = image_directory / "image_255_0_239.png"
+    image_id1 = gui_app_instance.get_image_id(target1)
+    gui_app_instance.repo.replace_probabilistic_annotations(
+        image_id=image_id1,
+        items=[("general", "castle", 0.8)],
+    )
+    gui_app_instance.repo.replace_regular_annotations(
+        image_id=image_id1,
+        items=[("category1", "tag_a")],
+    )
+
+    target2 = image_directory / "sub1" / "image_255_47_0.png"
+    image_id2 = gui_app_instance.get_image_id(target2)
+    gui_app_instance.repo.replace_probabilistic_annotations(
+        image_id=image_id2,
+        items=[("general", "castle", 0.7)],
+    )
+
+    target3 = image_directory / "sub2" / "sub23" / "image_0_255_159.png"
+    image_id3 = gui_app_instance.get_image_id(target3)
+    gui_app_instance.repo.replace_regular_annotations(
+        image_id=image_id3,
+        items=[("category1", "tag_a")],
+    )
+
+    search_tab = _setup_search_tab(gui_app_instance, qtbot)
+    search_tab.clear_search()
+
+    spec = {
+        "type": "and",
+        "children": [
+            {
+                "type": "probabilistic_tag",
+                "category": "general",
+                "name": "castle",
+                "min_probability": 0.5,
+            },
+            {
+                "type": "regular_tag",
+                "category": "category1",
+                "name": "tag_a",
+            },
+        ],
+    }
+    search_tab.set_search_spec(spec)
+    qtbot.wait(50)
+
+    search_tab.execute_search()
+    qtbot.wait(100)
+
+    take_screenshot(central_widget, screenshot_dir / "search_and.png")
+
+    results = search_tab.get_result_images()
+    assert len(results) == 1
+    assert str(target1) in [str(r) for r in results]
+    assert str(target2) not in [str(r) for r in results]
+    assert str(target3) not in [str(r) for r in results]
+    assert "Found 1 images" in search_tab.status_label.text()
+
+
+def test_search_or_combination(
+    gui_app_instance: AppInstanceRes,
+    screenshot_dir: Path,
+    qtbot: QtBot,
+    image_directory: Path,
+):
+    """Test searching with OR combination of conditions."""
+    qtbot.waitExposed(gui_app_instance.window)
+    central_widget = gui_app_instance.window.centralWidget()
+
+    target1 = image_directory / "image_255_0_239.png"
+    image_id1 = gui_app_instance.get_image_id(target1)
+    gui_app_instance.repo.replace_probabilistic_annotations(
+        image_id=image_id1,
+        items=[("general", "castle", 0.8)],
+    )
+
+    target2 = image_directory / "sub1" / "image_255_47_0.png"
+    image_id2 = gui_app_instance.get_image_id(target2)
+    gui_app_instance.repo.replace_regular_annotations(
+        image_id=image_id2,
+        items=[("category1", "tag_a")],
+    )
+
+    search_tab = _setup_search_tab(gui_app_instance, qtbot)
+    search_tab.clear_search()
+
+    spec = {
+        "type": "or",
+        "children": [
+            {
+                "type": "probabilistic_tag",
+                "category": "general",
+                "name": "castle",
+                "min_probability": 0.5,
+            },
+            {
+                "type": "regular_tag",
+                "category": "category1",
+                "name": "tag_a",
+            },
+        ],
+    }
+    search_tab.set_search_spec(spec)
+    qtbot.wait(50)
+
+    search_tab.execute_search()
+    qtbot.wait(100)
+
+    take_screenshot(central_widget, screenshot_dir / "search_or.png")
+
+    results = search_tab.get_result_images()
+    assert len(results) == 2
+    assert str(target1) in [str(r) for r in results]
+    assert str(target2) in [str(r) for r in results]
+    assert "Found 2 images" in search_tab.status_label.text()
+
+
+def test_search_not_condition(
+    gui_app_instance: AppInstanceRes,
+    screenshot_dir: Path,
+    qtbot: QtBot,
+    image_directory: Path,
+):
+    """Test searching with NOT condition."""
+    qtbot.waitExposed(gui_app_instance.window)
+    central_widget = gui_app_instance.window.centralWidget()
+
+    target1 = image_directory / "image_255_0_239.png"
+    image_id1 = gui_app_instance.get_image_id(target1)
+    gui_app_instance.repo.replace_probabilistic_annotations(
+        image_id=image_id1,
+        items=[("general", "castle", 0.8)],
+    )
+
+    target2 = image_directory / "sub1" / "image_255_47_0.png"
+    image_id2 = gui_app_instance.get_image_id(target2)
+
+    search_tab = _setup_search_tab(gui_app_instance, qtbot)
+    search_tab.clear_search()
+
+    spec = {
+        "type": "not",
+        "child": {
+            "type": "probabilistic_tag",
+            "category": "general",
+            "name": "castle",
+            "min_probability": 0.5,
+        },
+    }
+    search_tab.set_search_spec(spec)
+    qtbot.wait(50)
+
+    search_tab.execute_search()
+    qtbot.wait(100)
+
+    take_screenshot(central_widget, screenshot_dir / "search_not.png")
+
+    results = search_tab.get_result_images()
+    result_strs = [str(r) for r in results]
+    assert str(target1) not in result_strs
+    assert str(target2) in result_strs
+    assert "Found" in search_tab.status_label.text()
+
+
+def test_search_no_results(
+    gui_app_instance: AppInstanceRes,
+    screenshot_dir: Path,
+    qtbot: QtBot,
+    image_directory: Path,
+):
+    """Test search that returns no results."""
+    qtbot.waitExposed(gui_app_instance.window)
+    central_widget = gui_app_instance.window.centralWidget()
+
+    search_tab = _setup_search_tab(gui_app_instance, qtbot)
+    search_tab.clear_search()
+
+    spec = {
+        "type": "probabilistic_tag",
+        "category": "nonexistent_category",
+        "name": "nonexistent_tag",
+        "min_probability": 0.5,
+    }
+    search_tab.set_search_spec(spec)
+    qtbot.wait(50)
+
+    search_tab.execute_search()
+    qtbot.wait(100)
+
+    take_screenshot(central_widget, screenshot_dir / "search_no_results.png")
+
+    results = search_tab.get_result_images()
+    assert len(results) == 0
+    assert "No images found" in search_tab.status_label.text()
+
+
+def test_search_empty_spec(
+    gui_app_instance: AppInstanceRes,
+    screenshot_dir: Path,
+    qtbot: QtBot,
+    image_directory: Path,
+):
+    """Test search with no valid conditions."""
+    qtbot.waitExposed(gui_app_instance.window)
+    central_widget = gui_app_instance.window.centralWidget()
+
+    search_tab = _setup_search_tab(gui_app_instance, qtbot)
+    search_tab.clear_search()
+
+    search_tab.execute_search()
+    qtbot.wait(100)
+
+    take_screenshot(central_widget, screenshot_dir / "search_empty.png")
+
+    results = search_tab.get_result_images()
+    assert len(results) == 0
+    assert "No valid filter" in search_tab.status_label.text()
+
+
+def test_search_double_click_emits_file_selected(
+    gui_app_instance: AppInstanceRes,
+    screenshot_dir: Path,
+    qtbot: QtBot,
+    image_directory: Path,
+):
+    """Test double-clicking a search result emits fileSelected signal."""
+    qtbot.waitExposed(gui_app_instance.window)
+    central_widget = gui_app_instance.window.centralWidget()
+
+    target = image_directory / "image_255_0_239.png"
+    image_id = gui_app_instance.get_image_id(target)
+    gui_app_instance.repo.replace_probabilistic_annotations(
+        image_id=image_id,
+        items=[("general", "test_tag", 0.9)],
+    )
+
+    search_tab = _setup_search_tab(gui_app_instance, qtbot)
+    search_tab.clear_search()
+
+    spec = {
+        "type": "probabilistic_tag",
+        "category": "general",
+        "name": "test_tag",
+        "min_probability": 0.5,
+    }
+    search_tab.set_search_spec(spec)
+    qtbot.wait(50)
+
+    search_tab.execute_search()
+    qtbot.wait(100)
+
+    take_screenshot(central_widget, screenshot_dir / "search_double_click.png")
+
+    results = search_tab.get_result_images()
+    assert len(results) == 1
+    assert str(target) == str(results[0])
+
+    spy = QSignalSpy(gui_app_instance.window.left_panel.fileSelected)
+
+    thumbnail_list = search_tab.thumbnail_list.list_view
+    index = thumbnail_list.model().index(0, 0)
+    thumbnail_list.doubleClicked.emit(index)
+    qtbot.wait(50)
+
+    assert spy.count() == 1
+    assert spy.at(0)[0] == str(target)
+
+
+def test_search_via_add_tag_to_query(
+    gui_app_instance: AppInstanceRes,
+    screenshot_dir: Path,
+    qtbot: QtBot,
+    image_directory: Path,
+):
+    """Test adding tags to query via add_tag_to_query method."""
+    qtbot.waitExposed(gui_app_instance.window)
+    central_widget = gui_app_instance.window.centralWidget()
+
+    target = image_directory / "image_255_0_239.png"
+    image_id = gui_app_instance.get_image_id(target)
+    gui_app_instance.repo.replace_probabilistic_annotations(
+        image_id=image_id,
+        items=[("general", "castle", 0.7)],
+    )
+
+    target2 = image_directory / "sub1" / "image_255_0_0.png"
+    image_id2 = gui_app_instance.get_image_id(target2)
+    gui_app_instance.repo.replace_probabilistic_annotations(
+        image_id=image_id2,
+        items=[("general", "castle", 0.6)],
+    )
+
+    search_tab = _setup_search_tab(gui_app_instance, qtbot)
+    search_tab.clear_search()
+    qtbot.wait(50)
+
+    search_tab.add_tag_to_query("probabilistic_tag", "general", "castle")
+    qtbot.wait(50)
+
+    take_screenshot(central_widget, screenshot_dir / "search_add_tag.png")
+
+    search_tab.execute_search()
+    qtbot.wait(100)
+
+    results = search_tab.get_result_images()
+    assert len(results) == 2
+    assert str(target) in [str(r) for r in results]
+    assert str(target2) in [str(r) for r in results]
+    assert "Found 2 images" in search_tab.status_label.text()

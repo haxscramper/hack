@@ -72,7 +72,7 @@ class Repository:
                         ImageDescription.description.is_not(None)).distinct())
         return set(self.session.scalars(stmt).all())
 
-    def list_probabilistic_tags(self, image_id: int) -> Sequence[Tuple[ImageProbabilisticTag, ProbabilisticTag]]:
+    def list_probabilistic_tags(self, image_id: int):
         rows = self.session.execute(
             select(ImageProbabilisticTag, ProbabilisticTag).join(
                 ProbabilisticTag,
@@ -82,7 +82,7 @@ class Repository:
 
         return rows # type: ignore
 
-    def list_regular_tags(self, image_id: int) -> Sequence[Tuple[ImageRegularTag, RegularTag]]:
+    def list_regular_tags(self, image_id: int):
         rows = self.session.execute(
             select(ImageRegularTag, RegularTag).join(
                 RegularTag, ImageRegularTag.tag_id == RegularTag.id).where(
