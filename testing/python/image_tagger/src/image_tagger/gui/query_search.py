@@ -689,23 +689,59 @@ class SearchTab(QWidget):
             self.thumbnail_list.set_images([])
             return
 
-        query = build_query(self.session, spec)
-        image_ids = [r[0] for r in self.session.execute(query).all()]
+        paths = self._resolve_search_results(spec)
 
-        if not image_ids:
+        if not paths:
             self.status_label.setText("No images found.")
             self.thumbnail_list.set_images([])
             return
 
+        self.status_label.setText(f"Found {len(paths)} images.")
+        self.thumbnail_list.set_images(paths)
+
+    def _resolve_search_results(self, spec: dict) -> list[str]:
+        if spec["type"] == "path_contains":
+            return self._search_by_path(spec["text"])
+        if spec["type"] == "and":
+            result_sets = [
+                set(self._resolve_search_results(c)) for c in spec["children"]
+            ]
+            if not result_sets:
+                return []
+            return sorted(set.intersection(*result_sets))
+        if spec["type"] == "or":
+            result_sets = [
+                set(self._resolve_search_results(c)) for c in spec["children"]
+            ]
+            if not result_sets:
+                return []
+            return sorted(set.union(*result_sets))
+        if spec["type"] == "not":
+            all_images = set(self._search_by_path(""))
+            excluded = set(self._resolve_search_results(spec["child"]))
+            return sorted(all_images - excluded)
+
+        query = build_query(self.session, spec)
+        image_ids = [r[0] for r in self.session.execute(query).all()]
+        if not image_ids:
+            return []
         images = self.session.execute(
             select(ImageEntry.relative_path).where(ImageEntry.id.in_(image_ids))
         ).all()
-
         paths = []
         for (rel_path,) in images:
             full_path = os.path.join(self.base_dir, rel_path)
             if os.path.isfile(full_path):
                 paths.append(full_path)
+        return paths
 
-        self.status_label.setText(f"Found {len(paths)} images.")
-        self.thumbnail_list.set_images(paths)
+    def _search_by_path(self, text: str) -> list[str]:
+        paths = []
+        base = Path(self.base_dir)
+        for file_path in base.rglob("*"):
+            if not file_path.is_file():
+                continue
+            rel = str(file_path.relative_to(base))
+            if text in rel:
+                paths.append(str(file_path))
+        return sorted(paths)
