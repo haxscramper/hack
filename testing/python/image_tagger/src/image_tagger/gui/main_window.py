@@ -25,6 +25,7 @@ import shutil
 
 from image_tagger.db.repository import Repository
 from image_tagger.gui.image_directory_view import MixedTreeTileView
+from image_tagger.gui.image_list_widget import ImageListModel
 from image_tagger.gui.left_panel import LeftPanel
 
 from image_tagger.gui.center_panel import CenterPanel
@@ -35,11 +36,11 @@ class MoveFilesCommand(QUndoCommand):
 
     def __init__(
         self,
-        repository,
+        repository: Repository,
         source_files: list[Path],
         target_dir: Path,
         root_dir: Path,
-        main_window,
+        main_window: "MainWindow",
         parent=None,
     ):
         super().__init__(parent)
@@ -68,20 +69,11 @@ class MoveFilesCommand(QUndoCommand):
             self.repository.session.commit()
 
     def _refresh_ui(self):
-
-        def _refresh_node(node):
-            node.children_loaded = False
-            if node.expanded:
-                node.load()
-                for child in node.child_dirs:
-                    _refresh_node(child)
-
-        _refresh_node(self.main_window.left_panel.root_node)
         self.main_window.left_panel.selected_files = {
             dest
             for src, dest in self.moves
         }
-        self.main_window.left_panel._update_scrollbars()
+        self.main_window.left_panel.tree_view.refresh()
         self.main_window.left_panel.viewport().update()
 
         for i in range(self.main_window.right_panel.splitter.count()):
@@ -172,25 +164,11 @@ class MainWindow(QMainWindow):
         self.left_panel.fully_annotated_files = full_paths
         self.left_panel.viewport().update()
 
-    def on_move_shortcut(self, idx: int):
-        if idx - 1 >= self.right_panel.splitter.count():
-            return
-
-        widget = self.right_panel.splitter.widget(idx - 1)
-        if not widget or not hasattr(widget, "current_dir"):
-            return
-
-        target_dir = getattr(widget, "current_dir")
-        selected_files = list(self.left_panel.selected_files)
-
-        if not selected_files:
-            return
-
-        from image_tagger.gui.image_list_widget import ImageListModel
-
+    def create_move_dialog(self, selected_files, target_dir):
         dialog = QDialog(self)
         dialog.setWindowTitle(f"Move to {target_dir.name}?")
         dialog.resize(600, 400)
+
         layout = QVBoxLayout(dialog)
 
         label = QLabel(f"Move {len(selected_files)} items to {target_dir}?")
@@ -210,21 +188,50 @@ class MainWindow(QMainWindow):
 
         layout.addWidget(list_view)
 
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok
-                                   | QDialogButtonBox.StandardButton.Cancel)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok
+            | QDialogButtonBox.StandardButton.Cancel
+        )
         buttons.accepted.connect(dialog.accept)
         buttons.rejected.connect(dialog.reject)
         layout.addWidget(buttons)
 
-        if dialog.exec() == QDialog.DialogCode.Accepted:
-            command = MoveFilesCommand(
-                self.repository,
-                selected_files,
-                target_dir,
-                self.root_dir,
-                self,
-            )
-            self.undo_stack.push(command)
+        return dialog
+
+
+    def on_move_dialog_finished(self, result, selected_files, target_dir):
+        if result != QDialog.DialogCode.Accepted:
+            return
+
+        command = MoveFilesCommand(
+            self.repository,
+            selected_files,
+            target_dir,
+            self.root_dir,
+            self,
+        )
+        self.undo_stack.push(command)
+
+
+    def on_move_shortcut(self, idx: int):
+        if idx - 1 >= self.right_panel.splitter.count():
+            return
+
+        widget = self.right_panel.splitter.widget(idx - 1)
+        if not widget or not hasattr(widget, "current_dir"):
+            return
+
+        target_dir = getattr(widget, "current_dir")
+        selected_files = list(self.left_panel.selected_files)
+
+        if not selected_files:
+            return
+
+        dialog = self.create_move_dialog(selected_files, target_dir)
+        dialog.finished.connect(
+            lambda result: self.on_move_dialog_finished(result, selected_files, target_dir)
+        )
+        dialog.open()
 
     def on_file_selected(self, file_path: str):
         logging.debug(f"File selected in GUI: {file_path}")

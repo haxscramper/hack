@@ -4,8 +4,9 @@ from conftest import AppInstanceRes
 from pathlib import Path
 from pytestqt.qtbot import QtBot
 import logging
-from PySide6.QtCore import Qt, QPoint
+from PySide6.QtCore import QTimer, Qt, QPoint
 from PySide6.QtTest import QTest, QSignalSpy
+from PySide6.QtWidgets import QApplication, QDialog, QDialogButtonBox, QLabel, QListView
 
 
 def test_capture_specific_widget(gui_app_instance: AppInstanceRes,
@@ -22,15 +23,11 @@ def test_capture_specific_widget(gui_app_instance: AppInstanceRes,
     screenshot_path = screenshot_dir / "status_panel.png"
     take_screenshot(central_widget, screenshot_path)
 
-    logging.info(f"saved screenshot to {screenshot_path}")
-
     # Wait for images to load
     qtbot.wait(1000)
 
     screenshot_path2 = screenshot_dir / "status_panel_after_load.png"
     take_screenshot(central_widget, screenshot_path2)
-
-    logging.info(f"saved screenshot to {screenshot_path2}")
 
     assert screenshot_path.exists()
     assert screenshot_path2.exists()
@@ -76,8 +73,6 @@ def test_mixed_view_content_acces(
     screenshot_path = screenshot_dir / "status_panel.png"
     take_screenshot(central_widget, screenshot_path)
 
-    logging.info(f"saved screenshot to {screenshot_path}")
-
     assert spy.count() == 1
     assert spy.at(0)[0] == target
     assert target in widget.selected_files
@@ -111,11 +106,10 @@ def test_mixed_view_expand_directory_reveals_tiles(
     qtbot.wait(150)
     assert toggle_rect is not None, f"Could not find toggle for directory {subdir}"
 
-    # Verify children are not visible (directory collapsed)
-    child_images = list(subdir.glob("*.png"))
-    if child_images:
-        assert widget.get_tile_rect(
-            child_images[0]) is None, "Directory should start collapsed"
+    # Verify files are not visible (directory collapsed)
+    image_files = list(subdir.glob("*.png"))
+    assert widget.get_tile_rect(
+        image_files[0]) is None, "Directory should start collapsed"
 
     # Click toggle to expand
     scroll_y = widget.verticalScrollBar().value()
@@ -126,15 +120,51 @@ def test_mixed_view_expand_directory_reveals_tiles(
                      pos=click_pos)
     qtbot.wait(50)
 
-    screenshot_path = screenshot_dir / "directory_expanded.png"
-    take_screenshot(central_widget, screenshot_path)
-    logging.info(f"saved screenshot to {screenshot_path}")
+    take_screenshot(central_widget, screenshot_dir / "directory_expanded.png")
 
     # Verify tiles are now accessible
-    if child_images:
-        for img in child_images[:3]:
-            rect = widget.get_tile_rect(img)
-            assert rect is not None, f"Tile {img.name} should be visible after expansion"
+    for img in image_files[:3]:
+        rect = widget.get_tile_rect(img)
+        assert rect is not None, f"Tile {img.name} should be visible after expansion"
+
+    file_to_move = subdir / image_files[0]
+    first_image_rect = widget.get_element_click_pos(file_to_move)
+
+    QTest.mouseClick(widget.viewport(),
+                     Qt.MouseButton.LeftButton,
+                     pos=first_image_rect)
+
+
+    QTest.keyClick(gui_app_instance.window, Qt.Key.Key_1,
+                   Qt.KeyboardModifier.ControlModifier, 100)
+                   
+    dialog = next(
+        widget
+        for widget in QApplication.topLevelWidgets()
+        if isinstance(widget, QDialog) and widget.isVisible()
+    )
+
+    assert dialog.windowTitle().startswith("Move to ")
+
+    label = dialog.findChild(QLabel)
+    assert label is not None
+
+    list_view = dialog.findChild(QListView)
+    assert list_view is not None
+
+    buttons = dialog.findChild(QDialogButtonBox)
+    assert buttons is not None
+
+    qtbot.wait(150)
+    take_screenshot(dialog, screenshot_dir / "dialog_prompt.png")
+    take_screenshot(central_widget, screenshot_dir / "before_move.png")
+    assert file_to_move.exists()
+    dialog.accept()
+    assert not file_to_move.exists()
+    qtbot.wait(150)
+    take_screenshot(central_widget, screenshot_dir / "after_move.png")
+
+
 
 
 def test_mixed_view_ctrl_click_multi_select(
@@ -188,15 +218,12 @@ def test_mixed_view_ctrl_click_multi_select(
         scroll_y = widget.verticalScrollBar().value()
 
     pos2 = QPoint(rect2.center().x(), rect2.center().y() - scroll_y)
-    QTest.mouseClick(widget.viewport(),
-                    Qt.MouseButton.LeftButton,
-                    Qt.KeyboardModifier.ControlModifier,
-                    pos2)
+    QTest.mouseClick(widget.viewport(), Qt.MouseButton.LeftButton,
+                     Qt.KeyboardModifier.ControlModifier, pos2)
     qtbot.wait(50)
 
     screenshot_path = screenshot_dir / "multi_select.png"
     take_screenshot(central_widget, screenshot_path)
-    logging.info(f"saved screenshot to {screenshot_path}")
 
     assert img1 in widget.selected_files, "First image should remain selected"
     assert img2 in widget.selected_files, "Second image should be added to selection"
@@ -241,7 +268,6 @@ def test_mixed_view_scroll_to_offscreen_element(
     # Take screenshot of scrolled state
     screenshot_path = screenshot_dir / "scrolled_to_tile.png"
     take_screenshot(central_widget, screenshot_path)
-    logging.info(f"saved screenshot to {screenshot_path}")
 
     # Verify interaction works after scrolling
     scroll_y = widget.verticalScrollBar().value()
@@ -278,12 +304,13 @@ def test_mixed_view_double_click_emits_file_selected(
 
     target = widget.tile_hits[0].file_path
     image_id = gui_app_instance.get_image_id(target)
-    gui_app_instance.repo.replace_probabilistic_annotations(image_id=image_id, items=[
-        ("general", "mixed", 0.45),
-        ("general", "random", 0.5),
-        ("general", "castle", 0.4),
-    ])
-
+    gui_app_instance.repo.replace_probabilistic_annotations(
+        image_id=image_id,
+        items=[
+            ("general", "mixed", 0.45),
+            ("general", "random", 0.5),
+            ("general", "castle", 0.4),
+        ])
 
     rect = widget.get_tile_rect(target)
     assert rect
@@ -305,7 +332,6 @@ def test_mixed_view_double_click_emits_file_selected(
 
     screenshot_path = screenshot_dir / "double_click_selection.png"
     take_screenshot(central_widget, screenshot_path)
-    logging.info(f"saved screenshot to {screenshot_path}")
 
     assert spy.count() == 1
     assert spy.at(0)[0] == str(target)
@@ -314,10 +340,10 @@ def test_mixed_view_double_click_emits_file_selected(
     prob_table = gui_app_instance.window.get_probability_tags_table()
 
     assert prob_table.rowCount() == 3
-    assert prob_table.item(0, 1).text() == "random" # type: ignore
-    assert prob_table.item(1, 1).text() == "mixed" # type: ignore
-    assert prob_table.item(2, 1).text() == "castle" # type: ignore
+    assert prob_table.item(0, 1).text() == "random"  # type: ignore
+    assert prob_table.item(1, 1).text() == "mixed"  # type: ignore
+    assert prob_table.item(2, 1).text() == "castle"  # type: ignore
 
-    assert "0.5" in prob_table.item(0, 2).text() # type: ignore
-    assert "0.45" in prob_table.item(1, 2).text() # type: ignore
-    assert "0.4" in prob_table.item(2, 2).text() # type: ignore
+    assert "0.5" in prob_table.item(0, 2).text()  # type: ignore
+    assert "0.45" in prob_table.item(1, 2).text()  # type: ignore
+    assert "0.4" in prob_table.item(2, 2).text()  # type: ignore

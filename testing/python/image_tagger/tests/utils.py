@@ -3,12 +3,14 @@ from pathlib import Path
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication, QWidget
 from PySide6.QtGui import QPixmap, QScreen
-
+import logging
 
 def take_screenshot(widget: QWidget, filepath: Path) -> Path:
     """Capture screenshot of a widget and save to file."""
     pixmap = widget.grab() if hasattr(widget, "grab") else QPixmap.grabWidget(widget)
     pixmap.save(str(filepath))
+    logging.info(f"saved screenshot to {filepath}")
+    assert filepath.exists(), f"Could not save screenshot to {filepath}"
 
     return filepath
 

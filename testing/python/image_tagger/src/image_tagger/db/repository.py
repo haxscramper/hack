@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
-from beartype.typing import Iterable
+from beartype.typing import Iterable, Sequence, Tuple
 from beartype import beartype
 
 from sqlalchemy import select
@@ -72,22 +72,23 @@ class Repository:
                         ImageDescription.description.is_not(None)).distinct())
         return set(self.session.scalars(stmt).all())
 
-    def list_probabilistic_tags(self, image_id: int):
+    def list_probabilistic_tags(self, image_id: int) -> Sequence[Tuple[ImageProbabilisticTag, ProbabilisticTag]]:
         rows = self.session.execute(
             select(ImageProbabilisticTag, ProbabilisticTag).join(
                 ProbabilisticTag,
                 ImageProbabilisticTag.tag_id == ProbabilisticTag.id).where(
                     ImageProbabilisticTag.image_id == image_id).order_by(
                         ImageProbabilisticTag.probability.desc())).all()
-        return rows
 
-    def list_regular_tags(self, image_id: int):
+        return rows # type: ignore
+
+    def list_regular_tags(self, image_id: int) -> Sequence[Tuple[ImageRegularTag, RegularTag]]:
         rows = self.session.execute(
             select(ImageRegularTag, RegularTag).join(
                 RegularTag, ImageRegularTag.tag_id == RegularTag.id).where(
                     ImageRegularTag.image_id == image_id).order_by(
                         RegularTag.category, RegularTag.name)).all()
-        return rows
+        return rows # type: ignore
 
     def get_description(self, image_id: int) -> ImageDescription | None:
         return self.session.scalar(
@@ -132,6 +133,7 @@ class Repository:
             self.session.add(rel)
         else:
             rel.probability = probability
+
         self.session.commit()
 
     def delete_probabilistic_tag(self, image_id: int, tag_name: str):

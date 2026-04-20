@@ -239,6 +239,40 @@ class MixedTreeTileView(QAbstractScrollArea):
         _, y = self._build_layout(None, 0, self.CONTENT_MARGIN)
         return max(self.viewport().height(), y + self.CONTENT_MARGIN)
 
+    def refresh(self) -> None:
+        """Reload directory structure while preserving expansion state of directories."""
+        # Collect currently expanded paths before reload
+        expanded_paths: set[Path] = set()
+        
+        def collect_expanded(node: DirNode) -> None:
+            if node.expanded:
+                expanded_paths.add(node.path)
+            # Only recurse into loaded children to avoid lazy-loading everything
+            if node.children_loaded:
+                for child in node.child_dirs:
+                    collect_expanded(child)
+        
+        collect_expanded(self.root_node)
+        
+        # Clear root to force reload
+        self.root_node.children_loaded = False
+        self.root_node.child_dirs = []
+        self.root_node.image_files = []
+        self.root_node.load()
+        
+        # Restore expansion state
+        def apply_expanded(node: DirNode) -> None:
+            if node.path in expanded_paths:
+                node.expanded = True
+                node.load()  # Load children so we can recurse into them
+            for child in node.child_dirs:
+                apply_expanded(child)
+        
+        apply_expanded(self.root_node)
+        self.thumb_cache.clear()  # Clear stale thumbnails
+        self._update_scrollbars()
+
+
     def _update_scrollbars(self) -> None:
         total = self.total_content_height()
         page = max(1, self.viewport().height())
@@ -691,44 +725,11 @@ class MixedTreeTileView(QAbstractScrollArea):
         visible = self.visible_content_rect()
         return visible.intersects(rect)
 
-
-class MainWindow(QMainWindow):
-    def __init__(self, root_dir: Path):
-        super().__init__()
-        self.setWindowTitle(f"Mixed Tree/Tiles Explorer - {root_dir}")
-        self.resize(1200, 800)
-
-        self.view = MixedTreeTileView(root_dir)
-        self.setCentralWidget(self.view)
-
-        quit_action = QAction("Quit", self)
-        quit_action.triggered.connect(self.close)
-        self.menuBar().addAction(quit_action)
+    def get_element_click_pos(self, node_path: Path) -> QPoint:
+        rect = self.get_tile_rect(node_path)
+        assert rect
+        scroll_y = self.verticalScrollBar().value()
+        return QPoint(rect.center().x(), rect.center().y() - scroll_y)
 
 
-def main() -> int:
-    app = QApplication(sys.argv)
 
-    if len(sys.argv) != 2:
-        print(f"Usage: {Path(sys.argv[0]).name} <input-directory>", file=sys.stderr)
-        return 2
-
-    root = Path(sys.argv[1])
-    if not root.exists():
-        print(f"Error: path does not exist: {root}", file=sys.stderr)
-        return 2
-    if not root.is_dir():
-        print(f"Error: path is not a directory: {root}", file=sys.stderr)
-        return 2
-
-    try:
-        window = MainWindow(root)
-        window.show()
-        return app.exec()
-    except Exception as ex:
-        QMessageBox.critical(None, "Fatal Error", str(ex))
-        raise
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
