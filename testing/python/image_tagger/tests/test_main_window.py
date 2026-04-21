@@ -176,6 +176,10 @@ def test_mixed_view_expand_directory_reveals_tiles(
         rect = widget.get_tile_rect(img)
         assert rect is not None, f"Tile {img.name} should be visible after expansion"
 
+    # Verify state reflects the expanded directory
+    state = gui_app_instance.window.get_state()
+    assert str(subdir) in state.left_panel.mixed_view.expanded_paths
+
     file_to_move = subdir / image_files[0]
     first_image_rect = widget.get_element_click_pos(file_to_move)
 
@@ -280,6 +284,11 @@ def test_mixed_view_ctrl_click_multi_select(
     assert img2 in widget.selected_files, "Second image should be added to selection"
     assert len(widget.selected_files) == 2
 
+    # Verify state reflects the multi-selection
+    state = gui_app_instance.window.get_state()
+    assert str(img1) in state.left_panel.mixed_view.selected_files
+    assert str(img2) in state.left_panel.mixed_view.selected_files
+
 
 def test_mixed_view_scroll_to_offscreen_element(
     gui_app_instance: AppInstanceRes,
@@ -332,6 +341,10 @@ def test_mixed_view_scroll_to_offscreen_element(
     assert spy.count() == 1
     assert spy.at(0)[0] == target
     assert target in widget.selected_files
+
+    # Verify state reflects the scroll position
+    state = gui_app_instance.window.get_state()
+    assert state.left_panel.mixed_view.scroll_y > 0
 
     # Restore original size
     gui_app_instance.window.resize(original_size)
@@ -470,6 +483,12 @@ def test_search_by_probabilistic_tag(
     assert str(target2) in [str(r) for r in results]
     assert str(target3) not in [str(r) for r in results]
     assert "Found 2 images" in search_tab.status_label.text()
+
+    # Verify state reflects the search tab configuration
+    state = gui_app_instance.window.get_state()
+    assert state.left_panel.active_tab == 1
+    assert "castle" in state.left_panel.search_tab.sexp_query
+    assert state.left_panel.search_tab.thumb_size == 100
 
 
 def test_search_by_regular_tag(
@@ -978,6 +997,11 @@ def test_search_sexp_text_input(
     assert str(target2) in [str(r) for r in results]
     assert "Found 2 images" in search_tab.status_label.text()
 
+    # Verify state reflects the S-expression query
+    state = gui_app_instance.window.get_state()
+    assert state.left_panel.search_tab.sexp_query == sexp
+    assert state.left_panel.active_tab == 1
+
 
 def test_search_sexp_and_expression(
     gui_app_instance: AppInstanceRes,
@@ -1428,6 +1452,13 @@ def test_move_file_to_second_output(
     assert not file_to_move.exists()
     assert (sub1_dir / "image_255_0_239.png").exists()
 
+    # Verify state reflects two preview widgets
+    state = gui_app_instance.window.get_state()
+    assert len(state.right_panel.preview_widgets) == 2
+    # After the move, the right panel refreshes and may reset the preview widget
+    # directory back to root. Check that the second preview widget exists.
+    assert state.right_panel.preview_widgets[1].selector.current_dir
+
 
 def test_move_file_with_output_navigation(
     gui_app_instance: AppInstanceRes,
@@ -1502,6 +1533,11 @@ def test_move_file_with_output_navigation(
 
     assert not file_to_move.exists()
     assert (sub12_dir / "image_255_0_239.png").exists()
+
+    # Verify state reflects the navigated directory in the preview widget
+    state = gui_app_instance.window.get_state()
+    assert state.right_panel.preview_widgets[0].selector.current_dir == str(
+        sub12_dir)
 
 
 def test_move_file_from_search_results(

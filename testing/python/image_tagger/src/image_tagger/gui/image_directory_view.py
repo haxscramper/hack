@@ -11,6 +11,7 @@ import sys
 from dataclasses import dataclass, field
 from beartype import beartype
 from pathlib import Path
+from image_tagger.gui.state_models import MixedViewState
 from image_tagger.utils.utils import confirm_clear_selection
 
 from pytestqt.qtbot import QtBot
@@ -148,6 +149,7 @@ class ThumbTask(QRunnable):
 
         image = reader.read()
         self.signals.loaded.emit(str(self.path), image)
+
 
 class MixedTreeTileView(QAbstractScrollArea):
     imageClicked = Signal(object)
@@ -766,3 +768,24 @@ class MixedTreeTileView(QAbstractScrollArea):
         )
         QTest.mouseClick(self.viewport(), Qt.MouseButton.LeftButton, pos=click_pos)
         qtbot.wait(50)
+
+    def get_state(self) -> MixedViewState:
+        from image_tagger.gui.state_models import MixedViewState
+
+        expanded_paths: set[str] = set()
+
+        def collect_expanded(node: DirNode) -> None:
+            if node.expanded:
+                expanded_paths.add(str(node.path))
+            if node.children_loaded:
+                for child in node.child_dirs:
+                    collect_expanded(child)
+
+        collect_expanded(self.root_node)
+
+        return MixedViewState(
+            expanded_paths=sorted(expanded_paths),
+            zoom_factor=self.zoom_factor,
+            scroll_y=self.verticalScrollBar().value(),
+            selected_files=sorted(str(p) for p in self.selected_files),
+        )

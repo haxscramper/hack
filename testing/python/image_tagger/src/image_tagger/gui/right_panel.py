@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 
 from image_tagger.gui.image_list_widget import ImageListWidget
 from image_tagger.config import config
+from image_tagger.gui.state_models import DirectorySelectorState
 
 IMAGE_EXTENSIONS = config.IMAGE_EXTENSIONS
 
@@ -156,6 +157,11 @@ class DirectorySelectorWidget(QWidget):
     def _on_subdir_clicked(self, item: QListWidgetItem):
         self._set_dir(Path(item.data(Qt.ItemDataRole.UserRole)))
 
+    def get_state(self) -> DirectorySelectorState:
+        from image_tagger.gui.state_models import DirectorySelectorState
+
+        return DirectorySelectorState(current_dir=str(self.current_dir))
+
 
 class DirectoryPreviewWidget(QFrame):
     removeRequested = Signal(QWidget)
@@ -194,6 +200,11 @@ class DirectoryPreviewWidget(QFrame):
 
         self.image_list.set_images(images)
 
+    def get_state(self) -> "DirectoryPreviewState":
+        from image_tagger.gui.state_models import DirectoryPreviewState
+
+        return DirectoryPreviewState(selector=self.selector.get_state())
+
 
 class RightPanel(QWidget):
     def __init__(self, root_dir: Path, parent=None):
@@ -227,3 +238,17 @@ class RightPanel(QWidget):
         widget.setParent(None)
         widget.deleteLater()
         self._update_indices()
+
+    def get_state(self) -> "RightPanelState":
+        from image_tagger.gui.state_models import RightPanelState
+
+        preview_widgets = []
+        for i in range(self.splitter.count()):
+            w = self.splitter.widget(i)
+            if isinstance(w, DirectoryPreviewWidget):
+                preview_widgets.append(w.get_state())
+
+        return RightPanelState(
+            preview_widgets=preview_widgets,
+            splitter_sizes=self.splitter.sizes(),
+        )

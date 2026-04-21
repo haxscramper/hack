@@ -4,6 +4,7 @@ from PySide6.QtWidgets import QWidget, QVBoxLayout, QTabWidget
 from PySide6.QtCore import Signal
 from image_tagger.gui.image_directory_view import MixedTreeTileView
 from image_tagger.gui.query_search import SearchTab
+from image_tagger.gui.state_models import LeftPanelState
 
 
 class LeftPanel(QWidget):
@@ -78,3 +79,12 @@ class LeftPanel(QWidget):
 
     def viewport(self):
         return self.tree_view.viewport()
+
+    def get_state(self) -> LeftPanelState:
+        from image_tagger.gui.state_models import LeftPanelState
+
+        return LeftPanelState(
+            active_tab=self.tabs.currentIndex(),
+            mixed_view=self.tree_view.get_state(),
+            search_tab=self.search_view.get_state(),
+        )

@@ -30,6 +30,7 @@ from image_tagger.gui.left_panel import LeftPanel
 
 from image_tagger.gui.center_panel import CenterPanel
 from image_tagger.gui.right_panel import RightPanel
+from image_tagger.gui.state_models import AppState
 
 
 class MoveFilesCommand(QUndoCommand):
@@ -319,3 +320,27 @@ class MainWindow(QMainWindow):
     def on_reg_tag_search_requested(self, category: str, name: str):
         self.left_panel.tabs.setCurrentIndex(1)
         self.left_panel.search_view.add_tag_to_query("regular_tag", category, name)
+
+    def get_state(self) -> AppState:
+        from image_tagger.gui.state_models import AppState
+
+        # Find the main horizontal splitter
+        central = self.centralWidget()
+        splitter = None
+        if central is not None:
+            layout = central.layout()
+            for i in range(layout.count()):
+                item = layout.itemAt(i)
+                if item and item.widget() and isinstance(item.widget(), QSplitter):
+                    splitter = item.widget()
+                    break
+
+        splitter_sizes = splitter.sizes() if splitter is not None else []
+
+        return AppState(
+            window_size=(self.width(), self.height()),
+            splitter_sizes=splitter_sizes,
+            left_panel=self.left_panel.get_state(),
+            center_panel=self.center_panel.get_state(),
+            right_panel=self.right_panel.get_state(),
+        )

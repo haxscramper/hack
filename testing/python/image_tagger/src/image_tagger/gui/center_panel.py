@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 )
 
 from image_tagger.gui.flow_layout import FlowLayout
+from image_tagger.gui.state_models import CenterPanelState
 
 
 class TagWidget(QFrame):
@@ -230,3 +231,18 @@ class CenterPanel(QWidget):
 
     def set_description(self, text: str):
         self.description_edit.setPlainText(text)
+
+    def get_state(self) -> CenterPanelState:
+        from image_tagger.gui.state_models import CenterPanelState
+
+        # Find the splitter — it's the first widget in the layout
+        splitter = None
+        for i in range(self.layout().count()):
+            item = self.layout().itemAt(i)
+            if item and item.widget() and isinstance(item.widget(), QSplitter):
+                splitter = item.widget()
+                break
+
+        splitter_sizes = splitter.sizes() if splitter is not None else []
+
+        return CenterPanelState(splitter_sizes=splitter_sizes)

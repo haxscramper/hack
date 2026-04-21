@@ -40,6 +40,8 @@ from image_tagger.db.models import (
 
 from sexpdata import loads, dumps, Symbol
 
+from image_tagger.gui.state_models import SearchTabState
+
 
 class ImageThumbnailList(ImageListWidget):
     """Displays image thumbnails in an icon-mode list."""
@@ -773,3 +775,21 @@ class SearchTab(QWidget):
             if text in rel:
                 paths.append(str(file_path))
         return sorted(paths)
+
+    def get_state(self) -> SearchTabState:
+        from image_tagger.gui.state_models import SearchTabState
+
+        splitter = self.sexp_input.parent().parent()
+        splitter_sizes = []
+        if isinstance(splitter, QSplitter):
+            splitter_sizes = splitter.sizes()
+
+        list_view = self.thumbnail_list.list_view
+        scroll_y = list_view.verticalScrollBar().value()
+
+        return SearchTabState(
+            sexp_query=self.sexp_input.toPlainText(),
+            thumb_size=self.thumbnail_list.model.thumb_size,
+            scroll_y=scroll_y,
+            splitter_sizes=splitter_sizes,
+        )
