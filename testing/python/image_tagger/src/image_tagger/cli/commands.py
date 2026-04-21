@@ -17,9 +17,8 @@ def cli():
 
 
 @cli.command()
-@click.argument(
-    "root_dir", type=click.Path(exists=True, file_okay=False, path_type=Path)
-)
+@click.argument("root_dir",
+                type=click.Path(exists=True, file_okay=False, path_type=Path))
 def gui(root_dir: Path):
     logging.info(f"Starting GUI for directory: {root_dir}")
     root_dir = root_dir.resolve()
@@ -41,14 +40,26 @@ def gui(root_dir: Path):
 
 
 @cli.command()
-@click.argument(
-    "root_dir", type=click.Path(exists=True, file_okay=False, path_type=Path)
-)
-def headless(root_dir: Path):
+@click.argument("root_dir",
+                type=click.Path(exists=True, file_okay=False, path_type=Path))
+@click.argument("enable_wd_tagger", type=click.BOOL, default=True)
+@click.argument("enable_joycaption_rule_tags", type=click.BOOL, default=False)
+@click.argument("enable_joycaption_description",
+                type=click.BOOL,
+                default=False)
+def headless(
+    root_dir: Path,
+    enable_wd_tagger: bool,
+    enable_joycaption_rule_tags: bool,
+    enable_joycaption_description: bool,
+):
     logging.info(f"Running in headless mode with root_dir={root_dir}")
     root_dir = root_dir.resolve()
     config.init_config(root_dir)
 
     run_headless(
         root_dir=root_dir,
+        enable_wd_tagger=enable_wd_tagger,
+        enable_joycaption_rule_tags=enable_joycaption_rule_tags,
+        enable_joycaption_description=enable_joycaption_description,
     )

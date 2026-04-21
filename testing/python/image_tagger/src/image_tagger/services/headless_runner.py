@@ -26,15 +26,20 @@ def get_xdg_cache_dir() -> Path:
 
 def ensure_file_exists(filename: Path, url: str) -> None:
     if not filename.exists():
-        logging.info(f"File {filename} not found. Downloading from Hugging Face...")
+        logging.info(
+            f"File {filename} not found. Downloading from Hugging Face...")
         urllib.request.urlretrieve(url, str(filename))
         logging.info(f"Successfully downloaded {filename}")
     else:
-        logging.info(f"File {filename} already exists locally. Skipping download.")
+        logging.info(
+            f"File {filename} already exists locally. Skipping download.")
 
 
 def run_headless(
     root_dir: Path,
+    enable_wd_tagger: bool,
+    enable_joycaption_rule_tags: bool,
+    enable_joycaption_description: bool,
 ):
     logging.info(f"Starting headless run for directory: {root_dir}")
     root_dir = root_dir.resolve()
@@ -72,6 +77,9 @@ def run_headless(
             chroma_store=chroma_store,
             wd_tagger=wd_tagger,
             joy_tagger=joy_tagger,
+            enable_wd_tagger=enable_wd_tagger,
+            enable_joycaption_rule_tags=enable_joycaption_rule_tags,
+            enable_joycaption_description=enable_joycaption_description,
         )
 
         images = scan_images(root_dir)

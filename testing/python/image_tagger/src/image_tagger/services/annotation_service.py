@@ -11,12 +11,16 @@ from .joy_tagger import Joytagger
 
 
 class AnnotationService:
+
     def __init__(
         self,
         repository: Repository,
         chroma_store: ChromaDescriptionStore,
         wd_tagger: WdTagger,
         joy_tagger: Joytagger,
+        enable_wd_tagger: bool,
+        enable_joycaption_rule_tags: bool,
+        enable_joycaption_description: bool,
     ):
         self.repository = repository
         self.chroma_store = chroma_store
@@ -25,6 +29,9 @@ class AnnotationService:
         self.processed_count = 0
         self.total_images = 0
         self.processing_times = deque(maxlen=20)
+        self.enable_wd_tagger = enable_wd_tagger
+        self.enable_joycaption_rule_tags = enable_joycaption_rule_tags
+        self.enable_joycaption_description = enable_joycaption_description
 
     def annotate_image(self, root_dir: Path, image_path: Path):
         start_time = time.time()
@@ -58,12 +65,11 @@ class AnnotationService:
         else:
             progress_str = ""
 
-        need_wd_tagger = not existing_prob_tags and False
-        need_joycaption_tagger = not existing_reg_tags and False
-        need_joycaption_description = not existing_desc and True
-        need_any_processing = (
-            need_wd_tagger or need_joycaption_tagger or need_joycaption_description
-        )
+        need_wd_tagger = not existing_prob_tags and self.enable_wd_tagger
+        need_joycaption_tagger = not existing_reg_tags and self.enable_joycaption_rule_tags
+        need_joycaption_description = not existing_desc and self.enable_joycaption_description
+        need_any_processing = (need_wd_tagger or need_joycaption_tagger
+                               or need_joycaption_description)
 
         if need_any_processing:
             logging.info(f"{progress_str}Annotating image: {image_path}")
@@ -72,7 +78,8 @@ class AnnotationService:
             if not existing_prob_tags:
                 logging.debug(f"Running WD tagger for {image_path}")
                 prob_tags = self.wd_tagger.tag_image(image_path)
-                self.repository.replace_probabilistic_annotations(image_id, prob_tags)
+                self.repository.replace_probabilistic_annotations(
+                    image_id, prob_tags)
             else:
                 logging.debug(
                     f"Skipping WD tagger for {image_path}, tags already exist."
@@ -92,18 +99,20 @@ class AnnotationService:
             from PIL import UnidentifiedImageError
 
             if not existing_desc:
-                logging.debug(f"Running Ollama description tagger for {image_path}")
+                logging.debug(
+                    f"Running Ollama description tagger for {image_path}")
                 try:
                     description = self.joy_tagger.describe(image_path)
 
                     if description:
                         self.repository.set_description(
-                            image_id, description, self.joy_tagger.model_name
-                        )
+                            image_id, description, self.joy_tagger.model_name)
                         self.chroma_store.upsert_description(
                             relative_path=str(entry.relative_path),
                             description=description,
-                            metadata={"relative_path": str(entry.relative_path)},
+                            metadata={
+                                "relative_path": str(entry.relative_path)
+                            },
                         )
                 except UnidentifiedImageError as err:
                     logging.error(str(err))
