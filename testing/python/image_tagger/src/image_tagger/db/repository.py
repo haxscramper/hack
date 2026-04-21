@@ -40,8 +40,11 @@ class Repository:
         entry = self.session.scalar(
             select(ImageEntry).where(ImageEntry.md5_digest == md5_digest))
         if entry is None:
+            conflict = self.session.scalar(
+                select(ImageEntry).where(
+                    ImageEntry.relative_path == relative_path))
             entry = ImageEntry(
-                relative_path=relative_path,
+                relative_path=None if conflict else relative_path,
                 original_name=file_path.name,
                 md5_digest=md5_digest,
             )
@@ -50,7 +53,10 @@ class Repository:
             self.session.refresh(entry)
         else:
             if entry.relative_path != relative_path:
-                entry.relative_path = relative_path
+                conflict = self.session.scalar(
+                    select(ImageEntry).where(
+                        ImageEntry.relative_path == relative_path))
+                entry.relative_path = None if conflict else relative_path
                 entry.original_name = file_path.name
                 self.session.commit()
                 self.session.refresh(entry)
@@ -80,7 +86,7 @@ class Repository:
                     ImageProbabilisticTag.image_id == image_id).order_by(
                         ImageProbabilisticTag.probability.desc())).all()
 
-        return rows # type: ignore
+        return rows  # type: ignore
 
     def list_regular_tags(self, image_id: int):
         rows = self.session.execute(
@@ -88,7 +94,7 @@ class Repository:
                 RegularTag, ImageRegularTag.tag_id == RegularTag.id).where(
                     ImageRegularTag.image_id == image_id).order_by(
                         RegularTag.category, RegularTag.name)).all()
-        return rows # type: ignore
+        return rows  # type: ignore
 
     def get_description(self, image_id: int) -> ImageDescription | None:
         return self.session.scalar(

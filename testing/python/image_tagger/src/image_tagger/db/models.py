@@ -18,7 +18,7 @@ class ImageEntry(Base):
     __tablename__ = "image_entries"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    relative_path = Column(String, unique=True, nullable=False, index=True)
+    relative_path = Column(String, unique=True, nullable=True, index=True)
     original_name = Column(String, nullable=False)
     md5_digest = Column(String, nullable=False, index=True)
 

@@ -84,6 +84,10 @@ def run_headless(
 
         images = scan_images(root_dir)
         service.total_images = len(images)
+
+        for image_path in images:
+            repo.upsert_image(root_dir, image_path)
+
         for image_path in images:
             try:
                 service.annotate_image(root_dir, image_path)
