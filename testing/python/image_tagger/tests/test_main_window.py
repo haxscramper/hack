@@ -6,6 +6,7 @@ from utils import take_screenshot
 from conftest import AppInstanceRes
 from pathlib import Path
 from pytestqt.qtbot import QtBot
+from image_tagger.utils.utils import _generate_monotone_image
 import logging
 from PySide6.QtCore import QTimer, Qt, QPoint
 from PySide6.QtTest import QTest, QSignalSpy
@@ -1298,10 +1299,6 @@ def test_move_file_from_search_results(
     assert (sub1_dir / "image_255_0_239.png").exists()
 
 
-@pytest.mark.xfail(
-    reason=
-    "Known bug: UNIQUE constraint fails on identical filenames from different directories"
-)
 def test_move_files_with_identical_names(
     gui_app_instance: AppInstanceRes,
     screenshot_dir: Path,
@@ -1321,12 +1318,8 @@ def test_move_files_with_identical_names(
     file1 = sub1 / "random.png"
     file2 = sub2 / "random.png"
 
-    from PIL import Image
-
-    img1 = Image.new("RGB", (10, 10), color=(255, 0, 0))
-    img1.save(file1)
-    img2 = Image.new("RGB", (10, 10), color=(0, 255, 0))
-    img2.save(file2)
+    _generate_monotone_image(file1, color=(256, 0, 0))
+    _generate_monotone_image(file2, color=(0, 256, 0))
 
     gui_app_instance.repo.upsert_image(image_directory, file1)
     gui_app_instance.repo.upsert_image(image_directory, file2)
@@ -1336,6 +1329,10 @@ def test_move_files_with_identical_names(
 
     widget = gui_app_instance.window.get_mixed_view()
 
+    widget.toggle_subdir(sub1, qtbot)
+    widget.toggle_subdir(sub2, qtbot)
+
+    take_screenshot(central_widget, screenshot_dir / "move_root_dialog.png")
     _click_tile(widget, file1, qtbot)
     assert file1 in widget.selected_files
 
@@ -1376,6 +1373,12 @@ def test_move_files_with_identical_names(
     assert file2 in widget.selected_files
     assert len(widget.selected_files) == 2
 
+    file2_md5 = gui_app_instance.repo.get_image_by_path(
+        str(file2.relative_to(image_directory))).md5_digest
+
+    file1_md5 = gui_app_instance.repo.get_image_by_path(
+        str(file1.relative_to(image_directory))).md5_digest
+
     QTest.keyClick(gui_app_instance.window, Qt.Key.Key_1,
                    Qt.KeyboardModifier.ControlModifier, 100)
 
@@ -1389,6 +1392,7 @@ def test_move_files_with_identical_names(
     assert file2.exists()
     dialog.accept()
     qtbot.wait(150)
+    take_screenshot(central_widget, screenshot_dir / "after_move.png")
 
     assert not file1.exists()
     assert not file2.exists()
@@ -1397,4 +1401,5 @@ def test_move_files_with_identical_names(
     preview_widget = cast(DirectoryPreviewWidget,
                           right_panel.splitter.widget(0))
     target_dir = preview_widget.current_dir
-    assert (target_dir / "random.png").exists()
+    assert (target_dir / f"random.png").exists()
+    assert (target_dir / f"random_{file2_md5[:8]}.png").exists() or (target_dir / f"random_{file1_md5[:8]}.png").exists()

@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from beartype import beartype
 from pathlib import Path
 
+from pytestqt.qtbot import QtBot
 from PySide6.QtCore import (
     QObject,
     QPoint,
@@ -731,5 +732,28 @@ class MixedTreeTileView(QAbstractScrollArea):
         scroll_y = self.verticalScrollBar().value()
         return QPoint(rect.center().x(), rect.center().y() - scroll_y)
 
+    def toggle_subdir(self, subdir: Path, qtbot: QtBot):
+        from PySide6.QtTest import QTest
+        toggle_rect = self.get_toggle_rect(subdir)
+
+        # If not found, scroll to make header visible
+        if toggle_rect is None:
+            header_rect = self.get_header_rect(subdir)
+            if header_rect:
+                self.scroll_to_content_y(header_rect.center().y())
+                qtbot.wait(150)
+                toggle_rect = self.get_toggle_rect(subdir)
+
+        qtbot.wait(150)
+        assert toggle_rect is not None, f"Could not find toggle for directory {subdir}"
+
+        # Click toggle to expand
+        scroll_y = self.verticalScrollBar().value()
+        click_pos = QPoint(toggle_rect.center().x(),
+                        toggle_rect.center().y() - scroll_y)
+        QTest.mouseClick(self.viewport(),
+                        Qt.MouseButton.LeftButton,
+                        pos=click_pos)
+        qtbot.wait(50)
 
 
