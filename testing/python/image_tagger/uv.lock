@@ -450,6 +450,7 @@ dependencies = [
     { name = "pyside6" },
     { name = "pytest-qt" },
     { name = "requests" },
+    { name = "sexpdata" },
     { name = "sqlalchemy" },
     { name = "timm" },
     { name = "torch" },
@@ -475,6 +476,7 @@ requires-dist = [
     { name = "pyside6", specifier = ">=6.10.2" },
     { name = "pytest-qt", specifier = ">=4.5.0" },
     { name = "requests", specifier = ">=2.32" },
+    { name = "sexpdata", specifier = ">=1.0.2" },
     { name = "sqlalchemy", specifier = ">=2.0.48" },
     { name = "timm", specifier = ">=1.0.25" },
     { name = "torch", specifier = ">=2.10.0", index = "https://download.pytorch.org/whl/rocm7.0" },
@@ -1485,6 +1487,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/4f/db/cfac1baf10650ab4d1c111714410d2fbb77ac5a616db26775db562c8fab2/setuptools-82.0.1.tar.gz", hash = "sha256:7d872682c5d01cfde07da7bccc7b65469d3dca203318515ada1de5eda35efbf9", size = 1152316, upload-time = "2026-03-09T12:47:17.221Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/9d/76/f789f7a86709c6b087c5a2f52f911838cad707cc613162401badc665acfe/setuptools-82.0.1-py3-none-any.whl", hash = "sha256:a59e362652f08dcd477c78bb6e7bd9d80a7995bc73ce773050228a348ce2e5bb", size = 1006223, upload-time = "2026-03-09T12:47:15.026Z" },
+]
+
+[[package]]
+name = "sexpdata"
+version = "1.0.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/a7/7f/369a478863a39351be75e0a12602bc29196b31f87bf3432bed2be6379f8e/sexpdata-1.0.2.tar.gz", hash = "sha256:92b67b0361f6766f8f9e44b9519cf3fbcfafa755db85bbf893c3e1cf4ddac109", size = 8906, upload-time = "2024-01-09T07:09:59.096Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f1/f3/ec9f8cc20dc1f34c926f0ec3f43b73fa2da59cf08e432fb8ae5b666b2027/sexpdata-1.0.2-py3-none-any.whl", hash = "sha256:b39c918f055a85c5c35c1d4f7930aabb176bd29016e5ba5692e7e849914b2a1a", size = 10337, upload-time = "2024-01-09T07:09:57.185Z" },
 ]
 
 [[package]]

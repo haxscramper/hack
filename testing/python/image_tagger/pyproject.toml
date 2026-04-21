@@ -24,6 +24,7 @@ dependencies = [
     "requests>=2.32",
     "onnxruntime-migraphx",
     "pytest-qt>=4.5.0",
+    "sexpdata>=1.0.2",
 ]
 
 [tool.uv.sources]

@@ -23,8 +23,11 @@ from PySide6.QtWidgets import (
 def _get_visible_dialog() -> QDialog:
     """Return the currently visible QDialog, or raise AssertionError."""
     dialog = next(
-        (widget for widget in QApplication.topLevelWidgets()
-         if isinstance(widget, QDialog) and widget.isVisible()),
+        (
+            widget
+            for widget in QApplication.topLevelWidgets()
+            if isinstance(widget, QDialog) and widget.isVisible()
+        ),
         None,
     )
     assert dialog is not None, "No visible dialog found"
@@ -42,9 +45,7 @@ def _click_tile(widget, file_path: Path, qtbot: QtBot):
         assert rect is not None
     scroll_y = widget.verticalScrollBar().value()
     click_pos = QPoint(rect.center().x(), rect.center().y() - scroll_y)
-    QTest.mouseClick(widget.viewport(),
-                     Qt.MouseButton.LeftButton,
-                     pos=click_pos)
+    QTest.mouseClick(widget.viewport(), Qt.MouseButton.LeftButton, pos=click_pos)
     qtbot.wait(50)
 
 
@@ -58,8 +59,9 @@ def _accept_move_dialog(qtbot: QtBot):
     qtbot.wait(50)
 
 
-def test_capture_specific_widget(gui_app_instance: AppInstanceRes,
-                                 screenshot_dir: Path, qtbot: QtBot):
+def test_capture_specific_widget(
+    gui_app_instance: AppInstanceRes, screenshot_dir: Path, qtbot: QtBot
+):
     """Capture screenshot of a specific nested widget."""
     qtbot.waitExposed(gui_app_instance.window)
 
@@ -115,9 +117,7 @@ def test_mixed_view_content_acces(
 
     # Click and verify signal
     spy = QSignalSpy(widget.imageClicked)
-    QTest.mouseClick(widget.viewport(),
-                     Qt.MouseButton.LeftButton,
-                     pos=click_pos)
+    QTest.mouseClick(widget.viewport(), Qt.MouseButton.LeftButton, pos=click_pos)
 
     screenshot_path = screenshot_dir / "status_panel.png"
     take_screenshot(central_widget, screenshot_path)
@@ -157,16 +157,14 @@ def test_mixed_view_expand_directory_reveals_tiles(
 
     # Verify files are not visible (directory collapsed)
     image_files = list(subdir.glob("*.png"))
-    assert widget.get_tile_rect(
-        image_files[0]) is None, ("Directory should start collapsed")
+    assert widget.get_tile_rect(image_files[0]) is None, (
+        "Directory should start collapsed"
+    )
 
     # Click toggle to expand
     scroll_y = widget.verticalScrollBar().value()
-    click_pos = QPoint(toggle_rect.center().x(),
-                       toggle_rect.center().y() - scroll_y)
-    QTest.mouseClick(widget.viewport(),
-                     Qt.MouseButton.LeftButton,
-                     pos=click_pos)
+    click_pos = QPoint(toggle_rect.center().x(), toggle_rect.center().y() - scroll_y)
+    QTest.mouseClick(widget.viewport(), Qt.MouseButton.LeftButton, pos=click_pos)
     qtbot.wait(50)
 
     take_screenshot(central_widget, screenshot_dir / "directory_expanded.png")
@@ -179,15 +177,17 @@ def test_mixed_view_expand_directory_reveals_tiles(
     file_to_move = subdir / image_files[0]
     first_image_rect = widget.get_element_click_pos(file_to_move)
 
-    QTest.mouseClick(widget.viewport(),
-                     Qt.MouseButton.LeftButton,
-                     pos=first_image_rect)
+    QTest.mouseClick(widget.viewport(), Qt.MouseButton.LeftButton, pos=first_image_rect)
 
-    QTest.keyClick(gui_app_instance.window, Qt.Key.Key_1,
-                   Qt.KeyboardModifier.ControlModifier, 100)
+    QTest.keyClick(
+        gui_app_instance.window, Qt.Key.Key_1, Qt.KeyboardModifier.ControlModifier, 100
+    )
 
-    dialog = next(widget for widget in QApplication.topLevelWidgets()
-                  if isinstance(widget, QDialog) and widget.isVisible())
+    dialog = next(
+        widget
+        for widget in QApplication.topLevelWidgets()
+        if isinstance(widget, QDialog) and widget.isVisible()
+    )
 
     assert dialog.windowTitle().startswith("Move to ")
 
@@ -236,11 +236,10 @@ def test_mixed_view_ctrl_click_multi_select(
                 toggle = widget.get_toggle_rect(d)
                 if toggle:
                     scroll_y = widget.verticalScrollBar().value()
-                    pos = QPoint(toggle.center().x(),
-                                 toggle.center().y() - scroll_y)
-                    QTest.mouseClick(widget.viewport(),
-                                     Qt.MouseButton.LeftButton,
-                                     pos=pos)
+                    pos = QPoint(toggle.center().x(), toggle.center().y() - scroll_y)
+                    QTest.mouseClick(
+                        widget.viewport(), Qt.MouseButton.LeftButton, pos=pos
+                    )
                     qtbot.wait(50)
         images = [hit.file_path for hit in widget.tile_hits][:2]
 
@@ -313,8 +312,7 @@ def test_mixed_view_scroll_to_offscreen_element(
 
     rect = widget.get_tile_rect(target)
     assert rect
-    assert widget.is_element_visible(
-        rect), "Tile should be visible after scroll"
+    assert widget.is_element_visible(rect), "Tile should be visible after scroll"
 
     # Take screenshot of scrolled state
     screenshot_path = screenshot_dir / "scrolled_to_tile.png"
@@ -325,9 +323,7 @@ def test_mixed_view_scroll_to_offscreen_element(
     click_pos = QPoint(rect.center().x(), rect.center().y() - scroll_y)
 
     spy = QSignalSpy(widget.imageClicked)
-    QTest.mouseClick(widget.viewport(),
-                     Qt.MouseButton.LeftButton,
-                     pos=click_pos)
+    QTest.mouseClick(widget.viewport(), Qt.MouseButton.LeftButton, pos=click_pos)
 
     assert spy.count() == 1
     assert spy.at(0)[0] == target
@@ -377,9 +373,7 @@ def test_mixed_view_double_click_emits_file_selected(
     click_pos = QPoint(rect.center().x(), rect.center().y() - scroll_y)
 
     spy = QSignalSpy(widget.fileSelected)
-    QTest.mouseDClick(widget.viewport(),
-                      Qt.MouseButton.LeftButton,
-                      pos=click_pos)
+    QTest.mouseDClick(widget.viewport(), Qt.MouseButton.LeftButton, pos=click_pos)
     qtbot.wait(50)
 
     screenshot_path = screenshot_dir / "double_click_selection.png"
@@ -540,17 +534,20 @@ def test_search_by_description(
     target1 = image_directory / "image_255_0_239.png"
     image_id1 = gui_app_instance.get_image_id(target1)
     gui_app_instance.repo.set_description(
-        image_id=image_id1, description="a beautiful sunset over the ocean")
+        image_id=image_id1, description="a beautiful sunset over the ocean"
+    )
 
     target2 = image_directory / "sub1" / "sub12" / "image_31_255_0.png"
     image_id2 = gui_app_instance.get_image_id(target2)
     gui_app_instance.repo.set_description(
-        image_id=image_id2, description="a beautiful mountain landscape")
+        image_id=image_id2, description="a beautiful mountain landscape"
+    )
 
     target3 = image_directory / "sub2" / "sub23" / "image_0_255_207.png"
     image_id3 = gui_app_instance.get_image_id(target3)
-    gui_app_instance.repo.set_description(image_id=image_id3,
-                                          description="just a random picture")
+    gui_app_instance.repo.set_description(
+        image_id=image_id3, description="just a random picture"
+    )
 
     search_tab = _setup_search_tab(gui_app_instance, qtbot)
     search_tab.clear_search()
@@ -649,8 +646,7 @@ def test_search_and_combination(
     search_tab.clear_search()
 
     spec = {
-        "type":
-        "and",
+        "type": "and",
         "children": [
             {
                 "type": "probabilistic_tag",
@@ -709,8 +705,7 @@ def test_search_or_combination(
     search_tab.clear_search()
 
     spec = {
-        "type":
-        "or",
+        "type": "or",
         "children": [
             {
                 "type": "probabilistic_tag",
@@ -934,6 +929,303 @@ def test_search_via_add_tag_to_query(
     assert "Found 2 images" in search_tab.status_label.text()
 
 
+def test_search_sexp_text_input(
+    gui_app_instance: AppInstanceRes,
+    screenshot_dir: Path,
+    qtbot: QtBot,
+    image_directory: Path,
+):
+    """Test entering an S-expression directly into the text field."""
+    qtbot.waitExposed(gui_app_instance.window)
+    central_widget = gui_app_instance.window.centralWidget()
+
+    target = image_directory / "image_255_0_239.png"
+    image_id = gui_app_instance.get_image_id(target)
+    gui_app_instance.repo.replace_probabilistic_annotations(
+        image_id=image_id,
+        items=[("general", "castle", 0.8)],
+    )
+
+    target2 = image_directory / "sub1" / "image_255_0_0.png"
+    image_id2 = gui_app_instance.get_image_id(target2)
+    gui_app_instance.repo.replace_probabilistic_annotations(
+        image_id=image_id2,
+        items=[("general", "castle", 0.6)],
+    )
+
+    search_tab = _setup_search_tab(gui_app_instance, qtbot)
+    search_tab.clear_search()
+    qtbot.wait(50)
+
+    # Type S-expression directly
+    sexp = "(probabilistic_tag general castle 0.5)"
+    search_tab.sexp_input.setPlainText(sexp)
+    qtbot.wait(50)
+
+    search_tab.execute_search()
+    qtbot.wait(100)
+
+    take_screenshot(central_widget, screenshot_dir / "search_sexp_text.png")
+
+    results = search_tab.get_result_images()
+    assert len(results) == 2
+    assert str(target) in [str(r) for r in results]
+    assert str(target2) in [str(r) for r in results]
+    assert "Found 2 images" in search_tab.status_label.text()
+
+
+def test_search_sexp_and_expression(
+    gui_app_instance: AppInstanceRes,
+    screenshot_dir: Path,
+    qtbot: QtBot,
+    image_directory: Path,
+):
+    """Test entering a compound AND S-expression."""
+    qtbot.waitExposed(gui_app_instance.window)
+    central_widget = gui_app_instance.window.centralWidget()
+
+    target1 = image_directory / "image_255_0_239.png"
+    image_id1 = gui_app_instance.get_image_id(target1)
+    gui_app_instance.repo.replace_probabilistic_annotations(
+        image_id=image_id1,
+        items=[("general", "castle", 0.8)],
+    )
+    gui_app_instance.repo.replace_regular_annotations(
+        image_id=image_id1,
+        items=[("category1", "tag_a")],
+    )
+
+    target2 = image_directory / "sub1" / "image_255_47_0.png"
+    image_id2 = gui_app_instance.get_image_id(target2)
+    gui_app_instance.repo.replace_probabilistic_annotations(
+        image_id=image_id2,
+        items=[("general", "castle", 0.7)],
+    )
+
+    search_tab = _setup_search_tab(gui_app_instance, qtbot)
+    search_tab.clear_search()
+    qtbot.wait(50)
+
+    sexp = "(and (probabilistic_tag general castle 0.5) (regular_tag category1 tag_a))"
+    search_tab.sexp_input.setPlainText(sexp)
+    qtbot.wait(50)
+
+    search_tab.execute_search()
+    qtbot.wait(100)
+
+    take_screenshot(central_widget, screenshot_dir / "search_sexp_and.png")
+
+    results = search_tab.get_result_images()
+    assert len(results) == 1
+    assert str(target1) in [str(r) for r in results]
+
+
+def test_search_sexp_or_expression(
+    gui_app_instance: AppInstanceRes,
+    screenshot_dir: Path,
+    qtbot: QtBot,
+    image_directory: Path,
+):
+    """Test entering a compound OR S-expression."""
+    qtbot.waitExposed(gui_app_instance.window)
+    central_widget = gui_app_instance.window.centralWidget()
+
+    target1 = image_directory / "image_255_0_239.png"
+    image_id1 = gui_app_instance.get_image_id(target1)
+    gui_app_instance.repo.replace_probabilistic_annotations(
+        image_id=image_id1,
+        items=[("general", "castle", 0.8)],
+    )
+
+    target2 = image_directory / "sub1" / "image_255_47_0.png"
+    image_id2 = gui_app_instance.get_image_id(target2)
+    gui_app_instance.repo.replace_regular_annotations(
+        image_id=image_id2,
+        items=[("category1", "tag_a")],
+    )
+
+    search_tab = _setup_search_tab(gui_app_instance, qtbot)
+    search_tab.clear_search()
+    qtbot.wait(50)
+
+    sexp = "(or (probabilistic_tag general castle 0.5) (regular_tag category1 tag_a))"
+    search_tab.sexp_input.setPlainText(sexp)
+    qtbot.wait(50)
+
+    search_tab.execute_search()
+    qtbot.wait(100)
+
+    take_screenshot(central_widget, screenshot_dir / "search_sexp_or.png")
+
+    results = search_tab.get_result_images()
+    assert len(results) == 2
+    assert str(target1) in [str(r) for r in results]
+    assert str(target2) in [str(r) for r in results]
+
+
+def test_search_sexp_not_expression(
+    gui_app_instance: AppInstanceRes,
+    screenshot_dir: Path,
+    qtbot: QtBot,
+    image_directory: Path,
+):
+    """Test entering a NOT S-expression."""
+    qtbot.waitExposed(gui_app_instance.window)
+    central_widget = gui_app_instance.window.centralWidget()
+
+    target1 = image_directory / "image_255_0_239.png"
+    image_id1 = gui_app_instance.get_image_id(target1)
+    gui_app_instance.repo.replace_probabilistic_annotations(
+        image_id=image_id1,
+        items=[("general", "castle", 0.8)],
+    )
+
+    target2 = image_directory / "sub1" / "image_255_47_0.png"
+    image_id2 = gui_app_instance.get_image_id(target2)
+
+    search_tab = _setup_search_tab(gui_app_instance, qtbot)
+    search_tab.clear_search()
+    qtbot.wait(50)
+
+    sexp = "(not (probabilistic_tag general castle 0.5))"
+    search_tab.sexp_input.setPlainText(sexp)
+    qtbot.wait(50)
+
+    search_tab.execute_search()
+    qtbot.wait(100)
+
+    take_screenshot(central_widget, screenshot_dir / "search_sexp_not.png")
+
+    results = search_tab.get_result_images()
+    result_strs = [str(r) for r in results]
+    assert str(target1) not in result_strs
+    assert str(target2) in result_strs
+
+
+def test_search_sexp_add_tag_rewrites_expression(
+    gui_app_instance: AppInstanceRes,
+    screenshot_dir: Path,
+    qtbot: QtBot,
+    image_directory: Path,
+):
+    """Test that add_tag_to_query rewrites an existing S-expression correctly."""
+    qtbot.waitExposed(gui_app_instance.window)
+    central_widget = gui_app_instance.window.centralWidget()
+
+    target = image_directory / "image_255_0_239.png"
+    image_id = gui_app_instance.get_image_id(target)
+    gui_app_instance.repo.replace_probabilistic_annotations(
+        image_id=image_id,
+        items=[("general", "castle", 0.7)],
+    )
+
+    target2 = image_directory / "sub1" / "image_255_0_0.png"
+    image_id2 = gui_app_instance.get_image_id(target2)
+    gui_app_instance.repo.replace_probabilistic_annotations(
+        image_id=image_id2,
+        items=[("general", "castle", 0.6)],
+    )
+
+    search_tab = _setup_search_tab(gui_app_instance, qtbot)
+    search_tab.clear_search()
+    qtbot.wait(50)
+
+    # Start with one tag
+    search_tab.add_tag_to_query("probabilistic_tag", "general", "castle")
+    qtbot.wait(50)
+
+    first_text = search_tab.sexp_input.toPlainText().strip()
+    assert first_text == "(probabilistic_tag general castle 0.5)"
+
+    # Add another tag - should wrap in 'and'
+    search_tab.add_tag_to_query("probabilistic_tag", "general", "castle")
+    qtbot.wait(50)
+
+    second_text = search_tab.sexp_input.toPlainText().strip()
+    assert (
+        second_text
+        == "(and (probabilistic_tag general castle 0.5) (probabilistic_tag general castle 0.5))"
+    )
+
+    search_tab.execute_search()
+    qtbot.wait(100)
+
+    take_screenshot(central_widget, screenshot_dir / "search_sexp_rewrite.png")
+
+    results = search_tab.get_result_images()
+    assert len(results) == 2
+    assert str(target) in [str(r) for r in results]
+    assert str(target2) in [str(r) for r in results]
+
+
+def test_search_sexp_invalid_input(
+    gui_app_instance: AppInstanceRes,
+    screenshot_dir: Path,
+    qtbot: QtBot,
+    image_directory: Path,
+):
+    """Test that invalid S-expressions show an error instead of crashing."""
+    qtbot.waitExposed(gui_app_instance.window)
+    central_widget = gui_app_instance.window.centralWidget()
+
+    search_tab = _setup_search_tab(gui_app_instance, qtbot)
+    search_tab.clear_search()
+    qtbot.wait(50)
+
+    search_tab.sexp_input.setPlainText("(and (incomplete")
+    qtbot.wait(50)
+
+    search_tab.execute_search()
+    qtbot.wait(100)
+
+    take_screenshot(central_widget, screenshot_dir / "search_sexp_invalid.png")
+
+    assert "Parse error" in search_tab.status_label.text()
+    results = search_tab.get_result_images()
+    assert len(results) == 0
+
+
+def test_search_sexp_description_with_quotes(
+    gui_app_instance: AppInstanceRes,
+    screenshot_dir: Path,
+    qtbot: QtBot,
+    image_directory: Path,
+):
+    """Test description search with quoted string in S-expression."""
+    qtbot.waitExposed(gui_app_instance.window)
+    central_widget = gui_app_instance.window.centralWidget()
+
+    target1 = image_directory / "image_255_0_239.png"
+    image_id1 = gui_app_instance.get_image_id(target1)
+    gui_app_instance.repo.set_description(
+        image_id=image_id1, description="a beautiful sunset over the ocean"
+    )
+
+    target2 = image_directory / "sub1" / "sub12" / "image_31_255_0.png"
+    image_id2 = gui_app_instance.get_image_id(target2)
+    gui_app_instance.repo.set_description(
+        image_id=image_id2, description="a beautiful mountain landscape"
+    )
+
+    search_tab = _setup_search_tab(gui_app_instance, qtbot)
+    search_tab.clear_search()
+    qtbot.wait(50)
+
+    sexp = '(description "beautiful")'
+    search_tab.sexp_input.setPlainText(sexp)
+    qtbot.wait(50)
+
+    search_tab.execute_search()
+    qtbot.wait(100)
+
+    take_screenshot(central_widget, screenshot_dir / "search_sexp_description.png")
+
+    results = search_tab.get_result_images()
+    assert len(results) == 2
+    assert str(target1) in [str(r) for r in results]
+    assert str(target2) in [str(r) for r in results]
+
+
 def test_move_file_from_root_to_output(
     gui_app_instance: AppInstanceRes,
     screenshot_dir: Path,
@@ -952,8 +1244,7 @@ def test_move_file_from_root_to_output(
     assert file_to_move in widget.selected_files
 
     right_panel = gui_app_instance.window.right_panel
-    preview_widget = cast(DirectoryPreviewWidget,
-                          right_panel.splitter.widget(0))
+    preview_widget = cast(DirectoryPreviewWidget, right_panel.splitter.widget(0))
     selector = preview_widget.selector
 
     sub1_dir = image_directory / "sub1"
@@ -971,8 +1262,9 @@ def test_move_file_from_root_to_output(
 
     gui_app_instance.window.activateWindow()
     qtbot.wait(50)
-    QTest.keyClick(gui_app_instance.window, Qt.Key.Key_1,
-                   Qt.KeyboardModifier.ControlModifier, 100)
+    QTest.keyClick(
+        gui_app_instance.window, Qt.Key.Key_1, Qt.KeyboardModifier.ControlModifier, 100
+    )
     qtbot.wait(100)
 
     dialog = _get_visible_dialog()
@@ -1040,8 +1332,7 @@ def test_move_multiple_files_to_output(
     assert len(widget.selected_files) == 2
 
     right_panel = gui_app_instance.window.right_panel
-    preview_widget = cast(DirectoryPreviewWidget,
-                          right_panel.splitter.widget(0))
+    preview_widget = cast(DirectoryPreviewWidget, right_panel.splitter.widget(0))
     selector = preview_widget.selector
 
     sub2_dir = image_directory / "sub2"
@@ -1057,8 +1348,9 @@ def test_move_multiple_files_to_output(
     qtbot.wait(50)
     assert preview_widget.current_dir == sub2_dir
 
-    QTest.keyClick(gui_app_instance.window, Qt.Key.Key_1,
-                   Qt.KeyboardModifier.ControlModifier, 100)
+    QTest.keyClick(
+        gui_app_instance.window, Qt.Key.Key_1, Qt.KeyboardModifier.ControlModifier, 100
+    )
 
     dialog = _get_visible_dialog()
     assert dialog.windowTitle().startswith("Move to ")
@@ -1099,8 +1391,7 @@ def test_move_file_to_second_output(
 
     assert right_panel.splitter.count() == 2
 
-    second_preview = cast(DirectoryPreviewWidget,
-                          right_panel.splitter.widget(1))
+    second_preview = cast(DirectoryPreviewWidget, right_panel.splitter.widget(1))
     sub1_dir = image_directory / "sub1"
     second_preview.set_directory(sub1_dir)
     qtbot.wait(50)
@@ -1112,8 +1403,9 @@ def test_move_file_to_second_output(
     _click_tile(widget, file_to_move, qtbot)
     assert file_to_move in widget.selected_files
 
-    QTest.keyClick(gui_app_instance.window, Qt.Key.Key_2,
-                   Qt.KeyboardModifier.ControlModifier, 100)
+    QTest.keyClick(
+        gui_app_instance.window, Qt.Key.Key_2, Qt.KeyboardModifier.ControlModifier, 100
+    )
 
     dialog = _get_visible_dialog()
     assert dialog.windowTitle().startswith("Move to ")
@@ -1151,8 +1443,7 @@ def test_move_file_with_output_navigation(
     assert file_to_move in widget.selected_files
 
     right_panel = gui_app_instance.window.right_panel
-    preview_widget = cast(DirectoryPreviewWidget,
-                          right_panel.splitter.widget(0))
+    preview_widget = cast(DirectoryPreviewWidget, right_panel.splitter.widget(0))
     selector = preview_widget.selector
 
     sub1_dir = image_directory / "sub1"
@@ -1187,8 +1478,9 @@ def test_move_file_with_output_navigation(
 
     assert preview_widget.current_dir == sub12_dir
 
-    QTest.keyClick(gui_app_instance.window, Qt.Key.Key_1,
-                   Qt.KeyboardModifier.ControlModifier, 100)
+    QTest.keyClick(
+        gui_app_instance.window, Qt.Key.Key_1, Qt.KeyboardModifier.ControlModifier, 100
+    )
 
     dialog = _get_visible_dialog()
     assert dialog.windowTitle().startswith("Move to ")
@@ -1261,8 +1553,7 @@ def test_move_file_from_search_results(
     assert target in gui_app_instance.window.left_panel.selected_files
 
     right_panel = gui_app_instance.window.right_panel
-    preview_widget = cast(DirectoryPreviewWidget,
-                          right_panel.splitter.widget(0))
+    preview_widget = cast(DirectoryPreviewWidget, right_panel.splitter.widget(0))
     selector = preview_widget.selector
 
     sub1_dir = image_directory / "sub1"
@@ -1280,8 +1571,9 @@ def test_move_file_from_search_results(
 
     gui_app_instance.window.activateWindow()
     qtbot.wait(50)
-    QTest.keyClick(gui_app_instance.window, Qt.Key.Key_1,
-                   Qt.KeyboardModifier.ControlModifier, 100)
+    QTest.keyClick(
+        gui_app_instance.window, Qt.Key.Key_1, Qt.KeyboardModifier.ControlModifier, 100
+    )
     qtbot.wait(100)
 
     dialog = _get_visible_dialog()
@@ -1345,11 +1637,8 @@ def test_move_files_with_identical_names(
         toggle_rect = widget.get_toggle_rect(sub2)
         if toggle_rect:
             scroll_y = widget.verticalScrollBar().value()
-            pos = QPoint(toggle_rect.center().x(),
-                         toggle_rect.center().y() - scroll_y)
-            QTest.mouseClick(widget.viewport(),
-                             Qt.MouseButton.LeftButton,
-                             pos=pos)
+            pos = QPoint(toggle_rect.center().x(), toggle_rect.center().y() - scroll_y)
+            QTest.mouseClick(widget.viewport(), Qt.MouseButton.LeftButton, pos=pos)
             qtbot.wait(50)
         rect2 = widget.get_tile_rect(file2)
 
@@ -1374,13 +1663,16 @@ def test_move_files_with_identical_names(
     assert len(widget.selected_files) == 2
 
     file2_md5 = gui_app_instance.repo.get_image_by_path(
-        str(file2.relative_to(image_directory))).md5_digest
+        str(file2.relative_to(image_directory))
+    ).md5_digest
 
     file1_md5 = gui_app_instance.repo.get_image_by_path(
-        str(file1.relative_to(image_directory))).md5_digest
+        str(file1.relative_to(image_directory))
+    ).md5_digest
 
-    QTest.keyClick(gui_app_instance.window, Qt.Key.Key_1,
-                   Qt.KeyboardModifier.ControlModifier, 100)
+    QTest.keyClick(
+        gui_app_instance.window, Qt.Key.Key_1, Qt.KeyboardModifier.ControlModifier, 100
+    )
 
     dialog = _get_visible_dialog()
     assert dialog.windowTitle().startswith("Move to ")
@@ -1398,8 +1690,9 @@ def test_move_files_with_identical_names(
     assert not file2.exists()
 
     right_panel = gui_app_instance.window.right_panel
-    preview_widget = cast(DirectoryPreviewWidget,
-                          right_panel.splitter.widget(0))
+    preview_widget = cast(DirectoryPreviewWidget, right_panel.splitter.widget(0))
     target_dir = preview_widget.current_dir
     assert (target_dir / f"random.png").exists()
-    assert (target_dir / f"random_{file2_md5[:8]}.png").exists() or (target_dir / f"random_{file1_md5[:8]}.png").exists()
+    assert (target_dir / f"random_{file2_md5[:8]}.png").exists() or (
+        target_dir / f"random_{file1_md5[:8]}.png"
+    ).exists()

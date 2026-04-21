@@ -5,23 +5,26 @@ from beartype import beartype
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
-    QScrollArea,
     QPushButton,
     QLabel,
-    QFrame,
-    QComboBox,
-    QDoubleSpinBox,
-    QLineEdit,
-    QHBoxLayout,
-    QFormLayout,
     QSplitter,
     QAbstractItemView,
     QCompleter,
+    QPlainTextEdit,
+    QTextEdit,
 )
 from PySide6.QtCore import Qt, Signal, QStringListModel
+from PySide6.QtGui import (
+    QTextCursor,
+    QKeyEvent,
+    QTextCharFormat,
+    QColor,
+    QSyntaxHighlighter,
+)
 from pathlib import Path
 import os
 import logging
+import re
 
 from image_tagger.gui.image_list_widget import ImageListWidget
 from sqlalchemy.orm import Session
@@ -34,6 +37,8 @@ from image_tagger.db.models import (
     ImageRegularTag,
     ImageDescription,
 )
+
+from sexpdata import loads, dumps, Symbol
 
 
 class ImageThumbnailList(ImageListWidget):
@@ -78,118 +83,69 @@ class ImageThumbnailList(ImageListWidget):
                     break
 
 
-class TagCompleter(QLineEdit):
-    """A line edit with auto-completion for tag names."""
+class SexpHighlighter(QSyntaxHighlighter):
+    """Simple syntax highlighter for S-expressions."""
 
-    def __init__(self, suggestions: list[str], parent=None):
+    def __init__(self, parent=None):
         super().__init__(parent)
+        self._keyword_format = QTextCharFormat()
+        self._keyword_format.setForeground(QColor("#0077aa"))
+        self._keyword_format.setFontWeight(700)
 
-        self._completer = QCompleter(suggestions)
-        self._completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
-        self._completer.setFilterMode(Qt.MatchFlag.MatchContains)
-        self.setCompleter(self._completer)
+        self._string_format = QTextCharFormat()
+        self._string_format.setForeground(QColor("#690"))
 
-    def set_suggestions(self, suggestions: list[str]):
-        self._completer.setModel(QStringListModel(suggestions))
+        self._comment_format = QTextCharFormat()
+        self._comment_format.setForeground(QColor("#999"))
+
+        self._keywords = {
+            "and",
+            "or",
+            "not",
+            "probabilistic_tag",
+            "regular_tag",
+            "description",
+            "path_contains",
+        }
+
+    def highlightBlock(self, text: str):
+        # Highlight keywords
+        for kw in self._keywords:
+            for m in re.finditer(r"\b" + re.escape(kw) + r"\b", text):
+                self.setFormat(m.start(), m.end() - m.start(), self._keyword_format)
+
+        # Highlight strings
+        for m in re.finditer(r'"([^"\\]|\\.)*"', text):
+            self.setFormat(m.start(), m.end() - m.start(), self._string_format)
+
+        # Highlight comments
+        for m in re.finditer(r";.*$", text):
+            self.setFormat(m.start(), m.end() - m.start(), self._comment_format)
 
 
-class ConditionWidget(QFrame):
-    """Widget for a single filter condition."""
-
-    changed = Signal()
-    remove_requested = Signal()
+class SexpTextEdit(QPlainTextEdit):
+    """Multi-line text edit with autocomplete for S-expressions."""
 
     def __init__(self, session: Session, parent=None):
         super().__init__(parent)
         self.session = session
-        self.setFrameStyle(QFrame.Shape.StyledPanel | QFrame.Shadow.Raised)
-        self._build_ui()
+        self._completer = QCompleter()
+        self._completer.setWidget(self)
+        self._completer.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
+        self._completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self._completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        self._completer.activated.connect(self._insert_completion)
 
-    def _build_ui(self):
-        layout = QFormLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
-        self.setStyleSheet(
-            "QComboBox, QDoubleSpinBox, QLineEdit { border: none; } QPushButton { border: none; }"
+        self._highlighter = SexpHighlighter(self.document())
+
+        self.setPlaceholderText(
+            "Enter S-expression query, e.g.:\n"
+            "(and (probabilistic_tag general castle 0.5)\n"
+            "     (regular_tag category1 tag_a))"
         )
-
-        self.condition_type = QComboBox()
-        self.condition_type.addItems(
-            [
-                "has probabilistic tag",
-                "has regular tag",
-                "has description containing",
-                "has path containing",
-            ]
-        )
-        self.condition_type.currentIndexChanged.connect(self._on_type_changed)
-        layout.addRow("type:", self.condition_type)
-
-        self.category_combo = QComboBox()
-        self.category_combo.setEditable(True)
-        self.category_combo.setMinimumWidth(100)
-        self.category_combo.currentTextChanged.connect(self._on_category_changed)
-        layout.addRow("category:", self.category_combo)
-        self.category_label = layout.labelForField(self.category_combo)
-
-        self.tag_input = TagCompleter([])
-        self.tag_input.setMinimumWidth(200)
-        self.tag_input.textChanged.connect(lambda: self.changed.emit())
-        layout.addRow("tag:", self.tag_input)
-        self.tag_label = layout.labelForField(self.tag_input)
-
-        self.prob_spin = QDoubleSpinBox()
-        self.prob_spin.setRange(0.0, 1.0)
-        self.prob_spin.setSingleStep(0.05)
-        self.prob_spin.setValue(0.5)
-        self.prob_spin.setDecimals(2)
-        self.prob_spin.valueChanged.connect(lambda: self.changed.emit())
-        layout.addRow("confidence ≥", self.prob_spin)
-        self.prob_label = layout.labelForField(self.prob_spin)
-
-        self.desc_input = QLineEdit()
-        self.desc_input.setMinimumWidth(200)
-        self.desc_input.textChanged.connect(lambda: self.changed.emit())
-        layout.addRow("text:", self.desc_input)
-        self.desc_label = layout.labelForField(self.desc_input)
-
-        self.path_input = QLineEdit()
-        self.path_input.setMinimumWidth(200)
-        self.path_input.textChanged.connect(lambda: self.changed.emit())
-        layout.addRow("path:", self.path_input)
-        self.path_label = layout.labelForField(self.path_input)
-
-        remove_btn = QPushButton("✕")
-        remove_btn.setFixedWidth(30)
-        remove_btn.clicked.connect(self.remove_requested.emit)
-
-        # Move to upper right: Wrap in layout with alignment
-        button_layout = QHBoxLayout()
-        button_layout.addStretch()
-        button_layout.addWidget(remove_btn)
-        layout.addRow(button_layout)
+        self.setLineWrapMode(QPlainTextEdit.LineWrapMode.WidgetWidth)
 
         self._load_suggestions()
-        self._on_type_changed(0)
-
-    def load_from_spec(self, spec: dict):
-        t = spec["type"]
-        if t == "probabilistic_tag":
-            self.condition_type.setCurrentIndex(0)
-            self.category_combo.setCurrentText(spec["category"])
-            self.tag_input.setText(spec["name"])
-            self.prob_spin.setValue(spec["min_probability"])
-        elif t == "regular_tag":
-            self.condition_type.setCurrentIndex(1)
-            self.category_combo.setCurrentText(spec["category"])
-            self.tag_input.setText(spec["name"])
-        elif t == "description":
-            self.condition_type.setCurrentIndex(2)
-            self.desc_input.setText(spec["text"])
-        elif t == "path_contains":
-            self.condition_type.setCurrentIndex(3)
-            self.path_input.setText(spec["text"])
-        self._on_type_changed(self.condition_type.currentIndex())
 
     def _load_suggestions(self):
         prob_cats = sorted(
@@ -208,314 +164,369 @@ class ConditionWidget(QFrame):
                 ).all()
             )
         )
+        prob_names = sorted(
+            set(
+                r[0]
+                for r in self.session.execute(
+                    select(ProbabilisticTag.name).distinct()
+                ).all()
+            )
+        )
+        reg_names = sorted(
+            set(
+                r[0]
+                for r in self.session.execute(select(RegularTag.name).distinct()).all()
+            )
+        )
+
         self._prob_categories = prob_cats
         self._reg_categories = reg_cats
-        self._update_categories()
+        self._prob_names = prob_names
+        self._reg_names = reg_names
 
-    def _update_categories(self):
-        idx = self.condition_type.currentIndex()
-        current_text = self.category_combo.currentText()
+        # Base suggestions: function names
+        self._base_suggestions = [
+            "and",
+            "or",
+            "not",
+            "probabilistic_tag",
+            "regular_tag",
+            "description",
+            "path_contains",
+        ]
 
-        self.category_combo.blockSignals(True)
-        self.category_combo.clear()
-        if idx == 0:
-            self.category_combo.addItems(self._prob_categories)
-        elif idx == 1:
-            self.category_combo.addItems(self._reg_categories)
+    def _current_word(self) -> tuple[str, int, int]:
+        """Return (word, start, end) of the word under the cursor."""
+        cursor = self.textCursor()
+        pos = cursor.position()
+        block_text = cursor.block().text()
+        col = pos - cursor.block().position()
 
-        if current_text:
-            self.category_combo.setCurrentText(current_text)
-        self.category_combo.blockSignals(False)
+        # Find word boundaries
+        start = col
+        while start > 0 and block_text[start - 1] not in ' \t\n()"':
+            start -= 1
+        end = col
+        while end < len(block_text) and block_text[end] not in ' \t\n()"':
+            end += 1
 
-    def _on_type_changed(self, idx):
-        is_prob = idx == 0
-        is_reg = idx == 1
-        is_desc = idx == 2
-        is_path = idx == 3
+        return block_text[start:end], start, end
 
-        self.category_label.setVisible(is_prob or is_reg)
-        self.category_combo.setVisible(is_prob or is_reg)
-        self.tag_label.setVisible(is_prob or is_reg)
-        self.tag_input.setVisible(is_prob or is_reg)
-        self.prob_label.setVisible(is_prob)
-        self.prob_spin.setVisible(is_prob)
-        self.desc_label.setVisible(is_desc)
-        self.desc_input.setVisible(is_desc)
-        self.path_label.setVisible(is_path)
-        self.path_input.setVisible(is_path)
+    def _get_context_suggestions(self) -> list[str]:
+        """Determine autocomplete suggestions based on cursor context."""
+        text = self.toPlainText()
+        cursor = self.textCursor()
+        pos = cursor.position()
 
-        if is_prob or is_reg:
-            self.category_label.show()
-            self.tag_label.show()
-        else:
-            self.category_label.hide()
-            self.tag_label.hide()
-        if is_prob:
-            self.prob_label.show()
-        else:
-            self.prob_label.hide()
-        if is_desc:
-            self.desc_label.show()
-        else:
-            self.desc_label.hide()
-        if is_path:
-            self.path_label.show()
-        else:
-            self.path_label.hide()
+        # Find the enclosing expression context by looking backwards
+        before = text[:pos]
 
-        self._update_categories()
-        self._on_category_changed()
-        self.changed.emit()
+        # Try to find the most recent unclosed '(' and what function it contains
+        depth = 0
+        i = len(before) - 1
+        func_name = None
+        arg_index = 0
 
-    def _on_category_changed(self):
-        idx = self.condition_type.currentIndex()
-        cat = self.category_combo.currentText()
-        if idx == 0:
-            names = sorted(
-                r[0]
-                for r in self.session.execute(
-                    select(ProbabilisticTag.name).where(
-                        ProbabilisticTag.category == cat
+        while i >= 0:
+            c = before[i]
+            if c == ")":
+                depth += 1
+            elif c == "(":
+                if depth == 0:
+                    # Found our opening paren, extract function name
+                    m = re.match(r"\s*([a-zA-Z_][a-zA-Z0-9_]*)", before[i + 1 :])
+                    if m:
+                        func_name = m.group(1)
+                        # Count arguments between i+1 and pos
+                        inner = before[i + 1 + len(func_name) :]
+                        arg_index = inner.count(" ") + inner.count("\n")
+                        # More accurate: split by whitespace outside parens
+                        arg_index = self._count_args(inner)
+                    break
+                else:
+                    depth -= 1
+            i -= 1
+
+        if func_name == "probabilistic_tag":
+            if arg_index == 0:
+                return self._prob_categories
+            elif arg_index == 1:
+                # Try to find category
+                cat = self._get_arg_at_index(before, 0)
+                if cat:
+                    return sorted(
+                        r[0]
+                        for r in self.session.execute(
+                            select(ProbabilisticTag.name).where(
+                                ProbabilisticTag.category == cat
+                            )
+                        ).all()
                     )
-                ).all()
-            )
-        elif idx == 1:
-            names = sorted(
-                r[0]
-                for r in self.session.execute(
-                    select(RegularTag.name).where(RegularTag.category == cat)
-                ).all()
-            )
-        else:
-            names = []
-        self.tag_input.set_suggestions(names)
-        self.changed.emit()
+                return self._prob_names
+            elif arg_index == 2:
+                return []  # probability is a number
+        elif func_name == "regular_tag":
+            if arg_index == 0:
+                return self._reg_categories
+            elif arg_index == 1:
+                cat = self._get_arg_at_index(before, 0)
+                if cat:
+                    return sorted(
+                        r[0]
+                        for r in self.session.execute(
+                            select(RegularTag.name).where(RegularTag.category == cat)
+                        ).all()
+                    )
+                return self._reg_names
+        elif func_name in ("description", "path_contains"):
+            return []
+        elif func_name in ("and", "or", "not"):
+            return self._base_suggestions
 
-    def to_filter_spec(self) -> Optional[dict]:
-        idx = self.condition_type.currentIndex()
-        if idx == 0:
-            tag_name = self.tag_input.text().strip()
-            if not tag_name:
-                return None
-            return {
-                "type": "probabilistic_tag",
-                "category": self.category_combo.currentText(),
-                "name": tag_name,
-                "min_probability": self.prob_spin.value(),
-            }
-        elif idx == 1:
-            tag_name = self.tag_input.text().strip()
-            if not tag_name:
-                return None
-            return {
-                "type": "regular_tag",
-                "category": self.category_combo.currentText(),
-                "name": tag_name,
-            }
-        elif idx == 2:
-            text = self.desc_input.text().strip()
-            if not text:
-                return None
-            return {
-                "type": "description",
-                "text": text,
-            }
-        elif idx == 3:
-            text = self.path_input.text().strip()
-            if not text:
-                return None
-            return {
-                "type": "path_contains",
-                "text": text,
-            }
-        return None
+        return self._base_suggestions
 
+    def _count_args(self, inner: str) -> int:
+        """Count top-level arguments in inner text."""
+        depth = 0
+        args = 0
+        in_word = False
+        for c in inner:
+            if c == "(":
+                depth += 1
+            elif c == ")":
+                depth -= 1
+            elif depth == 0 and c not in " \t\n":
+                if not in_word:
+                    args += 1
+                    in_word = True
+            elif depth == 0 and c in " \t\n":
+                in_word = False
+        return max(0, args - 1)  # subtract 1 for function name
 
-class ExpressionNode(QFrame):
-    """A node in the boolean expression tree. Can be a condition or a logical group."""
-
-    changed = Signal()
-    remove_requested = Signal()
-
-    def __init__(self, session: Session, is_root=False, parent=None):
-        super().__init__(parent)
-        self.session = session
-        self.is_root = is_root
-        self.child_nodes: list[ExpressionNode] = []
-        self.condition: Optional[ConditionWidget] = None
-        self.is_group = True
-
-        self._build_ui()
-
-    def _build_ui(self):
-        self.main_layout = QVBoxLayout(self)
-        self.main_layout.setContentsMargins(0, 0, 0, 0)
-        self.main_layout.setSpacing(0)
-
-        self.setStyleSheet("QPushButton { border: none; } QComboBox { border: none; }")
-
-        header = QVBoxLayout()
-        header.setContentsMargins(0, 0, 0, 0)
-        h_row = QHBoxLayout()
-        h_row.setContentsMargins(0, 0, 0, 0)
-        h_row.setSpacing(0)  # Remove spacing
-
-        self.operator_combo = QComboBox()
-        self.operator_combo.addItems(["AND", "OR", "NOT"])
-        self.operator_combo.currentIndexChanged.connect(self._on_operator_changed)
-        # Removed QLabel("Operator:")
-        h_row.addWidget(self.operator_combo)
-
-        add_cond_btn = QPushButton("+ Condition")
-        add_cond_btn.clicked.connect(self._add_condition_child)
-        h_row.addWidget(add_cond_btn)
-
-        add_group_btn = QPushButton("+ Group")
-        add_group_btn.clicked.connect(self._add_group_child)
-        h_row.addWidget(add_group_btn)
-
-        h_row.addStretch()
-
-        if not self.is_root:
-            remove_btn = QPushButton("✕ Remove Group")
-            remove_btn.clicked.connect(self.remove_requested.emit)
-            h_row.addWidget(remove_btn)
-
-        header.addLayout(h_row)
-        self.main_layout.addLayout(header)
-
-        self.children_layout = QVBoxLayout()
-        self.children_layout.setContentsMargins(8, 0, 0, 0)
-        self.children_layout.setSpacing(0)
-        self.main_layout.addLayout(self.children_layout)
-
-    def _on_operator_changed(self):
-        self.changed.emit()
-
-    def _add_condition_child(self):
-        node = ExpressionNode(self.session, is_root=False)
-        node.is_group = False
-        node._convert_to_condition()
-        node.changed.connect(self.changed.emit)
-        node.remove_requested.connect(lambda n=node: self._remove_child(n))
-        self.child_nodes.append(node)
-        self.children_layout.addWidget(node)
-        self.changed.emit()
-
-    def _add_group_child(self):
-        node = ExpressionNode(self.session, is_root=False)
-        node.changed.connect(self.changed.emit)
-        node.remove_requested.connect(lambda n=node: self._remove_child(n))
-        self.child_nodes.append(node)
-        self.children_layout.addWidget(node)
-        self.changed.emit()
-
-    def _remove_child(self, child: "ExpressionNode"):
-        if child in self.child_nodes:
-            self.child_nodes.remove(child)
-            self.children_layout.removeWidget(child)
-            child.deleteLater()
-            self.changed.emit()
-
-    def _add_child_from_spec(self, spec: dict):
-        node = ExpressionNode(self.session, is_root=False)
-        node.load_from_spec(spec)
-        node.changed.connect(self.changed.emit)
-        node.remove_requested.connect(lambda n=node: self._remove_child(n))
-        self.child_nodes.append(node)
-        self.children_layout.addWidget(node)
-        return node
-
-    def load_from_spec(self, spec: dict):
-        logging.info(f"Loading node from spec: {spec}")
-        t = spec.get("type")
-        if not t:
-            logging.error(f"Spec missing type: {spec}")
-            return
-
-        if t in ["probabilistic_tag", "regular_tag", "description", "path_contains"]:
-            if self.is_root and not self.child_nodes:
-                self._add_child_from_spec(spec)
-            else:
-                self._convert_to_condition()
-                if self.condition:
-                    self.condition.load_from_spec(spec)
-                else:
-                    logging.error("Condition not created after _convert_to_condition")
-        else:
-            self.is_group = True
-            self.operator_combo.setCurrentText(t.upper())
-            if t == "not":
-                child = spec.get("child")
-                if child:
-                    self._add_child_from_spec(child)
-            elif t in ["and", "or"]:
-                children = spec.get("children")
-                if children:
-                    for child_spec in children:
-                        self._add_child_from_spec(child_spec)
-                else:
-                    logging.error(f"Spec {t} missing children: {spec}")
-
-    def _convert_to_condition(self):
-        logging.info("Converting to condition")
-        self.is_group = False
-        while self.main_layout.count():
-            item = self.main_layout.takeAt(0)
-            if item is None:
-                continue
-            widget = item.widget()
-            if widget:
-                widget.deleteLater()
-            else:
-                child_layout = item.layout()
-                if child_layout:
-                    self._clear_layout(child_layout)
-
-        self.condition = ConditionWidget(self.session)
-        self.condition.changed.connect(self.changed.emit)
-        self.condition.remove_requested.connect(self.remove_requested.emit)
-        self.main_layout.addWidget(self.condition)
-        logging.info(f"Condition created: {self.condition}")
-
-    def _clear_layout(self, layout):
-        while layout.count():
-            item = layout.takeAt(0)
-            if item is None:
-                continue
-            widget = item.widget()
-            if widget:
-                widget.deleteLater()
-            else:
-                child_layout = item.layout()
-                if child_layout:
-                    self._clear_layout(child_layout)
-
-    def to_filter_spec(self) -> Optional[dict]:
-        if not self.is_group and self.condition:
-            return self.condition.to_filter_spec()
-
-        op = self.operator_combo.currentText()
-        child_specs = []
-        for child in self.child_nodes:
-            spec = child.to_filter_spec()
-            if spec is not None:
-                child_specs.append(spec)
-
-        if not child_specs:
+    def _get_arg_at_index(self, before_cursor: str, index: int) -> Optional[str]:
+        """Try to extract the argument at the given index from the current expression."""
+        # Find the opening paren of current expression
+        depth = 0
+        i = len(before_cursor) - 1
+        while i >= 0:
+            c = before_cursor[i]
+            if c == ")":
+                depth += 1
+            elif c == "(":
+                if depth == 0:
+                    break
+                depth -= 1
+            i -= 1
+        if i < 0:
             return None
 
-        if op == "NOT":
-            return {"type": "not", "child": child_specs[0]}
-        elif op == "AND":
-            if len(child_specs) == 1:
-                return child_specs[0]
-            return {"type": "and", "children": child_specs}
-        elif op == "OR":
-            if len(child_specs) == 1:
-                return child_specs[0]
-            return {"type": "or", "children": child_specs}
+        expr_text = before_cursor[i:]
+        m = re.match(r"\(\s*([a-zA-Z_][a-zA-Z0-9_]*)\s+", expr_text)
+        if not m:
+            return None
+
+        func_start = m.end()
+        rest = expr_text[func_start:]
+
+        # Parse arguments
+        args = []
+        current = ""
+        depth = 0
+        in_string = False
+        for c in rest:
+            if in_string:
+                current += c
+                if c == '"' and (len(current) < 2 or current[-2] != "\\"):
+                    in_string = False
+            elif c == '"':
+                current += c
+                in_string = True
+            elif c == "(":
+                depth += 1
+                current += c
+            elif c == ")":
+                if depth == 0:
+                    if current.strip():
+                        args.append(current.strip())
+                    break
+                depth -= 1
+                current += c
+            elif c in " \t\n" and depth == 0:
+                if current.strip():
+                    args.append(current.strip())
+                    current = ""
+            else:
+                current += c
+
+        if current.strip():
+            args.append(current.strip())
+
+        if index < len(args):
+            val = args[index]
+            # Remove quotes if present
+            if val.startswith('"') and val.endswith('"'):
+                val = val[1:-1]
+            return val
         return None
+
+    def keyPressEvent(self, event: QKeyEvent):
+        if self._completer.popup().isVisible():
+            if event.key() in (
+                Qt.Key.Key_Enter,
+                Qt.Key.Key_Return,
+                Qt.Key.Key_Tab,
+                Qt.Key.Key_Escape,
+            ):
+                event.ignore()
+                if event.key() == Qt.Key.Key_Escape:
+                    self._completer.popup().hide()
+                return
+
+        super().keyPressEvent(event)
+
+        word, start, end = self._current_word()
+        if len(word) < 1:
+            self._completer.popup().hide()
+            return
+
+        suggestions = self._get_context_suggestions()
+        filtered = [s for s in suggestions if word.lower() in s.lower()]
+        if not filtered:
+            self._completer.popup().hide()
+            return
+
+        self._completer.setModel(QStringListModel(filtered))
+        self._completer.setCompletionPrefix(word)
+        self._completer.popup().setCurrentIndex(
+            self._completer.completionModel().index(0, 0)
+        )
+
+        cr = self.cursorRect()
+        cr.setWidth(self._completer.popup().sizeHintForColumn(0) + 20)
+        self._completer.complete(cr)
+
+    def _insert_completion(self, completion: str):
+        cursor = self.textCursor()
+        word, start, end = self._current_word()
+        block_pos = cursor.block().position()
+        cursor.setPosition(block_pos + start)
+        cursor.setPosition(block_pos + end, QTextCursor.MoveMode.KeepAnchor)
+        cursor.insertText(completion)
+        self.setTextCursor(cursor)
+
+    def refresh_suggestions(self):
+        """Reload tag/category suggestions from the database."""
+        self._load_suggestions()
+
+
+def _symbol_to_str(val: Any) -> str:
+    """Convert a sexpdata Symbol or string to a Python string."""
+    if isinstance(val, Symbol):
+        return val.value()
+    if isinstance(val, str):
+        return val
+    raise ValueError(f"Expected Symbol or str, got {type(val)}: {val}")
+
+
+def _sexp_to_spec(sexp: Any) -> Optional[dict]:
+    """Convert a parsed sexpdata expression to the internal filter spec dict."""
+    if not isinstance(sexp, list) or not sexp:
+        return None
+
+    op = _symbol_to_str(sexp[0])
+
+    if op == "probabilistic_tag":
+        if len(sexp) < 3:
+            return None
+        category = _symbol_to_str(sexp[1])
+        name = _symbol_to_str(sexp[2])
+        min_probability = 0.5
+        if len(sexp) >= 4:
+            min_probability = float(sexp[3])
+        return {
+            "type": "probabilistic_tag",
+            "category": category,
+            "name": name,
+            "min_probability": min_probability,
+        }
+
+    elif op == "regular_tag":
+        if len(sexp) < 3:
+            return None
+        return {
+            "type": "regular_tag",
+            "category": _symbol_to_str(sexp[1]),
+            "name": _symbol_to_str(sexp[2]),
+        }
+
+    elif op == "description":
+        if len(sexp) < 2:
+            return None
+        return {
+            "type": "description",
+            "text": _symbol_to_str(sexp[1]),
+        }
+
+    elif op == "path_contains":
+        if len(sexp) < 2:
+            return None
+        return {
+            "type": "path_contains",
+            "text": _symbol_to_str(sexp[1]),
+        }
+
+    elif op == "and":
+        children = [_sexp_to_spec(child) for child in sexp[1:]]
+        children = [c for c in children if c is not None]
+        if not children:
+            return None
+        if len(children) == 1:
+            return children[0]
+        return {"type": "and", "children": children}
+
+    elif op == "or":
+        children = [_sexp_to_spec(child) for child in sexp[1:]]
+        children = [c for c in children if c is not None]
+        if not children:
+            return None
+        if len(children) == 1:
+            return children[0]
+        return {"type": "or", "children": children}
+
+    elif op == "not":
+        if len(sexp) < 2:
+            return None
+        child = _sexp_to_spec(sexp[1])
+        if child is None:
+            return None
+        return {"type": "not", "child": child}
+
+    return None
+
+
+def _spec_to_sexp(spec: dict) -> Any:
+    """Convert an internal filter spec dict to a sexpdata expression."""
+    t = spec["type"]
+    if t == "probabilistic_tag":
+        return [
+            Symbol("probabilistic_tag"),
+            Symbol(spec["category"]),
+            Symbol(spec["name"]),
+            spec.get("min_probability", 0.5),
+        ]
+    elif t == "regular_tag":
+        return [Symbol("regular_tag"), Symbol(spec["category"]), Symbol(spec["name"])]
+    elif t == "description":
+        return [Symbol("description"), spec["text"]]
+    elif t == "path_contains":
+        return [Symbol("path_contains"), spec["text"]]
+    elif t == "and":
+        return [Symbol("and"), *[_spec_to_sexp(c) for c in spec["children"]]]
+    elif t == "or":
+        return [Symbol("or"), *[_spec_to_sexp(c) for c in spec["children"]]]
+    elif t == "not":
+        return [Symbol("not"), _spec_to_sexp(spec["child"])]
+    raise ValueError(f"Unknown spec type: {t}")
 
 
 def build_query(session: Session, spec: dict):
@@ -592,7 +603,7 @@ def build_query(session: Session, spec: dict):
 
 
 class SearchTab(QWidget):
-    """Tab with boolean expression builder for filtering images."""
+    """Tab with S-expression query builder for filtering images."""
 
     results_found = Signal(list)
 
@@ -612,13 +623,8 @@ class SearchTab(QWidget):
 
         logging.info(f"Root dir for search tab: {base_dir}")
 
-        self.scroll_view = QScrollArea()
-        self.scroll_view.setWidgetResizable(True)
-
-        self.root_node = ExpressionNode(session, is_root=True)
-        self.root_node.changed.connect(self._adjust_scroll_area)
-        self.scroll_view.setWidget(self.root_node)
-        expr_layout.addWidget(self.scroll_view)
+        self.sexp_input = SexpTextEdit(session)
+        expr_layout.addWidget(self.sexp_input)
 
         search_btn = QPushButton("Search")
         search_btn.clicked.connect(self._execute_search)
@@ -638,23 +644,47 @@ class SearchTab(QWidget):
         layout.addWidget(splitter)
 
     def add_tag_to_query(self, tag_type: str, category: str, name: str):
-        spec: dict[str, Any] = {
-            "type": tag_type,
-            "category": category,
-            "name": name,
-        }
-        if tag_type == "probabilistic_tag":
-            spec["min_probability"] = 0.5
+        """Append a tag condition to the current S-expression query."""
+        current_text = self.sexp_input.toPlainText().strip()
 
-        if self.root_node.is_group:
-            self.root_node._add_child_from_spec(spec)
+        if tag_type == "probabilistic_tag":
+            new_expr = [
+                Symbol("probabilistic_tag"),
+                Symbol(category),
+                Symbol(name),
+                0.5,
+            ]
+        else:
+            new_expr = [Symbol("regular_tag"), Symbol(category), Symbol(name)]
+
+        if not current_text:
+            self.sexp_input.setPlainText(dumps(new_expr))
+            return
+
+        try:
+            parsed = loads(current_text)
+        except Exception:
+            # If current text is invalid, replace it
+            self.sexp_input.setPlainText(dumps(new_expr))
+            return
+
+        # If current expression is already an 'and', append the new condition
+        if (
+            isinstance(parsed, list)
+            and len(parsed) > 0
+            and _symbol_to_str(parsed[0]) == "and"
+        ):
+            parsed.append(new_expr)
+            self.sexp_input.setPlainText(dumps(parsed))
+        else:
+            # Wrap existing expression and new one in an 'and'
+            combined = [Symbol("and"), parsed, new_expr]
+            self.sexp_input.setPlainText(dumps(combined))
 
     def set_search_spec(self, spec: dict) -> None:
-        self.root_node = ExpressionNode(self.session, is_root=True)
-        self.root_node.changed.connect(self._adjust_scroll_area)
-        self.scroll_view.setWidget(self.root_node)
-        self.root_node.load_from_spec(spec)
-        self.root_node.changed.emit()
+        """Set the query from an internal filter spec dict."""
+        sexp = _spec_to_sexp(spec)
+        self.sexp_input.setPlainText(dumps(sexp))
 
     def execute_search(self) -> None:
         self._execute_search()
@@ -663,27 +693,25 @@ class SearchTab(QWidget):
         return list(self.thumbnail_list.model.images)
 
     def clear_search(self) -> None:
-        self.root_node = ExpressionNode(self.session, is_root=True)
-        self.root_node.changed.connect(self._adjust_scroll_area)
-        self.scroll_view.setWidget(self.root_node)
+        self.sexp_input.setPlainText("")
         self.thumbnail_list.set_images([])
         self.status_label.setText("")
 
-    def _on_expression_changed(self):
-        pass
-
-    def _adjust_scroll_area(self):
-        from PySide6.QtCore import QTimer
-
-        QTimer.singleShot(
-            0,
-            lambda: self.scroll_view.setMinimumHeight(
-                min(self.root_node.sizeHint().height() + 20, 500)
-            ),
-        )
-
     def _execute_search(self):
-        spec = self.root_node.to_filter_spec()
+        text = self.sexp_input.toPlainText().strip()
+        if not text:
+            self.status_label.setText("No valid filter conditions specified.")
+            self.thumbnail_list.set_images([])
+            return
+
+        try:
+            parsed = loads(text)
+        except Exception as e:
+            self.status_label.setText(f"Parse error: {e}")
+            self.thumbnail_list.set_images([])
+            return
+
+        spec = _sexp_to_spec(parsed)
         if spec is None:
             self.status_label.setText("No valid filter conditions specified.")
             self.thumbnail_list.set_images([])
