@@ -1,4 +1,7 @@
+from beartype.typing import cast
+import pytest
 from beartype import beartype
+from image_tagger.gui.right_panel import DirectoryPreviewWidget
 from utils import take_screenshot
 from conftest import AppInstanceRes
 from pathlib import Path
@@ -6,12 +9,56 @@ from pytestqt.qtbot import QtBot
 import logging
 from PySide6.QtCore import QTimer, Qt, QPoint
 from PySide6.QtTest import QTest, QSignalSpy
-from PySide6.QtWidgets import QApplication, QDialog, QDialogButtonBox, QLabel, QListView
+from PySide6.QtWidgets import (
+    QApplication,
+    QDialog,
+    QDialogButtonBox,
+    QLabel,
+    QListView,
+    QPushButton,
+)
 
 
-def test_capture_specific_widget(
-    gui_app_instance: AppInstanceRes, screenshot_dir: Path, qtbot: QtBot
-):
+def _get_visible_dialog() -> QDialog:
+    """Return the currently visible QDialog, or raise AssertionError."""
+    dialog = next(
+        (widget for widget in QApplication.topLevelWidgets()
+         if isinstance(widget, QDialog) and widget.isVisible()),
+        None,
+    )
+    assert dialog is not None, "No visible dialog found"
+    return dialog
+
+
+def _click_tile(widget, file_path: Path, qtbot: QtBot):
+    """Click a tile in the mixed view, scrolling if necessary."""
+    rect = widget.get_tile_rect(file_path)
+    assert rect is not None, f"Tile {file_path} not found"
+    if not widget.is_element_visible(rect):
+        widget.scroll_to_content_y(rect.center().y())
+        qtbot.wait(50)
+        rect = widget.get_tile_rect(file_path)
+        assert rect is not None
+    scroll_y = widget.verticalScrollBar().value()
+    click_pos = QPoint(rect.center().x(), rect.center().y() - scroll_y)
+    QTest.mouseClick(widget.viewport(),
+                     Qt.MouseButton.LeftButton,
+                     pos=click_pos)
+    qtbot.wait(50)
+
+
+def _accept_move_dialog(qtbot: QtBot):
+    """Find the visible move dialog and accept it."""
+    dialog = _get_visible_dialog()
+    buttons = dialog.findChild(QDialogButtonBox)
+    assert buttons is not None
+    qtbot.wait(50)
+    dialog.accept()
+    qtbot.wait(50)
+
+
+def test_capture_specific_widget(gui_app_instance: AppInstanceRes,
+                                 screenshot_dir: Path, qtbot: QtBot):
     """Capture screenshot of a specific nested widget."""
     qtbot.waitExposed(gui_app_instance.window)
 
@@ -67,7 +114,9 @@ def test_mixed_view_content_acces(
 
     # Click and verify signal
     spy = QSignalSpy(widget.imageClicked)
-    QTest.mouseClick(widget.viewport(), Qt.MouseButton.LeftButton, pos=click_pos)
+    QTest.mouseClick(widget.viewport(),
+                     Qt.MouseButton.LeftButton,
+                     pos=click_pos)
 
     screenshot_path = screenshot_dir / "status_panel.png"
     take_screenshot(central_widget, screenshot_path)
@@ -107,14 +156,16 @@ def test_mixed_view_expand_directory_reveals_tiles(
 
     # Verify files are not visible (directory collapsed)
     image_files = list(subdir.glob("*.png"))
-    assert widget.get_tile_rect(image_files[0]) is None, (
-        "Directory should start collapsed"
-    )
+    assert widget.get_tile_rect(
+        image_files[0]) is None, ("Directory should start collapsed")
 
     # Click toggle to expand
     scroll_y = widget.verticalScrollBar().value()
-    click_pos = QPoint(toggle_rect.center().x(), toggle_rect.center().y() - scroll_y)
-    QTest.mouseClick(widget.viewport(), Qt.MouseButton.LeftButton, pos=click_pos)
+    click_pos = QPoint(toggle_rect.center().x(),
+                       toggle_rect.center().y() - scroll_y)
+    QTest.mouseClick(widget.viewport(),
+                     Qt.MouseButton.LeftButton,
+                     pos=click_pos)
     qtbot.wait(50)
 
     take_screenshot(central_widget, screenshot_dir / "directory_expanded.png")
@@ -127,17 +178,15 @@ def test_mixed_view_expand_directory_reveals_tiles(
     file_to_move = subdir / image_files[0]
     first_image_rect = widget.get_element_click_pos(file_to_move)
 
-    QTest.mouseClick(widget.viewport(), Qt.MouseButton.LeftButton, pos=first_image_rect)
+    QTest.mouseClick(widget.viewport(),
+                     Qt.MouseButton.LeftButton,
+                     pos=first_image_rect)
 
-    QTest.keyClick(
-        gui_app_instance.window, Qt.Key.Key_1, Qt.KeyboardModifier.ControlModifier, 100
-    )
+    QTest.keyClick(gui_app_instance.window, Qt.Key.Key_1,
+                   Qt.KeyboardModifier.ControlModifier, 100)
 
-    dialog = next(
-        widget
-        for widget in QApplication.topLevelWidgets()
-        if isinstance(widget, QDialog) and widget.isVisible()
-    )
+    dialog = next(widget for widget in QApplication.topLevelWidgets()
+                  if isinstance(widget, QDialog) and widget.isVisible())
 
     assert dialog.windowTitle().startswith("Move to ")
 
@@ -186,10 +235,11 @@ def test_mixed_view_ctrl_click_multi_select(
                 toggle = widget.get_toggle_rect(d)
                 if toggle:
                     scroll_y = widget.verticalScrollBar().value()
-                    pos = QPoint(toggle.center().x(), toggle.center().y() - scroll_y)
-                    QTest.mouseClick(
-                        widget.viewport(), Qt.MouseButton.LeftButton, pos=pos
-                    )
+                    pos = QPoint(toggle.center().x(),
+                                 toggle.center().y() - scroll_y)
+                    QTest.mouseClick(widget.viewport(),
+                                     Qt.MouseButton.LeftButton,
+                                     pos=pos)
                     qtbot.wait(50)
         images = [hit.file_path for hit in widget.tile_hits][:2]
 
@@ -262,7 +312,8 @@ def test_mixed_view_scroll_to_offscreen_element(
 
     rect = widget.get_tile_rect(target)
     assert rect
-    assert widget.is_element_visible(rect), "Tile should be visible after scroll"
+    assert widget.is_element_visible(
+        rect), "Tile should be visible after scroll"
 
     # Take screenshot of scrolled state
     screenshot_path = screenshot_dir / "scrolled_to_tile.png"
@@ -273,7 +324,9 @@ def test_mixed_view_scroll_to_offscreen_element(
     click_pos = QPoint(rect.center().x(), rect.center().y() - scroll_y)
 
     spy = QSignalSpy(widget.imageClicked)
-    QTest.mouseClick(widget.viewport(), Qt.MouseButton.LeftButton, pos=click_pos)
+    QTest.mouseClick(widget.viewport(),
+                     Qt.MouseButton.LeftButton,
+                     pos=click_pos)
 
     assert spy.count() == 1
     assert spy.at(0)[0] == target
@@ -323,7 +376,9 @@ def test_mixed_view_double_click_emits_file_selected(
     click_pos = QPoint(rect.center().x(), rect.center().y() - scroll_y)
 
     spy = QSignalSpy(widget.fileSelected)
-    QTest.mouseDClick(widget.viewport(), Qt.MouseButton.LeftButton, pos=click_pos)
+    QTest.mouseDClick(widget.viewport(),
+                      Qt.MouseButton.LeftButton,
+                      pos=click_pos)
     qtbot.wait(50)
 
     screenshot_path = screenshot_dir / "double_click_selection.png"
@@ -484,20 +539,17 @@ def test_search_by_description(
     target1 = image_directory / "image_255_0_239.png"
     image_id1 = gui_app_instance.get_image_id(target1)
     gui_app_instance.repo.set_description(
-        image_id=image_id1, description="a beautiful sunset over the ocean"
-    )
+        image_id=image_id1, description="a beautiful sunset over the ocean")
 
     target2 = image_directory / "sub1" / "sub12" / "image_31_255_0.png"
     image_id2 = gui_app_instance.get_image_id(target2)
     gui_app_instance.repo.set_description(
-        image_id=image_id2, description="a beautiful mountain landscape"
-    )
+        image_id=image_id2, description="a beautiful mountain landscape")
 
     target3 = image_directory / "sub2" / "sub23" / "image_0_255_207.png"
     image_id3 = gui_app_instance.get_image_id(target3)
-    gui_app_instance.repo.set_description(
-        image_id=image_id3, description="just a random picture"
-    )
+    gui_app_instance.repo.set_description(image_id=image_id3,
+                                          description="just a random picture")
 
     search_tab = _setup_search_tab(gui_app_instance, qtbot)
     search_tab.clear_search()
@@ -596,7 +648,8 @@ def test_search_and_combination(
     search_tab.clear_search()
 
     spec = {
-        "type": "and",
+        "type":
+        "and",
         "children": [
             {
                 "type": "probabilistic_tag",
@@ -655,7 +708,8 @@ def test_search_or_combination(
     search_tab.clear_search()
 
     spec = {
-        "type": "or",
+        "type":
+        "or",
         "children": [
             {
                 "type": "probabilistic_tag",
@@ -877,3 +931,470 @@ def test_search_via_add_tag_to_query(
     assert str(target) in [str(r) for r in results]
     assert str(target2) in [str(r) for r in results]
     assert "Found 2 images" in search_tab.status_label.text()
+
+
+def test_move_file_from_root_to_output(
+    gui_app_instance: AppInstanceRes,
+    screenshot_dir: Path,
+    qtbot: QtBot,
+    image_directory: Path,
+):
+    """Test moving a file from the root directory to the default output target."""
+    qtbot.waitExposed(gui_app_instance.window)
+    central_widget = gui_app_instance.window.centralWidget()
+
+    widget = gui_app_instance.window.get_mixed_view()
+    qtbot.waitExposed(widget)
+
+    file_to_move = image_directory / "image_255_0_239.png"
+    _click_tile(widget, file_to_move, qtbot)
+    assert file_to_move in widget.selected_files
+
+    right_panel = gui_app_instance.window.right_panel
+    preview_widget = cast(DirectoryPreviewWidget,
+                          right_panel.splitter.widget(0))
+    selector = preview_widget.selector
+
+    sub1_dir = image_directory / "sub1"
+    list_widget = selector.subdir_list
+    sub1_item = None
+    for i in range(list_widget.count()):
+        item = list_widget.item(i)
+        if item.text() == "sub1":
+            sub1_item = item
+            break
+    assert sub1_item is not None
+    list_widget.itemClicked.emit(sub1_item)
+    qtbot.wait(50)
+    assert preview_widget.current_dir == sub1_dir
+
+    gui_app_instance.window.activateWindow()
+    qtbot.wait(50)
+    QTest.keyClick(gui_app_instance.window, Qt.Key.Key_1,
+                   Qt.KeyboardModifier.ControlModifier, 100)
+    qtbot.wait(100)
+
+    dialog = _get_visible_dialog()
+    assert dialog.windowTitle().startswith("Move to ")
+
+    label = dialog.findChild(QLabel)
+    assert label is not None
+    assert "1 items" in label.text()
+    assert "sub1" in label.text()
+
+    list_view = dialog.findChild(QListView)
+    assert list_view is not None
+
+    qtbot.wait(150)
+    take_screenshot(dialog, screenshot_dir / "move_root_dialog.png")
+    take_screenshot(central_widget, screenshot_dir / "move_root_before.png")
+
+    assert file_to_move.exists()
+    dialog.accept()
+    qtbot.wait(150)
+    take_screenshot(central_widget, screenshot_dir / "move_root_after.png")
+
+    assert not file_to_move.exists()
+    assert (sub1_dir / "image_255_0_239.png").exists()
+
+
+def test_move_multiple_files_to_output(
+    gui_app_instance: AppInstanceRes,
+    screenshot_dir: Path,
+    qtbot: QtBot,
+    image_directory: Path,
+):
+    """Test moving multiple selected files to the default output target."""
+    qtbot.waitExposed(gui_app_instance.window)
+    central_widget = gui_app_instance.window.centralWidget()
+
+    widget = gui_app_instance.window.get_mixed_view()
+    qtbot.waitExposed(widget)
+
+    file1 = image_directory / "image_255_0_239.png"
+    file2 = image_directory / "image_255_0_191.png"
+
+    _click_tile(widget, file1, qtbot)
+    assert file1 in widget.selected_files
+
+    rect2 = widget.get_tile_rect(file2)
+    assert rect2 is not None
+    if not widget.is_element_visible(rect2):
+        widget.scroll_to_content_y(rect2.center().y())
+        qtbot.wait(50)
+        rect2 = widget.get_tile_rect(file2)
+        assert rect2 is not None
+    scroll_y = widget.verticalScrollBar().value()
+    click_pos = QPoint(rect2.center().x(), rect2.center().y() - scroll_y)
+    QTest.mouseClick(
+        widget.viewport(),
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.ControlModifier,
+        click_pos,
+    )
+    qtbot.wait(50)
+
+    assert file1 in widget.selected_files
+    assert file2 in widget.selected_files
+    assert len(widget.selected_files) == 2
+
+    right_panel = gui_app_instance.window.right_panel
+    preview_widget = cast(DirectoryPreviewWidget,
+                          right_panel.splitter.widget(0))
+    selector = preview_widget.selector
+
+    sub2_dir = image_directory / "sub2"
+    list_widget = selector.subdir_list
+    sub2_item = None
+    for i in range(list_widget.count()):
+        item = list_widget.item(i)
+        if item.text() == "sub2":
+            sub2_item = item
+            break
+    assert sub2_item is not None
+    list_widget.itemClicked.emit(sub2_item)
+    qtbot.wait(50)
+    assert preview_widget.current_dir == sub2_dir
+
+    QTest.keyClick(gui_app_instance.window, Qt.Key.Key_1,
+                   Qt.KeyboardModifier.ControlModifier, 100)
+
+    dialog = _get_visible_dialog()
+    assert dialog.windowTitle().startswith("Move to ")
+
+    label = dialog.findChild(QLabel)
+    assert label is not None
+    assert "2 items" in label.text()
+    assert "sub2" in label.text()
+
+    qtbot.wait(150)
+    take_screenshot(dialog, screenshot_dir / "move_multi_dialog.png")
+
+    assert file1.exists()
+    assert file2.exists()
+    dialog.accept()
+    qtbot.wait(150)
+
+    assert not file1.exists()
+    assert not file2.exists()
+
+    assert (sub2_dir / "image_255_0_239.png").exists()
+    assert (sub2_dir / "image_255_0_191.png").exists()
+
+
+def test_move_file_to_second_output(
+    gui_app_instance: AppInstanceRes,
+    screenshot_dir: Path,
+    qtbot: QtBot,
+    image_directory: Path,
+):
+    """Test moving a file to the second output target (Ctrl+2)."""
+    qtbot.waitExposed(gui_app_instance.window)
+    central_widget = gui_app_instance.window.centralWidget()
+
+    right_panel = gui_app_instance.window.right_panel
+    right_panel.add_preview_widget()
+    qtbot.wait(50)
+
+    assert right_panel.splitter.count() == 2
+
+    second_preview = cast(DirectoryPreviewWidget,
+                          right_panel.splitter.widget(1))
+    sub1_dir = image_directory / "sub1"
+    second_preview.set_directory(sub1_dir)
+    qtbot.wait(50)
+
+    widget = gui_app_instance.window.get_mixed_view()
+    qtbot.waitExposed(widget)
+
+    file_to_move = image_directory / "image_255_0_239.png"
+    _click_tile(widget, file_to_move, qtbot)
+    assert file_to_move in widget.selected_files
+
+    QTest.keyClick(gui_app_instance.window, Qt.Key.Key_2,
+                   Qt.KeyboardModifier.ControlModifier, 100)
+
+    dialog = _get_visible_dialog()
+    assert dialog.windowTitle().startswith("Move to ")
+
+    label = dialog.findChild(QLabel)
+    assert label is not None
+    assert "sub1" in label.text()
+
+    qtbot.wait(150)
+    take_screenshot(dialog, screenshot_dir / "move_second_output_dialog.png")
+
+    assert file_to_move.exists()
+    dialog.accept()
+    qtbot.wait(150)
+
+    assert not file_to_move.exists()
+    assert (sub1_dir / "image_255_0_239.png").exists()
+
+
+def test_move_file_with_output_navigation(
+    gui_app_instance: AppInstanceRes,
+    screenshot_dir: Path,
+    qtbot: QtBot,
+    image_directory: Path,
+):
+    """Test navigating the output target (clicking path bar / subdirs) before moving."""
+    qtbot.waitExposed(gui_app_instance.window)
+    central_widget = gui_app_instance.window.centralWidget()
+
+    widget = gui_app_instance.window.get_mixed_view()
+    qtbot.waitExposed(widget)
+
+    file_to_move = image_directory / "image_255_0_239.png"
+    _click_tile(widget, file_to_move, qtbot)
+    assert file_to_move in widget.selected_files
+
+    right_panel = gui_app_instance.window.right_panel
+    preview_widget = cast(DirectoryPreviewWidget,
+                          right_panel.splitter.widget(0))
+    selector = preview_widget.selector
+
+    sub1_dir = image_directory / "sub1"
+    sub12_dir = sub1_dir / "sub12"
+
+    assert preview_widget.current_dir == image_directory
+
+    list_widget = selector.subdir_list
+    sub1_item = None
+    for i in range(list_widget.count()):
+        item = list_widget.item(i)
+        if item.text() == "sub1":
+            sub1_item = item
+            break
+    assert sub1_item is not None
+
+    list_widget.itemClicked.emit(sub1_item)
+    qtbot.wait(50)
+
+    assert preview_widget.current_dir == sub1_dir
+
+    sub12_item = None
+    for i in range(list_widget.count()):
+        item = list_widget.item(i)
+        if item.text() == "sub12":
+            sub12_item = item
+            break
+    assert sub12_item is not None
+
+    list_widget.itemClicked.emit(sub12_item)
+    qtbot.wait(50)
+
+    assert preview_widget.current_dir == sub12_dir
+
+    QTest.keyClick(gui_app_instance.window, Qt.Key.Key_1,
+                   Qt.KeyboardModifier.ControlModifier, 100)
+
+    dialog = _get_visible_dialog()
+    assert dialog.windowTitle().startswith("Move to ")
+
+    label = dialog.findChild(QLabel)
+    assert label is not None
+    assert "sub12" in label.text()
+
+    qtbot.wait(150)
+    take_screenshot(dialog, screenshot_dir / "move_navigated_dialog.png")
+
+    assert file_to_move.exists()
+    dialog.accept()
+    qtbot.wait(150)
+
+    assert not file_to_move.exists()
+    assert (sub12_dir / "image_255_0_239.png").exists()
+
+
+def test_move_file_from_search_results(
+    gui_app_instance: AppInstanceRes,
+    screenshot_dir: Path,
+    qtbot: QtBot,
+    image_directory: Path,
+):
+    """Test moving a file selected from the search results view."""
+    qtbot.waitExposed(gui_app_instance.window)
+    central_widget = gui_app_instance.window.centralWidget()
+
+    target = image_directory / "image_255_0_239.png"
+    image_id = gui_app_instance.get_image_id(target)
+    gui_app_instance.repo.replace_probabilistic_annotations(
+        image_id=image_id,
+        items=[("general", "move_test_tag", 0.9)],
+    )
+
+    search_tab = _setup_search_tab(gui_app_instance, qtbot)
+    search_tab.clear_search()
+
+    spec = {
+        "type": "probabilistic_tag",
+        "category": "general",
+        "name": "move_test_tag",
+        "min_probability": 0.5,
+    }
+    search_tab.set_search_spec(spec)
+    qtbot.wait(50)
+
+    search_tab.execute_search()
+    qtbot.wait(100)
+
+    results = search_tab.get_result_images()
+    assert len(results) == 1
+    assert str(target) == str(results[0])
+
+    thumbnail_list = search_tab.thumbnail_list.list_view
+    index = thumbnail_list.model().index(0, 0)
+
+    from PySide6.QtCore import QItemSelectionModel
+
+    selection_model = thumbnail_list.selectionModel()
+    selection_model.select(
+        index,
+        QItemSelectionModel.SelectionFlag.Select
+        | QItemSelectionModel.SelectionFlag.Current,
+    )
+    thumbnail_list.clicked.emit(index)
+    qtbot.wait(50)
+
+    assert target in gui_app_instance.window.left_panel.selected_files
+
+    right_panel = gui_app_instance.window.right_panel
+    preview_widget = cast(DirectoryPreviewWidget,
+                          right_panel.splitter.widget(0))
+    selector = preview_widget.selector
+
+    sub1_dir = image_directory / "sub1"
+    list_widget = selector.subdir_list
+    sub1_item = None
+    for i in range(list_widget.count()):
+        item = list_widget.item(i)
+        if item.text() == "sub1":
+            sub1_item = item
+            break
+    assert sub1_item is not None
+    list_widget.itemClicked.emit(sub1_item)
+    qtbot.wait(50)
+    assert preview_widget.current_dir == sub1_dir
+
+    gui_app_instance.window.activateWindow()
+    qtbot.wait(50)
+    QTest.keyClick(gui_app_instance.window, Qt.Key.Key_1,
+                   Qt.KeyboardModifier.ControlModifier, 100)
+    qtbot.wait(100)
+
+    dialog = _get_visible_dialog()
+    assert dialog.windowTitle().startswith("Move to ")
+    assert "sub1" in dialog.windowTitle()
+
+    qtbot.wait(150)
+    take_screenshot(dialog, screenshot_dir / "move_search_dialog.png")
+
+    assert target.exists()
+    dialog.accept()
+    qtbot.wait(150)
+
+    assert not target.exists()
+    assert (sub1_dir / "image_255_0_239.png").exists()
+
+
+@pytest.mark.xfail(
+    reason=
+    "Known bug: UNIQUE constraint fails on identical filenames from different directories"
+)
+def test_move_files_with_identical_names(
+    gui_app_instance: AppInstanceRes,
+    screenshot_dir: Path,
+    qtbot: QtBot,
+    image_directory: Path,
+):
+    """Test moving two files with identical names from different source directories.
+
+    This test is expected to fail due to a UNIQUE constraint on relative_path.
+    """
+    qtbot.waitExposed(gui_app_instance.window)
+    central_widget = gui_app_instance.window.centralWidget()
+
+    sub1 = image_directory / "sub1"
+    sub2 = image_directory / "sub2"
+
+    file1 = sub1 / "random.png"
+    file2 = sub2 / "random.png"
+
+    from PIL import Image
+
+    img1 = Image.new("RGB", (10, 10), color=(255, 0, 0))
+    img1.save(file1)
+    img2 = Image.new("RGB", (10, 10), color=(0, 255, 0))
+    img2.save(file2)
+
+    gui_app_instance.repo.upsert_image(image_directory, file1)
+    gui_app_instance.repo.upsert_image(image_directory, file2)
+
+    gui_app_instance.window.get_mixed_view().refresh()
+    qtbot.wait(100)
+
+    widget = gui_app_instance.window.get_mixed_view()
+
+    _click_tile(widget, file1, qtbot)
+    assert file1 in widget.selected_files
+
+    rect2 = widget.get_tile_rect(file2)
+    if rect2 is None:
+        header_rect = widget.get_header_rect(sub2)
+        if header_rect:
+            widget.scroll_to_content_y(header_rect.center().y())
+            qtbot.wait(150)
+        toggle_rect = widget.get_toggle_rect(sub2)
+        if toggle_rect:
+            scroll_y = widget.verticalScrollBar().value()
+            pos = QPoint(toggle_rect.center().x(),
+                         toggle_rect.center().y() - scroll_y)
+            QTest.mouseClick(widget.viewport(),
+                             Qt.MouseButton.LeftButton,
+                             pos=pos)
+            qtbot.wait(50)
+        rect2 = widget.get_tile_rect(file2)
+
+    assert rect2 is not None, f"Tile {file2} not found"
+    if not widget.is_element_visible(rect2):
+        widget.scroll_to_content_y(rect2.center().y())
+        qtbot.wait(50)
+        rect2 = widget.get_tile_rect(file2)
+        assert rect2 is not None
+    scroll_y = widget.verticalScrollBar().value()
+    click_pos = QPoint(rect2.center().x(), rect2.center().y() - scroll_y)
+    QTest.mouseClick(
+        widget.viewport(),
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.ControlModifier,
+        click_pos,
+    )
+    qtbot.wait(50)
+
+    assert file1 in widget.selected_files
+    assert file2 in widget.selected_files
+    assert len(widget.selected_files) == 2
+
+    QTest.keyClick(gui_app_instance.window, Qt.Key.Key_1,
+                   Qt.KeyboardModifier.ControlModifier, 100)
+
+    dialog = _get_visible_dialog()
+    assert dialog.windowTitle().startswith("Move to ")
+
+    qtbot.wait(150)
+    take_screenshot(dialog, screenshot_dir / "move_identical_names_dialog.png")
+
+    assert file1.exists()
+    assert file2.exists()
+    dialog.accept()
+    qtbot.wait(150)
+
+    assert not file1.exists()
+    assert not file2.exists()
+
+    right_panel = gui_app_instance.window.right_panel
+    preview_widget = cast(DirectoryPreviewWidget,
+                          right_panel.splitter.widget(0))
+    target_dir = preview_widget.current_dir
+    assert (target_dir / "random.png").exists()
