@@ -1,5 +1,6 @@
 from pathlib import Path
 from PIL import Image
+from PySide6.QtWidgets import QDialog, QDialogButtonBox, QLabel, QVBoxLayout
 
 TEMPLATE_DIR = Path("/tmp/image_tagger_tests/image_template_directory")
 
@@ -91,3 +92,29 @@ def _populate_template_directory(
         color = tuple(int(c * 255) for c in colorsys.hsv_to_rgb(hue, 1.0, 1.0))
         _generate_monotone_image(
             dest / f"image_{color[0]}_{color[1]}_{color[2]}.png", size, color)
+
+
+def confirm_clear_selection(parent, selected_count: int) -> bool:
+    """Show a confirmation dialog before clearing a large selection.
+
+    Returns True if the user confirms they want to clear the selection,
+    or False if they cancel (keeping the current selection).
+    """
+    dialog = QDialog(parent)
+    dialog.setWindowTitle("Clear Selection?")
+    dialog.resize(400, 150)
+
+    layout = QVBoxLayout(dialog)
+    label = QLabel(f"You have {selected_count} files selected.\n\n"
+                   "Are you sure you want to clear the selection?")
+    label.setWordWrap(True)
+    layout.addWidget(label)
+
+    buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Yes
+                               | QDialogButtonBox.StandardButton.No)
+    buttons.accepted.connect(dialog.accept)
+    buttons.rejected.connect(dialog.reject)
+    layout.addWidget(buttons)
+
+    result = dialog.exec()
+    return result == QDialog.DialogCode.Accepted

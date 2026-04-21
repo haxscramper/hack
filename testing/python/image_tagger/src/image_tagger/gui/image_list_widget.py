@@ -27,40 +27,11 @@ from PySide6.QtWidgets import (
 )
 
 from image_tagger.config import config
+from image_tagger.utils.utils import confirm_clear_selection
 
 IMAGE_EXTENSIONS = config.IMAGE_EXTENSIONS
 
 SELECTION_CLEAR_CONFIRM_THRESHOLD = 3
-
-
-def confirm_clear_selection(parent, selected_count: int) -> bool:
-    """Show a confirmation dialog before clearing a large selection.
-
-    Returns True if the user confirms they want to clear the selection,
-    or False if they cancel (keeping the current selection).
-    """
-    dialog = QDialog(parent)
-    dialog.setWindowTitle("Clear Selection?")
-    dialog.resize(400, 150)
-
-    layout = QDialogVBoxLayout(dialog)
-    label = QLabel(
-        f"You have {selected_count} files selected.\n\n"
-        "Are you sure you want to clear the selection?"
-    )
-    label.setWordWrap(True)
-    layout.addWidget(label)
-
-    buttons = QDialogButtonBox(
-        QDialogButtonBox.StandardButton.Yes | QDialogButtonBox.StandardButton.No
-    )
-    buttons.accepted.connect(dialog.accept)
-    buttons.rejected.connect(dialog.reject)
-    layout.addWidget(buttons)
-
-    result = dialog.exec()
-    return result == QDialog.DialogCode.Accepted
-
 
 class ImageLoadSignals(QObject):
     loaded = Signal(int, Path, QImage)
@@ -178,8 +149,7 @@ class ConfirmClearListView(QListView):
                     # If clicking on an already selected item, Qt will keep the selection
                     # If clicking on a non-selected item and we have > threshold selected
                     if (
-                        index.isValid()
-                        and not selection_model.isSelected(index)
+                        not selection_model.isSelected(index)
                         and len(selected) > SELECTION_CLEAR_CONFIRM_THRESHOLD
                     ):
                         if not confirm_clear_selection(self, len(selected)):

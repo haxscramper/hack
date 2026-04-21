@@ -11,6 +11,7 @@ import sys
 from dataclasses import dataclass, field
 from beartype import beartype
 from pathlib import Path
+from image_tagger.utils.utils import confirm_clear_selection
 
 from pytestqt.qtbot import QtBot
 from PySide6.QtCore import (
@@ -147,36 +148,6 @@ class ThumbTask(QRunnable):
 
         image = reader.read()
         self.signals.loaded.emit(str(self.path), image)
-
-
-def confirm_clear_selection(parent, selected_count: int) -> bool:
-    """Show a confirmation dialog before clearing a large selection.
-
-    Returns True if the user confirms they want to clear the selection,
-    or False if they cancel (keeping the current selection).
-    """
-    dialog = QDialog(parent)
-    dialog.setWindowTitle("Clear Selection?")
-    dialog.resize(400, 150)
-
-    layout = QVBoxLayout(dialog)
-    label = QLabel(
-        f"You have {selected_count} files selected.\n\n"
-        "Are you sure you want to clear the selection?"
-    )
-    label.setWordWrap(True)
-    layout.addWidget(label)
-
-    buttons = QDialogButtonBox(
-        QDialogButtonBox.StandardButton.Yes | QDialogButtonBox.StandardButton.No
-    )
-    buttons.accepted.connect(dialog.accept)
-    buttons.rejected.connect(dialog.reject)
-    layout.addWidget(buttons)
-
-    result = dialog.exec()
-    return result == QDialog.DialogCode.Accepted
-
 
 class MixedTreeTileView(QAbstractScrollArea):
     imageClicked = Signal(object)
@@ -700,6 +671,7 @@ class MixedTreeTileView(QAbstractScrollArea):
                     ):
                         if not confirm_clear_selection(self, len(self.selected_files)):
                             return
+
                     self.selected_files = {hit.file_path}
                     self.last_clicked_file = hit.file_path
 
