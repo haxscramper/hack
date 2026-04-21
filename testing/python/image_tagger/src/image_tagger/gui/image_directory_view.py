@@ -45,6 +45,10 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QMenu,
+    QDialog,
+    QVBoxLayout,
+    QDialogButtonBox,
+    QLabel,
 )
 
 
@@ -145,6 +149,35 @@ class ThumbTask(QRunnable):
         self.signals.loaded.emit(str(self.path), image)
 
 
+def confirm_clear_selection(parent, selected_count: int) -> bool:
+    """Show a confirmation dialog before clearing a large selection.
+
+    Returns True if the user confirms they want to clear the selection,
+    or False if they cancel (keeping the current selection).
+    """
+    dialog = QDialog(parent)
+    dialog.setWindowTitle("Clear Selection?")
+    dialog.resize(400, 150)
+
+    layout = QVBoxLayout(dialog)
+    label = QLabel(
+        f"You have {selected_count} files selected.\n\n"
+        "Are you sure you want to clear the selection?"
+    )
+    label.setWordWrap(True)
+    layout.addWidget(label)
+
+    buttons = QDialogButtonBox(
+        QDialogButtonBox.StandardButton.Yes | QDialogButtonBox.StandardButton.No
+    )
+    buttons.accepted.connect(dialog.accept)
+    buttons.rejected.connect(dialog.reject)
+    layout.addWidget(buttons)
+
+    result = dialog.exec()
+    return result == QDialog.DialogCode.Accepted
+
+
 class MixedTreeTileView(QAbstractScrollArea):
     imageClicked = Signal(object)
     fileSelected = Signal(object)
@@ -161,6 +194,7 @@ class MixedTreeTileView(QAbstractScrollArea):
     CONTENT_MARGIN = 8
     PREFETCH_MARGIN = 300
     TILE_MARGIN = 4
+    SELECTION_CLEAR_CONFIRM_THRESHOLD = 3
 
     def __init__(self, root_path: Path, parent=None):
         super().__init__(parent)
@@ -244,7 +278,7 @@ class MixedTreeTileView(QAbstractScrollArea):
         """Reload directory structure while preserving expansion state of directories."""
         # Collect currently expanded paths before reload
         expanded_paths: set[Path] = set()
-        
+
         def collect_expanded(node: DirNode) -> None:
             if node.expanded:
                 expanded_paths.add(node.path)
@@ -252,15 +286,15 @@ class MixedTreeTileView(QAbstractScrollArea):
             if node.children_loaded:
                 for child in node.child_dirs:
                     collect_expanded(child)
-        
+
         collect_expanded(self.root_node)
-        
+
         # Clear root to force reload
         self.root_node.children_loaded = False
         self.root_node.child_dirs = []
         self.root_node.image_files = []
         self.root_node.load()
-        
+
         # Restore expansion state
         def apply_expanded(node: DirNode) -> None:
             if node.path in expanded_paths:
@@ -268,11 +302,10 @@ class MixedTreeTileView(QAbstractScrollArea):
                 node.load()  # Load children so we can recurse into them
             for child in node.child_dirs:
                 apply_expanded(child)
-        
+
         apply_expanded(self.root_node)
         self.thumb_cache.clear()  # Clear stale thumbnails
         self._update_scrollbars()
-
 
     def _update_scrollbars(self) -> None:
         total = self.total_content_height()
@@ -661,6 +694,12 @@ class MixedTreeTileView(QAbstractScrollArea):
                     # Keep last_clicked_file unchanged for range extension, or update? usually update
                     self.last_clicked_file = hit.file_path
                 else:
+                    if (
+                        len(self.selected_files)
+                        > self.SELECTION_CLEAR_CONFIRM_THRESHOLD
+                    ):
+                        if not confirm_clear_selection(self, len(self.selected_files)):
+                            return
                     self.selected_files = {hit.file_path}
                     self.last_clicked_file = hit.file_path
 
@@ -734,6 +773,7 @@ class MixedTreeTileView(QAbstractScrollArea):
 
     def toggle_subdir(self, subdir: Path, qtbot: QtBot):
         from PySide6.QtTest import QTest
+
         toggle_rect = self.get_toggle_rect(subdir)
 
         # If not found, scroll to make header visible
@@ -749,11 +789,8 @@ class MixedTreeTileView(QAbstractScrollArea):
 
         # Click toggle to expand
         scroll_y = self.verticalScrollBar().value()
-        click_pos = QPoint(toggle_rect.center().x(),
-                        toggle_rect.center().y() - scroll_y)
-        QTest.mouseClick(self.viewport(),
-                        Qt.MouseButton.LeftButton,
-                        pos=click_pos)
+        click_pos = QPoint(
+            toggle_rect.center().x(), toggle_rect.center().y() - scroll_y
+        )
+        QTest.mouseClick(self.viewport(), Qt.MouseButton.LeftButton, pos=click_pos)
         qtbot.wait(50)
-
-

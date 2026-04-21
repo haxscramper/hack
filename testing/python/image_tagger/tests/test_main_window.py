@@ -8,7 +8,7 @@ from pathlib import Path
 from pytestqt.qtbot import QtBot
 from image_tagger.utils.utils import _generate_monotone_image
 import logging
-from PySide6.QtCore import QTimer, Qt, QPoint
+from PySide6.QtCore import QTimer, Qt, QPoint, QItemSelectionModel
 from PySide6.QtTest import QTest, QSignalSpy
 from PySide6.QtWidgets import (
     QApplication,
@@ -23,11 +23,8 @@ from PySide6.QtWidgets import (
 def _get_visible_dialog() -> QDialog:
     """Return the currently visible QDialog, or raise AssertionError."""
     dialog = next(
-        (
-            widget
-            for widget in QApplication.topLevelWidgets()
-            if isinstance(widget, QDialog) and widget.isVisible()
-        ),
+        (widget for widget in QApplication.topLevelWidgets()
+         if isinstance(widget, QDialog) and widget.isVisible()),
         None,
     )
     assert dialog is not None, "No visible dialog found"
@@ -45,7 +42,9 @@ def _click_tile(widget, file_path: Path, qtbot: QtBot):
         assert rect is not None
     scroll_y = widget.verticalScrollBar().value()
     click_pos = QPoint(rect.center().x(), rect.center().y() - scroll_y)
-    QTest.mouseClick(widget.viewport(), Qt.MouseButton.LeftButton, pos=click_pos)
+    QTest.mouseClick(widget.viewport(),
+                     Qt.MouseButton.LeftButton,
+                     pos=click_pos)
     qtbot.wait(50)
 
 
@@ -59,9 +58,8 @@ def _accept_move_dialog(qtbot: QtBot):
     qtbot.wait(50)
 
 
-def test_capture_specific_widget(
-    gui_app_instance: AppInstanceRes, screenshot_dir: Path, qtbot: QtBot
-):
+def test_capture_specific_widget(gui_app_instance: AppInstanceRes,
+                                 screenshot_dir: Path, qtbot: QtBot):
     """Capture screenshot of a specific nested widget."""
     qtbot.waitExposed(gui_app_instance.window)
 
@@ -117,7 +115,9 @@ def test_mixed_view_content_acces(
 
     # Click and verify signal
     spy = QSignalSpy(widget.imageClicked)
-    QTest.mouseClick(widget.viewport(), Qt.MouseButton.LeftButton, pos=click_pos)
+    QTest.mouseClick(widget.viewport(),
+                     Qt.MouseButton.LeftButton,
+                     pos=click_pos)
 
     screenshot_path = screenshot_dir / "status_panel.png"
     take_screenshot(central_widget, screenshot_path)
@@ -157,14 +157,16 @@ def test_mixed_view_expand_directory_reveals_tiles(
 
     # Verify files are not visible (directory collapsed)
     image_files = list(subdir.glob("*.png"))
-    assert widget.get_tile_rect(image_files[0]) is None, (
-        "Directory should start collapsed"
-    )
+    assert widget.get_tile_rect(
+        image_files[0]) is None, ("Directory should start collapsed")
 
     # Click toggle to expand
     scroll_y = widget.verticalScrollBar().value()
-    click_pos = QPoint(toggle_rect.center().x(), toggle_rect.center().y() - scroll_y)
-    QTest.mouseClick(widget.viewport(), Qt.MouseButton.LeftButton, pos=click_pos)
+    click_pos = QPoint(toggle_rect.center().x(),
+                       toggle_rect.center().y() - scroll_y)
+    QTest.mouseClick(widget.viewport(),
+                     Qt.MouseButton.LeftButton,
+                     pos=click_pos)
     qtbot.wait(50)
 
     take_screenshot(central_widget, screenshot_dir / "directory_expanded.png")
@@ -177,17 +179,15 @@ def test_mixed_view_expand_directory_reveals_tiles(
     file_to_move = subdir / image_files[0]
     first_image_rect = widget.get_element_click_pos(file_to_move)
 
-    QTest.mouseClick(widget.viewport(), Qt.MouseButton.LeftButton, pos=first_image_rect)
+    QTest.mouseClick(widget.viewport(),
+                     Qt.MouseButton.LeftButton,
+                     pos=first_image_rect)
 
-    QTest.keyClick(
-        gui_app_instance.window, Qt.Key.Key_1, Qt.KeyboardModifier.ControlModifier, 100
-    )
+    QTest.keyClick(gui_app_instance.window, Qt.Key.Key_1,
+                   Qt.KeyboardModifier.ControlModifier, 100)
 
-    dialog = next(
-        widget
-        for widget in QApplication.topLevelWidgets()
-        if isinstance(widget, QDialog) and widget.isVisible()
-    )
+    dialog = next(widget for widget in QApplication.topLevelWidgets()
+                  if isinstance(widget, QDialog) and widget.isVisible())
 
     assert dialog.windowTitle().startswith("Move to ")
 
@@ -236,10 +236,11 @@ def test_mixed_view_ctrl_click_multi_select(
                 toggle = widget.get_toggle_rect(d)
                 if toggle:
                     scroll_y = widget.verticalScrollBar().value()
-                    pos = QPoint(toggle.center().x(), toggle.center().y() - scroll_y)
-                    QTest.mouseClick(
-                        widget.viewport(), Qt.MouseButton.LeftButton, pos=pos
-                    )
+                    pos = QPoint(toggle.center().x(),
+                                 toggle.center().y() - scroll_y)
+                    QTest.mouseClick(widget.viewport(),
+                                     Qt.MouseButton.LeftButton,
+                                     pos=pos)
                     qtbot.wait(50)
         images = [hit.file_path for hit in widget.tile_hits][:2]
 
@@ -312,7 +313,8 @@ def test_mixed_view_scroll_to_offscreen_element(
 
     rect = widget.get_tile_rect(target)
     assert rect
-    assert widget.is_element_visible(rect), "Tile should be visible after scroll"
+    assert widget.is_element_visible(
+        rect), "Tile should be visible after scroll"
 
     # Take screenshot of scrolled state
     screenshot_path = screenshot_dir / "scrolled_to_tile.png"
@@ -323,7 +325,9 @@ def test_mixed_view_scroll_to_offscreen_element(
     click_pos = QPoint(rect.center().x(), rect.center().y() - scroll_y)
 
     spy = QSignalSpy(widget.imageClicked)
-    QTest.mouseClick(widget.viewport(), Qt.MouseButton.LeftButton, pos=click_pos)
+    QTest.mouseClick(widget.viewport(),
+                     Qt.MouseButton.LeftButton,
+                     pos=click_pos)
 
     assert spy.count() == 1
     assert spy.at(0)[0] == target
@@ -373,7 +377,9 @@ def test_mixed_view_double_click_emits_file_selected(
     click_pos = QPoint(rect.center().x(), rect.center().y() - scroll_y)
 
     spy = QSignalSpy(widget.fileSelected)
-    QTest.mouseDClick(widget.viewport(), Qt.MouseButton.LeftButton, pos=click_pos)
+    QTest.mouseDClick(widget.viewport(),
+                      Qt.MouseButton.LeftButton,
+                      pos=click_pos)
     qtbot.wait(50)
 
     screenshot_path = screenshot_dir / "double_click_selection.png"
@@ -534,20 +540,17 @@ def test_search_by_description(
     target1 = image_directory / "image_255_0_239.png"
     image_id1 = gui_app_instance.get_image_id(target1)
     gui_app_instance.repo.set_description(
-        image_id=image_id1, description="a beautiful sunset over the ocean"
-    )
+        image_id=image_id1, description="a beautiful sunset over the ocean")
 
     target2 = image_directory / "sub1" / "sub12" / "image_31_255_0.png"
     image_id2 = gui_app_instance.get_image_id(target2)
     gui_app_instance.repo.set_description(
-        image_id=image_id2, description="a beautiful mountain landscape"
-    )
+        image_id=image_id2, description="a beautiful mountain landscape")
 
     target3 = image_directory / "sub2" / "sub23" / "image_0_255_207.png"
     image_id3 = gui_app_instance.get_image_id(target3)
-    gui_app_instance.repo.set_description(
-        image_id=image_id3, description="just a random picture"
-    )
+    gui_app_instance.repo.set_description(image_id=image_id3,
+                                          description="just a random picture")
 
     search_tab = _setup_search_tab(gui_app_instance, qtbot)
     search_tab.clear_search()
@@ -646,7 +649,8 @@ def test_search_and_combination(
     search_tab.clear_search()
 
     spec = {
-        "type": "and",
+        "type":
+        "and",
         "children": [
             {
                 "type": "probabilistic_tag",
@@ -705,7 +709,8 @@ def test_search_or_combination(
     search_tab.clear_search()
 
     spec = {
-        "type": "or",
+        "type":
+        "or",
         "children": [
             {
                 "type": "probabilistic_tag",
@@ -1143,8 +1148,8 @@ def test_search_sexp_add_tag_rewrites_expression(
 
     second_text = search_tab.sexp_input.toPlainText().strip()
     assert (
-        second_text
-        == "(and (probabilistic_tag general castle 0.5) (probabilistic_tag general castle 0.5))"
+        second_text ==
+        "(and (probabilistic_tag general castle 0.5) (probabilistic_tag general castle 0.5))"
     )
 
     search_tab.execute_search()
@@ -1198,14 +1203,12 @@ def test_search_sexp_description_with_quotes(
     target1 = image_directory / "image_255_0_239.png"
     image_id1 = gui_app_instance.get_image_id(target1)
     gui_app_instance.repo.set_description(
-        image_id=image_id1, description="a beautiful sunset over the ocean"
-    )
+        image_id=image_id1, description="a beautiful sunset over the ocean")
 
     target2 = image_directory / "sub1" / "sub12" / "image_31_255_0.png"
     image_id2 = gui_app_instance.get_image_id(target2)
     gui_app_instance.repo.set_description(
-        image_id=image_id2, description="a beautiful mountain landscape"
-    )
+        image_id=image_id2, description="a beautiful mountain landscape")
 
     search_tab = _setup_search_tab(gui_app_instance, qtbot)
     search_tab.clear_search()
@@ -1218,7 +1221,8 @@ def test_search_sexp_description_with_quotes(
     search_tab.execute_search()
     qtbot.wait(100)
 
-    take_screenshot(central_widget, screenshot_dir / "search_sexp_description.png")
+    take_screenshot(central_widget,
+                    screenshot_dir / "search_sexp_description.png")
 
     results = search_tab.get_result_images()
     assert len(results) == 2
@@ -1244,7 +1248,8 @@ def test_move_file_from_root_to_output(
     assert file_to_move in widget.selected_files
 
     right_panel = gui_app_instance.window.right_panel
-    preview_widget = cast(DirectoryPreviewWidget, right_panel.splitter.widget(0))
+    preview_widget = cast(DirectoryPreviewWidget,
+                          right_panel.splitter.widget(0))
     selector = preview_widget.selector
 
     sub1_dir = image_directory / "sub1"
@@ -1262,9 +1267,8 @@ def test_move_file_from_root_to_output(
 
     gui_app_instance.window.activateWindow()
     qtbot.wait(50)
-    QTest.keyClick(
-        gui_app_instance.window, Qt.Key.Key_1, Qt.KeyboardModifier.ControlModifier, 100
-    )
+    QTest.keyClick(gui_app_instance.window, Qt.Key.Key_1,
+                   Qt.KeyboardModifier.ControlModifier, 100)
     qtbot.wait(100)
 
     dialog = _get_visible_dialog()
@@ -1332,7 +1336,8 @@ def test_move_multiple_files_to_output(
     assert len(widget.selected_files) == 2
 
     right_panel = gui_app_instance.window.right_panel
-    preview_widget = cast(DirectoryPreviewWidget, right_panel.splitter.widget(0))
+    preview_widget = cast(DirectoryPreviewWidget,
+                          right_panel.splitter.widget(0))
     selector = preview_widget.selector
 
     sub2_dir = image_directory / "sub2"
@@ -1348,9 +1353,8 @@ def test_move_multiple_files_to_output(
     qtbot.wait(50)
     assert preview_widget.current_dir == sub2_dir
 
-    QTest.keyClick(
-        gui_app_instance.window, Qt.Key.Key_1, Qt.KeyboardModifier.ControlModifier, 100
-    )
+    QTest.keyClick(gui_app_instance.window, Qt.Key.Key_1,
+                   Qt.KeyboardModifier.ControlModifier, 100)
 
     dialog = _get_visible_dialog()
     assert dialog.windowTitle().startswith("Move to ")
@@ -1391,7 +1395,8 @@ def test_move_file_to_second_output(
 
     assert right_panel.splitter.count() == 2
 
-    second_preview = cast(DirectoryPreviewWidget, right_panel.splitter.widget(1))
+    second_preview = cast(DirectoryPreviewWidget,
+                          right_panel.splitter.widget(1))
     sub1_dir = image_directory / "sub1"
     second_preview.set_directory(sub1_dir)
     qtbot.wait(50)
@@ -1403,9 +1408,8 @@ def test_move_file_to_second_output(
     _click_tile(widget, file_to_move, qtbot)
     assert file_to_move in widget.selected_files
 
-    QTest.keyClick(
-        gui_app_instance.window, Qt.Key.Key_2, Qt.KeyboardModifier.ControlModifier, 100
-    )
+    QTest.keyClick(gui_app_instance.window, Qt.Key.Key_2,
+                   Qt.KeyboardModifier.ControlModifier, 100)
 
     dialog = _get_visible_dialog()
     assert dialog.windowTitle().startswith("Move to ")
@@ -1443,7 +1447,8 @@ def test_move_file_with_output_navigation(
     assert file_to_move in widget.selected_files
 
     right_panel = gui_app_instance.window.right_panel
-    preview_widget = cast(DirectoryPreviewWidget, right_panel.splitter.widget(0))
+    preview_widget = cast(DirectoryPreviewWidget,
+                          right_panel.splitter.widget(0))
     selector = preview_widget.selector
 
     sub1_dir = image_directory / "sub1"
@@ -1478,9 +1483,8 @@ def test_move_file_with_output_navigation(
 
     assert preview_widget.current_dir == sub12_dir
 
-    QTest.keyClick(
-        gui_app_instance.window, Qt.Key.Key_1, Qt.KeyboardModifier.ControlModifier, 100
-    )
+    QTest.keyClick(gui_app_instance.window, Qt.Key.Key_1,
+                   Qt.KeyboardModifier.ControlModifier, 100)
 
     dialog = _get_visible_dialog()
     assert dialog.windowTitle().startswith("Move to ")
@@ -1553,7 +1557,8 @@ def test_move_file_from_search_results(
     assert target in gui_app_instance.window.left_panel.selected_files
 
     right_panel = gui_app_instance.window.right_panel
-    preview_widget = cast(DirectoryPreviewWidget, right_panel.splitter.widget(0))
+    preview_widget = cast(DirectoryPreviewWidget,
+                          right_panel.splitter.widget(0))
     selector = preview_widget.selector
 
     sub1_dir = image_directory / "sub1"
@@ -1571,9 +1576,8 @@ def test_move_file_from_search_results(
 
     gui_app_instance.window.activateWindow()
     qtbot.wait(50)
-    QTest.keyClick(
-        gui_app_instance.window, Qt.Key.Key_1, Qt.KeyboardModifier.ControlModifier, 100
-    )
+    QTest.keyClick(gui_app_instance.window, Qt.Key.Key_1,
+                   Qt.KeyboardModifier.ControlModifier, 100)
     qtbot.wait(100)
 
     dialog = _get_visible_dialog()
@@ -1589,6 +1593,469 @@ def test_move_file_from_search_results(
 
     assert not target.exists()
     assert (sub1_dir / "image_255_0_239.png").exists()
+
+
+def _accept_clear_selection_dialog(qtbot: QtBot):
+    """Find and accept the visible clear-selection confirmation dialog."""
+    dialog = _get_visible_dialog()
+    assert dialog.windowTitle() == "Clear Selection?"
+    buttons = dialog.findChild(QDialogButtonBox)
+    assert buttons is not None
+    qtbot.wait(50)
+    dialog.accept()
+    qtbot.wait(50)
+
+
+def _reject_clear_selection_dialog(qtbot: QtBot):
+    """Find and reject the visible clear-selection confirmation dialog."""
+    dialog = _get_visible_dialog()
+    assert dialog.windowTitle() == "Clear Selection?"
+    buttons = dialog.findChild(QDialogButtonBox)
+    assert buttons is not None
+    qtbot.wait(50)
+    dialog.reject()
+    qtbot.wait(50)
+
+
+def test_mixed_view_large_selection_clear_confirmed(
+    gui_app_instance: AppInstanceRes,
+    screenshot_dir: Path,
+    qtbot: QtBot,
+    image_directory: Path,
+):
+    """Test that clearing >3 selected files in mixed view shows confirmation dialog."""
+    qtbot.waitExposed(gui_app_instance.window)
+    central_widget = gui_app_instance.window.centralWidget()
+
+    widget = gui_app_instance.window.get_mixed_view()
+    qtbot.waitExposed(widget)
+
+    # Expand subdirectories to get enough images
+    for d in image_directory.iterdir():
+        if d.is_dir():
+            toggle = widget.get_toggle_rect(d)
+            if toggle:
+                scroll_y = widget.verticalScrollBar().value()
+                pos = QPoint(toggle.center().x(),
+                             toggle.center().y() - scroll_y)
+                QTest.mouseClick(widget.viewport(),
+                                 Qt.MouseButton.LeftButton,
+                                 pos=pos)
+                qtbot.wait(50)
+
+    # Select 4 images with Ctrl+Click
+    images = [hit.file_path for hit in widget.tile_hits][:4]
+    assert len(images) >= 4, f"Need at least 4 images, found {len(images)}"
+
+    for i, img in enumerate(images):
+        rect = widget.get_tile_rect(img)
+        assert rect is not None
+        if not widget.is_element_visible(rect):
+            widget.scroll_to_content_y(rect.center().y())
+            qtbot.wait(50)
+            rect = widget.get_tile_rect(img)
+            assert rect is not None
+        scroll_y = widget.verticalScrollBar().value()
+        pos = QPoint(rect.center().x(), rect.center().y() - scroll_y)
+        if i == 0:
+            QTest.mouseClick(widget.viewport(),
+                             Qt.MouseButton.LeftButton,
+                             pos=pos)
+        else:
+            QTest.mouseClick(
+                widget.viewport(),
+                Qt.MouseButton.LeftButton,
+                Qt.KeyboardModifier.ControlModifier,
+                pos,
+            )
+        qtbot.wait(50)
+
+    assert len(widget.selected_files) == 4
+
+    # Now left-click a 5th image without Ctrl/Shift - should show confirmation
+    other_images = [hit.file_path for hit in widget.tile_hits]
+    fifth_img = None
+    for img in other_images:
+        if img not in widget.selected_files:
+            fifth_img = img
+            break
+    assert fifth_img is not None, "Need an unselected image to click"
+
+    rect5 = widget.get_tile_rect(fifth_img)
+    assert rect5 is not None
+    if not widget.is_element_visible(rect5):
+        widget.scroll_to_content_y(rect5.center().y())
+        qtbot.wait(50)
+        rect5 = widget.get_tile_rect(fifth_img)
+        assert rect5 is not None
+    scroll_y = widget.verticalScrollBar().value()
+    pos5 = QPoint(rect5.center().x(), rect5.center().y() - scroll_y)
+
+    # Use a timer to accept the dialog since it will block
+    QTimer.singleShot(100, lambda: _accept_clear_selection_dialog(qtbot))
+    QTest.mouseClick(widget.viewport(), Qt.MouseButton.LeftButton, pos=pos5)
+    qtbot.wait(200)
+
+    # Selection should be cleared and only fifth_img selected
+    assert len(widget.selected_files) == 1
+    assert fifth_img in widget.selected_files
+
+
+def test_mixed_view_large_selection_clear_cancelled(
+    gui_app_instance: AppInstanceRes,
+    screenshot_dir: Path,
+    qtbot: QtBot,
+    image_directory: Path,
+):
+    """Test that cancelling the clear-selection dialog preserves selection."""
+    qtbot.waitExposed(gui_app_instance.window)
+    central_widget = gui_app_instance.window.centralWidget()
+
+    widget = gui_app_instance.window.get_mixed_view()
+    qtbot.waitExposed(widget)
+
+    # Expand subdirectories to get enough images
+    for d in image_directory.iterdir():
+        if d.is_dir():
+            toggle = widget.get_toggle_rect(d)
+            if toggle:
+                scroll_y = widget.verticalScrollBar().value()
+                pos = QPoint(toggle.center().x(),
+                             toggle.center().y() - scroll_y)
+                QTest.mouseClick(widget.viewport(),
+                                 Qt.MouseButton.LeftButton,
+                                 pos=pos)
+                qtbot.wait(50)
+
+    # Select 4 images with Ctrl+Click
+    images = [hit.file_path for hit in widget.tile_hits][:4]
+    assert len(images) >= 4, f"Need at least 4 images, found {len(images)}"
+
+    for i, img in enumerate(images):
+        rect = widget.get_tile_rect(img)
+        assert rect is not None
+        if not widget.is_element_visible(rect):
+            widget.scroll_to_content_y(rect.center().y())
+            qtbot.wait(50)
+            rect = widget.get_tile_rect(img)
+            assert rect is not None
+        scroll_y = widget.verticalScrollBar().value()
+        pos = QPoint(rect.center().x(), rect.center().y() - scroll_y)
+        if i == 0:
+            QTest.mouseClick(widget.viewport(),
+                             Qt.MouseButton.LeftButton,
+                             pos=pos)
+        else:
+            QTest.mouseClick(
+                widget.viewport(),
+                Qt.MouseButton.LeftButton,
+                Qt.KeyboardModifier.ControlModifier,
+                pos,
+            )
+        qtbot.wait(50)
+
+    original_selection = set(widget.selected_files)
+    assert len(original_selection) == 4
+
+    # Now left-click a 5th image without Ctrl/Shift - should show confirmation
+    other_images = [hit.file_path for hit in widget.tile_hits]
+    fifth_img = None
+    for img in other_images:
+        if img not in widget.selected_files:
+            fifth_img = img
+            break
+    assert fifth_img is not None, "Need an unselected image to click"
+
+    rect5 = widget.get_tile_rect(fifth_img)
+    assert rect5 is not None
+    if not widget.is_element_visible(rect5):
+        widget.scroll_to_content_y(rect5.center().y())
+        qtbot.wait(50)
+        rect5 = widget.get_tile_rect(fifth_img)
+        assert rect5 is not None
+    scroll_y = widget.verticalScrollBar().value()
+    pos5 = QPoint(rect5.center().x(), rect5.center().y() - scroll_y)
+
+    # Use a timer to reject the dialog since it will block
+    QTimer.singleShot(100, lambda: _reject_clear_selection_dialog(qtbot))
+    QTest.mouseClick(widget.viewport(), Qt.MouseButton.LeftButton, pos=pos5)
+    qtbot.wait(200)
+
+    # Selection should be preserved
+    assert widget.selected_files == original_selection
+    assert len(widget.selected_files) == 4
+
+
+def test_mixed_view_small_selection_no_confirmation(
+    gui_app_instance: AppInstanceRes,
+    screenshot_dir: Path,
+    qtbot: QtBot,
+    image_directory: Path,
+):
+    """Test that clearing <=3 selected files does NOT show confirmation dialog."""
+    qtbot.waitExposed(gui_app_instance.window)
+    central_widget = gui_app_instance.window.centralWidget()
+
+    widget = gui_app_instance.window.get_mixed_view()
+    qtbot.waitExposed(widget)
+
+    # Expand subdirectories to get enough images
+    for d in image_directory.iterdir():
+        if d.is_dir():
+            toggle = widget.get_toggle_rect(d)
+            if toggle:
+                scroll_y = widget.verticalScrollBar().value()
+                pos = QPoint(toggle.center().x(),
+                             toggle.center().y() - scroll_y)
+                QTest.mouseClick(widget.viewport(),
+                                 Qt.MouseButton.LeftButton,
+                                 pos=pos)
+                qtbot.wait(50)
+
+    # Select 3 images with Ctrl+Click
+    images = [hit.file_path for hit in widget.tile_hits][:3]
+    assert len(images) >= 3, f"Need at least 3 images, found {len(images)}"
+
+    for i, img in enumerate(images):
+        rect = widget.get_tile_rect(img)
+        assert rect is not None
+        if not widget.is_element_visible(rect):
+            widget.scroll_to_content_y(rect.center().y())
+            qtbot.wait(50)
+            rect = widget.get_tile_rect(img)
+            assert rect is not None
+        scroll_y = widget.verticalScrollBar().value()
+        pos = QPoint(rect.center().x(), rect.center().y() - scroll_y)
+        if i == 0:
+            QTest.mouseClick(widget.viewport(),
+                             Qt.MouseButton.LeftButton,
+                             pos=pos)
+        else:
+            QTest.mouseClick(
+                widget.viewport(),
+                Qt.MouseButton.LeftButton,
+                Qt.KeyboardModifier.ControlModifier,
+                pos,
+            )
+        qtbot.wait(50)
+
+    assert len(widget.selected_files) == 3
+
+    # Now left-click a 4th image without Ctrl/Shift - should NOT show confirmation
+    other_images = [hit.file_path for hit in widget.tile_hits]
+    fourth_img = None
+    for img in other_images:
+        if img not in widget.selected_files:
+            fourth_img = img
+            break
+    assert fourth_img is not None, "Need an unselected image to click"
+
+    rect4 = widget.get_tile_rect(fourth_img)
+    assert rect4 is not None
+    if not widget.is_element_visible(rect4):
+        widget.scroll_to_content_y(rect4.center().y())
+        qtbot.wait(50)
+        rect4 = widget.get_tile_rect(fourth_img)
+        assert rect4 is not None
+    scroll_y = widget.verticalScrollBar().value()
+    pos4 = QPoint(rect4.center().x(), rect4.center().y() - scroll_y)
+
+    QTest.mouseClick(widget.viewport(), Qt.MouseButton.LeftButton, pos=pos4)
+    qtbot.wait(100)
+
+    # No dialog should appear, selection should be cleared immediately
+    assert len(widget.selected_files) == 1
+    assert fourth_img in widget.selected_files
+
+
+def test_search_view_large_selection_clear_confirmed(
+    gui_app_instance: AppInstanceRes,
+    screenshot_dir: Path,
+    qtbot: QtBot,
+    image_directory: Path,
+):
+    """Test that clearing >3 selected files in search view shows confirmation dialog."""
+    qtbot.waitExposed(gui_app_instance.window)
+    central_widget = gui_app_instance.window.centralWidget()
+
+    search_tab = _setup_search_tab(gui_app_instance, qtbot)
+    search_tab.clear_search()
+
+    # Use path_contains to get all images
+    spec = {"type": "path_contains", "text": ".png"}
+    search_tab.set_search_spec(spec)
+    search_tab.execute_search()
+    qtbot.wait(100)
+
+    results = search_tab.get_result_images()
+    assert len(
+        results) >= 4, f"Need at least 4 search results, found {len(results)}"
+
+    thumbnail_list = search_tab.thumbnail_list.list_view
+
+    # Select first 4 results with actual mouse clicks
+    for i in range(4):
+        index = thumbnail_list.model().index(i, 0)
+        rect = thumbnail_list.visualRect(index)
+        if i == 0:
+            QTest.mouseClick(
+                thumbnail_list.viewport(),
+                Qt.MouseButton.LeftButton,
+                Qt.KeyboardModifier.NoModifier,
+                rect.center(),
+            )
+        else:
+            QTest.mouseClick(
+                thumbnail_list.viewport(),
+                Qt.MouseButton.LeftButton,
+                Qt.KeyboardModifier.ControlModifier,
+                rect.center(),
+            )
+        qtbot.wait(50)
+
+    selected = search_tab.thumbnail_list.get_selected_images()
+    assert len(selected) == 4
+
+    # Click on 5th result without Ctrl - should show confirmation
+    index5 = thumbnail_list.model().index(4, 0)
+    QTimer.singleShot(100, lambda: _accept_clear_selection_dialog(qtbot))
+    QTest.mouseClick(
+        thumbnail_list.viewport(),
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier,
+        thumbnail_list.visualRect(index5).center(),
+    )
+    qtbot.wait(200)
+
+    selected_after = search_tab.thumbnail_list.get_selected_images()
+    assert len(selected_after) == 1
+    assert selected_after[0] == results[4]
+
+
+def test_search_view_large_selection_clear_cancelled(
+    gui_app_instance: AppInstanceRes,
+    screenshot_dir: Path,
+    qtbot: QtBot,
+    image_directory: Path,
+):
+    """Test that cancelling the clear-selection dialog in search view preserves selection."""
+    qtbot.waitExposed(gui_app_instance.window)
+    central_widget = gui_app_instance.window.centralWidget()
+
+    search_tab = _setup_search_tab(gui_app_instance, qtbot)
+    search_tab.clear_search()
+
+    # Use path_contains to get all images
+    spec = {"type": "path_contains", "text": ".png"}
+    search_tab.set_search_spec(spec)
+    search_tab.execute_search()
+    qtbot.wait(100)
+
+    results = search_tab.get_result_images()
+    assert len(
+        results) >= 4, f"Need at least 4 search results, found {len(results)}"
+
+    thumbnail_list = search_tab.thumbnail_list.list_view
+
+    # Select first 4 results with actual mouse clicks
+    for i in range(4):
+        index = thumbnail_list.model().index(i, 0)
+        rect = thumbnail_list.visualRect(index)
+        if i == 0:
+            QTest.mouseClick(
+                thumbnail_list.viewport(),
+                Qt.MouseButton.LeftButton,
+                Qt.KeyboardModifier.NoModifier,
+                rect.center(),
+            )
+        else:
+            QTest.mouseClick(
+                thumbnail_list.viewport(),
+                Qt.MouseButton.LeftButton,
+                Qt.KeyboardModifier.ControlModifier,
+                rect.center(),
+            )
+        qtbot.wait(50)
+
+    selected = search_tab.thumbnail_list.get_selected_images()
+    assert len(selected) == 4
+
+    # Click on 5th result without Ctrl - should show confirmation
+    index5 = thumbnail_list.model().index(4, 0)
+    QTimer.singleShot(100, lambda: _reject_clear_selection_dialog(qtbot))
+    QTest.mouseClick(
+        thumbnail_list.viewport(),
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier,
+        thumbnail_list.visualRect(index5).center(),
+    )
+    qtbot.wait(200)
+
+    selected_after = search_tab.thumbnail_list.get_selected_images()
+    assert len(selected_after) == 4
+
+
+def test_search_view_small_selection_no_confirmation(
+    gui_app_instance: AppInstanceRes,
+    screenshot_dir: Path,
+    qtbot: QtBot,
+    image_directory: Path,
+):
+    """Test that clearing <=3 selected files in search view does NOT show confirmation."""
+    qtbot.waitExposed(gui_app_instance.window)
+    central_widget = gui_app_instance.window.centralWidget()
+
+    search_tab = _setup_search_tab(gui_app_instance, qtbot)
+    search_tab.clear_search()
+
+    # Use path_contains to get all images
+    spec = {"type": "path_contains", "text": ".png"}
+    search_tab.set_search_spec(spec)
+    search_tab.execute_search()
+    qtbot.wait(100)
+
+    results = search_tab.get_result_images()
+    assert len(
+        results) >= 3, f"Need at least 3 search results, found {len(results)}"
+
+    thumbnail_list = search_tab.thumbnail_list.list_view
+
+    # Select first 3 results with actual mouse clicks
+    for i in range(3):
+        index = thumbnail_list.model().index(i, 0)
+        rect = thumbnail_list.visualRect(index)
+        if i == 0:
+            QTest.mouseClick(
+                thumbnail_list.viewport(),
+                Qt.MouseButton.LeftButton,
+                Qt.KeyboardModifier.NoModifier,
+                rect.center(),
+            )
+        else:
+            QTest.mouseClick(
+                thumbnail_list.viewport(),
+                Qt.MouseButton.LeftButton,
+                Qt.KeyboardModifier.ControlModifier,
+                rect.center(),
+            )
+        qtbot.wait(50)
+
+    selected = search_tab.thumbnail_list.get_selected_images()
+    assert len(selected) == 3
+
+    # Click on 4th result without Ctrl - should NOT show confirmation
+    index4 = thumbnail_list.model().index(3, 0)
+    QTest.mouseClick(
+        thumbnail_list.viewport(),
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier,
+        thumbnail_list.visualRect(index4).center(),
+    )
+    qtbot.wait(100)
+
+    selected_after = search_tab.thumbnail_list.get_selected_images()
+    assert len(selected_after) == 1
+    assert selected_after[0] == results[3]
 
 
 def test_move_files_with_identical_names(
@@ -1637,8 +2104,11 @@ def test_move_files_with_identical_names(
         toggle_rect = widget.get_toggle_rect(sub2)
         if toggle_rect:
             scroll_y = widget.verticalScrollBar().value()
-            pos = QPoint(toggle_rect.center().x(), toggle_rect.center().y() - scroll_y)
-            QTest.mouseClick(widget.viewport(), Qt.MouseButton.LeftButton, pos=pos)
+            pos = QPoint(toggle_rect.center().x(),
+                         toggle_rect.center().y() - scroll_y)
+            QTest.mouseClick(widget.viewport(),
+                             Qt.MouseButton.LeftButton,
+                             pos=pos)
             qtbot.wait(50)
         rect2 = widget.get_tile_rect(file2)
 
@@ -1663,16 +2133,13 @@ def test_move_files_with_identical_names(
     assert len(widget.selected_files) == 2
 
     file2_md5 = gui_app_instance.repo.get_image_by_path(
-        str(file2.relative_to(image_directory))
-    ).md5_digest
+        str(file2.relative_to(image_directory))).md5_digest
 
     file1_md5 = gui_app_instance.repo.get_image_by_path(
-        str(file1.relative_to(image_directory))
-    ).md5_digest
+        str(file1.relative_to(image_directory))).md5_digest
 
-    QTest.keyClick(
-        gui_app_instance.window, Qt.Key.Key_1, Qt.KeyboardModifier.ControlModifier, 100
-    )
+    QTest.keyClick(gui_app_instance.window, Qt.Key.Key_1,
+                   Qt.KeyboardModifier.ControlModifier, 100)
 
     dialog = _get_visible_dialog()
     assert dialog.windowTitle().startswith("Move to ")
@@ -1690,9 +2157,9 @@ def test_move_files_with_identical_names(
     assert not file2.exists()
 
     right_panel = gui_app_instance.window.right_panel
-    preview_widget = cast(DirectoryPreviewWidget, right_panel.splitter.widget(0))
+    preview_widget = cast(DirectoryPreviewWidget,
+                          right_panel.splitter.widget(0))
     target_dir = preview_widget.current_dir
     assert (target_dir / f"random.png").exists()
     assert (target_dir / f"random_{file2_md5[:8]}.png").exists() or (
-        target_dir / f"random_{file1_md5[:8]}.png"
-    ).exists()
+        target_dir / f"random_{file1_md5[:8]}.png").exists()

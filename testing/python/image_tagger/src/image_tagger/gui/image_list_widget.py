@@ -20,11 +20,46 @@ from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
     QListView,
+    QDialog,
+    QVBoxLayout as QDialogVBoxLayout,
+    QDialogButtonBox,
+    QLabel,
 )
 
 from image_tagger.config import config
 
 IMAGE_EXTENSIONS = config.IMAGE_EXTENSIONS
+
+SELECTION_CLEAR_CONFIRM_THRESHOLD = 3
+
+
+def confirm_clear_selection(parent, selected_count: int) -> bool:
+    """Show a confirmation dialog before clearing a large selection.
+
+    Returns True if the user confirms they want to clear the selection,
+    or False if they cancel (keeping the current selection).
+    """
+    dialog = QDialog(parent)
+    dialog.setWindowTitle("Clear Selection?")
+    dialog.resize(400, 150)
+
+    layout = QDialogVBoxLayout(dialog)
+    label = QLabel(
+        f"You have {selected_count} files selected.\n\n"
+        "Are you sure you want to clear the selection?"
+    )
+    label.setWordWrap(True)
+    layout.addWidget(label)
+
+    buttons = QDialogButtonBox(
+        QDialogButtonBox.StandardButton.Yes | QDialogButtonBox.StandardButton.No
+    )
+    buttons.accepted.connect(dialog.accept)
+    buttons.rejected.connect(dialog.reject)
+    layout.addWidget(buttons)
+
+    result = dialog.exec()
+    return result == QDialog.DialogCode.Accepted
 
 
 class ImageLoadSignals(QObject):
@@ -125,6 +160,34 @@ class ImageListModel(QAbstractListModel):
             self.dataChanged.emit(index, index, [Qt.ItemDataRole.DecorationRole])
 
 
+class ConfirmClearListView(QListView):
+    """QListView that shows a confirmation dialog before clearing a large selection."""
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            modifiers = event.modifiers()
+            # Only check for plain left-clicks (no Ctrl/Shift)
+            if not (
+                modifiers & Qt.KeyboardModifier.ControlModifier
+                or modifiers & Qt.KeyboardModifier.ShiftModifier
+            ):
+                index = self.indexAt(event.position().toPoint())
+                selection_model = self.selectionModel()
+                if selection_model is not None:
+                    selected = selection_model.selectedIndexes()
+                    # If clicking on an already selected item, Qt will keep the selection
+                    # If clicking on a non-selected item and we have > threshold selected
+                    if (
+                        index.isValid()
+                        and not selection_model.isSelected(index)
+                        and len(selected) > SELECTION_CLEAR_CONFIRM_THRESHOLD
+                    ):
+                        if not confirm_clear_selection(self, len(selected)):
+                            event.accept()
+                            return
+        super().mousePressEvent(event)
+
+
 class ImageListWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -132,7 +195,7 @@ class ImageListWidget(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        self.list_view = QListView()
+        self.list_view = ConfirmClearListView()
         self.list_view.setViewMode(QListView.ViewMode.IconMode)
         self.list_view.setResizeMode(QListView.ResizeMode.Adjust)
         self.list_view.setSelectionMode(QListView.SelectionMode.ExtendedSelection)
