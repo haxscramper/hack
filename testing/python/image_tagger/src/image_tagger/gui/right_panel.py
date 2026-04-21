@@ -162,6 +162,9 @@ class DirectorySelectorWidget(QWidget):
 
         return DirectorySelectorState(current_dir=str(self.current_dir))
 
+    def set_state(self, state: DirectorySelectorState) -> None:
+        self._set_dir(Path(state.current_dir))
+
 
 class DirectoryPreviewWidget(QFrame):
     removeRequested = Signal(QWidget)
@@ -204,6 +207,9 @@ class DirectoryPreviewWidget(QFrame):
         from image_tagger.gui.state_models import DirectoryPreviewState
 
         return DirectoryPreviewState(selector=self.selector.get_state())
+
+    def set_state(self, state: "DirectoryPreviewState") -> None:
+        self.selector.set_state(state.selector)
 
 
 class RightPanel(QWidget):
@@ -252,3 +258,22 @@ class RightPanel(QWidget):
             preview_widgets=preview_widgets,
             splitter_sizes=self.splitter.sizes(),
         )
+
+    def set_state(self, state: "RightPanelState") -> None:
+        # Remove existing preview widgets
+        while self.splitter.count():
+            w = self.splitter.widget(0)
+            if w is not None:
+                w.setParent(None)
+                w.deleteLater()
+
+        for preview_state in state.preview_widgets:
+            widget = DirectoryPreviewWidget(self.root_dir)
+            widget.removeRequested.connect(self.remove_preview_widget)
+            widget.set_state(preview_state)
+            self.splitter.addWidget(widget)
+
+        self._update_indices()
+
+        if state.splitter_sizes:
+            self.splitter.setSizes(state.splitter_sizes)

@@ -47,7 +47,8 @@ class TagWidget(QFrame):
         self.add_btn.setFixedSize(16, 16)
         self.add_btn.setStyleSheet(
             "QPushButton { color: white; background-color: #4CAF50; border: none; border-radius: 8px; font-weight: bold; padding-bottom: 2px; }"
-            "QPushButton:hover { background-color: #45a049; }")
+            "QPushButton:hover { background-color: #45a049; }"
+        )
         self.add_btn.hide()
         self.add_btn.clicked.connect(self._on_add_clicked)
         layout.addWidget(self.add_btn)
@@ -56,7 +57,8 @@ class TagWidget(QFrame):
         self.close_btn.setFixedSize(16, 16)
         self.close_btn.setStyleSheet(
             "QPushButton { color: white; background-color: #ff4444; border: none; border-radius: 8px; font-weight: bold; padding-bottom: 2px; }"
-            "QPushButton:hover { background-color: #cc0000; }")
+            "QPushButton:hover { background-color: #cc0000; }"
+        )
         self.close_btn.hide()
         layout.addWidget(self.close_btn)
 
@@ -99,10 +101,13 @@ class RegularTagsContainer(QWidget):
         for category, name in tags:
             tag_widget = TagWidget(category, name)
             tag_widget.close_btn.clicked.connect(
-                lambda checked=False, c=category, n=name: self.
-                tagRemoveRequested.emit(c, n))
+                lambda checked=False, c=category, n=name: self.tagRemoveRequested.emit(
+                    c, n
+                )
+            )
             tag_widget.addSearchRequested.connect(
-                lambda c, n: self.tagAddSearchRequested.emit(c, n))
+                lambda c, n: self.tagAddSearchRequested.emit(c, n)
+            )
             self.flow.addWidget(tag_widget)
 
 
@@ -191,8 +196,7 @@ class CenterPanel(QWidget):
         self.reg_add_btn.clicked.connect(self._on_reg_add)
         self.save_description_btn.clicked.connect(self._on_save_desc)
         self.regular_tags.tagRemoveRequested.connect(self.regularTagDeleted)
-        self.regular_tags.tagAddSearchRequested.connect(
-            self.regTagSearchRequested)
+        self.regular_tags.tagAddSearchRequested.connect(self.regTagSearchRequested)
 
     def _on_prob_add(self):
         name = self.prob_name_edit.text().strip()
@@ -216,15 +220,17 @@ class CenterPanel(QWidget):
             add_btn = QPushButton("+")
             add_btn.setStyleSheet(
                 "QPushButton { color: white; background-color: #4CAF50; border: none; font-weight: bold; margin: 2px; }"
-                "QPushButton:hover { background-color: #45a049; }")
+                "QPushButton:hover { background-color: #45a049; }"
+            )
             add_btn.clicked.connect(
-                lambda checked=False, c=category, t=tag_name: self.
-                probTagSearchRequested.emit(c, t))
+                lambda checked=False,
+                c=category,
+                t=tag_name: self.probTagSearchRequested.emit(c, t)
+            )
 
             self.prob_table.setCellWidget(row, 0, add_btn)
             self.prob_table.setItem(row, 1, QTableWidgetItem(tag_name))
-            self.prob_table.setItem(row, 2,
-                                    QTableWidgetItem(f"{probability:.4f}"))
+            self.prob_table.setItem(row, 2, QTableWidgetItem(f"{probability:.4f}"))
 
     def set_regular_tags(self, tags: list[tuple[str, str]]):
         self.regular_tags.set_tags(tags)
@@ -246,3 +252,14 @@ class CenterPanel(QWidget):
         splitter_sizes = splitter.sizes() if splitter is not None else []
 
         return CenterPanelState(splitter_sizes=splitter_sizes)
+
+    def set_state(self, state: CenterPanelState) -> None:
+        splitter = None
+        for i in range(self.layout().count()):
+            item = self.layout().itemAt(i)
+            if item and item.widget() and isinstance(item.widget(), QSplitter):
+                splitter = item.widget()
+                break
+
+        if splitter is not None and state.splitter_sizes:
+            splitter.setSizes(state.splitter_sizes)

@@ -789,3 +789,23 @@ class MixedTreeTileView(QAbstractScrollArea):
             scroll_y=self.verticalScrollBar().value(),
             selected_files=sorted(str(p) for p in self.selected_files),
         )
+
+    def set_state(self, state: MixedViewState) -> None:
+        self.zoom_factor = state.zoom_factor
+        self.thumb_cache.clear()
+
+        expanded_set = set(state.expanded_paths)
+
+        def apply_expanded(node: DirNode) -> None:
+            node.expanded = str(node.path) in expanded_set
+            if node.expanded:
+                node.load()
+            for child in node.child_dirs:
+                apply_expanded(child)
+
+        apply_expanded(self.root_node)
+        self._update_scrollbars()
+        self.verticalScrollBar().setValue(state.scroll_y)
+
+        self.selected_files = {Path(p) for p in state.selected_files}
+        self.viewport().update()

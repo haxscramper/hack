@@ -793,3 +793,13 @@ class SearchTab(QWidget):
             scroll_y=scroll_y,
             splitter_sizes=splitter_sizes,
         )
+
+    def set_state(self, state: SearchTabState) -> None:
+        self.sexp_input.setPlainText(state.sexp_query)
+        self.thumbnail_list.model.thumb_size = state.thumb_size
+        list_view = self.thumbnail_list.list_view
+        list_view.verticalScrollBar().setValue(state.scroll_y)
+
+        splitter = self.sexp_input.parent().parent()
+        if isinstance(splitter, QSplitter) and state.splitter_sizes:
+            splitter.setSizes(state.splitter_sizes)

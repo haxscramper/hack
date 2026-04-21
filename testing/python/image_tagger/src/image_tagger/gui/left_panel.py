@@ -88,3 +88,8 @@ class LeftPanel(QWidget):
             mixed_view=self.tree_view.get_state(),
             search_tab=self.search_view.get_state(),
         )
+
+    def set_state(self, state: LeftPanelState) -> None:
+        self.tabs.setCurrentIndex(state.active_tab)
+        self.tree_view.set_state(state.mixed_view)
+        self.search_view.set_state(state.search_tab)

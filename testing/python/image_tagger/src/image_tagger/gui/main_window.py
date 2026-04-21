@@ -344,3 +344,23 @@ class MainWindow(QMainWindow):
             center_panel=self.center_panel.get_state(),
             right_panel=self.right_panel.get_state(),
         )
+
+    def set_state(self, state: AppState) -> None:
+        self.resize(*state.window_size)
+
+        central = self.centralWidget()
+        splitter = None
+        if central is not None:
+            layout = central.layout()
+            for i in range(layout.count()):
+                item = layout.itemAt(i)
+                if item and item.widget() and isinstance(item.widget(), QSplitter):
+                    splitter = item.widget()
+                    break
+
+        if splitter is not None and state.splitter_sizes:
+            splitter.setSizes(state.splitter_sizes)
+
+        self.left_panel.set_state(state.left_panel)
+        self.center_panel.set_state(state.center_panel)
+        self.right_panel.set_state(state.right_panel)
