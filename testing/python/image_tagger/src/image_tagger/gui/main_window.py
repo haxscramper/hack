@@ -221,7 +221,15 @@ class MainWindow(QMainWindow):
             self.root_dir,
             self,
         )
+
         self.undo_stack.push(command)
+
+        # Clear selection in the tree view
+        self.left_panel.tree_view.selected_files = set()
+        self.left_panel.tree_view.viewport().update()
+
+        # Re-run query in search view to clear selection there
+        self.left_panel.search_view.execute_search()
 
     def on_move_shortcut(self, idx: int):
         if idx - 1 >= self.right_panel.splitter.count():
