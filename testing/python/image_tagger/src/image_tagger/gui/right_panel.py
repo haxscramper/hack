@@ -25,6 +25,53 @@ from image_tagger.gui.state_models import DirectorySelectorState
 IMAGE_EXTENSIONS = config.IMAGE_EXTENSIONS
 
 
+def compute_relevant_paths(root_dir: Path, paths: list[Path]) -> list[str]:
+    """Compute the relevant path suffix for each path based on commonality.
+
+    - If all paths differ only in the last component, return last component.
+    - If paths share a common directory under root, return suffix after that common dir.
+    - If no common parts, return path relative to root.
+    """
+    if not paths:
+        return []
+
+    rel_parts_list = []
+    for p in paths:
+        try:
+            rel = p.relative_to(root_dir)
+            parts = rel.parts
+        except ValueError:
+            parts = p.parts
+        rel_parts_list.append(parts)
+
+    if not rel_parts_list:
+        return []
+
+    # Find longest common prefix
+    min_len = min(len(parts) for parts in rel_parts_list)
+    common_len = 0
+    for i in range(min_len):
+        if all(parts[i] == rel_parts_list[0][i] for parts in rel_parts_list):
+            common_len = i + 1
+        else:
+            break
+
+    # If all paths differ only in the last component (same depth, same prefix except last)
+    if all(len(parts) == len(rel_parts_list[0]) for parts in rel_parts_list):
+        first_parts = rel_parts_list[0]
+        if len(first_parts) >= 1 and common_len == len(first_parts) - 1:
+            return [parts[-1] for parts in rel_parts_list]
+
+    if common_len > 0:
+        result = ["/".join(parts[common_len:]) for parts in rel_parts_list]
+        return [r if r else str(paths[i].name) for i, r in enumerate(result)]
+
+    # No common parts - return relative to root
+    result = ["/".join(parts) for parts in rel_parts_list]
+    # Ensure we never return empty strings; fall back to path name
+    return [r if r else str(paths[i].name) for i, r in enumerate(result)]
+
+
 class DirectorySelectorWidget(QWidget):
     directoryChanged = Signal(Path)
     removeRequested = Signal()
@@ -173,6 +220,8 @@ class DirectoryPreviewWidget(QFrame):
         super().__init__(parent)
         self.root_dir = root_dir
         self.current_dir = root_dir
+        self._index_color = ""
+        self._relevant_path_text = ""
         self.setFrameShape(QFrame.Shape.StyledPanel)
 
         layout = QVBoxLayout(self)
@@ -189,8 +238,51 @@ class DirectoryPreviewWidget(QFrame):
         self.selector.removeRequested.connect(lambda: self.removeRequested.emit(self))
         self.set_directory(root_dir)
 
+        # Overlay for move dialog highlighting
+        self.overlay_widget = QFrame(self)
+        self.overlay_widget.setAttribute(
+            Qt.WidgetAttribute.WA_TransparentForMouseEvents
+        )
+        self.overlay_widget.hide()
+
+        overlay_layout = QVBoxLayout(self.overlay_widget)
+        overlay_layout.setContentsMargins(0, 0, 0, 0)
+        overlay_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        self.overlay_label = QLabel()
+        self.overlay_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        overlay_layout.addWidget(self.overlay_label)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.overlay_widget.setGeometry(self.rect())
+
     def set_index(self, index: int, color: str):
         self.selector.set_index(index, color)
+        self._index_color = color
+
+    def set_relevant_path_text(self, text: str):
+        self._relevant_path_text = text
+
+    def show_move_overlay(self):
+        if self._index_color:
+            self.overlay_widget.setStyleSheet(
+                f"QFrame {{ background-color: {self._index_color}; }}"
+            )
+        font = self.overlay_label.font()
+        font.setPointSize(24)
+        font.setBold(True)
+        self.overlay_label.setFont(font)
+        self.overlay_label.setStyleSheet("color: black; background: transparent;")
+        self.overlay_label.setText(self._relevant_path_text)
+        self.overlay_widget.setGeometry(self.rect())
+        self.overlay_widget.show()
+        self.overlay_widget.raise_()
+        self.overlay_widget.update()
+        self.overlay_label.update()
+
+    def hide_move_overlay(self):
+        self.overlay_widget.hide()
 
     def set_directory(self, path: Path):
         self.current_dir = path
@@ -233,6 +325,41 @@ class RightPanel(QWidget):
                 hue = (i * 137) % 360
                 color = QColor.fromHsv(hue, 120, 255).name()
                 widget.set_index(i + 1, color)
+
+    def get_preview_widget_paths(self) -> list[Path]:
+        paths = []
+        for i in range(self.splitter.count()):
+            widget = self.splitter.widget(i)
+            if isinstance(widget, DirectoryPreviewWidget):
+                paths.append(widget.current_dir)
+        return paths
+
+    def update_relevant_paths(self):
+        paths = self.get_preview_widget_paths()
+        relevant = compute_relevant_paths(self.root_dir, paths)
+        idx = 0
+        for i in range(self.splitter.count()):
+            widget = self.splitter.widget(i)
+            if isinstance(widget, DirectoryPreviewWidget):
+                if idx < len(relevant):
+                    widget.set_relevant_path_text(relevant[idx])
+                idx += 1
+
+    def show_move_overlay(self, target_index: int):
+        self.update_relevant_paths()
+        for i in range(self.splitter.count()):
+            widget = self.splitter.widget(i)
+            if isinstance(widget, DirectoryPreviewWidget):
+                if i == target_index:
+                    widget.show_move_overlay()
+                else:
+                    widget.hide_move_overlay()
+
+    def hide_move_overlays(self):
+        for i in range(self.splitter.count()):
+            widget = self.splitter.widget(i)
+            if isinstance(widget, DirectoryPreviewWidget):
+                widget.hide_move_overlay()
 
     def add_preview_widget(self):
         widget = DirectoryPreviewWidget(self.root_dir)

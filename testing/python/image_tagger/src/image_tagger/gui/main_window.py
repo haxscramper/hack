@@ -29,7 +29,7 @@ from image_tagger.gui.image_list_widget import ImageListModel
 from image_tagger.gui.left_panel import LeftPanel
 
 from image_tagger.gui.center_panel import CenterPanel
-from image_tagger.gui.right_panel import RightPanel
+from image_tagger.gui.right_panel import RightPanel, DirectoryPreviewWidget
 from image_tagger.gui.state_models import AppState
 
 
@@ -177,15 +177,33 @@ class MainWindow(QMainWindow):
         self.left_panel.fully_annotated_files = full_paths
         self.left_panel.viewport().update()
 
-    def create_move_dialog(self, selected_files, target_dir):
+    def create_move_dialog(
+        self,
+        selected_files,
+        target_dir,
+        target_color: str = "",
+        target_relevant_path: str = "",
+    ):
         dialog = QDialog(self)
         dialog.setWindowTitle(f"Move to {target_dir.name}?")
         dialog.resize(600, 400)
 
         layout = QVBoxLayout(dialog)
 
-        label = QLabel(f"Move {len(selected_files)} items to {target_dir}?")
-        layout.addWidget(label)
+        top_layout = QHBoxLayout()
+
+        label = QLabel(f"Move {len(selected_files)} items to")
+        top_layout.addWidget(label)
+
+        path_label = QLabel(target_relevant_path or target_dir.name)
+        path_label.setStyleSheet(
+            f"background-color: {target_color}; color: black; border-radius: 4px; font-weight: bold; padding: 4px 8px;"
+            if target_color
+            else "font-weight: bold; padding: 4px 8px;"
+        )
+        top_layout.addWidget(path_label)
+        top_layout.addStretch(1)
+        layout.addLayout(top_layout)
 
         list_view = QListView()
         list_view.setViewMode(QListView.ViewMode.IconMode)
@@ -245,13 +263,28 @@ class MainWindow(QMainWindow):
         if not selected_files:
             return
 
-        dialog = self.create_move_dialog(selected_files, target_dir)
+        self.right_panel.update_relevant_paths()
+        self.right_panel.show_move_overlay(idx - 1)
+
+        target_color = ""
+        target_relevant_path = ""
+        if isinstance(widget, DirectoryPreviewWidget):
+            target_color = widget._index_color
+            target_relevant_path = widget._relevant_path_text
+
+        dialog = self.create_move_dialog(
+            selected_files, target_dir, target_color, target_relevant_path
+        )
         dialog.finished.connect(
-            lambda result: self.on_move_dialog_finished(
+            lambda result: self._on_move_dialog_closed(
                 result, selected_files, target_dir
             )
         )
         dialog.open()
+
+    def _on_move_dialog_closed(self, result, selected_files, target_dir):
+        self.right_panel.hide_move_overlays()
+        self.on_move_dialog_finished(result, selected_files, target_dir)
 
     def on_file_selected(self, file_path: str):
         logging.debug(f"File selected in GUI: {file_path}")

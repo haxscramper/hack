@@ -1294,10 +1294,12 @@ def test_move_file_from_root_to_output(
     dialog = _get_visible_dialog()
     assert dialog.windowTitle().startswith("Move to ")
 
-    label = dialog.findChild(QLabel)
-    assert label is not None
-    assert "1 items" in label.text()
-    assert "sub1" in label.text()
+    labels = dialog.findChildren(QLabel)
+    assert labels
+    assert any("1 items" in lbl.text() for lbl in labels)
+    # The highlighted path label is a separate QLabel
+    path_label = next((lbl for lbl in labels if lbl.text() == "sub1"), None)
+    assert path_label is not None
 
     list_view = dialog.findChild(QListView)
     assert list_view is not None
@@ -1382,10 +1384,11 @@ def test_move_multiple_files_to_output(
     dialog = _get_visible_dialog()
     assert dialog.windowTitle().startswith("Move to ")
 
-    label = dialog.findChild(QLabel)
-    assert label is not None
-    assert "2 items" in label.text()
-    assert "sub2" in label.text()
+    labels = dialog.findChildren(QLabel)
+    assert labels
+    assert any("2 items" in lbl.text() for lbl in labels)
+    path_label = next((lbl for lbl in labels if lbl.text() == "sub2"), None)
+    assert path_label is not None
 
     qtbot.wait(150)
     take_screenshot(dialog, screenshot_dir / "move_multi_dialog.png")
@@ -1440,9 +1443,10 @@ def test_move_file_to_second_output(
     dialog = _get_visible_dialog()
     assert dialog.windowTitle().startswith("Move to ")
 
-    label = dialog.findChild(QLabel)
-    assert label is not None
-    assert "sub1" in label.text()
+    labels = dialog.findChildren(QLabel)
+    assert labels
+    path_label = next((lbl for lbl in labels if lbl.text() == "sub1"), None)
+    assert path_label is not None
 
     qtbot.wait(150)
     take_screenshot(dialog, screenshot_dir / "move_second_output_dialog.png")
@@ -1525,9 +1529,10 @@ def test_move_file_with_output_navigation(
     dialog = _get_visible_dialog()
     assert dialog.windowTitle().startswith("Move to ")
 
-    label = dialog.findChild(QLabel)
-    assert label is not None
-    assert "sub12" in label.text()
+    labels = dialog.findChildren(QLabel)
+    assert labels
+    path_label = next((lbl for lbl in labels if lbl.text() == "sub12"), None)
+    assert path_label is not None
 
     qtbot.wait(150)
     take_screenshot(dialog, screenshot_dir / "move_navigated_dialog.png")
@@ -1625,7 +1630,9 @@ def test_move_file_from_search_results(
 
     dialog = _get_visible_dialog()
     assert dialog.windowTitle().startswith("Move to ")
-    assert "sub1" in dialog.windowTitle()
+    labels = dialog.findChildren(QLabel)
+    path_label = next((lbl for lbl in labels if lbl.text() == "sub1"), None)
+    assert path_label is not None
 
     qtbot.wait(150)
     take_screenshot(dialog, screenshot_dir / "move_search_dialog.png")
@@ -2194,3 +2201,232 @@ def test_move_files_with_identical_names(
     assert (target_dir / f"random_{file2_md5[:8]}.png").exists() or (
         target_dir / f"random_{file1_md5[:8]}.png"
     ).exists()
+
+
+def test_move_overlay_shown_on_target_widget(
+    gui_app_instance: AppInstanceRes,
+    screenshot_dir: Path,
+    qtbot: QtBot,
+    image_directory: Path,
+):
+    """Test that the move overlay is shown on the target preview widget."""
+    qtbot.waitExposed(gui_app_instance.window)
+
+    widget = gui_app_instance.window.get_mixed_view()
+    qtbot.waitExposed(widget)
+
+    file_to_move = image_directory / "image_255_0_239.png"
+    _click_tile(widget, file_to_move, qtbot)
+    assert file_to_move in widget.selected_files
+
+    right_panel = gui_app_instance.window.right_panel
+    preview_widget = cast(DirectoryPreviewWidget, right_panel.splitter.widget(0))
+
+    assert not preview_widget.overlay_widget.isVisible()
+
+    QTest.keyClick(
+        gui_app_instance.window, Qt.Key.Key_1, Qt.KeyboardModifier.ControlModifier, 100
+    )
+    qtbot.wait(100)
+
+    dialog = _get_visible_dialog()
+    assert dialog.windowTitle().startswith("Move to ")
+
+    assert preview_widget.overlay_widget.isVisible()
+    assert preview_widget.overlay_label.text() != ""
+
+    dialog.reject()
+    qtbot.wait(50)
+
+    assert not preview_widget.overlay_widget.isVisible()
+
+
+def test_move_overlay_hidden_on_other_widgets(
+    gui_app_instance: AppInstanceRes,
+    screenshot_dir: Path,
+    qtbot: QtBot,
+    image_directory: Path,
+):
+    """Test that only the target preview widget shows the overlay."""
+    qtbot.waitExposed(gui_app_instance.window)
+
+    right_panel = gui_app_instance.window.right_panel
+    right_panel.add_preview_widget()
+    qtbot.wait(50)
+
+    assert right_panel.splitter.count() == 2
+
+    first_preview = cast(DirectoryPreviewWidget, right_panel.splitter.widget(0))
+    second_preview = cast(DirectoryPreviewWidget, right_panel.splitter.widget(1))
+
+    sub1_dir = image_directory / "sub1"
+    second_preview.set_directory(sub1_dir)
+    qtbot.wait(50)
+
+    widget = gui_app_instance.window.get_mixed_view()
+    qtbot.waitExposed(widget)
+
+    file_to_move = image_directory / "image_255_0_239.png"
+    _click_tile(widget, file_to_move, qtbot)
+    assert file_to_move in widget.selected_files
+
+    QTest.keyClick(
+        gui_app_instance.window, Qt.Key.Key_2, Qt.KeyboardModifier.ControlModifier, 100
+    )
+    qtbot.wait(100)
+
+    dialog = _get_visible_dialog()
+    assert dialog.windowTitle().startswith("Move to ")
+
+    assert not first_preview.overlay_widget.isVisible()
+    assert second_preview.overlay_widget.isVisible()
+
+    dialog.reject()
+    qtbot.wait(50)
+
+    assert not first_preview.overlay_widget.isVisible()
+    assert not second_preview.overlay_widget.isVisible()
+
+
+def test_move_dialog_shows_relevant_path_with_common_parent(
+    gui_app_instance: AppInstanceRes,
+    screenshot_dir: Path,
+    qtbot: QtBot,
+    image_directory: Path,
+):
+    """Test dialog shows relevant path when widgets share a common parent."""
+    qtbot.waitExposed(gui_app_instance.window)
+
+    right_panel = gui_app_instance.window.right_panel
+    right_panel.add_preview_widget()
+    qtbot.wait(50)
+
+    first_preview = cast(DirectoryPreviewWidget, right_panel.splitter.widget(0))
+    second_preview = cast(DirectoryPreviewWidget, right_panel.splitter.widget(1))
+
+    sub1_dir = image_directory / "sub1"
+    sub12_dir = sub1_dir / "sub12"
+    first_preview.set_directory(sub1_dir)
+    second_preview.set_directory(sub12_dir)
+    qtbot.wait(50)
+
+    widget = gui_app_instance.window.get_mixed_view()
+    qtbot.waitExposed(widget)
+
+    file_to_move = image_directory / "image_255_0_239.png"
+    _click_tile(widget, file_to_move, qtbot)
+    assert file_to_move in widget.selected_files
+
+    QTest.keyClick(
+        gui_app_instance.window, Qt.Key.Key_1, Qt.KeyboardModifier.ControlModifier, 100
+    )
+    qtbot.wait(100)
+
+    dialog = _get_visible_dialog()
+    assert dialog.windowTitle().startswith("Move to ")
+
+    labels = dialog.findChildren(QLabel)
+    path_label = next((lbl for lbl in labels if lbl.text() == "sub1"), None)
+    assert path_label is not None
+
+    assert first_preview.overlay_label.text() == "sub1"
+
+    # Verify the overlay widget is visible on the second (target) widget
+    assert not second_preview.overlay_widget.isVisible()
+
+    dialog.reject()
+    qtbot.wait(50)
+
+
+def test_move_relevant_path_last_component_only(
+    gui_app_instance: AppInstanceRes,
+    screenshot_dir: Path,
+    qtbot: QtBot,
+    image_directory: Path,
+):
+    """Test relevant path shows only last component when all differ by that."""
+    qtbot.waitExposed(gui_app_instance.window)
+
+    right_panel = gui_app_instance.window.right_panel
+    right_panel.add_preview_widget()
+    qtbot.wait(50)
+
+    first_preview = cast(DirectoryPreviewWidget, right_panel.splitter.widget(0))
+    second_preview = cast(DirectoryPreviewWidget, right_panel.splitter.widget(1))
+
+    sub1_dir = image_directory / "sub1"
+    sub2_dir = image_directory / "sub2"
+    first_preview.set_directory(sub1_dir)
+    second_preview.set_directory(sub2_dir)
+    qtbot.wait(50)
+
+    widget = gui_app_instance.window.get_mixed_view()
+    qtbot.waitExposed(widget)
+
+    file_to_move = image_directory / "image_255_0_239.png"
+    _click_tile(widget, file_to_move, qtbot)
+    assert file_to_move in widget.selected_files
+
+    QTest.keyClick(
+        gui_app_instance.window, Qt.Key.Key_1, Qt.KeyboardModifier.ControlModifier, 100
+    )
+    qtbot.wait(100)
+
+    dialog = _get_visible_dialog()
+    assert dialog.windowTitle().startswith("Move to ")
+
+    labels = dialog.findChildren(QLabel)
+    path_label = next((lbl for lbl in labels if lbl.text() == "sub1"), None)
+    assert path_label is not None
+
+    assert first_preview.overlay_label.text() == "sub1"
+
+    dialog.reject()
+    qtbot.wait(50)
+
+
+def test_move_relevant_path_relative_to_root(
+    gui_app_instance: AppInstanceRes,
+    screenshot_dir: Path,
+    qtbot: QtBot,
+    image_directory: Path,
+):
+    """Test relevant path falls back to relative path when no common parts."""
+    qtbot.waitExposed(gui_app_instance.window)
+
+    right_panel = gui_app_instance.window.right_panel
+    right_panel.add_preview_widget()
+    qtbot.wait(50)
+
+    first_preview = cast(DirectoryPreviewWidget, right_panel.splitter.widget(0))
+    second_preview = cast(DirectoryPreviewWidget, right_panel.splitter.widget(1))
+
+    sub1_dir = image_directory / "sub1"
+    sub2_sub23_dir = image_directory / "sub2" / "sub23"
+    first_preview.set_directory(sub1_dir)
+    second_preview.set_directory(sub2_sub23_dir)
+    qtbot.wait(50)
+
+    widget = gui_app_instance.window.get_mixed_view()
+    qtbot.waitExposed(widget)
+
+    file_to_move = image_directory / "image_255_0_239.png"
+    _click_tile(widget, file_to_move, qtbot)
+    assert file_to_move in widget.selected_files
+
+    QTest.keyClick(
+        gui_app_instance.window, Qt.Key.Key_1, Qt.KeyboardModifier.ControlModifier, 100
+    )
+    qtbot.wait(100)
+
+    dialog = _get_visible_dialog()
+    assert dialog.windowTitle().startswith("Move to ")
+
+    labels = dialog.findChildren(QLabel)
+    path_label = next((lbl for lbl in labels if lbl.text() == "sub1"), None)
+    assert path_label is not None
+
+    assert first_preview.overlay_label.text() == "sub1"
+
+    dialog.reject()
+    qtbot.wait(50)
