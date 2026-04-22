@@ -10,7 +10,6 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import declarative_base, relationship
 
-
 Base = declarative_base()
 
 
@@ -22,9 +21,7 @@ class ImageEntry(Base):
     original_name = Column(String, nullable=False)
     md5_digest = Column(String, nullable=False, index=True)
 
-    probabilistic_tags = relationship(
-        "ImageProbabilisticTag", cascade="all, delete-orphan"
-    )
+    probabilistic_tags = relationship("ImageProbabilisticTag", cascade="all, delete-orphan")
     regular_tags = relationship("ImageRegularTag", cascade="all, delete-orphan")
     descriptions = relationship("ImageDescription", cascade="all, delete-orphan")
 
@@ -46,7 +43,7 @@ class ImageProbabilisticTag(Base):
     tag_id = Column(Integer, ForeignKey("probabilistic_tags.id"), nullable=False)
     probability = Column(Float, nullable=False)
 
-    __table_args__ = (UniqueConstraint("image_id", "tag_id"),)
+    __table_args__ = (UniqueConstraint("image_id", "tag_id"), )
 
 
 class RegularTag(Base):
@@ -56,7 +53,7 @@ class RegularTag(Base):
     category = Column(String, nullable=False)
     name = Column(String, nullable=False)
 
-    __table_args__ = (UniqueConstraint("category", "name"),)
+    __table_args__ = (UniqueConstraint("category", "name"), )
 
 
 class ImageRegularTag(Base):
@@ -66,15 +63,15 @@ class ImageRegularTag(Base):
     image_id = Column(Integer, ForeignKey("image_entries.id"), nullable=False)
     tag_id = Column(Integer, ForeignKey("regular_tags.id"), nullable=False)
 
-    __table_args__ = (UniqueConstraint("image_id", "tag_id"),)
+    __table_args__ = (UniqueConstraint("image_id", "tag_id"), )
 
 
 class ImageDescription(Base):
     __tablename__ = "image_descriptions"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    image_id = Column(
-        Integer, ForeignKey("image_entries.id"), nullable=False, unique=True
-    )
+    image_id = Column(Integer, ForeignKey("image_entries.id"),
+                      nullable=False,
+                      unique=True)
     description = Column(Text, nullable=False)
     model_name = Column(String, nullable=True)

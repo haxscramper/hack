@@ -2,6 +2,7 @@ from beartype import beartype
 from pathlib import Path
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QTabWidget
 from PySide6.QtCore import Signal
+from image_tagger.db.sorting import SortMode
 from image_tagger.gui.image_directory_view import MixedTreeTileView
 from image_tagger.gui.query_search import SearchTab
 from image_tagger.gui.state_models import LeftPanelState
@@ -17,8 +18,9 @@ class LeftPanel(QWidget):
 
         self.tabs = QTabWidget()
 
-        self.tree_view = MixedTreeTileView(root_dir)
+        self.tree_view = MixedTreeTileView(root_dir, session=session)
         self.search_view = SearchTab(session, str(root_dir))
+        self.tree_view.set_sort_mode(SortMode.SIMILARITY)
 
         self.tabs.addTab(self.tree_view, "Files")
         self.tabs.addTab(self.search_view, "Search")

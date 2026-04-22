@@ -11,8 +11,11 @@ import sys
 from dataclasses import dataclass, field
 from beartype import beartype
 from pathlib import Path
+
+from sqlalchemy.orm import Session
 from image_tagger.gui.state_models import MixedViewState
 from image_tagger.utils.utils import confirm_clear_selection
+from image_tagger.db.sorting import SimilarityIndex, SortMode, sort_paths
 
 from pytestqt.qtbot import QtBot
 from PySide6.QtCore import (
@@ -53,7 +56,6 @@ from PySide6.QtWidgets import (
     QLabel,
 )
 
-
 IMAGE_EXTENSIONS = {
     ".bmp",
     ".gif",
@@ -79,8 +81,18 @@ class DirNode:
     child_dirs: list["DirNode"] = field(default_factory=list)
     image_files: list[Path] = field(default_factory=list)
 
-    def load(self) -> None:
+    def load(
+        self,
+        sort_mode: SortMode = SortMode.NAME_ASC,
+        similarity_index: SimilarityIndex | None = None,
+        reference_path: Path | None = None,
+    ) -> None:
         if self.children_loaded:
+            self.resort(
+                sort_mode=sort_mode,
+                similarity_index=similarity_index,
+                reference_path=reference_path,
+            )
             return
 
         child_dirs: list[DirNode] = []
@@ -91,7 +103,7 @@ class DirNode:
                 self.path.iterdir(),
                 key=lambda p: (not p.is_dir(), p.name.lower()),
             )
-        except PermissionError, FileNotFoundError, OSError:
+        except (PermissionError, FileNotFoundError, OSError):
             entries = []
 
         for entry in entries:
@@ -100,12 +112,30 @@ class DirNode:
                     child_dirs.append(DirNode(entry, expanded=False))
                 elif is_image_file(entry):
                     image_files.append(entry)
-            except PermissionError, OSError:
+            except (PermissionError, OSError):
                 pass
 
         self.child_dirs = child_dirs
-        self.image_files = image_files
+        self.image_files = sort_paths(
+            paths=image_files,
+            sort_mode=sort_mode,
+            similarity_index=similarity_index,
+            reference_path=reference_path,
+        )
         self.children_loaded = True
+
+    def resort(
+        self,
+        sort_mode: SortMode,
+        similarity_index: SimilarityIndex | None = None,
+        reference_path: Path | None = None,
+    ) -> None:
+        self.image_files = sort_paths(
+            paths=self.image_files,
+            sort_mode=sort_mode,
+            similarity_index=similarity_index,
+            reference_path=reference_path,
+        )
 
 
 @dataclass
@@ -128,6 +158,7 @@ class ThumbSignals(QObject):
 
 
 class ThumbTask(QRunnable):
+
     def __init__(self, path: Path, thumb_size: int, signals: ThumbSignals):
         super().__init__()
         self.path = path
@@ -169,12 +200,20 @@ class MixedTreeTileView(QAbstractScrollArea):
     TILE_MARGIN = 4
     SELECTION_CLEAR_CONFIRM_THRESHOLD = 3
 
-    def __init__(self, root_path: Path, parent=None):
+    def __init__(self, root_path: Path, session: Session, parent=None):
         super().__init__(parent)
         self.zoom_factor = 1.0
 
+        self.session = session
+        self.sort_mode = SortMode.NAME_ASC
+        # Reference image to sort similarity against
+        self.similarity_reference_path: Path | None = None
+
+        self.similarity_index = SimilarityIndex(root_path)
+        self.similarity_index.build(self.session)
+
         self.root_node = DirNode(root_path.resolve(), expanded=True)
-        self.root_node.load()
+        self.root_node.load(**self.get_node_load())
 
         self.header_hits: list[HeaderHit] = []
         self.tile_hits: list[TileHit] = []
@@ -228,11 +267,11 @@ class MixedTreeTileView(QAbstractScrollArea):
         return max(1, self.viewport().width())
 
     def flow_columns(self, depth: int) -> int:
-        available = self.visible_width() - 2 * self.CONTENT_MARGIN - depth * self.INDENT
+        available = self.visible_width(
+        ) - 2 * self.CONTENT_MARGIN - depth * self.INDENT
         available = max(available, self.tile_w)
-        return max(
-            1, (available + self.TILE_SPACING_X) // (self.tile_w + self.TILE_SPACING_X)
-        )
+        return max(1, (available + self.TILE_SPACING_X) //
+                   (self.tile_w + self.TILE_SPACING_X))
 
     def layout_height_for_images(self, count: int, depth: int) -> int:
         if count == 0:
@@ -246,6 +285,12 @@ class MixedTreeTileView(QAbstractScrollArea):
         self.tile_hits.clear()
         _, y = self._build_layout(None, 0, self.CONTENT_MARGIN)
         return max(self.viewport().height(), y + self.CONTENT_MARGIN)
+
+    def get_node_load(self) -> dict:
+        return dict(
+            similarity_index=self.similarity_index,
+            reference_path=self.similarity_reference_path,
+        )
 
     def refresh(self) -> None:
         """Reload directory structure while preserving expansion state of directories."""
@@ -266,13 +311,14 @@ class MixedTreeTileView(QAbstractScrollArea):
         self.root_node.children_loaded = False
         self.root_node.child_dirs = []
         self.root_node.image_files = []
-        self.root_node.load()
+        self.root_node.load(**self.get_node_load())
 
         # Restore expansion state
         def apply_expanded(node: DirNode) -> None:
             if node.path in expanded_paths:
                 node.expanded = True
-                node.load()  # Load children so we can recurse into them
+                node.load(**self.get_node_load()
+                          )  # Load children so we can recurse into them
             for child in node.child_dirs:
                 apply_expanded(child)
 
@@ -303,7 +349,8 @@ class MixedTreeTileView(QAbstractScrollArea):
         if path in self.thumb_cache or path in self.loading_paths:
             return
         self.loading_paths.add(path)
-        self.thread_pool.start(ThumbTask(path, self.thumb_size, self.thumb_signals))
+        self.thread_pool.start(
+            ThumbTask(path, self.thumb_size, self.thumb_signals))
 
     def on_thumbnail_loaded(self, path_str: str, image: QImage) -> None:
         path = Path(path_str)
@@ -319,21 +366,39 @@ class MixedTreeTileView(QAbstractScrollArea):
         if not self._update_timer.isActive():
             self._update_timer.start(10)
 
-    def _build_layout(
-        self, painter: QPainter | None, depth: int, y: int, node: DirNode | None = None
-    ) -> tuple[int, int]:
+    def set_sort_mode(
+        self,
+        sort_mode: SortMode,
+        reference_path: Path | None = None,
+    ) -> None:
+        self.sort_mode = sort_mode
+        self.similarity_reference_path = reference_path
+        self.root_node.resort(
+            sort_mode=self.sort_mode,
+            similarity_index=self.similarity_index,
+            reference_path=self.similarity_reference_path,
+        )
+
+    def _build_layout(self,
+                      painter: QPainter | None,
+                      depth: int,
+                      y: int,
+                      node: DirNode | None = None) -> tuple[int, int]:
         if node is None:
             node = self.root_node
 
         vx = self.CONTENT_MARGIN + depth * self.INDENT
-        vw = self.visible_width() - 2 * self.CONTENT_MARGIN - depth * self.INDENT
+        vw = self.visible_width(
+        ) - 2 * self.CONTENT_MARGIN - depth * self.INDENT
         vw = max(vw, 100)
 
         header_rect = QRect(vx, y, vw, self.HEADER_HEIGHT)
         toggle_rect = QRect(vx, y + 6, 16, 16)
         self.header_hits.append(
-            HeaderHit(node=node, rect=header_rect, toggle_rect=toggle_rect, depth=depth)
-        )
+            HeaderHit(node=node,
+                      rect=header_rect,
+                      toggle_rect=toggle_rect,
+                      depth=depth))
 
         if painter is not None:
             self._paint_header(painter, node, header_rect, toggle_rect, depth)
@@ -341,7 +406,7 @@ class MixedTreeTileView(QAbstractScrollArea):
         y += self.HEADER_HEIGHT + 4
 
         if node.expanded:
-            node.load()
+            node.load(**self.get_node_load())
 
             # Directories first
             for child in node.child_dirs:
@@ -357,8 +422,7 @@ class MixedTreeTileView(QAbstractScrollArea):
                     ty = y + row * (self.tile_h + self.TILE_SPACING_Y)
                     rect = QRect(tx, ty, self.tile_w, self.tile_h)
                     self.tile_hits.append(
-                        TileHit(file_path=file_path, rect=rect, depth=depth)
-                    )
+                        TileHit(file_path=file_path, rect=rect, depth=depth))
                     if painter is not None:
                         self._paint_tile(
                             painter,
@@ -367,7 +431,8 @@ class MixedTreeTileView(QAbstractScrollArea):
                             selected=(file_path in self.selected_files),
                         )
 
-                y += self.layout_height_for_images(len(node.image_files), depth)
+                y += self.layout_height_for_images(len(node.image_files),
+                                                   depth)
                 y += self.SECTION_SPACING
 
         return depth, y
@@ -410,21 +475,17 @@ class MixedTreeTileView(QAbstractScrollArea):
         cy = toggle_rect.center().y()
 
         if node.expanded:
-            poly = QPolygon(
-                [
-                    QPoint(cx - 4, cy - 2),
-                    QPoint(cx + 4, cy - 2),
-                    QPoint(cx, cy + 4),
-                ]
-            )
+            poly = QPolygon([
+                QPoint(cx - 4, cy - 2),
+                QPoint(cx + 4, cy - 2),
+                QPoint(cx, cy + 4),
+            ])
         else:
-            poly = QPolygon(
-                [
-                    QPoint(cx - 2, cy - 4),
-                    QPoint(cx - 2, cy + 4),
-                    QPoint(cx + 4, cy),
-                ]
-            )
+            poly = QPolygon([
+                QPoint(cx - 2, cy - 4),
+                QPoint(cx - 2, cy + 4),
+                QPoint(cx + 4, cy),
+            ])
 
         painter.drawPolygon(poly)
 
@@ -434,9 +495,8 @@ class MixedTreeTileView(QAbstractScrollArea):
         painter.setFont(font)
 
         text_x = toggle_rect.right() + 6
-        text_rect = QRect(
-            text_x, rect.y(), rect.width() - (text_x - rect.x()), rect.height()
-        )
+        text_rect = QRect(text_x, rect.y(),
+                          rect.width() - (text_x - rect.x()), rect.height())
         label = node.path.name if node.path.name else str(node.path)
         count_text = ""
         if node.children_loaded:
@@ -451,9 +511,8 @@ class MixedTreeTileView(QAbstractScrollArea):
 
         painter.restore()
 
-    def _paint_placeholder_thumb(
-        self, painter: QPainter, thumb_rect: QRect, file_path: Path
-    ) -> None:
+    def _paint_placeholder_thumb(self, painter: QPainter, thumb_rect: QRect,
+                                 file_path: Path) -> None:
         painter.save()
         painter.setPen(QPen(self.mid, 1, Qt.PenStyle.DashLine))
         painter.setBrush(self.placeholder_bg)
@@ -467,9 +526,8 @@ class MixedTreeTileView(QAbstractScrollArea):
         )
         painter.restore()
 
-    def _paint_tile(
-        self, painter: QPainter, file_path: Path, rect: QRect, selected: bool
-    ) -> None:
+    def _paint_tile(self, painter: QPainter, file_path: Path, rect: QRect,
+                    selected: bool) -> None:
         painter.save()
 
         is_fully_annotated = file_path in self.fully_annotated_files
@@ -617,16 +675,16 @@ class MixedTreeTileView(QAbstractScrollArea):
                     def open_sxiv():
                         import subprocess
 
-                        subprocess.Popen(
-                            ["sxiv"] + [str(p) for p in self.selected_files]
-                        )
+                        subprocess.Popen(["sxiv"] +
+                                         [str(p) for p in self.selected_files])
 
                     sxiv_action.triggered.connect(open_sxiv)
 
                     copy_path_action = menu.addAction("copy path")
 
                     def copy_path():
-                        paths = "\n".join(str(p.resolve()) for p in self.selected_files)
+                        paths = "\n".join(
+                            str(p.resolve()) for p in self.selected_files)
                         QApplication.clipboard().setText(paths)
 
                     copy_path_action.triggered.connect(copy_path)
@@ -638,7 +696,7 @@ class MixedTreeTileView(QAbstractScrollArea):
             if hit.toggle_rect.contains(pos) or hit.rect.contains(pos):
                 hit.node.expanded = not hit.node.expanded
                 if hit.node.expanded:
-                    hit.node.load()
+                    hit.node.load(**self.get_node_load())
                 self._update_scrollbars()
                 return
 
@@ -650,28 +708,25 @@ class MixedTreeTileView(QAbstractScrollArea):
                     else:
                         self.selected_files.add(hit.file_path)
                     self.last_clicked_file = hit.file_path
-                elif (
-                    modifiers & Qt.KeyboardModifier.ShiftModifier
-                    and self.last_clicked_file
-                ):
+                elif (modifiers & Qt.KeyboardModifier.ShiftModifier
+                      and self.last_clicked_file):
                     paths = [th.file_path for th in self.tile_hits]
                     try:
                         start_idx = paths.index(self.last_clicked_file)
                         end_idx = paths.index(hit.file_path)
                         if start_idx > end_idx:
                             start_idx, end_idx = end_idx, start_idx
-                        for p in paths[start_idx : end_idx + 1]:
+                        for p in paths[start_idx:end_idx + 1]:
                             self.selected_files.add(p)
                     except ValueError:
                         self.selected_files = {hit.file_path}
                     # Keep last_clicked_file unchanged for range extension, or update? usually update
                     self.last_clicked_file = hit.file_path
                 else:
-                    if (
-                        len(self.selected_files)
-                        > self.SELECTION_CLEAR_CONFIRM_THRESHOLD
-                    ):
-                        if not confirm_clear_selection(self, len(self.selected_files)):
+                    if (len(self.selected_files)
+                            > self.SELECTION_CLEAR_CONFIRM_THRESHOLD):
+                        if not confirm_clear_selection(
+                                self, len(self.selected_files)):
                             return
 
                     self.selected_files = {hit.file_path}
@@ -690,7 +745,7 @@ class MixedTreeTileView(QAbstractScrollArea):
             if hit.rect.contains(pos):
                 hit.node.expanded = not hit.node.expanded
                 if hit.node.expanded:
-                    hit.node.load()
+                    hit.node.load(**self.get_node_load())
                 self._update_scrollbars()
                 return
 
@@ -763,10 +818,11 @@ class MixedTreeTileView(QAbstractScrollArea):
 
         # Click toggle to expand
         scroll_y = self.verticalScrollBar().value()
-        click_pos = QPoint(
-            toggle_rect.center().x(), toggle_rect.center().y() - scroll_y
-        )
-        QTest.mouseClick(self.viewport(), Qt.MouseButton.LeftButton, pos=click_pos)
+        click_pos = QPoint(toggle_rect.center().x(),
+                           toggle_rect.center().y() - scroll_y)
+        QTest.mouseClick(self.viewport(),
+                         Qt.MouseButton.LeftButton,
+                         pos=click_pos)
         qtbot.wait(50)
 
     def get_state(self) -> MixedViewState:
@@ -799,7 +855,7 @@ class MixedTreeTileView(QAbstractScrollArea):
         def apply_expanded(node: DirNode) -> None:
             node.expanded = str(node.path) in expanded_set
             if node.expanded:
-                node.load()
+                node.load(**self.get_node_load())
             for child in node.child_dirs:
                 apply_expanded(child)
 
