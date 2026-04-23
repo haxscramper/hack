@@ -118,3 +118,5 @@ def confirm_clear_selection(parent, selected_count: int) -> bool:
 
     result = dialog.exec()
     return result == QDialog.DialogCode.Accepted
+
+

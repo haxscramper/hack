@@ -1,7 +1,7 @@
 import pytest
 import colorsys
-from PySide6.QtCore import QTimer
-from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import QPoint, QTimer, Qt
+from PySide6.QtWidgets import QApplication, QDialog, QDialogButtonBox
 from PySide6.QtGui import QPixmap, QScreen
 import shutil
 from pathlib import Path
@@ -16,6 +16,7 @@ from pytestqt.qtbot import QtBot
 from beartype import beartype
 import logging
 from beartype.typing import Any
+from PySide6.QtTest import QTest
 
 
 @beartype
@@ -88,7 +89,6 @@ def stable_test_dir(request: pytest.FixtureRequest) -> Path:
     final_dir.mkdir(parents=True, exist_ok=True)
 
     return final_dir
-
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -184,3 +184,49 @@ def gui_app_instance(image_directory: Path,
     # Cleanup
     window.close()
     session.close()
+
+
+def setup_search_tab(gui_app_instance: AppInstanceRes, qtbot: QtBot):
+    """Switch to the search tab and return the SearchTab widget."""
+    left_panel = gui_app_instance.window.left_panel
+    left_panel.tabs.setCurrentIndex(1)
+    qtbot.wait(50)
+    return left_panel.search_view
+
+
+def _click_tile(widget, file_path: Path, qtbot: QtBot):
+    """Click a tile in the mixed view, scrolling if necessary."""
+    rect = widget.get_tile_rect(file_path)
+    assert rect is not None, f"Tile {file_path} not found"
+    if not widget.is_element_visible(rect):
+        widget.scroll_to_content_y(rect.center().y())
+        qtbot.wait(50)
+        rect = widget.get_tile_rect(file_path)
+        assert rect is not None
+    scroll_y = widget.verticalScrollBar().value()
+    click_pos = QPoint(rect.center().x(), rect.center().y() - scroll_y)
+    QTest.mouseClick(widget.viewport(),
+                     Qt.MouseButton.LeftButton,
+                     pos=click_pos)
+    qtbot.wait(50)
+
+
+def _accept_move_dialog(qtbot: QtBot):
+    """Find the visible move dialog and accept it."""
+    dialog = _get_visible_dialog()
+    buttons = dialog.findChild(QDialogButtonBox)
+    assert buttons is not None
+    qtbot.wait(50)
+    dialog.accept()
+    qtbot.wait(50)
+
+
+def _get_visible_dialog() -> QDialog:
+    """Return the currently visible QDialog, or raise AssertionError."""
+    dialog = next(
+        (widget for widget in QApplication.topLevelWidgets()
+         if isinstance(widget, QDialog) and widget.isVisible()),
+        None,
+    )
+    assert dialog is not None, "No visible dialog found"
+    return dialog
