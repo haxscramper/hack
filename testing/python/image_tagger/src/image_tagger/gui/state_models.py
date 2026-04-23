@@ -8,6 +8,8 @@ class MixedViewState(BaseModel):
     zoom_factor: float
     scroll_y: int
     selected_files: list[str]
+    sort_mode: str = "NAME_ASC"
+    similarity_reference_path: str | None = None
 
 
 class SearchTabState(BaseModel):

@@ -480,3 +480,4 @@ test/*.js
 perf.data*
 build
 testing/typescript/grpc_client_server/client/generated/
+.kilo/plans

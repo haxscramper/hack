@@ -288,6 +288,7 @@ class MixedTreeTileView(QAbstractScrollArea):
 
     def get_node_load(self) -> dict:
         return dict(
+            sort_mode=self.sort_mode,
             similarity_index=self.similarity_index,
             reference_path=self.similarity_reference_path,
         )
@@ -373,11 +374,17 @@ class MixedTreeTileView(QAbstractScrollArea):
     ) -> None:
         self.sort_mode = sort_mode
         self.similarity_reference_path = reference_path
-        self.root_node.resort(
-            sort_mode=self.sort_mode,
-            similarity_index=self.similarity_index,
-            reference_path=self.similarity_reference_path,
-        )
+
+        def resort_recursive(node: DirNode) -> None:
+            node.resort(
+                sort_mode=self.sort_mode,
+                similarity_index=self.similarity_index,
+                reference_path=self.similarity_reference_path,
+            )
+            for child in node.child_dirs:
+                resort_recursive(child)
+
+        resort_recursive(self.root_node)
 
     def _build_layout(self,
                       painter: QPainter | None,
@@ -844,6 +851,9 @@ class MixedTreeTileView(QAbstractScrollArea):
             zoom_factor=self.zoom_factor,
             scroll_y=self.verticalScrollBar().value(),
             selected_files=sorted(str(p) for p in self.selected_files),
+            sort_mode=self.sort_mode.name,
+            similarity_reference_path=str(self.similarity_reference_path)
+            if self.similarity_reference_path else None,
         )
 
     def set_state(self, state: MixedViewState) -> None:

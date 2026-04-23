@@ -20,7 +20,6 @@ class LeftPanel(QWidget):
 
         self.tree_view = MixedTreeTileView(root_dir, session=session)
         self.search_view = SearchTab(session, str(root_dir))
-        self.tree_view.set_sort_mode(SortMode.SIMILARITY)
 
         self.tabs.addTab(self.tree_view, "Files")
         self.tabs.addTab(self.search_view, "Search")
@@ -30,20 +29,20 @@ class LeftPanel(QWidget):
         # Connect signals
         self.tree_view.fileSelected.connect(self.fileSelected.emit)
         self.search_view.thumbnail_list.list_view.doubleClicked.connect(
-            self._on_search_double_clicked
-        )
+            self._on_search_double_clicked)
         self.search_view.thumbnail_list.list_view.clicked.connect(
-            self._on_search_clicked
-        )
+            self._on_search_clicked)
 
     def _on_search_clicked(self, index):
         if index.isValid():
-            img_path = self.search_view.thumbnail_list.model.images[index.row()]
+            img_path = self.search_view.thumbnail_list.model.images[
+                index.row()]
             self.fileSelected.emit(str(img_path))
 
     def _on_search_double_clicked(self, index):
         if index.isValid():
-            img_path = self.search_view.thumbnail_list.model.images[index.row()]
+            img_path = self.search_view.thumbnail_list.model.images[
+                index.row()]
             self.fileSelected.emit(str(img_path))
 
     @property
