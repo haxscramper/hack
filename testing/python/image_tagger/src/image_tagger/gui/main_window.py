@@ -356,7 +356,12 @@ class MainWindow(QMainWindow):
             self._palette_recent_paths.insert(0, target_str)
             self._palette_recent_paths = self._palette_recent_paths[:10]
 
-            dialog = self.create_move_dialog(selected_files, target_dir)
+            dialog = self.create_move_dialog(
+                selected_files,
+                target_dir,
+                target_relevant_path=str(target_dir.relative_to(
+                    self.root_dir)),
+            )
             dialog.setWindowTitle(f"Move to {target_dir.name}?")
 
             def on_move_finished(move_result):
