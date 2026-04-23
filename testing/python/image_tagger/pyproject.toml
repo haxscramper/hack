@@ -25,6 +25,7 @@ dependencies = [
     "onnxruntime-migraphx",
     "pytest-qt>=4.5.0",
     "sexpdata>=1.0.2",
+    "rapidfuzz>=3.14.5",
 ]
 
 [tool.uv.sources]

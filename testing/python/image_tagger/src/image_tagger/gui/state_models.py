@@ -49,9 +49,15 @@ class CenterPanelState(BaseModel):
     splitter_sizes: list[int]
 
 
+class PaletteState(BaseModel):
+    pinned_paths: list[str] = []
+    recent_paths: list[str] = []
+
+
 class AppState(BaseModel):
     window_size: tuple[int, int]
     splitter_sizes: list[int]
     left_panel: LeftPanelState
     center_panel: CenterPanelState
     right_panel: RightPanelState
+    palette: PaletteState = PaletteState()

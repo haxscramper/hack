@@ -31,6 +31,10 @@ from image_tagger.gui.left_panel import LeftPanel
 from image_tagger.gui.center_panel import CenterPanel
 from image_tagger.gui.right_panel import RightPanel, DirectoryPreviewWidget
 from image_tagger.gui.state_models import AppState
+from image_tagger.gui.fuzzy_file_selector import (
+    PaletteDialog,
+    build_directory_entries,
+)
 
 
 class MoveFilesCommand(QUndoCommand):
@@ -174,6 +178,12 @@ class MainWindow(QMainWindow):
             shortcut.activated.connect(
                 lambda idx=i: self.on_move_shortcut(idx))
 
+        self._palette_pinned_paths: set[str] = set()
+        self._palette_recent_paths: list[str] = []
+
+        palette_shortcut = QShortcut(QKeySequence("Ctrl+M"), self)
+        palette_shortcut.activated.connect(self.on_palette_move_shortcut)
+
     def _update_fully_annotated(self):
         rel_paths = self.repository.get_fully_annotated_paths()
         full_paths = {self.root_dir / p for p in rel_paths}
@@ -307,6 +317,67 @@ class MainWindow(QMainWindow):
         self.right_panel.hide_move_overlays()
         self.on_move_dialog_finished(result, selected_files, target_dir)
 
+    def on_palette_move_shortcut(self):
+        selected_files = list(self.left_panel.selected_files)
+        if not selected_files:
+            return
+
+        entries = build_directory_entries(
+            self.root_dir,
+            pinned_paths=self._palette_pinned_paths,
+            recent_paths=self._palette_recent_paths,
+        )
+
+        self._run_palette_move_loop(entries, selected_files)
+
+    def _run_palette_move_loop(self, entries, selected_files):
+        """Open palette dialog and handle move confirmation in a loop.
+
+        If the move is cancelled, the palette stays open for re-selection.
+        If the move is confirmed, the palette is hidden and the move is executed.
+        """
+        palette = PaletteDialog(entries, self)
+        palette.setWindowTitle("Move to directory")
+        palette.input.setPlaceholderText(
+            "Type to search for target directory...")
+
+        def on_palette_finished(result):
+            if result != QDialog.DialogCode.Accepted:
+                return
+
+            target_dir = palette.selected_path
+            if target_dir is None or not target_dir.is_dir():
+                return
+
+            # Update recent paths: move to front, keep max 10
+            target_str = str(target_dir)
+            if target_str in self._palette_recent_paths:
+                self._palette_recent_paths.remove(target_str)
+            self._palette_recent_paths.insert(0, target_str)
+            self._palette_recent_paths = self._palette_recent_paths[:10]
+
+            dialog = self.create_move_dialog(selected_files, target_dir)
+            dialog.setWindowTitle(f"Move to {target_dir.name}?")
+
+            def on_move_finished(move_result):
+                if move_result == QDialog.DialogCode.Accepted:
+                    self.on_move_dialog_finished(move_result, selected_files,
+                                                 target_dir)
+                else:
+                    # Move cancelled: reopen palette with updated entries
+                    new_entries = build_directory_entries(
+                        self.root_dir,
+                        pinned_paths=self._palette_pinned_paths,
+                        recent_paths=self._palette_recent_paths,
+                    )
+                    self._run_palette_move_loop(new_entries, selected_files)
+
+            dialog.finished.connect(on_move_finished)
+            dialog.open()
+
+        palette.finished.connect(on_palette_finished)
+        palette.open()
+
     def on_file_selected(self, file_path: str):
         logging.debug(f"File selected in GUI: {file_path}")
         try:
@@ -388,7 +459,7 @@ class MainWindow(QMainWindow):
                                                      name)
 
     def get_state(self) -> AppState:
-        from image_tagger.gui.state_models import AppState
+        from image_tagger.gui.state_models import AppState, PaletteState
 
         # Find the main horizontal splitter
         central = self.centralWidget()
@@ -410,6 +481,10 @@ class MainWindow(QMainWindow):
             left_panel=self.left_panel.get_state(),
             center_panel=self.center_panel.get_state(),
             right_panel=self.right_panel.get_state(),
+            palette=PaletteState(
+                pinned_paths=sorted(self._palette_pinned_paths),
+                recent_paths=list(self._palette_recent_paths),
+            ),
         )
 
     def set_state(self, state: AppState) -> None:
@@ -432,3 +507,7 @@ class MainWindow(QMainWindow):
         self.left_panel.set_state(state.left_panel)
         self.center_panel.set_state(state.center_panel)
         self.right_panel.set_state(state.right_panel)
+
+        if state.palette:
+            self._palette_pinned_paths = set(state.palette.pinned_paths)
+            self._palette_recent_paths = list(state.palette.recent_paths)
