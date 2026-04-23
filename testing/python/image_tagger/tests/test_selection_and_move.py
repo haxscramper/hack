@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QListView,
 )
 
+
 def test_move_file_from_root_to_output(
     gui_app_instance: AppInstanceRes,
     screenshot_dir: Path,
@@ -81,8 +82,10 @@ def test_move_file_from_root_to_output(
     assert not file_to_move.exists()
     assert (sub1_dir / "image_255_0_239.png").exists()
 
-    # Verify selection is cleared after move
-    assert len(widget.selected_files) == 0
+    # Verify a file from the common parent directory is selected after move
+    assert len(widget.selected_files) == 1
+    selected = next(iter(widget.selected_files))
+    assert selected.parent == image_directory
 
 
 def test_move_multiple_files_to_output(
@@ -169,8 +172,10 @@ def test_move_multiple_files_to_output(
     assert (sub2_dir / "image_255_0_239.png").exists()
     assert (sub2_dir / "image_255_0_191.png").exists()
 
-    # Verify selection is cleared after move
-    assert len(widget.selected_files) == 0
+    # Verify a file from the common parent directory is selected after move
+    assert len(widget.selected_files) == 1
+    selected = next(iter(widget.selected_files))
+    assert selected.parent == image_directory
 
 
 def test_move_file_to_second_output(
@@ -223,8 +228,10 @@ def test_move_file_to_second_output(
     assert not file_to_move.exists()
     assert (sub1_dir / "image_255_0_239.png").exists()
 
-    # Verify selection is cleared after move
-    assert len(widget.selected_files) == 0
+    # Verify a file from the common parent directory is selected after move
+    assert len(widget.selected_files) == 1
+    selected = next(iter(widget.selected_files))
+    assert selected.parent == image_directory
 
     # Verify state reflects two preview widgets
     state = gui_app_instance.window.get_state()
@@ -309,8 +316,10 @@ def test_move_file_with_output_navigation(
     assert not file_to_move.exists()
     assert (sub12_dir / "image_255_0_239.png").exists()
 
-    # Verify selection is cleared after move
-    assert len(widget.selected_files) == 0
+    # Verify a file from the common parent directory is selected after move
+    assert len(widget.selected_files) == 1
+    selected = next(iter(widget.selected_files))
+    assert selected.parent == image_directory
 
     # Verify state reflects the navigated directory in the preview widget
     state = gui_app_instance.window.get_state()
@@ -410,8 +419,11 @@ def test_move_file_from_search_results(
     assert not target.exists()
     assert (sub1_dir / "image_255_0_239.png").exists()
 
-    # Verify selection is cleared after move in search view
-    assert len(gui_app_instance.window.left_panel.selected_files) == 0
+    # Verify a file from the common parent directory is selected after move
+    widget = gui_app_instance.window.get_mixed_view()
+    assert len(widget.selected_files) == 1
+    selected = next(iter(widget.selected_files))
+    assert selected.parent == image_directory
 
 
 def _accept_clear_selection_dialog(qtbot: QtBot):
@@ -975,8 +987,9 @@ def test_move_files_with_identical_names(
     assert not file1.exists()
     assert not file2.exists()
 
-    # Verify selection is cleared after move
-    assert len(widget.selected_files) == 0
+    # Files were from different parents (sub1 and sub2), so no common parent
+    # file to select. Fallback to first visible file.
+    assert len(widget.selected_files) == 1
 
     right_panel = gui_app_instance.window.right_panel
     preview_widget = cast(DirectoryPreviewWidget,
