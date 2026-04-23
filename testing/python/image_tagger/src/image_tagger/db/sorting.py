@@ -6,7 +6,7 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 from math import sqrt
-from .models import (ImageEntry, ImageProbabilisticTag)
+from .models import ImageEntry, ImageProbabilisticTag
 
 
 class SortMode(Enum):
@@ -18,6 +18,7 @@ class SortMode(Enum):
     MTIME_DESC = auto()
     SIMILARITY = auto()
     SIMILARITY_TO_REFERENCE = auto()
+    SIMILARITY_TO_WEIGHTED_TAGS = auto()
 
 
 @dataclass(slots=True)
@@ -184,11 +185,48 @@ def order_paths_by_similarity_to_reference(
     return [path for _, path in scored] + unscored
 
 
+def order_paths_by_weighted_tags(
+    paths: list[Path],
+    similarity_index: SimilarityIndex,
+    weighted_tags: dict[int, float],
+) -> list[Path]:
+    if not weighted_tags:
+        return sorted(paths, key=_path_name_key)
+
+    reference_norm = sqrt(sum(w * w for w in weighted_tags.values()))
+    if reference_norm == 0.0:
+        return sorted(paths, key=_path_name_key)
+
+    scored: list[tuple[float, Path]] = []
+    unscored: list[Path] = []
+
+    for path in paths:
+        vector = similarity_index.get_vector_for_path(path)
+        if vector is None:
+            unscored.append(path)
+            continue
+
+        dot = 0.0
+        for tag_id, weight in weighted_tags.items():
+            val = vector.values.get(tag_id)
+            if val is not None:
+                dot += weight * val
+
+        score = dot / (reference_norm *
+                       vector.norm) if vector.norm > 0.0 else 0.0
+        scored.append((score, path))
+
+    scored.sort(key=lambda item: (-item[0], item[1].name.lower()))
+    unscored.sort(key=_path_name_key)
+    return [path for _, path in scored] + unscored
+
+
 def sort_paths(
     paths: list[Path],
     sort_mode: SortMode,
     similarity_index: SimilarityIndex | None = None,
     reference_path: Path | None = None,
+    weighted_tags: dict[int, float] | None = None,
 ) -> list[Path]:
     if sort_mode == SortMode.NAME_ASC:
         return sorted(paths, key=_path_name_key)
@@ -219,6 +257,15 @@ def sort_paths(
             paths=paths,
             similarity_index=similarity_index,
             reference_path=reference_path,
+        )
+
+    if sort_mode == SortMode.SIMILARITY_TO_WEIGHTED_TAGS:
+        assert similarity_index is not None
+        assert weighted_tags is not None
+        return order_paths_by_weighted_tags(
+            paths=paths,
+            similarity_index=similarity_index,
+            weighted_tags=weighted_tags,
         )
 
     raise ValueError(sort_mode)

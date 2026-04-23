@@ -1,10 +1,11 @@
 from beartype import beartype
 from pathlib import Path
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QTabWidget
-from PySide6.QtCore import Signal
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QTabWidget, QSplitter
+from PySide6.QtCore import Signal, Qt
 from image_tagger.db.sorting import SortMode
 from image_tagger.gui.image_directory_view import MixedTreeTileView
 from image_tagger.gui.query_search import SearchTab
+from image_tagger.gui.weighted_tag_sort import WeightedTagSortWidget
 from image_tagger.gui.state_models import LeftPanelState
 
 
@@ -24,7 +25,17 @@ class LeftPanel(QWidget):
         self.tabs.addTab(self.tree_view, "Files")
         self.tabs.addTab(self.search_view, "Search")
 
-        layout.addWidget(self.tabs)
+        # Weighted tag sort widget
+        self.weighted_sort = WeightedTagSortWidget(session)
+        self.weighted_sort.sortRequested.connect(
+            self._on_weighted_sort_requested)
+
+        splitter = QSplitter(Qt.Orientation.Vertical)
+        splitter.addWidget(self.tabs)
+        splitter.addWidget(self.weighted_sort)
+        splitter.setSizes([500, 200])
+
+        layout.addWidget(splitter)
 
         # Connect signals
         self.tree_view.fileSelected.connect(self.fileSelected.emit)
@@ -32,6 +43,15 @@ class LeftPanel(QWidget):
             self._on_search_double_clicked)
         self.search_view.thumbnail_list.list_view.clicked.connect(
             self._on_search_clicked)
+
+    def _on_weighted_sort_requested(self):
+        weighted_tags = self.weighted_sort.get_tag_id_weights()
+        self.tree_view.similarity_index.build(self.tree_view.session)
+        self.tree_view.set_sort_mode(
+            SortMode.SIMILARITY_TO_WEIGHTED_TAGS,
+            weighted_tags=weighted_tags,
+        )
+        self.tree_view._update_scrollbars()
 
     def _on_search_clicked(self, index):
         if index.isValid():
@@ -82,15 +102,23 @@ class LeftPanel(QWidget):
         return self.tree_view.viewport()
 
     def get_state(self) -> LeftPanelState:
-        from image_tagger.gui.state_models import LeftPanelState
+        from image_tagger.gui.state_models import LeftPanelState, WeightedTagEntry
+
+        entries = [
+            WeightedTagEntry(tag_name=name, weight=weight)
+            for name, weight in self.weighted_sort.get_entries()
+        ]
 
         return LeftPanelState(
             active_tab=self.tabs.currentIndex(),
             mixed_view=self.tree_view.get_state(),
             search_tab=self.search_view.get_state(),
+            weighted_tag_entries=entries,
         )
 
     def set_state(self, state: LeftPanelState) -> None:
         self.tabs.setCurrentIndex(state.active_tab)
         self.tree_view.set_state(state.mixed_view)
         self.search_view.set_state(state.search_tab)
+        self.weighted_sort.set_entries([(e.tag_name, e.weight)
+                                        for e in state.weighted_tag_entries])

@@ -3,6 +3,11 @@ from __future__ import annotations
 from pydantic import BaseModel
 
 
+class WeightedTagEntry(BaseModel):
+    tag_name: str
+    weight: float
+
+
 class MixedViewState(BaseModel):
     expanded_paths: list[str]
     zoom_factor: float
@@ -10,6 +15,7 @@ class MixedViewState(BaseModel):
     selected_files: list[str]
     sort_mode: str = "NAME_ASC"
     similarity_reference_path: str | None = None
+    weighted_tag_entries: list[WeightedTagEntry] = []
 
 
 class SearchTabState(BaseModel):
@@ -36,6 +42,7 @@ class LeftPanelState(BaseModel):
     active_tab: int
     mixed_view: MixedViewState
     search_tab: SearchTabState
+    weighted_tag_entries: list[WeightedTagEntry] = []
 
 
 class CenterPanelState(BaseModel):

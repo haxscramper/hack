@@ -86,12 +86,14 @@ class DirNode:
         sort_mode: SortMode = SortMode.NAME_ASC,
         similarity_index: SimilarityIndex | None = None,
         reference_path: Path | None = None,
+        weighted_tags: dict[int, float] | None = None,
     ) -> None:
         if self.children_loaded:
             self.resort(
                 sort_mode=sort_mode,
                 similarity_index=similarity_index,
                 reference_path=reference_path,
+                weighted_tags=weighted_tags,
             )
             return
 
@@ -121,6 +123,7 @@ class DirNode:
             sort_mode=sort_mode,
             similarity_index=similarity_index,
             reference_path=reference_path,
+            weighted_tags=weighted_tags,
         )
         self.children_loaded = True
 
@@ -129,12 +132,14 @@ class DirNode:
         sort_mode: SortMode,
         similarity_index: SimilarityIndex | None = None,
         reference_path: Path | None = None,
+        weighted_tags: dict[int, float] | None = None,
     ) -> None:
         self.image_files = sort_paths(
             paths=self.image_files,
             sort_mode=sort_mode,
             similarity_index=similarity_index,
             reference_path=reference_path,
+            weighted_tags=weighted_tags,
         )
 
 
@@ -208,6 +213,8 @@ class MixedTreeTileView(QAbstractScrollArea):
         self.sort_mode = SortMode.NAME_ASC
         # Reference image to sort similarity against
         self.similarity_reference_path: Path | None = None
+        # Weighted tags for SIMILARITY_TO_WEIGHTED_TAGS mode
+        self.weighted_tags: dict[int, float] | None = None
 
         self.similarity_index = SimilarityIndex(root_path)
         self.similarity_index.build(self.session)
@@ -291,6 +298,7 @@ class MixedTreeTileView(QAbstractScrollArea):
             sort_mode=self.sort_mode,
             similarity_index=self.similarity_index,
             reference_path=self.similarity_reference_path,
+            weighted_tags=self.weighted_tags,
         )
 
     def refresh(self) -> None:
@@ -371,15 +379,18 @@ class MixedTreeTileView(QAbstractScrollArea):
         self,
         sort_mode: SortMode,
         reference_path: Path | None = None,
+        weighted_tags: dict[int, float] | None = None,
     ) -> None:
         self.sort_mode = sort_mode
         self.similarity_reference_path = reference_path
+        self.weighted_tags = weighted_tags
 
         def resort_recursive(node: DirNode) -> None:
             node.resort(
                 sort_mode=self.sort_mode,
                 similarity_index=self.similarity_index,
                 reference_path=self.similarity_reference_path,
+                weighted_tags=self.weighted_tags,
             )
             for child in node.child_dirs:
                 resort_recursive(child)
@@ -833,7 +844,7 @@ class MixedTreeTileView(QAbstractScrollArea):
         qtbot.wait(50)
 
     def get_state(self) -> MixedViewState:
-        from image_tagger.gui.state_models import MixedViewState
+        from image_tagger.gui.state_models import MixedViewState, WeightedTagEntry
 
         expanded_paths: set[str] = set()
 
@@ -846,6 +857,25 @@ class MixedTreeTileView(QAbstractScrollArea):
 
         collect_expanded(self.root_node)
 
+        weighted_entries = []
+        if self.weighted_tags:
+            # Map tag IDs back to names for serialization
+            from sqlalchemy import select
+            from image_tagger.db.models import ProbabilisticTag
+
+            tag_ids = list(self.weighted_tags.keys())
+            rows = self.session.execute(
+                select(ProbabilisticTag.id, ProbabilisticTag.name).where(
+                    ProbabilisticTag.id.in_(tag_ids))).all()
+            id_to_name = {tid: name for tid, name in rows}
+            weighted_entries = [
+                WeightedTagEntry(
+                    tag_name=id_to_name.get(tid, ""),
+                    weight=weight,
+                ) for tid, weight in self.weighted_tags.items()
+                if id_to_name.get(tid, "")
+            ]
+
         return MixedViewState(
             expanded_paths=sorted(expanded_paths),
             zoom_factor=self.zoom_factor,
@@ -854,6 +884,7 @@ class MixedTreeTileView(QAbstractScrollArea):
             sort_mode=self.sort_mode.name,
             similarity_reference_path=str(self.similarity_reference_path)
             if self.similarity_reference_path else None,
+            weighted_tag_entries=weighted_entries,
         )
 
     def set_state(self, state: MixedViewState) -> None:
