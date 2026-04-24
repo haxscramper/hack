@@ -1,0 +1,22 @@
+[project]
+name = "ggml-eva"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+  "ggml-python",
+  "opencv-python>=4.13.0.92",
+  "pandas>=3.0.2",
+  "safetensors>=0.7.0",
+  "torch>=2.11.0",
+]
+
+[tool.uv]
+package = true
+
+[tool.uv.extra-build-dependencies]
+ggml-python = []
+
+[tool.uv.extra-build-variables]
+ggml-python = { CMAKE_ARGS = "-DGGML_VULKAN=ON" }
