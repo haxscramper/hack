@@ -1303,3 +1303,167 @@ def test_move_dialog_switch_target_with_shortcut(
     assert len(widget.selected_files) == 1
     selected = next(iter(widget.selected_files))
     assert selected.parent == image_directory
+
+
+def test_move_undo_restores_original_selection(
+    gui_app_instance: AppInstanceRes,
+    screenshot_dir: Path,
+    qtbot: QtBot,
+    image_directory: Path,
+):
+    """Test that undo after a move restores the original file selection."""
+    qtbot.waitExposed(gui_app_instance.window)
+
+    widget = gui_app_instance.window.get_mixed_view()
+    qtbot.waitExposed(widget)
+
+    file_to_move = image_directory / "image_255_0_239.png"
+    _click_tile(widget, file_to_move, qtbot)
+    assert file_to_move in widget.selected_files
+
+    right_panel = gui_app_instance.window.right_panel
+    preview_widget = cast(DirectoryPreviewWidget,
+                          right_panel.splitter.widget(0))
+    selector = preview_widget.selector
+
+    sub1_dir = image_directory / "sub1"
+    list_widget = selector.subdir_list
+    sub1_item = None
+    for i in range(list_widget.count()):
+        item = list_widget.item(i)
+        if item.text() == "sub1":
+            sub1_item = item
+            break
+    assert sub1_item is not None
+    list_widget.itemClicked.emit(sub1_item)
+    qtbot.wait(50)
+    assert preview_widget.current_dir == sub1_dir
+
+    gui_app_instance.window.activateWindow()
+    qtbot.wait(50)
+    QTest.keyClick(gui_app_instance.window, Qt.Key.Key_1,
+                   Qt.KeyboardModifier.ControlModifier, 100)
+    qtbot.wait(100)
+
+    dialog = _get_visible_dialog()
+    assert dialog.windowTitle().startswith("Move to ")
+
+    dialog.accept()
+    qtbot.wait(150)
+
+    # File moved successfully
+    assert not file_to_move.exists()
+    assert (sub1_dir / "image_255_0_239.png").exists()
+
+    moved_in_sub1 = sub1_dir / "image_255_0_239.png"
+
+    # Selection changed to something else after move
+    assert len(widget.selected_files) == 1
+    selected_after_move = next(iter(widget.selected_files))
+    assert selected_after_move != file_to_move
+
+    # Undo with Ctrl+Z
+    gui_app_instance.window.activateWindow()
+    qtbot.wait(50)
+    QTest.keyClick(gui_app_instance.window, Qt.Key.Key_Z,
+                   Qt.KeyboardModifier.ControlModifier, 100)
+    qtbot.wait(200)
+
+    # File restored to original location
+    assert file_to_move.exists()
+    assert not moved_in_sub1.exists()
+
+    # Original selection restored
+    assert len(widget.selected_files) == 1
+    selected_after_undo = next(iter(widget.selected_files))
+    assert selected_after_undo == file_to_move
+
+    # Redo with Ctrl+Shift+Z
+    gui_app_instance.window.activateWindow()
+    qtbot.wait(50)
+    QTest.keyClick(
+        gui_app_instance.window, Qt.Key.Key_Z,
+        Qt.KeyboardModifier.ControlModifier
+        | Qt.KeyboardModifier.ShiftModifier, 100)
+    qtbot.wait(200)
+
+    # File moved again to sub1
+    assert not file_to_move.exists()
+    assert (sub1_dir / "image_255_0_239.png").exists()
+
+    # Selection updated after redo
+    assert len(widget.selected_files) == 1
+
+
+def test_move_undo_with_search_view_visible(
+    gui_app_instance: AppInstanceRes,
+    screenshot_dir: Path,
+    qtbot: QtBot,
+    image_directory: Path,
+):
+    """Test that undo works correctly when the search tab is visible."""
+    qtbot.waitExposed(gui_app_instance.window)
+
+    widget = gui_app_instance.window.get_mixed_view()
+    qtbot.waitExposed(widget)
+
+    file_to_move = image_directory / "image_255_0_239.png"
+    _click_tile(widget, file_to_move, qtbot)
+    assert file_to_move in widget.selected_files
+
+    right_panel = gui_app_instance.window.right_panel
+    preview_widget = cast(DirectoryPreviewWidget,
+                          right_panel.splitter.widget(0))
+    selector = preview_widget.selector
+
+    sub1_dir = image_directory / "sub1"
+    list_widget = selector.subdir_list
+    sub1_item = None
+    for i in range(list_widget.count()):
+        item = list_widget.item(i)
+        if item.text() == "sub1":
+            sub1_item = item
+            break
+    assert sub1_item is not None
+    list_widget.itemClicked.emit(sub1_item)
+    qtbot.wait(50)
+
+    gui_app_instance.window.activateWindow()
+    qtbot.wait(50)
+    QTest.keyClick(gui_app_instance.window, Qt.Key.Key_1,
+                   Qt.KeyboardModifier.ControlModifier, 100)
+    qtbot.wait(100)
+
+    dialog = _get_visible_dialog()
+    dialog.accept()
+    qtbot.wait(150)
+
+    assert not file_to_move.exists()
+    assert (sub1_dir / "image_255_0_239.png").exists()
+
+    # Switch to search tab
+    search_tab = setup_search_tab(gui_app_instance, qtbot)
+    search_tab.clear_search()
+    spec = {"type": "path_contains", "text": ".png"}
+    search_tab.set_search_spec(spec)
+    search_tab.execute_search()
+    qtbot.wait(100)
+
+    results_before_undo = search_tab.get_result_images()
+    assert len(results_before_undo) > 0
+
+    # Undo with Ctrl+Z while search tab is visible
+    gui_app_instance.window.activateWindow()
+    qtbot.wait(50)
+    QTest.keyClick(gui_app_instance.window, Qt.Key.Key_Z,
+                   Qt.KeyboardModifier.ControlModifier, 100)
+    qtbot.wait(200)
+
+    # File restored
+    assert file_to_move.exists()
+    assert not (sub1_dir / "image_255_0_239.png").exists()
+
+    # Tree view selection restored
+    assert len(widget.selected_files) == 1
+    selected_after_undo = next(iter(widget.selected_files))
+    assert selected_after_undo == file_to_move

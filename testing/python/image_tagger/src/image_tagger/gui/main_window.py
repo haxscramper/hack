@@ -55,6 +55,7 @@ class MoveFilesCommand(QUndoCommand):
         self.target_dir = target_dir
         self.root_dir = root_dir
         self.main_window = main_window
+        self.original_selection = set(source_files)
 
         self.moves = []
         used_names = set()
@@ -90,10 +91,6 @@ class MoveFilesCommand(QUndoCommand):
             self.repository.session.commit()
 
     def _refresh_ui(self):
-        self.main_window.left_panel.selected_files = {
-            dest
-            for src, dest in self.moves
-        }
         self.main_window.left_panel.tree_view.refresh()
         self.main_window.left_panel.viewport().update()
 
@@ -110,6 +107,8 @@ class MoveFilesCommand(QUndoCommand):
             except Exception as e:
                 logging.error(f"Failed to move {src} to {dest}: {e}")
         self._refresh_ui()
+        moved_files = [dest for src, dest in self.moves]
+        self.main_window._focus_after_move(moved_files)
 
     def undo(self):
         for src, dest in self.moves:
@@ -119,6 +118,10 @@ class MoveFilesCommand(QUndoCommand):
             except Exception as e:
                 logging.error(f"Failed to move back {dest} to {src}: {e}")
         self._refresh_ui()
+        self.main_window._focus_after_move(
+            list(self.original_selection),
+            selection_override=self.original_selection,
+        )
 
 
 class MainWindow(QMainWindow):
@@ -174,6 +177,10 @@ class MainWindow(QMainWindow):
         undo_action.setShortcut(QKeySequence("Ctrl+Z"))
         self.addAction(undo_action)
 
+        redo_action = self.undo_stack.createRedoAction(self, "Redo")
+        redo_action.setShortcut(QKeySequence("Ctrl+Shift+Z"))
+        self.addAction(redo_action)
+
         for i in range(1, 10):
             shortcut = QShortcut(QKeySequence(f"Ctrl+{i}"), self)
             shortcut.activated.connect(
@@ -208,6 +215,58 @@ class MainWindow(QMainWindow):
                     (target_dir, target_color, target_relevant_path))
         return targets
 
+    def _focus_after_move(self, moved_files, selection_override=None):
+        """Select an appropriate file after a move or undo operation.
+
+        If *selection_override* is given it is used directly as the new
+        selection set (used by undo to restore the original selection).
+        Otherwise the first remaining file sharing a common parent with the
+        moved files is selected.  When the search tab is visible its results
+        are refreshed and the first result is also selected.
+        """
+        tree_view = self.left_panel.tree_view
+
+        if selection_override is not None:
+            new_selection = next(iter(selection_override), None)
+        else:
+            source_parents = [p.parent for p in moved_files]
+            common_parent = source_parents[0] if source_parents else None
+            for p in source_parents[1:]:
+                while not str(p).startswith(str(common_parent)):
+                    common_parent = common_parent.parent
+
+            new_selection = None
+            if common_parent is not None:
+                for hit in tree_view.tile_hits:
+                    if hit.file_path.parent == common_parent:
+                        new_selection = hit.file_path
+                        break
+
+            if new_selection is None and tree_view.tile_hits:
+                new_selection = tree_view.tile_hits[0].file_path
+
+        if new_selection is not None:
+            tree_view.selected_files = {new_selection}
+            tree_view.last_clicked_file = new_selection
+        else:
+            tree_view.selected_files = set()
+
+        tree_view.viewport().update()
+
+        search_view = self.left_panel.search_view
+        search_view.execute_search()
+        if self.left_panel.tabs.currentIndex() == 1:
+            results = search_view.get_result_images()
+            if results:
+                from PySide6.QtCore import QItemSelectionModel
+                thumb_list = search_view.thumbnail_list
+                index = thumb_list.model.index(0, 0)
+                thumb_list.list_view.selectionModel().select(
+                    index,
+                    QItemSelectionModel.SelectionFlag.Select
+                    | QItemSelectionModel.SelectionFlag.Current,
+                )
+
     def on_move_dialog_finished(self, result, selected_files, target_dir):
         if result != QDialog.DialogCode.Accepted:
             return
@@ -222,37 +281,9 @@ class MainWindow(QMainWindow):
 
         self.undo_stack.push(command)
 
-        # Determine the common parent directory of the moved files
-        source_parents = [p.parent for p in selected_files]
-        common_parent = source_parents[0] if source_parents else None
-        for p in source_parents[1:]:
-            while not str(p).startswith(str(common_parent)):
-                common_parent = common_parent.parent
-
-        tree_view = self.left_panel.tree_view
-
-        # Try to select the first file from the common parent directory
-        new_selection = None
-        if common_parent is not None:
-            for hit in tree_view.tile_hits:
-                if hit.file_path.parent == common_parent:
-                    new_selection = hit.file_path
-                    break
-
-        # Failing that, select the first visible file
-        if new_selection is None and tree_view.tile_hits:
-            new_selection = tree_view.tile_hits[0].file_path
-
-        if new_selection is not None:
-            tree_view.selected_files = {new_selection}
-            tree_view.last_clicked_file = new_selection
-        else:
-            tree_view.selected_files = set()
-
-        tree_view.viewport().update()
-
-        # Re-run query in search view to clear selection there
-        self.left_panel.search_view.execute_search()
+    def get_selected_files_for_move(self):
+        """Return the currently selected files suitable for a move operation."""
+        return list(self.left_panel.selected_files)
 
     def on_move_shortcut(self, idx: int):
         selected_files = list(self.left_panel.selected_files)
