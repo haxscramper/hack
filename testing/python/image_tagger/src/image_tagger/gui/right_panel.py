@@ -76,7 +76,10 @@ class DirectorySelectorWidget(QWidget):
     directoryChanged = Signal(Path)
     removeRequested = Signal()
 
-    def __init__(self, root_dir: Path, initial_dir: Path | None = None, parent=None):
+    def __init__(self,
+                 root_dir: Path,
+                 initial_dir: Path | None = None,
+                 parent=None):
         super().__init__(parent)
         self.root_dir = root_dir
         self.current_dir = initial_dir or root_dir
@@ -86,9 +89,8 @@ class DirectorySelectorWidget(QWidget):
         layout.setSpacing(0)
 
         self.top_widget = QWidget()
-        self.top_widget.setSizePolicy(
-            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed
-        )
+        self.top_widget.setSizePolicy(QSizePolicy.Policy.Preferred,
+                                      QSizePolicy.Policy.Fixed)
         self.top_layout = QHBoxLayout(self.top_widget)
         self.top_layout.setContentsMargins(0, 0, 0, 0)
         self.top_layout.setSpacing(0)
@@ -117,19 +119,18 @@ class DirectorySelectorWidget(QWidget):
         self.subdir_list = QListWidget()
         self.subdir_list.setFrameShape(QFrame.Shape.NoFrame)
         self.subdir_list.setVerticalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
-        )
+            Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.subdir_list.setStyleSheet(
             "QListWidget { background: transparent; } QListWidget::item { padding: 2px; }"
         )
-        self.subdir_list.setSizePolicy(
-            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum
-        )
+        self.subdir_list.setSizePolicy(QSizePolicy.Policy.Preferred,
+                                       QSizePolicy.Policy.Maximum)
 
         layout.addWidget(self.top_widget)
         layout.addWidget(self.subdir_list)
 
-        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        self.setSizePolicy(QSizePolicy.Policy.Preferred,
+                           QSizePolicy.Policy.Maximum)
 
         self.subdir_list.itemClicked.connect(self._on_subdir_clicked)
         self.refresh()
@@ -149,11 +150,8 @@ class DirectorySelectorWidget(QWidget):
             if w is not None:
                 w.deleteLater()  # type: ignore
 
-        rel_parts = (
-            self.current_dir.relative_to(self.root_dir).parts
-            if self.current_dir != self.root_dir
-            else ()
-        )
+        rel_parts = (self.current_dir.relative_to(self.root_dir).parts
+                     if self.current_dir != self.root_dir else ())
         accumulated = self.root_dir
 
         btn_style = "QPushButton { border: none; padding: 2px 4px; margin: 0px; background: transparent; } QPushButton:hover { background: rgba(128, 128, 128, 0.2); border-radius: 2px; }"
@@ -172,7 +170,8 @@ class DirectorySelectorWidget(QWidget):
             btn = QPushButton(part)
             btn.setFlat(True)
             btn.setStyleSheet(btn_style)
-            btn.clicked.connect(lambda checked=False, p=accumulated: self._set_dir(p))
+            btn.clicked.connect(
+                lambda checked=False, p=accumulated: self._set_dir(p))
             self.path_bar.addWidget(btn)
 
         self.path_bar.addStretch(1)
@@ -192,7 +191,9 @@ class DirectorySelectorWidget(QWidget):
             row_height = self.subdir_list.sizeHintForRow(0)
             if row_height <= 0:
                 row_height = 20
-            self.subdir_list.setFixedHeight(row_height * count)
+            max_visible = 4
+            self.subdir_list.setFixedHeight(row_height *
+                                            min(count, max_visible))
         else:
             self.subdir_list.hide()
 
@@ -235,14 +236,14 @@ class DirectoryPreviewWidget(QFrame):
         layout.addWidget(self.image_list)
 
         self.selector.directoryChanged.connect(self.set_directory)
-        self.selector.removeRequested.connect(lambda: self.removeRequested.emit(self))
+        self.selector.removeRequested.connect(
+            lambda: self.removeRequested.emit(self))
         self.set_directory(root_dir)
 
         # Overlay for move dialog highlighting
         self.overlay_widget = QFrame(self)
         self.overlay_widget.setAttribute(
-            Qt.WidgetAttribute.WA_TransparentForMouseEvents
-        )
+            Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         self.overlay_widget.hide()
 
         overlay_layout = QVBoxLayout(self.overlay_widget)
@@ -267,13 +268,13 @@ class DirectoryPreviewWidget(QFrame):
     def show_move_overlay(self):
         if self._index_color:
             self.overlay_widget.setStyleSheet(
-                f"QFrame {{ background-color: {self._index_color}; }}"
-            )
+                f"QFrame {{ background-color: {self._index_color}; }}")
         font = self.overlay_label.font()
         font.setPointSize(24)
         font.setBold(True)
         self.overlay_label.setFont(font)
-        self.overlay_label.setStyleSheet("color: black; background: transparent;")
+        self.overlay_label.setStyleSheet(
+            "color: black; background: transparent;")
         self.overlay_label.setText(self._relevant_path_text)
         self.overlay_widget.setGeometry(self.rect())
         self.overlay_widget.show()
@@ -288,8 +289,7 @@ class DirectoryPreviewWidget(QFrame):
         self.current_dir = path
 
         images = [
-            p
-            for p in sorted(path.iterdir())
+            p for p in sorted(path.iterdir())
             if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS
         ]
 
@@ -305,6 +305,7 @@ class DirectoryPreviewWidget(QFrame):
 
 
 class RightPanel(QWidget):
+
     def __init__(self, root_dir: Path, parent=None):
         super().__init__(parent)
         self.root_dir = root_dir
