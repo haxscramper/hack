@@ -35,6 +35,7 @@ from image_tagger.gui.fuzzy_file_selector import (
     PaletteDialog,
     build_directory_entries,
 )
+from image_tagger.gui.move_dialog import MoveDialog
 
 
 class MoveFilesCommand(QUndoCommand):
@@ -190,53 +191,22 @@ class MainWindow(QMainWindow):
         self.left_panel.fully_annotated_files = full_paths
         self.left_panel.viewport().update()
 
-    def create_move_dialog(
-        self,
-        selected_files,
-        target_dir,
-        target_color: str = "",
-        target_relevant_path: str = "",
-    ):
-        dialog = QDialog(self)
-        dialog.setWindowTitle(f"Move to {target_dir.name}?")
-        dialog.resize(600, 400)
-
-        layout = QVBoxLayout(dialog)
-
-        top_layout = QHBoxLayout()
-
-        label = QLabel(f"Move {len(selected_files)} items to")
-        top_layout.addWidget(label)
-
-        path_label = QLabel(target_relevant_path or target_dir.name)
-        path_label.setStyleSheet(
-            f"background-color: {target_color}; color: black; border-radius: 4px; font-weight: bold; padding: 4px 8px;"
-            if target_color else "font-weight: bold; padding: 4px 8px;")
-        top_layout.addWidget(path_label)
-        top_layout.addStretch(1)
-        layout.addLayout(top_layout)
-
-        list_view = QListView()
-        list_view.setViewMode(QListView.ViewMode.IconMode)
-        list_view.setResizeMode(QListView.ResizeMode.Adjust)
-        list_view.setWordWrap(True)
-        list_view.setUniformItemSizes(True)
-        list_view.setGridSize(QSize(120, 140))
-        list_view.setIconSize(QSize(100, 100))
-
-        model = ImageListModel()
-        model.set_images(selected_files)
-        list_view.setModel(model)
-
-        layout.addWidget(list_view)
-
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok
-                                   | QDialogButtonBox.StandardButton.Cancel)
-        buttons.accepted.connect(dialog.accept)
-        buttons.rejected.connect(dialog.reject)
-        layout.addWidget(buttons)
-
-        return dialog
+    def _build_move_targets(self) -> list[tuple[Path, str, str]]:
+        """Build list of (target_dir, color, relevant_path) for all preview widgets."""
+        targets = []
+        self.right_panel.update_relevant_paths()
+        for i in range(self.right_panel.splitter.count()):
+            widget = self.right_panel.splitter.widget(i)
+            if widget and hasattr(widget, "current_dir"):
+                target_dir = getattr(widget, "current_dir")
+                target_color = ""
+                target_relevant_path = ""
+                if isinstance(widget, DirectoryPreviewWidget):
+                    target_color = widget._index_color
+                    target_relevant_path = widget._relevant_path_text
+                targets.append(
+                    (target_dir, target_color, target_relevant_path))
+        return targets
 
     def on_move_dialog_finished(self, result, selected_files, target_dir):
         if result != QDialog.DialogCode.Accepted:
@@ -285,32 +255,25 @@ class MainWindow(QMainWindow):
         self.left_panel.search_view.execute_search()
 
     def on_move_shortcut(self, idx: int):
-        if idx - 1 >= self.right_panel.splitter.count():
-            return
-
-        widget = self.right_panel.splitter.widget(idx - 1)
-        if not widget or not hasattr(widget, "current_dir"):
-            return
-
-        target_dir = getattr(widget, "current_dir")
         selected_files = list(self.left_panel.selected_files)
-
         if not selected_files:
             return
 
-        self.right_panel.update_relevant_paths()
-        self.right_panel.show_move_overlay(idx - 1)
+        targets = self._build_move_targets()
+        target_index = idx - 1
+        if target_index < 0 or target_index >= len(targets):
+            return
 
-        target_color = ""
-        target_relevant_path = ""
-        if isinstance(widget, DirectoryPreviewWidget):
-            target_color = widget._index_color
-            target_relevant_path = widget._relevant_path_text
+        self.right_panel.show_move_overlay(target_index)
 
-        dialog = self.create_move_dialog(selected_files, target_dir,
-                                         target_color, target_relevant_path)
-        dialog.finished.connect(lambda result: self._on_move_dialog_closed(
-            result, selected_files, target_dir))
+        dialog = MoveDialog(
+            selected_files,
+            targets,
+            target_index,
+            parent=self,
+        )
+        dialog.moveConfirmed.connect(self._on_move_dialog_closed)
+        dialog.outputIndexChanged.connect(self.right_panel.show_move_overlay)
         dialog.open()
 
     def _on_move_dialog_closed(self, result, selected_files, target_dir):
@@ -356,18 +319,28 @@ class MainWindow(QMainWindow):
             self._palette_recent_paths.insert(0, target_str)
             self._palette_recent_paths = self._palette_recent_paths[:10]
 
-            dialog = self.create_move_dialog(
-                selected_files,
-                target_dir,
-                target_relevant_path=str(target_dir.relative_to(
-                    self.root_dir)),
-            )
-            dialog.setWindowTitle(f"Move to {target_dir.name}?")
+            targets = self._build_move_targets()
+            # Find or append the palette-selected target
+            palette_target_index = -1
+            for i, (t_dir, _, _) in enumerate(targets):
+                if t_dir == target_dir:
+                    palette_target_index = i
+                    break
+            if palette_target_index == -1:
+                targets.append((target_dir, "",
+                                str(target_dir.relative_to(self.root_dir))))
+                palette_target_index = len(targets) - 1
 
-            def on_move_finished(move_result):
-                if move_result == QDialog.DialogCode.Accepted:
-                    self.on_move_dialog_finished(move_result, selected_files,
-                                                 target_dir)
+            dialog = MoveDialog(
+                selected_files,
+                targets,
+                palette_target_index,
+                parent=self,
+            )
+
+            def on_move_finished(result, files, t_dir):
+                if result == QDialog.DialogCode.Accepted:
+                    self.on_move_dialog_finished(result, files, t_dir)
                 else:
                     # Move cancelled: reopen palette with updated entries
                     new_entries = build_directory_entries(
@@ -377,7 +350,7 @@ class MainWindow(QMainWindow):
                     )
                     self._run_palette_move_loop(new_entries, selected_files)
 
-            dialog.finished.connect(on_move_finished)
+            dialog.moveConfirmed.connect(on_move_finished)
             dialog.open()
 
         palette.finished.connect(on_palette_finished)

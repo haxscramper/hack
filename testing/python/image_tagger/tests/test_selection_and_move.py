@@ -1231,3 +1231,75 @@ def test_move_relevant_path_relative_to_root(
 
     dialog.reject()
     qtbot.wait(50)
+
+
+def test_move_dialog_switch_target_with_shortcut(
+    gui_app_instance: AppInstanceRes,
+    screenshot_dir: Path,
+    qtbot: QtBot,
+    image_directory: Path,
+):
+    """Test that Ctrl+2 inside the move dialog switches the target directory."""
+    qtbot.waitExposed(gui_app_instance.window)
+
+    right_panel = gui_app_instance.window.right_panel
+    right_panel.add_preview_widget()
+    qtbot.wait(50)
+
+    assert right_panel.splitter.count() == 2
+
+    first_preview = cast(DirectoryPreviewWidget,
+                         right_panel.splitter.widget(0))
+    second_preview = cast(DirectoryPreviewWidget,
+                          right_panel.splitter.widget(1))
+
+    sub1_dir = image_directory / "sub1"
+    sub2_dir = image_directory / "sub2"
+    first_preview.set_directory(sub1_dir)
+    second_preview.set_directory(sub2_dir)
+    qtbot.wait(50)
+
+    widget = gui_app_instance.window.get_mixed_view()
+    qtbot.waitExposed(widget)
+
+    file_to_move = image_directory / "image_255_0_239.png"
+    _click_tile(widget, file_to_move, qtbot)
+    assert file_to_move in widget.selected_files
+
+    # Open move dialog with Ctrl+1 (targeting sub1)
+    QTest.keyClick(gui_app_instance.window, Qt.Key.Key_1,
+                   Qt.KeyboardModifier.ControlModifier, 100)
+    qtbot.wait(100)
+
+    dialog = _get_visible_dialog()
+    assert dialog.windowTitle().startswith("Move to ")
+
+    labels = dialog.findChildren(QLabel)
+    path_label = next((lbl for lbl in labels if lbl.text() == "sub1"), None)
+    assert path_label is not None
+
+    # Now press Ctrl+2 inside the dialog to switch to second target
+    QTest.keyClick(dialog, Qt.Key.Key_2, Qt.KeyboardModifier.ControlModifier,
+                   100)
+    qtbot.wait(100)
+
+    # Dialog should now show sub2 as the target
+    labels = dialog.findChildren(QLabel)
+    path_label = next((lbl for lbl in labels if lbl.text() == "sub2"), None)
+    assert path_label is not None
+
+    qtbot.wait(150)
+    take_screenshot(dialog, screenshot_dir / "move_dialog_switched_target.png")
+
+    assert file_to_move.exists()
+    dialog.accept()
+    qtbot.wait(150)
+
+    # File should have moved to sub2, not sub1
+    assert not file_to_move.exists()
+    assert (sub2_dir / "image_255_0_239.png").exists()
+
+    # Verify a file from the common parent directory is selected after move
+    assert len(widget.selected_files) == 1
+    selected = next(iter(widget.selected_files))
+    assert selected.parent == image_directory
