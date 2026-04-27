@@ -2,3 +2,4 @@
 selected_tags.csv
 */**/__pycache__
 .kilo/plans
+docs

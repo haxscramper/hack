@@ -28,7 +28,7 @@ import re
 
 from image_tagger.gui.image_list_widget import ImageListWidget
 from sqlalchemy.orm import Session
-from sqlalchemy import select, text, func
+from sqlalchemy import or_, select, text, func
 from image_tagger.db.models import (
     ImageEntry,
     ProbabilisticTag,
@@ -49,8 +49,7 @@ class ImageThumbnailList(ImageListWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.list_view.setSelectionMode(
-            QAbstractItemView.SelectionMode.ExtendedSelection
-        )
+            QAbstractItemView.SelectionMode.ExtendedSelection)
 
     def set_images(self, images: list):
         """Set the images to display in the thumbnail list."""
@@ -80,8 +79,7 @@ class ImageThumbnailList(ImageListWidget):
                 if img_path == path or str(img_path) == path_str:
                     index = self.model.index(idx, 0)
                     selection_model.select(
-                        index, QItemSelectionModel.SelectionFlag.Select
-                    )
+                        index, QItemSelectionModel.SelectionFlag.Select)
                     break
 
 
@@ -108,13 +106,15 @@ class SexpHighlighter(QSyntaxHighlighter):
             "regular_tag",
             "description",
             "path_contains",
+            "in_directory",
         }
 
     def highlightBlock(self, text: str):
         # Highlight keywords
         for kw in self._keywords:
             for m in re.finditer(r"\b" + re.escape(kw) + r"\b", text):
-                self.setFormat(m.start(), m.end() - m.start(), self._keyword_format)
+                self.setFormat(m.start(),
+                               m.end() - m.start(), self._keyword_format)
 
         # Highlight strings
         for m in re.finditer(r'"([^"\\]|\\.)*"', text):
@@ -122,7 +122,8 @@ class SexpHighlighter(QSyntaxHighlighter):
 
         # Highlight comments
         for m in re.finditer(r";.*$", text):
-            self.setFormat(m.start(), m.end() - m.start(), self._comment_format)
+            self.setFormat(m.start(),
+                           m.end() - m.start(), self._comment_format)
 
 
 class SexpTextEdit(QPlainTextEdit):
@@ -133,53 +134,34 @@ class SexpTextEdit(QPlainTextEdit):
         self.session = session
         self._completer = QCompleter()
         self._completer.setWidget(self)
-        self._completer.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
+        self._completer.setCompletionMode(
+            QCompleter.CompletionMode.PopupCompletion)
         self._completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
         self._completer.setFilterMode(Qt.MatchFlag.MatchContains)
         self._completer.activated.connect(self._insert_completion)
 
         self._highlighter = SexpHighlighter(self.document())
 
-        self.setPlaceholderText(
-            "Enter S-expression query, e.g.:\n"
-            "(and (probabilistic_tag general castle 0.5)\n"
-            "     (regular_tag category1 tag_a))"
-        )
+        self.setPlaceholderText("Enter S-expression query, e.g.:\n"
+                                "(and (probabilistic_tag general castle 0.5)\n"
+                                "     (regular_tag category1 tag_a))")
         self.setLineWrapMode(QPlainTextEdit.LineWrapMode.WidgetWidth)
 
         self._load_suggestions()
 
     def _load_suggestions(self):
         prob_cats = sorted(
-            set(
-                r[0]
-                for r in self.session.execute(
-                    select(ProbabilisticTag.category).distinct()
-                ).all()
-            )
-        )
+            set(r[0] for r in self.session.execute(
+                select(ProbabilisticTag.category).distinct()).all()))
         reg_cats = sorted(
-            set(
-                r[0]
-                for r in self.session.execute(
-                    select(RegularTag.category).distinct()
-                ).all()
-            )
-        )
+            set(r[0] for r in self.session.execute(
+                select(RegularTag.category).distinct()).all()))
         prob_names = sorted(
-            set(
-                r[0]
-                for r in self.session.execute(
-                    select(ProbabilisticTag.name).distinct()
-                ).all()
-            )
-        )
+            set(r[0] for r in self.session.execute(
+                select(ProbabilisticTag.name).distinct()).all()))
         reg_names = sorted(
-            set(
-                r[0]
-                for r in self.session.execute(select(RegularTag.name).distinct()).all()
-            )
-        )
+            set(r[0] for r in self.session.execute(
+                select(RegularTag.name).distinct()).all()))
 
         self._prob_categories = prob_cats
         self._reg_categories = reg_cats
@@ -195,6 +177,7 @@ class SexpTextEdit(QPlainTextEdit):
             "regular_tag",
             "description",
             "path_contains",
+            "in_directory",
         ]
 
     def _current_word(self) -> tuple[str, int, int]:
@@ -236,11 +219,12 @@ class SexpTextEdit(QPlainTextEdit):
             elif c == "(":
                 if depth == 0:
                     # Found our opening paren, extract function name
-                    m = re.match(r"\s*([a-zA-Z_][a-zA-Z0-9_]*)", before[i + 1 :])
+                    m = re.match(r"\s*([a-zA-Z_][a-zA-Z0-9_]*)",
+                                 before[i + 1:])
                     if m:
                         func_name = m.group(1)
                         # Count arguments between i+1 and pos
-                        inner = before[i + 1 + len(func_name) :]
+                        inner = before[i + 1 + len(func_name):]
                         arg_index = inner.count(" ") + inner.count("\n")
                         # More accurate: split by whitespace outside parens
                         arg_index = self._count_args(inner)
@@ -256,14 +240,9 @@ class SexpTextEdit(QPlainTextEdit):
                 # Try to find category
                 cat = self._get_arg_at_index(before, 0)
                 if cat:
-                    return sorted(
-                        r[0]
-                        for r in self.session.execute(
-                            select(ProbabilisticTag.name).where(
-                                ProbabilisticTag.category == cat
-                            )
-                        ).all()
-                    )
+                    return sorted(r[0] for r in self.session.execute(
+                        select(ProbabilisticTag.name).where(
+                            ProbabilisticTag.category == cat)).all())
                 return self._prob_names
             elif arg_index == 2:
                 return []  # probability is a number
@@ -273,14 +252,11 @@ class SexpTextEdit(QPlainTextEdit):
             elif arg_index == 1:
                 cat = self._get_arg_at_index(before, 0)
                 if cat:
-                    return sorted(
-                        r[0]
-                        for r in self.session.execute(
-                            select(RegularTag.name).where(RegularTag.category == cat)
-                        ).all()
-                    )
+                    return sorted(r[0] for r in self.session.execute(
+                        select(RegularTag.name).where(
+                            RegularTag.category == cat)).all())
                 return self._reg_names
-        elif func_name in ("description", "path_contains"):
+        elif func_name in ("description", "path_contains", "in_directory"):
             return []
         elif func_name in ("and", "or", "not"):
             return self._base_suggestions
@@ -305,7 +281,8 @@ class SexpTextEdit(QPlainTextEdit):
                 in_word = False
         return max(0, args - 1)  # subtract 1 for function name
 
-    def _get_arg_at_index(self, before_cursor: str, index: int) -> Optional[str]:
+    def _get_arg_at_index(self, before_cursor: str,
+                          index: int) -> Optional[str]:
         """Try to extract the argument at the given index from the current expression."""
         # Find the opening paren of current expression
         depth = 0
@@ -374,10 +351,10 @@ class SexpTextEdit(QPlainTextEdit):
     def keyPressEvent(self, event: QKeyEvent):
         if self._completer.popup().isVisible():
             if event.key() in (
-                Qt.Key.Key_Enter,
-                Qt.Key.Key_Return,
-                Qt.Key.Key_Tab,
-                Qt.Key.Key_Escape,
+                    Qt.Key.Key_Enter,
+                    Qt.Key.Key_Return,
+                    Qt.Key.Key_Tab,
+                    Qt.Key.Key_Escape,
             ):
                 event.ignore()
                 if event.key() == Qt.Key.Key_Escape:
@@ -400,8 +377,7 @@ class SexpTextEdit(QPlainTextEdit):
         self._completer.setModel(QStringListModel(filtered))
         self._completer.setCompletionPrefix(word)
         self._completer.popup().setCurrentIndex(
-            self._completer.completionModel().index(0, 0)
-        )
+            self._completer.completionModel().index(0, 0))
 
         cr = self.cursorRect()
         cr.setWidth(self._completer.popup().sizeHintForColumn(0) + 20)
@@ -477,6 +453,15 @@ def _sexp_to_spec(sexp: Any) -> Optional[dict]:
             "text": _symbol_to_str(sexp[1]),
         }
 
+    elif op == "in_directory":
+        if len(sexp) < 2:
+            return None
+
+        return {
+            "type": "in_directory",
+            "text": _symbol_to_str(sexp[1]),
+        }
+
     elif op == "and":
         children = [_sexp_to_spec(child) for child in sexp[1:]]
         children = [c for c in children if c is not None]
@@ -517,11 +502,17 @@ def _spec_to_sexp(spec: dict) -> Any:
             spec.get("min_probability", 0.5),
         ]
     elif t == "regular_tag":
-        return [Symbol("regular_tag"), Symbol(spec["category"]), Symbol(spec["name"])]
+        return [
+            Symbol("regular_tag"),
+            Symbol(spec["category"]),
+            Symbol(spec["name"])
+        ]
     elif t == "description":
         return [Symbol("description"), spec["text"]]
     elif t == "path_contains":
         return [Symbol("path_contains"), spec["text"]]
+    elif t == "in_directory":
+        return [Symbol("in_directory"), spec["text"]]
     elif t == "and":
         return [Symbol("and"), *[_spec_to_sexp(c) for c in spec["children"]]]
     elif t == "or":
@@ -539,8 +530,7 @@ def build_query(session: Session, spec: dict):
             select(ProbabilisticTag.id).where(
                 ProbabilisticTag.category == spec["category"],
                 ProbabilisticTag.name == spec["name"],
-            )
-        ).scalar()
+            )).scalar()
         if tag is None:
             return select(ImageEntry.id).where(text("0"))
         return select(ImageProbabilisticTag.image_id).where(
@@ -553,21 +543,27 @@ def build_query(session: Session, spec: dict):
             select(RegularTag.id).where(
                 RegularTag.category == spec["category"],
                 RegularTag.name == spec["name"],
-            )
-        ).scalar()
+            )).scalar()
         if tag is None:
             return select(ImageEntry.id).where(text("0"))
-        return select(ImageRegularTag.image_id).where(ImageRegularTag.tag_id == tag)
+        return select(
+            ImageRegularTag.image_id).where(ImageRegularTag.tag_id == tag)
 
     elif t == "description":
         return select(ImageDescription.image_id).where(
-            ImageDescription.description.contains(spec["text"])
-        )
+            ImageDescription.description.contains(spec["text"]))
 
     elif t == "path_contains":
         return select(ImageEntry.id).where(
-            func.instr(ImageEntry.relative_path, spec["text"]) > 0
-        )
+            func.instr(ImageEntry.relative_path, spec["text"]) > 0)
+
+    elif t == "in_directory":
+        dir_name = spec["text"]
+        return select(ImageEntry.id).where(
+            or_(
+                ImageEntry.relative_path.like(dir_name + '/%'),
+                ImageEntry.relative_path.like('%/' + dir_name + '/%'),
+            ))
 
     elif t == "and":
         subqueries = [build_query(session, c) for c in spec["children"]]
@@ -576,11 +572,8 @@ def build_query(session: Session, spec: dict):
         result = subqueries[0].subquery()
         for sq in subqueries[1:]:
             sq_sub = sq.subquery()
-            result = (
-                select(result.c.image_id).where(
-                    result.c.image_id.in_(select(sq_sub.c.image_id))
-                )
-            ).subquery()
+            result = (select(result.c.image_id).where(
+                result.c.image_id.in_(select(sq_sub.c.image_id)))).subquery()
         return select(result.c.image_id)
 
     elif t == "or":
@@ -590,16 +583,14 @@ def build_query(session: Session, spec: dict):
         result = subqueries[0].subquery()
         for sq in subqueries[1:]:
             sq_sub = sq.subquery()
-            result = (
-                select(result.c.image_id).union(select(sq_sub.c.image_id))
-            ).subquery()
+            result = (select(result.c.image_id).union(select(
+                sq_sub.c.image_id))).subquery()
         return select(result.c.image_id)
 
     elif t == "not":
         child_query = build_query(session, spec["child"]).subquery()
         return select(ImageEntry.id).where(
-            ImageEntry.id.notin_(select(child_query.c.image_id))
-        )
+            ImageEntry.id.notin_(select(child_query.c.image_id)))
 
     raise ValueError(f"Unknown filter spec type: {t}")
 
@@ -671,11 +662,8 @@ class SearchTab(QWidget):
             return
 
         # If current expression is already an 'and', append the new condition
-        if (
-            isinstance(parsed, list)
-            and len(parsed) > 0
-            and _symbol_to_str(parsed[0]) == "and"
-        ):
+        if (isinstance(parsed, list) and len(parsed) > 0
+                and _symbol_to_str(parsed[0]) == "and"):
             parsed.append(new_expr)
             self.sexp_input.setPlainText(dumps(parsed))
         else:
@@ -756,10 +744,10 @@ class SearchTab(QWidget):
         if not image_ids:
             return []
         images = self.session.execute(
-            select(ImageEntry.relative_path).where(ImageEntry.id.in_(image_ids))
-        ).all()
+            select(ImageEntry.relative_path).where(
+                ImageEntry.id.in_(image_ids))).all()
         paths = []
-        for (rel_path,) in images:
+        for (rel_path, ) in images:
             full_path = os.path.join(self.base_dir, rel_path)
             if os.path.isfile(full_path):
                 paths.append(full_path)
