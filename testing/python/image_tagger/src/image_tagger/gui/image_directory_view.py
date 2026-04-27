@@ -2,6 +2,50 @@
 # /// script
 # dependencies = ["pyside6>=6.7"]
 # ///
+"""
+Mixed tree/tile view for browsing image directories.
+
+This module implements :class:`MixedTreeTileView`, a custom
+:class:`~PySide6.QtWidgets.QAbstractScrollArea` that renders a directory tree
+as collapsible headers with image files displayed in a flowing grid (tile) layout
+beneath each expanded directory.
+
+**Key design points**
+
+* **Lazy loading** -- :class:`DirNode` scans a directory only when first expanded.
+* **Layout-as-you-paint** -- The recursive layout engine (:meth:`MixedTreeTileView._build_layout`)
+  is run inside ``paintEvent``. It both paints visible items and records their geometry in
+  ``header_hits`` / ``tile_hits`` so that subsequent mouse events can hit-test against the
+  exact same geometry without a separate layout pass.
+* **Async thumbnails** -- Thumbnails are generated in background threads via
+  :class:`ThumbTask` / :class:`ThumbSignals` and a :class:`~PySide6.QtCore.QThreadPool`.
+  A small in-memory cache stores the resulting pixmaps; visible tiles request thumbnails
+  on-demand during painting.
+* **Sorting** -- Image lists are sorted through :func:`image_tagger.db.sorting.sort_paths`,
+  supporting name-based orders as well as similarity-based ordering backed by a
+  :class:`~image_tagger.db.sorting.SimilarityIndex`.
+* **State persistence** -- The view can serialize and restore expansion, zoom,
+  scroll position, selection, sort mode, and weighted tag filters via
+  :class:`~image_tagger.gui.state_models.MixedViewState`.
+
+Control flow for a typical frame
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+1. ``paintEvent`` clears the hit lists and creates a ``QPainter`` translated by the
+   current vertical scroll value.
+2. ``_build_layout`` walks the :class:`DirNode` tree recursively. For each node it
+   appends a :class:`HeaderHit`, then (if expanded) lays out child directories and
+   image tiles, appending :class:`TileHit` records and painting directly when a painter
+   is present.
+3. ``_paint_tile`` checks the thumbnail cache. If the image is missing and the tile
+   intersects the visible (plus prefetch) area, it calls ``request_thumbnail``,
+   which starts a :class:`ThumbTask` in the thread pool. A placeholder is drawn
+   immediately.
+4. When the worker finishes, ``on_thumbnail_loaded`` stores the pixmap and triggers
+   a short single-shot timer to repaint the viewport.
+5. Mouse events use the hit lists populated by the most recent paint to toggle
+   directories, select tiles, or show context menus.
+"""
 
 from __future__ import annotations
 
@@ -70,11 +114,21 @@ IMAGE_EXTENSIONS = {
 
 
 def is_image_file(path: Path) -> bool:
+    """Return ``True`` if *path* exists and its suffix is a known image extension."""
     return path.is_file() and path.suffix.lower() in IMAGE_EXTENSIONS
 
 
 @dataclass
 class DirNode:
+    """
+    A node in the browsable directory tree.
+
+    Each node represents a single filesystem directory. Children (sub-directories
+    and image files) are loaded lazily via :meth:`load` and cached in
+    :attr:`child_dirs` and :attr:`image_files`. The node also remembers its
+    visual expansion state (:attr:`expanded`).
+    """
+
     path: Path
     expanded: bool = True
     children_loaded: bool = False
@@ -88,6 +142,13 @@ class DirNode:
         reference_path: Path | None = None,
         weighted_tags: dict[int, float] | None = None,
     ) -> None:
+        """
+        Scan the directory on disk and populate children.
+
+        If the node was already loaded, this delegates to :meth:`resort` instead
+        of re-reading the filesystem. Permission errors while enumerating entries
+        are silently ignored.
+        """
         if self.children_loaded:
             self.resort(
                 sort_mode=sort_mode,
@@ -134,6 +195,11 @@ class DirNode:
         reference_path: Path | None = None,
         weighted_tags: dict[int, float] | None = None,
     ) -> None:
+        """
+        Re-sort :attr:`image_files` without touching the filesystem.
+
+        Called when the user changes sort mode or similarity parameters.
+        """
         self.image_files = sort_paths(
             paths=self.image_files,
             sort_mode=sort_mode,
@@ -145,6 +211,13 @@ class DirNode:
 
 @dataclass
 class HeaderHit:
+    """
+    Geometry record produced by the layout engine for a directory header.
+
+    Used by mouse-event handlers to detect clicks on headers and their
+    expand/collapse toggle buttons.
+    """
+
     node: DirNode
     rect: QRect
     toggle_rect: QRect
@@ -153,16 +226,36 @@ class HeaderHit:
 
 @dataclass
 class TileHit:
+    """
+    Geometry record produced by the layout engine for an image tile.
+
+    Used by mouse-event handlers for selection, hover, and context menus.
+    """
+
     file_path: Path
     rect: QRect
     depth: int
 
 
 class ThumbSignals(QObject):
+    """
+    Signal carrier used to pass thumbnail results from worker threads back to the GUI.
+
+    Must be a QObject so it can participate in Qt's signal/slot mechanism across
+    thread boundaries.
+    """
+
     loaded = Signal(str, QImage)
 
 
 class ThumbTask(QRunnable):
+    """
+    Background task that reads an image file and produces a scaled thumbnail.
+
+    The task uses :class:`~PySide6.QtGui.QImageReader` with auto-transform
+    enabled, computes a uniform scale to fit the target thumb size, and emits
+    the result through :class:`ThumbSignals`.
+    """
 
     def __init__(self, path: Path, thumb_size: int, signals: ThumbSignals):
         super().__init__()
@@ -171,6 +264,7 @@ class ThumbTask(QRunnable):
         self.signals = signals
 
     def run(self) -> None:
+        """Read the image, scale it, and emit ``loaded``."""
         reader = QImageReader(str(self.path))
         reader.setAutoTransform(True)
 
@@ -188,6 +282,27 @@ class ThumbTask(QRunnable):
 
 
 class MixedTreeTileView(QAbstractScrollArea):
+    """
+    Scrollable mixed tree/tile viewer for image directories.
+
+    The widget displays a recursive directory structure. Each directory is
+    rendered as a horizontal header row with an expand/collapse arrow. When a
+    directory is expanded, its image files are laid out in a left-to-right,
+    top-to-bottom grid directly beneath the header, followed by its expanded
+    sub-directories.
+
+    Thumbnails are loaded asynchronously in a thread pool and cached. The view
+    supports zooming (Ctrl + mouse wheel), multi-selection (Ctrl/Shift click),
+    context menus, and sorting via :mod:`image_tagger.db.sorting`.
+
+    Signals
+    -------
+    imageClicked : Signal(object)
+        Emitted with a :class:`~pathlib.Path` when a tile is left-clicked.
+    fileSelected : Signal(object)
+        Emitted with a ``str`` path when a tile is double-clicked.
+    """
+
     imageClicked = Signal(object)
     fileSelected = Signal(object)
 
@@ -206,6 +321,18 @@ class MixedTreeTileView(QAbstractScrollArea):
     SELECTION_CLEAR_CONFIRM_THRESHOLD = 3
 
     def __init__(self, root_path: Path, session: Session, parent=None):
+        """
+        Create the view, build the similarity index, and load the root directory.
+
+        Parameters
+        ----------
+        root_path : Path
+            Top-level directory to browse.
+        session : Session
+            SQLAlchemy session used for similarity-based sorting.
+        parent : QWidget, optional
+            Parent widget.
+        """
         super().__init__(parent)
         self.zoom_factor = 1.0
 
@@ -260,20 +387,29 @@ class MixedTreeTileView(QAbstractScrollArea):
 
     @property
     def tile_w(self) -> int:
+        """Current tile width in pixels, derived from zoomed thumb size and margins."""
         return self.thumb_size + self.TILE_MARGIN * 2
 
     @property
     def tile_h(self) -> int:
+        """Current tile height in pixels, derived from zoomed thumb size and margins."""
         return self.thumb_size + self.TILE_MARGIN * 2
 
     @property
     def thumb_size(self) -> int:
+        """Thumbnail edge length after applying the current zoom factor."""
         return int(self.THUMB_SIZE * self.zoom_factor)
 
     def visible_width(self) -> int:
+        """Viewport width clamped to at least 1 pixel."""
         return max(1, self.viewport().width())
 
     def flow_columns(self, depth: int) -> int:
+        """
+        Compute how many tiles fit horizontally for a node at *depth*.
+
+        Accounts for content margins and per-depth indentation.
+        """
         available = self.visible_width(
         ) - 2 * self.CONTENT_MARGIN - depth * self.INDENT
         available = max(available, self.tile_w)
@@ -281,6 +417,7 @@ class MixedTreeTileView(QAbstractScrollArea):
                    (self.tile_w + self.TILE_SPACING_X))
 
     def layout_height_for_images(self, count: int, depth: int) -> int:
+        """Total pixel height needed to display *count* images at *depth*."""
         if count == 0:
             return 0
         cols = self.flow_columns(depth)
@@ -288,12 +425,22 @@ class MixedTreeTileView(QAbstractScrollArea):
         return rows * self.tile_h + max(0, rows - 1) * self.TILE_SPACING_Y
 
     def total_content_height(self) -> int:
+        """
+        Measure the full content height and refresh hit-test lists.
+
+        Runs :meth:`_build_layout` without a painter solely to repopulate
+        :attr:`header_hits` and :attr:`tile_hits` and determine the Y extent.
+        """
         self.header_hits.clear()
         self.tile_hits.clear()
         _, y = self._build_layout(None, 0, self.CONTENT_MARGIN)
         return max(self.viewport().height(), y + self.CONTENT_MARGIN)
 
     def get_node_load(self) -> dict:
+        """
+        Build the keyword-argument dict used for :meth:`DirNode.load` and
+        :meth:`DirNode.resort` from the view's current sort settings.
+        """
         return dict(
             sort_mode=self.sort_mode,
             similarity_index=self.similarity_index,
@@ -336,6 +483,7 @@ class MixedTreeTileView(QAbstractScrollArea):
         self._update_scrollbars()
 
     def _update_scrollbars(self) -> None:
+        """Recalculate vertical scrollbar range from :meth:`total_content_height`."""
         total = self.total_content_height()
         page = max(1, self.viewport().height())
         self.verticalScrollBar().setPageStep(page)
@@ -343,9 +491,15 @@ class MixedTreeTileView(QAbstractScrollArea):
         self.viewport().update()
 
     def content_pos(self, viewport_pos: QPoint) -> QPoint:
+        """Map a viewport-local point to content coordinates using scroll offset."""
         return viewport_pos + QPoint(0, self.verticalScrollBar().value())
 
     def visible_content_rect(self) -> QRect:
+        """
+        Return the content rectangle considered "visible" including the prefetch margin.
+
+        Tiles that intersect this rect may trigger asynchronous thumbnail loads.
+        """
         y = self.verticalScrollBar().value()
         return QRect(
             0,
@@ -355,6 +509,9 @@ class MixedTreeTileView(QAbstractScrollArea):
         )
 
     def request_thumbnail(self, path: Path) -> None:
+        """
+        Enqueue a background thumbnail load for *path* if not already cached or loading.
+        """
         if path in self.thumb_cache or path in self.loading_paths:
             return
         self.loading_paths.add(path)
@@ -362,6 +519,12 @@ class MixedTreeTileView(QAbstractScrollArea):
             ThumbTask(path, self.thumb_size, self.thumb_signals))
 
     def on_thumbnail_loaded(self, path_str: str, image: QImage) -> None:
+        """
+        Slot receiving the result of a :class:`ThumbTask`.
+
+        Stores the image in :attr:`thumb_cache` (or a gray placeholder on failure)
+        and schedules a deferred viewport repaint via :attr:`_update_timer`.
+        """
         path = Path(path_str)
         self.loading_paths.discard(path)
 
@@ -381,6 +544,18 @@ class MixedTreeTileView(QAbstractScrollArea):
         reference_path: Path | None = None,
         weighted_tags: dict[int, float] | None = None,
     ) -> None:
+        """
+        Change the sort mode and re-sort every already-loaded node recursively.
+
+        Parameters
+        ----------
+        sort_mode : SortMode
+            New sort mode to apply.
+        reference_path : Path, optional
+            Image to use as a similarity reference.
+        weighted_tags : dict[int, float], optional
+            Tag ID -> weight mapping for weighted tag similarity sorting.
+        """
         self.sort_mode = sort_mode
         self.similarity_reference_path = reference_path
         self.weighted_tags = weighted_tags
@@ -402,6 +577,18 @@ class MixedTreeTileView(QAbstractScrollArea):
                       depth: int,
                       y: int,
                       node: DirNode | None = None) -> tuple[int, int]:
+        """
+        Recursively lay out headers and image tiles starting at *y*.
+
+        If *painter* is not ``None``, visible elements are painted immediately.
+        Regardless, this populates :attr:`header_hits` and :attr:`tile_hits`
+        so that later input events can hit-test against the exact geometry.
+
+        Returns
+        -------
+        tuple[int, int]
+            The final (depth, y) after laying out the subtree.
+        """
         if node is None:
             node = self.root_node
 
@@ -456,6 +643,12 @@ class MixedTreeTileView(QAbstractScrollArea):
         return depth, y
 
     def paintEvent(self, event: QPaintEvent) -> None:
+        """
+        Main paint entry point.
+
+        Clears the hit lists, fills the viewport background, applies scroll
+        translation, and runs :meth:`_build_layout` with an active painter.
+        """
         self.header_hits.clear()
         self.tile_hits.clear()
 
@@ -473,6 +666,11 @@ class MixedTreeTileView(QAbstractScrollArea):
         toggle_rect: QRect,
         depth: int,
     ) -> None:
+        """
+        Draw a single directory header: background, expand/collapse arrow, label, and counts.
+
+        Excluded directories (from app config) are tinted red.
+        """
         painter.save()
         from image_tagger.config import config
 
@@ -531,6 +729,7 @@ class MixedTreeTileView(QAbstractScrollArea):
 
     def _paint_placeholder_thumb(self, painter: QPainter, thumb_rect: QRect,
                                  file_path: Path) -> None:
+        """Draw a dashed placeholder with the file extension while a thumbnail loads."""
         painter.save()
         painter.setPen(QPen(self.mid, 1, Qt.PenStyle.DashLine))
         painter.setBrush(self.placeholder_bg)
@@ -546,6 +745,12 @@ class MixedTreeTileView(QAbstractScrollArea):
 
     def _paint_tile(self, painter: QPainter, file_path: Path, rect: QRect,
                     selected: bool) -> None:
+        """
+        Draw a single image tile: background, border, thumbnail (or placeholder), and filename overlay.
+
+        The thumbnail is drawn centered and scaled with smooth transformation.
+        A semi-transparent filename overlay appears for selected or hovered tiles.
+        """
         painter.save()
 
         is_fully_annotated = file_path in self.fully_annotated_files
@@ -612,22 +817,28 @@ class MixedTreeTileView(QAbstractScrollArea):
         painter.restore()
 
     def resizeEvent(self, event: QResizeEvent) -> None:
+        """Update scrollbars when the viewport changes size."""
         super().resizeEvent(event)
         self._update_scrollbars()
 
     def zoom_in(self) -> None:
+        """Increase zoom factor by 20 % (capped at 5.0) and invalidate thumbnails."""
         self.zoom_factor *= 1.2
         self.zoom_factor = min(self.zoom_factor, 5.0)
         self.thumb_cache.clear()
         self._update_scrollbars()
 
     def zoom_out(self) -> None:
+        """Decrease zoom factor by 20 % (floor at 0.2) and invalidate thumbnails."""
         self.zoom_factor /= 1.2
         self.zoom_factor = max(self.zoom_factor, 0.2)
         self.thumb_cache.clear()
         self._update_scrollbars()
 
     def wheelEvent(self, event: QWheelEvent) -> None:
+        """
+        Ctrl + wheel zooms the tile view; normal wheel scrolls vertically.
+        """
         if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
             delta = event.angleDelta().y()
             if delta > 0:
@@ -643,6 +854,9 @@ class MixedTreeTileView(QAbstractScrollArea):
         event.accept()
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
+        """
+        Track the tile currently under the cursor to enable hover highlighting.
+        """
         pos = self.content_pos(event.position().toPoint())
         new_hover = None
         for hit in self.tile_hits:
@@ -657,12 +871,22 @@ class MixedTreeTileView(QAbstractScrollArea):
         super().mouseMoveEvent(event)
 
     def leaveEvent(self, event) -> None:
+        """Clear hover state when the mouse leaves the widget."""
         if getattr(self, "hovered_file_path", None) is not None:
             self.hovered_file_path = None
             self.viewport().update()
         super().leaveEvent(event)
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
+        """
+        Handle header toggles, tile selection, and context menus.
+
+        * Left click on header toggle arrow or header body expands/collapses.
+        * Right click on header toggles the directory exclusion flag.
+        * Right click on a tile opens a context menu (open in sxiv, copy path).
+        * Left click on a tile selects it; Ctrl toggles, Shift ranges.
+        * If clearing a large selection (>3 items), a confirmation dialog is shown.
+        """
         pos = self.content_pos(event.position().toPoint())
         modifiers = event.modifiers()
 
@@ -757,6 +981,10 @@ class MixedTreeTileView(QAbstractScrollArea):
                 return
 
     def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:
+        """
+        Toggle directory expansion on header double-click, or emit ``fileSelected``
+        when double-clicking a tile.
+        """
         pos = self.content_pos(event.position().toPoint())
 
         for hit in self.header_hits:
@@ -819,6 +1047,12 @@ class MixedTreeTileView(QAbstractScrollArea):
         return QPoint(rect.center().x(), rect.center().y() - scroll_y)
 
     def toggle_subdir(self, subdir: Path, qtbot: QtBot):
+        """
+        Automation helper: expand or collapse *subdir* by clicking its toggle arrow.
+
+        If the header is not currently in the hit list, the view scrolls to bring
+        it into range first.
+        """
         from PySide6.QtTest import QTest
 
         toggle_rect = self.get_toggle_rect(subdir)
@@ -844,6 +1078,12 @@ class MixedTreeTileView(QAbstractScrollArea):
         qtbot.wait(50)
 
     def get_state(self) -> MixedViewState:
+        """
+        Serialize the current view state.
+
+        Captures expanded directory paths, zoom level, scroll offset, selected
+        files, active sort mode, similarity reference, and weighted tag entries.
+        """
         from image_tagger.gui.state_models import MixedViewState, WeightedTagEntry
 
         expanded_paths: set[str] = set()
@@ -888,6 +1128,12 @@ class MixedTreeTileView(QAbstractScrollArea):
         )
 
     def set_state(self, state: MixedViewState) -> None:
+        """
+        Restore view state from a :class:`~image_tagger.gui.state_models.MixedViewState`.
+
+        Applies zoom, expands previously open directories, restores scroll position
+        and selection, and clears the thumbnail cache so that zoom is respected.
+        """
         self.zoom_factor = state.zoom_factor
         self.thumb_cache.clear()
 

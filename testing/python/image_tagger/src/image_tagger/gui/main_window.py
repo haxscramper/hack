@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import logging
 
 from beartype import beartype
@@ -39,6 +40,21 @@ from image_tagger.gui.move_dialog import MoveDialog
 
 
 class MoveFilesCommand(QUndoCommand):
+    """Undoable batch file move with automatic name-collision resolution.
+
+    When ``redo()`` is executed each source file is moved into *target_dir*
+    using :func:`shutil.move`.  If a destination path already exists (or the
+    basename was already claimed by another selected file) the command
+    generates a unique name by appending the first 8 hex characters of the
+    file's MD5 hash to the stem, looping until a free name is found.
+
+    The command keeps the database in sync by updating the
+    ``relative_path`` and ``original_name`` columns of the corresponding
+    :class:`~image_tagger.db.models.ImageEntry` rows, then refreshes the
+    relevant UI panels so that the tree view and preview widgets reflect the
+    new filesystem state.  On ``undo()`` the inverse moves are performed and
+    the original file selection is restored.
+    """
 
     def __init__(
         self,
@@ -49,6 +65,15 @@ class MoveFilesCommand(QUndoCommand):
         main_window: "MainWindow",
         parent=None,
     ):
+        """Prepare the move operation without touching the filesystem.
+
+        The constructor resolves every destination path ahead of time so that
+        ``redo`` and ``undo`` operate on a stable pre-computed list.  Name
+        collisions are resolved by hashing the source file with
+        :func:`~image_tagger.db.repository.get_md5` and appending ``_{md5[:8]}``
+        to the stem.  The original set of selected files is preserved so that
+        ``undo`` can restore the user's prior selection.
+        """
         super().__init__(parent)
         self.repository = repository
         self.source_files = source_files
@@ -81,6 +106,13 @@ class MoveFilesCommand(QUndoCommand):
         self.setText(f"Move {len(self.moves)} files to {self.target_dir.name}")
 
     def _update_db(self, old_path: Path, new_path: Path):
+        """Synchronize the database with a single filesystem move.
+
+        The row matching *old_path* (resolved relative to *root_dir*) is
+        looked up via ``relative_path``.  If found, the column is rewritten to
+        the path relative to *new_path* and the change is committed
+        immediately.
+        """
         old_rel = str(old_path.resolve().relative_to(self.root_dir.resolve()))
         entry = self.repository.session.scalar(
             select(ImageEntry).where(ImageEntry.relative_path == old_rel))
@@ -91,6 +123,12 @@ class MoveFilesCommand(QUndoCommand):
             self.repository.session.commit()
 
     def _refresh_ui(self):
+        """Refresh all views that display directory contents.
+
+        This re-populates the left-hand tree view and every preview widget in
+        the right-hand panel so that moved files disappear from their old
+        locations and appear in the new one.
+        """
         self.main_window.left_panel.tree_view.refresh()
         self.main_window.left_panel.viewport().update()
 
@@ -100,6 +138,12 @@ class MoveFilesCommand(QUndoCommand):
                 w.set_directory(w.current_dir)
 
     def redo(self):
+        """Execute the move forward.
+
+        Files are moved via :func:`shutil.move`, database rows are updated,
+        the UI is refreshed, and the main window shifts focus to the moved
+        files so the user sees the result immediately.
+        """
         for src, dest in self.moves:
             try:
                 shutil.move(str(src), str(dest))
@@ -111,6 +155,12 @@ class MoveFilesCommand(QUndoCommand):
         self.main_window._focus_after_move(moved_files)
 
     def undo(self):
+        """Reverse the move operation.
+
+        Each file is moved back from its destination to the original source
+        path, the database is reverted, the UI is refreshed, and the user's
+        original selection is restored.
+        """
         for src, dest in self.moves:
             try:
                 shutil.move(str(dest), str(src))
@@ -125,14 +175,74 @@ class MoveFilesCommand(QUndoCommand):
 
 
 class MainWindow(QMainWindow):
+    """Primary application window orchestrating the image-tagging workflow.
+
+    The window is organised as a horizontal splitter with three panels:
+
+    * **Left** – :class:`~image_tagger.gui.left_panel.LeftPanel` showing a
+        directory tree (with a tile view) and a search tab.
+    * **Center** – :class:`~image_tagger.gui.center_panel.CenterPanel`
+        displaying probabilistic tags, regular tags, and a description editor
+        for the currently selected image.
+    * **Right** – :class:`~image_tagger.gui.right_panel.RightPanel`
+        containing one or more :class:`DirectoryPreviewWidget` columns that act
+        as visual drop targets for file moves.
+
+    Control flow
+    ============
+
+    1. **File selection** – When the user clicks a file in the left panel,
+        :meth:`on_file_selected` is emitted.  It resolves the file to a
+        relative path, looks up (or lazily creates) the
+        :class:`~image_tagger.db.models.ImageEntry`, and pushes the
+        associated probabilistic tags, regular tags, and description into the
+        center panel.
+
+    2. **Tagging / description edits** – Center-panel signals
+        (``probabilisticTagAdded``, ``regularTagAdded``, etc.) are wired to
+        repository methods.  After each mutation
+        :meth:`_update_fully_annotated` is called so that the left panel can
+        highlight files whose annotation is complete.
+
+    3. **Search** – Clicking a tag in the center panel emits a search-request
+        signal that switches the left tab to search and seeds the query with
+        the clicked tag.
+
+    4. **Moving files** – Two user-facing paths exist:
+
+        * *Direct shortcuts* ``Ctrl+1`` … ``Ctrl+9`` invoke
+            :meth:`on_move_shortcut`, which temporarily highlights the target
+            preview widget, opens a :class:`MoveDialog`, and—on
+            confirmation—creates a :class:`MoveFilesCommand` and pushes it onto
+            the :class:`QUndoStack`.
+
+        * *Palette move* ``Ctrl+M`` invokes
+            :meth:`on_palette_move_shortcut`, which opens a fuzzy
+            :class:`PaletteDialog` for directory selection.  If the user
+            confirms, a :class:`MoveDialog` is opened; if cancelled, the palette
+            reopens so the user can pick another directory immediately.
+
+        In both cases the actual filesystem work is performed by
+        :class:`MoveFilesCommand`, which also updates the DB and refreshes
+        the UI.
+    """
 
     def get_mixed_view(self) -> MixedTreeTileView:
+        """Return the tree-and-tile view from the left panel."""
         return self.left_panel.tree_view
 
     def get_probability_tags_table(self) -> QTableWidget:
+        """Return the probabilistic tags table from the center panel."""
         return self.center_panel.prob_table
 
     def __init__(self, root_dir: Path, repository: Repository):
+        """Construct the main window, lay out the three panels, and wire signals.
+
+        A :class:`QUndoStack` is created with ``Ctrl+Z`` / ``Ctrl+Shift+Z``
+        actions.  Numeric shortcuts ``Ctrl+1`` … ``Ctrl+9`` are bound to the
+        nine right-panel preview targets, and ``Ctrl+M`` opens the fuzzy-move
+        palette.
+        """
         super().__init__()
         self.root_dir = root_dir
         self.repository = repository
@@ -193,13 +303,25 @@ class MainWindow(QMainWindow):
         palette_shortcut.activated.connect(self.on_palette_move_shortcut)
 
     def _update_fully_annotated(self):
+        """Query the repository for fully-annotated images and highlight them.
+
+        The set of absolute paths is forwarded to the left panel's tree view
+        so that completed files can be drawn with a distinct visual marker.
+        """
         rel_paths = self.repository.get_fully_annotated_paths()
         full_paths = {self.root_dir / p for p in rel_paths}
         self.left_panel.fully_annotated_files = full_paths
         self.left_panel.viewport().update()
 
     def _build_move_targets(self) -> list[tuple[Path, str, str]]:
-        """Build list of (target_dir, color, relevant_path) for all preview widgets."""
+        """Collect the current target directories exposed by the right panel.
+
+        Iterates over every widget inside the right-hand splitter.  For
+        :class:`DirectoryPreviewWidget` instances the associated colour index
+        and relevant-path text are extracted as well.  The returned list is
+        used to populate :class:`MoveDialog` and to map numeric shortcuts to
+        concrete directories.
+        """
         targets = []
         self.right_panel.update_relevant_paths()
         for i in range(self.right_panel.splitter.count()):
@@ -216,13 +338,13 @@ class MainWindow(QMainWindow):
         return targets
 
     def _focus_after_move(self, moved_files, selection_override=None):
-        """Select an appropriate file after a move or undo operation.
+        """Select a sensible file after a move or undo.
 
-        If *selection_override* is given it is used directly as the new
-        selection set (used by undo to restore the original selection).
-        Otherwise the first remaining file sharing a common parent with the
-        moved files is selected.  When the search tab is visible its results
-        are refreshed and the first result is also selected.
+        If *selection_override* is provided (used by undo) it is converted
+        directly into the new selection.  Otherwise the method walks the
+        visible tiles in the left panel looking for a file that shares a
+        common parent with the moved items.  If the search tab is active its
+        results are refreshed and the first result is selected.
         """
         tree_view = self.left_panel.tree_view
 
@@ -268,6 +390,11 @@ class MainWindow(QMainWindow):
                 )
 
     def on_move_dialog_finished(self, result, selected_files, target_dir):
+        """Create and execute a :class:`MoveFilesCommand` when a move is accepted.
+
+        This is the common exit point for both direct-shortcut moves and
+        palette-driven moves.
+        """
         if result != QDialog.DialogCode.Accepted:
             return
 
@@ -282,10 +409,17 @@ class MainWindow(QMainWindow):
         self.undo_stack.push(command)
 
     def get_selected_files_for_move(self):
-        """Return the currently selected files suitable for a move operation."""
+        """Return the files currently selected in the left panel as a list."""
         return list(self.left_panel.selected_files)
 
     def on_move_shortcut(self, idx: int):
+        """Handle ``Ctrl+<idx>`` by opening a move dialog for the Nth target.
+
+        The right-panel preview widget corresponding to *idx* is temporarily
+        highlighted via :meth:`RightPanel.show_move_overlay`.  If the dialog
+        is cancelled the overlay is hidden in
+        :meth:`_on_move_dialog_closed`.
+        """
         selected_files = list(self.left_panel.selected_files)
         if not selected_files:
             return
@@ -308,10 +442,17 @@ class MainWindow(QMainWindow):
         dialog.open()
 
     def _on_move_dialog_closed(self, result, selected_files, target_dir):
+        """Hide move overlays and forward the result to the command builder."""
         self.right_panel.hide_move_overlays()
         self.on_move_dialog_finished(result, selected_files, target_dir)
 
     def on_palette_move_shortcut(self):
+        """Handle ``Ctrl+M`` by opening the fuzzy directory palette.
+
+        If files are selected, the palette is seeded with pinned and recent
+        directories.  Selection of a directory advances to the move-dialog
+        stage via :meth:`_run_palette_move_loop`.
+        """
         selected_files = list(self.left_panel.selected_files)
         if not selected_files:
             return
@@ -325,10 +466,14 @@ class MainWindow(QMainWindow):
         self._run_palette_move_loop(entries, selected_files)
 
     def _run_palette_move_loop(self, entries, selected_files):
-        """Open palette dialog and handle move confirmation in a loop.
+        """Open the palette dialog and, if accepted, chain into a move dialog.
 
-        If the move is cancelled, the palette stays open for re-selection.
-        If the move is confirmed, the palette is hidden and the move is executed.
+        Implementation detail: this method is **self-recursive**.  If the
+        user cancels the subsequent :class:`MoveDialog`, a fresh palette is
+        reopened with updated recent-path history so the user can pick a
+        different target without re-pressing the shortcut.
+
+        Recent paths are maintained as an MRU list capped at 10 items.
         """
         palette = PaletteDialog(entries, self)
         palette.setWindowTitle("Move to directory")
@@ -388,6 +533,14 @@ class MainWindow(QMainWindow):
         palette.open()
 
     def on_file_selected(self, file_path: str):
+        """Load metadata for *file_path* and populate the center panel.
+
+        The path is resolved to a location relative to :attr:`root_dir`.  The
+        repository is queried for an existing :class:`ImageEntry`; if absent a
+        new record is created via :meth:`Repository.upsert_image`.  All
+        probabilistic tags, regular tags, and the description are fetched and
+        forwarded to the center panel widgets.
+        """
         logging.debug(f"File selected in GUI: {file_path}")
         try:
             rel_path = str(
@@ -416,6 +569,7 @@ class MainWindow(QMainWindow):
         self.center_panel.set_description(desc.description if desc else "")
 
     def on_prob_tag_added(self, name: str, probability: float):
+        """Persist a probabilistic tag for the current image and refresh UI."""
         if not self.current_image:
             return
         logging.info(
@@ -428,6 +582,7 @@ class MainWindow(QMainWindow):
             str(self.root_dir / self.current_image.relative_path))
 
     def on_regular_tag_added(self, category: str, name: str):
+        """Persist a regular tag for the current image and refresh UI."""
         if not self.current_image:
             return
         logging.info(
@@ -439,6 +594,7 @@ class MainWindow(QMainWindow):
             str(self.root_dir / self.current_image.relative_path))
 
     def on_regular_tag_deleted(self, category: str, name: str):
+        """Remove a regular tag from the current image and refresh UI."""
         if not self.current_image:
             return
         logging.info(
@@ -451,6 +607,7 @@ class MainWindow(QMainWindow):
             str(self.root_dir / self.current_image.relative_path))
 
     def on_description_saved(self, text: str):
+        """Persist the description text for the current image."""
         if not self.current_image:
             return
         logging.info(f"Saving description for image {self.current_image.id}")
@@ -458,16 +615,23 @@ class MainWindow(QMainWindow):
         self._update_fully_annotated()
 
     def on_prob_tag_search_requested(self, category: str, name: str):
+        """Switch to the search tab and filter by the clicked probabilistic tag."""
         self.left_panel.tabs.setCurrentIndex(1)
         self.left_panel.search_view.add_tag_to_query("probabilistic_tag",
                                                      category, name)
 
     def on_reg_tag_search_requested(self, category: str, name: str):
+        """Switch to the search tab and filter by the clicked regular tag."""
         self.left_panel.tabs.setCurrentIndex(1)
         self.left_panel.search_view.add_tag_to_query("regular_tag", category,
                                                      name)
 
     def get_state(self) -> AppState:
+        """Serialize the complete window layout and panel states.
+
+        Captures window size, horizontal splitter sizes, the internal state of
+        each panel, and the palette's pinned / recent path history.
+        """
         from image_tagger.gui.state_models import AppState, PaletteState
 
         # Find the main horizontal splitter
@@ -497,6 +661,7 @@ class MainWindow(QMainWindow):
         )
 
     def set_state(self, state: AppState) -> None:
+        """Restore window geometry, splitter proportions, and panel states."""
         self.resize(*state.window_size)
 
         central = self.centralWidget()
