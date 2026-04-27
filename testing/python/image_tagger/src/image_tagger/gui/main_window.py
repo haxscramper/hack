@@ -343,12 +343,12 @@ class MainWindow(QMainWindow):
             if target_dir is None or not target_dir.is_dir():
                 return
 
-            # Update recent paths: move to front, keep max 10
+            # Update recent paths: move to front, keep max 100
             target_str = str(target_dir)
             if target_str in self._palette_recent_paths:
                 self._palette_recent_paths.remove(target_str)
             self._palette_recent_paths.insert(0, target_str)
-            self._palette_recent_paths = self._palette_recent_paths[:10]
+            self._palette_recent_paths = self._palette_recent_paths[:100]
 
             targets = self._build_move_targets()
             # Find or append the palette-selected target
