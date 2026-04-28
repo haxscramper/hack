@@ -153,10 +153,11 @@ def repeat_bias_2d(ctx, bias, cols, rows):
         ctx, reshaped,
         ggml.ggml_new_tensor_2d(ctx, ggml.GGML_TYPE_F32, cols, rows))
 
+def get_ne(tensor, idx):
+    return tensor.contents.ne[idx]
 
 def add_bias_2d(ctx, x, bias):
-    cols = ggml.ggml_ne0(x)
-    rows = ggml.ggml_ne1(x)
+    rows = get_ne(x, 1)
     reshaped = ggml.ggml_reshape_2d(ctx, bias, 1, rows)
     repeated = ggml.ggml_repeat(ctx, reshaped, x)
     return ggml.ggml_add(ctx, x, repeated)
