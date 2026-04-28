@@ -203,6 +203,24 @@ def score_entry(query: str, entry: Entry) -> MatchResult | None:
     if entry.recent_rank > 0:
         total_score += 500.0 - entry.recent_rank * 25.0
 
+    nq = normalize_text(query)
+    n_rel = normalize_text(entry.rel_text)
+    n_basename = normalize_text(basename)
+
+    if nq == n_rel:
+        total_score += 50000.0
+    elif n_rel.endswith(nq):
+        total_score += 20000.0
+    elif nq in n_rel:
+        total_score += 5000.0
+
+    if nq == n_basename:
+        total_score += 30000.0
+    elif n_basename.endswith(nq):
+        total_score += 15000.0
+    elif nq in n_basename:
+        total_score += 3000.0
+
     total_score -= len(entry.components) * 2.0
     total_score -= len(entry.rel_text) * 0.03
 
