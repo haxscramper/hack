@@ -1179,14 +1179,6 @@ class MainWindow(QMainWindow):
                                 "Please enter a prompt.")
             return
 
-        if not self.selection_queue:
-            QMessageBox.warning(
-                self,
-                "No images selected",
-                "Select one or more images with single click.",
-            )
-            return
-
         api_key = (self.api_key_edit.text().strip()
                    or os.environ.get("GEMINI_API_KEY", "").strip())
         if not api_key:

@@ -1,0 +1,8 @@
+repos:
+  - repo: local
+    hooks:
+      - id: yapf
+        name: Format python code
+        entry: yapf -i
+        language: system
+        types: [python]

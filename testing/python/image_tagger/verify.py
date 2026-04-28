@@ -1,3 +1,4 @@
+from beartype import beartype
 import torch
 
 # 1. Check if PyTorch is using the ROCm build

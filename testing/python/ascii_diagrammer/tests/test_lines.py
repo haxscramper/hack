@@ -1,36 +1,42 @@
 from diagram_layout.resolver import resolve_diagram
-from diagram_layout.schema import DiagramInput
+from diagram_layout.schema import *
+from beartype import beartype
 
 
+@beartype
 def shape_map(resolved):
     return {shape.id: shape for shape in resolved.shapes}
 
 
+@beartype
 def test_line_points_are_resolved_to_absolute_coordinates():
-    diagram = DiagramInput.model_validate(
-        {
-            "canvas_width": 300,
-            "canvas_height": 200,
-            "shapes": [
-                {
-                    "id": "line1",
-                    "shape_type": "line",
-                    "size": {
-                        "type": "fixed",
-                        "w": {"type": "axis-value", "fixed": 100},
-                        "h": {"type": "axis-value", "fixed": 50},
-                    },
-                    "position": {"type": "absolute", "x": 20, "y": 30},
-                    "line": {
-                        "points": [
-                            {"type": "point-literal", "x": 0, "y": 0},
-                            {"type": "point-add", "left": {"type": "point-literal", "x": 10, "y": 5}, "right": {"type": "point-literal", "x": 5, "y": 5}},
-                            {"type": "point-scale", "expr": {"type": "point-literal", "x": 20, "y": 10}, "factor": 2},
-                        ]
-                    },
-                }
-            ],
-        }
+    diagram = DiagramInput(
+        canvas_width=300,
+        canvas_height=200,
+        shapes=[
+            ShapeDefinition(
+                id="line1",
+                shape_type=ShapeType.LINE,
+                size=FixedSize(
+                    w=AxisValue(type="axis-value", fixed=100),
+                    h=AxisValue(type="axis-value", fixed=50),
+                ),
+                position=AbsolutePos(type="absolute", x=20, y=30),
+                line=LinePointExprs(points=[
+                    PointLiteral(type="point-literal", x=0, y=0),
+                    PointAdd(
+                        type="point-add",
+                        left=PointLiteral(type="point-literal", x=10, y=5),
+                        right=PointLiteral(type="point-literal", x=5, y=5),
+                    ),
+                    PointScale(
+                        type="point-scale",
+                        expr=PointLiteral(type="point-literal", x=20, y=10),
+                        factor=2.0,
+                    ),
+                ]),
+            ),
+        ],
     )
 
     resolved = resolve_diagram(diagram)
@@ -43,56 +49,53 @@ def test_line_points_are_resolved_to_absolute_coordinates():
     ]
 
 
+@beartype
 def test_line_end_point_anchor_can_be_used():
-    diagram = DiagramInput.model_validate(
-        {
-            "canvas_width": 500,
-            "canvas_height": 300,
-            "shapes": [
-                {
-                    "id": "line1",
-                    "shape_type": "line",
-                    "size": {
-                        "type": "fixed",
-                        "w": {"type": "axis-value", "fixed": 80},
-                        "h": {"type": "axis-value", "fixed": 20},
-                    },
-                    "position": {"type": "absolute", "x": 50, "y": 60},
-                    "line": {
-                        "points": [
-                            {"type": "point-literal", "x": 0, "y": 0},
-                            {"type": "point-literal", "x": 40, "y": 10},
-                        ]
-                    },
-                },
-                {
-                    "id": "r",
-                    "shape_type": "rect",
-                    "size": {
-                        "type": "fixed",
-                        "w": {"type": "axis-value", "fixed": 20},
-                        "h": {"type": "axis-value", "fixed": 10},
-                    },
-                    "position": {
-                        "type": "conjunction",
-                        "exprs": [
-                            {
-                                "type": "relative",
-                                "relation": "right-of",
-                                "target": {"shape_id": "line1", "anchor": "end-point"},
-                                "gap": 5,
-                            },
-                            {
-                                "type": "relative",
-                                "relation": "below",
-                                "target": {"shape_id": "line1", "anchor": "end-point"},
-                                "gap": 5,
-                            },
-                        ],
-                    },
-                },
-            ],
-        }
+    diagram = DiagramInput(
+        canvas_width=500,
+        canvas_height=300,
+        shapes=[
+            ShapeDefinition(
+                id="line1",
+                shape_type=ShapeType.LINE,
+                size=FixedSize(
+                    w=AxisValue(type="axis-value", fixed=80),
+                    h=AxisValue(type="axis-value", fixed=20),
+                ),
+                position=AbsolutePos(type="absolute", x=50, y=60),
+                line=LinePointExprs(points=[
+                    PointLiteral(type="point-literal", x=0, y=0),
+                    PointLiteral(type="point-literal", x=40, y=10),
+                ],),
+            ),
+            ShapeDefinition(
+                id="r",
+                shape_type=ShapeType.RECT,
+                size=FixedSize(
+                    w=AxisValue(type="axis-value", fixed=20),
+                    h=AxisValue(type="axis-value", fixed=10),
+                ),
+                position=Conjunction(
+                    type="conjunction",
+                    exprs=[
+                        RelativePlacement(
+                            type="relative",
+                            relation=SpatialRelation.RIGHT_OF,
+                            target=AnchorRef(shape_id="line1",
+                                             anchor=PointAccessor.END_POINT),
+                            gap=5.0,
+                        ),
+                        RelativePlacement(
+                            type="relative",
+                            relation=SpatialRelation.BELOW,
+                            target=AnchorRef(shape_id="line1",
+                                             anchor=PointAccessor.END_POINT),
+                            gap=5.0,
+                        ),
+                    ],
+                ),
+            ),
+        ],
     )
 
     resolved = resolve_diagram(diagram)
