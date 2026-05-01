@@ -617,13 +617,13 @@ class MixedTreeTileView(QAbstractScrollArea):
 
     def zoom_in(self) -> None:
         self.zoom_factor *= 1.2
-        self.zoom_factor = min(self.zoom_factor, 5.0)
+        self.zoom_factor = min(self.zoom_factor, 20.0)
         self.thumb_cache.clear()
         self._update_scrollbars()
 
     def zoom_out(self) -> None:
         self.zoom_factor /= 1.2
-        self.zoom_factor = max(self.zoom_factor, 0.2)
+        self.zoom_factor = max(self.zoom_factor, 0.05)
         self.thumb_cache.clear()
         self._update_scrollbars()
 

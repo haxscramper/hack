@@ -44,6 +44,8 @@ class LeftPanel(QWidget):
         self.search_view.thumbnail_list.list_view.clicked.connect(
             self._on_search_clicked)
 
+        self.tree_view.set_sort_mode(SortMode.MTIME_ASC)
+
     def _on_weighted_sort_requested(self):
         weighted_tags = self.weighted_sort.get_tag_id_weights()
         self.tree_view.similarity_index.build(self.tree_view.session)
