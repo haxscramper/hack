@@ -22,6 +22,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 from tree_sitter import Language, Node, Parser
 import tree_sitter_cpp
 import tree_sitter_python
+import re
 
 CPP_LANGUAGE = Language(tree_sitter_cpp.language())
 PYTHON_LANGUAGE = Language(tree_sitter_python.language())
@@ -102,9 +103,9 @@ class ParsedArgument:
 @dataclass
 class ParsedEntry:
     kind: str
+    path: str
     name: str | None = None
     language: str | None = None
-    path: str | None = None
     qualified_name: str | None = None
     start_line: int | None = None
     end_line: int | None = None
@@ -122,9 +123,15 @@ def make_parser(language: Language) -> Parser:
     return parser
 
 
-def node_text(node: Node, source: bytes) -> str:
-    return source[node.start_byte:node.end_byte].decode("utf-8",
+def node_text(node: Node, source: bytes, normalize: bool = True) -> str:
+    text = source[node.start_byte:node.end_byte].decode("utf-8",
                                                         errors="replace")
+    if normalize:
+        text = re.sub(r"\r\n?|\n", "", text)
+        text = re.sub(r"[ \t]*\n[ \t]*", "\n", text)
+        text = re.sub(r" {2,}", " ", text)
+        assert "\n" not in text
+    return text
 
 
 def source_lines(node: Node) -> tuple[int | None, int | None]:
@@ -148,6 +155,7 @@ def normalize_doc_lines(lines: list[str]) -> DocInfo | None:
     for line in cleaned:
         if line.strip():
             brief = line.strip()
+            brief = brief.replace("\\brief", "")
             break
 
     return DocInfo(brief=brief, full=full)
@@ -318,6 +326,7 @@ def cpp_parse_function_entry(
     kind: str,
     qualified_prefix: list[str],
     doc: DocInfo | None,
+    rel_path: str,
 ) -> ParsedEntry | None:
     declarator = node.child_by_field_name("declarator")
     if declarator is None:
@@ -347,6 +356,7 @@ def cpp_parse_function_entry(
         signature_text=signature_suffix,
         signature_source=node_text(declarator, source).strip(),
         arguments=args,
+        path=rel_path,
     )
 
 
@@ -368,6 +378,7 @@ def cpp_parse_class(
     source: bytes,
     qualified_prefix: list[str],
     doc: DocInfo | None,
+    rel_path: str,
 ) -> ParsedEntry | None:
     name_node = node.child_by_field_name("name")
     if name_node is None:
@@ -385,6 +396,7 @@ def cpp_parse_class(
         start_line=start_line,
         end_line=end_line,
         doc=doc,
+        path=rel_path,
     )
 
     body = node.child_by_field_name("body")
@@ -407,6 +419,7 @@ def cpp_parse_class(
                 "signal" if signal_section else "method",
                 qualified_prefix + [class_name],
                 child_doc,
+                rel_path=rel_path,
             )
             if method is not None:
                 entry.children.append(method)
@@ -424,6 +437,7 @@ def cpp_parse_class(
                         "signal" if signal_section else "method",
                         qualified_prefix + [class_name],
                         child_doc,
+                        rel_path=rel_path,
                     )
                     if method is not None:
                         entry.children.append(method)
@@ -446,6 +460,7 @@ def cpp_parse_class(
                         end_line=fend,
                         doc=child_doc,
                         type_text=field_type,
+                        path=rel_path,
                     ))
             continue
 
@@ -467,6 +482,7 @@ def cpp_parse_class(
                         end_line=fend,
                         doc=child_doc,
                         type_text=field_type,
+                        path=rel_path,
                     ))
 
     return entry
@@ -477,6 +493,7 @@ def cpp_parse_scope(
     source: bytes,
     out: list[ParsedEntry],
     qualified_prefix: list[str],
+    rel_path: str,
 ) -> None:
     for idx, child in enumerate(node.named_children):
         child_doc = extract_leading_cpp_doc(node, idx, source)
@@ -497,25 +514,43 @@ def cpp_parse_scope(
                 start_line=ns_start,
                 end_line=ns_end,
                 doc=child_doc,
+                path=rel_path,
             )
 
             body = child.child_by_field_name("body")
             if body is not None:
-                cpp_parse_scope(body, source, ns_entry.children,
-                                qualified_prefix + [ns_name])
+                cpp_parse_scope(
+                    body,
+                    source,
+                    ns_entry.children,
+                    qualified_prefix + [ns_name],
+                    rel_path=rel_path,
+                )
 
             out.append(ns_entry)
             continue
 
         if child.type in {"class_specifier", "struct_specifier"}:
-            cls = cpp_parse_class(child, source, qualified_prefix, child_doc)
+            cls = cpp_parse_class(
+                child,
+                source,
+                qualified_prefix,
+                child_doc,
+                rel_path=rel_path,
+            )
             if cls is not None:
                 out.append(cls)
             continue
 
         if child.type == "function_definition":
-            fn = cpp_parse_function_entry(child, source, "function",
-                                          qualified_prefix, child_doc)
+            fn = cpp_parse_function_entry(
+                child,
+                source,
+                "function",
+                qualified_prefix,
+                child_doc,
+                rel_path=rel_path,
+            )
             if fn is not None:
                 out.append(fn)
             continue
@@ -528,8 +563,14 @@ def cpp_parse_scope(
                                                {"parameter_list"}) is not None
             if not has_params:
                 continue
-            fn = cpp_parse_function_entry(child, source, "function",
-                                          qualified_prefix, child_doc)
+            fn = cpp_parse_function_entry(
+                child,
+                source,
+                "function",
+                qualified_prefix,
+                child_doc,
+                rel_path=rel_path,
+            )
             if fn is not None:
                 out.append(fn)
 
@@ -595,6 +636,7 @@ def python_parse_function(
     source: bytes,
     kind: str,
     qualified_prefix: list[str],
+    rel_path: str,
 ) -> ParsedEntry | None:
     name = python_extract_function_name(node, source)
     if name is None:
@@ -627,11 +669,16 @@ def python_parse_function(
         signature_text=signature,
         signature_source=f"{name}{signature}",
         arguments=args,
+        path=rel_path,
     )
 
 
-def python_parse_class(node: Node, source: bytes,
-                       qualified_prefix: list[str]) -> ParsedEntry | None:
+def python_parse_class(
+    node: Node,
+    source: bytes,
+    qualified_prefix: list[str],
+    rel_path: str,
+) -> ParsedEntry | None:
     name = python_extract_function_name(node, source)
     if name is None:
         return None
@@ -650,6 +697,7 @@ def python_parse_class(node: Node, source: bytes,
         start_line=start_line,
         end_line=end_line,
         doc=doc,
+        path=rel_path,
     )
 
     if body is None:
@@ -657,8 +705,13 @@ def python_parse_class(node: Node, source: bytes,
 
     for child in body.named_children:
         if child.type in {"function_definition", "async_function_definition"}:
-            method = python_parse_function(child, source, "method",
-                                           qualified_prefix + [name])
+            method = python_parse_function(
+                child,
+                source,
+                "method",
+                qualified_prefix + [name],
+                rel_path=rel_path,
+            )
             if method is not None:
                 cls.children.append(method)
             continue
@@ -691,6 +744,7 @@ def python_parse_class(node: Node, source: bytes,
                         end_line=fend,
                         doc=None,
                         type_text=type_text,
+                        path=rel_path,
                     ))
 
     return cls
@@ -712,7 +766,7 @@ def index_cpp_file(path: Path, rel_path: str, parser: Parser) -> ParsedEntry:
         end_line=end_line,
     )
 
-    cpp_parse_scope(root, source, file_entry.children, [])
+    cpp_parse_scope(root, source, file_entry.children, [], rel_path=rel_path)
     return file_entry
 
 
@@ -737,13 +791,16 @@ def index_python_file(path: Path, rel_path: str,
 
     for child in root.named_children:
         if child.type in {"function_definition", "async_function_definition"}:
-            fn = python_parse_function(child, source, "function", [])
+            fn = python_parse_function(child,
+                                       source,
+                                       "function", [],
+                                       rel_path=rel_path)
             if fn is not None:
                 file_entry.children.append(fn)
             continue
 
         if child.type == "class_definition":
-            cls = python_parse_class(child, source, [])
+            cls = python_parse_class(child, source, [], rel_path=rel_path)
             if cls is not None:
                 file_entry.children.append(cls)
 
@@ -755,7 +812,8 @@ def index_file(path: Path, rel_path: str, cpp_parser: Parser,
     suffix = path.suffix.lower()
     if suffix in CPP_SUFFIXES:
         return index_cpp_file(path, rel_path, cpp_parser)
-    return index_python_file(path, rel_path, python_parser)
+    else:
+        return index_python_file(path, rel_path, python_parser)
 
 
 def gather_git_files(root: Path) -> list[Path]:
@@ -835,7 +893,7 @@ def create_flat_view(session: Session) -> None:
                     WHEN e.kind IN ('function', 'method', 'signal') THEN
                         COALESCE(e.qualified_name, e.name, '') || COALESCE(e.signature_text, '')
                     WHEN e.kind = 'field' THEN
-                        trim(COALESCE(e.type_text || ' ', '') || COALESCE(e.qualified_name, e.name, ''))
+                        COALESCE(e.qualified_name, e.name, ''))
                     WHEN e.kind = 'class' THEN
                         COALESCE(e.qualified_name, e.name, '')
                     WHEN e.kind = 'namespace' THEN
@@ -851,7 +909,8 @@ def create_flat_view(session: Session) -> None:
                 e.signature_text AS signature_text,
                 e.signature_source AS signature_source,
                 e.doc_brief AS doc_brief,
-                e.doc_full AS doc_full
+                e.doc_full AS doc_full,
+                e.start_line AS start_line
             FROM entries e
             """))
 
@@ -862,7 +921,7 @@ def main() -> None:
 
     argp = argparse.ArgumentParser()
     argp.add_argument("root", type=Path)
-    argp.add_argument("-o", "--output", type=Path, required=False)
+    argp.add_argument("--output", type=Path, required=False)
     args = argp.parse_args()
 
     root = args.root.resolve()
@@ -927,7 +986,7 @@ def main() -> None:
             elapsed = time.monotonic() - start
             avg = elapsed / processed
             eta = avg * remaining
-            logging.info("[%d/%d] ETA %s %s", processed, remaining,
+            logging.info("[%d/%d] ETA %s %s", processed, total,
                          format_eta(eta), rel)
 
         create_flat_view(session)
