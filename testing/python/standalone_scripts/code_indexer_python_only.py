@@ -18,10 +18,10 @@ import click
 from beartype import beartype
 from pydantic import BaseModel, Field
 
-
 # ----------------------------
 # Models
 # ----------------------------
+
 
 class DocInfo(BaseModel):
     brief: str | None = None
@@ -95,6 +95,7 @@ class IndexRoot(BaseModel):
 # Helpers
 # ----------------------------
 
+
 @beartype
 def split_docstring(doc: str | None) -> DocInfo | None:
     if not doc:
@@ -157,17 +158,16 @@ def get_target_names(target: ast.AST) -> list[str]:
 
 
 @beartype
-def extract_doc_from_body_following_assign(body: list[ast.stmt], index: int) -> DocInfo | None:
+def extract_doc_from_body_following_assign(body: list[ast.stmt],
+                                           index: int) -> DocInfo | None:
     next_index = index + 1
     if next_index >= len(body):
         return None
 
     next_stmt = body[next_index]
-    if (
-        isinstance(next_stmt, ast.Expr)
-        and isinstance(next_stmt.value, ast.Constant)
-        and isinstance(next_stmt.value.value, str)
-    ):
+    if (isinstance(next_stmt, ast.Expr)
+            and isinstance(next_stmt.value, ast.Constant)
+            and isinstance(next_stmt.value.value, str)):
         return split_docstring(next_stmt.value.value)
     return None
 
@@ -176,8 +176,10 @@ def extract_doc_from_body_following_assign(body: list[ast.stmt], index: int) -> 
 # AST analyzers
 # ----------------------------
 
+
 @beartype
-def analyze_function(node: ast.FunctionDef | ast.AsyncFunctionDef, kind: Literal["function", "method"]) -> FunctionInfo:
+def analyze_function(node: ast.FunctionDef | ast.AsyncFunctionDef,
+                     kind: Literal["function", "method"]) -> FunctionInfo:
     return FunctionInfo(
         kind=kind,
         name=node.name,
@@ -201,23 +203,22 @@ def analyze_class(node: ast.ClassDef) -> ClassInfo:
         elif isinstance(stmt, ast.Assign):
             for target in stmt.targets:
                 for name in get_target_names(target):
-                    doc = extract_doc_from_body_following_assign(node.body, idx)
+                    doc = extract_doc_from_body_following_assign(
+                        node.body, idx)
                     if is_signal_call(stmt.value):
                         class_info.signals.append(
                             SignalInfo(
                                 name=name,
                                 range=node_range(stmt),
                                 doc=doc,
-                            )
-                        )
+                            ))
                     else:
                         class_info.fields.append(
                             FieldInfo(
                                 name=name,
                                 range=node_range(stmt),
                                 doc=doc,
-                            )
-                        )
+                            ))
 
         elif isinstance(stmt, ast.AnnAssign):
             names = get_target_names(stmt.target)
@@ -229,16 +230,14 @@ def analyze_class(node: ast.ClassDef) -> ClassInfo:
                             name=name,
                             range=node_range(stmt),
                             doc=doc,
-                        )
-                    )
+                        ))
                 else:
                     class_info.fields.append(
                         FieldInfo(
                             name=name,
                             range=node_range(stmt),
                             doc=doc,
-                        )
-                    )
+                        ))
 
     return class_info
 
@@ -251,7 +250,8 @@ def analyze_file(file_path: Path, root: Path) -> FileInfo:
 
     file_info = FileInfo(
         path=rel_path,
-        range=SourceRange(start_line=1, end_line=len(source.splitlines()) or 1),
+        range=SourceRange(start_line=1, end_line=len(source.splitlines())
+                          or 1),
         doc=split_docstring(ast.get_docstring(tree, clean=False)),
     )
 
@@ -293,7 +293,8 @@ def directory_line_range(dir_path: Path) -> SourceRange:
 
 @beartype
 def analyze_directory(dir_path: Path, root: Path) -> DirectoryInfo:
-    rel_path = "." if dir_path == root else dir_path.relative_to(root).as_posix()
+    rel_path = "." if dir_path == root else dir_path.relative_to(
+        root).as_posix()
 
     directory_info = DirectoryInfo(
         path=rel_path,
@@ -303,7 +304,8 @@ def analyze_directory(dir_path: Path, root: Path) -> DirectoryInfo:
 
     children: list[EntryInfo] = []
 
-    for child in sorted(dir_path.iterdir(), key=lambda p: (p.is_file(), p.name.lower())):
+    for child in sorted(dir_path.iterdir(),
+                        key=lambda p: (p.is_file(), p.name.lower())):
         if child.name.startswith("."):
             continue
 
@@ -335,8 +337,10 @@ def build_index(root: Path) -> IndexRoot:
 # CLI
 # ----------------------------
 
+
 @click.command()
-@click.argument("input_dir", type=click.Path(exists=True, file_okay=False, path_type=Path))
+@click.argument("input_dir",
+                type=click.Path(exists=True, file_okay=False, path_type=Path))
 @click.argument("output_file", type=click.Path(dir_okay=False, path_type=Path))
 def main(input_dir: Path, output_file: Path) -> None:
     """
@@ -344,7 +348,8 @@ def main(input_dir: Path, output_file: Path) -> None:
     """
     index = build_index(input_dir)
     output_file.write_text(
-        json.dumps(index.model_dump(mode="json"), indent=2, ensure_ascii=False),
+        json.dumps(index.model_dump(mode="json"), indent=2,
+                   ensure_ascii=False),
         encoding="utf-8",
     )
 
