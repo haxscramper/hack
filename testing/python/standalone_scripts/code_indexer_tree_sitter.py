@@ -1,9 +1,7 @@
 #!/usr/bin/env python
 # /// script
 # dependencies = [
-#   "pydantic>=2",
-#   "beartype>=0.18",
-#   "click>=8",
+#   "sqlalchemy>=2",
 #   "tree_sitter",
 #   "tree_sitter_cpp",
 #   "tree_sitter_python",
@@ -13,84 +11,17 @@
 from __future__ import annotations
 
 import argparse
-import json
-import re
+import logging
+import subprocess
+import time
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal
 
-from pydantic import BaseModel, Field
+from sqlalchemy import ForeignKey, create_engine, text
+from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 from tree_sitter import Language, Node, Parser
 import tree_sitter_cpp
 import tree_sitter_python
-
-
-class DocInfo(BaseModel):
-    brief: str | None = None
-    full: str | None = None
-
-
-class SourceRange(BaseModel):
-    start_line: int | None = None
-    end_line: int | None = None
-
-
-class FieldInfo(BaseModel):
-    kind: Literal["field"] = "field"
-    name: str
-    range: SourceRange
-    doc: DocInfo | None = None
-
-
-class SignalInfo(BaseModel):
-    kind: Literal["signal"] = "signal"
-    name: str
-    range: SourceRange
-    doc: DocInfo | None = None
-
-
-class FunctionInfo(BaseModel):
-    kind: Literal["function", "method"] = "function"
-    name: str
-    range: SourceRange
-    doc: DocInfo | None = None
-
-
-class ClassInfo(BaseModel):
-    kind: Literal["class"] = "class"
-    name: str
-    range: SourceRange
-    doc: DocInfo | None = None
-    methods: list[FunctionInfo] = Field(default_factory=list)
-    fields: list[FieldInfo] = Field(default_factory=list)
-    signals: list[SignalInfo] = Field(default_factory=list)
-
-
-class FileInfo(BaseModel):
-    kind: Literal["file"] = "file"
-    path: str
-    range: SourceRange
-    doc: DocInfo | None = None
-    classes: list[ClassInfo] = Field(default_factory=list)
-    functions: list[FunctionInfo] = Field(default_factory=list)
-
-
-class DirectoryInfo(BaseModel):
-    kind: Literal["directory"] = "directory"
-    path: str
-    range: SourceRange
-    doc: DocInfo | None = None
-    children: list["EntryInfo"] = Field(default_factory=list)
-
-
-EntryInfo = DirectoryInfo | FileInfo
-
-DirectoryInfo.model_rebuild()
-
-
-class IndexRoot(BaseModel):
-    root: str
-    entries: list[EntryInfo]
-
 
 CPP_LANGUAGE = Language(tree_sitter_cpp.language())
 PYTHON_LANGUAGE = Language(tree_sitter_python.language())
@@ -111,22 +42,93 @@ PYTHON_SUFFIXES = {
 }
 
 
+class Base(DeclarativeBase):
+    pass
+
+
+class IndexEntry(Base):
+    __tablename__ = "entries"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    parent_id: Mapped[int | None] = mapped_column(ForeignKey("entries.id"),
+                                                  nullable=True)
+
+    kind: Mapped[str] = mapped_column(nullable=False)
+    language: Mapped[str | None] = mapped_column(nullable=True)
+
+    name: Mapped[str | None] = mapped_column(nullable=True)
+    path: Mapped[str | None] = mapped_column(nullable=True)
+    qualified_name: Mapped[str | None] = mapped_column(nullable=True)
+
+    start_line: Mapped[int | None] = mapped_column(nullable=True)
+    end_line: Mapped[int | None] = mapped_column(nullable=True)
+
+    type_text: Mapped[str | None] = mapped_column(nullable=True)
+    signature_text: Mapped[str | None] = mapped_column(nullable=True)
+    signature_source: Mapped[str | None] = mapped_column(nullable=True)
+
+    doc_brief: Mapped[str | None] = mapped_column(nullable=True)
+    doc_full: Mapped[str | None] = mapped_column(nullable=True)
+
+
+class FunctionArgument(Base):
+    __tablename__ = "function_arguments"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    entry_id: Mapped[int] = mapped_column(ForeignKey("entries.id"),
+                                          nullable=False)
+    position: Mapped[int] = mapped_column(nullable=False)
+
+    name: Mapped[str | None] = mapped_column(nullable=True)
+    type_text: Mapped[str | None] = mapped_column(nullable=True)
+    default_value: Mapped[str | None] = mapped_column(nullable=True)
+    kind: Mapped[str | None] = mapped_column(nullable=True)
+
+
+@dataclass
+class DocInfo:
+    brief: str | None = None
+    full: str | None = None
+
+
+@dataclass
+class ParsedArgument:
+    name: str | None
+    type_text: str | None = None
+    default_value: str | None = None
+    kind: str | None = None
+
+
+@dataclass
+class ParsedEntry:
+    kind: str
+    name: str | None = None
+    language: str | None = None
+    path: str | None = None
+    qualified_name: str | None = None
+    start_line: int | None = None
+    end_line: int | None = None
+    doc: DocInfo | None = None
+    type_text: str | None = None
+    signature_text: str | None = None
+    signature_source: str | None = None
+    arguments: list[ParsedArgument] = field(default_factory=list)
+    children: list["ParsedEntry"] = field(default_factory=list)
+
+
 def make_parser(language: Language) -> Parser:
     parser = Parser()
     parser.language = language
     return parser
 
 
-def source_range_from_node(node: Node) -> SourceRange:
-    return SourceRange(
-        start_line=node.start_point[0] + 1,
-        end_line=node.end_point[0] + 1,
-    )
-
-
 def node_text(node: Node, source: bytes) -> str:
     return source[node.start_byte:node.end_byte].decode("utf-8",
                                                         errors="replace")
+
+
+def source_lines(node: Node) -> tuple[int | None, int | None]:
+    return node.start_point[0] + 1, node.end_point[0] + 1
 
 
 def normalize_doc_lines(lines: list[str]) -> DocInfo | None:
@@ -144,9 +146,8 @@ def normalize_doc_lines(lines: list[str]) -> DocInfo | None:
 
     brief = None
     for line in cleaned:
-        stripped = line.strip()
-        if stripped:
-            brief = stripped
+        if line.strip():
+            brief = line.strip()
             break
 
     return DocInfo(brief=brief, full=full)
@@ -183,16 +184,17 @@ def extract_leading_cpp_doc(parent: Node, target_index: int,
     while idx >= 0:
         node = parent.named_children[idx]
         if node.type == "comment":
-            comment_lines = clean_cpp_comment_text(node_text(node, source))
-            lines = comment_lines + lines
+            lines = clean_cpp_comment_text(node_text(node, source)) + lines
             saw_comment = True
             idx -= 1
             continue
 
-        gap = parent.named_children[idx + 1].start_point[0] - node.end_point[0]
-        if saw_comment and gap <= 1:
-            idx -= 1
-            continue
+        if saw_comment:
+            gap = parent.named_children[idx +
+                                        1].start_point[0] - node.end_point[0]
+            if gap <= 1:
+                idx -= 1
+                continue
         break
 
     return normalize_doc_lines(lines)
@@ -211,10 +213,10 @@ def clean_python_docstring(raw: str) -> DocInfo | None:
     if not lines:
         return None
 
-    indent_candidates = [
-        len(re.match(r"^[ \t]*", line).group(0)) for line in lines[1:]
-        if line.strip()
-    ]
+    indent_candidates: list[int] = []
+    for line in lines[1:]:
+        if line.strip():
+            indent_candidates.append(len(line) - len(line.lstrip(" \t")))
     common_indent = min(indent_candidates) if indent_candidates else 0
 
     normalized: list[str] = []
@@ -227,11 +229,12 @@ def clean_python_docstring(raw: str) -> DocInfo | None:
     return normalize_doc_lines(normalized)
 
 
-def get_python_docstring_for_body(body: Node, source: bytes) -> DocInfo | None:
-    if body.type != "block" or body.named_child_count == 0:
+def get_python_docstring_for_statement_list(node: Node,
+                                            source: bytes) -> DocInfo | None:
+    if node.named_child_count == 0:
         return None
 
-    first = body.named_children[0]
+    first = node.named_children[0]
     if first.type != "expression_statement" or first.named_child_count != 1:
         return None
 
@@ -242,48 +245,80 @@ def get_python_docstring_for_body(body: Node, source: bytes) -> DocInfo | None:
     return clean_python_docstring(node_text(expr, source))
 
 
-def find_child_by_field_name(node: Node, field_name: str) -> Node | None:
-    for child in node.children:
-        if node.field_name_for_child(child.id) == field_name:
-            return child
+def find_first_descendant(node: Node, target_types: set[str]) -> Node | None:
+    stack = [node]
+    while stack:
+        cur = stack.pop()
+        if cur.type in target_types:
+            return cur
+        for child in reversed(cur.children):
+            stack.append(child)
     return None
 
 
 def cpp_extract_declarator_name(node: Node, source: bytes) -> str | None:
-    if node.type == "identifier":
+    if node.type in {"identifier", "field_identifier", "type_identifier"}:
         return node_text(node, source)
 
     for child in node.children:
         result = cpp_extract_declarator_name(child, source)
         if result is not None:
             return result
-
     return None
 
 
-def cpp_is_function_definition(node: Node) -> bool:
-    return node.type == "function_definition"
+def cpp_parse_arguments_from_declarator(
+        declarator: Node,
+        source: bytes) -> tuple[list[ParsedArgument], str | None]:
+    parameter_list = find_first_descendant(declarator, {"parameter_list"})
+    if parameter_list is None:
+        return [], None
+
+    args: list[ParsedArgument] = []
+    for child in parameter_list.named_children:
+        if child.type not in {
+                "parameter_declaration", "optional_parameter_declaration"
+        }:
+            continue
+
+        type_node = child.child_by_field_name("type")
+        declarator_node = child.child_by_field_name("declarator")
+        default_node = child.child_by_field_name("default_value")
+
+        arg_name = cpp_extract_declarator_name(
+            declarator_node, source) if declarator_node is not None else None
+        arg_type = node_text(type_node,
+                             source).strip() if type_node is not None else None
+        arg_default = node_text(
+            default_node, source).strip() if default_node is not None else None
+
+        args.append(
+            ParsedArgument(
+                name=arg_name,
+                type_text=arg_type,
+                default_value=arg_default,
+                kind=None,
+            ))
+
+    declarator_text = node_text(declarator, source)
+    params_text = node_text(parameter_list, source)
+    suffix = params_text
+    idx = declarator_text.find(params_text)
+    if idx != -1:
+        trailing = declarator_text[idx + len(params_text):].strip()
+        if trailing:
+            suffix = f"{params_text} {trailing}"
+
+    return args, suffix
 
 
-def cpp_is_class_like(node: Node) -> bool:
-    return node.type in {"class_specifier", "struct_specifier"}
-
-
-def cpp_extract_class_name(node: Node, source: bytes) -> str | None:
-    name_node = node.child_by_field_name("name")
-    if name_node is not None:
-        return node_text(name_node, source)
-    return None
-
-
-def cpp_member_is_signal(node: Node, source: bytes) -> bool:
-    text = node_text(node, source)
-    return "signals:" in text or "Q_SIGNAL" in text or "Q_SIGNALS" in text
-
-
-def cpp_parse_function(
-        node: Node, source: bytes,
-        kind: Literal["function", "method"]) -> FunctionInfo | None:
+def cpp_parse_function_entry(
+    node: Node,
+    source: bytes,
+    kind: str,
+    qualified_prefix: list[str],
+    doc: DocInfo | None,
+) -> ParsedEntry | None:
     declarator = node.child_by_field_name("declarator")
     if declarator is None:
         return None
@@ -292,336 +327,611 @@ def cpp_parse_function(
     if name is None:
         return None
 
-    return FunctionInfo(
+    type_node = node.child_by_field_name("type")
+    return_type = node_text(type_node,
+                            source).strip() if type_node is not None else None
+    args, signature_suffix = cpp_parse_arguments_from_declarator(
+        declarator, source)
+    start_line, end_line = source_lines(node)
+    qn = "::".join(qualified_prefix + [name])
+
+    return ParsedEntry(
         kind=kind,
         name=name,
-        range=source_range_from_node(node),
-        doc=None,
+        language="cpp",
+        qualified_name=qn,
+        start_line=start_line,
+        end_line=end_line,
+        doc=doc,
+        type_text=return_type,
+        signature_text=signature_suffix,
+        signature_source=node_text(declarator, source).strip(),
+        arguments=args,
     )
 
 
-def cpp_parse_field(node: Node, source: bytes) -> list[FieldInfo]:
-    result: list[FieldInfo] = []
-    for child in node.children:
-        if child.type == "field_declaration":
-            declarator = child.child_by_field_name("declarator")
-            if declarator is not None:
-                name = cpp_extract_declarator_name(declarator, source)
-                if name is not None:
-                    result.append(
-                        FieldInfo(
-                            name=name,
-                            range=source_range_from_node(child),
-                            doc=None,
-                        ))
-            else:
-                for sub in child.children:
-                    if sub.type in {"identifier", "field_identifier"}:
-                        result.append(
-                            FieldInfo(
-                                name=node_text(sub, source),
-                                range=source_range_from_node(child),
-                                doc=None,
-                            ))
-    return result
+def cpp_collect_field_names(node: Node, source: bytes) -> list[str]:
+    names: list[str] = []
+    stack = [node]
+    while stack:
+        cur = stack.pop()
+        if cur.type in {"field_identifier", "identifier"}:
+            names.append(node_text(cur, source))
+        for child in reversed(cur.children):
+            stack.append(child)
+    unique = list(dict.fromkeys(names))
+    return unique
 
 
-def cpp_parse_class(node: Node, source: bytes) -> ClassInfo | None:
-    name = cpp_extract_class_name(node, source)
-    if name is None:
+def cpp_parse_class(
+    node: Node,
+    source: bytes,
+    qualified_prefix: list[str],
+    doc: DocInfo | None,
+) -> ParsedEntry | None:
+    name_node = node.child_by_field_name("name")
+    if name_node is None:
         return None
 
-    info = ClassInfo(
-        name=name,
-        range=source_range_from_node(node),
-        doc=None,
+    class_name = node_text(name_node, source).strip()
+    start_line, end_line = source_lines(node)
+    qn = "::".join(qualified_prefix + [class_name])
+
+    entry = ParsedEntry(
+        kind="class",
+        name=class_name,
+        language="cpp",
+        qualified_name=qn,
+        start_line=start_line,
+        end_line=end_line,
+        doc=doc,
     )
 
     body = node.child_by_field_name("body")
     if body is None:
-        for child in node.children:
-            if child.type == "field_declaration_list":
-                body = child
-                break
+        return entry
 
-    if body is None:
-        return info
-
-    body_named = body.named_children
-    current_access = "private"
-    pending_doc: DocInfo | None = None
     signal_section = False
-
-    for idx, child in enumerate(body_named):
-        if child.type == "access_specifier":
-            access_text = node_text(child, source).strip().rstrip(":")
-            current_access = access_text
-            signal_section = access_text == "signals" or "signals" in access_text
-            pending_doc = extract_leading_cpp_doc(body, idx, source)
-            continue
-
+    for idx, child in enumerate(body.named_children):
         child_doc = extract_leading_cpp_doc(body, idx, source)
 
-        if cpp_is_function_definition(child):
-            fn = cpp_parse_function(child, source, "method")
-            if fn is not None:
-                fn.doc = child_doc
-                if signal_section or cpp_member_is_signal(child, source):
-                    info.signals.append(
-                        SignalInfo(
-                            name=fn.name,
-                            range=fn.range,
-                            doc=fn.doc,
-                        ))
-                else:
-                    info.methods.append(fn)
+        if child.type == "access_specifier":
+            access_text = node_text(child, source).strip().rstrip(":")
+            signal_section = access_text == "signals" or "signals" in access_text
+            continue
+
+        if child.type == "function_definition":
+            method = cpp_parse_function_entry(
+                child,
+                source,
+                "signal" if signal_section else "method",
+                qualified_prefix + [class_name],
+                child_doc,
+            )
+            if method is not None:
+                entry.children.append(method)
             continue
 
         if child.type == "declaration":
             declarator = child.child_by_field_name("declarator")
             if declarator is not None:
-                declarator_text = node_text(declarator, source)
-                if "(" in declarator_text and ")" in declarator_text:
-                    name = cpp_extract_declarator_name(declarator, source)
-                    if name is not None:
-                        fn = FunctionInfo(
-                            kind="method",
-                            name=name,
-                            range=source_range_from_node(child),
-                            doc=child_doc,
-                        )
-                        if signal_section or cpp_member_is_signal(
-                                child, source):
-                            info.signals.append(
-                                SignalInfo(
-                                    name=name,
-                                    range=fn.range,
-                                    doc=fn.doc,
-                                ))
-                        else:
-                            info.methods.append(fn)
+                has_params = find_first_descendant(
+                    declarator, {"parameter_list"}) is not None
+                if has_params:
+                    method = cpp_parse_function_entry(
+                        child,
+                        source,
+                        "signal" if signal_section else "method",
+                        qualified_prefix + [class_name],
+                        child_doc,
+                    )
+                    if method is not None:
+                        entry.children.append(method)
                     continue
 
-            for field in cpp_parse_field(child, source):
-                field.doc = child_doc
-                info.fields.append(field)
+            type_node = child.child_by_field_name("type")
+            field_type = node_text(
+                type_node, source).strip() if type_node is not None else None
+            field_names = cpp_collect_field_names(child, source)
+            for fname in field_names:
+                fstart, fend = source_lines(child)
+                entry.children.append(
+                    ParsedEntry(
+                        kind="field",
+                        name=fname,
+                        language="cpp",
+                        qualified_name="::".join(qualified_prefix +
+                                                 [class_name, fname]),
+                        start_line=fstart,
+                        end_line=fend,
+                        doc=child_doc,
+                        type_text=field_type,
+                    ))
             continue
 
         if child.type == "field_declaration":
-            names: list[str] = []
-            for sub in child.children:
-                if sub.type in {"field_identifier", "identifier"}:
-                    names.append(node_text(sub, source))
-            for field_name in names:
-                info.fields.append(
-                    FieldInfo(
-                        name=field_name,
-                        range=source_range_from_node(child),
+            type_node = child.child_by_field_name("type")
+            field_type = node_text(
+                type_node, source).strip() if type_node is not None else None
+            field_names = cpp_collect_field_names(child, source)
+            for fname in field_names:
+                fstart, fend = source_lines(child)
+                entry.children.append(
+                    ParsedEntry(
+                        kind="field",
+                        name=fname,
+                        language="cpp",
+                        qualified_name="::".join(qualified_prefix +
+                                                 [class_name, fname]),
+                        start_line=fstart,
+                        end_line=fend,
                         doc=child_doc,
+                        type_text=field_type,
                     ))
 
-    return info
+    return entry
 
 
-def index_cpp_file(path: Path, rel_path: str, parser: Parser) -> FileInfo:
-    source = path.read_bytes()
-    tree = parser.parse(source)
-    root = tree.root_node
+def cpp_parse_scope(
+    node: Node,
+    source: bytes,
+    out: list[ParsedEntry],
+    qualified_prefix: list[str],
+) -> None:
+    for idx, child in enumerate(node.named_children):
+        child_doc = extract_leading_cpp_doc(node, idx, source)
 
-    file_info = FileInfo(
-        path=rel_path,
-        range=source_range_from_node(root),
-        doc=None,
-    )
+        if child.type == "namespace_definition":
+            name_node = child.child_by_field_name("name")
+            if name_node is None:
+                continue
+            ns_name = node_text(name_node, source).strip()
+            ns_qn = "::".join(qualified_prefix + [ns_name])
+            ns_start, ns_end = source_lines(child)
 
-    named = root.named_children
-    for idx, child in enumerate(named):
-        child_doc = extract_leading_cpp_doc(root, idx, source)
+            ns_entry = ParsedEntry(
+                kind="namespace",
+                name=ns_name,
+                language="cpp",
+                qualified_name=ns_qn,
+                start_line=ns_start,
+                end_line=ns_end,
+                doc=child_doc,
+            )
 
-        if cpp_is_class_like(child):
-            cls = cpp_parse_class(child, source)
-            if cls is not None:
-                cls.doc = child_doc
-                file_info.classes.append(cls)
+            body = child.child_by_field_name("body")
+            if body is not None:
+                cpp_parse_scope(body, source, ns_entry.children,
+                                qualified_prefix + [ns_name])
+
+            out.append(ns_entry)
             continue
 
-        if cpp_is_function_definition(child):
-            fn = cpp_parse_function(child, source, "function")
+        if child.type in {"class_specifier", "struct_specifier"}:
+            cls = cpp_parse_class(child, source, qualified_prefix, child_doc)
+            if cls is not None:
+                out.append(cls)
+            continue
+
+        if child.type == "function_definition":
+            fn = cpp_parse_function_entry(child, source, "function",
+                                          qualified_prefix, child_doc)
             if fn is not None:
-                fn.doc = child_doc
-                file_info.functions.append(fn)
+                out.append(fn)
+            continue
 
-    return file_info
+        if child.type == "declaration":
+            declarator = child.child_by_field_name("declarator")
+            if declarator is None:
+                continue
+            has_params = find_first_descendant(declarator,
+                                               {"parameter_list"}) is not None
+            if not has_params:
+                continue
+            fn = cpp_parse_function_entry(child, source, "function",
+                                          qualified_prefix, child_doc)
+            if fn is not None:
+                out.append(fn)
 
 
-def python_function_name(node: Node, source: bytes) -> str | None:
+def python_extract_function_name(node: Node, source: bytes) -> str | None:
     name_node = node.child_by_field_name("name")
     if name_node is None:
         return None
     return node_text(name_node, source)
 
 
-def python_parse_class(node: Node, source: bytes) -> ClassInfo | None:
-    name = python_function_name(node, source)
+def python_parse_arguments(params_node: Node | None,
+                           source: bytes) -> list[ParsedArgument]:
+    if params_node is None:
+        return []
+
+    args: list[ParsedArgument] = []
+    pos = 0
+    for child in params_node.named_children:
+        arg = ParsedArgument(name=None)
+
+        if child.type == "identifier":
+            arg.name = node_text(child, source)
+            arg.kind = "positional"
+        elif child.type == "typed_parameter":
+            n = child.child_by_field_name("name")
+            t = child.child_by_field_name("type")
+            arg.name = node_text(n, source) if n is not None else None
+            arg.type_text = node_text(t, source) if t is not None else None
+            arg.kind = "positional"
+        elif child.type == "default_parameter":
+            n = child.child_by_field_name("name")
+            v = child.child_by_field_name("value")
+            arg.name = node_text(n, source) if n is not None else None
+            arg.default_value = node_text(v, source) if v is not None else None
+            arg.kind = "positional"
+        elif child.type == "typed_default_parameter":
+            n = child.child_by_field_name("name")
+            t = child.child_by_field_name("type")
+            v = child.child_by_field_name("value")
+            arg.name = node_text(n, source) if n is not None else None
+            arg.type_text = node_text(t, source) if t is not None else None
+            arg.default_value = node_text(v, source) if v is not None else None
+            arg.kind = "positional"
+        elif child.type == "list_splat_pattern":
+            arg.name = node_text(child, source).lstrip("*")
+            arg.kind = "vararg"
+        elif child.type == "dictionary_splat_pattern":
+            arg.name = node_text(child, source).lstrip("*")
+            arg.kind = "kwvararg"
+        else:
+            continue
+
+        if arg.name is not None:
+            args.append(arg)
+            pos += 1
+
+    return args
+
+
+def python_parse_function(
+    node: Node,
+    source: bytes,
+    kind: str,
+    qualified_prefix: list[str],
+) -> ParsedEntry | None:
+    name = python_extract_function_name(node, source)
     if name is None:
         return None
 
     body = node.child_by_field_name("body")
-    doc = get_python_docstring_for_body(body,
-                                        source) if body is not None else None
+    params = node.child_by_field_name("parameters")
+    return_type = node.child_by_field_name("return_type")
+    doc = get_python_docstring_for_statement_list(
+        body, source) if body is not None else None
+    args = python_parse_arguments(params, source)
 
-    info = ClassInfo(
+    params_text = node_text(params, source) if params is not None else "()"
+    return_text = f" -> {node_text(return_type, source)}" if return_type is not None else ""
+    signature = f"{params_text}{return_text}"
+
+    qn = ".".join(qualified_prefix + [name])
+    start_line, end_line = source_lines(node)
+
+    return ParsedEntry(
+        kind=kind,
         name=name,
-        range=source_range_from_node(node),
+        language="python",
+        qualified_name=qn,
+        start_line=start_line,
+        end_line=end_line,
+        doc=doc,
+        type_text=node_text(return_type, source)
+        if return_type is not None else None,
+        signature_text=signature,
+        signature_source=f"{name}{signature}",
+        arguments=args,
+    )
+
+
+def python_parse_class(node: Node, source: bytes,
+                       qualified_prefix: list[str]) -> ParsedEntry | None:
+    name = python_extract_function_name(node, source)
+    if name is None:
+        return None
+
+    body = node.child_by_field_name("body")
+    doc = get_python_docstring_for_statement_list(
+        body, source) if body is not None else None
+    start_line, end_line = source_lines(node)
+    qn = ".".join(qualified_prefix + [name])
+
+    cls = ParsedEntry(
+        kind="class",
+        name=name,
+        language="python",
+        qualified_name=qn,
+        start_line=start_line,
+        end_line=end_line,
         doc=doc,
     )
 
-    if body is None or body.type != "block":
-        return info
+    if body is None:
+        return cls
 
     for child in body.named_children:
-        if child.type == "function_definition":
-            method_name = python_function_name(child, source)
-            if method_name is None:
-                continue
-            method_body = child.child_by_field_name("body")
-            method_doc = get_python_docstring_for_body(
-                method_body, source) if method_body is not None else None
-            info.methods.append(
-                FunctionInfo(
-                    kind="method",
-                    name=method_name,
-                    range=source_range_from_node(child),
-                    doc=method_doc,
-                ))
+        if child.type in {"function_definition", "async_function_definition"}:
+            method = python_parse_function(child, source, "method",
+                                           qualified_prefix + [name])
+            if method is not None:
+                cls.children.append(method)
             continue
 
-        if child.type == "expression_statement":
-            continue
-
-        if child.type == "assignment":
+        if child.type in {"assignment", "typed_assignment"}:
             left = child.child_by_field_name("left")
-            if left is not None and left.type == "identifier":
-                info.fields.append(
-                    FieldInfo(
-                        name=node_text(left, source),
-                        range=source_range_from_node(child),
+            tnode = child.child_by_field_name("type")
+            type_text = node_text(tnode, source) if tnode is not None else None
+            if left is None:
+                continue
+
+            targets: list[str] = []
+            if left.type == "identifier":
+                targets.append(node_text(left, source))
+            elif left.type in {"pattern_list", "tuple_pattern"}:
+                for sub in left.named_children:
+                    if sub.type == "identifier":
+                        targets.append(node_text(sub, source))
+
+            fstart, fend = source_lines(child)
+            for target in targets:
+                cls.children.append(
+                    ParsedEntry(
+                        kind="field",
+                        name=target,
+                        language="python",
+                        qualified_name=".".join(qualified_prefix +
+                                                [name, target]),
+                        start_line=fstart,
+                        end_line=fend,
                         doc=None,
+                        type_text=type_text,
                     ))
-            elif left is not None and left.type == "pattern_list":
-                for target in left.named_children:
-                    if target.type == "identifier":
-                        info.fields.append(
-                            FieldInfo(
-                                name=node_text(target, source),
-                                range=source_range_from_node(child),
-                                doc=None,
-                            ))
 
-    return info
+    return cls
 
 
-def index_python_file(path: Path, rel_path: str, parser: Parser) -> FileInfo:
+def index_cpp_file(path: Path, rel_path: str, parser: Parser) -> ParsedEntry:
     source = path.read_bytes()
     tree = parser.parse(source)
     root = tree.root_node
+    start_line, end_line = source_lines(root)
 
-    file_info = FileInfo(
+    file_entry = ParsedEntry(
+        kind="file",
+        name=path.name,
+        language=None,
         path=rel_path,
-        range=source_range_from_node(root),
-        doc=get_python_docstring_for_body(root, source)
+        qualified_name=rel_path,
+        start_line=start_line,
+        end_line=end_line,
+    )
+
+    cpp_parse_scope(root, source, file_entry.children, [])
+    return file_entry
+
+
+def index_python_file(path: Path, rel_path: str,
+                      parser: Parser) -> ParsedEntry:
+    source = path.read_bytes()
+    tree = parser.parse(source)
+    root = tree.root_node
+    start_line, end_line = source_lines(root)
+
+    file_entry = ParsedEntry(
+        kind="file",
+        name=path.name,
+        language=None,
+        path=rel_path,
+        qualified_name=rel_path,
+        start_line=start_line,
+        end_line=end_line,
+        doc=get_python_docstring_for_statement_list(root, source)
         if root.type == "module" else None,
     )
 
     for child in root.named_children:
-        if child.type == "function_definition":
-            name = python_function_name(child, source)
-            if name is None:
-                continue
-            body = child.child_by_field_name("body")
-            file_info.functions.append(
-                FunctionInfo(
-                    kind="function",
-                    name=name,
-                    range=source_range_from_node(child),
-                    doc=get_python_docstring_for_body(body, source)
-                    if body is not None else None,
-                ))
+        if child.type in {"function_definition", "async_function_definition"}:
+            fn = python_parse_function(child, source, "function", [])
+            if fn is not None:
+                file_entry.children.append(fn)
             continue
 
         if child.type == "class_definition":
-            cls = python_parse_class(child, source)
+            cls = python_parse_class(child, source, [])
             if cls is not None:
-                file_info.classes.append(cls)
+                file_entry.children.append(cls)
 
-    return file_info
+    return file_entry
 
 
-def index_file(path: Path, root: Path, cpp_parser: Parser,
-               python_parser: Parser) -> FileInfo | None:
-    rel_path = str(path.relative_to(root))
+def index_file(path: Path, rel_path: str, cpp_parser: Parser,
+               python_parser: Parser) -> ParsedEntry:
     suffix = path.suffix.lower()
-
     if suffix in CPP_SUFFIXES:
         return index_cpp_file(path, rel_path, cpp_parser)
-
-    if suffix in PYTHON_SUFFIXES:
-        return index_python_file(path, rel_path, python_parser)
-
-    return None
+    return index_python_file(path, rel_path, python_parser)
 
 
-def directory_range(path: Path) -> SourceRange:
-    return SourceRange(start_line=None, end_line=None)
-
-
-def build_directory_tree(path: Path, root: Path, cpp_parser: Parser,
-                         python_parser: Parser) -> list[EntryInfo]:
-    entries: list[EntryInfo] = []
-
-    for child in sorted(path.iterdir(), key=lambda p:
-                        (not p.is_dir(), p.name)):
-        if child.name == ".git":
+def gather_git_files(root: Path) -> list[Path]:
+    output = subprocess.check_output(
+        ["git", "-C",
+         str(root), "ls-files", "-co", "--exclude-standard"],
+        text=True,
+    )
+    result: list[Path] = []
+    for line in output.splitlines():
+        rel = line.strip()
+        if not rel:
             continue
+        suffix = Path(rel).suffix.lower()
+        if suffix in CPP_SUFFIXES or suffix in PYTHON_SUFFIXES:
+            result.append(Path(rel))
+    result.sort()
+    return result
 
-        if child.is_dir():
-            dir_info = DirectoryInfo(
-                path=str(child.relative_to(root)),
-                range=directory_range(child),
-                doc=None,
-                children=build_directory_tree(child, root, cpp_parser,
-                                              python_parser),
-            )
-            if dir_info.children:
-                entries.append(dir_info)
-            continue
 
-        file_info = index_file(child, root, cpp_parser, python_parser)
-        if file_info is not None:
-            entries.append(file_info)
+def format_eta(seconds: float) -> str:
+    total = int(max(0, seconds))
+    h, rem = divmod(total, 3600)
+    m, s = divmod(rem, 60)
+    return f"{h:02d}:{m:02d}:{s:02d}"
 
-    return entries
+
+def persist_entry(session: Session, parent_id: int | None,
+                  entry: ParsedEntry) -> int:
+    row = IndexEntry(
+        parent_id=parent_id,
+        kind=entry.kind,
+        language=entry.language,
+        name=entry.name,
+        path=entry.path,
+        qualified_name=entry.qualified_name,
+        start_line=entry.start_line,
+        end_line=entry.end_line,
+        type_text=entry.type_text,
+        signature_text=entry.signature_text,
+        signature_source=entry.signature_source,
+        doc_brief=entry.doc.brief if entry.doc else None,
+        doc_full=entry.doc.full if entry.doc else None,
+    )
+    session.add(row)
+    session.flush()
+
+    for idx, arg in enumerate(entry.arguments):
+        session.add(
+            FunctionArgument(
+                entry_id=row.id,
+                position=idx,
+                name=arg.name,
+                type_text=arg.type_text,
+                default_value=arg.default_value,
+                kind=arg.kind,
+            ))
+
+    for child in entry.children:
+        persist_entry(session, row.id, child)
+
+    return row.id
+
+
+def create_flat_view(session: Session) -> None:
+    session.execute(text("DROP VIEW IF EXISTS entry_flat_view"))
+    session.execute(
+        text("""
+            CREATE VIEW entry_flat_view AS
+            SELECT
+                e.id AS entry_id,
+                e.kind AS kind,
+                e.language AS language,
+                e.path AS path,
+                e.qualified_name AS qualified_name,
+                CASE
+                    WHEN e.kind IN ('function', 'method', 'signal') THEN
+                        COALESCE(e.qualified_name, e.name, '') || COALESCE(e.signature_text, '')
+                    WHEN e.kind = 'field' THEN
+                        trim(COALESCE(e.type_text || ' ', '') || COALESCE(e.qualified_name, e.name, ''))
+                    WHEN e.kind = 'class' THEN
+                        COALESCE(e.qualified_name, e.name, '')
+                    WHEN e.kind = 'namespace' THEN
+                        COALESCE(e.qualified_name, e.name, '')
+                    WHEN e.kind = 'file' THEN
+                        COALESCE(e.path, e.name, '')
+                    WHEN e.kind = 'directory' THEN
+                        COALESCE(e.path, e.name, '')
+                    ELSE
+                        COALESCE(e.qualified_name, e.path, e.name, '')
+                END AS flat_representation,
+                e.type_text AS type_text,
+                e.signature_text AS signature_text,
+                e.signature_source AS signature_source,
+                e.doc_brief AS doc_brief,
+                e.doc_full AS doc_full
+            FROM entries e
+            """))
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("root", type=Path)
-    parser.add_argument("-o", "--output", type=Path, required=True)
-    args = parser.parse_args()
+    logging.basicConfig(level=logging.INFO,
+                        format="%(asctime)s %(levelname)s %(message)s")
+
+    argp = argparse.ArgumentParser()
+    argp.add_argument("root", type=Path)
+    argp.add_argument("-o", "--output", type=Path, required=False)
+    args = argp.parse_args()
 
     root = args.root.resolve()
+    output = args.output.resolve(
+    ) if args.output is not None else root / ".haxscramper-code-index.sqlite"
+    output.unlink(missing_ok=True)
+
+    files = gather_git_files(root)
+    total = len(files)
+
     cpp_parser = make_parser(CPP_LANGUAGE)
     python_parser = make_parser(PYTHON_LANGUAGE)
 
-    index = IndexRoot(
-        root=str(root),
-        entries=build_directory_tree(root, root, cpp_parser, python_parser),
-    )
+    engine = create_engine(f"sqlite+pysqlite:///{output}")
+    Base.metadata.create_all(engine)
 
-    args.output.write_text(
-        index.model_dump_json(indent=2),
-        encoding="utf-8",
-    )
+    with Session(engine) as session:
+        root_dir = ParsedEntry(
+            kind="directory",
+            name=root.name,
+            path=".",
+            qualified_name=".",
+            start_line=None,
+            end_line=None,
+        )
+        root_id = persist_entry(session, None, root_dir)
+
+        dir_ids: dict[Path, int] = {Path("."): root_id}
+        dirs_to_create: set[Path] = set()
+
+        for rel in files:
+            parent = rel.parent
+            while str(parent) != ".":
+                dirs_to_create.add(parent)
+                parent = parent.parent
+
+        for d in sorted(dirs_to_create, key=lambda p: (len(p.parts), str(p))):
+            parent = d.parent if str(d.parent) != "" else Path(".")
+            parent_id = dir_ids[parent]
+            dir_entry = ParsedEntry(
+                kind="directory",
+                name=d.name,
+                path=str(d),
+                qualified_name=str(d),
+                start_line=None,
+                end_line=None,
+            )
+            dir_ids[d] = persist_entry(session, parent_id, dir_entry)
+
+        start = time.monotonic()
+        processed = 0
+
+        for rel in files:
+            abs_path = root / rel
+            parsed_file = index_file(abs_path, str(rel), cpp_parser,
+                                     python_parser)
+            parent_id = dir_ids.get(rel.parent, root_id)
+            persist_entry(session, parent_id, parsed_file)
+
+            processed += 1
+            remaining = total - processed
+            elapsed = time.monotonic() - start
+            avg = elapsed / processed
+            eta = avg * remaining
+            logging.info("[%d/%d] ETA %s %s", processed, remaining,
+                         format_eta(eta), rel)
+
+        create_flat_view(session)
+        session.commit()
 
 
 if __name__ == "__main__":
