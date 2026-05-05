@@ -19,7 +19,7 @@ from beartype import beartype
 
 logging.basicConfig(
     level=logging.DEBUG,
-    format="%(levelname)s %(filename)s:%(lineno)d: %(message)s",
+    format="%(name)s %(levelname)s %(filename)s:%(lineno)d: %(message)s",
 )
 
 import graphviz
@@ -58,7 +58,7 @@ class FunctionInfo:
 class DirTree:
     name: str
     children: dict[str, "DirTree"] = field(default_factory=dict)
-    funcs: list[str] = field(default_factory=list)
+    files: dict[str, list[str]] = field(default_factory=dict)
 
 
 @beartype
@@ -90,6 +90,9 @@ def iter_forms_in_file(text: str) -> Iterable:
 
 @beartype
 def collect_refs(expr, out: set[tuple[str, str]]) -> None:
+    if is_sequence(expr) and 0 < len(expr) and symbol_name(expr[0]) == "map!":
+        return None
+
     qv = quoted_value(expr)
     if qv is not None:
         qsym = symbol_name(qv)
@@ -145,25 +148,45 @@ def node_id(func_name: str) -> str:
 
 
 @beartype
-def add_to_tree(root: DirTree, rel_dir: Path, func_name: str) -> None:
-    current = root
-    for part in rel_dir.parts:
-        if part in ("", "."):
-            continue
-        current = current.children.setdefault(part, DirTree(name=part))
-    current.funcs.append(func_name)
+def cluster_name(parts: tuple[str, ...]) -> str:
+    raw = "/".join(parts) if parts else "__root__"
+    h = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:12]
+    return f"cluster_{h}"
 
 
 @beartype
-def build_clusters(g, tree: DirTree, id_map: dict[str, str],
-                   cluster_path: tuple[str, ...], label: str) -> None:
-    cluster_name = "cluster_" + "_".join(
-        cluster_path) if cluster_path else "cluster_root"
-    with g.subgraph(name=cluster_name) as sg:
+def add_to_tree(root: DirTree, rel_file: Path, func_name: str) -> None:
+    current = root
+    for part in rel_file.parent.parts:
+        if part in ("", "."):
+            continue
+        current = current.children.setdefault(part, DirTree(name=part))
+
+    current.files.setdefault(rel_file.name, []).append(func_name)
+
+
+@beartype
+def build_clusters(
+    g,
+    tree: DirTree,
+    id_map: dict[str, str],
+    cluster_path: tuple[str, ...],
+    label: str,
+) -> None:
+    with g.subgraph(name=cluster_name(cluster_path)) as sg:
         sg.attr(label=label)
         sg.attr(color="gray40")
-        for fn in sorted(tree.funcs):
-            sg.node(id_map[fn], label=fn)
+
+        for file_name in sorted(tree.files):
+            funcs = tree.files[file_name]
+            with sg.subgraph(name=cluster_name((*cluster_path,
+                                                file_name))) as fsg:
+                fsg.attr(label=file_name)
+                fsg.attr(color="gray60")
+                fsg.attr(style="rounded")
+                for fn in sorted(funcs):
+                    fsg.node(id_map[fn], label=fn)
+
         for child_name in sorted(tree.children):
             child = tree.children[child_name]
             build_clusters(
@@ -193,7 +216,6 @@ def main() -> None:
 
     all_funcs: dict[str, FunctionInfo] = {}
     for file in el_files:
-        logging.info(f"{file}")
         text = file.read_text(encoding="utf-8")
         for form in iter_forms_in_file(text):
             info = parse_defun(form, file)
@@ -206,8 +228,9 @@ def main() -> None:
     fmt = out_path.suffix.lstrip(".")
     stem = out_path.with_suffix("")
 
-    g = graphviz.Digraph("elisp_callgraph", format=fmt)
+    g: graphviz.Diagraph = graphviz.Digraph("elisp_callgraph", format=fmt)
     g.attr(rankdir="LR")
+    g.attr(overlap="false")
     g.attr("node", shape="box", fontsize="10")
     g.attr("edge", fontsize="9")
 
@@ -215,8 +238,8 @@ def main() -> None:
 
     tree = DirTree(name=root.name)
     for fn, info in all_funcs.items():
-        rel_dir = info.file.parent.relative_to(root)
-        add_to_tree(tree, rel_dir, fn)
+        rel_file = info.file.relative_to(root)
+        add_to_tree(tree, rel_file, fn)
 
     build_clusters(g, tree, id_map=id_map, cluster_path=(), label=root.name)
 
@@ -231,7 +254,7 @@ def main() -> None:
             style = EDGE_STYLES[kind]
             g.edge(src_id, id_map[target], **style)
 
-    g.render(filename=str(stem), cleanup=True)
+    g.render(filename=str(stem), cleanup=True, engine="dot")
 
 
 if __name__ == "__main__":
