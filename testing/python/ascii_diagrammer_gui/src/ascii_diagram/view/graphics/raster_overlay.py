@@ -1,4 +1,5 @@
 from __future__ import annotations
+import logging
 
 from typing import Optional
 
@@ -80,6 +81,7 @@ class RasterOverlayItem(QGraphicsItem):
         self._cached_origin = QPoint(bounds[0] - 10, bounds[1] - 10)
         self.prepareGeometryChange()
         self._dirty = False
+        self.update()
 
     def cache_valid(self) -> bool:
         return not self._dirty

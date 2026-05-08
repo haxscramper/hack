@@ -1,4 +1,5 @@
 from __future__ import annotations
+import logging
 
 from typing import Dict, Optional, cast
 
@@ -125,8 +126,10 @@ class PropertiesPanel(QWidget):
         self._make_position_group(form)
         w_spin = QSpinBox()
         w_spin.setRange(0, 9999)
+        w_spin.valueChanged.connect(self._on_property_edit)
         h_spin = QSpinBox()
         h_spin.setRange(0, 9999)
+        h_spin.valueChanged.connect(self._on_property_edit)
         self._widgets["width"] = w_spin
         self._widgets["height"] = h_spin
         form.addRow("Width", w_spin)
@@ -326,8 +329,7 @@ class PropertiesPanel(QWidget):
             return
 
         item = self._model.item_from_index(self._current_index)
-        if item is None:
-            return
+        assert item is not None, f"Could not select item for current index {self._current_index}"
 
         props = item.properties
         self._read_common(props)
