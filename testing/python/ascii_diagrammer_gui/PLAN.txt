@@ -1,0 +1,223 @@
+** Initial design
+
+Below is the description of the behavior of the GUI application for editing ASCII diagrams. The application will be written in the Python using PySide6 and UV.
+
+*** main application description
+
+**** Scene structure
+
+The diagram scene is modeled using QT tree view model, with the main scene acting as a view, and the underlying model providing the structure for both the visual representation on the scene diagram, and the tree view widget on the right. Changes in the tree view are reflected on the main scene, and structural changes on the main scene (adding or re-parenting elements) are reflected on the tree view.
+
+Shapes on the scene are parented to each other, and coordinates of the shape are relative to the upper left corner of the parent.
+
+- When rendering, the parent nodes don't clip the nested ones.
+- Moving the parent shape moves the nested elements. 
+- parent-child relationship for the scenes is handled by the qt model framework, operations on the model should be done through the framework. 
+
+**** GUI structure
+
+The application is split into three parts. The left part shows a list of predefined elements that the user can add to the scene: rectangles, edges, circles, text. The center part shows the scene and the right part shows the properties of the currently focused object and the overall scene tree
+
+***** shape list
+
+- The application renders a scrollable list of shape previews, where each shape is shown on the same class of widget as the main scene, except scaled down to a smaller size.
+- The user can click with the left mouse and drag the widget from the preview area to the scene. Once over the scene all normal dragging behavior for the elements on the scene should apply
+- The base list of provided shapes is: rectangle, edge, ellipse
+
+****** rectangle
+
+- upper left coordinates, width height, 
+- charset for sides and corners
+  
+****** edge
+
+- coordinates of control points: start, end, bends
+- charset for the start, end arrows, intermediate elements and the bend points
+- edge type: polyline, spline or orthogonal
+
+******  text
+
+- coordinates, width, height of the bounding box (wrapping if necessary)
+- the text itself
+- justification: left, right, center of the bounding box
+- vertical position: top, center, bottom of the bounding box
+
+***** Main scene view
+
+- The main scene view shows the rendered version of the scene
+- The scene supports zooming, panning, selecting one or many objets at once using selection area or ctrl selection
+- Objects are rendered on the scene based on their ordering in the model tree, with the parent objects rendered first and then the nested elements rendered on top of them.
+- All object coordinates and geometry values are whole integers
+- The scene view is organized in a grid-like manner, with individual cells matching the size of the monospaced letter in width and height
+- Main canvas has effectively infinite size, coordinates can be negative
+- Moving shapes snaps to the integer grid values
+- The shapes on the scene are rendered in two ways, both of which can be enabled at the same time: vector and raster
+
+****** Shape rendering as vector
+
+The first way to render the shape aka "vector", should render the shape as a regular geometry running through the midpoints of the cells on the coordinates. E.g. if a rectangle is placed at (1, 1) with width, height of (4, 3), the vector representation of the rectangle would run through `(1.5, 1.5) -> (4.5, 3.5)` creating a slightly offset shape. Vector shapes may be rendered on top of each other. Vector representation should not have any configurable parameters, and instead only serves as a general representation of the underlying geometry
+
+****** shape rendering as raster
+
+The second way to render each individual shape is the "raster" way, where the geometry is rendered onto a ASCII grid with the provided character set. Each shape has its individual collection of the configuration fields for the character set (edge might have start and end arrow, bend points, intermediate points for example, while rectangle will have top and bottom characters and corners and so other elements). Raster shapes are also rendered on top of each other. Resolution of the overlaps (if the individual cell already has the character specified by a preceding shape) is a configurable property of the shape.
+
+Character overlap resolution can have different modes:
+
+- overwrite existing
+- write only into empty cells
+- merge using character-specific intersection rules
+
+Character overlap resolution is only concerned with the underlying character, and it is irrelevant which shape it originally came from if there are special intersection rules. E.g. `|` and `-` intersection can lead to `+`.
+
+****** practical implementation
+
+- The scene is rendered using qt scene view and graphic items 
+- Rasterized version is rendered using a non-selectable graphics item that is placed below the vector elements. The rasterized element always contains a full ascii render of the scene -- this way there is no need to clip the visible part of the rasterized cell, as the visual aspect of this will be handled automatically. 
+- graphics items don't store properties directly, instead the user-configurable properties are stored in the model. 
+- graphics items may store some cache elements, such as raster grid cache, to avoid re-computing the character placement on every render call.
+- raster grid size is updated based on the shapes used, and re-computed with the coordinates to fully cover them, plus some additional buffer around for 10 cells in all directions. 
+- If model structure is updated, or elements are moved, invalidate the raster grid and render it again. 
+
+***** right panel
+
+- The right panel shows preview of the properties for the currently selected shape
+- Below it, show the qt tree view of the scene. The tree view should support dragging the elements around for re-parenting, deleting elements, selecting elements for editing. 
+  - It is possible to drag the element from one parent to another
+  - Each element displays the shape type and ID
+
+**** Implementation details on the concrete types
+
+- Use qt data classes for the position and size of the individual shapes
+- Store absolute position by summing ancestor offsets only when needed for rendering and hit-testing.
+
+*** data export and import 
+
+- The application should store the scene in a JSON form with support for serialization and deserialization of the state. 
+- To export the ASCII representation of the scene, the application will open a dialog window that will display a monospaced text label, with "copy" button, so the user could copy the final diagram text. When exporting to the final ASCII, the final result is cropped to the overall bounding box of all shapes. 
+  - the ascii export always exports the whole scene
+- the model is the single source of truth for the application, storing all the properties, The model structure is serialized and re-created from the file. 
+
+*** Testing strategy
+
+The project should be designed with testing in mind from the start. The testing should be done on the level of data model and then on the level of widget integration.
+  
+- Insert shapes on the scene with the scene API
+- Add shapes on the scene with the GUI implementation
+- Test trivial shape rendering to ASCII to verify the configuration parameters are working as expected
+
+
+
+**Implementation Plan**
+
+**Stack**
+- Package manager / runner: `uv` (`pyproject.toml`, `src` layout)
+- GUI: `PySide6`
+- Testing: `pytest` + `pytest-qt`
+
+**File Structure**
+```
+ascii-diagram/
+├── pyproject.toml
+└── src/
+    └── ascii_diagram/
+        ├── main.py                 # Entry point; constructs QApplication and MainWindow
+        ├── model/
+        │   ├── scene_model.py      # QAbstractItemModel; single source of truth
+        │   ├── scene_item.py       # Tree node base (parent/child, shape type, id)
+        │   ├── shape_properties.py # Dataclasses: RectData, EdgeData, EllipseData, TextData
+        │   └── enums.py            # EdgeType, OverlapMode, HJustify, VAlign
+        ├── rendering/
+        │   ├── ascii_grid.py       # 2D char buffer + overlap resolution rules
+        │   ├── raster_renderer.py  # Stamps shapes into AsciiGrid from model state
+        │   └── vector_renderer.py  # Factory for QGraphicsItems from model geometry
+        ├── view/
+        │   ├── main_window.py      # QMainWindow with left/center/right layout
+        │   ├── scene_view.py       # QGraphicsView: zoom, pan, rubber-band, drag-drop target
+        │   ├── shape_palette.py    # Left panel: preview list with internal drag-out
+        │   ├── properties_panel.py # Right panel top: editor for selected model index
+        │   ├── scene_tree.py       # Right panel bottom: QTreeView bound to SceneModel
+        │   ├── export_dialog.py    # Modal dialog: monospace label + Copy button
+        │   └── graphics/
+        │       ├── raster_overlay.py   # Non-selectable full-scene QGraphicsItem (cache)
+        │       ├── base_shape_item.py  # Reads coords from model; handles drag moves
+        │       └── shape_items.py      # Rect, Edge, Ellipse, Text vector items
+        ├── io/
+        │   └── scene_io.py         # JSON serialize / deserialize via model APIs
+        └── interaction/
+            └── drag_drop.py        # Shared mime-type helpers for palette and tree reparenting
+└── tests/
+    ├── conftest.py                 # qtbot fixture, reusable model/scene fixtures
+    ├── test_model/
+    ├── test_rendering/
+    └── test_gui/
+```
+
+**Component Responsibilities**
+- `model/`: Stores all properties. Coordinates are relative integers. Structural changes happen only through `QAbstractItemModel` APIs (`insertRows`, `moveRows`, `removeRows`), which emit the standard signals both the scene view and the tree view consume.
+- `rendering/`: `raster_renderer.py` iterates the model to write into `ascii_grid.py`, applying `OverlapMode`. `vector_renderer.py` creates geometry items that read from the model on paint/move. Graphics items never store user-configurable properties.
+- `view/graphics/raster_overlay.py`: Caches the full-scene ASCII grid (computed size = shape bounds + 10-cell buffer). Rebuilds when the model emits structural or geometry changes. Drawn beneath selectable vector items.
+- `interaction/`: Encapsulates drag/drop mime data and drop logic so `shape_palette` (creation) and `scene_tree` (reparenting) share the same model-update path.
+
+---
+
+**Testing Strategy**
+
+- **Model Unit Tests** (`test_model/`): Validate tree structure, relative/absolute coordinate math, signals, and JSON round-trips without a GUI event loop where possible.
+- **Rendering Tests** (`test_rendering/`): Build models programmatically, feed to `raster_renderer` and `ascii_grid`, assert against expected 2D string arrays. No GUI required.
+- **GUI Integration Tests** (`test_gui/`): Use `pytest-qt` (`qtbot`) to instantiate widgets, simulate mouse/keyboard/drag-drop, and verify that model state and view state remain synchronized.
+
+---
+
+**Detailed Test Collection**
+
+*Model & Coordinates*
+- `test_insert_root`: Insert shapes via `insertRows` at root; verify row count and `QModelIndex` parent.
+- `test_insert_nested`: Insert child under parent; verify tree depth and `rowsInserted` signal.
+- `test_relative_coords_unchanged_on_parent_move`: Changing parent position updates only the parent’s stored offset; child offsets remain constant in the model.
+- `test_absolute_coord_accumulation`: Nested depth ≥ 2 computes absolute position by summing ancestor offsets; assert integer math.
+- `test_reparent_via_moveRows`: Move node between parents via model API; assert new parent, correct signals, and absolute rendering position updated.
+- `test_delete_subtree`: Remove parent node; assert all descendants removed from model.
+- `test_geometry_change_signals`: Modify width/height via `setData`; assert `dataChanged` emitted with correct index/role.
+
+*Serialization*
+- `test_json_roundtrip`: Complex nested scene serialized to JSON and deserialized into a fresh model; assert full tree equality and property equality.
+- `test_json_unknown_shape_raises`: Input with unknown shape type during deserialization raises an exception (no silent fallback).
+
+*ASCII Grid & Raster Rendering*
+- `test_grid_size_with_buffer`: Shapes placed at extremes produce a grid covering all shapes plus a 10-cell buffer in all directions.
+- `test_grid_invalidation_on_move`: Change shape coordinates; assert cached grid rebuilds and `raster_overlay` updates.
+- `test_rectangle_raster_charset`: Rectangle with custom corners/sides renders exact expected characters.
+- `test_edge_polyline_raster`: Polyline with bends renders chars along straight segments and bend points.
+- `test_edge_orthogonal_raster`: Orthogonal edge renders only horizontal/vertical runs.
+- `test_edge_spline_raster`: Spline edge renders approximate curve via interpolated chars.
+- `test_ellipse_raster`: Closed ellipse curve renders expected characters on grid.
+- `test_text_wrapping`: Text exceeding width wraps correctly within bounding box.
+- `test_text_hjustify_left_right_center`: Horizontal justification offsets text correctly within box.
+- `test_text_valign_top_center_bottom`: Vertical alignment offsets text correctly within box.
+- `test_overlap_mode_overwrite`: Second shape overwrites first at shared cells.
+- `test_overlap_mode_empty_only`: Second shape writes only where no character exists.
+- `test_overlap_intersection_plus`: Intersection rules convert `|` + `-` crossing into `+`.
+- `test_raster_excludes_invisible_shapes`: Hidden or outlier shapes still contribute to grid bounds but render normally (no clipping logic needed).
+
+*Vector Rendering*
+- `test_vector_midpoint_offset`: Rectangle at `(1,1)` size `(4,3)` produces vector rect from `(1.5,1.5)` to `(4.5,3.5)`.
+- `test_vector_ignores_charset`: Vector renderer never consults charset properties.
+
+*Export*
+- `test_export_crops_to_bounds`: Negative and positive coordinates exist; exported string cropped to exact bounding box of all shapes.
+- `test_export_always_full_scene`: Export output contains every shape regardless of current viewport.
+- `test_export_dialog_copy`: Simulate clicking the Copy button; assert system clipboard contains the exported ASCII.
+
+*GUI & Integration*
+- `test_palette_preview_renders`: Palette widgets display scaled-down vector representations of base shapes.
+- `test_palette_drag_drop_creates_shape`: Simulate drag from `shape_palette` to `scene_view`; assert model insertion at grid-snapped drop coordinates.
+- `test_scene_drag_snaps_to_grid`: Move existing shape on canvas; assert final model coordinates are whole integers.
+- `test_rubber_band_multi_select`: Rubber-band drag on scene selects multiple items.
+- `test_ctrl_toggle_select`: Ctrl-click adds/removes individual items from selection.
+- `test_parent_move_translates_children`: Drag parent in scene view; children translate visually while their model-relative coordinates stay fixed.
+- `test_scene_selection_syncs_tree`: Select on canvas; `scene_tree` updates to same `QModelIndex` set.
+- `test_tree_selection_syncs_scene_and_properties`: Select in `scene_tree`; canvas highlights and `properties_panel` populates.
+- `test_tree_drag_reparents`: Drag node in `scene_tree` onto new parent; assert model parent change and view update.
+- `test_property_edit_updates_model_and_view`: Edit width in `properties_panel`; model updates, vector item repaints, raster overlay rebuilds.
+- `test_zoom_pan`: Zoom changes scene transform; pan changes view translation.
+- `test_raster_overlay_non_selectable`: Click on raster overlay does not alter selection.
