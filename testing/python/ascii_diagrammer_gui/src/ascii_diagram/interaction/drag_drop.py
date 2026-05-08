@@ -12,7 +12,7 @@ PALETTE_MIME = "application/x-ascii-diagram-palette"
 def encode_palette_mime(shape_type: ShapeType) -> QMimeData:
     data = QMimeData()
     encoded = QByteArray()
-    stream = QDataStream(encoded, QIODevice.WriteOnly)
+    stream = QDataStream(encoded, QIODevice.OpenModeFlag.WriteOnly)
     stream.writeInt32(shape_type.value)
     data.setData(PALETTE_MIME, encoded)
     return data
@@ -22,7 +22,7 @@ def decode_palette_mime(data: QMimeData) -> Optional[ShapeType]:
     if not data.hasFormat(PALETTE_MIME):
         return None
     raw = data.data(PALETTE_MIME)
-    stream = QDataStream(raw, QIODevice.ReadOnly)
+    stream = QDataStream(raw, QIODevice.OpenModeFlag.ReadOnly)
     val = stream.readInt32()
     try:
         return ShapeType(val)

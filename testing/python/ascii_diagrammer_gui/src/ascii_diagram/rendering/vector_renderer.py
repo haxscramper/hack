@@ -44,8 +44,8 @@ def _make_rect_item(abs_pos, data: RectData) -> QGraphicsPathItem:
     path = QPainterPath()
     path.addRect(x, y, float(w), float(h))
     item = QGraphicsPathItem(path)
-    item.setFlag(QGraphicsItem.ItemIsSelectable, True)
-    item.setFlag(QGraphicsItem.ItemIsMovable, False)
+    item.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, True)
+    item.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, False)
     return item
 
 
@@ -80,8 +80,8 @@ def _make_edge_item(abs_pos, data: EdgeData) -> QGraphicsPathItem:
         path.lineTo(ex, ey)
 
     item = QGraphicsPathItem(path)
-    item.setFlag(QGraphicsItem.ItemIsSelectable, True)
-    item.setFlag(QGraphicsItem.ItemIsMovable, False)
+    item.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, True)
+    item.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, False)
     return item
 
 
@@ -93,8 +93,8 @@ def _make_ellipse_item(abs_pos, data: EllipseData) -> QGraphicsPathItem:
     path = QPainterPath()
     path.addEllipse(x, y, float(w), float(h))
     item = QGraphicsPathItem(path)
-    item.setFlag(QGraphicsItem.ItemIsSelectable, True)
-    item.setFlag(QGraphicsItem.ItemIsMovable, False)
+    item.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, True)
+    item.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, False)
     return item
 
 
@@ -106,6 +106,6 @@ def _make_text_item(abs_pos, data: TextData) -> QGraphicsPathItem:
     path = QPainterPath()
     path.addRect(x, y, float(w), float(h))
     item = QGraphicsPathItem(path)
-    item.setFlag(QGraphicsItem.ItemIsSelectable, True)
-    item.setFlag(QGraphicsItem.ItemIsMovable, False)
+    item.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, True)
+    item.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, False)
     return item

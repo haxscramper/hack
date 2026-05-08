@@ -37,7 +37,7 @@ from ascii_diagram.view.graphics.shape_items import make_shape_item
 from ascii_diagram.interaction.drag_drop import decode_palette_mime, PALETTE_MIME
 
 _GRID_FONT = QFont("Courier New", 12)
-_GRID_FONT.setStyleHint(QFont.Monospace)
+_GRID_FONT.setStyleHint(QFont.StyleHint.Monospace)
 
 
 class SceneView(QGraphicsView):
@@ -55,12 +55,14 @@ class SceneView(QGraphicsView):
         self._item_map: Dict[int, BaseShapeItem] = {}
         self._shape_type_map: Dict[int, ShapeType] = {}
 
-        self.setRenderHint(QPainter.Antialiasing, False)
-        self.setDragMode(QGraphicsView.RubberBandDrag)
-        self.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
-        self.setResizeAnchor(QGraphicsView.AnchorUnderMouse)
+        self.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+        self.setDragMode(QGraphicsView.DragMode.RubberBandDrag)
+        self.setTransformationAnchor(
+            QGraphicsView.ViewportAnchor.AnchorUnderMouse)
+        self.setResizeAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
         self.setAcceptDrops(True)
-        self.setViewportUpdateMode(QGraphicsView.FullViewportUpdate)
+        self.setViewportUpdateMode(
+            QGraphicsView.ViewportUpdateMode.FullViewportUpdate)
         self.setBackgroundBrush(QBrush(QColor(255, 255, 255)))
 
         fm = QFontMetrics(_GRID_FONT)
@@ -104,9 +106,9 @@ class SceneView(QGraphicsView):
                 idx = self._model.index(row, 0, parent_index)
                 shape = make_shape_item(self._model, idx)
                 if shape:
-                    item_id = idx.data(Qt.UserRole + 103)
+                    item_id = idx.data(Qt.ItemDataRole.UserRole + 103)
                     self._item_map[item_id] = shape
-                    st = idx.data(Qt.UserRole + 102)
+                    st = idx.data(Qt.ItemDataRole.UserRole + 102)
                     if isinstance(st, ShapeType):
                         self._shape_type_map[item_id] = st
                     shape.set_moved_callback(self._on_item_moved)
@@ -121,9 +123,9 @@ class SceneView(QGraphicsView):
             idx = self._model.index(row, 0, parent)
             shape = make_shape_item(self._model, idx)
             if shape:
-                item_id = idx.data(Qt.UserRole + 103)
+                item_id = idx.data(Qt.ItemDataRole.UserRole + 103)
                 self._item_map[item_id] = shape
-                st = idx.data(Qt.UserRole + 102)
+                st = idx.data(Qt.ItemDataRole.UserRole + 102)
                 if isinstance(st, ShapeType):
                     self._shape_type_map[item_id] = st
                 shape.set_moved_callback(self._on_item_moved)
@@ -138,7 +140,7 @@ class SceneView(QGraphicsView):
             idx = self._model.index(row, 0, parent_idx)
             shape = make_shape_item(self._model, idx)
             if shape:
-                item_id = idx.data(Qt.UserRole + 103)
+                item_id = idx.data(Qt.ItemDataRole.UserRole + 103)
                 self._item_map[item_id] = shape
                 shape.set_moved_callback(self._on_item_moved)
                 self._scene.addItem(shape)
@@ -166,7 +168,7 @@ class SceneView(QGraphicsView):
 
     def _on_data_changed(self, top_left: QModelIndex,
                          bottom_right: QModelIndex) -> None:
-        item_id = top_left.data(Qt.UserRole + 103)
+        item_id = top_left.data(Qt.ItemDataRole.UserRole + 103)
         if item_id is not None and item_id in self._item_map:
             self._item_map[item_id].update_geometry()
         self._raster_overlay.rebuild()
@@ -190,7 +192,7 @@ class SceneView(QGraphicsView):
         self._scene.blockSignals(True)
         self._scene.clearSelection()
         for idx in indices:
-            item_id = idx.data(Qt.UserRole + 103)
+            item_id = idx.data(Qt.ItemDataRole.UserRole + 103)
             if item_id is not None and item_id in self._item_map:
                 self._item_map[item_id].setSelected(True)
         self._scene.blockSignals(False)
@@ -262,7 +264,7 @@ class SceneView(QGraphicsView):
             y += ch
 
     def keyPressEvent(self, event) -> None:
-        if event.key() == Qt.Key_Delete:
+        if event.key() == Qt.Key.Key_Delete:
             self._delete_selected()
         else:
             super().keyPressEvent(event)

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from PySide6.QtCore import QPoint, QRectF, Qt
+from PySide6.QtCore import QPoint, QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter
 from PySide6.QtWidgets import (
     QGraphicsItem,
@@ -16,7 +16,7 @@ from ascii_diagram.rendering.ascii_grid import AsciiGrid
 from ascii_diagram.rendering.raster_renderer import render_scene_to_grid
 
 _MONO_FONT = QFont("Courier New", 12)
-_MONO_FONT.setStyleHint(QFont.Monospace)
+_MONO_FONT.setStyleHint(QFont.StyleHint.Monospace)
 
 
 class RasterOverlayItem(QGraphicsItem):
@@ -30,8 +30,8 @@ class RasterOverlayItem(QGraphicsItem):
         self._font = _MONO_FONT
         self._dirty = True
         self.setZValue(-10)
-        self.setFlag(QGraphicsItem.ItemIsSelectable, False)
-        self.setFlag(QGraphicsItem.ItemIsMovable, False)
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, False)
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, False)
         self.setAcceptHoverEvents(False)
 
     def boundingRect(self) -> QRectF:
@@ -67,11 +67,7 @@ class RasterOverlayItem(QGraphicsItem):
             for col_idx, ch_char in enumerate(line):
                 if ch_char != " ":
                     x = float(self._cached_origin.x()) + float(col_idx) * cw
-                    painter.drawText(
-                        x,
-                        y,
-                        ch_char,
-                    )
+                    painter.drawText(QPointF(x, y), ch_char)
 
     def invalidate_cache(self) -> None:
         self._dirty = True

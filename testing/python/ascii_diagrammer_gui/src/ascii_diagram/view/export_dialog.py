@@ -21,7 +21,7 @@ class ExportDialog(QDialog):
 
         self._text_edit = QPlainTextEdit()
         font = QFont("Courier New", 11)
-        font.setStyleHint(QFont.Monospace)
+        font.setStyleHint(QFont.StyleHint.Monospace)
         self._text_edit.setFont(font)
         self._text_edit.setReadOnly(True)
         self._text_edit.setPlainText(text)

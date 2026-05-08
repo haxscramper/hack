@@ -22,8 +22,7 @@ class RectShapeItem(BaseShapeItem):
             return
         abs_pos = item.absolute_position()
         props = item.properties
-        if not isinstance(props, RectData):
-            return
+        assert isinstance(props, RectData)
         x = float(abs_pos.x() + props.x) + 0.5
         y = float(abs_pos.y() + props.y) + 0.5
         w = float(props.width)
@@ -136,7 +135,7 @@ def make_shape_item(model: SceneModel,
     elif isinstance(props, TextData):
         shape = TextShapeItem(index, model)
     else:
-        return None
+        assert False
 
     shape.update_geometry()
     return shape

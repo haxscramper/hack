@@ -22,8 +22,9 @@ class BaseShapeItem(QGraphicsPathItem):
         self._dragging = False
         self._drag_start_pos: Optional[QPointF] = None
         self._moved_callback: Optional[Callable[[], None]] = None
-        self.setFlag(QGraphicsItem.ItemIsSelectable, True)
-        self.setFlag(QGraphicsItem.ItemSendsGeometryChanges, True)
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, True)
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges,
+                     True)
         self.setAcceptHoverEvents(True)
         self.setPen(QPen(QColor(50, 100, 200), 1.5))
         self.setBrush(QBrush(QColor(180, 200, 255, 80)))
@@ -48,7 +49,7 @@ class BaseShapeItem(QGraphicsPathItem):
         raise NotImplementedError
 
     def mousePressEvent(self, event: QGraphicsSceneMouseEvent) -> None:
-        if event.button() == Qt.LeftButton:
+        if event.button() == Qt.MouseButton.LeftButton:
             self._dragging = True
             self._drag_start_pos = event.scenePos()
         super().mousePressEvent(event)
@@ -77,7 +78,7 @@ class BaseShapeItem(QGraphicsPathItem):
         super().mouseReleaseEvent(event)
 
     def itemChange(self, change, value):
-        if change == QGraphicsItem.ItemSelectedHasChanged:
+        if change == QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged:
             if value:
                 self.setPen(self._selected_pen)
             else:

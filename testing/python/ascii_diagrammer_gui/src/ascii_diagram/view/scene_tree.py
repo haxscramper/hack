@@ -17,9 +17,9 @@ class SceneTreeWidget(QTreeView):
         self.setDragEnabled(True)
         self.setAcceptDrops(True)
         self.setDropIndicatorShown(True)
-        self.setDragDropMode(QTreeView.InternalMove)
+        self.setDragDropMode(QTreeView.DragDropMode.InternalMove)
         self.setHeaderHidden(True)
-        self.setSelectionMode(QTreeView.ExtendedSelection)
+        self.setSelectionMode(QTreeView.SelectionMode.ExtendedSelection)
         self.selectionModel().currentChanged.connect(self._on_current_changed)
 
     def _on_current_changed(self, current: QModelIndex,
@@ -35,7 +35,7 @@ class SceneTreeWidget(QTreeView):
             model.remove_item(idx)
 
     def keyPressEvent(self, event) -> None:
-        if event.key() == Qt.Key_Delete:
+        if event.key() == Qt.Key.Key_Delete:
             self.delete_selected()
         else:
             super().keyPressEvent(event)

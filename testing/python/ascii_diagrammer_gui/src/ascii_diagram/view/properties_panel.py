@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Dict, Optional
+from typing import Dict, Optional, cast
 
 from PySide6.QtCore import QModelIndex, QPoint, Qt, Signal
 from PySide6.QtWidgets import (
@@ -85,15 +85,19 @@ class PropertiesPanel(QWidget):
 
         if item.shape_type == ShapeType.RECTANGLE:
             self._stack.setCurrentWidget(self._rect_form)
+            assert isinstance(item.properties, RectData)
             self._populate_rect(item.properties)
         elif item.shape_type == ShapeType.EDGE:
             self._stack.setCurrentWidget(self._edge_form)
+            assert isinstance(item.properties, EdgeData)
             self._populate_edge(item.properties)
         elif item.shape_type == ShapeType.ELLIPSE:
             self._stack.setCurrentWidget(self._ellipse_form)
+            assert isinstance(item.properties, EllipseData)
             self._populate_ellipse(item.properties)
         elif item.shape_type == ShapeType.TEXT:
             self._stack.setCurrentWidget(self._text_form)
+            assert isinstance(item.properties, TextData)
             self._populate_text(item.properties)
 
     def _make_position_group(self, parent: QFormLayout) -> None:
@@ -241,67 +245,76 @@ class PropertiesPanel(QWidget):
 
     def _populate_rect(self, props: RectData) -> None:
         self._ignore_updates = True
-        self._widgets["x"].setValue(props.x)
-        self._widgets["y"].setValue(props.y)
-        self._widgets["width"].setValue(props.width)
-        self._widgets["height"].setValue(props.height)
-        self._widgets["corner_ch"].setText(props.corner_ch)
-        self._widgets["top_ch"].setText(props.top_ch)
-        self._widgets["bottom_ch"].setText(props.bottom_ch)
-        self._widgets["left_ch"].setText(props.left_ch)
-        self._widgets["right_ch"].setText(props.right_ch)
+        x_spin = cast(QSpinBox, self._widgets["x"])
+        y_spin = cast(QSpinBox, self._widgets["y"])
+        w_spin = cast(QSpinBox, self._widgets["width"])
+        h_spin = cast(QSpinBox, self._widgets["height"])
+        x_spin.setValue(props.x)
+        y_spin.setValue(props.y)
+        w_spin.setValue(props.width)
+        h_spin.setValue(props.height)
+        cast(QLineEdit, self._widgets["corner_ch"]).setText(props.corner_ch)
+        cast(QLineEdit, self._widgets["top_ch"]).setText(props.top_ch)
+        cast(QLineEdit, self._widgets["bottom_ch"]).setText(props.bottom_ch)
+        cast(QLineEdit, self._widgets["left_ch"]).setText(props.left_ch)
+        cast(QLineEdit, self._widgets["right_ch"]).setText(props.right_ch)
         mode_idx = ["OVERWRITE", "EMPTY_ONLY",
                     "MERGE"].index(props.overlap_mode.name)
-        self._widgets["overlap_mode"].setCurrentIndex(mode_idx)
+        cast(QComboBox,
+             self._widgets["overlap_mode"]).setCurrentIndex(mode_idx)
         self._ignore_updates = False
 
     def _populate_edge(self, props: EdgeData) -> None:
         self._ignore_updates = True
-        self._widgets["x"].setValue(props.x)
-        self._widgets["y"].setValue(props.y)
-        self._widgets["start_x"].setValue(props.start.x())
-        self._widgets["start_y"].setValue(props.start.y())
-        self._widgets["end_x"].setValue(props.end.x())
-        self._widgets["end_y"].setValue(props.end.y())
+        cast(QSpinBox, self._widgets["x"]).setValue(props.x)
+        cast(QSpinBox, self._widgets["y"]).setValue(props.y)
+        cast(QSpinBox, self._widgets["start_x"]).setValue(props.start.x())
+        cast(QSpinBox, self._widgets["start_y"]).setValue(props.start.y())
+        cast(QSpinBox, self._widgets["end_x"]).setValue(props.end.x())
+        cast(QSpinBox, self._widgets["end_y"]).setValue(props.end.y())
         type_idx = ["POLYLINE", "SPLINE",
                     "ORTHOGONAL"].index(props.edge_type.name)
-        self._widgets["edge_type"].setCurrentIndex(type_idx)
-        self._widgets["h_char"].setText(props.h_char)
-        self._widgets["v_char"].setText(props.v_char)
-        self._widgets["start_arrow"].setText(props.start_arrow)
-        self._widgets["end_arrow"].setText(props.end_arrow)
-        self._widgets["bend_char"].setText(props.bend_char)
+        cast(QComboBox, self._widgets["edge_type"]).setCurrentIndex(type_idx)
+        cast(QLineEdit, self._widgets["h_char"]).setText(props.h_char)
+        cast(QLineEdit, self._widgets["v_char"]).setText(props.v_char)
+        cast(QLineEdit,
+             self._widgets["start_arrow"]).setText(props.start_arrow)
+        cast(QLineEdit, self._widgets["end_arrow"]).setText(props.end_arrow)
+        cast(QLineEdit, self._widgets["bend_char"]).setText(props.bend_char)
         mode_idx = ["OVERWRITE", "EMPTY_ONLY",
                     "MERGE"].index(props.overlap_mode.name)
-        self._widgets["overlap_mode"].setCurrentIndex(mode_idx)
+        cast(QComboBox,
+             self._widgets["overlap_mode"]).setCurrentIndex(mode_idx)
         self._ignore_updates = False
 
     def _populate_ellipse(self, props: EllipseData) -> None:
         self._ignore_updates = True
-        self._widgets["x"].setValue(props.x)
-        self._widgets["y"].setValue(props.y)
-        self._widgets["width"].setValue(props.width)
-        self._widgets["height"].setValue(props.height)
-        self._widgets["char"].setText(props.char)
+        cast(QSpinBox, self._widgets["x"]).setValue(props.x)
+        cast(QSpinBox, self._widgets["y"]).setValue(props.y)
+        cast(QSpinBox, self._widgets["width"]).setValue(props.width)
+        cast(QSpinBox, self._widgets["height"]).setValue(props.height)
+        cast(QLineEdit, self._widgets["char"]).setText(props.char)
         mode_idx = ["OVERWRITE", "EMPTY_ONLY",
                     "MERGE"].index(props.overlap_mode.name)
-        self._widgets["overlap_mode"].setCurrentIndex(mode_idx)
+        cast(QComboBox,
+             self._widgets["overlap_mode"]).setCurrentIndex(mode_idx)
         self._ignore_updates = False
 
     def _populate_text(self, props: TextData) -> None:
         self._ignore_updates = True
-        self._widgets["x"].setValue(props.x)
-        self._widgets["y"].setValue(props.y)
-        self._widgets["width"].setValue(props.width)
-        self._widgets["height"].setValue(props.height)
-        self._widgets["text"].setText(props.text)
+        cast(QSpinBox, self._widgets["x"]).setValue(props.x)
+        cast(QSpinBox, self._widgets["y"]).setValue(props.y)
+        cast(QSpinBox, self._widgets["width"]).setValue(props.width)
+        cast(QSpinBox, self._widgets["height"]).setValue(props.height)
+        cast(QLineEdit, self._widgets["text"]).setText(props.text)
         h_idx = ["LEFT", "CENTER", "RIGHT"].index(props.h_justify.name)
-        self._widgets["h_justify"].setCurrentIndex(h_idx)
+        cast(QComboBox, self._widgets["h_justify"]).setCurrentIndex(h_idx)
         v_idx = ["TOP", "CENTER", "BOTTOM"].index(props.v_align.name)
-        self._widgets["v_align"].setCurrentIndex(v_idx)
+        cast(QComboBox, self._widgets["v_align"]).setCurrentIndex(v_idx)
         mode_idx = ["OVERWRITE", "EMPTY_ONLY",
                     "MERGE"].index(props.overlap_mode.name)
-        self._widgets["overlap_mode"].setCurrentIndex(mode_idx)
+        cast(QComboBox,
+             self._widgets["overlap_mode"]).setCurrentIndex(mode_idx)
         self._ignore_updates = False
 
     def _on_property_edit(self) -> None:
@@ -333,43 +346,45 @@ class PropertiesPanel(QWidget):
         self.property_changed.emit()
 
     def _read_common(self, props) -> None:
-        props.x = self._widgets["x"].value()
-        props.y = self._widgets["y"].value()
-        mode_name = self._widgets["overlap_mode"].currentText()
+        props.x = cast(QSpinBox, self._widgets["x"]).value()
+        props.y = cast(QSpinBox, self._widgets["y"]).value()
+        mode_name = cast(QComboBox,
+                         self._widgets["overlap_mode"]).currentText()
         props.overlap_mode = OverlapMode[mode_name]
 
     def _read_rect(self, props: RectData) -> None:
-        props.width = self._widgets["width"].value()
-        props.height = self._widgets["height"].value()
-        props.corner_ch = self._widgets["corner_ch"].text()
-        props.top_ch = self._widgets["top_ch"].text()
-        props.bottom_ch = self._widgets["bottom_ch"].text()
-        props.left_ch = self._widgets["left_ch"].text()
-        props.right_ch = self._widgets["right_ch"].text()
+        props.width = cast(QSpinBox, self._widgets["width"]).value()
+        props.height = cast(QSpinBox, self._widgets["height"]).value()
+        props.corner_ch = cast(QLineEdit, self._widgets["corner_ch"]).text()
+        props.top_ch = cast(QLineEdit, self._widgets["top_ch"]).text()
+        props.bottom_ch = cast(QLineEdit, self._widgets["bottom_ch"]).text()
+        props.left_ch = cast(QLineEdit, self._widgets["left_ch"]).text()
+        props.right_ch = cast(QLineEdit, self._widgets["right_ch"]).text()
 
     def _read_edge(self, props: EdgeData) -> None:
-        props.start.setX(self._widgets["start_x"].value())
-        props.start.setY(self._widgets["start_y"].value())
-        props.end.setX(self._widgets["end_x"].value())
-        props.end.setY(self._widgets["end_y"].value())
-        type_name = self._widgets["edge_type"].currentText()
+        props.start.setX(cast(QSpinBox, self._widgets["start_x"]).value())
+        props.start.setY(cast(QSpinBox, self._widgets["start_y"]).value())
+        props.end.setX(cast(QSpinBox, self._widgets["end_x"]).value())
+        props.end.setY(cast(QSpinBox, self._widgets["end_y"]).value())
+        type_name = cast(QComboBox, self._widgets["edge_type"]).currentText()
         props.edge_type = EdgeType[type_name]
-        props.h_char = self._widgets["h_char"].text()
-        props.v_char = self._widgets["v_char"].text()
-        props.start_arrow = self._widgets["start_arrow"].text()
-        props.end_arrow = self._widgets["end_arrow"].text()
-        props.bend_char = self._widgets["bend_char"].text()
+        props.h_char = cast(QLineEdit, self._widgets["h_char"]).text()
+        props.v_char = cast(QLineEdit, self._widgets["v_char"]).text()
+        props.start_arrow = cast(QLineEdit,
+                                 self._widgets["start_arrow"]).text()
+        props.end_arrow = cast(QLineEdit, self._widgets["end_arrow"]).text()
+        props.bend_char = cast(QLineEdit, self._widgets["bend_char"]).text()
 
     def _read_ellipse(self, props: EllipseData) -> None:
-        props.width = self._widgets["width"].value()
-        props.height = self._widgets["height"].value()
-        props.char = self._widgets["char"].text()
+        props.width = cast(QSpinBox, self._widgets["width"]).value()
+        props.height = cast(QSpinBox, self._widgets["height"]).value()
+        props.char = cast(QLineEdit, self._widgets["char"]).text()
 
     def _read_text(self, props: TextData) -> None:
-        props.width = self._widgets["width"].value()
-        props.height = self._widgets["height"].value()
-        props.text = self._widgets["text"].text()
-        h_name = self._widgets["h_justify"].currentText()
+        props.width = cast(QSpinBox, self._widgets["width"]).value()
+        props.height = cast(QSpinBox, self._widgets["height"]).value()
+        props.text = cast(QLineEdit, self._widgets["text"]).text()
+        h_name = cast(QComboBox, self._widgets["h_justify"]).currentText()
         props.h_justify = HJustify[h_name]
-        v_name = self._widgets["v_align"].currentText()
+        v_name = cast(QComboBox, self._widgets["v_align"]).currentText()
         props.v_align = VAlign[v_name]

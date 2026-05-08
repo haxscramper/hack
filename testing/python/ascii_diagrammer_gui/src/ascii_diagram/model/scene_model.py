@@ -17,10 +17,10 @@ from ascii_diagram.model.shape_properties import ShapeProperties
 
 SCENE_ITEM_MIME = "application/x-ascii-diagram-item"
 
-ITEM_ROLE = Qt.UserRole + 100
-PROPERTIES_ROLE = Qt.UserRole + 101
-SHAPE_TYPE_ROLE = Qt.UserRole + 102
-ITEM_ID_ROLE = Qt.UserRole + 103
+ITEM_ROLE = Qt.ItemDataRole.UserRole + 100
+PROPERTIES_ROLE = Qt.ItemDataRole.UserRole + 101
+SHAPE_TYPE_ROLE = Qt.ItemDataRole.UserRole + 102
+ITEM_ID_ROLE = Qt.ItemDataRole.UserRole + 103
 
 
 class SceneModel(QAbstractItemModel):
@@ -75,11 +75,13 @@ class SceneModel(QAbstractItemModel):
     def columnCount(self, parent: QModelIndex = QModelIndex()) -> int:
         return 1
 
-    def data(self, index: QModelIndex, role: int = Qt.DisplayRole) -> Any:
+    def data(self,
+             index: QModelIndex,
+             role: int = Qt.ItemDataRole.DisplayRole) -> Any:
         if not index.isValid():
             return None
         item: SceneItem = index.internalPointer()
-        if role == Qt.DisplayRole:
+        if role == Qt.ItemDataRole.DisplayRole:
             return item.display_name()
         if role == ITEM_ROLE:
             return item
@@ -101,7 +103,7 @@ class SceneModel(QAbstractItemModel):
     def setData(self,
                 index: QModelIndex,
                 value: Any,
-                role: int = Qt.EditRole) -> bool:
+                role: int = Qt.ItemDataRole.EditRole) -> bool:
         if not index.isValid():
             return False
         if role == PROPERTIES_ROLE:
@@ -111,13 +113,13 @@ class SceneModel(QAbstractItemModel):
             return True
         return False
 
-    def flags(self, index: QModelIndex) -> Qt.ItemFlags:
+    def flags(self, index: QModelIndex) -> Qt.ItemFlag:
         if not index.isValid():
-            return Qt.ItemIsDropEnabled
-        flags = (Qt.ItemIsEnabled
-                 | Qt.ItemIsSelectable
-                 | Qt.ItemIsDragEnabled
-                 | Qt.ItemIsDropEnabled)
+            return Qt.ItemFlag.ItemIsDropEnabled
+        flags = (Qt.ItemFlag.ItemIsEnabled
+                 | Qt.ItemFlag.ItemIsSelectable
+                 | Qt.ItemFlag.ItemIsDragEnabled
+                 | Qt.ItemFlag.ItemIsDropEnabled)
         return flags
 
     def insert_item(
@@ -208,7 +210,7 @@ class SceneModel(QAbstractItemModel):
     def mimeData(self, indexes: List[QModelIndex]) -> QMimeData:
         mime_data = QMimeData()
         encoded = QByteArray()
-        stream = QDataStream(encoded, QIODevice.WriteOnly)
+        stream = QDataStream(encoded, QIODevice.OpenModeFlag.WriteOnly)
         for idx in indexes:
             if idx.isValid():
                 item: SceneItem = idx.internalPointer()
@@ -302,6 +304,7 @@ class SceneModel(QAbstractItemModel):
                     min_y = min(min_y, sy)
                     max_x = max(max_x, ex)
                     max_y = max(max_y, ey)
+
         if min_x == float("inf"):
             return (0, 0, 0, 0)
         return (int(min_x), int(min_y), int(max_x), int(max_y))
@@ -322,7 +325,7 @@ def find_item_by_id(model: SceneModel, parent: QModelIndex,
 def decode_mime_items(data: QByteArray) -> List[Dict[str, int]]:
     """Decode MIME-encoded items. Returns list of {row, parent_id (-1 for root)}."""
     result = []
-    stream = QDataStream(data, QIODevice.ReadOnly)
+    stream = QDataStream(data, QIODevice.OpenModeFlag.ReadOnly)
     while not stream.atEnd():
         row = stream.readInt32()
         parent_id = stream.readInt32()

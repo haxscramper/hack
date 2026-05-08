@@ -19,10 +19,10 @@ class ShapePaletteWidget(QListWidget):
         self.setDragEnabled(True)
         self.setIconSize(QSize(80, 50))
         self.setSpacing(4)
-        self.setViewMode(QListWidget.IconMode)
-        self.setFlow(QListWidget.TopToBottom)
+        self.setViewMode(QListWidget.ViewMode.IconMode)
+        self.setFlow(QListWidget.Flow.TopToBottom)
         self.setWrapping(False)
-        self.setResizeMode(QListWidget.Adjust)
+        self.setResizeMode(QListWidget.ResizeMode.Adjust)
         self._populate()
 
     def _populate(self) -> None:
@@ -34,17 +34,17 @@ class ShapePaletteWidget(QListWidget):
         ]
         for name, shape_type in shapes:
             item = QListWidgetItem(name)
-            item.setData(Qt.UserRole, shape_type)
-            item.setFlags(Qt.ItemIsEnabled
-                          | Qt.ItemIsSelectable
-                          | Qt.ItemIsDragEnabled)
+            item.setData(Qt.ItemDataRole.UserRole, shape_type)
+            item.setFlags(Qt.ItemFlag.ItemIsEnabled
+                          | Qt.ItemFlag.ItemIsSelectable
+                          | Qt.ItemFlag.ItemIsDragEnabled)
             self.addItem(item)
 
     def mimeData(self, items) -> QMimeData:
         if not items:
             return QMimeData()
         item = items[0]
-        shape_type = item.data(Qt.UserRole)
+        shape_type = item.data(Qt.ItemDataRole.UserRole)
         if isinstance(shape_type, ShapeType):
             return encode_palette_mime(shape_type)
         return QMimeData()
@@ -54,7 +54,7 @@ class ShapePaletteWidget(QListWidget):
 
 
 def palette_shape_type(item: QListWidgetItem) -> ShapeType | None:
-    data = item.data(Qt.UserRole)
+    data = item.data(Qt.ItemDataRole.UserRole)
     if isinstance(data, ShapeType):
         return data
     return None

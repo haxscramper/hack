@@ -75,14 +75,14 @@ class MainWindow(QMainWindow):
         right_panel = QWidget()
         right_layout = QVBoxLayout(right_panel)
         right_layout.setContentsMargins(0, 0, 0, 0)
-        right_splitter = QSplitter(Qt.Vertical)
+        right_splitter = QSplitter(Qt.Orientation.Vertical)
         right_splitter.addWidget(self._properties_panel)
         right_splitter.addWidget(self._scene_tree)
         right_splitter.setStretchFactor(0, 1)
         right_splitter.setStretchFactor(1, 1)
         right_layout.addWidget(right_splitter)
 
-        main_splitter = QSplitter(Qt.Horizontal)
+        main_splitter = QSplitter(Qt.Orientation.Horizontal)
         main_splitter.addWidget(left_panel)
         main_splitter.addWidget(self._scene_view)
         main_splitter.addWidget(right_panel)
@@ -110,10 +110,12 @@ class MainWindow(QMainWindow):
             self._scene_tree.clearSelection()
             for idx in indices:
                 self._scene_tree.setCurrentIndex(idx)
+                from PySide6.QtCore import QItemSelectionModel
+
                 self._scene_tree.selectionModel().select(
                     idx,
-                    self._scene_tree.selectionModel().Select
-                    | self._scene_tree.selectionModel().Rows,
+                    QItemSelectionModel.SelectionFlag.Select
+                    | QItemSelectionModel.SelectionFlag.Rows,
                 )
             self._scene_tree.selectionModel().blockSignals(False)
 

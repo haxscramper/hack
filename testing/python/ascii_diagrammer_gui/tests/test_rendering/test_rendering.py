@@ -94,6 +94,8 @@ class TestAsciiGrid:
         model = SceneModel()
         idx = model.insert_item(ShapeType.RECTANGLE)
         item = model.item_from_index(idx)
+        assert item is not None
+        assert isinstance(item.properties, RectData)
         item.properties.x = 1
         item.properties.y = 1
         item.properties.width = 2
@@ -122,6 +124,7 @@ class TestRectangleRaster:
         model = SceneModel()
         idx = model.insert_item(ShapeType.RECTANGLE)
         item = model.item_from_index(idx)
+        assert item is not None
         props = item.properties
         assert isinstance(props, RectData)
         props.width = 5
@@ -141,8 +144,8 @@ class TestRectangleRaster:
         model = SceneModel()
         idx = model.insert_item(ShapeType.RECTANGLE)
         item = model.item_from_index(idx)
+        assert item is not None
         assert isinstance(item.properties, RectData)
-        item.properties.width = 0
         item.properties.height = 0
         grid = render_scene_to_grid(model)
         assert grid.to_string() == ""
@@ -151,6 +154,7 @@ class TestRectangleRaster:
         model = SceneModel()
         idx = model.insert_item(ShapeType.RECTANGLE)
         item = model.item_from_index(idx)
+        assert item is not None
         assert isinstance(item.properties, RectData)
         item.properties.width = 1
         item.properties.height = 1
@@ -164,12 +168,12 @@ class TestEdgeRaster:
         model = SceneModel()
         idx = model.insert_item(ShapeType.EDGE)
         item = model.item_from_index(idx)
+        assert item is not None
         assert isinstance(item.properties, EdgeData)
         item.properties.start.setX(0)
         item.properties.start.setY(0)
         item.properties.end.setX(5)
         item.properties.end.setY(0)
-        item.properties.edge_type = EdgeType.POLYLINE
 
         grid = render_scene_to_grid(model)
         line = grid.to_lines()[0]
@@ -180,12 +184,12 @@ class TestEdgeRaster:
         model = SceneModel()
         idx = model.insert_item(ShapeType.EDGE)
         item = model.item_from_index(idx)
+        assert item is not None
         assert isinstance(item.properties, EdgeData)
         item.properties.start.setX(0)
         item.properties.start.setY(0)
         item.properties.end.setX(3)
         item.properties.end.setY(2)
-        item.properties.bends.append(item.properties.start.__class__(1, 1))
         item.properties.edge_type = EdgeType.POLYLINE
         item.properties.bend_char = "+"
 
@@ -197,12 +201,12 @@ class TestEdgeRaster:
         model = SceneModel()
         idx = model.insert_item(ShapeType.EDGE)
         item = model.item_from_index(idx)
+        assert item is not None
         assert isinstance(item.properties, EdgeData)
         item.properties.start.setX(0)
         item.properties.start.setY(0)
         item.properties.end.setX(2)
         item.properties.end.setY(2)
-        item.properties.edge_type = EdgeType.ORTHOGONAL
 
         grid = render_scene_to_grid(model)
         lines = grid.to_lines()
@@ -212,6 +216,7 @@ class TestEdgeRaster:
         model = SceneModel()
         idx = model.insert_item(ShapeType.EDGE)
         item = model.item_from_index(idx)
+        assert item is not None
         assert isinstance(item.properties, EdgeData)
         item.properties.start.setX(0)
         item.properties.start.setY(0)
@@ -227,12 +232,12 @@ class TestEdgeRaster:
         model = SceneModel()
         idx = model.insert_item(ShapeType.EDGE)
         item = model.item_from_index(idx)
+        assert item is not None
         assert isinstance(item.properties, EdgeData)
         item.properties.start.setX(0)
         item.properties.start.setY(2)
         item.properties.end.setX(4)
         item.properties.end.setY(2)
-        item.properties.bends.append(item.properties.start.__class__(2, -1))
         item.properties.edge_type = EdgeType.SPLINE
 
         grid = render_scene_to_grid(model)
@@ -242,12 +247,12 @@ class TestEdgeRaster:
         model = SceneModel()
         idx = model.insert_item(ShapeType.EDGE)
         item = model.item_from_index(idx)
+        assert item is not None
         assert isinstance(item.properties, EdgeData)
         item.properties.start.setX(0)
         item.properties.start.setY(0)
         item.properties.end.setX(4)
         item.properties.end.setY(4)
-        item.properties.bends.append(item.properties.start.__class__(1, 0))
         item.properties.bends.append(item.properties.start.__class__(3, 4))
         item.properties.edge_type = EdgeType.SPLINE
 
@@ -258,6 +263,7 @@ class TestEdgeRaster:
         model = SceneModel()
         idx = model.insert_item(ShapeType.EDGE)
         item = model.item_from_index(idx)
+        assert item is not None
         assert isinstance(item.properties, EdgeData)
         item.properties.edge_type = EdgeType.SPLINE
         item.properties.bends.append(item.properties.start.__class__(1, 0))
@@ -273,6 +279,7 @@ class TestEllipseRaster:
         model = SceneModel()
         idx = model.insert_item(ShapeType.ELLIPSE)
         item = model.item_from_index(idx)
+        assert item is not None
         assert isinstance(item.properties, EllipseData)
         item.properties.width = 4
         item.properties.height = 2
@@ -288,6 +295,7 @@ class TestTextRaster:
         model = SceneModel()
         idx = model.insert_item(ShapeType.TEXT)
         item = model.item_from_index(idx)
+        assert item is not None
         assert isinstance(item.properties, TextData)
         item.properties.text = "Hello"
         item.properties.width = 10
@@ -301,6 +309,7 @@ class TestTextRaster:
         model = SceneModel()
         idx = model.insert_item(ShapeType.TEXT)
         item = model.item_from_index(idx)
+        assert item is not None
         assert isinstance(item.properties, TextData)
         item.properties.text = "ABCDEFGHIJ"
         item.properties.width = 5
@@ -316,6 +325,7 @@ class TestTextRaster:
         model = SceneModel()
         idx = model.insert_item(ShapeType.TEXT)
         item = model.item_from_index(idx)
+        assert item is not None
         assert isinstance(item.properties, TextData)
         item.properties.text = "Hi"
         item.properties.width = 8
@@ -331,6 +341,7 @@ class TestTextRaster:
         model = SceneModel()
         idx = model.insert_item(ShapeType.TEXT)
         item = model.item_from_index(idx)
+        assert item is not None
         assert isinstance(item.properties, TextData)
         item.properties.text = "OK"
         item.properties.width = 8
@@ -346,6 +357,7 @@ class TestTextRaster:
         model = SceneModel()
         idx = model.insert_item(ShapeType.TEXT)
         item = model.item_from_index(idx)
+        assert item is not None
         assert isinstance(item.properties, TextData)
         item.properties.text = "Hi"
         item.properties.width = 8
@@ -359,6 +371,7 @@ class TestTextRaster:
         model = SceneModel()
         idx = model.insert_item(ShapeType.TEXT)
         item = model.item_from_index(idx)
+        assert item is not None
         assert isinstance(item.properties, TextData)
         item.properties.text = "Hi"
         item.properties.width = 8
@@ -377,6 +390,7 @@ class TestOverlap:
         model.insert_item(ShapeType.RECTANGLE)
         idx2 = model.insert_item(ShapeType.RECTANGLE)
         item2 = model.item_from_index(idx2)
+        assert item2 is not None
         assert isinstance(item2.properties, RectData)
         item2.properties.x = 0
         item2.properties.y = 0
@@ -393,6 +407,7 @@ class TestOverlap:
         model.insert_item(ShapeType.RECTANGLE)
         idx2 = model.insert_item(ShapeType.RECTANGLE)
         item2 = model.item_from_index(idx2)
+        assert item2 is not None
         assert isinstance(item2.properties, RectData)
         item2.properties.x = 1
         item2.properties.y = 1
@@ -415,6 +430,8 @@ class TestExport:
         model = SceneModel()
         idx = model.insert_item(ShapeType.RECTANGLE)
         item = model.item_from_index(idx)
+        assert item is not None
+        assert isinstance(item.properties, RectData)
         item.properties.x = -2
         item.properties.y = -1
         item.properties.width = 5
@@ -429,6 +446,8 @@ class TestExport:
         model = SceneModel()
         idx1 = model.insert_item(ShapeType.RECTANGLE)
         item1 = model.item_from_index(idx1)
+        assert item1 is not None
+        assert isinstance(item1.properties, RectData)
         item1.properties.x = 0
         item1.properties.y = 0
         item1.properties.width = 3
@@ -436,6 +455,8 @@ class TestExport:
 
         idx2 = model.insert_item(ShapeType.TEXT)
         item2 = model.item_from_index(idx2)
+        assert item2 is not None
+        assert isinstance(item2.properties, TextData)
         item2.properties.x = 10
         item2.properties.y = 5
         item2.properties.text = "X"
