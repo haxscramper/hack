@@ -1,554 +1,920 @@
+#!/usr/bin/env python
 # /// script
 # dependencies = [
 #   "kiwisolver",
 #   "pytest",
+#   "svgwrite",
+#   "graphviz",
 # ]
 # ///
-#!/usr/bin/env python
 
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from enum import Enum
+from dataclasses import dataclass, field
+from enum import Enum, auto
 from pathlib import Path
-from typing import Iterable
+from typing import Dict, Iterable, List, Sequence, Tuple
 
+import graphviz
 import kiwisolver as kiwi
 import pytest
+import svgwrite
 
 
-class Axis(str, Enum):
-    X = "x"
-    Y = "y"
+class Expr:
+
+    def __init__(self, value) -> None:
+        self.value = value
+
+    def to_kiwi(self):
+        return self.value
+
+    def __add__(self, other):
+        other = ensure_expr(other)
+        return Expr(self.value + other.value)
+
+    def __radd__(self, other):
+        other = ensure_expr(other)
+        return Expr(other.value + self.value)
+
+    def __sub__(self, other):
+        other = ensure_expr(other)
+        return Expr(self.value - other.value)
+
+    def __rsub__(self, other):
+        other = ensure_expr(other)
+        return Expr(other.value - self.value)
+
+    def __mul__(self, other):
+        if isinstance(other, Expr):
+            raise TypeError("Kiwi supports only linear expressions")
+        return Expr(self.value * other)
+
+    def __rmul__(self, other):
+        if isinstance(other, Expr):
+            raise TypeError("Kiwi supports only linear expressions")
+        return Expr(other * self.value)
+
+    def __neg__(self):
+        return Expr(-self.value)
 
 
-class Anchor(str, Enum):
-    LEFT = "left"
-    RIGHT = "right"
-    HCENTER = "hcenter"
-    TOP = "top"
-    BOTTOM = "bottom"
-    VCENTER = "vcenter"
+def ensure_expr(value) -> Expr:
+    if isinstance(value, Expr):
+        return value
+    return Expr(value)
 
 
-STRENGTHS = {
-    "required": kiwi.strength.required,
-    "strong": kiwi.strength.strong,
-    "medium": kiwi.strength.medium,
-    "weak": kiwi.strength.weak,
-}
+class Axis(Enum):
+    X = auto()
+    Y = auto()
+
+
+class Anchor(Enum):
+    LEFT = auto()
+    HCENTER = auto()
+    RIGHT = auto()
+    TOP = auto()
+    VCENTER = auto()
+    BOTTOM = auto()
+
+
+class RectAttr(Enum):
+    X = auto()
+    Y = auto()
+    WIDTH = auto()
+    HEIGHT = auto()
+    LEFT = auto()
+    HCENTER = auto()
+    RIGHT = auto()
+    TOP = auto()
+    VCENTER = auto()
+    BOTTOM = auto()
+
+
+class Relation(Enum):
+    EQ = auto()
+    LE = auto()
+    GE = auto()
+
+
+class Strength(Enum):
+    REQUIRED = kiwi.strength.required
+    STRONG = kiwi.strength.strong
+    MEDIUM = kiwi.strength.medium
+    WEAK = kiwi.strength.weak
+
+    def kiwi_value(self):
+        return self.value
+
+
+def anchor_axis(anchor: Anchor) -> Axis:
+    if anchor in (Anchor.LEFT, Anchor.HCENTER, Anchor.RIGHT):
+        return Axis.X
+    return Axis.Y
 
 
 @dataclass
 class Rect:
-    id: str
-    x: float | None = None
-    y: float | None = None
-    width: float | None = None
-    height: float | None = None
+    rect_id: str
+    x0: float | None = None
+    y0: float | None = None
+    width0: float | None = None
+    height0: float | None = None
+    x: kiwi.Variable = field(init=False)
+    y: kiwi.Variable = field(init=False)
+    width: kiwi.Variable = field(init=False)
+    height: kiwi.Variable = field(init=False)
 
-    def __post_init__(self) -> None:
-        self.x_var = kiwi.Variable(f"{self.id}.x")
-        self.y_var = kiwi.Variable(f"{self.id}.y")
-        self.width_var = kiwi.Variable(f"{self.id}.width")
-        self.height_var = kiwi.Variable(f"{self.id}.height")
+    def __post_init__(self):
+        self.x = kiwi.Variable(f"{self.rect_id}.x")
+        self.y = kiwi.Variable(f"{self.rect_id}.y")
+        self.width = kiwi.Variable(f"{self.rect_id}.width")
+        self.height = kiwi.Variable(f"{self.rect_id}.height")
 
-    def anchor_expr(self, anchor: Anchor):
+    def expr(self, name: RectAttr) -> Expr:
+        if name == RectAttr.X:
+            return Expr(self.x)
+        if name == RectAttr.Y:
+            return Expr(self.y)
+        if name == RectAttr.WIDTH:
+            return Expr(self.width)
+        if name == RectAttr.HEIGHT:
+            return Expr(self.height)
+        if name == RectAttr.LEFT:
+            return Expr(self.x)
+        if name == RectAttr.HCENTER:
+            return Expr(self.x + 0.5 * self.width)
+        if name == RectAttr.RIGHT:
+            return Expr(self.x + self.width)
+        if name == RectAttr.TOP:
+            return Expr(self.y)
+        if name == RectAttr.VCENTER:
+            return Expr(self.y + 0.5 * self.height)
+        if name == RectAttr.BOTTOM:
+            return Expr(self.y + self.height)
+        raise ValueError(name)
+
+    def anchor_expr(self, anchor: Anchor) -> Expr:
         if anchor == Anchor.LEFT:
-            return self.x_var
-        if anchor == Anchor.RIGHT:
-            return self.x_var + self.width_var
+            return self.expr(RectAttr.LEFT)
         if anchor == Anchor.HCENTER:
-            return self.x_var + self.width_var * 0.5
+            return self.expr(RectAttr.HCENTER)
+        if anchor == Anchor.RIGHT:
+            return self.expr(RectAttr.RIGHT)
         if anchor == Anchor.TOP:
-            return self.y_var
-        if anchor == Anchor.BOTTOM:
-            return self.y_var + self.height_var
+            return self.expr(RectAttr.TOP)
         if anchor == Anchor.VCENTER:
-            return self.y_var + self.height_var * 0.5
+            return self.expr(RectAttr.VCENTER)
+        if anchor == Anchor.BOTTOM:
+            return self.expr(RectAttr.BOTTOM)
         raise ValueError(anchor)
 
-    def value_dict(self) -> dict[str, float]:
-        return {
-            "x": self.x_var.value(),
-            "y": self.y_var.value(),
-            "width": self.width_var.value(),
-            "height": self.height_var.value(),
-        }
 
+class ConstraintBase(ABC):
 
-class ConstraintSpec(ABC):
-
-    def __init__(self, strength: str = "required") -> None:
-        self.strength = STRENGTHS[strength]
+    def __init__(self, strength: Strength = Strength.REQUIRED):
+        self.strength = strength
 
     @abstractmethod
-    def add_to_solver(self, solver: kiwi.Solver, rects: dict[str,
-                                                             Rect]) -> None:
-        pass
+    def build(self, rects: Dict[str, Rect]) -> List[kiwi.Constraint]:
+        raise NotImplementedError
 
-    def _add(self, solver: kiwi.Solver, constraint) -> None:
-        solver.addConstraint(constraint | self.strength)
-
-
-class RectGeometryConstraint(ConstraintSpec):
-
-    def __init__(
-        self,
-        rect_id: str,
-        *,
-        x: float | None = None,
-        y: float | None = None,
-        width: float | None = None,
-        height: float | None = None,
-        strength: str = "required",
-    ) -> None:
-        super().__init__(strength)
-        self.rect_id = rect_id
-        self.x = x
-        self.y = y
-        self.width = width
-        self.height = height
-
-    def add_to_solver(self, solver: kiwi.Solver, rects: dict[str,
-                                                             Rect]) -> None:
-        rect = rects[self.rect_id]
-        if self.x is not None:
-            self._add(solver, rect.x_var == self.x)
-        if self.y is not None:
-            self._add(solver, rect.y_var == self.y)
-        if self.width is not None:
-            self._add(solver, rect.width_var == self.width)
-        if self.height is not None:
-            self._add(solver, rect.height_var == self.height)
+    @abstractmethod
+    def describe_edges(self) -> List[Tuple[str, str, str]]:
+        raise NotImplementedError
 
 
-class RectMinSizeConstraint(ConstraintSpec):
+@dataclass
+class AlignItem:
+    rect_id: str
+    offset: float = 0.0
+
+
+class AlignConstraint(ConstraintBase):
 
     def __init__(
         self,
-        rect_id: str,
-        *,
-        min_width: float = 0,
-        min_height: float = 0,
-        strength: str = "required",
-    ) -> None:
-        super().__init__(strength)
-        self.rect_id = rect_id
-        self.min_width = min_width
-        self.min_height = min_height
-
-    def add_to_solver(self, solver: kiwi.Solver, rects: dict[str,
-                                                             Rect]) -> None:
-        rect = rects[self.rect_id]
-        self._add(solver, rect.width_var >= self.min_width)
-        self._add(solver, rect.height_var >= self.min_height)
-
-
-class AlignConstraint(ConstraintSpec):
-
-    def __init__(
-        self,
-        rect_id: str,
         anchor: Anchor,
-        axis: Axis,
-        position: float,
-        strength: str = "required",
-    ) -> None:
+        items: Sequence[AlignItem],
+        strength: Strength = Strength.REQUIRED,
+    ):
         super().__init__(strength)
-        self.rect_id = rect_id
         self.anchor = anchor
-        self.axis = axis
-        self.position = position
+        self.items = list(items)
 
-    def add_to_solver(self, solver: kiwi.Solver, rects: dict[str,
-                                                             Rect]) -> None:
-        rect = rects[self.rect_id]
-        expr = rect.anchor_expr(self.anchor)
-        self._add(solver, expr == self.position)
+    def build(self, rects: Dict[str, Rect]) -> List[kiwi.Constraint]:
+        assert len(self.items) >= 2
+        base = self.items[0]
+        base_expr = rects[base.rect_id].anchor_expr(self.anchor) - base.offset
+        result = []
+        for item in self.items[1:]:
+            expr = rects[item.rect_id].anchor_expr(self.anchor) - item.offset
+            result.append((expr.to_kiwi() == base_expr.to_kiwi())
+                          | self.strength.kiwi_value())
+        return result
+
+    def describe_edges(self) -> List[Tuple[str, str, str]]:
+        edges = []
+        base = self.items[0].rect_id
+        for item in self.items[1:]:
+            edges.append((base, item.rect_id, f"align:{self.anchor.name}"))
+        return edges
 
 
-class RelativeAnchorConstraint(ConstraintSpec):
+class SeparateConstraint(ConstraintBase):
 
     def __init__(
         self,
-        rect_id: str,
-        rect_anchor: Anchor,
-        other_rect_id: str,
-        other_anchor: Anchor,
+        first_rect_id: str,
+        first_anchor: Anchor,
+        second_rect_id: str,
+        second_anchor: Anchor,
         offset: float,
-        strength: str = "required",
-    ) -> None:
+        strength: Strength = Strength.REQUIRED,
+    ):
         super().__init__(strength)
-        self.rect_id = rect_id
-        self.rect_anchor = rect_anchor
-        self.other_rect_id = other_rect_id
-        self.other_anchor = other_anchor
+        self.first_rect_id = first_rect_id
+        self.first_anchor = first_anchor
+        self.second_rect_id = second_rect_id
+        self.second_anchor = second_anchor
         self.offset = offset
 
-    def add_to_solver(self, solver: kiwi.Solver, rects: dict[str,
-                                                             Rect]) -> None:
-        rect = rects[self.rect_id]
-        other = rects[self.other_rect_id]
-        self._add(
-            solver,
-            rect.anchor_expr(
-                self.rect_anchor) == other.anchor_expr(self.other_anchor) +
-            self.offset,
-        )
+    def build(self, rects: Dict[str, Rect]) -> List[kiwi.Constraint]:
+        first = rects[self.first_rect_id].anchor_expr(self.first_anchor)
+        second = rects[self.second_rect_id].anchor_expr(self.second_anchor)
+        c = (first.to_kiwi()
+             == (second + self.offset).to_kiwi()) | self.strength.kiwi_value()
+        return [c]
+
+    def describe_edges(self) -> List[Tuple[str, str, str]]:
+        return [(
+            self.second_rect_id,
+            self.first_rect_id,
+            f"separate:{self.second_anchor.name}->{self.first_anchor.name}+{self.offset}",
+        )]
 
 
-class EvenlySpacedSequenceConstraint(ConstraintSpec):
+class MultiSeparateConstraint(ConstraintBase):
 
     def __init__(
         self,
-        rect_ids: list[str],
+        groups: Sequence[Sequence[str]],
         anchor: Anchor,
-        offset: float,
-        strength: str = "required",
-    ) -> None:
+        step: float,
+        strength: Strength = Strength.REQUIRED,
+    ):
         super().__init__(strength)
-        self.rect_ids = rect_ids
+        self.groups = [list(group) for group in groups]
         self.anchor = anchor
-        self.offset = offset
+        self.step = step
 
-    def add_to_solver(self, solver: kiwi.Solver, rects: dict[str,
-                                                             Rect]) -> None:
-        for left, right in zip(self.rect_ids, self.rect_ids[1:]):
-            self._add(
-                solver,
-                rects[right].anchor_expr(
-                    self.anchor) == rects[left].anchor_expr(self.anchor) +
-                self.offset,
-            )
+    def build(self, rects: Dict[str, Rect]) -> List[kiwi.Constraint]:
+        constraints: List[kiwi.Constraint] = []
+        for idx in range(len(self.groups) - 1):
+            g1 = self.groups[idx]
+            g2 = self.groups[idx + 1]
+            if not g1 or not g2:
+                continue
+            if len(g1) != len(g2):
+                raise ValueError(
+                    "MultiSeparateConstraint requires corresponding group sizes"
+                )
+            for a, b in zip(g1, g2):
+                expr_a = rects[b].anchor_expr(self.anchor)
+                expr_b = rects[a].anchor_expr(self.anchor)
+                constraints.append((expr_a.to_kiwi() == (expr_b +
+                                                         self.step).to_kiwi())
+                                   | self.strength.kiwi_value())
+        return constraints
+
+    def describe_edges(self) -> List[Tuple[str, str, str]]:
+        edges = []
+        for idx in range(len(self.groups) - 1):
+            for a, b in zip(self.groups[idx], self.groups[idx + 1]):
+                edges.append(
+                    (a, b, f"multi-separate:{self.anchor.name}+{self.step}"))
+        return edges
 
 
-class ParentWrapConstraint(ConstraintSpec):
+class ParentWrapConstraint(ConstraintBase):
 
     def __init__(
         self,
-        parent_id: str,
-        child_ids: list[str],
-        *,
-        padding_left: float = 0,
-        padding_top: float = 0,
-        padding_right: float = 0,
-        padding_bottom: float = 0,
-        strength: str = "required",
-    ) -> None:
+        parent_rect_id: str,
+        child_rect_ids: Sequence[str],
+        padding_left: float = 0.0,
+        padding_top: float = 0.0,
+        padding_right: float = 0.0,
+        padding_bottom: float = 0.0,
+        strength: Strength = Strength.REQUIRED,
+    ):
         super().__init__(strength)
-        self.parent_id = parent_id
-        self.child_ids = child_ids
+        self.parent_rect_id = parent_rect_id
+        self.child_rect_ids = list(child_rect_ids)
         self.padding_left = padding_left
         self.padding_top = padding_top
         self.padding_right = padding_right
         self.padding_bottom = padding_bottom
 
-    def add_to_solver(self, solver: kiwi.Solver, rects: dict[str,
-                                                             Rect]) -> None:
-        parent = rects[self.parent_id]
-        children = [rects[child_id] for child_id in self.child_ids]
+    def build(self, rects: Dict[str, Rect]) -> List[kiwi.Constraint]:
+        if not self.child_rect_ids:
+            return []
 
-        for child in children:
-            self._add(
-                solver,
-                child.anchor_expr(Anchor.LEFT)
-                >= parent.anchor_expr(Anchor.LEFT) + self.padding_left,
-            )
-            self._add(
-                solver,
-                child.anchor_expr(Anchor.TOP)
-                >= parent.anchor_expr(Anchor.TOP) + self.padding_top,
-            )
-            self._add(
-                solver,
-                child.anchor_expr(Anchor.RIGHT)
-                <= parent.anchor_expr(Anchor.RIGHT) - self.padding_right,
-            )
-            self._add(
-                solver,
-                child.anchor_expr(Anchor.BOTTOM)
-                <= parent.anchor_expr(Anchor.BOTTOM) - self.padding_bottom,
-            )
+        parent = rects[self.parent_rect_id]
+        constraints: List[kiwi.Constraint] = []
 
-        if children:
-            first = children[0]
-            self._add(
-                solver,
-                parent.anchor_expr(
-                    Anchor.LEFT) == first.anchor_expr(Anchor.LEFT) -
-                self.padding_left,
-            )
-            self._add(
-                solver,
-                parent.anchor_expr(
-                    Anchor.TOP) == first.anchor_expr(Anchor.TOP) -
-                self.padding_top,
-            )
+        left_exprs = [
+            rects[child_id].anchor_expr(Anchor.LEFT)
+            for child_id in self.child_rect_ids
+        ]
+        top_exprs = [
+            rects[child_id].anchor_expr(Anchor.TOP)
+            for child_id in self.child_rect_ids
+        ]
+        right_exprs = [
+            rects[child_id].anchor_expr(Anchor.RIGHT)
+            for child_id in self.child_rect_ids
+        ]
+        bottom_exprs = [
+            rects[child_id].anchor_expr(Anchor.BOTTOM)
+            for child_id in self.child_rect_ids
+        ]
 
-            right_expr = first.anchor_expr(Anchor.RIGHT)
-            bottom_expr = first.anchor_expr(Anchor.BOTTOM)
-            for child in children[1:]:
-                self._add(
-                    solver,
-                    parent.anchor_expr(Anchor.RIGHT)
-                    >= child.anchor_expr(Anchor.RIGHT) + self.padding_right,
-                )
-                self._add(
-                    solver,
-                    parent.anchor_expr(Anchor.BOTTOM)
-                    >= child.anchor_expr(Anchor.BOTTOM) + self.padding_bottom,
-                )
-                right_expr = child.anchor_expr(Anchor.RIGHT)
-                bottom_expr = child.anchor_expr(Anchor.BOTTOM)
+        for child_left in left_exprs:
+            constraints.append((parent.anchor_expr(Anchor.LEFT).to_kiwi() <= (
+                child_left - self.padding_left).to_kiwi())
+                               | self.strength.kiwi_value())
 
-            self._add(
-                solver,
-                parent.anchor_expr(Anchor.RIGHT) == right_expr +
-                self.padding_right)
-            self._add(
-                solver,
-                parent.anchor_expr(Anchor.BOTTOM) == bottom_expr +
-                self.padding_bottom)
+        for child_top in top_exprs:
+            constraints.append((parent.anchor_expr(Anchor.TOP).to_kiwi() <= (
+                child_top - self.padding_top).to_kiwi())
+                               | self.strength.kiwi_value())
+
+        for child_right in right_exprs:
+            constraints.append((parent.anchor_expr(Anchor.RIGHT).to_kiwi() >= (
+                child_right + self.padding_right).to_kiwi())
+                               | self.strength.kiwi_value())
+
+        for child_bottom in bottom_exprs:
+            constraints.append((parent.anchor_expr(Anchor.BOTTOM).to_kiwi() >=
+                                (child_bottom + self.padding_bottom).to_kiwi())
+                               | self.strength.kiwi_value())
+
+        constraints.append((parent.anchor_expr(Anchor.LEFT).to_kiwi() == (
+            left_exprs[0] - self.padding_left).to_kiwi())
+                           | self.strength.kiwi_value())
+        constraints.append((parent.anchor_expr(Anchor.TOP).to_kiwi() == (
+            top_exprs[0] - self.padding_top).to_kiwi())
+                           | self.strength.kiwi_value())
+        constraints.append((parent.anchor_expr(Anchor.RIGHT).to_kiwi() == (
+            right_exprs[-1] + self.padding_right).to_kiwi())
+                           | self.strength.kiwi_value())
+        constraints.append((parent.anchor_expr(Anchor.BOTTOM).to_kiwi() == (
+            bottom_exprs[-1] + self.padding_bottom).to_kiwi())
+                           | self.strength.kiwi_value())
+
+        return constraints
+
+    def describe_edges(self) -> List[Tuple[str, str, str]]:
+        return [(child_id, self.parent_rect_id, "wrap-parent")
+                for child_id in self.child_rect_ids]
 
 
-class ChildFromParentConstraint(ConstraintSpec):
+class ChildRelativeToParentConstraint(ConstraintBase):
 
     def __init__(
         self,
-        rect_id: str,
-        parent_id: str,
-        *,
-        width_ratio: float | None = None,
-        height_ratio: float | None = None,
-        x_offset: float = 0,
-        y_offset: float = 0,
+        child_rect_id: str,
+        parent_rect_id: str,
+        width_factor: float | None = None,
+        height_factor: float | None = None,
         x_anchor: Anchor = Anchor.LEFT,
         y_anchor: Anchor = Anchor.TOP,
-        strength: str = "required",
-    ) -> None:
+        x_offset: float = 0.0,
+        y_offset: float = 0.0,
+        child_x_anchor: Anchor = Anchor.LEFT,
+        child_y_anchor: Anchor = Anchor.TOP,
+        strength: Strength = Strength.REQUIRED,
+    ):
         super().__init__(strength)
-        self.rect_id = rect_id
-        self.parent_id = parent_id
-        self.width_ratio = width_ratio
-        self.height_ratio = height_ratio
-        self.x_offset = x_offset
-        self.y_offset = y_offset
+        self.child_rect_id = child_rect_id
+        self.parent_rect_id = parent_rect_id
+        self.width_factor = width_factor
+        self.height_factor = height_factor
         self.x_anchor = x_anchor
         self.y_anchor = y_anchor
+        self.x_offset = x_offset
+        self.y_offset = y_offset
+        self.child_x_anchor = child_x_anchor
+        self.child_y_anchor = child_y_anchor
 
-    def add_to_solver(self, solver: kiwi.Solver, rects: dict[str,
-                                                             Rect]) -> None:
-        rect = rects[self.rect_id]
-        parent = rects[self.parent_id]
+    def build(self, rects: Dict[str, Rect]) -> List[kiwi.Constraint]:
+        child = rects[self.child_rect_id]
+        parent = rects[self.parent_rect_id]
+        constraints: List[kiwi.Constraint] = []
 
-        if self.width_ratio is not None:
-            self._add(solver,
-                      rect.width_var == parent.width_var * self.width_ratio)
-        if self.height_ratio is not None:
-            self._add(solver,
-                      rect.height_var == parent.height_var * self.height_ratio)
+        if self.width_factor is not None:
+            constraints.append((child.expr(RectAttr.WIDTH).to_kiwi() == (
+                parent.expr(RectAttr.WIDTH) * self.width_factor).to_kiwi())
+                               | self.strength.kiwi_value())
+        if self.height_factor is not None:
+            constraints.append((child.expr(RectAttr.HEIGHT).to_kiwi() == (
+                parent.expr(RectAttr.HEIGHT) * self.height_factor).to_kiwi())
+                               | self.strength.kiwi_value())
 
-        self._add(
-            solver,
-            rect.anchor_expr(
-                self.x_anchor) == parent.anchor_expr(self.x_anchor) +
-            self.x_offset,
-        )
-        self._add(
-            solver,
-            rect.anchor_expr(
-                self.y_anchor) == parent.anchor_expr(self.y_anchor) +
-            self.y_offset,
-        )
+        constraints.append((child.anchor_expr(self.child_x_anchor).to_kiwi() ==
+                            (parent.anchor_expr(self.x_anchor) +
+                             self.x_offset).to_kiwi())
+                           | self.strength.kiwi_value())
+        constraints.append((child.anchor_expr(self.child_y_anchor).to_kiwi() ==
+                            (parent.anchor_expr(self.y_anchor) +
+                             self.y_offset).to_kiwi())
+                           | self.strength.kiwi_value())
+        return constraints
+
+    def describe_edges(self) -> List[Tuple[str, str, str]]:
+        return [(self.parent_rect_id, self.child_rect_id, "child-relative")]
+
+
+class EvenGapConstraint(ConstraintBase):
+
+    def __init__(
+        self,
+        rect_ids: Sequence[str],
+        axis: Axis,
+        anchor: Anchor,
+        strength: Strength = Strength.REQUIRED,
+    ):
+        super().__init__(strength)
+        self.rect_ids = list(rect_ids)
+        self.axis = axis
+        self.anchor = anchor
+
+    def build(self, rects: Dict[str, Rect]) -> List[kiwi.Constraint]:
+        if len(self.rect_ids) < 3:
+            return []
+        constraints: List[kiwi.Constraint] = []
+        for i in range(1, len(self.rect_ids) - 1):
+            a = rects[self.rect_ids[i - 1]].anchor_expr(self.anchor)
+            b = rects[self.rect_ids[i]].anchor_expr(self.anchor)
+            c = rects[self.rect_ids[i + 1]].anchor_expr(self.anchor)
+            constraints.append((((b - a) - (c - b)).to_kiwi() == 0)
+                               | self.strength.kiwi_value())
+        return constraints
+
+    def describe_edges(self) -> List[Tuple[str, str, str]]:
+        return [(self.rect_ids[i], self.rect_ids[i + 1],
+                 f"even-gap:{self.anchor.name}")
+                for i in range(len(self.rect_ids) - 1)]
+
+
+class EqualSizeConstraint(ConstraintBase):
+
+    def __init__(
+        self,
+        rect_a_id: str,
+        rect_b_id: str,
+        match_width: bool = False,
+        match_height: bool = False,
+        strength: Strength = Strength.REQUIRED,
+    ):
+        super().__init__(strength)
+        self.rect_a_id = rect_a_id
+        self.rect_b_id = rect_b_id
+        self.match_width = match_width
+        self.match_height = match_height
+
+    def build(self, rects: Dict[str, Rect]) -> List[kiwi.Constraint]:
+        a = rects[self.rect_a_id]
+        b = rects[self.rect_b_id]
+        constraints: List[kiwi.Constraint] = []
+        if self.match_width:
+            constraints.append((a.expr(RectAttr.WIDTH).to_kiwi() == b.expr(
+                RectAttr.WIDTH).to_kiwi())
+                               | self.strength.kiwi_value())
+        if self.match_height:
+            constraints.append((a.expr(RectAttr.HEIGHT).to_kiwi() == b.expr(
+                RectAttr.HEIGHT).to_kiwi())
+                               | self.strength.kiwi_value())
+        return constraints
+
+    def describe_edges(self) -> List[Tuple[str, str, str]]:
+        label = []
+        if self.match_width:
+            label.append("width")
+        if self.match_height:
+            label.append("height")
+        return [(self.rect_a_id, self.rect_b_id,
+                 f"equal-size:{'+'.join(label)}")]
+
+
+class LinearConstraint(ConstraintBase):
+
+    def __init__(
+        self,
+        left: Expr,
+        relation: Relation,
+        right: Expr,
+        strength: Strength = Strength.REQUIRED,
+    ):
+        super().__init__(strength)
+        self.left = left
+        self.relation = relation
+        self.right = right
+
+    def build(self, rects: Dict[str, Rect]) -> List[kiwi.Constraint]:
+        if self.relation == Relation.EQ:
+            c = (self.left.to_kiwi()
+                 == self.right.to_kiwi()) | self.strength.kiwi_value()
+        elif self.relation == Relation.LE:
+            c = (self.left.to_kiwi()
+                 <= self.right.to_kiwi()) | self.strength.kiwi_value()
+        elif self.relation == Relation.GE:
+            c = (self.left.to_kiwi()
+                 >= self.right.to_kiwi()) | self.strength.kiwi_value()
+        else:
+            raise ValueError(self.relation)
+        return [c]
+
+    def describe_edges(self) -> List[Tuple[str, str, str]]:
+        return []
 
 
 class Layout:
 
     def __init__(self, rects: Iterable[Rect],
-                 constraints: Iterable[ConstraintSpec]) -> None:
-        self.rects = {rect.id: rect for rect in rects}
+                 constraints: Iterable[ConstraintBase]):
+        self.rects = {rect.rect_id: rect for rect in rects}
         self.constraints = list(constraints)
 
-    def solve(self) -> dict[str, dict[str, float]]:
+    def solve(self) -> Dict[str, Dict[str, float]]:
         solver = kiwi.Solver()
+        added: List[kiwi.Constraint] = []
 
         for rect in self.rects.values():
-            solver.addConstraint(rect.width_var >= 0)
-            solver.addConstraint(rect.height_var >= 0)
+            solver.addConstraint((rect.expr(RectAttr.WIDTH).to_kiwi() >= 0)
+                                 | kiwi.strength.required)
+            solver.addConstraint((rect.expr(RectAttr.HEIGHT).to_kiwi() >= 0)
+                                 | kiwi.strength.required)
+            added.extend([])
+            if rect.x0 is not None:
+                solver.addConstraint((
+                    rect.expr(RectAttr.X).to_kiwi() == rect.x0)
+                                     | kiwi.strength.required)
+            if rect.y0 is not None:
+                solver.addConstraint((
+                    rect.expr(RectAttr.Y).to_kiwi() == rect.y0)
+                                     | kiwi.strength.required)
+            if rect.width0 is not None:
+                solver.addConstraint((
+                    rect.expr(RectAttr.WIDTH).to_kiwi() == rect.width0)
+                                     | kiwi.strength.required)
+            if rect.height0 is not None:
+                solver.addConstraint((
+                    rect.expr(RectAttr.HEIGHT).to_kiwi() == rect.height0)
+                                     | kiwi.strength.required)
 
-            if rect.x is not None:
-                solver.addConstraint(rect.x_var == rect.x)
-            if rect.y is not None:
-                solver.addConstraint(rect.y_var == rect.y)
-            if rect.width is not None:
-                solver.addConstraint(rect.width_var == rect.width)
-            if rect.height is not None:
-                solver.addConstraint(rect.height_var == rect.height)
-
-        for constraint in self.constraints:
-            constraint.add_to_solver(solver, self.rects)
+        for item in self.constraints:
+            for c in item.build(self.rects):
+                solver.addConstraint(c)
+                added.append(c)
 
         solver.updateVariables()
+
         return {
-            rect_id: rect.value_dict()
+            rect_id: {
+                "x": rect.x.value(),
+                "y": rect.y.value(),
+                "width": rect.width.value(),
+                "height": rect.height.value(),
+            }
             for rect_id, rect in self.rects.items()
         }
 
-    def write_svg(self, path: str | Path) -> None:
+    def to_svg(self, path: str | Path, title: str = "layout") -> None:
         path = Path(path)
-        values = {
-            rect_id: rect.value_dict()
-            for rect_id, rect in self.rects.items()
-        }
+        path.parent.mkdir(parents=True, exist_ok=True)
 
-        min_x = min(v["x"] for v in values.values())
-        min_y = min(v["y"] for v in values.values())
-        max_x = max(v["x"] + v["width"] for v in values.values())
-        max_y = max(v["y"] + v["height"] for v in values.values())
+        solved = self.solve()
+        max_x = max(v["x"] + v["width"]
+                    for v in solved.values()) if solved else 100
+        max_y = max(v["y"] + v["height"]
+                    for v in solved.values()) if solved else 100
 
-        pad = 20
-        width = max_x - min_x + pad * 2
-        height = max_y - min_y + pad * 2
+        dwg = svgwrite.Drawing(str(path), size=(max_x + 40, max_y + 40))
+        dwg.add(
+            dwg.rect(insert=(0, 0),
+                     size=(max_x + 40, max_y + 40),
+                     fill="white"))
+        dwg.add(
+            dwg.text(title, insert=(10, 18), fill="black", font_size="14px"))
 
-        palette = [
-            "#d95f02",
-            "#1b9e77",
-            "#7570b3",
-            "#e7298a",
-            "#66a61e",
-            "#e6ab02",
-            "#a6761d",
-            "#666666",
+        colors = [
+            "#ffcccc", "#ccffcc", "#ccccff", "#fff0cc", "#f0ccff", "#ccfff7"
         ]
+        for idx, (rect_id, g) in enumerate(solved.items()):
+            color = colors[idx % len(colors)]
+            dwg.add(
+                dwg.rect(
+                    insert=(g["x"] + 20, g["y"] + 20),
+                    size=(g["width"], g["height"]),
+                    fill=color,
+                    stroke="black",
+                ))
+            dwg.add(
+                dwg.text(
+                    rect_id,
+                    insert=(g["x"] + 24, g["y"] + 36),
+                    fill="black",
+                    font_size="12px",
+                ))
 
-        lines = [
-            f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">',
-            '<rect width="100%" height="100%" fill="white"/>',
-        ]
+        dwg.save()
 
-        for idx, (rect_id, v) in enumerate(values.items()):
-            color = palette[idx % len(palette)]
-            x = v["x"] - min_x + pad
-            y = v["y"] - min_y + pad
-            w = v["width"]
-            h = v["height"]
-            lines.append(
-                f'<rect x="{x}" y="{y}" width="{w}" height="{h}" fill="{color}" fill-opacity="0.2" stroke="{color}" stroke-width="2"/>'
-            )
-            lines.append(
-                f'<text x="{x + 4}" y="{y + 16}" font-family="monospace" font-size="12" fill="{color}">{rect_id}</text>'
-            )
+    def to_graphviz(self) -> graphviz.Digraph:
+        dot = graphviz.Digraph("layout", format="svg")
+        dot.attr(rankdir="LR")
 
-        lines.append("</svg>")
-        path.write_text("\n".join(lines))
+        for rect_id in self.rects:
+            dot.node(f"rect:{rect_id}", rect_id, shape="box")
+
+        for idx, constraint in enumerate(self.constraints):
+            cid = f"constraint:{idx}"
+            dot.node(cid, constraint.__class__.__name__, shape="ellipse")
+            for src, dst, label in constraint.describe_edges():
+                dot.edge(f"rect:{src}", cid, label=label)
+                dot.edge(cid, f"rect:{dst}")
+
+        return dot
+
+    def write_graphviz(self, path: str | Path) -> None:
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        dot = self.to_graphviz()
+        dot.render(filename=str(path), cleanup=True)
 
 
-def test_alignment_and_relative_positioning() -> None:
+def assert_close(a: float, b: float, eps: float = 1e-6):
+    assert abs(a - b) <= eps
+
+
+def write_outputs(name: str, layout: Layout):
+    out_dir = Path("/tmp/kiwi-place")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    layout.to_svg(out_dir / f"{name}.svg", title=name)
+    layout.write_graphviz(out_dir / f"{name}-graph")
+
+
+def test_alignment_and_relative_positioning():
     rects = [
-        Rect("a", width=100, height=40),
-        Rect("b", width=80, height=30),
+        Rect("a", x0=10, y0=20, width0=40, height0=30),
+        Rect("b", width0=40, height0=30),
+        Rect("c", width0=40, height0=30),
     ]
-    layout = Layout(
-        rects,
-        [
-            AlignConstraint("a", Anchor.LEFT, Axis.X, 10),
-            AlignConstraint("a", Anchor.TOP, Axis.Y, 20),
-            RelativeAnchorConstraint("b", Anchor.LEFT, "a", Anchor.RIGHT, 25),
-            RelativeAnchorConstraint("b", Anchor.VCENTER, "a", Anchor.VCENTER,
-                                     0),
-        ],
-    )
-
-    values = layout.solve()
-    layout.write_svg(
-        "/tmp/kiwi-place-test_alignment_and_relative_positioning.svg")
-
-    assert values["a"]["x"] == pytest.approx(10)
-    assert values["a"]["y"] == pytest.approx(20)
-    assert values["b"]["x"] == pytest.approx(135)
-    assert values["b"]["y"] == pytest.approx(25)
-
-
-def test_even_spacing_of_aligned_columns() -> None:
-    rects = [
-        Rect("a", width=40, height=20),
-        Rect("b", width=40, height=20),
-        Rect("c", width=40, height=20),
+    constraints = [
+        AlignConstraint(
+            Anchor.TOP,
+            [AlignItem("a"), AlignItem("b"),
+             AlignItem("c")]),
+        SeparateConstraint("b", Anchor.LEFT, "a", Anchor.RIGHT, 15),
+        SeparateConstraint("c", Anchor.LEFT, "b", Anchor.RIGHT, 15),
     ]
-    layout = Layout(
-        rects,
-        [
-            AlignConstraint("a", Anchor.TOP, Axis.Y, 10),
-            AlignConstraint("b", Anchor.TOP, Axis.Y, 10),
-            AlignConstraint("c", Anchor.TOP, Axis.Y, 10),
-            AlignConstraint("a", Anchor.LEFT, Axis.X, 0),
-            EvenlySpacedSequenceConstraint(["a", "b", "c"], Anchor.LEFT, 50),
-        ],
-    )
+    layout = Layout(rects, constraints)
+    solved = layout.solve()
+    write_outputs("test_alignment_and_relative_positioning", layout)
 
-    values = layout.solve()
-    layout.write_svg(
-        "/tmp/kiwi-place-test_even_spacing_of_aligned_columns.svg")
-
-    assert values["a"]["x"] == pytest.approx(0)
-    assert values["b"]["x"] == pytest.approx(50)
-    assert values["c"]["x"] == pytest.approx(100)
-    assert values["a"]["y"] == pytest.approx(10)
-    assert values["b"]["y"] == pytest.approx(10)
-    assert values["c"]["y"] == pytest.approx(10)
+    assert_close(solved["a"]["y"], solved["b"]["y"])
+    assert_close(solved["b"]["y"], solved["c"]["y"])
+    assert_close(solved["b"]["x"],
+                 solved["a"]["x"] + solved["a"]["width"] + 15)
+    assert_close(solved["c"]["x"],
+                 solved["b"]["x"] + solved["b"]["width"] + 15)
 
 
-def test_parent_wrap_and_child_from_parent() -> None:
+def test_even_gap_shape_placement():
     rects = [
+        Rect("a", x0=10, y0=10, width0=20, height0=20),
+        Rect("b", y0=10, width0=20, height0=20),
+        Rect("c", x0=110, y0=10, width0=20, height0=20),
+    ]
+    constraints = [
+        EvenGapConstraint(["a", "b", "c"], Axis.X, Anchor.LEFT),
+    ]
+    layout = Layout(rects, constraints)
+    solved = layout.solve()
+    write_outputs("test_even_gap_shape_placement", layout)
+
+    assert_close(solved["b"]["x"], 60.0)
+
+
+def test_parent_and_child_relative_constraints():
+    rects = [
+        Rect("child1", x0=20, y0=30, width0=30, height0=10),
+        Rect("child2", x0=70, y0=60, width0=20, height0=20),
         Rect("parent"),
-        Rect("c1", width=60, height=20),
-        Rect("c2", width=70, height=30),
-        Rect("overlay"),
+        Rect("inner"),
     ]
-    layout = Layout(
-        rects,
-        [
-            AlignConstraint("c1", Anchor.LEFT, Axis.X, 20),
-            AlignConstraint("c1", Anchor.TOP, Axis.Y, 30),
-            RelativeAnchorConstraint("c2", Anchor.LEFT, "c1", Anchor.LEFT, 0),
-            RelativeAnchorConstraint("c2", Anchor.TOP, "c1", Anchor.BOTTOM,
-                                     15),
-            ParentWrapConstraint(
-                "parent",
-                ["c1", "c2"],
-                padding_left=10,
-                padding_top=5,
-                padding_right=12,
-                padding_bottom=7,
-            ),
-            ChildFromParentConstraint(
-                "overlay",
-                "parent",
-                width_ratio=0.2,
-                height_ratio=0.5,
-                x_anchor=Anchor.HCENTER,
-                y_anchor=Anchor.VCENTER,
-                x_offset=20,
-                y_offset=0,
-            ),
-        ],
-    )
+    constraints = [
+        ParentWrapConstraint(
+            "parent",
+            ["child1", "child2"],
+            padding_left=5,
+            padding_top=10,
+            padding_right=15,
+            padding_bottom=20,
+        ),
+        ChildRelativeToParentConstraint(
+            "inner",
+            "parent",
+            width_factor=0.2,
+            height_factor=0.5,
+            x_anchor=Anchor.HCENTER,
+            y_anchor=Anchor.VCENTER,
+            x_offset=20,
+            y_offset=0,
+            child_x_anchor=Anchor.LEFT,
+            child_y_anchor=Anchor.TOP,
+        ),
+    ]
+    layout = Layout(rects, constraints)
+    solved = layout.solve()
+    write_outputs("test_parent_and_child_relative_constraints", layout)
 
-    values = layout.solve()
-    layout.write_svg(
-        "/tmp/kiwi-place-test_parent_wrap_and_child_from_parent.svg")
+    assert_close(solved["parent"]["x"], 15.0)
+    assert_close(solved["parent"]["y"], 20.0)
+    assert_close(solved["parent"]["width"], 90.0)
+    assert_close(solved["parent"]["height"], 80.0)
+    assert_close(solved["inner"]["width"], solved["parent"]["width"] * 0.2)
+    assert_close(solved["inner"]["height"], solved["parent"]["height"] * 0.5)
+    assert_close(solved["inner"]["x"],
+                 solved["parent"]["x"] + solved["parent"]["width"] * 0.5 + 20)
+    assert_close(solved["inner"]["y"],
+                 solved["parent"]["y"] + solved["parent"]["height"] * 0.5)
 
-    assert values["parent"]["x"] == pytest.approx(10)
-    assert values["parent"]["y"] == pytest.approx(25)
-    assert values["parent"]["width"] == pytest.approx(92)
-    assert values["parent"]["height"] == pytest.approx(77)
-    assert values["overlay"]["width"] == pytest.approx(16.4)
-    assert values["overlay"]["height"] == pytest.approx(38.5)
-    assert values["overlay"]["x"] + values["overlay"][
-        "width"] * 0.5 == pytest.approx(values["parent"]["x"] +
-                                        values["parent"]["width"] * 0.5 + 20)
-    assert values["overlay"]["y"] + values["overlay"][
-        "height"] * 0.5 == pytest.approx(values["parent"]["y"] +
-                                         values["parent"]["height"] * 0.5)
+
+def test_linear_constraint_and_equal_size():
+    rects = [
+        Rect("a", x0=10, y0=10, width0=40, height0=25),
+        Rect("b", y0=50),
+    ]
+    a = rects[0]
+    b = rects[1]
+    constraints = [
+        EqualSizeConstraint("a", "b", match_height=True),
+        LinearConstraint(b.expr(RectAttr.X), Relation.EQ,
+                         a.expr(RectAttr.RIGHT) + 30),
+        LinearConstraint(b.expr(RectAttr.WIDTH), Relation.EQ,
+                         a.expr(RectAttr.WIDTH) + 20),
+    ]
+    layout = Layout(rects, constraints)
+    solved = layout.solve()
+    write_outputs("test_linear_constraint_and_equal_size", layout)
+
+    assert_close(solved["b"]["x"], 80.0)
+    assert_close(solved["b"]["width"], 60.0)
+    assert_close(solved["b"]["height"], 25.0)
+
+
+def test_multi_separate_several_lines_of_evenly_spaced_rectangles():
+    rects = [
+        Rect("r00", x0=0, y0=0, width0=20, height0=10),
+        Rect("r01", y0=0, width0=20, height0=10),
+        Rect("r02", x0=80, y0=0, width0=20, height0=10),
+        Rect("r10", y0=30, width0=20, height0=10),
+        Rect("r11", y0=30, width0=20, height0=10),
+        Rect("r12", y0=30, width0=20, height0=10),
+        Rect("r20", y0=60, width0=20, height0=10),
+        Rect("r21", y0=60, width0=20, height0=10),
+        Rect("r22", y0=60, width0=20, height0=10),
+    ]
+    constraints = [
+        EvenGapConstraint(["r00", "r01", "r02"], Axis.X, Anchor.LEFT),
+        AlignConstraint(Anchor.LEFT,
+                        [AlignItem("r00"),
+                         AlignItem("r10"),
+                         AlignItem("r20")]),
+        AlignConstraint(Anchor.LEFT,
+                        [AlignItem("r01"),
+                         AlignItem("r11"),
+                         AlignItem("r21")]),
+        AlignConstraint(Anchor.LEFT,
+                        [AlignItem("r02"),
+                         AlignItem("r12"),
+                         AlignItem("r22")]),
+        MultiSeparateConstraint(
+            [["r00", "r01", "r02"], ["r10", "r11", "r12"],
+             ["r20", "r21", "r22"]],
+            Anchor.TOP,
+            30,
+        ),
+    ]
+    layout = Layout(rects, constraints)
+    solved = layout.solve()
+    write_outputs(
+        "test_multi_separate_several_lines_of_evenly_spaced_rectangles",
+        layout)
+
+    assert_close(solved["r01"]["x"], 40.0)
+    assert_close(solved["r10"]["y"], 30.0)
+    assert_close(solved["r20"]["y"], 60.0)
+
+
+def test_two_orthogonal_multi_separate_grid():
+    ids = [
+        ["g00", "g01", "g02"],
+        ["g10", "g11", "g12"],
+        ["g20", "g21", "g22"],
+    ]
+    rects = [Rect("g00", x0=0, y0=0, width0=10, height0=10)]
+    for row in ids:
+        for rid in row:
+            if rid != "g00":
+                rects.append(Rect(rid, width0=10, height0=10))
+
+    constraints: List[ConstraintBase] = []
+    constraints.append(MultiSeparateConstraint(ids, Anchor.TOP, 25))
+    col_groups = [[ids[0][0], ids[1][0], ids[2][0]],
+                  [ids[0][1], ids[1][1], ids[2][1]],
+                  [ids[0][2], ids[1][2], ids[2][2]]]
+    constraints.append(MultiSeparateConstraint(col_groups, Anchor.LEFT, 35))
+    for row in ids:
+        constraints.append(
+            AlignConstraint(Anchor.TOP, [AlignItem(r) for r in row]))
+    for col in col_groups:
+        constraints.append(
+            AlignConstraint(Anchor.LEFT, [AlignItem(r) for r in col]))
+
+    layout = Layout(rects, constraints)
+    solved = layout.solve()
+    write_outputs("test_two_orthogonal_multi_separate_grid", layout)
+
+    assert_close(solved["g12"]["x"], 70.0)
+    assert_close(solved["g12"]["y"], 25.0)
+    assert_close(solved["g21"]["x"], 35.0)
+    assert_close(solved["g21"]["y"], 50.0)
+
+
+def test_even_gap_parent_rectangles_and_children_relative():
+    rects = [
+        Rect("p1", x0=0, y0=0, width0=100, height0=60),
+        Rect("p2", y0=0, width0=100, height0=60),
+        Rect("p3", x0=300, y0=0, width0=100, height0=60),
+        Rect("c1"),
+        Rect("c2"),
+        Rect("c3"),
+    ]
+    constraints = [
+        EvenGapConstraint(["p1", "p2", "p3"], Axis.X, Anchor.LEFT),
+        ChildRelativeToParentConstraint(
+            "c1",
+            "p1",
+            width_factor=0.2,
+            height_factor=0.5,
+            x_anchor=Anchor.HCENTER,
+            y_anchor=Anchor.VCENTER,
+            x_offset=10,
+            y_offset=0,
+            child_x_anchor=Anchor.LEFT,
+            child_y_anchor=Anchor.TOP,
+        ),
+        ChildRelativeToParentConstraint(
+            "c2",
+            "p2",
+            width_factor=0.2,
+            height_factor=0.5,
+            x_anchor=Anchor.HCENTER,
+            y_anchor=Anchor.VCENTER,
+            x_offset=10,
+            y_offset=0,
+            child_x_anchor=Anchor.LEFT,
+            child_y_anchor=Anchor.TOP,
+        ),
+        ChildRelativeToParentConstraint(
+            "c3",
+            "p3",
+            width_factor=0.2,
+            height_factor=0.5,
+            x_anchor=Anchor.HCENTER,
+            y_anchor=Anchor.VCENTER,
+            x_offset=10,
+            y_offset=0,
+            child_x_anchor=Anchor.LEFT,
+            child_y_anchor=Anchor.TOP,
+        ),
+    ]
+    layout = Layout(rects, constraints)
+    solved = layout.solve()
+    write_outputs("test_even_gap_parent_rectangles_and_children_relative",
+                  layout)
+
+    assert_close(solved["p2"]["x"], 150.0)
+    assert_close(solved["c2"]["width"], 20.0)
+    assert_close(solved["c2"]["height"], 30.0)
+    assert_close(solved["c2"]["x"], solved["p2"]["x"] + 50 + 10)
+    assert_close(solved["c2"]["y"], solved["p2"]["y"] + 30)
+
+
+if __name__ == "__main__":
+    raise SystemExit(pytest.main([__file__]))
