@@ -49,7 +49,7 @@ local function build_client_json(c)
         '"title":' .. json_string(c.name or ""),
         '"wm_class":' .. json_string(c.class or ""),
         '"pid":' .. json_number(c.pid or -1),
-        '"screen":' .. json_number(c.screen.index),
+        '"screen":' .. json_number(c.screen.index - 1),
         '"x":' .. json_number(c.x),
         '"y":' .. json_number(c.y),
         '"width":' .. json_number(c.width),
@@ -80,7 +80,7 @@ for s in screen do
 
         table.insert(tags_json, json_object({
             '"name":' .. json_string(tag.name or ""),
-            '"screen":' .. json_number(s.index),
+            '"screen":' .. json_number(s.index - 1),
             '"selected":' .. json_boolean(tag.selected),
             '"activated":' .. json_boolean(tag.activated),
             '"index":' .. json_number(tag.index or -1),

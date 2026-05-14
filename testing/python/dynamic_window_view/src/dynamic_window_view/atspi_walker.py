@@ -467,13 +467,3 @@ def populate_splits(win: WindowInfo) -> None:
 
     # For VSCode, Qt Creator, and anything else: use AT-SPI
     win.splits = get_atspi_splits(win)
-
-
-def print_split_tree(splits: list[SplitPane], indent: int = 4) -> None:
-    prefix = " " * indent
-    for s in splits:
-        print(
-            f"{prefix}[{s.role}] \"{s.name}\" @ ({s.rect.x},{s.rect.y}) {s.rect.width}x{s.rect.height}"
-        )
-        if s.children:
-            print_split_tree(s.children, indent + 4)
