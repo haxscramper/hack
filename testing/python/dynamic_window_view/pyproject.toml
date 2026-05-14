@@ -1,0 +1,20 @@
+[project]
+name = "dynamic-window-view"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "haxscramper", email = "haxscramper@gmail.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "pygobject>=3.56.3",
+    "python-xlib>=0.33",
+]
+
+[project.scripts]
+dynamic-window-view = "dynamic_window_view:main"
+
+[build-system]
+requires = ["uv_build>=0.9.27,<0.10.0"]
+build-backend = "uv_build"
