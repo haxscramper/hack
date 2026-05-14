@@ -8,6 +8,7 @@ authors = [
 ]
 requires-python = ">=3.13"
 dependencies = [
+    "plumbum>=1.10.0",
     "pygobject>=3.56.3",
     "python-xlib>=0.33",
 ]

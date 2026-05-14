@@ -34,6 +34,35 @@ class WindowInfo:
     pid: int
     rect: Rect
     splits: list[SplitPane] = field(default_factory=list)
+    screen: int = -1
+    tags: list[str] = field(default_factory=list)
+    visible_on_selected_tag: bool = False
+    floating: bool = False
+    maximized: bool = False
+    minimized: bool = False
+    fullscreen: bool = False
+    urgent: bool = False
+    hidden: bool = False
+    ontop: bool = False
+    sticky: bool = False
+    above: bool = False
+    below: bool = False
+
+
+@dataclass
+class TagInfo:
+    name: str
+    screen: int
+    selected: bool
+    activated: bool
+    index: int
+    layout: str
+    master_count: int
+    column_count: int
+    master_width_factor: float
+    gap: int
+    volatile: bool
+    windows: list[WindowInfo] = field(default_factory=list)
 
 
 def get_x11_windows() -> list[WindowInfo]:
