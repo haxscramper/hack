@@ -112,7 +112,15 @@ class Strength(Enum):
 def anchor_axis(anchor: Anchor) -> Axis:
     if anchor in (Anchor.LEFT, Anchor.HCENTER, Anchor.RIGHT):
         return Axis.X
-    return Axis.Y
+    else:
+        return Axis.Y
+
+
+def axis_color(axis: Axis) -> str:
+    if axis == Axis.X:
+        return "red"
+    else:
+        return "blue"
 
 
 @dataclass
@@ -172,6 +180,14 @@ class Rect:
         raise ValueError(anchor)
 
 
+@dataclass(frozen=True)
+class EdgeDesc:
+    src: str
+    dst: str
+    label: str
+    color: str
+
+
 class ConstraintBase(ABC):
 
     def __init__(self, strength: Strength = Strength.REQUIRED):
@@ -182,7 +198,7 @@ class ConstraintBase(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def describe_edges(self) -> List[Tuple[str, str, str]]:
+    def describe_edges(self) -> List[EdgeDesc]:
         raise NotImplementedError
 
 
@@ -215,11 +231,14 @@ class AlignConstraint(ConstraintBase):
                           | self.strength.kiwi_value())
         return result
 
-    def describe_edges(self) -> List[Tuple[str, str, str]]:
+    def describe_edges(self) -> List[EdgeDesc]:
+        color = axis_color(anchor_axis(self.anchor))
         edges = []
         base = self.items[0].rect_id
         for item in self.items[1:]:
-            edges.append((base, item.rect_id, f"align:{self.anchor.name}"))
+            edges.append(
+                EdgeDesc(base, item.rect_id, f"align:{self.anchor.name}",
+                         color))
         return edges
 
 
@@ -248,12 +267,16 @@ class SeparateConstraint(ConstraintBase):
              == (second + self.offset).to_kiwi()) | self.strength.kiwi_value()
         return [c]
 
-    def describe_edges(self) -> List[Tuple[str, str, str]]:
-        return [(
-            self.second_rect_id,
-            self.first_rect_id,
-            f"separate:{self.second_anchor.name}->{self.first_anchor.name}+{self.offset}",
-        )]
+    def describe_edges(self) -> List[EdgeDesc]:
+        color = axis_color(anchor_axis(self.first_anchor))
+        return [
+            EdgeDesc(
+                self.second_rect_id,
+                self.first_rect_id,
+                f"separate:{self.second_anchor.name}->{self.first_anchor.name}+{self.offset}",
+                color,
+            )
+        ]
 
 
 class MultiSeparateConstraint(ConstraintBase):
@@ -289,12 +312,15 @@ class MultiSeparateConstraint(ConstraintBase):
                                    | self.strength.kiwi_value())
         return constraints
 
-    def describe_edges(self) -> List[Tuple[str, str, str]]:
+    def describe_edges(self) -> List[EdgeDesc]:
+        color = axis_color(anchor_axis(self.anchor))
         edges = []
         for idx in range(len(self.groups) - 1):
             for a, b in zip(self.groups[idx], self.groups[idx + 1]):
                 edges.append(
-                    (a, b, f"multi-separate:{self.anchor.name}+{self.step}"))
+                    EdgeDesc(a, b,
+                             f"multi-separate:{self.anchor.name}+{self.step}",
+                             color))
         return edges
 
 
@@ -377,9 +403,16 @@ class ParentWrapConstraint(ConstraintBase):
 
         return constraints
 
-    def describe_edges(self) -> List[Tuple[str, str, str]]:
-        return [(child_id, self.parent_rect_id, "wrap-parent")
-                for child_id in self.child_rect_ids]
+    def describe_edges(self) -> List[EdgeDesc]:
+        edges: List[EdgeDesc] = []
+        for child_id in self.child_rect_ids:
+            edges.append(
+                EdgeDesc(child_id, self.parent_rect_id, "wrap-parent-x",
+                         "red"))
+            edges.append(
+                EdgeDesc(child_id, self.parent_rect_id, "wrap-parent-y",
+                         "blue"))
+        return edges
 
 
 class ChildRelativeToParentConstraint(ConstraintBase):
@@ -434,8 +467,22 @@ class ChildRelativeToParentConstraint(ConstraintBase):
                            | self.strength.kiwi_value())
         return constraints
 
-    def describe_edges(self) -> List[Tuple[str, str, str]]:
-        return [(self.parent_rect_id, self.child_rect_id, "child-relative")]
+    def describe_edges(self) -> List[EdgeDesc]:
+        edges = [
+            EdgeDesc(self.parent_rect_id, self.child_rect_id,
+                     "child-relative-x", "red"),
+            EdgeDesc(self.parent_rect_id, self.child_rect_id,
+                     "child-relative-y", "blue"),
+        ]
+        if self.width_factor is not None:
+            edges.append(
+                EdgeDesc(self.parent_rect_id, self.child_rect_id,
+                         "child-relative-width", "red"))
+        if self.height_factor is not None:
+            edges.append(
+                EdgeDesc(self.parent_rect_id, self.child_rect_id,
+                         "child-relative-height", "blue"))
+        return edges
 
 
 class EvenGapConstraint(ConstraintBase):
@@ -464,10 +511,13 @@ class EvenGapConstraint(ConstraintBase):
                                | self.strength.kiwi_value())
         return constraints
 
-    def describe_edges(self) -> List[Tuple[str, str, str]]:
-        return [(self.rect_ids[i], self.rect_ids[i + 1],
-                 f"even-gap:{self.anchor.name}")
-                for i in range(len(self.rect_ids) - 1)]
+    def describe_edges(self) -> List[EdgeDesc]:
+        color = axis_color(self.axis)
+        return [
+            EdgeDesc(self.rect_ids[i], self.rect_ids[i + 1],
+                     f"even-gap:{self.anchor.name}", color)
+            for i in range(len(self.rect_ids) - 1)
+        ]
 
 
 class EqualSizeConstraint(ConstraintBase):
@@ -500,14 +550,17 @@ class EqualSizeConstraint(ConstraintBase):
                                | self.strength.kiwi_value())
         return constraints
 
-    def describe_edges(self) -> List[Tuple[str, str, str]]:
-        label = []
+    def describe_edges(self) -> List[EdgeDesc]:
+        edges: List[EdgeDesc] = []
         if self.match_width:
-            label.append("width")
+            edges.append(
+                EdgeDesc(self.rect_a_id, self.rect_b_id, "equal-size:width",
+                         "red"))
         if self.match_height:
-            label.append("height")
-        return [(self.rect_a_id, self.rect_b_id,
-                 f"equal-size:{'+'.join(label)}")]
+            edges.append(
+                EdgeDesc(self.rect_a_id, self.rect_b_id, "equal-size:height",
+                         "blue"))
+        return edges
 
 
 class LinearConstraint(ConstraintBase):
@@ -538,7 +591,7 @@ class LinearConstraint(ConstraintBase):
             raise ValueError(self.relation)
         return [c]
 
-    def describe_edges(self) -> List[Tuple[str, str, str]]:
+    def describe_edges(self) -> List[EdgeDesc]:
         return []
 
 
@@ -638,14 +691,17 @@ class Layout:
         dot.attr(rankdir="LR")
 
         for rect_id in self.rects:
-            dot.node(f"rect:{rect_id}", rect_id, shape="box")
+            dot.node(f"rect-{rect_id}", rect_id, shape="box")
 
         for idx, constraint in enumerate(self.constraints):
-            cid = f"constraint:{idx}"
+            cid = f"constraint-{idx}"
             dot.node(cid, constraint.__class__.__name__, shape="ellipse")
-            for src, dst, label in constraint.describe_edges():
-                dot.edge(f"rect:{src}", cid, label=label)
-                dot.edge(cid, f"rect:{dst}")
+            for edge in constraint.describe_edges():
+                dot.edge(f"rect-{edge.src}",
+                         cid,
+                         label=edge.label,
+                         color=edge.color)
+                dot.edge(cid, f"rect-{edge.dst}", color=edge.color)
 
         return dot
 
@@ -654,6 +710,7 @@ class Layout:
         path.parent.mkdir(parents=True, exist_ok=True)
         dot = self.to_graphviz()
         dot.render(filename=str(path), cleanup=True)
+        dot.save(str(path) + ".gv")
 
 
 def assert_close(a: float, b: float, eps: float = 1e-6):
