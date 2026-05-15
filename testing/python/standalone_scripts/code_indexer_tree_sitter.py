@@ -893,7 +893,7 @@ def create_flat_view(session: Session) -> None:
                     WHEN e.kind IN ('function', 'method', 'signal') THEN
                         COALESCE(e.qualified_name, e.name, '') || COALESCE(e.signature_text, '')
                     WHEN e.kind = 'field' THEN
-                        COALESCE(e.qualified_name, e.name, ''))
+                        COALESCE(e.qualified_name, e.name, '')
                     WHEN e.kind = 'class' THEN
                         COALESCE(e.qualified_name, e.name, '')
                     WHEN e.kind = 'namespace' THEN

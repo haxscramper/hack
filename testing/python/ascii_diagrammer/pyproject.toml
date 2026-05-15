@@ -9,9 +9,6 @@ dependencies = [
     "beartype>=0.22.9",
 ]
 
-[project.scripts]
-diagram-layout = "diagram_layout.cli:main"
-
 [dependency-groups]
 dev = ["pytest>=8.2.0"]
 

@@ -30,17 +30,17 @@ EDGE_STYLES = {
     "call": {
         "color": "black",
         "style": "solid",
-        "label": "call"
+        "label": "call",
     },
     "quote": {
         "color": "royalblue4",
         "style": "dashed",
-        "label": "'"
+        "label": "'",
     },
     "sharpquote": {
         "color": "darkgreen",
         "style": "dotted",
-        "label": "#'"
+        "label": "#'",
     },
 }
 
@@ -65,7 +65,6 @@ class DirTree:
 def symbol_name(obj) -> str | None:
     if isinstance(obj, sexpdata.Symbol):
         return str(obj)
-
     return None
 
 
@@ -170,6 +169,8 @@ def build_clusters(
     g,
     tree: DirTree,
     id_map: dict[str, str],
+    uncalled_functions: set[str],
+    single_external_caller_functions: set[str],
     cluster_path: tuple[str, ...],
     label: str,
 ) -> None:
@@ -185,7 +186,23 @@ def build_clusters(
                 fsg.attr(color="gray60")
                 fsg.attr(style="rounded")
                 for fn in sorted(funcs):
-                    fsg.node(id_map[fn], label=fn)
+                    if fn in uncalled_functions:
+                        fsg.node(
+                            id_map[fn],
+                            label=fn,
+                            color="red",
+                            fontcolor="red",
+                        )
+                    elif fn in single_external_caller_functions:
+                        fsg.node(
+                            id_map[fn],
+                            label=fn,
+                            color="darkorange3",
+                            fontcolor="darkorange3",
+                            penwidth="2",
+                        )
+                    else:
+                        fsg.node(id_map[fn], label=fn)
 
         for child_name in sorted(tree.children):
             child = tree.children[child_name]
@@ -193,6 +210,9 @@ def build_clusters(
                 sg,
                 child,
                 id_map=id_map,
+                uncalled_functions=uncalled_functions,
+                single_external_caller_functions=
+                single_external_caller_functions,
                 cluster_path=(*cluster_path, child_name),
                 label=child_name,
             )
@@ -205,10 +225,13 @@ def main() -> None:
     parser.add_argument(
         "root",
         type=Path,
-        help="Root directory to scan recursively for .el files.")
-    parser.add_argument("output",
-                        type=Path,
-                        help="Output file path, e.g. callgraph.svg")
+        help="Root directory to scan recursively for .el files.",
+    )
+    parser.add_argument(
+        "output",
+        type=Path,
+        help="Output file path, e.g. callgraph.svg",
+    )
     args = parser.parse_args()
 
     root = args.root.resolve()
@@ -224,11 +247,28 @@ def main() -> None:
 
     defined = set(all_funcs.keys())
 
+    called_functions: set[str] = set()
+    target_to_calling_files: dict[str, set[Path]] = {}
+    for src_info in all_funcs.values():
+        for kind, target in src_info.refs:
+            if kind == "call" and target in defined:
+                called_functions.add(target)
+                target_to_calling_files.setdefault(target,
+                                                   set()).add(src_info.file)
+
+    uncalled_functions = defined - called_functions
+    single_external_caller_functions = {
+        target
+        for target, caller_files in target_to_calling_files.items()
+        if len(caller_files) == 1
+        and next(iter(caller_files)) != all_funcs[target].file
+    }
+
     out_path = args.output.resolve()
     fmt = out_path.suffix.lstrip(".")
     stem = out_path.with_suffix("")
 
-    g: graphviz.Diagraph = graphviz.Digraph("elisp_callgraph", format=fmt)
+    g: graphviz.Digraph = graphviz.Digraph("elisp_callgraph", format=fmt)
     g.attr(rankdir="LR")
     g.attr(overlap="false")
     g.attr("node", shape="box", fontsize="10")
@@ -241,7 +281,15 @@ def main() -> None:
         rel_file = info.file.relative_to(root)
         add_to_tree(tree, rel_file, fn)
 
-    build_clusters(g, tree, id_map=id_map, cluster_path=(), label=root.name)
+    build_clusters(
+        g,
+        tree,
+        id_map=id_map,
+        uncalled_functions=uncalled_functions,
+        single_external_caller_functions=single_external_caller_functions,
+        cluster_path=(),
+        label=root.name,
+    )
 
     for src_name, src_info in sorted(all_funcs.items()):
         src_id = id_map[src_name]

@@ -8,6 +8,7 @@ import subprocess
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+from dominate.util import raw
 
 from flask import Flask, jsonify, request
 from dominate import document
@@ -441,7 +442,8 @@ def build_page(tags: list[TagInfo], monitors: list[MonitorInfo]) -> str:
             build_tag_node(root, tag, normalized_by_screen[tag.screen],
                            screenshot_cache)
 
-        script(JS)
+        with script(type="text/javascript"):
+            raw(JS)
 
     return str(doc)
 
