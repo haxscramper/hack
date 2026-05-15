@@ -203,6 +203,99 @@ class ConstraintBase(ABC):
 
 
 @dataclass
+class ConstraintEntry:
+    source: ConstraintBase | str
+    lowered: List[kiwi.Constraint]
+
+
+def describe_constraint_source(source: ConstraintBase | str) -> str:
+    if isinstance(source, str):
+        return source
+
+    if isinstance(source, AlignConstraint):
+        items = ", ".join(
+            f"{item.rect_id}{'' if item.offset == 0 else f'({item.offset:+g})'}"
+            for item in source.items)
+        return (
+            f"AlignConstraint(anchor={source.anchor.name}, items=[{items}], "
+            f"strength={source.strength.name})")
+
+    if isinstance(source, SeparateConstraint):
+        return (
+            f"SeparateConstraint("
+            f"{source.first_rect_id}.{source.first_anchor.name} == "
+            f"{source.second_rect_id}.{source.second_anchor.name} + {source.offset:g}, "
+            f"strength={source.strength.name})")
+
+    if isinstance(source, MultiSeparateConstraint):
+        return (
+            f"MultiSeparateConstraint(anchor={source.anchor.name}, step={source.step:g}, "
+            f"groups={source.groups}, strength={source.strength.name})")
+
+    if isinstance(source, ParentWrapConstraint):
+        return (
+            f"ParentWrapConstraint(parent={source.parent_rect_id}, children={source.child_rect_ids}, "
+            f"padding=({source.padding_left:g}, {source.padding_top:g}, "
+            f"{source.padding_right:g}, {source.padding_bottom:g}), "
+            f"strength={source.strength.name})")
+
+    if isinstance(source, ChildRelativeToParentConstraint):
+        return (
+            f"ChildRelativeToParentConstraint(child={source.child_rect_id}, parent={source.parent_rect_id}, "
+            f"width_factor={source.width_factor}, height_factor={source.height_factor}, "
+            f"x={source.child_x_anchor.name}->{source.x_anchor.name}{source.x_offset:+g}, "
+            f"y={source.child_y_anchor.name}->{source.y_anchor.name}{source.y_offset:+g}, "
+            f"strength={source.strength.name})")
+
+    if isinstance(source, EvenGapConstraint):
+        return (
+            f"EvenGapConstraint(rect_ids={source.rect_ids}, axis={source.axis.name}, "
+            f"anchor={source.anchor.name}, strength={source.strength.name})")
+
+    if isinstance(source, EqualSizeConstraint):
+        return (
+            f"EqualSizeConstraint(a={source.rect_a_id}, b={source.rect_b_id}, "
+            f"match_width={source.match_width}, match_height={source.match_height}, "
+            f"strength={source.strength.name})")
+
+    if isinstance(source, LinearConstraint):
+        relation_map = {
+            Relation.EQ: "==",
+            Relation.LE: "<=",
+            Relation.GE: ">=",
+        }
+        rel = relation_map[source.relation]
+        return (
+            f"LinearConstraint({source.left.to_kiwi()} {rel} {source.right.to_kiwi()}, "
+            f"strength={source.strength.name})")
+
+    return f"{source.__class__.__name__}(strength={source.strength.name})"
+
+
+class ConstraintVerificationError(Exception):
+
+    def __init__(
+        self,
+        failing_source: ConstraintBase | str,
+        conflicting_sources: Sequence[ConstraintBase | str],
+    ) -> None:
+        self.failing_source = failing_source
+        self.conflicting_sources = list(conflicting_sources)
+
+        lines = [
+            "Unsatisfiable layout constraints detected.",
+            f"Failing constraint: {describe_constraint_source(self.failing_source)}",
+        ]
+        if self.conflicting_sources:
+            lines.append("Conflicts with:")
+            for src in self.conflicting_sources:
+                lines.append(f"  - {describe_constraint_source(src)}")
+        else:
+            lines.append("The failing constraint is internally inconsistent.")
+        super().__init__("\n".join(lines))
+
+
+@dataclass
 class AlignItem:
     rect_id: str
     offset: float = 0.0
@@ -710,7 +803,108 @@ class Layout:
         path.parent.mkdir(parents=True, exist_ok=True)
         dot = self.to_graphviz()
         dot.render(filename=str(path), cleanup=True)
-        dot.save(str(path) + ".gv")
+        # dot.save(str(path) + ".gv")
+
+    def _build_constraint_entries(self) -> List[ConstraintEntry]:
+        entries: List[ConstraintEntry] = []
+
+        for rect in self.rects.values():
+            entries.append(
+                ConstraintEntry(
+                    source=f"Rect({rect.rect_id}).width >= 0",
+                    lowered=[(rect.expr(RectAttr.WIDTH).to_kiwi() >= 0)
+                             | kiwi.strength.required],
+                ))
+            entries.append(
+                ConstraintEntry(
+                    source=f"Rect({rect.rect_id}).height >= 0",
+                    lowered=[(rect.expr(RectAttr.HEIGHT).to_kiwi() >= 0)
+                             | kiwi.strength.required],
+                ))
+
+            if rect.x0 is not None:
+                entries.append(
+                    ConstraintEntry(
+                        source=f"Rect({rect.rect_id}).x == {rect.x0:g}",
+                        lowered=[(rect.expr(RectAttr.X).to_kiwi() == rect.x0)
+                                 | kiwi.strength.required],
+                    ))
+            if rect.y0 is not None:
+                entries.append(
+                    ConstraintEntry(
+                        source=f"Rect({rect.rect_id}).y == {rect.y0:g}",
+                        lowered=[(rect.expr(RectAttr.Y).to_kiwi() == rect.y0)
+                                 | kiwi.strength.required],
+                    ))
+            if rect.width0 is not None:
+                entries.append(
+                    ConstraintEntry(
+                        source=f"Rect({rect.rect_id}).width == {rect.width0:g}",
+                        lowered=[(rect.expr(RectAttr.WIDTH).to_kiwi()
+                                  == rect.width0)
+                                 | kiwi.strength.required],
+                    ))
+            if rect.height0 is not None:
+                entries.append(
+                    ConstraintEntry(
+                        source=
+                        f"Rect({rect.rect_id}).height == {rect.height0:g}",
+                        lowered=[(rect.expr(RectAttr.HEIGHT).to_kiwi()
+                                  == rect.height0)
+                                 | kiwi.strength.required],
+                    ))
+
+        for item in self.constraints:
+            entries.append(
+                ConstraintEntry(source=item, lowered=item.build(self.rects)))
+
+        return entries
+
+    def _is_satisfiable(self, entries: Sequence[ConstraintEntry]) -> bool:
+        solver = kiwi.Solver()
+        try:
+            for entry in entries:
+                for lowered in entry.lowered:
+                    solver.addConstraint(lowered)
+        except kiwi.UnsatisfiableConstraint:
+            return False
+        return True
+
+    def _minimal_conflict_set(
+        self,
+        active_entries: Sequence[ConstraintEntry],
+        failing_entry: ConstraintEntry,
+    ) -> List[ConstraintEntry]:
+        if not self._is_satisfiable([failing_entry]):
+            return []
+
+        conflict = list(active_entries)
+        idx = 0
+        while idx < len(conflict):
+            candidate = conflict[idx]
+            trial = [entry for entry in conflict if entry is not candidate]
+            if not self._is_satisfiable(trial + [failing_entry]):
+                conflict = trial
+            else:
+                idx += 1
+        return conflict
+
+    def verify_constraints(self) -> None:
+        entries = self._build_constraint_entries()
+        solver = kiwi.Solver()
+        active_entries: List[ConstraintEntry] = []
+
+        for entry in entries:
+            try:
+                for lowered in entry.lowered:
+                    solver.addConstraint(lowered)
+            except kiwi.UnsatisfiableConstraint:
+                conflicts = self._minimal_conflict_set(active_entries, entry)
+                raise ConstraintVerificationError(
+                    failing_source=entry.source,
+                    conflicting_sources=[c.source for c in conflicts],
+                ) from None
+            active_entries.append(entry)
 
 
 def assert_close(a: float, b: float, eps: float = 1e-6):
@@ -739,6 +933,7 @@ def test_alignment_and_relative_positioning():
         SeparateConstraint("c", Anchor.LEFT, "b", Anchor.RIGHT, 15),
     ]
     layout = Layout(rects, constraints)
+    layout.verify_constraints()
     solved = layout.solve()
     write_outputs("test_alignment_and_relative_positioning", layout)
 
@@ -796,6 +991,7 @@ def test_parent_and_child_relative_constraints():
         ),
     ]
     layout = Layout(rects, constraints)
+    layout.verify_constraints()
     solved = layout.solve()
     write_outputs("test_parent_and_child_relative_constraints", layout)
 
@@ -826,6 +1022,7 @@ def test_linear_constraint_and_equal_size():
                          a.expr(RectAttr.WIDTH) + 20),
     ]
     layout = Layout(rects, constraints)
+    layout.verify_constraints()
     solved = layout.solve()
     write_outputs("test_linear_constraint_and_equal_size", layout)
 
@@ -868,6 +1065,7 @@ def test_multi_separate_several_lines_of_evenly_spaced_rectangles():
         ),
     ]
     layout = Layout(rects, constraints)
+    layout.verify_constraints()
     solved = layout.solve()
     write_outputs(
         "test_multi_separate_several_lines_of_evenly_spaced_rectangles",
@@ -904,6 +1102,7 @@ def test_two_orthogonal_multi_separate_grid():
             AlignConstraint(Anchor.LEFT, [AlignItem(r) for r in col]))
 
     layout = Layout(rects, constraints)
+    layout.verify_constraints()
     solved = layout.solve()
     write_outputs("test_two_orthogonal_multi_separate_grid", layout)
 
@@ -962,6 +1161,7 @@ def test_even_gap_parent_rectangles_and_children_relative():
         ),
     ]
     layout = Layout(rects, constraints)
+    layout.verify_constraints()
     solved = layout.solve()
     write_outputs("test_even_gap_parent_rectangles_and_children_relative",
                   layout)
@@ -971,6 +1171,69 @@ def test_even_gap_parent_rectangles_and_children_relative():
     assert_close(solved["c2"]["height"], 30.0)
     assert_close(solved["c2"]["x"], solved["p2"]["x"] + 50 + 10)
     assert_close(solved["c2"]["y"], solved["p2"]["y"] + 30)
+
+
+def test_constraint_verification_passes_for_consistent_constraints():
+    rects = [
+        Rect("a", x0=0, y0=0, width0=10, height0=10),
+        Rect("b", y0=0, width0=10, height0=10),
+    ]
+    constraints = [
+        SeparateConstraint("b", Anchor.LEFT, "a", Anchor.RIGHT, 5),
+    ]
+    layout = Layout(rects, constraints)
+    layout.verify_constraints()
+
+
+def test_constraint_verification_passes_for_nonrequired_conflict():
+    rects = [Rect("a")]
+    a = rects[0]
+    constraints = [
+        LinearConstraint(a.expr(RectAttr.X),
+                         Relation.EQ,
+                         Expr(0),
+                         strength=Strength.WEAK),
+        LinearConstraint(a.expr(RectAttr.X),
+                         Relation.EQ,
+                         Expr(100),
+                         strength=Strength.WEAK),
+    ]
+    layout = Layout(rects, constraints)
+    layout.verify_constraints()
+
+
+def test_constraint_verification_fails_for_conflicting_rect_pin_and_linear_constraint(
+):
+    rects = [Rect("a", x0=0)]
+    a = rects[0]
+    constraints = [
+        LinearConstraint(a.expr(RectAttr.X), Relation.EQ, Expr(10)),
+    ]
+    layout = Layout(rects, constraints)
+
+    with pytest.raises(ConstraintVerificationError) as exc:
+        layout.verify_constraints()
+
+    message = str(exc.value)
+    assert "Rect(a).x == 0" in message
+    assert "LinearConstraint" in message
+
+
+def test_constraint_verification_fails_for_mutually_exclusive_constraints():
+    rects = [Rect("a"), Rect("b")]
+    constraints = [
+        SeparateConstraint("b", Anchor.LEFT, "a", Anchor.RIGHT, 5),
+        SeparateConstraint("b", Anchor.LEFT, "a", Anchor.RIGHT, 7),
+    ]
+    layout = Layout(rects, constraints)
+
+    with pytest.raises(ConstraintVerificationError) as exc:
+        layout.verify_constraints()
+
+    message = str(exc.value)
+    assert "SeparateConstraint" in message
+    assert "+ 5" in message
+    assert "+ 7" in message
 
 
 if __name__ == "__main__":
