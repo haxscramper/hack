@@ -10,6 +10,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
+import subprocess
+import time
 
 import click
 from beartype import beartype
@@ -165,6 +167,17 @@ def format_datetime(ts: float) -> str:
     if ts <= 0:
         return ""
     return datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S")
+
+
+@beartype
+def parse_ffmpeg_out_time(value: str) -> float | None:
+    parts = value.split(":")
+    if len(parts) != 3:
+        return None
+    hours = int(parts[0])
+    minutes = int(parts[1])
+    seconds = float(parts[2])
+    return hours * 3600 + minutes * 60 + seconds
 
 
 @beartype
@@ -687,7 +700,8 @@ class VideoTreeModel(QAbstractItemModel):
                 return style.standardIcon(QStyle.StandardPixmap.SP_MediaPlay)
 
             if not node.is_dir and col == self.COL_CONVERT:
-                return style.standardIcon(QStyle.StandardPixmap.SP_ArrowRight)
+                return style.standardIcon(
+                    QStyle.StandardPixmap.SP_BrowserReload)
 
         return None
 
@@ -842,6 +856,8 @@ class ConversionWorker(QObject):
         self._queue: queue.Queue[ConversionTaskModel | None] = queue.Queue()
         self._running = True
         self._lock = threading.Lock()
+        self._stop_requested = threading.Event()
+        self._current_process: subprocess.Popen[str] | None = None
 
     @beartype
     def enqueue(self, task: ConversionTaskModel) -> None:
@@ -857,14 +873,25 @@ class ConversionWorker(QObject):
                 result = self._convert(task)
                 self.converted.emit(result)
             except Exception as error:
-                self.failed.emit(f"{task.source_path}: {error}")
+                if not self._stop_requested.is_set():
+                    self.failed.emit(f"{task.source_path}: {error}")
             finally:
                 self._queue.task_done()
 
     @beartype
     def stop(self) -> None:
+        self._stop_requested.set()
         with self._lock:
             self._running = False
+            process = self._current_process
+
+        if process is not None and process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                process.kill()
+
         self._queue.put(None)
 
     @beartype
@@ -872,10 +899,18 @@ class ConversionWorker(QObject):
         src = Path(task.source_path)
         dst = Path(task.output_path)
         dst.parent.mkdir(parents=True, exist_ok=True)
-        ffmpeg = local["ffmpeg"]
+
+        source_probe = run_ffprobe(src)
+        duration = source_probe.duration_seconds if source_probe is not None else None
 
         cmd = [
+            "ffmpeg",
             "-y",
+            "-loglevel",
+            "error",
+            "-nostats",
+            "-progress",
+            "pipe:1",
             "-hwaccel",
             "vaapi",
             "-hwaccel_device",
@@ -917,7 +952,69 @@ class ConversionWorker(QObject):
         ])
 
         LOGGER.info(f"Converting {src} -> {dst}")
-        ffmpeg[cmd]()
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            bufsize=1,
+        )
+
+        with self._lock:
+            self._current_process = process
+
+        start_ts = time.monotonic()
+        last_log_ts = 0.0
+        out_time_sec = 0.0
+
+        try:
+            if process.stdout is not None:
+                for raw_line in process.stdout:
+                    if self._stop_requested.is_set():
+                        process.terminate()
+                        break
+
+                    line = raw_line.strip()
+                    if "=" not in line:
+                        continue
+
+                    key, value = line.split("=", 1)
+
+                    if key == "out_time":
+                        parsed = parse_ffmpeg_out_time(value)
+                        if parsed is not None:
+                            out_time_sec = parsed
+
+                    if key == "progress":
+                        now = time.monotonic()
+                        if (duration is not None and 0 < duration
+                                and now - last_log_ts >= 1.0):
+                            ratio = min(max(out_time_sec / duration, 0.0), 1.0)
+                            pct = ratio * 100.0
+
+                            eta_text = ""
+                            if 0.0 < ratio < 1.0:
+                                elapsed = now - start_ts
+                                eta_seconds = elapsed * (1.0 - ratio) / ratio
+                                eta_text = format_duration(eta_seconds)
+                            elif ratio >= 1.0:
+                                eta_text = "00:00:00"
+
+                            LOGGER.info(
+                                f"{src.name}: {pct:6.2f}% ETA {eta_text}")
+                            last_log_ts = now
+
+            return_code = process.wait()
+        finally:
+            with self._lock:
+                self._current_process = None
+
+        if self._stop_requested.is_set():
+            raise RuntimeError("Conversion cancelled")
+
+        if return_code != 0:
+            raise RuntimeError(f"ffmpeg failed with exit code {return_code}")
+
         probe = run_ffprobe(dst)
         stat = dst.stat()
         output = OutputVideoModel(
@@ -1102,7 +1199,7 @@ class MainWindow(QWidget):
 
     def closeEvent(self, event: Any) -> None:
         self._worker.stop()
-        self._thread.join()
+        self._thread.join(timeout=3)
         super().closeEvent(event)
 
 
