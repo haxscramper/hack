@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QSpinBox,
     QStyledItemDelegate,
+    QStyle,
     QStyleOptionViewItem,
     QTreeView,
     QVBoxLayout,
@@ -534,6 +535,7 @@ class VideoTreeModel(QAbstractItemModel):
         self._enqueue_callback = enqueue_callback
         self._save_callback = save_callback
         self._path_map: dict[str, TreeEntryModel] = {}
+        self._expanded_dirs: set[str] = set()
         self._build_path_map(self._root)
 
     @beartype
@@ -623,14 +625,14 @@ class VideoTreeModel(QAbstractItemModel):
             if col == self.COL_CODEC:
                 return node.codec_text
             if col == self.COL_PLAY_INPUT and not node.is_dir:
-                return "Play"
+                return ""
             if col == self.COL_SET_RESOLUTION and not node.is_dir:
                 return node.action.target_resolution
             if col == self.COL_SET_CRF and not node.is_dir:
                 return str(node.action.crf)
             if col == self.COL_PLAY_OUTPUT and not node.is_dir:
                 if node.output is not None:
-                    return "Play"
+                    return ""
                 return ""
             if col == self.COL_REDUCTION and not node.is_dir:
                 if node.output is None or node.file_size_bytes == 0:
@@ -639,7 +641,7 @@ class VideoTreeModel(QAbstractItemModel):
                          node.file_size_bytes) * 100.0
                 return f"{ratio:.2f}%"
             if col == self.COL_CONVERT and not node.is_dir:
-                return "Queue"
+                return ""
 
         if role == Qt.ItemDataRole.EditRole and not node.is_dir:
             if col == self.COL_SET_RESOLUTION:
@@ -666,6 +668,27 @@ class VideoTreeModel(QAbstractItemModel):
                 return (node.output.file_size_bytes /
                         node.file_size_bytes) * 100.0
             return node.row_in_parent
+
+        elif role == Qt.ItemDataRole.DecorationRole:
+            style = QApplication.style()
+
+            if col == self.COL_NAME:
+                if node.is_dir:
+                    if node.absolute_path in self._expanded_dirs:
+                        return style.standardIcon(
+                            QStyle.StandardPixmap.SP_DirOpenIcon)
+                    return style.standardIcon(QStyle.StandardPixmap.SP_DirIcon)
+                return style.standardIcon(QStyle.StandardPixmap.SP_FileIcon)
+
+            if not node.is_dir and col == self.COL_PLAY_INPUT:
+                return style.standardIcon(QStyle.StandardPixmap.SP_MediaPlay)
+
+            if not node.is_dir and col == self.COL_PLAY_OUTPUT and node.output is not None:
+                return style.standardIcon(QStyle.StandardPixmap.SP_MediaPlay)
+
+            if not node.is_dir and col == self.COL_CONVERT:
+                return style.standardIcon(QStyle.StandardPixmap.SP_ArrowRight)
+
         return None
 
     @beartype
@@ -701,6 +724,19 @@ class VideoTreeModel(QAbstractItemModel):
         if index.isValid():
             return index.internalPointer()
         return self._root
+
+    @beartype
+    def set_dir_expanded(self, absolute_path: str, expanded: bool) -> None:
+        if expanded:
+            self._expanded_dirs.add(absolute_path)
+        else:
+            self._expanded_dirs.discard(absolute_path)
+
+        idx = self.index_for_path(absolute_path)
+        if idx.isValid():
+            name_idx = self.index(idx.row(), self.COL_NAME, idx.parent())
+            self.dataChanged.emit(name_idx, name_idx,
+                                  [Qt.ItemDataRole.DecorationRole])
 
     @beartype
     def handle_action(self, action_name: str, index: QModelIndex) -> None:
@@ -771,28 +807,30 @@ class DirectorySortProxy(QSortFilterProxyModel):
         src = self.sourceModel()
         if not isinstance(src, VideoTreeModel):
             return super().lessThan(left, right)
+
         left_node: TreeEntryModel = left.internalPointer()
         right_node: TreeEntryModel = right.internalPointer()
+
         if left_node.is_dir != right_node.is_dir:
             return left_node.is_dir
+
         col = self.sortColumn()
         if col < 0:
             return left_node.row_in_parent < right_node.row_in_parent
+
         lval = src.data(left.siblingAtColumn(col), Qt.ItemDataRole.UserRole)
         rval = src.data(right.siblingAtColumn(col), Qt.ItemDataRole.UserRole)
+
         if isinstance(lval, (int, float)) and isinstance(rval, (int, float)):
-            if self.sortOrder() == Qt.SortOrder.AscendingOrder:
-                return lval < rval
-            return rval < lval
+            return lval < rval
+
         ltxt = str(
             src.data(left.siblingAtColumn(col), Qt.ItemDataRole.DisplayRole)
             or "")
         rtxt = str(
             src.data(right.siblingAtColumn(col), Qt.ItemDataRole.DisplayRole)
             or "")
-        if self.sortOrder() == Qt.SortOrder.AscendingOrder:
-            return ltxt.lower() < rtxt.lower()
-        return rtxt.lower() < ltxt.lower()
+        return ltxt.lower() < rtxt.lower()
 
 
 class ConversionWorker(QObject):
@@ -829,69 +867,69 @@ class ConversionWorker(QObject):
             self._running = False
         self._queue.put(None)
 
+    @beartype
+    def _convert(self, task: ConversionTaskModel) -> ConversionResultModel:
+        src = Path(task.source_path)
+        dst = Path(task.output_path)
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        ffmpeg = local["ffmpeg"]
 
-@beartype
-def _convert(self, task: ConversionTaskModel) -> ConversionResultModel:
-    src = Path(task.source_path)
-    dst = Path(task.output_path)
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    ffmpeg = local["ffmpeg"]
+        cmd = [
+            "-y",
+            "-hwaccel",
+            "vaapi",
+            "-hwaccel_device",
+            "/dev/dri/renderD128",
+            "-hwaccel_output_format",
+            "vaapi",
+            "-i",
+            str(src),
+            "-map",
+            "0",
+            "-vaapi_device",
+            "/dev/dri/renderD128",
+        ]
 
-    cmd = [
-        "-y",
-        "-hwaccel",
-        "vaapi",
-        "-hwaccel_device",
-        "/dev/dri/renderD128",
-        "-hwaccel_output_format",
-        "vaapi",
-        "-i",
-        str(src),
-        "-map",
-        "0",
-        "-vaapi_device",
-        "/dev/dri/renderD128",
-    ]
+        filters: list[str] = []
+        if task.action.target_resolution != "":
+            h = RESOLUTION_HEIGHT[task.action.target_resolution]
+            filters.append(
+                f"scale_vaapi=w=-2:h={h}:force_original_aspect_ratio=decrease")
 
-    filters: list[str] = []
-    if task.action.target_resolution != "":
-        h = RESOLUTION_HEIGHT[task.action.target_resolution]
-        filters.append(
-            f"scale_vaapi=w=-2:h={h}:force_original_aspect_ratio=decrease")
+        if filters:
+            cmd.extend(["-vf", ",".join(filters)])
 
-    if filters:
-        cmd.extend(["-vf", ",".join(filters)])
+        quality_value = task.action.crf if 0 < task.action.crf else 28
+        cmd.extend([
+            "-c:v",
+            "hevc_vaapi",
+            "-rc_mode",
+            "CQP",
+            "-qp",
+            str(quality_value),
+            "-preset",
+            task.preset,
+            "-c:a",
+            "copy",
+            "-c:s",
+            "copy",
+            str(dst),
+        ])
 
-    crf_value = task.action.crf if 0 < task.action.crf else 28
-    cmd.extend([
-        "-c:v",
-        "hevc_vaapi",
-        "-rc_mode",
-        "ICQ",
-        "-global_quality",
-        str(crf_value),
-        "-preset",
-        task.preset,
-        "-c:a",
-        "copy",
-        "-c:s",
-        "copy",
-        str(dst),
-    ])
-
-    LOGGER.info(f"Converting {src} -> {dst}")
-    ffmpeg[cmd]()
-    probe = run_ffprobe(dst)
-    stat = dst.stat()
-    output = OutputVideoModel(
-        output_path=str(dst.resolve()),
-        file_size_bytes=stat.st_size,
-        created_ts=stat.st_ctime,
-        probe=probe,
-        action=task.action,
-        preset=task.preset,
-    )
-    return ConversionResultModel(source_path=str(src.resolve()), output=output)
+        LOGGER.info(f"Converting {src} -> {dst}")
+        ffmpeg[cmd]()
+        probe = run_ffprobe(dst)
+        stat = dst.stat()
+        output = OutputVideoModel(
+            output_path=str(dst.resolve()),
+            file_size_bytes=stat.st_size,
+            created_ts=stat.st_ctime,
+            probe=probe,
+            action=task.action,
+            preset=task.preset,
+        )
+        return ConversionResultModel(source_path=str(src.resolve()),
+                                     output=output)
 
 
 class MainWindow(QWidget):
@@ -925,6 +963,7 @@ class MainWindow(QWidget):
         self._tree.setRootIsDecorated(True)
         self._tree.setAlternatingRowColors(True)
         self._tree.setSortingEnabled(True)
+        self._tree.setStyleSheet("QTreeView::item { height: 26px; }")
         self._tree.setEditTriggers(QTreeView.EditTrigger.CurrentChanged
                                    | QTreeView.EditTrigger.SelectedClicked
                                    | QTreeView.EditTrigger.EditKeyPressed)
@@ -941,6 +980,9 @@ class MainWindow(QWidget):
         self._tree.setItemDelegateForColumn(
             VideoTreeModel.COL_CONVERT,
             ActionButtonDelegate("convert", self._tree))
+
+        self._tree.expanded.connect(self.on_tree_expanded)
+        self._tree.collapsed.connect(self.on_tree_collapsed)
 
         header = self._tree.header()
         header.setSectionsClickable(True)
@@ -972,7 +1014,7 @@ class MainWindow(QWidget):
 
         self.setWindowTitle(f"Video manager: {input_root}")
         self.resize(1600, 900)
-        self._tree.expandToDepth(0)
+        self._tree.collapseAll()
 
     @Slot(str)
     def on_preset_changed(self, value: str) -> None:
@@ -998,6 +1040,24 @@ class MainWindow(QWidget):
                 preset=self._preset,
             )
             self.enqueue_task(task)
+
+    @Slot(QModelIndex)
+    def on_tree_expanded(self, proxy_index: QModelIndex) -> None:
+        src_index = self._proxy.mapToSource(proxy_index)
+        if not src_index.isValid():
+            return
+        node: TreeEntryModel = src_index.internalPointer()
+        if node.is_dir:
+            self._model.set_dir_expanded(node.absolute_path, True)
+
+    @Slot(QModelIndex)
+    def on_tree_collapsed(self, proxy_index: QModelIndex) -> None:
+        src_index = self._proxy.mapToSource(proxy_index)
+        if not src_index.isValid():
+            return
+        node: TreeEntryModel = src_index.internalPointer()
+        if node.is_dir:
+            self._model.set_dir_expanded(node.absolute_path, False)
 
     @beartype
     def enqueue_task(self, task: ConversionTaskModel) -> None:
