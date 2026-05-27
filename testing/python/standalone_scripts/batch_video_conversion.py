@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Literal
 import subprocess
 import time
+import shlex
 
 import click
 from beartype import beartype
@@ -19,12 +20,14 @@ from plumbum import local
 from plumbum.commands.processes import ProcessExecutionError
 from pydantic import BaseModel, Field
 from PySide6.QtCore import QAbstractItemModel, QModelIndex, QObject, QSortFilterProxyModel, Qt, Signal, Slot
-from PySide6.QtGui import QMouseEvent
+from PySide6.QtGui import QColor, QMouseEvent, QBrush
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
+    QDialog,
     QHeaderView,
     QHBoxLayout,
+    QPlainTextEdit,
     QPushButton,
     QSpinBox,
     QStyledItemDelegate,
@@ -70,6 +73,7 @@ class ProbeInfoModel(BaseModel):
 class ActionModel(BaseModel):
     target_resolution: Literal["", "SD", "HD", "FULL_HD"] = ""
     crf: int = 0
+    fps: int = 0
 
 
 @beartype
@@ -80,6 +84,8 @@ class OutputVideoModel(BaseModel):
     probe: ProbeInfoModel | None = None
     action: ActionModel = Field(default_factory=ActionModel)
     preset: str = "medium"
+    ffmpeg_command: str = ""
+    ffmpeg_stdout: str = ""
 
 
 @beartype
@@ -292,8 +298,9 @@ def collect_video_nodes(node: TreeEntryModel,
 
 @beartype
 def assign_share_and_cached_text(node: TreeEntryModel,
-                                 total_size: int) -> None:
-    node.share = (node.file_size_bytes / total_size) if 0 < total_size else 0.0
+                                 parent_total: int) -> None:
+    node.share = (node.file_size_bytes /
+                  parent_total) if 0 < parent_total else 0.0
     node.created_text = format_datetime(node.created_ts)
     node.size_text = format_size(node.file_size_bytes)
     node.share_text = f"{node.share * 100:.2f}%"
@@ -307,8 +314,10 @@ def assign_share_and_cached_text(node: TreeEntryModel,
         node.bitrate_text = format_bitrate(node.probe.bitrate_bps)
         node.resolution_text = node.probe.resolution or ""
         node.codec_text = node.probe.codec_name or ""
+
+    child_total = sum(entry.file_size_bytes for entry in node.entires)
     for entry in node.entires:
-        assign_share_and_cached_text(entry, total_size)
+        assign_share_and_cached_text(entry, child_total)
 
 
 @beartype
@@ -481,6 +490,68 @@ class CrfDelegate(QStyledItemDelegate):
             model.setData(index, spin.value(), Qt.ItemDataRole.EditRole)
 
 
+class FpsDelegate(QStyledItemDelegate):
+
+    @beartype
+    def createEditor(self, parent: QWidget, option: QStyleOptionViewItem,
+                     index: QModelIndex) -> QWidget:
+        editor = QSpinBox(parent)
+        editor.setRange(0, 240)
+        return editor
+
+    @beartype
+    def setEditorData(self, editor: QWidget, index: QModelIndex) -> None:
+        value = int(index.data(Qt.ItemDataRole.EditRole) or 0)
+        spin = editor
+        if isinstance(spin, QSpinBox):
+            spin.setValue(value)
+
+    @beartype
+    def setModelData(self, editor: QWidget, model: QAbstractItemModel,
+                     index: QModelIndex) -> None:
+        spin = editor
+        if isinstance(spin, QSpinBox):
+            model.setData(index, spin.value(), Qt.ItemDataRole.EditRole)
+
+
+class ShareHighlightDelegate(QStyledItemDelegate):
+
+    @beartype
+    def paint(
+        self,
+        painter: Any,
+        option: QStyleOptionViewItem,
+        index: QModelIndex,
+    ) -> None:
+        opt = QStyleOptionViewItem(option)
+        self.initStyleOption(opt, index)
+
+        share_value = index.data(Qt.ItemDataRole.UserRole)
+        background = None
+
+        if isinstance(share_value, (float, int)):
+            share = float(share_value)
+            if share < 0.02:
+                background = QColor("#E6F2FF")
+            elif share < 0.05:
+                background = QColor("#E8F5E9")
+            elif share < 0.10:
+                background = QColor("#FFF9C4")
+            elif share < 0.20:
+                background = QColor("#FFE0B2")
+            elif share < 0.50:
+                background = QColor("#FFCDD2")
+
+        painter.save()
+
+        if background is not None:
+            painter.fillRect(opt.rect, background)
+
+        super().paint(painter, opt, index)
+
+        painter.restore()
+
+
 class ActionButtonDelegate(QStyledItemDelegate):
 
     def __init__(self,
@@ -509,7 +580,6 @@ class VideoTreeModel(QAbstractItemModel):
     HEADERS = [
         "Name",
         "Size",
-        "Created",
         "Share",
         "Resolution",
         "Bitrate",
@@ -518,35 +588,41 @@ class VideoTreeModel(QAbstractItemModel):
         "Play Input",
         "Set Resolution",
         "Set CRF",
+        "Set FPS",
         "Play Output",
+        "Output Size",
         "Reduction Rate",
+        "FFmpeg",
         "Convert",
     ]
 
     COL_NAME = 0
     COL_SIZE = 1
-    COL_CREATED = 2
-    COL_SHARE = 3
-    COL_RESOLUTION = 4
-    COL_BITRATE = 5
-    COL_DURATION = 6
-    COL_CODEC = 7
-    COL_PLAY_INPUT = 8
-    COL_SET_RESOLUTION = 9
-    COL_SET_CRF = 10
+    COL_SHARE = 2
+    COL_RESOLUTION = 3
+    COL_BITRATE = 4
+    COL_DURATION = 5
+    COL_CODEC = 6
+    COL_PLAY_INPUT = 7
+    COL_SET_RESOLUTION = 8
+    COL_SET_CRF = 9
+    COL_SET_FPS = 10
     COL_PLAY_OUTPUT = 11
-    COL_REDUCTION = 12
-    COL_CONVERT = 13
+    COL_OUTPUT_SIZE = 12
+    COL_REDUCTION = 13
+    COL_FFMPEG = 14
+    COL_CONVERT = 15
 
     def __init__(self, root_entry: TreeEntryModel, input_root: Path,
-                 output_root: Path, enqueue_callback: Any,
-                 save_callback: Any) -> None:
+                 output_root: Path, enqueue_callback: Any, save_callback: Any,
+                 show_ffmpeg_callback: Any) -> None:
         super().__init__()
         self._root = root_entry
         self._input_root = input_root
         self._output_root = output_root
         self._enqueue_callback = enqueue_callback
         self._save_callback = save_callback
+        self._show_ffmpeg_callback = show_ffmpeg_callback
         self._path_map: dict[str, TreeEntryModel] = {}
         self._expanded_dirs: set[str] = set()
         self._build_path_map(self._root)
@@ -607,7 +683,8 @@ class VideoTreeModel(QAbstractItemModel):
         base = Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled
         if node.is_dir:
             return base
-        if index.column() in (self.COL_SET_RESOLUTION, self.COL_SET_CRF):
+        if index.column() in (self.COL_SET_RESOLUTION, self.COL_SET_CRF,
+                              self.COL_SET_FPS):
             return base | Qt.ItemFlag.ItemIsEditable
         return base
 
@@ -625,8 +702,6 @@ class VideoTreeModel(QAbstractItemModel):
                 return node.name
             if col == self.COL_SIZE:
                 return node.size_text
-            if col == self.COL_CREATED:
-                return node.created_text
             if col == self.COL_SHARE:
                 return node.share_text
             if col == self.COL_RESOLUTION:
@@ -643,16 +718,22 @@ class VideoTreeModel(QAbstractItemModel):
                 return node.action.target_resolution
             if col == self.COL_SET_CRF and not node.is_dir:
                 return str(node.action.crf)
+            if col == self.COL_SET_FPS and not node.is_dir:
+                return str(node.action.fps)
             if col == self.COL_PLAY_OUTPUT and not node.is_dir:
-                if node.output is not None:
-                    return ""
                 return ""
+            if col == self.COL_OUTPUT_SIZE and not node.is_dir:
+                if node.output is None:
+                    return ""
+                return format_size(node.output.file_size_bytes)
             if col == self.COL_REDUCTION and not node.is_dir:
                 if node.output is None or node.file_size_bytes == 0:
                     return ""
                 ratio = (node.output.file_size_bytes /
                          node.file_size_bytes) * 100.0
                 return f"{ratio:.2f}%"
+            if col == self.COL_FFMPEG and not node.is_dir:
+                return ""
             if col == self.COL_CONVERT and not node.is_dir:
                 return ""
 
@@ -661,10 +742,12 @@ class VideoTreeModel(QAbstractItemModel):
                 return node.action.target_resolution
             if col == self.COL_SET_CRF:
                 return node.action.crf
+            if col == self.COL_SET_FPS:
+                return node.action.fps
 
         if role == Qt.ItemDataRole.TextAlignmentRole and col in (
                 self.COL_SIZE, self.COL_SHARE, self.COL_SET_CRF,
-                self.COL_REDUCTION):
+                self.COL_SET_FPS, self.COL_OUTPUT_SIZE, self.COL_REDUCTION):
             return int(Qt.AlignmentFlag.AlignRight
                        | Qt.AlignmentFlag.AlignVCenter)
 
@@ -673,14 +756,24 @@ class VideoTreeModel(QAbstractItemModel):
                 return node.file_size_bytes
             if col == self.COL_SHARE:
                 return node.share
-            if col == self.COL_CREATED:
-                return node.created_ts
             if col == self.COL_REDUCTION:
                 if node.output is None or node.file_size_bytes == 0:
                     return 0.0
                 return (node.output.file_size_bytes /
                         node.file_size_bytes) * 100.0
+            if col == self.COL_OUTPUT_SIZE:
+                if node.output is None:
+                    return 0
+                return node.output.file_size_bytes
             return node.row_in_parent
+
+        if role == Qt.ItemDataRole.BackgroundRole and not node.is_dir:
+            if col == self.COL_BITRATE and node.probe is not None and node.probe.bitrate_bps is not None:
+                if node.probe.bitrate_bps > 5_000_000:
+                    return QColor("#FFE0B2")  # pale orange
+            if col == self.COL_OUTPUT_SIZE and node.output is not None:
+                if node.output.file_size_bytes > node.file_size_bytes:
+                    return QColor("#FFCDD2")  # pale red
 
         elif role == Qt.ItemDataRole.DecorationRole:
             style = QApplication.style()
@@ -698,6 +791,10 @@ class VideoTreeModel(QAbstractItemModel):
 
             if not node.is_dir and col == self.COL_PLAY_OUTPUT and node.output is not None:
                 return style.standardIcon(QStyle.StandardPixmap.SP_MediaPlay)
+
+            if not node.is_dir and col == self.COL_FFMPEG and node.output is not None and node.output.ffmpeg_command:
+                return style.standardIcon(
+                    QStyle.StandardPixmap.SP_FileDialogDetailedView)
 
             if not node.is_dir and col == self.COL_CONVERT:
                 return style.standardIcon(
@@ -726,6 +823,13 @@ class VideoTreeModel(QAbstractItemModel):
             return True
         if index.column() == self.COL_SET_CRF:
             node.action.crf = int(value)
+            self.dataChanged.emit(
+                index, index,
+                [Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole])
+            self._save_callback()
+            return True
+        if index.column() == self.COL_SET_FPS:
+            node.action.fps = int(value)
             self.dataChanged.emit(
                 index, index,
                 [Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole])
@@ -767,8 +871,13 @@ class VideoTreeModel(QAbstractItemModel):
                 return
             local["mpv"].popen([node.output.output_path])
             return
+        if action_name == "show_ffmpeg":
+            if not node.output:
+                return
+            self._show_ffmpeg_callback(node.output)
+            return
         if action_name == "convert":
-            if node.action.target_resolution == "" and node.action.crf == 0:
+            if node.action.target_resolution == "" and node.action.crf == 0 and node.action.fps == 0:
                 return
             rel = Path(node.relative_path)
             output_path = self._output_root / rel.with_suffix(".mp4")
@@ -791,11 +900,12 @@ class VideoTreeModel(QAbstractItemModel):
         if idx_row.isValid():
             left = self.index(idx_row.row(), self.COL_PLAY_OUTPUT,
                               idx_row.parent())
-            right = self.index(idx_row.row(), self.COL_REDUCTION,
+            right = self.index(idx_row.row(), self.COL_FFMPEG,
                                idx_row.parent())
-            self.dataChanged.emit(
-                left, right,
-                [Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.UserRole])
+            self.dataChanged.emit(left, right, [
+                Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.UserRole,
+                Qt.ItemDataRole.BackgroundRole, Qt.ItemDataRole.DecorationRole
+            ])
         self._save_callback()
 
     @beartype
@@ -948,8 +1058,12 @@ class ConversionWorker(QObject):
             "copy",
             "-c:s",
             "copy",
-            str(dst),
         ])
+
+        if task.action.fps > 0:
+            cmd.extend(["-r", str(task.action.fps)])
+
+        cmd.append(str(dst))
 
         LOGGER.info(f"Converting {src} -> {dst}")
         process = subprocess.Popen(
@@ -966,10 +1080,12 @@ class ConversionWorker(QObject):
         start_ts = time.monotonic()
         last_log_ts = 0.0
         out_time_sec = 0.0
+        ffmpeg_stdout = []
 
         try:
             if process.stdout is not None:
                 for raw_line in process.stdout:
+                    ffmpeg_stdout.append(raw_line)
                     if self._stop_requested.is_set():
                         process.terminate()
                         break
@@ -1017,14 +1133,14 @@ class ConversionWorker(QObject):
 
         probe = run_ffprobe(dst)
         stat = dst.stat()
-        output = OutputVideoModel(
-            output_path=str(dst.resolve()),
-            file_size_bytes=stat.st_size,
-            created_ts=stat.st_ctime,
-            probe=probe,
-            action=task.action,
-            preset=task.preset,
-        )
+        output = OutputVideoModel(output_path=str(dst.resolve()),
+                                  file_size_bytes=stat.st_size,
+                                  created_ts=stat.st_ctime,
+                                  probe=probe,
+                                  action=task.action,
+                                  preset=task.preset,
+                                  ffmpeg_stdout="\n".join(ffmpeg_stdout),
+                                  ffmpeg_command=" ".join(cmd))
         return ConversionResultModel(source_path=str(src.resolve()),
                                      output=output)
 
@@ -1049,6 +1165,7 @@ class MainWindow(QWidget):
             output_root=self._output_root,
             enqueue_callback=self.enqueue_task,
             save_callback=self.save_cache,
+            show_ffmpeg_callback=self.show_ffmpeg_dialog,
         )
 
         self._proxy = DirectorySortProxy(self)
@@ -1059,21 +1176,29 @@ class MainWindow(QWidget):
         self._tree.setModel(self._proxy)
         self._tree.setRootIsDecorated(True)
         self._tree.setAlternatingRowColors(True)
-        self._tree.setSortingEnabled(True)
+        self._tree.setSortingEnabled(False)
         self._tree.setStyleSheet("QTreeView::item { height: 26px; }")
         self._tree.setEditTriggers(QTreeView.EditTrigger.CurrentChanged
                                    | QTreeView.EditTrigger.SelectedClicked
                                    | QTreeView.EditTrigger.EditKeyPressed)
+
         self._tree.setItemDelegateForColumn(VideoTreeModel.COL_SET_RESOLUTION,
                                             ResolutionDelegate(self._tree))
         self._tree.setItemDelegateForColumn(VideoTreeModel.COL_SET_CRF,
                                             CrfDelegate(self._tree))
+        self._tree.setItemDelegateForColumn(VideoTreeModel.COL_SET_FPS,
+                                            FpsDelegate(self._tree))
+        self._tree.setItemDelegateForColumn(VideoTreeModel.COL_SHARE,
+                                            ShareHighlightDelegate(self._tree))
         self._tree.setItemDelegateForColumn(
             VideoTreeModel.COL_PLAY_INPUT,
             ActionButtonDelegate("play_input", self._tree))
         self._tree.setItemDelegateForColumn(
             VideoTreeModel.COL_PLAY_OUTPUT,
             ActionButtonDelegate("play_output", self._tree))
+        self._tree.setItemDelegateForColumn(
+            VideoTreeModel.COL_FFMPEG,
+            ActionButtonDelegate("show_ffmpeg", self._tree))
         self._tree.setItemDelegateForColumn(
             VideoTreeModel.COL_CONVERT,
             ActionButtonDelegate("convert", self._tree))
@@ -1083,9 +1208,11 @@ class MainWindow(QWidget):
 
         header = self._tree.header()
         header.setSectionsClickable(True)
+        header.setSortIndicatorShown(True)
         for index in range(len(VideoTreeModel.HEADERS)):
             header.setSectionResizeMode(index,
                                         QHeaderView.ResizeMode.Interactive)
+        self._tree.setColumnWidth(VideoTreeModel.COL_NAME, 260)
         header.sectionClicked.connect(self.handle_sort_click)
 
         self._sort_state_column = -1
@@ -1121,12 +1248,18 @@ class MainWindow(QWidget):
     def convert_all(self) -> None:
         videos = self._model.iter_video_nodes()
         for node in videos:
-            action_enabled = node.action.target_resolution != "" or 0 < node.action.crf
+            action_enabled = (node.action.target_resolution != ""
+                              or 0 < node.action.crf or 0 < node.action.fps)
             if not action_enabled:
                 continue
             if node.output is not None:
-                if node.output.action.target_resolution == node.action.target_resolution and node.output.action.crf == node.action.crf and node.output.preset == self._preset:
+                if (node.output.action.target_resolution
+                        == node.action.target_resolution
+                        and node.output.action.crf == node.action.crf
+                        and node.output.action.fps == node.action.fps
+                        and node.output.preset == self._preset):
                     continue
+
             rel = Path(node.relative_path)
             out = self._output_root / rel.with_suffix(".mp4")
             task = ConversionTaskModel(
@@ -1137,6 +1270,25 @@ class MainWindow(QWidget):
                 preset=self._preset,
             )
             self.enqueue_task(task)
+
+    @beartype
+    def show_ffmpeg_dialog(self, model: OutputVideoModel) -> None:
+        dialog = QDialog(self)
+        dialog.setWindowTitle("ffmpeg command")
+        layout = QVBoxLayout(dialog)
+        edit = QPlainTextEdit(dialog)
+        edit.setReadOnly(True)
+        edit.setPlainText(f"""
+command
+{model.ffmpeg_command}
+
+probe:
+{model.probe}
+
+        """)
+        layout.addWidget(edit)
+        dialog.resize(1000, 220)
+        dialog.exec()
 
     @Slot(QModelIndex)
     def on_tree_expanded(self, proxy_index: QModelIndex) -> None:
