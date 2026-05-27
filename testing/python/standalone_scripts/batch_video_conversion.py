@@ -67,12 +67,13 @@ class ProbeInfoModel(BaseModel):
     resolution: str | None = None
     codec_name: str | None = None
     format_name: str | None = None
+    fps: float | None = None
 
 
 @beartype
 class ActionModel(BaseModel):
     target_resolution: Literal["", "SD", "HD", "FULL_HD"] = ""
-    crf: int = 0
+    quality: int = 0
     fps: int = 0
 
 
@@ -84,7 +85,7 @@ class OutputVideoModel(BaseModel):
     probe: ProbeInfoModel | None = None
     action: ActionModel = Field(default_factory=ActionModel)
     preset: str = "medium"
-    ffmpeg_command: str = ""
+    ffmpeg_command: list[str] = Field(default_factory=list)
     ffmpeg_stdout: str = ""
 
 
@@ -107,7 +108,7 @@ class TreeEntryModel(BaseModel):
     share_text: str = ""
     duration_text: str = ""
     bitrate_text: str = ""
-    resolution_text: str = ""
+    visual_quality_text: str = ""
     codec_text: str = ""
 
 
@@ -130,6 +131,7 @@ class ConversionTaskModel(BaseModel):
     relative_path: str
     output_path: str
     action: ActionModel
+    probe: ProbeInfoModel
     preset: str
 
 
@@ -198,10 +200,16 @@ def format_duration(seconds: float | None) -> str:
 
 
 @beartype
-def format_bitrate(bitrate: int | None) -> str:
-    if bitrate is None:
+def format_bitrate(probe: ProbeInfoModel) -> str:
+    if probe.bitrate_bps is None:
         return ""
-    return f"{bitrate / 1_000_000:.2f} Mbps"
+
+    result = f"{probe.bitrate_bps / 1_000_000:.2f} Mbps"
+
+    if probe.width and probe.height:
+        result += f" ({probe.bitrate_bps / (probe.height * probe.width):.2f} bpps)"
+
+    return result
 
 
 @beartype
@@ -307,12 +315,14 @@ def assign_share_and_cached_text(node: TreeEntryModel,
     if node.probe is None:
         node.duration_text = ""
         node.bitrate_text = ""
-        node.resolution_text = ""
+        node.visual_quality_text = ""
         node.codec_text = ""
     else:
         node.duration_text = format_duration(node.probe.duration_seconds)
-        node.bitrate_text = format_bitrate(node.probe.bitrate_bps)
-        node.resolution_text = node.probe.resolution or ""
+        node.bitrate_text = format_bitrate(node.probe)
+        node.visual_quality_text = node.probe.resolution or ""
+        if node.probe.fps:
+            node.visual_quality_text += f" {node.probe.fps:.2f}fps"
         node.codec_text = node.probe.codec_name or ""
 
     child_total = sum(entry.file_size_bytes for entry in node.entires)
@@ -355,11 +365,28 @@ def run_ffprobe(path: Path) -> ProbeInfoModel | None:
             return None
         return float(value)
 
+    def parse_fps(value: Any) -> float | None:
+        if value is None:
+            return None
+        if value == "N/A":
+            return None
+        text = str(value)
+        if "/" in text:
+            num, den = text.split("/", 1)
+            denominator = float(den)
+            if denominator == 0:
+                return None
+            return float(num) / denominator
+        return float(text)
+
     width = parse_int(
         video_stream.get("width")) if video_stream is not None else None
     height = parse_int(
         video_stream.get("height")) if video_stream is not None else None
     resolution = f"{width}x{height}" if width is not None and height is not None else None
+    fps = parse_fps(video_stream.get(
+        "avg_frame_rate")) if video_stream is not None else None
+
     return ProbeInfoModel(
         duration_seconds=parse_float(format_raw.get("duration")),
         bitrate_bps=parse_int(format_raw.get("bit_rate")),
@@ -369,6 +396,7 @@ def run_ffprobe(path: Path) -> ProbeInfoModel | None:
         codec_name=video_stream.get("codec_name")
         if video_stream is not None else None,
         format_name=format_raw.get("format_name"),
+        fps=fps,
     )
 
 
@@ -466,7 +494,7 @@ class ResolutionDelegate(QStyledItemDelegate):
             model.setData(index, combo.currentText(), Qt.ItemDataRole.EditRole)
 
 
-class CrfDelegate(QStyledItemDelegate):
+class QualityDelegate(QStyledItemDelegate):
 
     @beartype
     def createEditor(self, parent: QWidget, option: QStyleOptionViewItem,
@@ -581,13 +609,13 @@ class VideoTreeModel(QAbstractItemModel):
         "Name",
         "Size",
         "Share",
-        "Resolution",
+        "Visual Quality",
         "Bitrate",
         "Duration",
         "Codec",
         "Play Input",
         "Set Resolution",
-        "Set CRF",
+        "Set Quality",
         "Set FPS",
         "Play Output",
         "Output Size",
@@ -599,13 +627,13 @@ class VideoTreeModel(QAbstractItemModel):
     COL_NAME = 0
     COL_SIZE = 1
     COL_SHARE = 2
-    COL_RESOLUTION = 3
+    COL_VISUAL_QUALITY = 3
     COL_BITRATE = 4
     COL_DURATION = 5
     COL_CODEC = 6
     COL_PLAY_INPUT = 7
     COL_SET_RESOLUTION = 8
-    COL_SET_CRF = 9
+    COL_SET_QUALITY = 9
     COL_SET_FPS = 10
     COL_PLAY_OUTPUT = 11
     COL_OUTPUT_SIZE = 12
@@ -683,7 +711,7 @@ class VideoTreeModel(QAbstractItemModel):
         base = Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled
         if node.is_dir:
             return base
-        if index.column() in (self.COL_SET_RESOLUTION, self.COL_SET_CRF,
+        if index.column() in (self.COL_SET_RESOLUTION, self.COL_SET_QUALITY,
                               self.COL_SET_FPS):
             return base | Qt.ItemFlag.ItemIsEditable
         return base
@@ -704,8 +732,8 @@ class VideoTreeModel(QAbstractItemModel):
                 return node.size_text
             if col == self.COL_SHARE:
                 return node.share_text
-            if col == self.COL_RESOLUTION:
-                return node.resolution_text
+            if col == self.COL_VISUAL_QUALITY:
+                return node.visual_quality_text
             if col == self.COL_BITRATE:
                 return node.bitrate_text
             if col == self.COL_DURATION:
@@ -716,8 +744,8 @@ class VideoTreeModel(QAbstractItemModel):
                 return ""
             if col == self.COL_SET_RESOLUTION and not node.is_dir:
                 return node.action.target_resolution
-            if col == self.COL_SET_CRF and not node.is_dir:
-                return str(node.action.crf)
+            if col == self.COL_SET_QUALITY and not node.is_dir:
+                return str(node.action.quality)
             if col == self.COL_SET_FPS and not node.is_dir:
                 return str(node.action.fps)
             if col == self.COL_PLAY_OUTPUT and not node.is_dir:
@@ -740,13 +768,13 @@ class VideoTreeModel(QAbstractItemModel):
         if role == Qt.ItemDataRole.EditRole and not node.is_dir:
             if col == self.COL_SET_RESOLUTION:
                 return node.action.target_resolution
-            if col == self.COL_SET_CRF:
-                return node.action.crf
+            if col == self.COL_SET_QUALITY:
+                return node.action.quality
             if col == self.COL_SET_FPS:
                 return node.action.fps
 
         if role == Qt.ItemDataRole.TextAlignmentRole and col in (
-                self.COL_SIZE, self.COL_SHARE, self.COL_SET_CRF,
+                self.COL_SIZE, self.COL_SHARE, self.COL_SET_QUALITY,
                 self.COL_SET_FPS, self.COL_OUTPUT_SIZE, self.COL_REDUCTION):
             return int(Qt.AlignmentFlag.AlignRight
                        | Qt.AlignmentFlag.AlignVCenter)
@@ -821,8 +849,8 @@ class VideoTreeModel(QAbstractItemModel):
                 [Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole])
             self._save_callback()
             return True
-        if index.column() == self.COL_SET_CRF:
-            node.action.crf = int(value)
+        if index.column() == self.COL_SET_QUALITY:
+            node.action.quality = int(value)
             self.dataChanged.emit(
                 index, index,
                 [Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole])
@@ -877,8 +905,14 @@ class VideoTreeModel(QAbstractItemModel):
             self._show_ffmpeg_callback(node.output)
             return
         if action_name == "convert":
-            if node.action.target_resolution == "" and node.action.crf == 0 and node.action.fps == 0:
+            if node.action.target_resolution == "" and node.action.quality == 0 and node.action.fps == 0:
                 return
+            if not node.probe:
+                LOGGER.error(f"no probe for video {node.absolute_path}")
+                return
+
+            assert node.probe
+
             rel = Path(node.relative_path)
             output_path = self._output_root / rel.with_suffix(".mp4")
             task = ConversionTaskModel(
@@ -887,6 +921,7 @@ class VideoTreeModel(QAbstractItemModel):
                 output_path=str(output_path),
                 action=node.action.model_copy(deep=True),
                 preset="medium",
+                probe=node.probe,
             )
             self._enqueue_callback(task)
             return
@@ -1010,8 +1045,8 @@ class ConversionWorker(QObject):
         dst = Path(task.output_path)
         dst.parent.mkdir(parents=True, exist_ok=True)
 
-        source_probe = run_ffprobe(src)
-        duration = source_probe.duration_seconds if source_probe is not None else None
+        source_probe = task.probe
+        duration = source_probe.duration_seconds
 
         cmd = [
             "ffmpeg",
@@ -1044,16 +1079,32 @@ class ConversionWorker(QObject):
         if filters:
             cmd.extend(["-vf", ",".join(filters)])
 
-        quality_value = task.action.crf if 0 < task.action.crf else 28
         cmd.extend([
             "-c:v",
             "hevc_vaapi",
             "-rc_mode",
-            "CQP",
-            "-qp",
-            str(quality_value),
-            "-preset",
-            task.preset,
+            "QVBR",
+        ])
+
+        if 0 < task.action.quality:
+            cmd.extend([
+                "-global_quality",
+                str(task.action.quality),
+            ])
+
+        cmd.extend([
+            "-b:v",
+            "2500k",
+            "-maxrate",
+            "4000k",
+            "-bufsize",
+            "8000k",
+            "-profile:v",
+            "main",
+            "-tier",
+            "main",
+            "-compression_level",
+            "4",
             "-c:a",
             "copy",
             "-c:s",
@@ -1129,7 +1180,9 @@ class ConversionWorker(QObject):
             raise RuntimeError("Conversion cancelled")
 
         if return_code != 0:
-            raise RuntimeError(f"ffmpeg failed with exit code {return_code}")
+            raise RuntimeError(
+                f"ffmpeg failed with exit code {return_code}\ncommand was: {shlex.join(cmd)}"
+            )
 
         probe = run_ffprobe(dst)
         stat = dst.stat()
@@ -1140,7 +1193,7 @@ class ConversionWorker(QObject):
                                   action=task.action,
                                   preset=task.preset,
                                   ffmpeg_stdout="\n".join(ffmpeg_stdout),
-                                  ffmpeg_command=" ".join(cmd))
+                                  ffmpeg_command=cmd)
         return ConversionResultModel(source_path=str(src.resolve()),
                                      output=output)
 
@@ -1184,8 +1237,8 @@ class MainWindow(QWidget):
 
         self._tree.setItemDelegateForColumn(VideoTreeModel.COL_SET_RESOLUTION,
                                             ResolutionDelegate(self._tree))
-        self._tree.setItemDelegateForColumn(VideoTreeModel.COL_SET_CRF,
-                                            CrfDelegate(self._tree))
+        self._tree.setItemDelegateForColumn(VideoTreeModel.COL_SET_QUALITY,
+                                            QualityDelegate(self._tree))
         self._tree.setItemDelegateForColumn(VideoTreeModel.COL_SET_FPS,
                                             FpsDelegate(self._tree))
         self._tree.setItemDelegateForColumn(VideoTreeModel.COL_SHARE,
@@ -1213,6 +1266,8 @@ class MainWindow(QWidget):
             header.setSectionResizeMode(index,
                                         QHeaderView.ResizeMode.Interactive)
         self._tree.setColumnWidth(VideoTreeModel.COL_NAME, 260)
+        self._tree.setColumnWidth(VideoTreeModel.COL_BITRATE, 150)
+        self._tree.setColumnWidth(VideoTreeModel.COL_VISUAL_QUALITY, 150)
         header.sectionClicked.connect(self.handle_sort_click)
 
         self._sort_state_column = -1
@@ -1249,16 +1304,20 @@ class MainWindow(QWidget):
         videos = self._model.iter_video_nodes()
         for node in videos:
             action_enabled = (node.action.target_resolution != ""
-                              or 0 < node.action.crf or 0 < node.action.fps)
+                              or 0 < node.action.quality
+                              or 0 < node.action.fps)
             if not action_enabled:
                 continue
             if node.output is not None:
                 if (node.output.action.target_resolution
                         == node.action.target_resolution
-                        and node.output.action.crf == node.action.crf
+                        and node.output.action.quality == node.action.quality
                         and node.output.action.fps == node.action.fps
                         and node.output.preset == self._preset):
                     continue
+
+            if not node.probe:
+                continue
 
             rel = Path(node.relative_path)
             out = self._output_root / rel.with_suffix(".mp4")
@@ -1268,6 +1327,7 @@ class MainWindow(QWidget):
                 output_path=str(out),
                 action=node.action.model_copy(deep=True),
                 preset=self._preset,
+                probe=node.probe,
             )
             self.enqueue_task(task)
 
@@ -1280,7 +1340,7 @@ class MainWindow(QWidget):
         edit.setReadOnly(True)
         edit.setPlainText(f"""
 command
-{model.ffmpeg_command}
+{shlex.quote(model.ffmpeg_command)}
 
 probe:
 {model.probe}
