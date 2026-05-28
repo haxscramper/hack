@@ -1040,6 +1040,24 @@ class ConversionWorker(QObject):
         self._queue.put(None)
 
     @beartype
+    def _build_filter(self, target_fps: int, target_resolution: str,
+                      use_vaapi_encode: bool) -> str:
+        filters: list[str] = []
+
+        if target_fps > 0:
+            filters.append(f"fps={target_fps}")
+
+        if target_resolution != "":
+            height = RESOLUTION_HEIGHT[target_resolution]
+            filters.append(f"scale=-2:{height}")
+
+        if use_vaapi_encode:
+            filters.append("format=nv12")
+            filters.append("hwupload")
+
+        return ",".join(filters)
+
+    @beartype
     def _convert(self, task: ConversionTaskModel) -> ConversionResultModel:
         src = Path(task.source_path)
         dst = Path(task.output_path)
@@ -1047,6 +1065,40 @@ class ConversionWorker(QObject):
 
         source_probe = task.probe
         duration = source_probe.duration_seconds
+
+        codec_name = source_probe.codec_name
+        use_vaapi_encode = codec_name in {"av1", "hevc"}
+
+        source_video_bitrate = source_probe.bitrate_bps
+        assert source_video_bitrate
+        assert source_probe.fps
+        target_video_bitrate = source_video_bitrate
+        if 0 < task.action.fps > 0 and 0 < source_probe.fps:
+            target_video_bitrate = target_video_bitrate * (task.action.fps /
+                                                           source_probe.fps)
+
+        assert source_probe.width
+        assert source_probe.height
+        if task.action.target_resolution != "" and source_probe.width > 0 and source_probe.height > 0:
+            target_height = RESOLUTION_HEIGHT[task.action.target_resolution]
+            if target_height < source_probe.height:
+                scale_ratio = target_height / source_probe.height
+                target_width = source_probe.width * scale_ratio
+                source_area = source_probe.width * source_probe.height
+                target_area = target_width * target_height
+                LOGGER.info(
+                    f"target_video_bitrate={target_video_bitrate} source_probe.height={source_probe.height} source_probe.width={source_probe.width} target_height={target_height} scale_ratio={scale_ratio}"
+                )
+                target_video_bitrate = int(target_video_bitrate *
+                                           (target_area / source_area))
+
+        target_video_bitrate = int(float(target_video_bitrate) / 1000) * 1000
+
+        vf = self._build_filter(
+            target_fps=task.action.fps,
+            target_resolution=task.action.target_resolution,
+            use_vaapi_encode=use_vaapi_encode,
+        )
 
         cmd = [
             "ffmpeg",
@@ -1056,65 +1108,44 @@ class ConversionWorker(QObject):
             "-nostats",
             "-progress",
             "pipe:1",
-            "-hwaccel",
-            "vaapi",
-            "-hwaccel_device",
-            "/dev/dri/renderD128",
-            "-hwaccel_output_format",
-            "vaapi",
+        ]
+
+        if use_vaapi_encode:
+            cmd.extend([
+                "-vaapi_device",
+                "/dev/dri/renderD128",
+            ])
+
+        cmd.extend([
             "-i",
             str(src),
             "-map",
             "0",
-            "-vaapi_device",
-            "/dev/dri/renderD128",
-        ]
-
-        filters: list[str] = []
-        if task.action.target_resolution != "":
-            h = RESOLUTION_HEIGHT[task.action.target_resolution]
-            filters.append(
-                f"scale_vaapi=w=-2:h={h}:force_original_aspect_ratio=decrease")
-
-        if filters:
-            cmd.extend(["-vf", ",".join(filters)])
-
-        cmd.extend([
-            "-c:v",
-            "hevc_vaapi",
-            "-rc_mode",
-            "QVBR",
         ])
 
-        if 0 < task.action.quality:
-            cmd.extend([
-                "-global_quality",
-                str(task.action.quality),
-            ])
+        if vf:
+            cmd.extend(["-vf", vf])
+
+        if codec_name == "av1":
+            cmd.extend(["-c:v", "av1_vaapi"])
+        elif codec_name == "hevc":
+            cmd.extend(["-c:v", "hevc_vaapi"])
+        else:
+            cmd.extend(["-c:v", codec_name])
 
         cmd.extend([
             "-b:v",
-            "2500k",
+            str(target_video_bitrate),
             "-maxrate",
-            "4000k",
+            str(target_video_bitrate),
             "-bufsize",
-            "8000k",
-            "-profile:v",
-            "main",
-            "-tier",
-            "main",
-            "-compression_level",
-            "4",
+            str(target_video_bitrate * 2),
             "-c:a",
             "copy",
             "-c:s",
             "copy",
+            str(dst),
         ])
-
-        if task.action.fps > 0:
-            cmd.extend(["-r", str(task.action.fps)])
-
-        cmd.append(str(dst))
 
         LOGGER.info(f"Converting {src} -> {dst}")
         process = subprocess.Popen(
@@ -1340,7 +1371,7 @@ class MainWindow(QWidget):
         edit.setReadOnly(True)
         edit.setPlainText(f"""
 command
-{shlex.quote(model.ffmpeg_command)}
+{shlex.join(model.ffmpeg_command)}
 
 probe:
 {model.probe}
