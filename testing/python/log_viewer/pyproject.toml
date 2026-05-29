@@ -1,0 +1,23 @@
+[project]
+name = "log-viewer"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "haxscramper", email = "haxscramper@gmail.com" }
+]
+requires-python = ">=3.11"
+dependencies = [
+    "glfw>=2.10.0",
+    "imgui[glfw]>=2.0.0",
+    "numpy>=2.4.6",
+    "pydantic>=2.13.4",
+    "pyside6>=6.11.1",
+]
+
+[project.scripts]
+log-viewer = "log_viewer:main"
+
+[build-system]
+requires = ["uv_build>=0.9.27,<0.10.0"]
+build-backend = "uv_build"

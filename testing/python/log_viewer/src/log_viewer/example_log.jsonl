@@ -1,0 +1,7 @@
+{"event": "scope_start", "id": "1", "name": "main", "file": "app.py", "line": 10, "metadata": {"variables": {"user": "alice", "mode": "debug"}}}
+{"event": "instant", "id": "2", "name": "config_loaded", "file": "app.py", "line": 12, "metadata": {"variables": {"config_path": "/tmp/config.json"}}}
+{"event": "scope_start", "id": "3", "name": "worker", "file": "worker.py", "line": 21, "metadata": {"variables": {"task_id": 42}}}
+{"event": "instant", "id": "4", "name": "step", "file": "worker.py", "line": 25, "metadata": {"variables": {"progress": 0.5, "state": "running"}}}
+{"event": "scope_end", "id": "3", "file": "worker.py", "line": 30, "metadata": {"variables": {"status": "ok"}}}
+{"event": "instant", "id": "5", "name": "cleanup", "file": "app.py", "line": 40, "metadata": {"variables": {"deleted": 3}}}
+{"event": "scope_end", "id": "1", "file": "app.py", "line": 50, "metadata": {"variables": {"result": "success"}}}
