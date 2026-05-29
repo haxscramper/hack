@@ -55,7 +55,6 @@ VIDEO_EXTENSIONS = {
     ".m2ts",
     ".3gp",
 }
-RESOLUTION_HEIGHT: dict[str, int] = {"SD": 480, "HD": 720, "FULL_HD": 1080}
 
 
 @beartype
@@ -72,9 +71,7 @@ class ProbeInfoModel(BaseModel):
 
 @beartype
 class ActionModel(BaseModel):
-    target_resolution: Literal["", "SD", "HD", "FULL_HD"] = ""
-    quality: int = 0
-    fps: int = 0
+    preset: str = ""
 
 
 @beartype
@@ -132,7 +129,6 @@ class ConversionTaskModel(BaseModel):
     output_path: str
     action: ActionModel
     probe: ProbeInfoModel
-    preset: str
 
 
 @beartype
@@ -469,13 +465,13 @@ def load_or_build_model(input_root: Path) -> TreeEntryModel:
     return root_entry
 
 
-class ResolutionDelegate(QStyledItemDelegate):
+class PresetDelegate(QStyledItemDelegate):
 
     @beartype
     def createEditor(self, parent: QWidget, option: QStyleOptionViewItem,
                      index: QModelIndex) -> QWidget:
         editor = QComboBox(parent)
-        editor.addItems(["", "SD", "HD", "FULL_HD"])
+        editor.addItems(["", "Fast 720p30", "Fast 1080p30", "Fast 480p30"])
         return editor
 
     @beartype
@@ -632,14 +628,12 @@ class VideoTreeModel(QAbstractItemModel):
     COL_DURATION = 5
     COL_CODEC = 6
     COL_PLAY_INPUT = 7
-    COL_SET_RESOLUTION = 8
-    COL_SET_QUALITY = 9
-    COL_SET_FPS = 10
-    COL_PLAY_OUTPUT = 11
-    COL_OUTPUT_SIZE = 12
-    COL_REDUCTION = 13
-    COL_FFMPEG = 14
-    COL_CONVERT = 15
+    COL_SET_PRESET = 8
+    COL_PLAY_OUTPUT = 9
+    COL_OUTPUT_SIZE = 10
+    COL_REDUCTION = 11
+    COL_FFMPEG = 12
+    COL_CONVERT = 13
 
     def __init__(self, root_entry: TreeEntryModel, input_root: Path,
                  output_root: Path, enqueue_callback: Any, save_callback: Any,
@@ -711,8 +705,7 @@ class VideoTreeModel(QAbstractItemModel):
         base = Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled
         if node.is_dir:
             return base
-        if index.column() in (self.COL_SET_RESOLUTION, self.COL_SET_QUALITY,
-                              self.COL_SET_FPS):
+        if index.column() in (self.COL_SET_PRESET, ):
             return base | Qt.ItemFlag.ItemIsEditable
         return base
 
@@ -742,12 +735,8 @@ class VideoTreeModel(QAbstractItemModel):
                 return node.codec_text
             if col == self.COL_PLAY_INPUT and not node.is_dir:
                 return ""
-            if col == self.COL_SET_RESOLUTION and not node.is_dir:
-                return node.action.target_resolution
-            if col == self.COL_SET_QUALITY and not node.is_dir:
-                return str(node.action.quality)
-            if col == self.COL_SET_FPS and not node.is_dir:
-                return str(node.action.fps)
+            if col == self.COL_SET_PRESET and not node.is_dir:
+                return node.action.preset
             if col == self.COL_PLAY_OUTPUT and not node.is_dir:
                 return ""
             if col == self.COL_OUTPUT_SIZE and not node.is_dir:
@@ -766,16 +755,12 @@ class VideoTreeModel(QAbstractItemModel):
                 return ""
 
         if role == Qt.ItemDataRole.EditRole and not node.is_dir:
-            if col == self.COL_SET_RESOLUTION:
-                return node.action.target_resolution
-            if col == self.COL_SET_QUALITY:
-                return node.action.quality
-            if col == self.COL_SET_FPS:
-                return node.action.fps
+            if col == self.COL_SET_PRESET:
+                return node.action.preset
 
         if role == Qt.ItemDataRole.TextAlignmentRole and col in (
-                self.COL_SIZE, self.COL_SHARE, self.COL_SET_QUALITY,
-                self.COL_SET_FPS, self.COL_OUTPUT_SIZE, self.COL_REDUCTION):
+                self.COL_SIZE, self.COL_SHARE, self.COL_SET_PRESET,
+                self.COL_OUTPUT_SIZE, self.COL_REDUCTION):
             return int(Qt.AlignmentFlag.AlignRight
                        | Qt.AlignmentFlag.AlignVCenter)
 
@@ -842,22 +827,8 @@ class VideoTreeModel(QAbstractItemModel):
         node: TreeEntryModel = index.internalPointer()
         if node.is_dir:
             return False
-        if index.column() == self.COL_SET_RESOLUTION:
-            node.action.target_resolution = str(value)
-            self.dataChanged.emit(
-                index, index,
-                [Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole])
-            self._save_callback()
-            return True
-        if index.column() == self.COL_SET_QUALITY:
-            node.action.quality = int(value)
-            self.dataChanged.emit(
-                index, index,
-                [Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole])
-            self._save_callback()
-            return True
-        if index.column() == self.COL_SET_FPS:
-            node.action.fps = int(value)
+        if index.column() == self.COL_SET_PRESET:
+            node.action.preset = str(value)
             self.dataChanged.emit(
                 index, index,
                 [Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole])
@@ -905,7 +876,7 @@ class VideoTreeModel(QAbstractItemModel):
             self._show_ffmpeg_callback(node.output)
             return
         if action_name == "convert":
-            if node.action.target_resolution == "" and node.action.quality == 0 and node.action.fps == 0:
+            if node.action.preset == "":
                 return
             if not node.probe:
                 LOGGER.error(f"no probe for video {node.absolute_path}")
@@ -920,7 +891,6 @@ class VideoTreeModel(QAbstractItemModel):
                 relative_path=node.relative_path,
                 output_path=str(output_path),
                 action=node.action.model_copy(deep=True),
-                preset="medium",
                 probe=node.probe,
             )
             self._enqueue_callback(task)
@@ -1040,112 +1010,22 @@ class ConversionWorker(QObject):
         self._queue.put(None)
 
     @beartype
-    def _build_filter(self, target_fps: int, target_resolution: str,
-                      use_vaapi_encode: bool) -> str:
-        filters: list[str] = []
-
-        if target_fps > 0:
-            filters.append(f"fps={target_fps}")
-
-        if target_resolution != "":
-            height = RESOLUTION_HEIGHT[target_resolution]
-            filters.append(f"scale=-2:{height}")
-
-        if use_vaapi_encode:
-            filters.append("format=nv12")
-            filters.append("hwupload")
-
-        return ",".join(filters)
-
-    @beartype
     def _convert(self, task: ConversionTaskModel) -> ConversionResultModel:
         src = Path(task.source_path)
         dst = Path(task.output_path)
         dst.parent.mkdir(parents=True, exist_ok=True)
 
         source_probe = task.probe
-        duration = source_probe.duration_seconds
-
-        codec_name = source_probe.codec_name
-        use_vaapi_encode = codec_name in {"av1", "hevc"}
-
-        source_video_bitrate = source_probe.bitrate_bps
-        assert source_video_bitrate
-        assert source_probe.fps
-        target_video_bitrate = source_video_bitrate
-        if 0 < task.action.fps > 0 and 0 < source_probe.fps:
-            target_video_bitrate = target_video_bitrate * (task.action.fps /
-                                                           source_probe.fps)
-
-        assert source_probe.width
-        assert source_probe.height
-        if task.action.target_resolution != "" and source_probe.width > 0 and source_probe.height > 0:
-            target_height = RESOLUTION_HEIGHT[task.action.target_resolution]
-            if target_height < source_probe.height:
-                scale_ratio = target_height / source_probe.height
-                target_width = source_probe.width * scale_ratio
-                source_area = source_probe.width * source_probe.height
-                target_area = target_width * target_height
-                LOGGER.info(
-                    f"target_video_bitrate={target_video_bitrate} source_probe.height={source_probe.height} source_probe.width={source_probe.width} target_height={target_height} scale_ratio={scale_ratio}"
-                )
-                target_video_bitrate = int(target_video_bitrate *
-                                           (target_area / source_area))
-
-        target_video_bitrate = int(float(target_video_bitrate) / 1000) * 1000
-
-        vf = self._build_filter(
-            target_fps=task.action.fps,
-            target_resolution=task.action.target_resolution,
-            use_vaapi_encode=use_vaapi_encode,
-        )
 
         cmd = [
-            "ffmpeg",
-            "-y",
-            "-loglevel",
-            "error",
-            "-nostats",
-            "-progress",
-            "pipe:1",
-        ]
-
-        if use_vaapi_encode:
-            cmd.extend([
-                "-vaapi_device",
-                "/dev/dri/renderD128",
-            ])
-
-        cmd.extend([
+            "HandBrakeCLI",
             "-i",
             str(src),
-            "-map",
-            "0",
-        ])
-
-        if vf:
-            cmd.extend(["-vf", vf])
-
-        if codec_name == "av1":
-            cmd.extend(["-c:v", "av1_vaapi"])
-        elif codec_name == "hevc":
-            cmd.extend(["-c:v", "hevc_vaapi"])
-        else:
-            cmd.extend(["-c:v", codec_name])
-
-        cmd.extend([
-            "-b:v",
-            str(target_video_bitrate),
-            "-maxrate",
-            str(target_video_bitrate),
-            "-bufsize",
-            str(target_video_bitrate * 2),
-            "-c:a",
-            "copy",
-            "-c:s",
-            "copy",
+            "-o",
             str(dst),
-        ])
+            "-Z",
+            task.action.preset,
+        ]
 
         LOGGER.info(f"Converting {src} -> {dst}")
         process = subprocess.Popen(
@@ -1159,9 +1039,6 @@ class ConversionWorker(QObject):
         with self._lock:
             self._current_process = process
 
-        start_ts = time.monotonic()
-        last_log_ts = 0.0
-        out_time_sec = 0.0
         ffmpeg_stdout = []
 
         try:
@@ -1171,36 +1048,6 @@ class ConversionWorker(QObject):
                     if self._stop_requested.is_set():
                         process.terminate()
                         break
-
-                    line = raw_line.strip()
-                    if "=" not in line:
-                        continue
-
-                    key, value = line.split("=", 1)
-
-                    if key == "out_time":
-                        parsed = parse_ffmpeg_out_time(value)
-                        if parsed is not None:
-                            out_time_sec = parsed
-
-                    if key == "progress":
-                        now = time.monotonic()
-                        if (duration is not None and 0 < duration
-                                and now - last_log_ts >= 1.0):
-                            ratio = min(max(out_time_sec / duration, 0.0), 1.0)
-                            pct = ratio * 100.0
-
-                            eta_text = ""
-                            if 0.0 < ratio < 1.0:
-                                elapsed = now - start_ts
-                                eta_seconds = elapsed * (1.0 - ratio) / ratio
-                                eta_text = format_duration(eta_seconds)
-                            elif ratio >= 1.0:
-                                eta_text = "00:00:00"
-
-                            LOGGER.info(
-                                f"{src.name}: {pct:6.2f}% ETA {eta_text}")
-                            last_log_ts = now
 
             return_code = process.wait()
         finally:
@@ -1222,7 +1069,6 @@ class ConversionWorker(QObject):
                                   created_ts=stat.st_ctime,
                                   probe=probe,
                                   action=task.action,
-                                  preset=task.preset,
                                   ffmpeg_stdout="\n".join(ffmpeg_stdout),
                                   ffmpeg_command=cmd)
         return ConversionResultModel(source_path=str(src.resolve()),
@@ -1237,7 +1083,6 @@ class MainWindow(QWidget):
         self._input_root = input_root
         self._output_root = output_root
         self._root_entry = root_entry
-        self._preset = "medium"
 
         self._worker = ConversionWorker()
         self._thread = threading.Thread(target=self._worker.run, daemon=True)
@@ -1266,12 +1111,8 @@ class MainWindow(QWidget):
                                    | QTreeView.EditTrigger.SelectedClicked
                                    | QTreeView.EditTrigger.EditKeyPressed)
 
-        self._tree.setItemDelegateForColumn(VideoTreeModel.COL_SET_RESOLUTION,
-                                            ResolutionDelegate(self._tree))
-        self._tree.setItemDelegateForColumn(VideoTreeModel.COL_SET_QUALITY,
-                                            QualityDelegate(self._tree))
-        self._tree.setItemDelegateForColumn(VideoTreeModel.COL_SET_FPS,
-                                            FpsDelegate(self._tree))
+        self._tree.setItemDelegateForColumn(VideoTreeModel.COL_SET_PRESET,
+                                            PresetDelegate(self._tree))
         self._tree.setItemDelegateForColumn(VideoTreeModel.COL_SHARE,
                                             ShareHighlightDelegate(self._tree))
         self._tree.setItemDelegateForColumn(
@@ -1304,16 +1145,7 @@ class MainWindow(QWidget):
         self._sort_state_column = -1
         self._sort_state_mode = 0
 
-        self._preset_combo = QComboBox(self)
-        self._preset_combo.addItems(["fast", "medium", "slow"])
-        self._preset_combo.currentTextChanged.connect(self.on_preset_changed)
-
-        self._convert_all = QPushButton("Convert all", self)
-        self._convert_all.clicked.connect(self.convert_all)
-
         top = QHBoxLayout()
-        top.addWidget(self._preset_combo)
-        top.addWidget(self._convert_all)
 
         root_layout = QVBoxLayout(self)
         root_layout.addLayout(top)
@@ -1325,42 +1157,6 @@ class MainWindow(QWidget):
         self.setWindowTitle(f"Video manager: {input_root}")
         self.resize(1600, 900)
         self._tree.collapseAll()
-
-    @Slot(str)
-    def on_preset_changed(self, value: str) -> None:
-        self._preset = value
-
-    @Slot()
-    def convert_all(self) -> None:
-        videos = self._model.iter_video_nodes()
-        for node in videos:
-            action_enabled = (node.action.target_resolution != ""
-                              or 0 < node.action.quality
-                              or 0 < node.action.fps)
-            if not action_enabled:
-                continue
-            if node.output is not None:
-                if (node.output.action.target_resolution
-                        == node.action.target_resolution
-                        and node.output.action.quality == node.action.quality
-                        and node.output.action.fps == node.action.fps
-                        and node.output.preset == self._preset):
-                    continue
-
-            if not node.probe:
-                continue
-
-            rel = Path(node.relative_path)
-            out = self._output_root / rel.with_suffix(".mp4")
-            task = ConversionTaskModel(
-                source_path=node.absolute_path,
-                relative_path=node.relative_path,
-                output_path=str(out),
-                action=node.action.model_copy(deep=True),
-                preset=self._preset,
-                probe=node.probe,
-            )
-            self.enqueue_task(task)
 
     @beartype
     def show_ffmpeg_dialog(self, model: OutputVideoModel) -> None:
@@ -1401,7 +1197,6 @@ probe:
 
     @beartype
     def enqueue_task(self, task: ConversionTaskModel) -> None:
-        task.preset = self._preset
         LOGGER.info(f"Queue conversion: {task.source_path}")
         self._worker.enqueue(task)
 
