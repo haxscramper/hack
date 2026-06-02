@@ -1,12 +1,23 @@
 #!/usr/bin/env python
 import argparse
-import html
+
 import logging
+
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(levelname)s %(name)s %(filename)s:%(lineno)d: %(message)s",
+)
+log = logging.getLogger(__name__)
+
+logging.getLogger("graphviz").setLevel(logging.ERROR)
+
+import html
+
 import re
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
 import graphviz
 import igraph
@@ -18,12 +29,6 @@ from pygments.formatters import HtmlFormatter
 from pygments.lexers import CppLexer
 from tree_sitter import Language, Node, Parser
 import tree_sitter_cpp
-
-logging.basicConfig(
-    level=logging.DEBUG,
-    format="%(levelname)s %(name)s %(filename)s:%(lineno)d: %(message)s",
-)
-log = logging.getLogger(__name__)
 
 CPP_HEADERS: Set[str] = {
     ".h",
@@ -58,13 +63,12 @@ CAPTURE_TYPES: Set[str] = {
 
 
 class CodeBlock(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     id: str = Field(description="Stable unique block identifier.")
     path: Path = Field(description="Path of file containing block.")
     key: str = Field(description="Semantic symbol key used for matching.")
-    start_byte: int = Field(description="Block start byte in file.")
-    end_byte: int = Field(description="Block end byte in file.")
-    start_line: int = Field(description="1-based block start line.")
-    end_line: int = Field(description="1-based block end line.")
+    line_range: slice = Field(description="0-based half-open line range.")
     text: str = Field(description="Exact block source text.")
     scope: str = Field(description="Namespace scope string.")
     original_index: int = Field(description="Original order index in file.")
@@ -73,10 +77,15 @@ class CodeBlock(BaseModel):
     is_header_file: bool = Field(description="Whether file is header.")
     is_protected: bool = Field(description="Inside clang-format off region.")
 
+    @field_serializer("line_range", when_used="json")
+    def serialize_line_range(self, value: slice) -> dict:
+        return {"start": value.start, "stop": value.stop, "step": value.step}
+
 
 class ParsedFile(BaseModel):
     path: Path = Field(description="Parsed file path.")
     text: str = Field(description="Original file text.")
+    lines: list[str] = Field(description="Original file lines with endings.")
     blocks: list[CodeBlock] = Field(
         description="Extracted reorderable blocks.")
 
@@ -127,55 +136,29 @@ def _is_relevant_cpp(path: Path) -> bool:
 
 
 @beartype
-def _line_starts(data: bytes) -> List[int]:
-    starts: List[int] = [0]
-    idx: int = 0
-    while idx < len(data):
-        if data[idx] == 10:
-            starts.append(idx + 1)
-        idx += 1
-    return starts
-
-
-@beartype
-def _line_for_byte(line_offsets: Sequence[int], byte_index: int) -> int:
-    lo: int = 0
-    hi: int = len(line_offsets)
-    while lo < hi:
-        mid: int = (lo + hi) // 2
-        if line_offsets[mid] <= byte_index:
-            lo = mid + 1
-        else:
-            hi = mid
-    return lo
-
-
-@beartype
-def _clang_format_off_ranges(lines: Sequence[str]) -> List[Tuple[int, int]]:
-    ranges: List[Tuple[int, int]] = []
+def _clang_format_off_ranges(lines: Sequence[str]) -> List[slice]:
+    ranges: List[slice] = []
     active_start: Optional[int] = None
     idx: int = 0
     while idx < len(lines):
         line = lines[idx]
-        line_no = idx + 1
         if "/* clang-format off */" in line:
-            active_start = line_no
+            active_start = idx
         if "/* clang-format on */" in line and active_start is not None:
-            ranges.append((active_start, line_no))
+            ranges.append(slice(active_start, idx + 1))
             active_start = None
         idx += 1
     if active_start is not None:
-        ranges.append((active_start, len(lines)))
+        ranges.append(slice(active_start, len(lines)))
     return ranges
 
 
 @beartype
-def _line_in_ranges(start_line: int, end_line: int,
-                    ranges: Sequence[Tuple[int, int]]) -> bool:
-    for low, high in ranges:
-        if end_line < low:
+def _slice_overlaps_any(target: slice, ranges: Sequence[slice]) -> bool:
+    for item in ranges:
+        if target.stop <= item.start:
             continue
-        if high < start_line:
+        if item.stop <= target.start:
             continue
         return True
     return False
@@ -183,7 +166,7 @@ def _line_in_ranges(start_line: int, end_line: int,
 
 @beartype
 def _leading_comment_adjust(lines: Sequence[str], start_line: int) -> int:
-    line_idx: int = start_line - 1
+    line_idx: int = start_line
     in_block: bool = False
     while 0 < line_idx:
         candidate = lines[line_idx - 1]
@@ -204,7 +187,7 @@ def _leading_comment_adjust(lines: Sequence[str], start_line: int) -> int:
             line_idx -= 1
             continue
         break
-    return line_idx + 1
+    return line_idx
 
 
 @beartype
@@ -262,8 +245,7 @@ def _collect_blocks_from_node(
     path: Path,
     is_header: bool,
     lines: Sequence[str],
-    line_offsets: Sequence[int],
-    protected_ranges: Sequence[Tuple[int, int]],
+    protected_ranges: Sequence[slice],
     scope_stack: Sequence[str],
     block_counter_start: int,
 ) -> Tuple[List[CodeBlock], int]:
@@ -283,7 +265,6 @@ def _collect_blocks_from_node(
                     path,
                     is_header,
                     lines,
-                    line_offsets,
                     protected_ranges,
                     new_scope,
                     block_counter,
@@ -292,30 +273,27 @@ def _collect_blocks_from_node(
                 idx += 1
         return blocks, block_counter
     if node.type in CAPTURE_TYPES:
-        start_line = node.start_point[0] + 1
+        start_line = node.start_point[0]
         end_line = node.end_point[0] + 1
         adjusted_line = _leading_comment_adjust(lines, start_line)
-        start_byte = line_offsets[adjusted_line - 1]
-        end_byte = node.end_byte
-        text = "".join(lines)[start_byte:end_byte]
+        line_range = slice(adjusted_line, end_line)
+        if _slice_overlaps_any(line_range, protected_ranges):
+            return blocks, block_counter
+        text = "".join(lines[line_range.start:line_range.stop])
         scope = "::".join(scope_stack)
         key = _extract_symbol_from_text(node.type, text, scope)
-        protected = _line_in_ranges(adjusted_line, end_line, protected_ranges)
         block_id = f"{path.as_posix()}::{block_counter}"
         block = CodeBlock(
             id=block_id,
             path=path,
             key=key,
-            start_byte=start_byte,
-            end_byte=end_byte,
-            start_line=adjusted_line,
-            end_line=end_line,
+            line_range=line_range,
             text=text,
             scope=scope,
             original_index=block_counter,
             is_include_block=False,
             is_header_file=is_header,
-            is_protected=protected,
+            is_protected=False,
         )
         blocks.append(block)
         block_counter += 1
@@ -331,7 +309,6 @@ def _collect_blocks_from_node(
                 path,
                 is_header,
                 lines,
-                line_offsets,
                 protected_ranges,
                 scope_stack,
                 block_counter,
@@ -343,52 +320,75 @@ def _collect_blocks_from_node(
 
 @beartype
 def parse_cpp_file(path: Path, parser: Parser) -> ParsedFile:
-    log.debug(f"Parsing file {path}", )
+    logging.getLogger("main.parser").debug(f"Parsing file {path}", )
     data = path.read_bytes()
     text = data.decode("utf-8")
     lines = text.splitlines(keepends=True)
     tree = parser.parse(data)
     if tree.root_node.has_error:
-        raise ValueError(f"Parse failed with syntax errors: {path}")
-    line_offsets = _line_starts(data)
+        node_repr = str(tree.root_node)
+        raise ValueError("Parse failed with syntax errors: {}\n{}".format(
+            path,
+            node_repr,
+        ))
     protected_ranges = _clang_format_off_ranges(lines)
     root = tree.root_node
+
     include_nodes: List[Node] = []
-    idx: int = 0
-    while idx < len(root.named_children):
+    for idx in range(len(root.named_children)):
         child = root.named_children[idx]
-        if child.type == "preproc_include":
+        if child.type in ["preproc_include", "preproc_call"]:
             include_nodes.append(child)
-        idx += 1
+
     blocks: List[CodeBlock] = []
     counter: int = 0
+
     if 0 < len(include_nodes):
         first = include_nodes[0]
         last = include_nodes[-1]
-        start_line = first.start_point[0] + 1
+        start_line = first.start_point[0]
         end_line = last.end_point[0] + 1
         adjusted_line = _leading_comment_adjust(lines, start_line)
-        start_byte = line_offsets[adjusted_line - 1]
-        end_byte = last.end_byte
-        include_text = text[start_byte:end_byte]
-        include_block = CodeBlock(
-            id=f"{path.as_posix()}::includes",
+        include_range = slice(adjusted_line, end_line)
+        if not _slice_overlaps_any(include_range, protected_ranges):
+            include_text = "".join(
+                lines[include_range.start:include_range.stop])
+            include_block = CodeBlock(
+                id=f"{path.as_posix()}//includes",
+                path=path,
+                key="__includes__",
+                line_range=include_range,
+                text=include_text,
+                scope="",
+                original_index=counter,
+                is_include_block=True,
+                is_header_file=path.suffix.lower() in CPP_HEADERS,
+                is_protected=False,
+            )
+            blocks.append(include_block)
+            counter += 1
+
+    protected_index: int = 0
+    while protected_index < len(protected_ranges):
+        protected_range = protected_ranges[protected_index]
+        protected_text = "".join(
+            lines[protected_range.start:protected_range.stop])
+        protected_block = CodeBlock(
+            id=f"{path.as_posix()}//protected//{protected_index}",
             path=path,
-            key="__includes__",
-            start_byte=start_byte,
-            end_byte=end_byte,
-            start_line=adjusted_line,
-            end_line=end_line,
-            text=include_text,
+            key=f"__clang_format_block__//{protected_index}",
+            line_range=protected_range,
+            text=protected_text,
             scope="",
             original_index=counter,
-            is_include_block=True,
+            is_include_block=False,
             is_header_file=path.suffix.lower() in CPP_HEADERS,
-            is_protected=_line_in_ranges(adjusted_line, end_line,
-                                         protected_ranges),
+            is_protected=True,
         )
-        blocks.append(include_block)
+        blocks.append(protected_block)
         counter += 1
+        protected_index += 1
+
     idx = 0
     while idx < len(root.named_children):
         child = root.named_children[idx]
@@ -400,32 +400,31 @@ def parse_cpp_file(path: Path, parser: Parser) -> ParsedFile:
             path,
             path.suffix.lower() in CPP_HEADERS,
             lines,
-            line_offsets,
             protected_ranges,
             [],
             counter,
         )
         blocks.extend(child_blocks)
         idx += 1
-    blocks.sort(key=lambda b: b.start_byte)
-    return ParsedFile(path=path, text=text, blocks=blocks)
+
+    blocks.sort(key=lambda b: b.line_range.start)
+    return ParsedFile(path=path, text=text, lines=lines, blocks=blocks)
 
 
 @beartype
 def _rebuild_with_replacements(parsed: ParsedFile,
                                replacement: Dict[str, str]) -> str:
-    blocks = sorted(parsed.blocks, key=lambda b: b.start_byte)
+    blocks = sorted(parsed.blocks, key=lambda b: b.line_range.start)
     result_parts: List[str] = []
     cursor: int = 0
     idx: int = 0
     while idx < len(blocks):
         block = blocks[idx]
-        result_parts.append(parsed.text[cursor:block.start_byte])
-        replacement_text = replacement[block.id]
-        result_parts.append(replacement_text)
-        cursor = block.end_byte
+        result_parts.extend(parsed.lines[cursor:block.line_range.start])
+        result_parts.append(replacement[block.id])
+        cursor = block.line_range.stop
         idx += 1
-    result_parts.append(parsed.text[cursor:])
+    result_parts.extend(parsed.lines[cursor:])
     return "".join(result_parts)
 
 
@@ -464,14 +463,14 @@ def build_repository_graph(repo: RepositoryParse) -> RepositoryGraph:
         graph.vs[idx]["key"] = block.key
         graph.vs[idx]["path"] = str(block.path.relative_to(repo.root))
         graph.vs[idx]["text"] = block.text
-        graph.vs[idx]["start_line"] = block.start_line
-        graph.vs[idx]["end_line"] = block.end_line
+        graph.vs[idx]["line_start"] = block.line_range.start
+        graph.vs[idx]["line_stop"] = block.line_range.stop
 
     file_to_blocks: Dict[Path, List[CodeBlock]] = {}
     for block in blocks:
         file_to_blocks.setdefault(block.path, []).append(block)
     for path in file_to_blocks:
-        file_to_blocks[path].sort(key=lambda b: b.start_byte)
+        file_to_blocks[path].sort(key=lambda b: b.line_range.start)
 
     edges: Set[Tuple[int, int]] = set()
     for path, file_blocks in file_to_blocks.items():
@@ -542,63 +541,22 @@ def build_repository_graph(repo: RepositoryParse) -> RepositoryGraph:
 @beartype
 def _stable_topological_order_for_file(
         parsed: ParsedFile, repo_graph: RepositoryGraph) -> List[CodeBlock]:
-    file_blocks = sorted(parsed.blocks, key=lambda b: b.start_byte)
-    movable: List[CodeBlock] = []
-    fixed: Set[str] = set()
+    file_blocks = sorted(parsed.blocks, key=lambda b: b.line_range.start)
+    file_vertex_indices: List[int] = []
     for block in file_blocks:
-        if block.is_include_block:
-            fixed.add(block.id)
-            continue
-        if block.is_protected:
-            fixed.add(block.id)
-            continue
-        movable.append(block)
+        file_vertex_indices.append(repo_graph.id_to_index[block.id])
 
-    movable_ids: Set[str] = {b.id for b in movable}
-    indegree: Dict[str, int] = {}
-    succ: Dict[str, List[str]] = {}
-    for block in movable:
-        indegree[block.id] = 0
-        succ[block.id] = []
-
-    for edge in repo_graph.graph.es:
-        src_idx = edge.source
-        dst_idx = edge.target
-        src_id = repo_graph.blocks[src_idx].id
-        dst_id = repo_graph.blocks[dst_idx].id
-        if src_id in movable_ids and dst_id in movable_ids:
-            succ[src_id].append(dst_id)
-            indegree[dst_id] = indegree[dst_id] + 1
-
-    ready: List[CodeBlock] = []
-    for block in movable:
-        if indegree[block.id] == 0:
-            ready.append(block)
-    ready.sort(key=lambda b: b.original_index)
+    file_graph = repo_graph.graph.induced_subgraph(file_vertex_indices)
+    local_order = file_graph.topological_sorting(mode="out")
 
     ordered: List[CodeBlock] = []
-    while 0 < len(ready):
-        current = ready.pop(0)
-        ordered.append(current)
-        for nxt in succ[current.id]:
-            indegree[nxt] = indegree[nxt] - 1
-            if indegree[nxt] == 0:
-                ready.append(next(b for b in movable if b.id == nxt))
-        ready.sort(key=lambda b: b.original_index)
+    for local_idx in local_order:
+        global_idx = file_vertex_indices[local_idx]
+        ordered.append(repo_graph.blocks[global_idx])
 
-    if len(ordered) != len(movable):
-        raise ValueError(f"Cycle detected for file {parsed.path}")
-
-    ordered_map: Dict[str, CodeBlock] = {b.id: b for b in ordered}
-    iterator_index: int = 0
-    result: List[CodeBlock] = []
-    for block in file_blocks:
-        if block.id in fixed:
-            result.append(block)
-            continue
-        result.append(ordered_map[ordered[iterator_index].id])
-        iterator_index += 1
-    return result
+    if len(ordered) != len(file_blocks):
+        raise ValueError(f"Topological ordering failed for {parsed.path}")
+    return ordered
 
 
 @beartype
@@ -606,7 +564,7 @@ def _write_reordered_file(parsed: ParsedFile,
                           ordered_blocks: Sequence[CodeBlock]) -> None:
     replacement: Dict[str, str] = {}
     ordered_iter: List[CodeBlock] = list(ordered_blocks)
-    by_slot = sorted(parsed.blocks, key=lambda b: b.start_byte)
+    by_slot = sorted(parsed.blocks, key=lambda b: b.line_range.start)
     idx = 0
     while idx < len(by_slot):
         slot = by_slot[idx]
@@ -666,10 +624,10 @@ def visualize_repository_graph(repo: RepositoryParse,
         sub = graphviz.Digraph(name=f"cluster_{cluster_index}")
         sub.attr(label=str(path.relative_to(repo.root)))
         sub.attr(style="rounded")
-        nodes = sorted(file_to_nodes[path], key=lambda b: b.start_byte)
+        nodes = sorted(file_to_nodes[path], key=lambda b: b.line_range.start)
         for block in nodes:
             title = html.escape(
-                f"{path.relative_to(repo.root)}:{block.start_line}-{block.end_line}"
+                f"{path.relative_to(repo.root)} {block.line_range.start}-{block.line_range.stop}"
             )
             body = _highlight_html(block.text)
             label = ("<"
@@ -686,7 +644,11 @@ def visualize_repository_graph(repo: RepositoryParse,
         dst = repo_graph.blocks[edge.target].id
         dot.edge(src, dst)
     rendered_base = output_png.with_suffix("")
-    dot.render(filename=str(rendered_base), cleanup=True)
+    try:
+        dot.render(filename=str(rendered_base), cleanup=True)
+
+    except graphviz.backend.execute.CalledProcessError:
+        raise RuntimeError(str(dot)) from None
 
 
 @beartype
