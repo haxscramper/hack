@@ -6,6 +6,7 @@ import re
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
+from pydantic import BaseModel, ConfigDict, Field
 
 import graphviz
 import igraph
@@ -56,39 +57,33 @@ CAPTURE_TYPES: Set[str] = {
 }
 
 
-@dataclass
-class CodeBlock:
-    id: str = field(metadata={"doc": "Stable unique block identifier."})
-    path: Path = field(metadata={"doc": "Path of file containing block."})
-    key: str = field(
-        metadata={"doc": "Semantic symbol key used for matching."})
-    start_byte: int = field(metadata={"doc": "Block start byte in file."})
-    end_byte: int = field(metadata={"doc": "Block end byte in file."})
-    start_line: int = field(metadata={"doc": "1-based block start line."})
-    end_line: int = field(metadata={"doc": "1-based block end line."})
-    text: str = field(metadata={"doc": "Exact block source text."})
-    scope: str = field(metadata={"doc": "Namespace scope string."})
-    original_index: int = field(
-        metadata={"doc": "Original order index in file."})
-    is_include_block: bool = field(
-        metadata={"doc": "Whether this block is include-group."})
-    is_header_file: bool = field(metadata={"doc": "Whether file is header."})
-    is_protected: bool = field(
-        metadata={"doc": "Inside clang-format off region."})
+class CodeBlock(BaseModel):
+    id: str = Field(description="Stable unique block identifier.")
+    path: Path = Field(description="Path of file containing block.")
+    key: str = Field(description="Semantic symbol key used for matching.")
+    start_byte: int = Field(description="Block start byte in file.")
+    end_byte: int = Field(description="Block end byte in file.")
+    start_line: int = Field(description="1-based block start line.")
+    end_line: int = Field(description="1-based block end line.")
+    text: str = Field(description="Exact block source text.")
+    scope: str = Field(description="Namespace scope string.")
+    original_index: int = Field(description="Original order index in file.")
+    is_include_block: bool = Field(
+        description="Whether this block is include-group.")
+    is_header_file: bool = Field(description="Whether file is header.")
+    is_protected: bool = Field(description="Inside clang-format off region.")
 
 
-@dataclass
-class ParsedFile:
-    path: Path = field(metadata={"doc": "Parsed file path."})
-    text: str = field(metadata={"doc": "Original file text."})
-    blocks: List[CodeBlock] = field(
-        metadata={"doc": "Extracted reorderable blocks."})
+class ParsedFile(BaseModel):
+    path: Path = Field(description="Parsed file path.")
+    text: str = Field(description="Original file text.")
+    blocks: list[CodeBlock] = Field(
+        description="Extracted reorderable blocks.")
 
 
-@dataclass
-class RepositoryParse:
-    root: Path = field(metadata={"doc": "Repository root path."})
-    files: List[ParsedFile] = field(metadata={"doc": "All parsed files."})
+class RepositoryParse(BaseModel):
+    root: Path = Field(description="Repository root path.")
+    files: list[ParsedFile] = Field(description="All parsed files.")
 
 
 @dataclass
@@ -348,7 +343,7 @@ def _collect_blocks_from_node(
 
 @beartype
 def parse_cpp_file(path: Path, parser: Parser) -> ParsedFile:
-    log.debug("Parsing file %s", path)
+    log.debug(f"Parsing file {path}", )
     data = path.read_bytes()
     text = data.decode("utf-8")
     lines = text.splitlines(keepends=True)
@@ -462,8 +457,7 @@ def build_repository_graph(repo: RepositoryParse) -> RepositoryGraph:
     graph = igraph.Graph(directed=True)
     graph.add_vertices(len(blocks))
     id_to_index: Dict[str, int] = {}
-    idx: int = 0
-    while idx < len(blocks):
+    for idx in range(len(blocks)):
         block = blocks[idx]
         id_to_index[block.id] = idx
         graph.vs[idx]["id"] = block.id
@@ -472,7 +466,6 @@ def build_repository_graph(repo: RepositoryParse) -> RepositoryGraph:
         graph.vs[idx]["text"] = block.text
         graph.vs[idx]["start_line"] = block.start_line
         graph.vs[idx]["end_line"] = block.end_line
-        idx += 1
 
     file_to_blocks: Dict[Path, List[CodeBlock]] = {}
     for block in blocks:
@@ -630,7 +623,7 @@ def _write_reordered_file(parsed: ParsedFile,
     }
     if before_non_empty != after_non_empty:
         raise ValueError(f"Line set mismatch after write for {parsed.path}")
-    log.debug("Writing file %s", parsed.path)
+    log.debug(f"Writing file {parsed.path}", )
     parsed.path.write_text(rebuilt, encoding="utf-8")
 
 
@@ -640,11 +633,13 @@ def sort_repository(root: Path, graph_png: Optional[Path]) -> RepositoryGraph:
     repo_graph = build_repository_graph(repo)
     if graph_png is not None:
         visualize_repository_graph(repo, repo_graph, graph_png)
+
     for parsed in repo.files:
         if parsed.path.suffix.lower() not in CPP_SOURCES:
             continue
         ordered_blocks = _stable_topological_order_for_file(parsed, repo_graph)
         _write_reordered_file(parsed, ordered_blocks)
+
     return repo_graph
 
 
@@ -662,6 +657,7 @@ def visualize_repository_graph(repo: RepositoryParse,
                                output_png: Path) -> None:
     output_png.parent.mkdir(parents=True, exist_ok=True)
     dot = graphviz.Digraph("repo_graph", format="png")
+    dot.attr(rankdir="LR")
     file_to_nodes: Dict[Path, List[CodeBlock]] = {}
     for block in repo_graph.blocks:
         file_to_nodes.setdefault(block.path, []).append(block)
@@ -691,221 +687,6 @@ def visualize_repository_graph(repo: RepositoryParse,
         dot.edge(src, dst)
     rendered_base = output_png.with_suffix("")
     dot.render(filename=str(rendered_base), cleanup=True)
-
-
-@beartype
-def _init_repo(tmp_path: Path) -> Path:
-    root = tmp_path / "repo"
-    root.mkdir(parents=True, exist_ok=True)
-    subprocess.run(["git", "-C", str(root), "init"], check=True)
-    return root
-
-
-@beartype
-def _edge_exists(repo_graph: RepositoryGraph, src_id: str,
-                 dst_id: str) -> bool:
-    src = repo_graph.id_to_index[src_id]
-    dst = repo_graph.id_to_index[dst_id]
-    return repo_graph.graph.are_adjacent(src, dst)
-
-
-@beartype
-def _first_block_by_key(parsed: ParsedFile, key: str) -> CodeBlock:
-    for block in parsed.blocks:
-        if block.key == key:
-            return block
-    raise ValueError(f"Missing key {key} in {parsed.path}")
-
-
-@beartype
-def _parse_and_build(root: Path) -> Tuple[RepositoryParse, RepositoryGraph]:
-    repo = parse_repository(root)
-    graph = build_repository_graph(repo)
-    return repo, graph
-
-
-def test_templates_and_specialization_order(tmp_path: Path) -> None:
-    root = _init_repo(tmp_path)
-    header = root / "a.hpp"
-    source = root / "a.cpp"
-    header.write_text(
-        "#pragma once\n"
-        "template <typename T>\n"
-        "T add(T a, T b);\n"
-        "template <>\n"
-        "int add<int>(int a, int b);\n"
-        "int plain();\n",
-        encoding="utf-8",
-    )
-    source.write_text(
-        "#include \"a.hpp\"\n"
-        "int plain() { return 1; }\n"
-        "template <typename T>\n"
-        "T add(T a, T b) { return a + b; }\n"
-        "template <>\n"
-        "int add<int>(int a, int b) { return a - b; }\n",
-        encoding="utf-8",
-    )
-    repo, graph = _parse_and_build(root)
-    visualize_repository_graph(
-        repo,
-        graph,
-        Path(
-            "/tmp/haxscramper-hack/test_templates_and_specialization_order.png"
-        ),
-    )
-    parsed_source = next(f for f in repo.files if f.path == source)
-    assert 3 <= len(parsed_source.blocks)
-    assert rebuild_identity(parsed_source) == parsed_source.text
-    assert len(graph.blocks) == sum(len(f.blocks) for f in repo.files)
-
-    src_add = _first_block_by_key(parsed_source, "add")
-    src_add_spec = _first_block_by_key(parsed_source, "add<int>")
-    src_plain = _first_block_by_key(parsed_source, "plain")
-    assert src_add.id in graph.id_to_index
-    assert src_add_spec.id in graph.id_to_index
-    assert src_plain.id in graph.id_to_index
-    assert _edge_exists(graph, src_add.id, src_add_spec.id)
-    assert _edge_exists(graph, src_add_spec.id, src_plain.id)
-
-    sort_repository(root, None)
-    out = source.read_text(encoding="utf-8")
-    assert out.find("T add(T a, T b)") < out.find("add<int>(int a, int b)")
-    assert out.find("add<int>(int a, int b)") < out.find("int plain()")
-
-
-def test_anonymous_namespace_name_collision(tmp_path: Path) -> None:
-    root = _init_repo(tmp_path)
-    header = root / "b.hpp"
-    source = root / "b.cpp"
-    header.write_text(
-        "#pragma once\n"
-        "int ext_a();\n"
-        "int ext_b();\n",
-        encoding="utf-8",
-    )
-    source.write_text(
-        "#include \"b.hpp\"\n"
-        "namespace {\n"
-        "int helper() { return 1; }\n"
-        "}\n"
-        "namespace {\n"
-        "int helper() { return 2; }\n"
-        "}\n"
-        "int ext_b() { return helper(); }\n"
-        "int ext_a() { return helper(); }\n",
-        encoding="utf-8",
-    )
-    repo, graph = _parse_and_build(root)
-    visualize_repository_graph(
-        repo,
-        graph,
-        Path(
-            "/tmp/haxscramper-hack/test_anonymous_namespace_name_collision.png"
-        ),
-    )
-    parsed_source = next(f for f in repo.files if f.path == source)
-    assert rebuild_identity(parsed_source) == parsed_source.text
-    helper_keys = [b.key for b in parsed_source.blocks if "helper" in b.key]
-    assert 2 == len(helper_keys)
-    assert helper_keys[0] != helper_keys[1]
-
-    src_ext_a = _first_block_by_key(parsed_source, "ext_a")
-    src_ext_b = _first_block_by_key(parsed_source, "ext_b")
-    assert _edge_exists(graph, src_ext_a.id, src_ext_b.id)
-
-    sort_repository(root, None)
-    out = source.read_text(encoding="utf-8")
-    assert out.find("int ext_a()") < out.find("int ext_b()")
-    assert out.find("namespace {\nint helper() { return 1; }\n}") < out.find(
-        "namespace {\nint helper() { return 2; }\n}")
-
-
-def test_multi_header_multi_source_graph_edges(tmp_path: Path) -> None:
-    root = _init_repo(tmp_path)
-    h1 = root / "h1.hpp"
-    h2 = root / "h2.hxx"
-    s1 = root / "s1.cpp"
-    s2 = root / "s2.cpp"
-
-    h1.write_text(
-        "#pragma once\n"
-        "int A();\n"
-        "int B();\n",
-        encoding="utf-8",
-    )
-    h2.write_text(
-        "#pragma once\n"
-        "int C();\n",
-        encoding="utf-8",
-    )
-    s1.write_text(
-        "#include \"h1.hpp\"\n"
-        "#include \"h2.hxx\"\n"
-        "int C() { return 3; }\n"
-        "int A() { return 1; }\n",
-        encoding="utf-8",
-    )
-    s2.write_text(
-        "#include \"h1.hpp\"\n"
-        "int B() { return 2; }\n",
-        encoding="utf-8",
-    )
-
-    repo, graph = _parse_and_build(root)
-    visualize_repository_graph(
-        repo,
-        graph,
-        Path(
-            "/tmp/haxscramper-hack/test_multi_header_multi_source_graph_edges.png"
-        ),
-    )
-    parsed_s1 = next(f for f in repo.files if f.path == s1)
-    parsed_s2 = next(f for f in repo.files if f.path == s2)
-    assert rebuild_identity(parsed_s1) == parsed_s1.text
-    assert rebuild_identity(parsed_s2) == parsed_s2.text
-
-    s1_a = _first_block_by_key(parsed_s1, "A")
-    s2_b = _first_block_by_key(parsed_s2, "B")
-    assert _edge_exists(graph, s1_a.id, s2_b.id)
-    assert len(graph.blocks) == sum(len(f.blocks) for f in repo.files)
-
-    sort_repository(root, None)
-    out_s1 = s1.read_text(encoding="utf-8")
-    assert out_s1.find("int A()") < out_s1.find("int C()")
-
-
-def test_clang_format_off_region_is_not_reordered(tmp_path: Path) -> None:
-    root = _init_repo(tmp_path)
-    header = root / "c.h"
-    source = root / "c.cc"
-    header.write_text(
-        "#pragma once\n"
-        "int f();\n"
-        "int g();\n",
-        encoding="utf-8",
-    )
-    original = ("#include \"c.h\"\n"
-                "/* clang-format off */\n"
-                "int g() { return 2; }\n"
-                "int f() { return 1; }\n"
-                "/* clang-format on */\n")
-    source.write_text(original, encoding="utf-8")
-
-    repo, graph = _parse_and_build(root)
-    visualize_repository_graph(
-        repo,
-        graph,
-        Path(
-            "/tmp/haxscramper-hack/test_clang_format_off_region_is_not_reordered.png"
-        ),
-    )
-    parsed_source = next(f for f in repo.files if f.path == source)
-    assert rebuild_identity(parsed_source) == parsed_source.text
-
-    sort_repository(root, None)
-    out = source.read_text(encoding="utf-8")
-    assert out == original
 
 
 @beartype

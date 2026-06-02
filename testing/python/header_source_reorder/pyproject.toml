@@ -11,6 +11,7 @@ dependencies = [
     "beartype>=0.22.9",
     "graphviz>=0.21",
     "igraph>=1.0.0",
+    "pydantic>=2.13.4",
     "pytest>=9.0.3",
     "tree-sitter>=0.25.2",
     "tree-sitter-cpp>=0.23.4",
@@ -18,6 +19,10 @@ dependencies = [
 
 [project.scripts]
 header-source-reorder = "header_source_reorder:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
 
 [build-system]
 requires = ["uv_build>=0.9.27,<0.10.0"]
