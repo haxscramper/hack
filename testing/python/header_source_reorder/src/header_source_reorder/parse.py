@@ -11,7 +11,7 @@ from pathlib import Path
 from beartype import beartype
 from beartype.typing import Dict, List, Optional, Sequence, Set, Tuple
 from tree_sitter import Language, Node, Parser
-from header_source_reorder.types import CodeBlock, ParsedFile, RepositoryGraph, RepositoryParse
+from header_source_reorder.types import CodeBlock, ParsedFile, QualType, BlockType
 from header_source_reorder.common import CAPTURE_TYPES, CPP_HEADERS
 import logging
 
@@ -72,52 +72,120 @@ def _leading_comment_adjust(lines: Sequence[str], start_line: int) -> int:
 
 
 @beartype
-def _extract_symbol_from_text(node_type: str, text: str, scope: str) -> str:
-    normalized = " ".join(text.replace("\n", " ").split())
-    if node_type == "template_declaration":
-        spec_match = re.search(
-            r"([A-Za-z_]\w*(?:::[A-Za-z_]\w*)*)\s*<([^>]*)>\s*\(", normalized)
-        if spec_match is not None:
-            local = f"{spec_match.group(1)}<{spec_match.group(2).strip()}>"
-            if "::" in local:
-                return local
-            if scope == "":
-                return local
-            return f"{scope}::{local}"
-    class_match = re.search(r"\b(class|struct|enum)\s+([A-Za-z_]\w*)",
-                            normalized)
-    if class_match is not None:
-        local = class_match.group(2)
-        if scope == "":
-            return local
-        return f"{scope}::{local}"
-    func_match = re.search(
-        r"([A-Za-z_]\w*(?:::[A-Za-z_]\w*)*(?:<[^>]+>)?)\s*\(", normalized)
-    if func_match is not None:
-        local = func_match.group(1)
-        if "::" in local:
-            return local
-        if scope == "":
-            return local
-        return f"{scope}::{local}"
-    name_match = re.search(r"([A-Za-z_]\w*)", normalized)
-    if name_match is not None:
-        local = name_match.group(1)
-        if scope == "":
-            return local
-        return f"{scope}::{local}"
-    if scope == "":
-        return normalized
-    return f"{scope}::{normalized}"
-
-
-@beartype
 def _namespace_name(node: Node, lines: Sequence[str]) -> str:
     name_node = node.child_by_field_name("name")
     if name_node is None:
         return f"__anon_ns_line_{node.start_point[0] + 1}"
     line = lines[name_node.start_point[0]]
-    return line[name_node.start_point[1]:name_node.end_point[1]]
+    return line[name_node.start_point[1]:name_node.end_point[1]].strip()
+
+
+@beartype
+def _parse_param_type(raw: str) -> QualType:
+    token = " ".join(raw.strip().split())
+    qualifiers: List[QualType] = []
+    if "const" in token.split():
+        qualifiers.append(QualType(name="const"))
+    if "volatile" in token.split():
+        qualifiers.append(QualType(name="volatile"))
+    if "*" in token:
+        qualifiers.append(QualType(name="ptr"))
+    if "&" in token:
+        qualifiers.append(QualType(name="ref"))
+    cleaned = token.replace("const", "").replace("volatile", "")
+    cleaned = cleaned.replace("*", " ").replace("&", " ")
+    cleaned = " ".join(cleaned.split())
+    if cleaned == "":
+        cleaned = "void"
+    return QualType(name=cleaned, parameters=tuple(qualifiers))
+
+
+@beartype
+def _extract_qualified_name(
+    node_type: str,
+    text: str,
+    scope_stack: Sequence[str],
+    file_namespace: str,
+) -> Optional[QualType]:
+    normalized = " ".join(text.replace("\n", " ").split())
+    if node_type in {"preproc_include", "preproc_call", "preproc_def"}:
+        return None
+    function_match = re.search(
+        r"([~A-Za-z_]\w*(?:::[A-Za-z_]\w*)*)\s*\(([^)]*)\)", normalized)
+    if function_match is not None:
+        full_name = function_match.group(1)
+        params_raw = function_match.group(2).strip()
+        parts = full_name.split("::")
+        name = parts[-1]
+        parents: List[QualType] = [QualType(name=file_namespace)]
+        idx = 0
+        while idx < len(scope_stack):
+            parents.append(QualType(name=scope_stack[idx]))
+            idx += 1
+        idx = 0
+        while idx + 1 < len(parts):
+            parents.append(QualType(name=parts[idx]))
+            idx += 1
+        params: List[QualType] = []
+        if params_raw != "":
+            raw_items = [item.strip() for item in params_raw.split(",")]
+            idx = 0
+            while idx < len(raw_items):
+                params.append(_parse_param_type(raw_items[idx]))
+                idx += 1
+        return QualType(name=name,
+                        parent_namespaces=tuple(parents),
+                        parameters=tuple(params))
+    type_match = re.search(
+        r"\b(enum class|enum|struct|class|union)\s+([A-Za-z_]\w*)", normalized)
+    if type_match is not None:
+        parents = [QualType(name=file_namespace)]
+        idx = 0
+        while idx < len(scope_stack):
+            parents.append(QualType(name=scope_stack[idx]))
+            idx += 1
+        return QualType(name=type_match.group(2),
+                        parent_namespaces=tuple(parents))
+    decl_match = re.search(r"([A-Za-z_]\w*)\s*;", normalized)
+    if decl_match is not None:
+        parents = [QualType(name=file_namespace)]
+        idx = 0
+        while idx < len(scope_stack):
+            parents.append(QualType(name=scope_stack[idx]))
+            idx += 1
+        return QualType(name=decl_match.group(1),
+                        parent_namespaces=tuple(parents))
+    return None
+
+
+@beartype
+def _make_block(
+    path: Path,
+    lines: Sequence[str],
+    line_range: slice,
+    block_type: BlockType,
+    counter: int,
+    scope_stack: Sequence[str],
+    node_type: str,
+) -> CodeBlock:
+    text = "".join(lines[line_range.start:line_range.stop])
+    scope = "::".join(scope_stack)
+    file_namespace = path.name
+    qualified_name = _extract_qualified_name(node_type, text, scope_stack,
+                                             file_namespace)
+    key = qualified_name.name if qualified_name is not None else f"__local__{counter}"
+    return CodeBlock(
+        id=f"{path.as_posix()}::{counter}",
+        path=path,
+        key=key,
+        line_range=line_range,
+        text=text,
+        scope=scope,
+        original_index=counter,
+        block_type=block_type,
+        qualified_name=qualified_name
+        if block_type != BlockType.LOCAL_ENTRY else None,
+    )
 
 
 @beartype
@@ -131,155 +199,263 @@ def _collect_blocks_from_node(
     block_counter_start: int,
 ) -> Tuple[List[CodeBlock], int]:
     blocks: List[CodeBlock] = []
-    block_counter: int = block_counter_start
+    block_counter = block_counter_start
     if node.type == "namespace_definition":
-        ns_name = _namespace_name(node, lines)
-        new_scope = list(scope_stack)
-        new_scope.append(ns_name)
         body = node.child_by_field_name("body")
-        if body is not None:
-            idx: int = 0
-            while idx < len(body.named_children):
-                sub = body.named_children[idx]
-                sub_blocks, block_counter = _collect_blocks_from_node(
-                    sub,
+        if body is None:
+            line_range = slice(node.start_point[0], node.end_point[0] + 1)
+            blocks.append(
+                _make_block(
                     path,
-                    is_header,
                     lines,
-                    protected_ranges,
-                    new_scope,
+                    line_range,
+                    BlockType.LOCAL_ENTRY,
                     block_counter,
-                )
-                blocks.extend(sub_blocks)
-                idx += 1
-        return blocks, block_counter
-    if node.type in CAPTURE_TYPES:
-        start_line = node.start_point[0]
-        end_line = node.end_point[0] + 1
-        adjusted_line = _leading_comment_adjust(lines, start_line)
-        line_range = slice(adjusted_line, end_line)
-        if _slice_overlaps_any(line_range, protected_ranges):
-            return blocks, block_counter
-        text = "".join(lines[line_range.start:line_range.stop])
-        scope = "::".join(scope_stack)
-        key = _extract_symbol_from_text(node.type, text, scope)
-        block_id = f"{path.as_posix()}::{block_counter}"
-        block = CodeBlock(
-            id=block_id,
-            path=path,
-            key=key,
-            line_range=line_range,
-            text=text,
-            scope=scope,
-            original_index=block_counter,
-            is_include_block=False,
-            is_header_file=is_header,
-            is_protected=False,
-        )
-        blocks.append(block)
-        block_counter += 1
-        return blocks, block_counter
-    if node.type in {
-            "translation_unit", "declaration_list", "linkage_specification"
-    }:
+                    scope_stack,
+                    node.type,
+                ))
+            return blocks, block_counter + 1
+        child_count = len(body.named_children)
+        if node.start_point[0] == node.end_point[0] and 1 < child_count:
+            logging.getLogger("main.parser").warning(
+                "Multiple elements on one line in namespace at %s:%s",
+                path.as_posix(),
+                node.start_point[0] + 1,
+            )
+            line_range = slice(node.start_point[0], node.end_point[0] + 1)
+            blocks.append(
+                _make_block(
+                    path,
+                    lines,
+                    line_range,
+                    BlockType.LOCAL_ENTRY,
+                    block_counter,
+                    scope_stack,
+                    node.type,
+                ))
+            return blocks, block_counter + 1
+        ns_name = _namespace_name(node, lines)
+        open_range = slice(node.start_point[0],
+                           min(node.start_point[0] + 1, len(lines)))
+        if not _slice_overlaps_any(open_range, protected_ranges):
+            open_block = _make_block(
+                path,
+                lines,
+                open_range,
+                BlockType.NAMESPACE_OPEN,
+                block_counter,
+                scope_stack + [ns_name],
+                node.type,
+            )
+            blocks.append(open_block)
+            block_counter += 1
         idx = 0
-        while idx < len(node.named_children):
-            sub = node.named_children[idx]
+        while idx < child_count:
+            sub = body.named_children[idx]
             sub_blocks, block_counter = _collect_blocks_from_node(
                 sub,
                 path,
                 is_header,
                 lines,
                 protected_ranges,
-                scope_stack,
+                list(scope_stack) + [ns_name],
                 block_counter,
             )
             blocks.extend(sub_blocks)
             idx += 1
+        close_line = body.end_point[0]
+        close_range = slice(close_line, min(close_line + 1, len(lines)))
+        if not _slice_overlaps_any(close_range, protected_ranges):
+            close_block = _make_block(
+                path,
+                lines,
+                close_range,
+                BlockType.NAMESPACE_CLOSE,
+                block_counter,
+                scope_stack + [ns_name],
+                node.type,
+            )
+            blocks.append(close_block)
+            block_counter += 1
+        return blocks, block_counter
+    start_line = node.start_point[0]
+    end_line = node.end_point[0] + 1
+    adjusted_line = _leading_comment_adjust(lines, start_line)
+    line_range = slice(adjusted_line, end_line)
+    if _slice_overlaps_any(line_range, protected_ranges):
+        return blocks, block_counter
+    if node.type in {"preproc_include", "preproc_call", "preproc_def"}:
+        blocks.append(
+            _make_block(
+                path,
+                lines,
+                line_range,
+                BlockType.PREPROCESSOR_BLOCK,
+                block_counter,
+                scope_stack,
+                node.type,
+            ))
+        return blocks, block_counter + 1
+    declaration_types = {
+        "declaration",
+        "field_declaration",
+        "function_definition",
+        "class_specifier",
+        "struct_specifier",
+        "union_specifier",
+        "enum_specifier",
+        "enumerator",
+        "template_declaration",
+    }
+    if node.type in declaration_types:
+        if is_header:
+            block_type = BlockType.DECLARATION
+        else:
+            if node.type == "function_definition":
+                block_type = BlockType.DEFINITION
+            else:
+                block_type = BlockType.LOCAL_ENTRY
+        blocks.append(
+            _make_block(
+                path,
+                lines,
+                line_range,
+                block_type,
+                block_counter,
+                scope_stack,
+                node.type,
+            ))
+        block_counter += 1
+        if is_header and node.type in {
+                "class_specifier", "struct_specifier", "union_specifier",
+                "enum_specifier"
+        }:
+            idx = 0
+            while idx < len(node.named_children):
+                sub = node.named_children[idx]
+                sub_blocks, block_counter = _collect_blocks_from_node(
+                    sub,
+                    path,
+                    is_header,
+                    lines,
+                    protected_ranges,
+                    scope_stack,
+                    block_counter,
+                )
+                blocks.extend(sub_blocks)
+                idx += 1
+        return blocks, block_counter
+    if len(node.named_children) == 0:
+        blocks.append(
+            _make_block(
+                path,
+                lines,
+                line_range,
+                BlockType.LOCAL_ENTRY,
+                block_counter,
+                scope_stack,
+                node.type,
+            ))
+        return blocks, block_counter + 1
+    idx = 0
+    while idx < len(node.named_children):
+        sub = node.named_children[idx]
+        sub_blocks, block_counter = _collect_blocks_from_node(
+            sub,
+            path,
+            is_header,
+            lines,
+            protected_ranges,
+            scope_stack,
+            block_counter,
+        )
+        blocks.extend(sub_blocks)
+        idx += 1
     return blocks, block_counter
 
 
 @beartype
+def _merge_adjacent_local_entries(
+        blocks: Sequence[CodeBlock]) -> List[CodeBlock]:
+    merged: List[CodeBlock] = []
+    idx = 0
+    while idx < len(blocks):
+        current = blocks[idx]
+        if len(merged) == 0:
+            merged.append(current)
+            idx += 1
+            continue
+        prev = merged[-1]
+        if (prev.block_type == BlockType.LOCAL_ENTRY
+                and current.block_type == BlockType.LOCAL_ENTRY
+                and prev.path == current.path
+                and current.line_range.start <= prev.line_range.stop):
+            merged[-1] = CodeBlock(
+                id=prev.id,
+                path=prev.path,
+                key=prev.key,
+                line_range=slice(prev.line_range.start,
+                                 current.line_range.stop),
+                text=prev.text + current.text,
+                scope=prev.scope,
+                original_index=prev.original_index,
+                block_type=BlockType.LOCAL_ENTRY,
+                qualified_name=None,
+            )
+            idx += 1
+            continue
+        merged.append(current)
+        idx += 1
+    return merged
+
+
+@beartype
 def parse_cpp_file(path: Path, parser: Parser) -> ParsedFile:
-    logging.getLogger("main.parser").debug(f"Parsing file {path}", )
+    logging.getLogger("main.parser").debug(f"Parsing file {path}")
     data = path.read_bytes()
     text = data.decode("utf-8")
     lines = text.splitlines(keepends=True)
     tree = parser.parse(data)
     if tree.root_node.has_error:
-        node_repr = str(tree.root_node)
-        raise ValueError("Parse failed with syntax errors: {}\n{}".format(
-            path,
-            node_repr,
-        ))
+        raise ValueError(
+            f"Parse failed with syntax errors: {path}\n{tree.root_node}")
     protected_ranges = _clang_format_off_ranges(lines)
     root = tree.root_node
-
-    include_nodes: List[Node] = []
-    for idx in range(len(root.named_children)):
-        child = root.named_children[idx]
-        if child.type in ["preproc_include", "preproc_call"]:
-            include_nodes.append(child)
-
+    is_header = path.suffix.lower() in CPP_HEADERS
     blocks: List[CodeBlock] = []
-    counter: int = 0
-
-    if 0 < len(include_nodes):
-        first = include_nodes[0]
-        last = include_nodes[-1]
-        start_line = first.start_point[0]
-        end_line = last.end_point[0] + 1
-        adjusted_line = _leading_comment_adjust(lines, start_line)
-        include_range = slice(adjusted_line, end_line)
-        if not _slice_overlaps_any(include_range, protected_ranges):
-            include_text = "".join(
-                lines[include_range.start:include_range.stop])
-            include_block = CodeBlock(
-                id=f"{path.as_posix()}//includes",
-                path=path,
-                key="__includes__",
-                line_range=include_range,
-                text=include_text,
-                scope="",
-                original_index=counter,
-                is_include_block=True,
-                is_header_file=path.suffix.lower() in CPP_HEADERS,
-                is_protected=False,
-            )
-            blocks.append(include_block)
-            counter += 1
-
-    protected_index: int = 0
-    while protected_index < len(protected_ranges):
-        protected_range = protected_ranges[protected_index]
-        protected_text = "".join(
-            lines[protected_range.start:protected_range.stop])
-        protected_block = CodeBlock(
-            id=f"{path.as_posix()}//protected//{protected_index}",
-            path=path,
-            key=f"__clang_format_block__//{protected_index}",
-            line_range=protected_range,
-            text=protected_text,
-            scope="",
-            original_index=counter,
-            is_include_block=False,
-            is_header_file=path.suffix.lower() in CPP_HEADERS,
-            is_protected=True,
+    counter = 0
+    idx = 0
+    while idx < len(protected_ranges):
+        block = _make_block(
+            path,
+            lines,
+            protected_ranges[idx],
+            BlockType.CLANG_FORMAT_BLOCK,
+            counter,
+            [],
+            "clang_format",
         )
-        blocks.append(protected_block)
+        block = CodeBlock(
+            id=block.id,
+            path=block.path,
+            key=block.key,
+            line_range=block.line_range,
+            text=block.text,
+            scope=block.scope,
+            original_index=block.original_index,
+            block_type=BlockType.CLANG_FORMAT_BLOCK,
+            qualified_name=None,
+        )
+        blocks.append(block)
         counter += 1
-        protected_index += 1
-
+        idx += 1
     idx = 0
     while idx < len(root.named_children):
         child = root.named_children[idx]
-        if child.type == "preproc_include":
-            idx += 1
-            continue
         child_blocks, counter = _collect_blocks_from_node(
             child,
             path,
-            path.suffix.lower() in CPP_HEADERS,
+            is_header,
             lines,
             protected_ranges,
             [],
@@ -287,6 +463,6 @@ def parse_cpp_file(path: Path, parser: Parser) -> ParsedFile:
         )
         blocks.extend(child_blocks)
         idx += 1
-
-    blocks.sort(key=lambda b: b.line_range.start)
+    blocks.sort(key=lambda item: item.line_range.start)
+    blocks = _merge_adjacent_local_entries(blocks)
     return ParsedFile(path=path, text=text, lines=lines, blocks=blocks)
