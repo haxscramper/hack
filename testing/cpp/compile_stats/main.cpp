@@ -213,6 +213,12 @@ std::string toString(const rapidjson::Value& value) {
     return buffer.GetString();
 }
 
+// ensure these are available:
+// #include <algorithm>
+// #include <map>
+// #include <unordered_map>
+// #include <utility>
+
 void fill_events(std::vector<TraceEvent> const& traceEvents) {
     const std::string db_path = "/tmp/result.duckdb";
     std::filesystem::remove(db_path);
@@ -224,34 +230,65 @@ void fill_events(std::vector<TraceEvent> const& traceEvents) {
     con.Query("LOAD json;");
 
     auto create_result = con.Query(
-        "CREATE TABLE events ("
-        "  pid BIGINT,"
-        "  tid BIGINT,"
-        "  ts BIGINT,"
-        "  cat VARCHAR,"
-        "  ph VARCHAR,"
-        "  id BIGINT,"
-        "  dur BIGINT,"
-        "  name VARCHAR,"
-        "  detail VARCHAR,"
-        "  parsed_json JSON"
-        ");");
+        R"SQL(
+CREATE TABLE events (
+    event_id BIGINT PRIMARY KEY,
+    pid BIGINT,
+    tid BIGINT,
+    ts BIGINT,
+    cat VARCHAR,
+    ph VARCHAR,
+    id BIGINT,
+    dur BIGINT,
+    name VARCHAR,
+    detail VARCHAR,
+    parsed_json JSON
+);
 
+CREATE TABLE event_children (
+    parent_id BIGINT NOT NULL,
+    child_id  BIGINT NOT NULL,
+    PRIMARY KEY (parent_id, child_id)
+);
+
+CREATE TABLE event_parent (
+    event_id  BIGINT PRIMARY KEY,
+    parent_id BIGINT
+);
+)SQL"
+    );
 
     if (create_result->HasError()) {
         throw cpptrace::runtime_error(
             "duckdb create table failed: " + create_result->GetError());
     }
 
-    auto insert_stmt = con.Prepare(
-        "INSERT INTO events (pid, tid, ts, cat, ph, id, dur, name, "
-        "detail, parsed_json) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);");
+    auto insert_stmt = con.Prepare(R"SQL(
+INSERT INTO events (event_id, pid, tid, ts, cat, ph, id, dur, 
+name, 
+detail, parsed_json) 
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+        )SQL");
 
     if (insert_stmt->HasError()) {
         throw cpptrace::runtime_error(
             "duckdb prepare failed: " + insert_stmt->GetError());
     }
+
+    struct EventInfo {
+        int64_t event_id;
+        int64_t pid;
+        int64_t tid;
+        int64_t ts;
+        int64_t dur;
+        char    ph;
+        int64_t end_ts;    // ts for non-scope events; updated for B/X
+        bool    has_scope; // true if this event opens a nesting scope
+    };
+
+    std::vector<EventInfo> infos;
+    infos.reserve(traceEvents.size());
+    int64_t next_id = 0;
 
     for (auto const& ev : traceEvents) {
         std::optional<std::string> parsed_json;
@@ -279,15 +316,18 @@ void fill_events(std::vector<TraceEvent> const& traceEvents) {
             }
         }
 
-        duckdb::Value detail_value //
-            = ev.detail.has_value() ? duckdb::Value(ev.detail.value())
-                                    : duckdb::Value();
+        duckdb::Value detail_value = ev.detail.has_value()
+                                       ? duckdb::Value(ev.detail.value())
+                                       : duckdb::Value();
 
-        duckdb::Value parsed_value //
-            = parsed_json.has_value() ? duckdb::Value(parsed_json.value())
-                                      : duckdb::Value();
+        duckdb::Value parsed_value = parsed_json.has_value()
+                                       ? duckdb::Value(parsed_json.value())
+                                       : duckdb::Value();
+
+        int64_t const eid = ++next_id;
 
         auto insert_result = insert_stmt->Execute(
+            eid,
             ev.pid,
             ev.tid,
             ev.ts,
@@ -303,8 +343,121 @@ void fill_events(std::vector<TraceEvent> const& traceEvents) {
             throw cpptrace::runtime_error(
                 "duckdb insert failed: " + insert_result->GetError());
         }
+
+        infos.push_back({
+            eid,
+            static_cast<int64_t>(ev.pid),
+            static_cast<int64_t>(ev.tid),
+            static_cast<int64_t>(ev.ts),
+            static_cast<int64_t>(ev.dur),
+            ev.ph,
+            static_cast<int64_t>(ev.ts),
+            false,
+        });
+    }
+
+    // ---- Nesting computation
+    // ------------------------------------------------
+
+    // Group strictly by (pid, tid): cross-thread/cross-process nesting is
+    // not meaningful.
+    std::map<std::pair<int64_t, int64_t>, std::vector<EventInfo*>>
+        by_thread;
+    for (auto& e : infos) { by_thread[{e.pid, e.tid}].push_back(&e); }
+
+    // Pass 1: sort each thread by (ts, event_id), pair B/E, and compute
+    // end_ts / has_scope for scope-bearing events.
+    for (auto& [key, vec] : by_thread) {
+        std::sort(
+            vec.begin(),
+            vec.end(),
+            [](EventInfo const* a, EventInfo const* b) {
+                if (a->ts != b->ts) { return a->ts < b->ts; }
+                return a->event_id < b->event_id;
+            });
+
+        std::vector<EventInfo*> bstack;
+        for (auto* e : vec) {
+            if (e->ph == 'B') {
+                bstack.push_back(e);
+            } else if (e->ph == 'E') {
+                if (!bstack.empty()) {
+                    auto* b      = bstack.back();
+                    b->end_ts    = e->ts;
+                    b->has_scope = true;
+                    bstack.pop_back();
+                }
+            } else if (e->ph == 'X') {
+                if (e->dur > 0) {
+                    e->end_ts    = e->ts + e->dur;
+                    e->has_scope = true;
+                }
+            }
+        }
+    }
+
+    // Pass 2: sweep each thread with a stack of open scopes. The top of
+    // the stack when an event begins is its immediate parent.
+    std::vector<std::pair<int64_t, int64_t>> children_rows;
+    std::unordered_map<int64_t, int64_t>     parent_of;
+    children_rows.reserve(infos.size());
+
+    for (auto& [key, vec] : by_thread) {
+        std::vector<EventInfo*> stack;
+        for (auto* e : vec) {
+            while (!stack.empty() && stack.back()->end_ts <= e->ts) {
+                stack.pop_back();
+            }
+            // E events are scope closers, not nested children.
+            if (e->ph != 'E' && !stack.empty()) {
+                children_rows.emplace_back(
+                    stack.back()->event_id, e->event_id);
+                parent_of[e->event_id] = stack.back()->event_id;
+            }
+            if (e->has_scope) { stack.push_back(e); }
+        }
+    }
+
+    // ---- Populate nesting tables
+    // -------------------------------------------
+
+    auto child_stmt = con.Prepare(
+        "INSERT INTO event_children (parent_id, child_id) VALUES (?, ?);");
+    if (child_stmt->HasError()) {
+        throw cpptrace::runtime_error(
+            "duckdb prepare child failed: " + child_stmt->GetError());
+    }
+
+    for (auto const& [pid, cid] : children_rows) {
+        auto r = child_stmt->Execute(pid, cid);
+        if (r->HasError()) {
+            throw cpptrace::runtime_error(
+                "duckdb insert child failed: " + r->GetError());
+        }
+    }
+
+    auto parent_stmt = con.Prepare(
+        "INSERT INTO event_parent (event_id, parent_id) VALUES (?, ?);");
+    if (parent_stmt->HasError()) {
+        throw cpptrace::runtime_error(
+            "duckdb prepare parent failed: " + parent_stmt->GetError());
+    }
+
+    for (auto const& e : infos) {
+        duckdb::Value pval = [&] {
+            auto it = parent_of.find(e.event_id);
+            return it != parent_of.end() ? duckdb::Value(it->second)
+                                         : duckdb::Value();
+        }();
+
+        auto r = parent_stmt->Execute(e.event_id, pval);
+        if (r->HasError()) {
+            throw cpptrace::runtime_error(
+                "duckdb insert parent failed: " + r->GetError());
+        }
     }
 }
+
 
 int main(int argc, char** argv) {
     quill::BackendOptions backend_options;
