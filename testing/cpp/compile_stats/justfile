@@ -1,0 +1,10 @@
+configure:
+    cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=TRUE
+
+build: configure
+    cmake --build build --config Release
+
+run: build 
+    ./build/trace_events_parser
+
+        
