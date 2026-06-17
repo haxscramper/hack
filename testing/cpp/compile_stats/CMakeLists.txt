@@ -36,9 +36,13 @@ find_package(lexy REQUIRED)
 find_package(fmt REQUIRED)
 find_package(cpptrace REQUIRED)
 find_package(quill REQUIRED)
+find_package(SQLiteCpp REQUIRED)
+find_package(duckdb REQUIRED)
 
 add_executable(trace_events_parser main.cpp)
+
 target_link_libraries(trace_events_parser rapidjson foonathan::lexy fmt::fmt
-                      cpptrace::cpptrace quill::quill)
+                      cpptrace::cpptrace quill::quill duckdb::duckdb)
+
 target_include_directories(trace_events_parser
                            PUBLIC "${CMAKE_SOURCE_DIR}/cppdecl/include")

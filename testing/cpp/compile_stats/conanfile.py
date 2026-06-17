@@ -12,6 +12,7 @@ class ExampleRecipe(ConanFile):
         self.requires("fmt/12.1.0")
         self.requires("cpptrace/1.0.4")
         self.requires("quill/11.1.0")
+        self.requires("duckdb/1.4.3")
 
     def layout(self):
         cmake_layout(self)

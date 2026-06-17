@@ -1,4 +1,5 @@
 #include "cppdecl/declarations/parse.h"
+#include "cppdecl/declarations/to_string.h"
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -20,8 +21,16 @@
 #include <quill/Logger.h>
 #include <quill/sinks/ConsoleSink.h>
 #include <quill/std/Array.h>
+#include <rapidjson/document.h>
+#include <rapidjson/stringbuffer.h>
+#include <rapidjson/writer.h>
 
 #include <cpptrace/cpptrace.hpp>
+
+#include <duckdb.hpp>
+#include <filesystem>
+
+#include "to_json.hpp"
 
 struct TraceEvent {
     std::int64_t               pid{};
@@ -196,6 +205,107 @@ class TraceEventsSaxHandler
     void clearKeyAfterValue() { currentKey.clear(); }
 };
 
+
+std::string toString(const rapidjson::Value& value) {
+    rapidjson::StringBuffer                    buffer;
+    rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
+    value.Accept(writer);
+    return buffer.GetString();
+}
+
+void fill_events(std::vector<TraceEvent> const& traceEvents) {
+    const std::string db_path = "/tmp/result.duckdb";
+    std::filesystem::remove(db_path);
+
+    duckdb::DuckDB     db(db_path);
+    duckdb::Connection con(db);
+
+    con.Query("INSTALL json;");
+    con.Query("LOAD json;");
+
+    auto create_result = con.Query(
+        "CREATE TABLE events ("
+        "  pid BIGINT,"
+        "  tid BIGINT,"
+        "  ts BIGINT,"
+        "  cat VARCHAR,"
+        "  ph VARCHAR,"
+        "  id BIGINT,"
+        "  dur BIGINT,"
+        "  name VARCHAR,"
+        "  detail VARCHAR,"
+        "  parsed_json JSON"
+        ");");
+
+
+    if (create_result->HasError()) {
+        throw cpptrace::runtime_error(
+            "duckdb create table failed: " + create_result->GetError());
+    }
+
+    auto insert_stmt = con.Prepare(
+        "INSERT INTO events (pid, tid, ts, cat, ph, id, dur, name, "
+        "detail, parsed_json) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);");
+
+    if (insert_stmt->HasError()) {
+        throw cpptrace::runtime_error(
+            "duckdb prepare failed: " + insert_stmt->GetError());
+    }
+
+    for (auto const& ev : traceEvents) {
+        std::optional<std::string> parsed_json;
+
+        if (ev.name == "InstantiateFunction" && ev.detail.has_value()) {
+            cppdecl::ParseQualifiedNameFlags flags = {};
+            std::string_view                 input = ev.detail.value();
+            std::string_view                 input_before_parse = input;
+            auto result = cppdecl::ParseQualifiedName(input, flags);
+
+            if (auto error = std::get_if<cppdecl::ParseError>(&result)) {
+                throw cpptrace::runtime_error(
+                    "cppdecl: Parse error in qualified name `"
+                    + std::string(input_before_parse) + "` at position "
+                    + cppdecl::NumberToString(
+                        input.data() - input_before_parse.data())
+                    + ": " + error->message);
+            }
+
+            if (result.index() == 0) {
+                rapidjson::Document doc;
+                auto                js = cppdecl::ToJson(
+                    std::get<0>(result), doc.GetAllocator());
+                parsed_json = toString(js);
+            }
+        }
+
+        duckdb::Value detail_value //
+            = ev.detail.has_value() ? duckdb::Value(ev.detail.value())
+                                    : duckdb::Value();
+
+        duckdb::Value parsed_value //
+            = parsed_json.has_value() ? duckdb::Value(parsed_json.value())
+                                      : duckdb::Value();
+
+        auto insert_result = insert_stmt->Execute(
+            ev.pid,
+            ev.tid,
+            ev.ts,
+            ev.cat,
+            std::string(1, ev.ph),
+            ev.id,
+            ev.dur,
+            ev.name,
+            detail_value,
+            parsed_value);
+
+        if (insert_result->HasError()) {
+            throw cpptrace::runtime_error(
+                "duckdb insert failed: " + insert_result->GetError());
+        }
+    }
+}
+
 int main(int argc, char** argv) {
     quill::BackendOptions backend_options;
     quill::Backend::start(backend_options);
@@ -239,24 +349,7 @@ int main(int argc, char** argv) {
     std::vector<TraceEvent> traceEvents = std::move(handler.events);
     LOG_INFO(logger, "Parsed trace events: {}", traceEvents.size());
 
-    std::ofstream res;
-    for (auto const& ev : traceEvents) {
-        if (ev.name == "InstantiateFunction" && ev.detail.has_value()) {
-            cppdecl::ParseQualifiedNameFlags flags = {};
-            std::string_view                 input = ev.detail.value();
-            std::string_view                 input_before_parse = input;
-            auto result = cppdecl::ParseQualifiedName(input, flags);
-            if (auto error = std::get_if<cppdecl::ParseError>(&result)) {
-                throw cpptrace::runtime_error(
-                    "cppdecl: Parse error in qualified name `"
-                    + std::string(input_before_parse) + "` at position "
-                    + cppdecl::NumberToString(
-                        input.data() - input_before_parse.data())
-                    + ": " + error->message);
-            }
-        }
-    }
-
+    fill_events(traceEvents);
 
     return EXIT_SUCCESS;
 }
