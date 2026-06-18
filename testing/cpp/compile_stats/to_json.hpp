@@ -1,3 +1,5 @@
+#pragma once
+
 #include <rapidjson/document.h>
 #include <type_traits>
 

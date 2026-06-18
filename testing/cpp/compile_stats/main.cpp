@@ -31,6 +31,7 @@
 #include <filesystem>
 
 #include "to_json.hpp"
+#include "to_json_normalized.hpp"
 
 struct TraceEvent {
     std::int64_t               pid{};
@@ -242,7 +243,8 @@ CREATE TABLE events (
     dur BIGINT,
     name VARCHAR,
     detail VARCHAR,
-    parsed_json JSON
+    parsed_json JSON,
+    normal_json JSON
 );
 
 CREATE TABLE event_nested (
@@ -265,8 +267,8 @@ CREATE TABLE event_parent (
     auto insert_stmt = con.Prepare(
         R"SQL(
 INSERT INTO events (event_id, pid, tid, ts, cat, ph, id, dur, name,
-                    detail, parsed_json)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                    detail, parsed_json, normal_json)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 )SQL");
 
     if (insert_stmt->HasError()) {
@@ -287,6 +289,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
     for (auto const& ev : traceEvents) {
         std::optional<std::string> parsed_json;
+        std::optional<std::string> normal_json;
 
         if (ev.name == "InstantiateFunction" && ev.detail.has_value()) {
             cppdecl::ParseQualifiedNameFlags flags = {};
@@ -304,10 +307,18 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
             }
 
             if (result.index() == 0) {
-                rapidjson::Document doc;
-                auto                js = cppdecl::ToJson(
-                    std::get<0>(result), doc.GetAllocator());
-                parsed_json = toString(js);
+                {
+                    rapidjson::Document doc;
+                    auto                js = cppdecl::ToJson(
+                        std::get<0>(result), doc.GetAllocator());
+                    parsed_json = toString(js);
+                }
+                {
+                    rapidjson::Document doc;
+                    auto                js = cppdecl::ToJsonNormalized(
+                        std::get<0>(result), doc.GetAllocator());
+                    normal_json = toString(js);
+                }
             }
         }
 
@@ -318,6 +329,11 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         duckdb::Value parsed_value = parsed_json.has_value()
                                        ? duckdb::Value(parsed_json.value())
                                        : duckdb::Value();
+
+        duckdb::Value normal_value = normal_json.has_value()
+                                       ? duckdb::Value(normal_json.value())
+                                       : duckdb::Value();
+
 
         int64_t const eid = ++next_id;
 
@@ -332,7 +348,8 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
             ev.dur,
             ev.name,
             detail_value,
-            parsed_value);
+            parsed_value,
+            normal_value);
 
         if (insert_result->HasError()) {
             throw cpptrace::runtime_error(

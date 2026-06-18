@@ -39,10 +39,17 @@ find_package(quill REQUIRED)
 find_package(SQLiteCpp REQUIRED)
 find_package(duckdb REQUIRED)
 
-add_executable(trace_events_parser main.cpp)
+add_executable(trace_events_parser main.cpp to_json.hpp to_json.cpp
+                                   to_json_normalized.hpp)
 
-target_link_libraries(trace_events_parser rapidjson foonathan::lexy fmt::fmt
-                      cpptrace::cpptrace quill::quill duckdb::duckdb)
+target_link_libraries(
+  trace_events_parser
+  rapidjson
+  foonathan::lexy
+  fmt::fmt
+  cpptrace::cpptrace
+  quill::quill
+  duckdb::duckdb)
 
 target_include_directories(trace_events_parser
                            PUBLIC "${CMAKE_SOURCE_DIR}/cppdecl/include")
