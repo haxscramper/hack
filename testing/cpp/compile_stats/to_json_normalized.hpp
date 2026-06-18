@@ -475,20 +475,23 @@ inline void AddQualifiedNameFlags(
         return empty;
     }
 
-    JsonValue chain = ToName(target.parts.back(), alloc);
-
-    for (std::size_t i = target.parts.size() - 1; i-- > 0;) {
-        JsonValue parent = ToName(target.parts[i], alloc);
-        NameParams(parent).PushBack(std::move(chain), alloc);
-        chain = std::move(parent);
+    // Keep unqualified names unchanged.
+    if (target.parts.size() == 1 && !target.force_global_scope) {
+        JsonValue single = ToName(target.parts.front(), alloc);
+        AddQualifiedNameFlags(single, target.flags, alloc);
+        return single;
     }
 
-    if (target.force_global_scope) {
-        AddQualifier(chain, "global", alloc);
+    // Flatten qualified names to match `parts`-like structure.
+    JsonValue obj = MakeName("<qualified>", alloc);
+    if (target.force_global_scope) { AddQualifier(obj, "global", alloc); }
+    AddQualifiedNameFlags(obj, target.flags, alloc);
+
+    for (const auto& part : target.parts) {
+        NameParams(obj).PushBack(ToName(part, alloc), alloc);
     }
 
-    AddQualifiedNameFlags(chain, target.flags, alloc);
-    return chain;
+    return obj;
 }
 
 inline void ApplyTypeToName(
