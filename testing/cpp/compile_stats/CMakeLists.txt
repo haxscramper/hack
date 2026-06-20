@@ -21,12 +21,17 @@ find_package(benchmark REQUIRED)
 
 add_library(
   trace_events_lib
-  src/to_json.hpp src/to_json.cpp src/to_json_normalized.hpp
-  src/string_interner.hpp src/set_collection.hpp src/set_collection.cpp)
+  src/to_json.hpp
+  src/to_json.cpp
+  src/to_json_normalized.hpp
+  src/string_interner.hpp
+  src/set_collection.hpp
+  src/set_collection.cpp
+  src/name_tree.hpp)
 
 add_executable(trace_event_cli main.cpp)
 add_executable(trace_event_test test/tSubsetCollection.cpp
-                                test/tStringInterner.cpp)
+                                test/tStringInterner.cpp test/tNameTree.cpp)
 
 add_executable(trace_event_bench bench/bSubsetCollection.cpp)
 
