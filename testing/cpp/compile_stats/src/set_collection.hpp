@@ -72,14 +72,15 @@ class SubsetCollection {
     // --- Construction / population phase ---
 
     SetId createSet() {
-        sets_.push_back(makeBitmap());
-        return static_cast<SetId>(sets_.size() - 1);
+        sets.push_back(makeBitmap());
+        return static_cast<SetId>(sets.size() - 1);
     }
 
     void add(SetId id, uint32_t value) {
         roaring_bitmap_add(at(id).get(), value);
         roaring_bitmap_add(invertedFor(value).get(), id.raw()); // maintain
-                                                          // inverted index
+                                                                // inverted
+                                                                // index
     }
 
     void addMany(SetId id, size_t n, const uint32_t* values) {
@@ -97,11 +98,11 @@ class SubsetCollection {
     }
 
     void optimizeAll() {
-        for (auto& bm : sets_) {
+        for (auto& bm : sets) {
             roaring_bitmap_run_optimize(bm.get());
             roaring_bitmap_shrink_to_fit(bm.get());
         }
-        for (auto& kv : inverted_) {
+        for (auto& kv : inverted) {
             roaring_bitmap_run_optimize(kv.second.get());
             roaring_bitmap_shrink_to_fit(kv.second.get());
         }
@@ -129,8 +130,8 @@ class SubsetCollection {
     }
 
     BitmapView values(SetId id) const {
-        return BitmapView(sets_.at(id.raw())); // shares the stored bitmap, no
-                                         // copy
+        return BitmapView(sets.at(id.raw())); // shares the stored bitmap,
+                                              // no copy
     }
 
     // (2) All set IDs whose sets contain *all* of the given values.
@@ -167,30 +168,30 @@ class SubsetCollection {
         return BitmapView(std::move(acc));
     }
 
-    size_t setCount() const { return sets_.size(); }
+    size_t setCount() const { return sets.size(); }
 
   private:
     const BitmapPtr& at(SetId id) const {
-        if (toIndex(id) >= sets_.size() || !sets_[id.raw()]) {
+        if (toIndex(id) >= sets.size() || !sets[id.raw()]) {
             throw std::out_of_range("invalid SetId");
         }
-        return sets_[toIndex(id)];
+        return sets[toIndex(id)];
     }
 
     // Get (creating if needed) the inverted posting list for a value.
     BitmapPtr& invertedFor(uint32_t value) {
-        auto it = inverted_.find(value);
-        if (it == inverted_.end()) {
-            it = inverted_.emplace(value, makeBitmap()).first;
+        auto it = inverted.find(value);
+        if (it == inverted.end()) {
+            it = inverted.emplace(value, makeBitmap()).first;
         }
         return it->second;
     }
 
     const roaring_bitmap_t* findInverted(uint32_t value) const {
-        auto it = inverted_.find(value);
-        return it == inverted_.end() ? nullptr : it->second.get();
+        auto it = inverted.find(value);
+        return it == inverted.end() ? nullptr : it->second.get();
     }
 
-    std::vector<BitmapPtr>                  sets_;
-    std::unordered_map<uint32_t, BitmapPtr> inverted_;
+    std::vector<BitmapPtr>                  sets;
+    std::unordered_map<uint32_t, BitmapPtr> inverted;
 };
