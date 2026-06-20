@@ -38,7 +38,6 @@ find_package(cpptrace REQUIRED)
 find_package(quill REQUIRED)
 find_package(SQLiteCpp REQUIRED)
 find_package(duckdb REQUIRED)
-find_package(roaring REQUIRED)
 
 add_executable(trace_events_parser main.cpp to_json.hpp to_json.cpp
                                    to_json_normalized.hpp)
@@ -50,8 +49,7 @@ target_link_libraries(
   fmt::fmt
   cpptrace::cpptrace
   quill::quill
-  duckdb::duckdb
-  roaring::roaring)
+  duckdb::duckdb)
 
 target_include_directories(trace_events_parser
                            PUBLIC "${CMAKE_SOURCE_DIR}/cppdecl/include")
