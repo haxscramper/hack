@@ -1,8 +1,12 @@
-configure:
-    cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=TRUE -G Ninja
+conan: 
+    conan install . --output-folder=.conan_install -pr:h=conanprofile.txt --build=missing -s build_type=RelWithDebInfo
+
+configure: conan
+    cmake -S . -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_EXPORT_COMPILE_COMMANDS=TRUE -G Ninja \
+        -DCMAKE_TOOLCHAIN_FILE="$PWD/.conan_install/build/RelWithDebInfo/generators/conan_toolchain.cmake"
 
 build: configure
-    cmake --build build --config Release 
+    cmake --build build --config RelWithDebInfo 
 
 run: build 
     ./build/trace_events_parser

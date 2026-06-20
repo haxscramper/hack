@@ -24,6 +24,7 @@
 #include <rapidjson/document.h>
 #include <rapidjson/stringbuffer.h>
 #include <rapidjson/writer.h>
+#include <fmt/format.h>
 
 #include <cpptrace/cpptrace.hpp>
 
@@ -214,11 +215,127 @@ std::string toString(const rapidjson::Value& value) {
     return buffer.GetString();
 }
 
-// ensure these are available:
-// #include <algorithm>
-// #include <map>
-// #include <unordered_map>
-// #include <utility>
+
+struct ExtractedSymbol {
+    std::string symbol;
+    bool        has_template_args;
+
+    bool operator==(ExtractedSymbol const& other) const {
+        return symbol == other.symbol
+            && has_template_args == other.has_template_args;
+    }
+};
+
+struct ExtractedSymbolHash {
+    std::size_t operator()(ExtractedSymbol const& v) const {
+        std::size_t h1 = std::hash<std::string>{}(v.symbol);
+        std::size_t h2 = std::hash<bool>{}(v.has_template_args);
+        return h1 ^ (h2 + 0x9e3779b97f4a7c15ULL + (h1 << 6U) + (h1 >> 2U));
+    }
+};
+
+
+static std::string get_part_name(rapidjson::Value const& part) {
+    if (!part.IsObject() || !part.HasMember("var")) { return {}; }
+    auto const& var = part["var"];
+    if (!var.IsObject() || !var.HasMember("value")) { return {}; }
+    auto const& value = var["value"];
+    if (!value.IsString()) { return {}; }
+    return std::string(value.GetString(), value.GetStringLength());
+}
+
+static bool part_has_template_args(rapidjson::Value const& part) {
+    if (!part.IsObject() || !part.HasMember("template_args")) {
+        return false;
+    }
+    auto const& ta = part["template_args"];
+    if (!ta.IsObject() || !ta.HasMember("args")) { return false; }
+    auto const& args = ta["args"];
+    return args.IsArray() && args.Size() > 0;
+}
+
+static void collect_symbols_from_any(
+    rapidjson::Value const&                                   node,
+    std::unordered_set<ExtractedSymbol, ExtractedSymbolHash>& out);
+
+static void collect_symbols_from_qualified(
+    rapidjson::Value const&                                   qname,
+    std::unordered_set<ExtractedSymbol, ExtractedSymbolHash>& out) {
+    if (!qname.IsObject() || !qname.HasMember("parts")
+        || !qname["parts"].IsArray()) {
+        return;
+    }
+
+    std::string prefix;
+    for (auto const& part : qname["parts"].GetArray()) {
+        std::string const part_name = get_part_name(part);
+        if (part_name.empty()) { continue; }
+
+        if (!prefix.empty()) { prefix += "::"; }
+        prefix += part_name;
+
+        bool const has_targs = part_has_template_args(part);
+        out.insert(ExtractedSymbol{prefix, has_targs});
+
+        if (has_targs) {
+            auto const& args = part["template_args"]["args"];
+            for (auto const& arg : args.GetArray()) {
+                collect_symbols_from_any(arg, out);
+            }
+        }
+    }
+}
+
+static void collect_symbols_from_any(
+    rapidjson::Value const&                                   node,
+    std::unordered_set<ExtractedSymbol, ExtractedSymbolHash>& out) {
+    if (node.IsArray()) {
+        for (auto const& v : node.GetArray()) {
+            collect_symbols_from_any(v, out);
+        }
+        return;
+    }
+
+    if (!node.IsObject()) { return; }
+
+    // Detect qualified-name object produced by cppdecl::ToJson
+    if (node.HasMember("parts") && node["parts"].IsArray()) {
+        collect_symbols_from_qualified(node, out);
+    }
+
+    // Generic recursion so nested type wrappers are handled
+    for (auto it = node.MemberBegin(); it != node.MemberEnd(); ++it) {
+        collect_symbols_from_any(it->value, out);
+    }
+}
+
+static std::unordered_set<ExtractedSymbol, ExtractedSymbolHash> extract_symbols_from_parsed_json(
+    std::string const& parsed_json) {
+    rapidjson::Document doc;
+    doc.Parse(parsed_json.c_str());
+
+    if (doc.HasParseError() || !doc.IsObject()) {
+        throw cpptrace::runtime_error(
+            fmt::format(
+                "failed to parse parsed_json for symbol extraction: {} at "
+                "offset {}",
+                rapidjson::GetParseError_En(doc.GetParseError()),
+                doc.GetErrorOffset()));
+    }
+
+    std::unordered_set<ExtractedSymbol, ExtractedSymbolHash> result;
+
+    // Support both old {"names": ...} and current top-level qualified
+    // form.
+    if (doc.HasMember("names")) {
+        collect_symbols_from_any(doc["names"], result);
+    } else {
+        collect_symbols_from_any(doc, result);
+    }
+
+    return result;
+}
+
 
 void create_tables(duckdb::Connection& con) {
     con.Query("INSTALL json;");
@@ -243,14 +360,25 @@ CREATE TABLE events (
 
 CREATE TABLE event_nested (
     parent_id BIGINT NOT NULL,
-    nested_id  BIGINT NOT NULL,
+    nested_id BIGINT NOT NULL,
     PRIMARY KEY (parent_id, nested_id)
 );
 
 CREATE TABLE event_parent (
-    event_id  BIGINT PRIMARY KEY,
+    event_id BIGINT PRIMARY KEY,
     parent_id BIGINT
 );
+
+-- New: flattened symbol index for fast type/name lookup
+CREATE TABLE event_cpp_symbol (
+    event_id BIGINT NOT NULL,
+    symbol VARCHAR NOT NULL,                 -- e.g. std::optional
+    has_template_args BOOLEAN NOT NULL,      -- true for template-id nodes
+    PRIMARY KEY (event_id, symbol, has_template_args)
+);
+
+CREATE INDEX idx_event_cpp_symbol_lookup
+    ON event_cpp_symbol(symbol, has_template_args, event_id);
 )SQL");
 
     if (create_result->HasError()) {
@@ -384,7 +512,8 @@ INSERT INTO event_parent (event_id, parent_id) VALUES (?, ?);
 
 void fill_event1(
     int64_t&                                    next_id,
-    std::unique_ptr<duckdb::PreparedStatement>& insert_stmt,
+    std::unique_ptr<duckdb::PreparedStatement>& insert_event_stmt,
+    std::unique_ptr<duckdb::PreparedStatement>& insert_symbol_stmt,
     TraceEvent const&                           ev,
     std::vector<EventInfo>&                     infos) {
     std::optional<std::string> parsed_json;
@@ -433,10 +562,9 @@ void fill_event1(
                                    ? duckdb::Value(normal_json.value())
                                    : duckdb::Value();
 
-
     int64_t const eid = ++next_id;
 
-    auto insert_result = insert_stmt->Execute(
+    auto insert_event_result = insert_event_stmt->Execute(
         eid,
         ev.pid,
         ev.tid,
@@ -450,9 +578,26 @@ void fill_event1(
         parsed_value,
         normal_value);
 
-    if (insert_result->HasError()) {
+    if (insert_event_result->HasError()) {
         throw cpptrace::runtime_error(
-            "duckdb insert failed: " + insert_result->GetError());
+            "duckdb event insert failed: "
+            + insert_event_result->GetError());
+    }
+
+    if (parsed_json.has_value()) {
+        auto symbols = extract_symbols_from_parsed_json(
+            parsed_json.value());
+
+        for (auto const& sym : symbols) {
+            auto insert_symbol_result = insert_symbol_stmt->Execute(
+                eid, sym.symbol, sym.has_template_args);
+
+            if (insert_symbol_result->HasError()) {
+                throw cpptrace::runtime_error(
+                    "duckdb event_cpp_symbol insert failed: "
+                    + insert_symbol_result->GetError());
+            }
+        }
     }
 
     infos.push_back({
@@ -474,9 +619,15 @@ void fill_events(std::vector<TraceEvent> const& traceEvents) {
 
     auto insert_stmt = con.Prepare(
         R"SQL(
-INSERT INTO events (event_id, pid, tid, ts, cat, ph, id, dur, name,
-                    detail, parsed_json, normal_json)
+INSERT INTO events (event_id, pid, tid, ts, cat, ph, id, dur, name, detail, parsed_json, normal_json)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+)SQL");
+
+    auto insert_symbol_stmt = con.Prepare(
+        R"SQL(
+INSERT INTO event_cpp_symbol (
+    event_id, symbol, has_template_args
+) VALUES (?, ?, ?);
 )SQL");
 
     if (insert_stmt->HasError()) {
@@ -489,7 +640,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
     int64_t next_id = 0;
 
     for (auto const& ev : traceEvents) {
-        fill_event1(next_id, insert_stmt, ev, infos);
+        fill_event1(next_id, insert_stmt, insert_symbol_stmt, ev, infos);
     }
 
     fill_event_nesting(infos, con);

@@ -8,28 +8,28 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CONAN_PROFILE_PATH "${CMAKE_SOURCE_DIR}/conanprofile.txt")
 set(CONAN_OUTPUT_DIR "${CMAKE_SOURCE_DIR}/.conan_install")
 
-execute_process(
-  COMMAND
-    conan install ${CMAKE_SOURCE_DIR} --output-folder=${CONAN_OUTPUT_DIR}
-    -pr:h=${CONAN_PROFILE_PATH} --build=missing -s build_type=Release
-    ${CONAN_OPTS}
-  WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
-  RESULT_VARIABLE CONAN_RESULT
-  OUTPUT_VARIABLE CONAN_STDOUT
-  ERROR_VARIABLE CONAN_STDERR
-  OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_STRIP_TRAILING_WHITESPACE)
+# execute_process(
+#   COMMAND
+#     conan install ${CMAKE_SOURCE_DIR} --output-folder=${CONAN_OUTPUT_DIR}
+#     -pr:h=${CONAN_PROFILE_PATH} --build=missing -s build_type=RelWithDebInfo
+#     ${CONAN_OPTS}
+#   WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+#   RESULT_VARIABLE CONAN_RESULT
+#   OUTPUT_VARIABLE CONAN_STDOUT
+#   ERROR_VARIABLE CONAN_STDERR
+#   OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_STRIP_TRAILING_WHITESPACE)
 
-message(STATUS "Conan install\n" "---- stdout ----\n${CONAN_STDOUT}\n"
-               "---- stderr ----\n${CONAN_STDERR}\n")
+# message(STATUS "Conan install\n" "---- stdout ----\n${CONAN_STDOUT}\n"
+#                "---- stderr ----\n${CONAN_STDERR}\n")
 
-if(NOT CONAN_RESULT EQUAL 0)
-  message(FATAL_ERROR "Conan install failed (exit code: ${CONAN_RESULT})")
-endif()
+# if(NOT CONAN_RESULT EQUAL 0)
+#   message(FATAL_ERROR "Conan install failed (exit code: ${CONAN_RESULT})")
+# endif()
 
-set(CONAN_TOOLCHAIN
-    "${CONAN_OUTPUT_DIR}/build/Release/generators/conan_toolchain.cmake")
+# set(CONAN_TOOLCHAIN
+#     "${CONAN_OUTPUT_DIR}/build/RelWithDebInfo/generators/conan_toolchain.cmake")
 
-include("${CONAN_TOOLCHAIN}")
+# include("${CONAN_TOOLCHAIN}")
 
 find_package(RapidJSON REQUIRED)
 find_package(lexy REQUIRED)
@@ -44,6 +44,7 @@ add_executable(trace_events_parser main.cpp to_json.hpp to_json.cpp
 
 target_link_libraries(
   trace_events_parser
+  PUBLIC
   rapidjson
   foonathan::lexy
   fmt::fmt
