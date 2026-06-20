@@ -99,10 +99,9 @@ static void BM_ManySets_SetsContainingAll(benchmark::State& state) {
     SubsetCollection c = buildCollection(numSets, setSize, poolSize, 5678);
     c.optimizeAll();
 
-    // Query with a couple of values likely present in the pool.
-    std::mt19937                            rng(99);
-    std::uniform_int_distribution<uint32_t> dist(0, kUniverseMax - 1);
-    std::vector<uint32_t>                   query = {dist(rng), dist(rng)};
+    // Pick values guaranteed to exist.
+    const auto            base  = c.values(0).toVector();
+    std::vector<uint32_t> query = {base[0], base[1]};
 
     for (auto _ : state) {
         auto view = c.setsContainingAll(query);
@@ -122,10 +121,13 @@ static void BM_ManySets_InvertedQueryAny(benchmark::State& state) {
     SubsetCollection c = buildCollection(numSets, setSize, poolSize, 5678);
     c.optimizeAll();
 
-    std::mt19937                            rng(99);
-    std::uniform_int_distribution<uint32_t> dist(0, kUniverseMax - 1);
-    std::vector<uint32_t>                   query;
-    for (int i = 0; i < 8; ++i) { query.push_back(dist(rng)); }
+    // Pick values guaranteed to exist.
+    const auto            base = c.values(0).toVector();
+    std::vector<uint32_t> query;
+    query.reserve(8);
+    for (int i = 0; i < 8; ++i) {
+        query.push_back(base[static_cast<size_t>(i)]);
+    }
 
     for (auto _ : state) {
         auto view = c.setsContainingAny(query);

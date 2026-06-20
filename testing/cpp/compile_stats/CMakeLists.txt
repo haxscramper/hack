@@ -20,20 +20,31 @@ find_package(GTest REQUIRED)
 find_package(benchmark REQUIRED)
 
 add_library(trace_events_lib src/to_json.hpp src/to_json.cpp
-                                src/to_json_normalized.hpp)
+                             src/to_json_normalized.hpp src/string_interner.hpp)
 
 add_executable(trace_event_cli main.cpp)
-add_executable(trace_event_test test/tSubsetCollection.cpp)
+add_executable(trace_event_test test/tSubsetCollection.cpp
+                                test/tStringInterner.cpp)
+
 add_executable(trace_event_bench bench/bSubsetCollection.cpp)
 
-target_include_directories(trace_events_lib
-                           PUBLIC "${CMAKE_SOURCE_DIR}/cppdecl/include" "${CMAKE_SOURCE_DIR}/src")
+target_include_directories(
+  trace_events_lib PUBLIC "${CMAKE_SOURCE_DIR}/cppdecl/include"
+                          "${CMAKE_SOURCE_DIR}/src")
 
 target_link_libraries(
-  trace_events_lib PUBLIC rapidjson foonathan::lexy fmt::fmt cpptrace::cpptrace
-                          quill::quill duckdb::duckdb roaring::roaring)
+  trace_events_lib
+  PUBLIC rapidjson
+         foonathan::lexy
+         fmt::fmt
+         cpptrace::cpptrace
+         quill::quill
+         duckdb::duckdb
+         roaring::roaring)
 
 target_link_libraries(trace_event_cli PUBLIC trace_events_lib)
+
 target_link_libraries(trace_event_bench PUBLIC trace_events_lib
                                                benchmark::benchmark_main)
+
 target_link_libraries(trace_event_test PUBLIC trace_events_lib gtest::gtest)

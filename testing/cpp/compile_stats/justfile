@@ -13,3 +13,6 @@ run: build
 
 test: build
     ./build/trace_event_test        
+
+bench: build
+    ./build/trace_event_bench
