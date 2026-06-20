@@ -27,7 +27,8 @@ add_library(
   src/string_interner.hpp
   src/set_collection.hpp
   src/set_collection.cpp
-  src/name_tree.hpp)
+  src/name_tree.hpp
+  src/name_tree.cpp)
 
 add_executable(trace_event_cli main.cpp)
 add_executable(trace_event_test test/tSubsetCollection.cpp
