@@ -10,12 +10,11 @@ constexpr uint32_t kUniverseMax = 20'000'000;
 
 // Build a collection: `numSets` sets, each of `setSize` values, drawn from
 // a shared pool of `poolSize` distinct integers to create overlap.
-void buildCollection(
-    SubsetCollection& c,
-    size_t            numSets,
-    size_t            setSize,
-    size_t            poolSize,
-    uint32_t          seed) {
+SubsetCollection buildCollection(
+    size_t   numSets,
+    size_t   setSize,
+    size_t   poolSize,
+    uint32_t seed) {
     std::mt19937                            rng(seed);
     std::uniform_int_distribution<uint32_t> poolDist(0, kUniverseMax - 1);
 
@@ -25,10 +24,14 @@ void buildCollection(
 
     std::uniform_int_distribution<size_t> idxDist(0, poolSize - 1);
 
+    SubsetCollection c;
     for (size_t s = 0; s < numSets; ++s) {
         auto id = c.createSet();
-        for (size_t i = 0; i < setSize; ++i) { c.add(id, pool[idxDist(rng)]); }
+        for (size_t i = 0; i < setSize; ++i) {
+            c.add(id, pool[idxDist(rng)]);
+        }
     }
+    return c;
 }
 
 } // namespace
@@ -40,8 +43,8 @@ static void BM_FewLargeSets_Build(benchmark::State& state) {
     const size_t setSize  = static_cast<size_t>(state.range(0));
     const size_t poolSize = setSize * 2; // high overlap
     for (auto _ : state) {
-        SubsetCollection c;
-        buildCollection(c, numSets, setSize, poolSize, 1234);
+        SubsetCollection c = buildCollection(
+            numSets, setSize, poolSize, 1234);
         benchmark::DoNotOptimize(&c);
     }
     state.SetItemsProcessed(state.iterations() * numSets * setSize);
@@ -56,8 +59,7 @@ static void BM_FewLargeSets_Intersection(benchmark::State& state) {
     const size_t     numSets  = 10;
     const size_t     setSize  = static_cast<size_t>(state.range(0));
     const size_t     poolSize = setSize * 2;
-    SubsetCollection c;
-    buildCollection(c, numSets, setSize, poolSize, 1234);
+    SubsetCollection c = buildCollection(numSets, setSize, poolSize, 1234);
     c.optimizeAll();
     for (auto _ : state) {
         uint64_t card = c.intersectionCardinality(SetId{0}, SetId{1});
@@ -78,8 +80,8 @@ static void BM_ManySets_Build(benchmark::State& state) {
     const size_t setSize  = 16;        // small sets
     const size_t poolSize = 2'000'000; // millions of distinct integers
     for (auto _ : state) {
-        SubsetCollection c;
-        buildCollection(c, numSets, setSize, poolSize, 5678);
+        SubsetCollection c = buildCollection(
+            numSets, setSize, poolSize, 5678);
         benchmark::DoNotOptimize(&c);
     }
     state.SetItemsProcessed(state.iterations() * numSets * setSize);
@@ -94,8 +96,7 @@ static void BM_ManySets_SetsContainingAll(benchmark::State& state) {
     const size_t     numSets  = static_cast<size_t>(state.range(0));
     const size_t     setSize  = 16;
     const size_t     poolSize = 2'000'000;
-    SubsetCollection c;
-    buildCollection(c, numSets, setSize, poolSize, 5678);
+    SubsetCollection c = buildCollection(numSets, setSize, poolSize, 5678);
     c.optimizeAll();
 
     // Pick values guaranteed to exist.
@@ -117,15 +118,16 @@ static void BM_ManySets_InvertedQueryAny(benchmark::State& state) {
     const size_t     numSets  = static_cast<size_t>(state.range(0));
     const size_t     setSize  = 16;
     const size_t     poolSize = 2'000'000;
-    SubsetCollection c;
-    buildCollection(c, numSets, setSize, poolSize, 5678);
+    SubsetCollection c = buildCollection(numSets, setSize, poolSize, 5678);
     c.optimizeAll();
 
     // Pick values guaranteed to exist.
     const auto            base = c.values(SetId{0}).toVector();
     std::vector<uint32_t> query;
     query.reserve(8);
-    for (int i = 0; i < 8; ++i) { query.push_back(base[static_cast<size_t>(i)]); }
+    for (int i = 0; i < 8; ++i) {
+        query.push_back(base[static_cast<size_t>(i)]);
+    }
 
     for (auto _ : state) {
         auto view = c.setsContainingAny(query);

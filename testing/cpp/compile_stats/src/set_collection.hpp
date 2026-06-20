@@ -1,9 +1,7 @@
-// set_collection.hpp
 #pragma once
 
-#include <cudd.h>
+#include <roaring/roaring.h>
 
-#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -12,8 +10,7 @@
 
 #include "strong_id.hpp"
 
-using SetId   = StrongId<struct SetIdTag>;
-using CanonId = StrongId<struct CanonIdTag>;
+using SetId = StrongId<struct SetIdTag>;
 
 template <>
 struct std::hash<SetId> {
@@ -22,134 +19,154 @@ struct std::hash<SetId> {
     }
 };
 
-template <>
-struct std::hash<CanonId> {
-    std::size_t operator()(CanonId id) const noexcept {
-        return std::hash<uint32_t>{}(id.raw());
-    }
-};
-
 /// \class SubsetCollection
-/// \brief Stores many integer sets with batched compaction via CUDD ZDD.
-///
-/// Mutations are staged. Calling `optimize()` / `optimizeAll()` rebuilds
-/// canonical ZDD-backed storage and posting indexes in one batch.
+/// \brief Stores multiple integer sets and supports direct and
+/// inverted-index queries.
 class SubsetCollection {
   public:
-    /// \class View
-    /// \brief Lightweight shared view over sorted uint32 ids/values.
-    class View {
-      public:
-        explicit View(std::shared_ptr<const std::vector<uint32_t>> data);
+    /// \brief Shared owning handle for a Roaring bitmap.
+    using BitmapPtr = std::shared_ptr<roaring_bitmap_t>;
 
-        /// \brief Number of elements.
+    /// \brief Creates an empty bitmap with the proper deleter.
+    /// \return Shared bitmap handle.
+    static BitmapPtr makeBitmap();
+
+    /// \brief Converts a set id to a vector index.
+    /// \param id Logical set id.
+    /// \return Index in internal storage.
+    static std::size_t toIndex(SetId id) noexcept;
+
+    /// \class BitmapView
+    /// \brief Lightweight shared view over a bitmap.
+    class BitmapView {
+      public:
+        /// \brief Constructs a view from a shared bitmap handle.
+        /// \param bm Shared bitmap pointer.
+        explicit BitmapView(BitmapPtr bm);
+
+        /// \brief Returns number of values in the bitmap.
+        /// \return Cardinality.
         uint64_t cardinality() const;
 
-        /// \brief Checks membership.
+        /// \brief Checks whether a value is present.
+        /// \param value Value to test.
+        /// \return True if present.
         bool contains(uint32_t value) const;
 
-        /// \brief Iterates values in ascending order.
+        /// \brief Iterates all values in ascending order.
+        /// \tparam Fn Callable accepting `uint32_t`.
+        /// \param fn Callback invoked for each value.
         template <typename Fn>
         void forEach(Fn&& fn) const {
-            for (uint32_t v : *data_) { fn(v); }
+            roaring_uint32_iterator_t it;
+            roaring_iterator_init(bm_.get(), &it);
+            while (it.has_value) {
+                fn(it.current_value);
+                roaring_uint32_iterator_advance(&it);
+            }
         }
 
-        /// \brief Materializes values.
+        /// \brief Materializes bitmap values into a vector.
+        /// \return Sorted vector of values.
         std::vector<uint32_t> toVector() const;
 
+        /// \brief Returns raw pointer for read-only interop.
+        /// \return Raw bitmap pointer.
+        const roaring_bitmap_t* raw() const;
+
       private:
-        std::shared_ptr<const std::vector<uint32_t>> data_;
+        BitmapPtr bm_;
     };
 
-    SubsetCollection();
-    ~SubsetCollection();
+    SubsetCollection() = default;
 
     SubsetCollection(const SubsetCollection&)            = delete;
     SubsetCollection& operator=(const SubsetCollection&) = delete;
 
-    SubsetCollection(SubsetCollection&&)            = delete;
-    SubsetCollection& operator=(SubsetCollection&&) = delete;
+    SubsetCollection(SubsetCollection&&) noexcept            = default;
+    SubsetCollection& operator=(SubsetCollection&&) noexcept = default;
 
     /// \brief Creates a new empty set.
+    /// \return New set id.
     SetId createSet();
 
-    /// \brief Adds one value to a set (staged).
+    /// \brief Adds one value to a set and updates the inverted index.
+    /// \param id Target set id.
+    /// \param value Value to insert.
     void add(SetId id, uint32_t value);
 
-    /// \brief Adds many values to a set (staged).
+    /// \brief Adds many values to a set and updates the inverted index.
+    /// \param id Target set id.
+    /// \param n Number of values.
+    /// \param values Pointer to values array.
     void addMany(SetId id, std::size_t n, const uint32_t* values);
 
-    /// \brief Rebuilds compact canonical storage in batch.
-    ///
-    /// The argument is accepted for API compatibility; compaction is global.
+    /// \brief Applies run optimization and shrink-to-fit to one set.
+    /// \param id Target set id.
     void optimize(SetId id);
 
-    /// \brief Rebuilds compact canonical storage in batch.
+    /// \brief Applies run optimization and shrink-to-fit to all bitmaps.
     void optimizeAll();
 
-    /// \brief Cardinality of a set.
+    /// \brief Returns cardinality of a set.
+    /// \param id Set id.
+    /// \return Number of values.
     uint64_t cardinality(SetId id) const;
 
-    /// \brief Membership test.
+    /// \brief Checks whether a set contains a value.
+    /// \param id Set id.
+    /// \param value Value to test.
+    /// \return True if present.
     bool contains(SetId id, uint32_t value) const;
 
-    /// \brief Cardinality of pairwise set intersection.
+    /// \brief Returns cardinality of intersection of two sets.
+    /// \param a First set id.
+    /// \param b Second set id.
+    /// \return Intersection cardinality.
     uint64_t intersectionCardinality(SetId a, SetId b) const;
 
-    /// \brief Pairwise set intersection.
-    View intersection(SetId a, SetId b) const;
+    /// \brief Builds intersection bitmap of two sets.
+    /// \param a First set id.
+    /// \param b Second set id.
+    /// \return View over a new bitmap containing intersection.
+    BitmapView intersection(SetId a, SetId b) const;
 
-    /// \brief Intersects values of all provided sets in backend-native form.
-    /// \param ids Set ids to intersect.
-    /// \return View over the intersection result.
-    View intersection(const std::vector<SetId>& ids) const;
+    /// \brief Returns a shared view of set values.
+    /// \param id Set id.
+    /// \return View over stored bitmap.
+    BitmapView values(SetId id) const;
 
-    /// \brief Values of one set.
-    View values(SetId id) const;
+    /// \brief Finds set ids that contain all given values.
+    /// \param values Values that must all be present.
+    /// \return View over matching set ids.
+    BitmapView setsContainingAll(const std::vector<uint32_t>& values) const;
 
-    /// \brief Set IDs containing all requested values.
-    View setsContainingAll(const std::vector<uint32_t>& values) const;
+    /// \brief Finds set ids that contain any of the given values.
+    /// \param values Values where at least one must be present.
+    /// \return View over matching set ids.
+    BitmapView setsContainingAny(const std::vector<uint32_t>& values) const;
 
-    /// \brief Set IDs containing any requested value.
-    View setsContainingAny(const std::vector<uint32_t>& values) const;
-
-    /// \brief Number of created sets.
+    /// \brief Returns number of created sets.
+    /// \return Set count.
     std::size_t setCount() const;
 
   private:
-    struct CuddDeleter {
-        void operator()(DdManager* m) const noexcept {
-            if (m) { Cudd_Quit(m); }
-        }
-    };
+    /// \brief Returns validated set bitmap by id.
+    /// \param id Set id.
+    /// \return Reference to shared bitmap pointer.
+    /// \throws std::out_of_range If id is invalid.
+    const BitmapPtr& at(SetId id) const;
 
-    static std::size_t toIndex(SetId id) noexcept {
-        return static_cast<std::size_t>(id.raw());
-    }
+    /// \brief Returns posting list for a value, creating it if absent.
+    /// \param value Value key.
+    /// \return Mutable posting list handle.
+    BitmapPtr& invertedFor(uint32_t value);
 
-    void                         requireValid(SetId id) const;
-    void                         ensureMutable(SetId id);
-    const std::vector<uint32_t>& currentValues(std::size_t setIdx) const;
-    static void insertSortedUnique(std::vector<uint32_t>& vec, uint32_t v);
+    /// \brief Returns posting list for a value if present.
+    /// \param value Value key.
+    /// \return Raw posting list pointer or null.
+    const roaring_bitmap_t* findInverted(uint32_t value) const;
 
-    void rebuildCanonical();
-    void clearCanonical();
-
-    void    ensureZddVar(uint32_t idx);
-    DdNode* buildSingletonSetZdd(const std::vector<uint32_t>& sortedUniqueValues);
-
-  private:
-    std::unique_ptr<DdManager, CuddDeleter> mgr_;
-
-    // Staged mutable data (used between optimize calls).
-    std::vector<std::vector<uint32_t>> staged_sets_;
-    std::vector<uint8_t>               staged_dirty_set_; // 0/1
-    bool                               postings_dirty_ = true;
-
-    // Canonical compact data (valid after optimize).
-    std::vector<DdNode*>                                      canon_nodes_;
-    std::vector<std::shared_ptr<const std::vector<uint32_t>>> canon_values_;
-    std::vector<CanonId>                                      set_to_canon_;
-    std::vector<std::vector<uint32_t>>                        canon_to_sets_;
-    std::vector<std::vector<uint32_t>>                        value_to_canon_;
+    std::vector<BitmapPtr>                  sets;
+    std::unordered_map<uint32_t, BitmapPtr> inverted;
 };

@@ -50,7 +50,7 @@ const char* kEv2 = R"({
   }
 })";
 
-std::vector<uint32_t> toVec(SubsetCollection::View v) { return v.toVector(); }
+std::vector<uint32_t> toVec(SubsetCollection::BitmapView v) { return v.toVector(); }
 
 NameTreeStore::NameTree* node(
     NameTreeStore&                  store,

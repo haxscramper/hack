@@ -1,12 +1,13 @@
 #include "set_collection.hpp"
 
-#include <algorithm>
 #include <gtest/gtest.h>
+#include <algorithm>
 #include <vector>
 
 namespace {
 
-std::vector<uint32_t> sortedVector(const SubsetCollection::View& view) {
+std::vector<uint32_t> sortedVector(
+    const SubsetCollection::BitmapView& view) {
     std::vector<uint32_t> v = view.toVector();
     std::sort(v.begin(), v.end());
     return v;
@@ -83,7 +84,7 @@ TEST(SubsetCollection, SetsContainingAll) {
     for (uint32_t v : {3u, 4u, 5u}) { c.add(s2, v); }
 
     // Sets containing both 2 and 3 -> s0, s1
-    auto                  r        = sortedVector(c.setsContainingAll({2u, 3u}));
+    auto                  r = sortedVector(c.setsContainingAll({2u, 3u}));
     std::vector<uint32_t> expected = {s0.raw(), s1.raw()};
     EXPECT_EQ(r, expected);
 
@@ -109,7 +110,7 @@ TEST(SubsetCollection, SetsContainingAny) {
     for (uint32_t v : {5u, 6u}) { c.add(s2, v); }
 
     // Any of {1, 5} -> s0, s2
-    auto                  r        = sortedVector(c.setsContainingAny({1u, 5u}));
+    auto                  r = sortedVector(c.setsContainingAny({1u, 5u}));
     std::vector<uint32_t> expected = {s0.raw(), s2.raw()};
     EXPECT_EQ(r, expected);
 

@@ -15,7 +15,7 @@ void NameTreeStore::insertEvent(EventId id, const rapidjson::Document& doc) {
     walkChain(names["params"], &root_named_, id.raw());
 }
 
-SubsetCollection::View NameTreeStore::query(const rapidjson::Document& doc) {
+SubsetCollection::BitmapView NameTreeStore::query(const rapidjson::Document& doc) {
     std::vector<SetId> constraints;
     queryChain(doc["names"]["params"], &root_named_, constraints);
     return intersectAll(constraints);
@@ -147,8 +147,13 @@ SetId NameTreeStore::emptySet() {
     return empty_set_;
 }
 
-SubsetCollection::View NameTreeStore::intersectAll(
+SubsetCollection::BitmapView NameTreeStore::intersectAll(
     const std::vector<SetId>& constraints) {
     if (constraints.empty()) { return sets_.values(emptySet()); }
-    return sets_.intersection(constraints);
+    SubsetCollection::BitmapPtr acc = SubsetCollection::makeBitmap();
+    roaring_bitmap_overwrite(acc.get(), sets_.values(constraints.front()).raw());
+    for (std::size_t i = 1; i < constraints.size(); ++i) {
+        roaring_bitmap_and_inplace(acc.get(), sets_.values(constraints[i]).raw());
+    }
+    return SubsetCollection::BitmapView{acc};
 }
