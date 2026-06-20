@@ -12,6 +12,13 @@
 
 using SetId = StrongId<struct SetIdTag>;
 
+template <>
+struct std::hash<SetId> {
+    std::size_t operator()(SetId id) const noexcept {
+        return std::hash<uint32_t>{}(id.raw());
+    }
+};
+
 /// \class SubsetCollection
 /// \brief Stores multiple integer sets and supports direct and
 /// inverted-index queries.
@@ -132,14 +139,12 @@ class SubsetCollection {
     /// \brief Finds set ids that contain all given values.
     /// \param values Values that must all be present.
     /// \return View over matching set ids.
-    BitmapView setsContainingAll(
-        const std::vector<uint32_t>& values) const;
+    BitmapView setsContainingAll(const std::vector<uint32_t>& values) const;
 
     /// \brief Finds set ids that contain any of the given values.
     /// \param values Values where at least one must be present.
     /// \return View over matching set ids.
-    BitmapView setsContainingAny(
-        const std::vector<uint32_t>& values) const;
+    BitmapView setsContainingAny(const std::vector<uint32_t>& values) const;
 
     /// \brief Returns number of created sets.
     /// \return Set count.

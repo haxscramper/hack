@@ -2,6 +2,9 @@
 #include <rapidjson/document.h>
 
 #include <algorithm>
+#include <fmt/core.h>
+#include <fmt/format.h>
+#include <fmt/ranges.h>
 #include <string>
 #include <vector>
 

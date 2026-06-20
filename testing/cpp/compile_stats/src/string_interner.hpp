@@ -2,15 +2,31 @@
 
 #include <cstdint>
 #include <deque>
+#include <fmt/format.h>
 #include <string>
 #include <string_view>
 #include <unordered_map>
 
-#include <boost/serialization/strong_typedef.hpp>
 #include "strong_id.hpp"
+#include <boost/serialization/strong_typedef.hpp>
 
 
 using StrId = StrongId<struct StrIdTag>;
+
+template <>
+struct std::hash<StrId> {
+    std::size_t operator()(StrId id) const noexcept {
+        return std::hash<uint32_t>{}(id.raw());
+    }
+};
+
+template <>
+struct fmt::formatter<StrId> {
+    constexpr auto parse(fmt::format_parse_context& ctx) { return ctx.begin(); }
+    auto           format(StrId const& p, fmt::format_context& ctx) const {
+        return fmt::format_to(ctx.out(), "StrId({})", p.raw());
+    }
+};
 
 
 class StringInterner {
@@ -31,9 +47,7 @@ class StringInterner {
         return id;
     }
 
-    const std::string& get(StrId id) const {
-        return strings.at(toIndex(id));
-    }
+    const std::string& get(StrId id) const { return strings.at(toIndex(id)); }
 
     std::size_t size() const noexcept { return strings.size(); }
 

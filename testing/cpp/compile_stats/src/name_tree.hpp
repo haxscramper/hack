@@ -108,17 +108,20 @@ class NameTreeStore {
     /// \brief Walks a node's params as its template arguments (insert).
     void walkParams(const rapidjson::Value& params, NameTree* parent, uint32_t event) {
         const auto args = params.GetArray();
-        if (parent->indexed.size() < args.Size()) {
-            parent->indexed.resize(args.Size(), BranchingMap{&pool_});
-        }
+        while (parent->indexed.size() < args.Size()) { parent->indexed.emplace_back(); }
+
         for (rapidjson::SizeType k = 0; k < args.Size(); ++k) {
-            const auto& arg  = args[k];
-            const StrId name = interner_.intern(arg["name"]["name"].GetString());
-            NameTree*   node = childInsert(&parent->indexed[k], name);
-            sets_.add(node->set, event);
-            // An arg may itself be a qualified chain (a::b) or carry
-            // its own template params; both nest through the arg node.
-            walkChain(arg["params"], &node->named, event);
+            const auto& arg = args[k];
+            if (std::string_view{arg["name"]["name"].GetString()} == "<qualified>") {
+                // Arg is itself a qualified chain a::b::...; thread it
+                // directly into this positional branching level.
+                walkChain(arg["params"], &parent->indexed[k], event);
+            } else {
+                const StrId name = interner_.intern(arg["name"]["name"].GetString());
+                NameTree*   node = childInsert(&parent->indexed[k], name);
+                sets_.add(node->set, event);
+                walkParams(arg["params"], node, event);
+            }
         }
     }
 
@@ -153,6 +156,10 @@ class NameTreeStore {
                 out.push_back(emptySet());
                 return;
             }
+            if (std::string_view{arg["name"]["name"].GetString()} == "<qualified>") {
+                queryChain(arg["params"], &parent->indexed[k], out);
+                continue;
+            }
             const StrId name = interner_.intern(arg["name"]["name"].GetString());
             auto        it   = parent->indexed[k].find(name);
             if (it == parent->indexed[k].end()) {
@@ -161,7 +168,7 @@ class NameTreeStore {
             }
             NameTree* node = it->second;
             out.push_back(node->set);
-            queryChain(arg["params"], &node->named, out);
+            queryParams(arg["params"], node, out);
         }
     }
 
