@@ -1,19 +1,23 @@
 #include "cppdecl/declarations/parse.h"
 #include "cppdecl/declarations/to_string.h"
+#include <algorithm>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
+#include <map>
+#include <memory>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
+#include <cppdecl/declarations/parse_simple.h>
 #include <rapidjson/error/en.h>
 #include <rapidjson/filereadstream.h>
 #include <rapidjson/reader.h>
-#include <cppdecl/declarations/parse_simple.h>
 
 #include <quill/Backend.h>
 #include <quill/Frontend.h>
@@ -46,8 +50,7 @@ struct TraceEvent {
 };
 
 class TraceEventsSaxHandler
-    : public rapidjson::
-          BaseReaderHandler<rapidjson::UTF8<>, TraceEventsSaxHandler> {
+    : public rapidjson::BaseReaderHandler<rapidjson::UTF8<>, TraceEventsSaxHandler> {
   public:
     std::vector<TraceEvent> events;
 
@@ -107,8 +110,7 @@ class TraceEventsSaxHandler
     bool StartObject() {
         const bool isTraceEventsArrayAtTopLevel
             = (!scopeStack.empty() && scopeStack.back() == Scope::Array
-               && traceEventsArrayActive
-               && scopeStack.size() == traceEventsArrayDepth);
+               && traceEventsArrayActive && scopeStack.size() == traceEventsArrayDepth);
 
         scopeStack.push_back(Scope::Object);
 
@@ -159,8 +161,7 @@ class TraceEventsSaxHandler
     }
 
     bool EndArray(rapidjson::SizeType) {
-        if (traceEventsArrayActive
-            && scopeStack.size() == traceEventsArrayDepth) {
+        if (traceEventsArrayActive && scopeStack.size() == traceEventsArrayDepth) {
             traceEventsArrayActive = false;
         }
 
@@ -206,7 +207,6 @@ class TraceEventsSaxHandler
     void clearKeyAfterValue() { currentKey.clear(); }
 };
 
-
 std::string toString(const rapidjson::Value& value) {
     rapidjson::StringBuffer                    buffer;
     rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
@@ -214,18 +214,53 @@ std::string toString(const rapidjson::Value& value) {
     return buffer.GetString();
 }
 
-// ensure these are available:
-// #include <algorithm>
-// #include <map>
-// #include <unordered_map>
-// #include <utility>
+struct EventInfo {
+    TraceEvent const* ev;
+    int64_t           eventId;
+    int64_t           endTs;
+    bool              hasScope;
+};
 
-void create_tables(duckdb::Connection& con) {
-    con.Query("INSTALL json;");
-    con.Query("LOAD json;");
+class EventDatabaseWriter {
+  public:
+    explicit EventDatabaseWriter(std::string path)
+        : dbPath(std::move(path)), db(openDatabase(dbPath)), con(db) {
+        initializeSchemaAndStatements();
+    }
 
-    auto create_result = con.Query(
-        R"SQL(
+    void writeEvents(std::vector<TraceEvent> const& traceEvents) {
+        infos.clear();
+        infos.reserve(traceEvents.size());
+        nextEventId = 0;
+
+        for (auto const& ev : traceEvents) { insertEvent(ev); }
+
+        fillEventNesting();
+    }
+
+  private:
+    std::string        dbPath;
+    duckdb::DuckDB     db;
+    duckdb::Connection con;
+
+    std::unique_ptr<duckdb::PreparedStatement> insertEventStmt;
+    std::unique_ptr<duckdb::PreparedStatement> insertNestedStmt;
+    std::unique_ptr<duckdb::PreparedStatement> insertParentStmt;
+
+    std::vector<EventInfo> infos;
+    int64_t                nextEventId = 0;
+
+    static duckdb::DuckDB openDatabase(std::string const& path) {
+        std::filesystem::remove(path);
+        return duckdb::DuckDB(path);
+    }
+
+    void initializeSchemaAndStatements() {
+        auto createResult = con.Query(
+            R"SQL(
+INSTALL json;
+LOAD json;
+
 CREATE TABLE events (
     event_id BIGINT PRIMARY KEY,
     pid BIGINT,
@@ -243,272 +278,206 @@ CREATE TABLE events (
 
 CREATE TABLE event_nested (
     parent_id BIGINT NOT NULL,
-    nested_id  BIGINT NOT NULL,
+    nested_id BIGINT NOT NULL,
     PRIMARY KEY (parent_id, nested_id)
 );
 
 CREATE TABLE event_parent (
-    event_id  BIGINT PRIMARY KEY,
+    event_id BIGINT PRIMARY KEY,
     parent_id BIGINT
 );
 )SQL");
 
-    if (create_result->HasError()) {
-        throw cpptrace::runtime_error(
-            "duckdb create table failed: " + create_result->GetError());
-    }
-}
-
-struct EventInfo {
-    TraceEvent const* ev;
-    int64_t           event_id;
-    int64_t           end_ts; // ts for non-scope events; updated for B/X
-    bool has_scope;           // true if this event opens a nesting scope
-};
-
-void fill_event_nesting(
-    std::vector<EventInfo>& infos,
-    duckdb::Connection&     con) {
-
-    // ---- Nesting computation
-    // ------------------------------------------------
-
-    // Group strictly by (pid, tid): cross-thread/cross-process nesting is
-    // not meaningful.
-    std::map<std::pair<int64_t, int64_t>, std::vector<EventInfo*>>
-        by_thread;
-    for (auto& e : infos) {
-        by_thread[{static_cast<int64_t>(e.ev->pid),
-                   static_cast<int64_t>(e.ev->tid)}]
-            .push_back(&e);
-    }
-
-    // Pass 1: sort each thread by (ts, event_id), pair B/E, and compute
-    // end_ts / has_scope for scope-bearing events.
-    for (auto& [key, vec] : by_thread) {
-        std::sort(
-            vec.begin(),
-            vec.end(),
-            [](EventInfo const* a, EventInfo const* b) {
-                if (a->ev->ts != b->ev->ts) {
-                    return a->ev->ts < b->ev->ts;
-                }
-                return a->event_id < b->event_id;
-            });
-
-        std::vector<EventInfo*> bstack;
-        for (auto* e : vec) {
-            if (e->ev->ph == 'B') {
-                bstack.push_back(e);
-            } else if (e->ev->ph == 'E') {
-                if (!bstack.empty()) {
-                    auto* b      = bstack.back();
-                    b->end_ts    = e->ev->ts;
-                    b->has_scope = true;
-                    bstack.pop_back();
-                }
-            } else if (e->ev->ph == 'X') {
-                if (e->ev->dur > 0) {
-                    e->end_ts    = e->ev->ts + e->ev->dur;
-                    e->has_scope = true;
-                }
-            }
-        }
-    }
-
-    // Pass 2: sweep each thread with a stack of open scopes. The top of
-    // the stack when an event begins is its immediate parent.
-    std::vector<std::pair<int64_t, int64_t>> nested_rows;
-    std::unordered_map<int64_t, int64_t>     parent_of;
-    nested_rows.reserve(infos.size());
-
-    for (auto& [key, vec] : by_thread) {
-        std::vector<EventInfo*> stack;
-        for (auto* e : vec) {
-            while (!stack.empty() && stack.back()->end_ts <= e->ev->ts) {
-                stack.pop_back();
-            }
-            // E events are scope closers, not nested nested.
-            if (e->ev->ph != 'E' && !stack.empty()) {
-                nested_rows.emplace_back(
-                    stack.back()->event_id, e->event_id);
-                parent_of[e->event_id] = stack.back()->event_id;
-            }
-            if (e->has_scope) { stack.push_back(e); }
-        }
-    }
-
-    // ---- Populate nesting tables
-    // -------------------------------------------
-
-    auto nested_stmt = con.Prepare(
-        R"SQL(
-INSERT INTO event_nested (parent_id, nested_id) VALUES (?, ?);
-)SQL");
-    if (nested_stmt->HasError()) {
-        throw cpptrace::runtime_error(
-            "duckdb prepare nested failed: " + nested_stmt->GetError());
-    }
-
-    for (auto const& [pid, cid] : nested_rows) {
-        auto r = nested_stmt->Execute(pid, cid);
-        if (r->HasError()) {
+        if (createResult->HasError()) {
             throw cpptrace::runtime_error(
-                "duckdb insert nested failed: " + r->GetError());
-        }
-    }
-
-    auto parent_stmt = con.Prepare(
-        R"SQL(
-INSERT INTO event_parent (event_id, parent_id) VALUES (?, ?);
-)SQL");
-    if (parent_stmt->HasError()) {
-        throw cpptrace::runtime_error(
-            "duckdb prepare parent failed: " + parent_stmt->GetError());
-    }
-
-    for (auto const& e : infos) {
-        duckdb::Value pval = [&] {
-            auto it = parent_of.find(e.event_id);
-            return it != parent_of.end() ? duckdb::Value(it->second)
-                                         : duckdb::Value();
-        }();
-
-        auto r = parent_stmt->Execute(e.event_id, pval);
-        if (r->HasError()) {
-            throw cpptrace::runtime_error(
-                "duckdb insert parent failed: " + r->GetError());
-        }
-    }
-}
-
-void fill_event1(
-    int64_t&                                    next_id,
-    std::unique_ptr<duckdb::PreparedStatement>& insert_stmt,
-    TraceEvent const&                           ev,
-    std::vector<EventInfo>&                     infos) {
-    std::optional<std::string> parsed_json;
-    std::optional<std::string> normal_json;
-
-    if (ev.name == "InstantiateFunction" && ev.detail.has_value()) {
-        cppdecl::ParseQualifiedNameFlags flags = {};
-        std::string_view                 input = ev.detail.value();
-        std::string_view                 input_before_parse = input;
-        auto result = cppdecl::ParseQualifiedName(input, flags);
-
-        if (auto error = std::get_if<cppdecl::ParseError>(&result)) {
-            throw cpptrace::runtime_error(
-                "cppdecl: Parse error in qualified name `"
-                + std::string(input_before_parse) + "` at position "
-                + cppdecl::NumberToString(
-                    input.data() - input_before_parse.data())
-                + ": " + error->message);
+                "duckdb create table failed: " + createResult->GetError());
         }
 
-        if (result.index() == 0) {
-            {
-                rapidjson::Document doc;
-                auto                js = cppdecl::ToJson(
-                    std::get<0>(result), doc.GetAllocator());
-                parsed_json = toString(js);
-            }
-            {
-                rapidjson::Document doc;
-                auto                js = cppdecl::ToJsonNormalized(
-                    std::get<0>(result), doc.GetAllocator());
-                normal_json = toString(js);
-            }
-        }
-    }
-
-    duckdb::Value detail_value = ev.detail.has_value()
-                                   ? duckdb::Value(ev.detail.value())
-                                   : duckdb::Value();
-
-    duckdb::Value parsed_value = parsed_json.has_value()
-                                   ? duckdb::Value(parsed_json.value())
-                                   : duckdb::Value();
-
-    duckdb::Value normal_value = normal_json.has_value()
-                                   ? duckdb::Value(normal_json.value())
-                                   : duckdb::Value();
-
-
-    int64_t const eid = ++next_id;
-
-    auto insert_result = insert_stmt->Execute(
-        eid,
-        ev.pid,
-        ev.tid,
-        ev.ts,
-        ev.cat,
-        std::string(1, ev.ph),
-        ev.id,
-        ev.dur,
-        ev.name,
-        detail_value,
-        parsed_value,
-        normal_value);
-
-    if (insert_result->HasError()) {
-        throw cpptrace::runtime_error(
-            "duckdb insert failed: " + insert_result->GetError());
-    }
-
-    infos.push_back({
-        &ev,
-        eid,
-        static_cast<int64_t>(ev.ts),
-        false,
-    });
-}
-
-void fill_events(std::vector<TraceEvent> const& traceEvents) {
-    const std::string db_path = "/tmp/result.duckdb";
-    std::filesystem::remove(db_path);
-
-    duckdb::DuckDB     db(db_path);
-    duckdb::Connection con(db);
-
-    create_tables(con);
-
-    auto insert_stmt = con.Prepare(
-        R"SQL(
-INSERT INTO events (event_id, pid, tid, ts, cat, ph, id, dur, name,
-                    detail, parsed_json, normal_json)
+        insertEventStmt = con.Prepare(
+            R"SQL(
+INSERT INTO events (event_id, pid, tid, ts, cat, ph, id, dur, name, detail, parsed_json, normal_json)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 )SQL");
+        if (insertEventStmt->HasError()) {
+            throw cpptrace::runtime_error(
+                "duckdb prepare events failed: " + insertEventStmt->GetError());
+        }
 
-    if (insert_stmt->HasError()) {
-        throw cpptrace::runtime_error(
-            "duckdb prepare failed: " + insert_stmt->GetError());
+        insertNestedStmt = con.Prepare(
+            R"SQL(
+INSERT INTO event_nested (parent_id, nested_id) VALUES (?, ?);
+)SQL");
+        if (insertNestedStmt->HasError()) {
+            throw cpptrace::runtime_error(
+                "duckdb prepare nested failed: " + insertNestedStmt->GetError());
+        }
+
+        insertParentStmt = con.Prepare(
+            R"SQL(
+INSERT INTO event_parent (event_id, parent_id) VALUES (?, ?);
+)SQL");
+        if (insertParentStmt->HasError()) {
+            throw cpptrace::runtime_error(
+                "duckdb prepare parent failed: " + insertParentStmt->GetError());
+        }
     }
 
-    std::vector<EventInfo> infos;
-    infos.reserve(traceEvents.size());
-    int64_t next_id = 0;
+    void insertEvent(TraceEvent const& ev) {
+        std::optional<std::string> parsedJson;
+        std::optional<std::string> normalJson;
 
-    for (auto const& ev : traceEvents) {
-        fill_event1(next_id, insert_stmt, ev, infos);
+        if (ev.name == "InstantiateFunction" && ev.detail.has_value()) {
+            cppdecl::ParseQualifiedNameFlags flags            = {};
+            std::string_view                 input            = ev.detail.value();
+            std::string_view                 inputBeforeParse = input;
+            auto result = cppdecl::ParseQualifiedName(input, flags);
+
+            if (auto error = std::get_if<cppdecl::ParseError>(&result)) {
+                throw cpptrace::runtime_error(
+                    "cppdecl: Parse error in qualified name `"
+                    + std::string(inputBeforeParse) + "` at position "
+                    + cppdecl::NumberToString(input.data() - inputBeforeParse.data())
+                    + ": " + error->message);
+            }
+
+            if (result.index() == 0) {
+                {
+                    rapidjson::Document doc;
+                    auto js    = cppdecl::ToJson(std::get<0>(result), doc.GetAllocator());
+                    parsedJson = toString(js);
+                }
+                {
+                    rapidjson::Document doc;
+                    auto                js = cppdecl::ToJsonNormalized(
+                        std::get<0>(result), doc.GetAllocator());
+                    normalJson = toString(js);
+                }
+            }
+        }
+
+        duckdb::Value detailValue = ev.detail.has_value()
+                                      ? duckdb::Value(ev.detail.value())
+                                      : duckdb::Value();
+
+        duckdb::Value parsedValue = parsedJson.has_value()
+                                      ? duckdb::Value(parsedJson.value())
+                                      : duckdb::Value();
+
+        duckdb::Value normalValue = normalJson.has_value()
+                                      ? duckdb::Value(normalJson.value())
+                                      : duckdb::Value();
+
+        int64_t const eventId = ++nextEventId;
+
+        auto insertResult = insertEventStmt->Execute(
+            eventId,
+            ev.pid,
+            ev.tid,
+            ev.ts,
+            ev.cat,
+            std::string(1, ev.ph),
+            ev.id,
+            ev.dur,
+            ev.name,
+            detailValue,
+            parsedValue,
+            normalValue);
+
+        if (insertResult->HasError()) {
+            throw cpptrace::runtime_error(
+                "duckdb insert event failed: " + insertResult->GetError());
+        }
+
+        infos.push_back({&ev, eventId, static_cast<int64_t>(ev.ts), false});
     }
 
-    fill_event_nesting(infos, con);
-}
+    void fillEventNesting() {
+        std::map<std::pair<int64_t, int64_t>, std::vector<EventInfo*>> byThread;
 
+        for (auto& e : infos) {
+            byThread[{static_cast<int64_t>(e.ev->pid), static_cast<int64_t>(e.ev->tid)}]
+                .push_back(&e);
+        }
+
+        for (auto& [key, vec] : byThread) {
+            std::sort(vec.begin(), vec.end(), [](EventInfo const* a, EventInfo const* b) {
+                if (a->ev->ts != b->ev->ts) { return a->ev->ts < b->ev->ts; }
+                return a->eventId < b->eventId;
+            });
+
+            std::vector<EventInfo*> bstack;
+            for (auto* e : vec) {
+                if (e->ev->ph == 'B') {
+                    bstack.push_back(e);
+                } else if (e->ev->ph == 'E') {
+                    if (!bstack.empty()) {
+                        auto* b     = bstack.back();
+                        b->endTs    = e->ev->ts;
+                        b->hasScope = true;
+                        bstack.pop_back();
+                    }
+                } else if (e->ev->ph == 'X') {
+                    if (e->ev->dur > 0) {
+                        e->endTs    = e->ev->ts + e->ev->dur;
+                        e->hasScope = true;
+                    }
+                }
+            }
+        }
+
+        std::vector<std::pair<int64_t, int64_t>> nestedRows;
+        std::unordered_map<int64_t, int64_t>     parentOf;
+        nestedRows.reserve(infos.size());
+
+        for (auto& [key, vec] : byThread) {
+            std::vector<EventInfo*> stack;
+            for (auto* e : vec) {
+                while (!stack.empty() && stack.back()->endTs <= e->ev->ts) {
+                    stack.pop_back();
+                }
+
+                if (e->ev->ph != 'E' && !stack.empty()) {
+                    nestedRows.emplace_back(stack.back()->eventId, e->eventId);
+                    parentOf[e->eventId] = stack.back()->eventId;
+                }
+
+                if (e->hasScope) { stack.push_back(e); }
+            }
+        }
+
+        for (auto const& [parentId, childId] : nestedRows) {
+            auto r = insertNestedStmt->Execute(parentId, childId);
+            if (r->HasError()) {
+                throw cpptrace::runtime_error(
+                    "duckdb insert nested failed: " + r->GetError());
+            }
+        }
+
+        for (auto const& e : infos) {
+            duckdb::Value parentValue = [&]() -> duckdb::Value {
+                auto it = parentOf.find(e.eventId);
+                if (it != parentOf.end()) { return duckdb::Value(it->second); }
+                return duckdb::Value();
+            }();
+
+            auto r = insertParentStmt->Execute(e.eventId, parentValue);
+            if (r->HasError()) {
+                throw cpptrace::runtime_error(
+                    "duckdb insert parent failed: " + r->GetError());
+            }
+        }
+    }
+};
 
 int main(int argc, char** argv) {
-    quill::BackendOptions backend_options;
-    quill::Backend::start(backend_options);
+    quill::BackendOptions backendOptions;
+    quill::Backend::start(backendOptions);
 
-    // Frontend
-    auto console_sink = quill::Frontend::create_or_get_sink<
-        quill::ConsoleSink>("sink_id_1");
+    auto consoleSink = quill::Frontend::create_or_get_sink<quill::ConsoleSink>(
+        "sink_id_1");
     quill::Logger* logger = quill::Frontend::create_or_get_logger(
-        "root", std::move(console_sink));
-
-    // Change the LogLevel to print everything
+        "root", std::move(consoleSink));
     logger->set_log_level(quill::LogLevel::TraceL3);
-
 
     const char* inputPath = (argc > 1) ? argv[1] : "input.json";
 
@@ -539,7 +508,8 @@ int main(int argc, char** argv) {
     std::vector<TraceEvent> traceEvents = std::move(handler.events);
     LOG_INFO(logger, "Parsed trace events: {}", traceEvents.size());
 
-    fill_events(traceEvents);
+    EventDatabaseWriter writer("/tmp/result.duckdb");
+    writer.writeEvents(traceEvents);
 
     return EXIT_SUCCESS;
 }
