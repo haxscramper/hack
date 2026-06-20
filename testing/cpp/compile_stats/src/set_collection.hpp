@@ -1,42 +1,54 @@
+#pragma once
+
 #include <roaring/roaring.h>
+
+#include <cstddef>
 #include <cstdint>
-#include <vector>
 #include <memory>
 #include <unordered_map>
-#include <stdexcept>
+#include <vector>
 
-#include <boost/serialization/strong_typedef.hpp>
 #include "strong_id.hpp"
 
 using SetId = StrongId<struct SetIdTag>;
 
-
+/// \class SubsetCollection
+/// \brief Stores multiple integer sets and supports direct and
+/// inverted-index queries.
 class SubsetCollection {
   public:
-    // Shared handle to a roaring bitmap with the proper deleter.
+    /// \brief Shared owning handle for a Roaring bitmap.
     using BitmapPtr = std::shared_ptr<roaring_bitmap_t>;
 
-    static BitmapPtr makeBitmap() {
-        return BitmapPtr(roaring_bitmap_create(), roaring_bitmap_free);
-    }
+    /// \brief Creates an empty bitmap with the proper deleter.
+    /// \return Shared bitmap handle.
+    static BitmapPtr makeBitmap();
 
-    static inline std::size_t toIndex(SetId id) noexcept {
-        return static_cast<std::size_t>(id.raw());
-    }
+    /// \brief Converts a set id to a vector index.
+    /// \param id Logical set id.
+    /// \return Index in internal storage.
+    static std::size_t toIndex(SetId id) noexcept;
 
-    // Non-owning-copy view over a bitmap: holds only the shared_ptr.
+    /// \class BitmapView
+    /// \brief Lightweight shared view over a bitmap.
     class BitmapView {
       public:
-        explicit BitmapView(BitmapPtr bm) : bm_(std::move(bm)) {}
+        /// \brief Constructs a view from a shared bitmap handle.
+        /// \param bm Shared bitmap pointer.
+        explicit BitmapView(BitmapPtr bm);
 
-        uint64_t cardinality() const {
-            return roaring_bitmap_get_cardinality(bm_.get());
-        }
+        /// \brief Returns number of values in the bitmap.
+        /// \return Cardinality.
+        uint64_t cardinality() const;
 
-        bool contains(uint32_t value) const {
-            return roaring_bitmap_contains(bm_.get(), value);
-        }
+        /// \brief Checks whether a value is present.
+        /// \param value Value to test.
+        /// \return True if present.
+        bool contains(uint32_t value) const;
 
+        /// \brief Iterates all values in ascending order.
+        /// \tparam Fn Callable accepting `uint32_t`.
+        /// \param fn Callback invoked for each value.
         template <typename Fn>
         void forEach(Fn&& fn) const {
             roaring_uint32_iterator_t it;
@@ -47,15 +59,13 @@ class SubsetCollection {
             }
         }
 
-        // Materialize on demand only if the caller wants it.
-        std::vector<uint32_t> toVector() const {
-            std::vector<uint32_t> out;
-            out.resize(roaring_bitmap_get_cardinality(bm_.get()));
-            roaring_bitmap_to_uint32_array(bm_.get(), out.data());
-            return out;
-        }
+        /// \brief Materializes bitmap values into a vector.
+        /// \return Sorted vector of values.
+        std::vector<uint32_t> toVector() const;
 
-        const roaring_bitmap_t* raw() const { return bm_.get(); }
+        /// \brief Returns raw pointer for read-only interop.
+        /// \return Raw bitmap pointer.
+        const roaring_bitmap_t* raw() const;
 
       private:
         BitmapPtr bm_;
@@ -69,128 +79,88 @@ class SubsetCollection {
     SubsetCollection(SubsetCollection&&) noexcept            = default;
     SubsetCollection& operator=(SubsetCollection&&) noexcept = default;
 
-    // --- Construction / population phase ---
+    /// \brief Creates a new empty set.
+    /// \return New set id.
+    SetId createSet();
 
-    SetId createSet() {
-        sets.push_back(makeBitmap());
-        return static_cast<SetId>(sets.size() - 1);
-    }
+    /// \brief Adds one value to a set and updates the inverted index.
+    /// \param id Target set id.
+    /// \param value Value to insert.
+    void add(SetId id, uint32_t value);
 
-    void add(SetId id, uint32_t value) {
-        roaring_bitmap_add(at(id).get(), value);
-        roaring_bitmap_add(invertedFor(value).get(), id.raw()); // maintain
-                                                                // inverted
-                                                                // index
-    }
+    /// \brief Adds many values to a set and updates the inverted index.
+    /// \param id Target set id.
+    /// \param n Number of values.
+    /// \param values Pointer to values array.
+    void addMany(SetId id, std::size_t n, const uint32_t* values);
 
-    void addMany(SetId id, size_t n, const uint32_t* values) {
-        roaring_bitmap_t* bm = at(id).get();
-        roaring_bitmap_add_many(bm, n, values);
-        for (size_t i = 0; i < n; ++i) {
-            roaring_bitmap_add(invertedFor(values[i]).get(), id.raw());
-        }
-    }
+    /// \brief Applies run optimization and shrink-to-fit to one set.
+    /// \param id Target set id.
+    void optimize(SetId id);
 
-    void optimize(SetId id) {
-        roaring_bitmap_t* bm = at(id).get();
-        roaring_bitmap_run_optimize(bm);
-        roaring_bitmap_shrink_to_fit(bm);
-    }
+    /// \brief Applies run optimization and shrink-to-fit to all bitmaps.
+    void optimizeAll();
 
-    void optimizeAll() {
-        for (auto& bm : sets) {
-            roaring_bitmap_run_optimize(bm.get());
-            roaring_bitmap_shrink_to_fit(bm.get());
-        }
-        for (auto& kv : inverted) {
-            roaring_bitmap_run_optimize(kv.second.get());
-            roaring_bitmap_shrink_to_fit(kv.second.get());
-        }
-    }
+    /// \brief Returns cardinality of a set.
+    /// \param id Set id.
+    /// \return Number of values.
+    uint64_t cardinality(SetId id) const;
 
-    // --- Query phase ---
+    /// \brief Checks whether a set contains a value.
+    /// \param id Set id.
+    /// \param value Value to test.
+    /// \return True if present.
+    bool contains(SetId id, uint32_t value) const;
 
-    uint64_t cardinality(SetId id) const {
-        return roaring_bitmap_get_cardinality(at(id).get());
-    }
+    /// \brief Returns cardinality of intersection of two sets.
+    /// \param a First set id.
+    /// \param b Second set id.
+    /// \return Intersection cardinality.
+    uint64_t intersectionCardinality(SetId a, SetId b) const;
 
-    bool contains(SetId id, uint32_t value) const {
-        return roaring_bitmap_contains(at(id).get(), value);
-    }
+    /// \brief Builds intersection bitmap of two sets.
+    /// \param a First set id.
+    /// \param b Second set id.
+    /// \return View over a new bitmap containing intersection.
+    BitmapView intersection(SetId a, SetId b) const;
 
-    uint64_t intersectionCardinality(SetId a, SetId b) const {
-        return roaring_bitmap_and_cardinality(at(a).get(), at(b).get());
-    }
+    /// \brief Returns a shared view of set values.
+    /// \param id Set id.
+    /// \return View over stored bitmap.
+    BitmapView values(SetId id) const;
 
-    BitmapView intersection(SetId a, SetId b) const {
-        BitmapPtr r(
-            roaring_bitmap_and(at(a).get(), at(b).get()),
-            roaring_bitmap_free);
-        return BitmapView(std::move(r));
-    }
-
-    BitmapView values(SetId id) const {
-        return BitmapView(sets.at(id.raw())); // shares the stored bitmap,
-                                              // no copy
-    }
-
-    // (2) All set IDs whose sets contain *all* of the given values.
+    /// \brief Finds set ids that contain all given values.
+    /// \param values Values that must all be present.
+    /// \return View over matching set ids.
     BitmapView setsContainingAll(
-        const std::vector<uint32_t>& values) const {
-        if (values.empty()) { return BitmapView(makeBitmap()); }
+        const std::vector<uint32_t>& values) const;
 
-        const roaring_bitmap_t* first = findInverted(values[0]);
-        if (!first) {
-            return BitmapView(makeBitmap()); // no set has values[0]
-        }
-
-        BitmapPtr acc(roaring_bitmap_copy(first), roaring_bitmap_free);
-        for (size_t i = 1; i < values.size(); ++i) {
-            const roaring_bitmap_t* posting = findInverted(values[i]);
-            if (!posting) {
-                return BitmapView(makeBitmap()); // some value present
-                                                 // nowhere
-            }
-            roaring_bitmap_and_inplace(acc.get(), posting);
-            if (roaring_bitmap_is_empty(acc.get())) { break; }
-        }
-        return BitmapView(std::move(acc));
-    }
-
-    // All set IDs whose sets contain *any* of the given values.
+    /// \brief Finds set ids that contain any of the given values.
+    /// \param values Values where at least one must be present.
+    /// \return View over matching set ids.
     BitmapView setsContainingAny(
-        const std::vector<uint32_t>& values) const {
-        BitmapPtr acc = makeBitmap();
-        for (uint32_t v : values) {
-            const roaring_bitmap_t* posting = findInverted(v);
-            if (posting) { roaring_bitmap_or_inplace(acc.get(), posting); }
-        }
-        return BitmapView(std::move(acc));
-    }
+        const std::vector<uint32_t>& values) const;
 
-    size_t setCount() const { return sets.size(); }
+    /// \brief Returns number of created sets.
+    /// \return Set count.
+    std::size_t setCount() const;
 
   private:
-    const BitmapPtr& at(SetId id) const {
-        if (toIndex(id) >= sets.size() || !sets[id.raw()]) {
-            throw std::out_of_range("invalid SetId");
-        }
-        return sets[toIndex(id)];
-    }
+    /// \brief Returns validated set bitmap by id.
+    /// \param id Set id.
+    /// \return Reference to shared bitmap pointer.
+    /// \throws std::out_of_range If id is invalid.
+    const BitmapPtr& at(SetId id) const;
 
-    // Get (creating if needed) the inverted posting list for a value.
-    BitmapPtr& invertedFor(uint32_t value) {
-        auto it = inverted.find(value);
-        if (it == inverted.end()) {
-            it = inverted.emplace(value, makeBitmap()).first;
-        }
-        return it->second;
-    }
+    /// \brief Returns posting list for a value, creating it if absent.
+    /// \param value Value key.
+    /// \return Mutable posting list handle.
+    BitmapPtr& invertedFor(uint32_t value);
 
-    const roaring_bitmap_t* findInverted(uint32_t value) const {
-        auto it = inverted.find(value);
-        return it == inverted.end() ? nullptr : it->second.get();
-    }
+    /// \brief Returns posting list for a value if present.
+    /// \param value Value key.
+    /// \return Raw posting list pointer or null.
+    const roaring_bitmap_t* findInverted(uint32_t value) const;
 
     std::vector<BitmapPtr>                  sets;
     std::unordered_map<uint32_t, BitmapPtr> inverted;

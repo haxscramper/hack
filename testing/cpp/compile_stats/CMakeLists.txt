@@ -19,8 +19,10 @@ find_package(roaring REQUIRED)
 find_package(GTest REQUIRED)
 find_package(benchmark REQUIRED)
 
-add_library(trace_events_lib src/to_json.hpp src/to_json.cpp
-                             src/to_json_normalized.hpp src/string_interner.hpp)
+add_library(
+  trace_events_lib
+  src/to_json.hpp src/to_json.cpp src/to_json_normalized.hpp
+  src/string_interner.hpp src/set_collection.hpp src/set_collection.cpp)
 
 add_executable(trace_event_cli main.cpp)
 add_executable(trace_event_test test/tSubsetCollection.cpp
