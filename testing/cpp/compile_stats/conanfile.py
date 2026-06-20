@@ -13,6 +13,9 @@ class ExampleRecipe(ConanFile):
         self.requires("cpptrace/1.0.4")
         self.requires("quill/11.1.0")
         self.requires("duckdb/1.4.3")
+        self.requires("roaring/4.5.0")
+        self.requires("benchmark/1.9.5")
+        self.requires("gtest/1.17.0")
 
     def layout(self):
         cmake_layout(self)

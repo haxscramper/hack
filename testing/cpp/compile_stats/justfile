@@ -9,6 +9,7 @@ build: configure
     cmake --build build --config RelWithDebInfo 
 
 run: build 
-    ./build/trace_events_parser
+    ./build/trace_event_cli
 
-        
+test: build
+    ./build/trace_event_test        

@@ -58,6 +58,9 @@ class SubsetCollection {
     SubsetCollection(const SubsetCollection&)            = delete;
     SubsetCollection& operator=(const SubsetCollection&) = delete;
 
+    SubsetCollection(SubsetCollection&&) noexcept            = default;
+    SubsetCollection& operator=(SubsetCollection&&) noexcept = default;
+
     // --- Construction / population phase ---
 
     SetId createSet() {
@@ -67,8 +70,8 @@ class SubsetCollection {
 
     void add(SetId id, uint32_t value) {
         roaring_bitmap_add(at(id).get(), value);
-        invertedFor(value)->add(id); // maintain inverted index
-        // note: inverted index stored as BitmapPtr, see invertedFor
+        roaring_bitmap_add(invertedFor(value).get(), id); // maintain
+                                                          // inverted index
     }
 
     void addMany(SetId id, size_t n, const uint32_t* values) {
