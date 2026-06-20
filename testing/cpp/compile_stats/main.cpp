@@ -336,6 +336,88 @@ static std::unordered_set<ExtractedSymbol, ExtractedSymbolHash> extract_symbols_
     return result;
 }
 
+struct CppNodeRow {
+    int64_t                node_id;
+    std::optional<int64_t> parent_node_id;
+    std::string            edge_kind; // root | qual_part | template_arg
+    int32_t                edge_index;
+    std::string node_name; // e.g. std, optional, <qualified>, size
+};
+
+static std::string get_normal_node_name(rapidjson::Value const& node) {
+    if (!node.IsObject() || !node.HasMember("name")) { return {}; }
+    auto const& n = node["name"];
+    if (!n.IsObject() || !n.HasMember("name")) { return {}; }
+    auto const& name = n["name"];
+    if (!name.IsString()) { return {}; }
+    return std::string(name.GetString(), name.GetStringLength());
+}
+
+static void flatten_normal_name_tree(
+    rapidjson::Value const&  node,
+    std::optional<int64_t>   parent_node_id,
+    std::string const&       edge_kind,
+    int32_t                  edge_index,
+    int64_t&                 next_node_id,
+    std::vector<CppNodeRow>& out) {
+    if (!node.IsObject()) { return; }
+
+    std::string const node_name = get_normal_node_name(node);
+    if (node_name.empty()) { return; }
+
+    int64_t const my_id = ++next_node_id;
+    out.push_back(
+        CppNodeRow{
+            .node_id        = my_id,
+            .parent_node_id = parent_node_id,
+            .edge_kind      = edge_kind,
+            .edge_index     = edge_index,
+            .node_name      = node_name,
+        });
+
+    if (!node.HasMember("params") || !node["params"].IsArray()) { return; }
+    auto const& params = node["params"];
+
+    std::string const child_edge_kind = (node_name == "<qualified>")
+                                          ? "qual_part"
+                                          : "template_arg";
+
+    for (rapidjson::SizeType i = 0; i < params.Size(); ++i) {
+        flatten_normal_name_tree(
+            params[i],
+            my_id,
+            child_edge_kind,
+            static_cast<int32_t>(i),
+            next_node_id,
+            out);
+    }
+}
+
+static std::vector<CppNodeRow> extract_nodes_from_normal_json(
+    std::string const& normal_json) {
+    rapidjson::Document doc;
+    doc.Parse(normal_json.c_str());
+
+    if (doc.HasParseError() || !doc.IsObject()
+        || !doc.HasMember("names")) {
+        throw cpptrace::runtime_error(
+            fmt::format(
+                "failed to parse normal_json for AST extraction: {} at "
+                "offset {}",
+                rapidjson::GetParseError_En(doc.GetParseError()),
+                doc.GetErrorOffset()));
+    }
+
+    std::vector<CppNodeRow> rows;
+    rows.reserve(64);
+
+    int64_t next_node_id = 0;
+    flatten_normal_name_tree(
+        doc["names"], std::nullopt, "root", 0, next_node_id, rows);
+
+    return rows;
+}
+
 
 void create_tables(duckdb::Connection& con) {
     con.Query("INSTALL json;");
@@ -369,16 +451,21 @@ CREATE TABLE event_parent (
     parent_id BIGINT
 );
 
--- New: flattened symbol index for fast type/name lookup
-CREATE TABLE event_cpp_symbol (
+CREATE TABLE event_cpp_node (
     event_id BIGINT NOT NULL,
-    symbol VARCHAR NOT NULL,                 -- e.g. std::optional
-    has_template_args BOOLEAN NOT NULL,      -- true for template-id nodes
-    PRIMARY KEY (event_id, symbol, has_template_args)
+    node_id BIGINT NOT NULL,
+    parent_node_id BIGINT,
+    edge_kind VARCHAR NOT NULL,   -- root | qual_part | template_arg
+    edge_index INTEGER NOT NULL,
+    node_name VARCHAR NOT NULL,
+    PRIMARY KEY (event_id, node_id)
 );
 
-CREATE INDEX idx_event_cpp_symbol_lookup
-    ON event_cpp_symbol(symbol, has_template_args, event_id);
+CREATE INDEX idx_event_cpp_node_parent
+    ON event_cpp_node(event_id, parent_node_id, edge_kind, edge_index);
+
+CREATE INDEX idx_event_cpp_node_name
+    ON event_cpp_node(node_name, event_id);
 )SQL");
 
     if (create_result->HasError()) {
@@ -386,7 +473,6 @@ CREATE INDEX idx_event_cpp_symbol_lookup
             "duckdb create table failed: " + create_result->GetError());
     }
 }
-
 struct EventInfo {
     TraceEvent const* ev;
     int64_t           event_id;
@@ -513,7 +599,7 @@ INSERT INTO event_parent (event_id, parent_id) VALUES (?, ?);
 void fill_event1(
     int64_t&                                    next_id,
     std::unique_ptr<duckdb::PreparedStatement>& insert_event_stmt,
-    std::unique_ptr<duckdb::PreparedStatement>& insert_symbol_stmt,
+    std::unique_ptr<duckdb::PreparedStatement>& insert_cpp_node_stmt,
     TraceEvent const&                           ev,
     std::vector<EventInfo>&                     infos) {
     std::optional<std::string> parsed_json;
@@ -584,18 +670,27 @@ void fill_event1(
             + insert_event_result->GetError());
     }
 
-    if (parsed_json.has_value()) {
-        auto symbols = extract_symbols_from_parsed_json(
-            parsed_json.value());
+    if (normal_json.has_value()) {
+        auto rows = extract_nodes_from_normal_json(normal_json.value());
 
-        for (auto const& sym : symbols) {
-            auto insert_symbol_result = insert_symbol_stmt->Execute(
-                eid, sym.symbol, sym.has_template_args);
+        for (auto const& row : rows) {
+            duckdb::Value parent_val = row.parent_node_id.has_value()
+                                         ? duckdb::Value(
+                                               *row.parent_node_id)
+                                         : duckdb::Value();
 
-            if (insert_symbol_result->HasError()) {
+            auto insert_node_result = insert_cpp_node_stmt->Execute(
+                eid,
+                row.node_id,
+                parent_val,
+                row.edge_kind,
+                row.edge_index,
+                row.node_name);
+
+            if (insert_node_result->HasError()) {
                 throw cpptrace::runtime_error(
-                    "duckdb event_cpp_symbol insert failed: "
-                    + insert_symbol_result->GetError());
+                    "duckdb event_cpp_node insert failed: "
+                    + insert_node_result->GetError());
             }
         }
     }
@@ -619,15 +714,16 @@ void fill_events(std::vector<TraceEvent> const& traceEvents) {
 
     auto insert_stmt = con.Prepare(
         R"SQL(
-INSERT INTO events (event_id, pid, tid, ts, cat, ph, id, dur, name, detail, parsed_json, normal_json)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+INSERT INTO events (
+    event_id, pid, tid, ts, cat, ph, id, dur, name, detail, parsed_json, normal_json
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 )SQL");
 
     auto insert_symbol_stmt = con.Prepare(
         R"SQL(
-INSERT INTO event_cpp_symbol (
-    event_id, symbol, has_template_args
-) VALUES (?, ?, ?);
+INSERT INTO event_cpp_node (
+    event_id, node_id, parent_node_id, edge_kind, edge_index, node_name
+) VALUES (?, ?, ?, ?, ?, ?);
 )SQL");
 
     if (insert_stmt->HasError()) {
