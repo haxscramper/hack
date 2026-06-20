@@ -36,6 +36,8 @@
 
 #include "to_json.hpp"
 #include "to_json_normalized.hpp"
+#include <name_tree.hpp>
+#include <string_interner.hpp>
 
 struct TraceEvent {
     std::int64_t               pid{};
@@ -236,9 +238,32 @@ class EventDatabaseWriter {
         for (auto const& ev : traceEvents) { insertEvent(ev); }
 
         fillEventNesting();
+        flushStringIds();
     }
 
+
   private:
+    static duckdb::Value makePrefixValue(const std::vector<StrId>& ids) {
+        duckdb::vector<duckdb::Value> values;
+        values.reserve(ids.size());
+        for (StrId id : ids) { values.emplace_back(static_cast<int64_t>(id.raw())); }
+        return duckdb::Value::LIST(values);
+    }
+
+    void flushStringIds() {
+        const auto n = nameTree.interner().size();
+        for (std::size_t i = 0; i < n; ++i) {
+            const StrId sid = static_cast<StrId>(static_cast<uint32_t>(i));
+            auto        r   = insertStringIdStmt->Execute(
+                static_cast<int64_t>(sid.raw()), nameTree.interner().get(sid));
+            if (r->HasError()) {
+                throw cpptrace::runtime_error(
+                    "duckdb insert string_ids failed: " + r->GetError());
+            }
+        }
+    }
+
+
     std::string        dbPath;
     duckdb::DuckDB     db;
     duckdb::Connection con;
@@ -246,6 +271,10 @@ class EventDatabaseWriter {
     std::unique_ptr<duckdb::PreparedStatement> insertEventStmt;
     std::unique_ptr<duckdb::PreparedStatement> insertNestedStmt;
     std::unique_ptr<duckdb::PreparedStatement> insertParentStmt;
+    std::unique_ptr<duckdb::PreparedStatement> insertStringIdStmt;
+
+    NameTreeStore nameTree;
+
 
     std::vector<EventInfo> infos;
     int64_t                nextEventId = 0;
@@ -272,6 +301,7 @@ CREATE TABLE events (
     dur BIGINT,
     name VARCHAR,
     detail VARCHAR,
+    grouping_prefix BIGINT[],
     parsed_json JSON,
     normal_json JSON
 );
@@ -286,6 +316,12 @@ CREATE TABLE event_parent (
     event_id BIGINT PRIMARY KEY,
     parent_id BIGINT
 );
+
+CREATE TABLE string_ids (
+    str_id BIGINT PRIMARY KEY,
+    value VARCHAR NOT NULL
+);
+
 )SQL");
 
         if (createResult->HasError()) {
@@ -293,10 +329,21 @@ CREATE TABLE event_parent (
                 "duckdb create table failed: " + createResult->GetError());
         }
 
+        insertStringIdStmt = con.Prepare(
+            R"SQL(
+INSERT INTO string_ids (str_id, value) VALUES (?, ?);
+)SQL");
+        if (insertStringIdStmt->HasError()) {
+            throw cpptrace::runtime_error(
+                "duckdb prepare string_ids failed: " + insertStringIdStmt->GetError());
+        }
+
         insertEventStmt = con.Prepare(
             R"SQL(
-INSERT INTO events (event_id, pid, tid, ts, cat, ph, id, dur, name, detail, parsed_json, normal_json)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+INSERT INTO events (
+    event_id, pid, tid, ts, cat, ph, id, dur, name, detail, grouping_prefix, parsed_json, normal_json
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 )SQL");
         if (insertEventStmt->HasError()) {
             throw cpptrace::runtime_error(
@@ -323,8 +370,11 @@ INSERT INTO event_parent (event_id, parent_id) VALUES (?, ?);
     }
 
     void insertEvent(TraceEvent const& ev) {
+        int64_t const eventId = ++nextEventId;
+
         std::optional<std::string> parsedJson;
         std::optional<std::string> normalJson;
+        std::vector<StrId>         groupingPrefix;
 
         if (ev.name == "InstantiateFunction" && ev.detail.has_value()) {
             cppdecl::ParseQualifiedNameFlags flags            = {};
@@ -342,16 +392,30 @@ INSERT INTO event_parent (event_id, parent_id) VALUES (?, ?);
 
             if (result.index() == 0) {
                 {
-                    rapidjson::Document doc;
-                    auto js    = cppdecl::ToJson(std::get<0>(result), doc.GetAllocator());
-                    parsedJson = toString(js);
+                    rapidjson::Document parsedDoc;
+                    parsedDoc.SetObject();
+                    auto js = cppdecl::ToJson(
+                        std::get<0>(result), parsedDoc.GetAllocator());
+                    parsedDoc.CopyFrom(js, parsedDoc.GetAllocator());
+                    parsedJson = toString(parsedDoc);
                 }
-                {
-                    rapidjson::Document doc;
-                    auto                js = cppdecl::ToJsonNormalized(
-                        std::get<0>(result), doc.GetAllocator());
-                    normalJson = toString(js);
-                }
+
+                rapidjson::Document normalizedDoc;
+                normalizedDoc.SetObject();
+                auto normal = cppdecl::ToJsonNormalized(
+                    std::get<0>(result), normalizedDoc.GetAllocator());
+                normalizedDoc.CopyFrom(normal, normalizedDoc.GetAllocator());
+                normalJson = toString(normalizedDoc);
+
+                EventId treeEventId = static_cast<EventId>(
+                    static_cast<uint32_t>(eventId));
+                groupingPrefix = nameTree.insertEvent(
+                    treeEventId,
+                    normalizedDoc,
+                    NameTreeStore::VisitMode::PrefixSequenceOnly);
+
+                nameTree.insertEvent(
+                    treeEventId, normalizedDoc, NameTreeStore::VisitMode::Insert);
             }
         }
 
@@ -367,7 +431,9 @@ INSERT INTO event_parent (event_id, parent_id) VALUES (?, ?);
                                       ? duckdb::Value(normalJson.value())
                                       : duckdb::Value();
 
-        int64_t const eventId = ++nextEventId;
+        duckdb::Value groupingPrefixValue = groupingPrefix.empty()
+                                              ? duckdb::Value()
+                                              : makePrefixValue(groupingPrefix);
 
         auto insertResult = insertEventStmt->Execute(
             eventId,
@@ -380,6 +446,7 @@ INSERT INTO event_parent (event_id, parent_id) VALUES (?, ?);
             ev.dur,
             ev.name,
             detailValue,
+            groupingPrefixValue,
             parsedValue,
             normalValue);
 
@@ -390,6 +457,7 @@ INSERT INTO event_parent (event_id, parent_id) VALUES (?, ?);
 
         infos.push_back({&ev, eventId, static_cast<int64_t>(ev.ts), false});
     }
+
 
     void fillEventNesting() {
         std::map<std::pair<int64_t, int64_t>, std::vector<EventInfo*>> byThread;
@@ -445,8 +513,8 @@ INSERT INTO event_parent (event_id, parent_id) VALUES (?, ?);
             }
         }
 
-        for (auto const& [parentId, childId] : nestedRows) {
-            auto r = insertNestedStmt->Execute(parentId, childId);
+        for (auto const& [parentId, nestedId] : nestedRows) {
+            auto r = insertNestedStmt->Execute(parentId, nestedId);
             if (r->HasError()) {
                 throw cpptrace::runtime_error(
                     "duckdb insert nested failed: " + r->GetError());

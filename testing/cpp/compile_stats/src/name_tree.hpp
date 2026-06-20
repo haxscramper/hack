@@ -18,8 +18,15 @@ class NameTreeStore {
   public:
     struct NameTree;
 
-    /// \brief Map from interned name to child node, allocated from arena.
+    /// \brief Map from interned name to nested node, allocated from arena.
     using BranchingMap = std::pmr::unordered_map<StrId, NameTree*>;
+
+    enum class VisitMode
+    {
+        Insert,
+        PrefixSequenceOnly,
+        SequenceOnly
+    };
 
     struct NameTree {
         StrId name;
@@ -38,7 +45,10 @@ class NameTreeStore {
     /// \brief Inserts a single event document into the tree.
     /// \param id Caller-provided dense event id.
     /// \param doc Parsed instantiation document.
-    void insertEvent(EventId id, const rapidjson::Document& doc);
+    std::vector<StrId> insertEvent(
+        EventId                    id,
+        const rapidjson::Document& doc,
+        VisitMode                  mode = VisitMode::Insert);
 
     /// \brief Answers a query document, returning matching event ids.
     /// \param doc Query document, same schema, "<query_wildcard>" names
@@ -58,14 +68,37 @@ class NameTreeStore {
     static constexpr const char* kWildcard = "<query_wildcard>";
 
     NameTree* makeNode(StrId name);
-    NameTree* childInsert(BranchingMap* level, StrId name);
+    NameTree* nestedInsert(BranchingMap* level, StrId name);
     bool      isWildcard(const rapidjson::Value& nameNode) const;
 
+    std::vector<StrId> walkChain(
+        const rapidjson::Value& params,
+        BranchingMap*           level,
+        uint32_t                event,
+        VisitMode               mode);
+
     /// \brief Walks a params array as a qualified-name chain (insert).
-    void walkChain(const rapidjson::Value& params, BranchingMap* level, uint32_t event);
+    void walkChain(
+        const rapidjson::Value& params,
+        BranchingMap*           level,
+        uint32_t                event,
+        VisitMode               mode,
+        std::vector<StrId>&     out);
+
+    void walkChainInto(
+        const rapidjson::Value& params,
+        BranchingMap*           level,
+        uint32_t                event,
+        VisitMode               mode,
+        std::vector<StrId>&     out);
 
     /// \brief Walks a node's params as its template arguments (insert).
-    void walkParams(const rapidjson::Value& params, NameTree* parent, uint32_t event);
+    void walkParams(
+        const rapidjson::Value& params,
+        NameTree*               parent,
+        uint32_t                event,
+        VisitMode               mode,
+        std::vector<StrId>&     out);
 
     void queryChain(
         const rapidjson::Value& params,

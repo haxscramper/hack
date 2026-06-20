@@ -9,11 +9,14 @@ NameTreeStore::NameTree::NameTree(std::pmr::memory_resource* mr)
 
 NameTreeStore::NameTreeStore() : root_named_(&pool_) {}
 
-void NameTreeStore::insertEvent(EventId id, const rapidjson::Document& doc) {
-    const auto& names = doc["names"];
-    // The root <qualified> node's params are the main name chain.
-    walkChain(names["params"], &root_named_, id.raw());
+std::vector<StrId> NameTreeStore::insertEvent(
+    EventId                    id,
+    const rapidjson::Document& doc,
+    VisitMode                  mode) {
+    BranchingMap* root = (mode == VisitMode::Insert) ? &root_named_ : nullptr;
+    return walkChain(doc["names"]["params"], root, id.raw(), mode);
 }
+
 
 SubsetCollection::BitmapView NameTreeStore::query(const rapidjson::Document& doc) {
     std::vector<SetId> constraints;
@@ -45,7 +48,7 @@ NameTreeStore::NameTree* NameTreeStore::makeNode(StrId name) {
     return node;
 }
 
-NameTreeStore::NameTree* NameTreeStore::childInsert(BranchingMap* level, StrId name) {
+NameTreeStore::NameTree* NameTreeStore::nestedInsert(BranchingMap* level, StrId name) {
     auto it = level->find(name);
     if (it != level->end()) { return it->second; }
     NameTree* node = makeNode(name);
@@ -57,37 +60,83 @@ bool NameTreeStore::isWildcard(const rapidjson::Value& nameNode) const {
     return std::string_view{nameNode["name"].GetString()} == kWildcard;
 }
 
-void NameTreeStore::walkChain(
+std::vector<StrId> NameTreeStore::walkChain(
     const rapidjson::Value& params,
     BranchingMap*           level,
-    uint32_t                event) {
+    uint32_t                event,
+    VisitMode               mode) {
+    std::vector<StrId> out;
+    walkChainInto(params, level, event, mode, out);
+    return out;
+}
+
+void NameTreeStore::walkChainInto(
+    const rapidjson::Value& params,
+    BranchingMap*           level,
+    uint32_t                event,
+    VisitMode               mode,
+    std::vector<StrId>&     out) {
     for (const auto& seg : params.GetArray()) {
         const StrId name = interner_.intern(seg["name"]["name"].GetString());
-        NameTree*   node = childInsert(level, name);
-        sets_.add(node->set, event);
-        walkParams(seg["params"], node, event);
-        level = &node->named;
+        out.push_back(name);
+
+        const auto& segParams = seg["params"];
+        const bool  hasParams = !segParams.GetArray().Empty();
+
+        if (mode == VisitMode::Insert) {
+            NameTree* node = nestedInsert(level, name);
+            sets_.add(node->set, event);
+            walkParams(segParams, node, event, mode, out);
+            level = &node->named;
+            continue;
+        }
+
+        if (mode == VisitMode::SequenceOnly) {
+            walkParams(segParams, nullptr, event, mode, out);
+            continue;
+        }
+
+        // PrefixSequenceOnly:
+        // - no recursion into params
+        // - if current segment has params, ignore all following chain segments
+        if (hasParams) { return; }
     }
 }
+
 
 void NameTreeStore::walkParams(
     const rapidjson::Value& params,
     NameTree*               parent,
-    uint32_t                event) {
+    uint32_t                event,
+    VisitMode               mode,
+    std::vector<StrId>&     out) {
+    if (mode == VisitMode::PrefixSequenceOnly) { return; }
+
     const auto args = params.GetArray();
-    while (parent->indexed.size() < args.Size()) { parent->indexed.emplace_back(); }
+
+    if (mode == VisitMode::Insert) {
+        while (parent->indexed.size() < args.Size()) { parent->indexed.emplace_back(); }
+    }
 
     for (rapidjson::SizeType k = 0; k < args.Size(); ++k) {
         const auto& arg = args[k];
+
         if (std::string_view{arg["name"]["name"].GetString()} == "<qualified>") {
-            // Arg is itself a qualified chain a::b::...; thread it
-            // directly into this positional branching level.
-            walkChain(arg["params"], &parent->indexed[k], event);
-        } else {
-            const StrId name = interner_.intern(arg["name"]["name"].GetString());
-            NameTree*   node = childInsert(&parent->indexed[k], name);
+            BranchingMap* indexedLevel = nullptr;
+            if (mode == VisitMode::Insert) { indexedLevel = &parent->indexed[k]; }
+            walkChainInto(arg["params"], indexedLevel, event, mode, out);
+            continue;
+        }
+
+        const StrId name = interner_.intern(arg["name"]["name"].GetString());
+        out.push_back(name);
+
+        if (mode == VisitMode::Insert) {
+            NameTree* node = nestedInsert(&parent->indexed[k], name);
             sets_.add(node->set, event);
-            walkParams(arg["params"], node, event);
+            walkParams(arg["params"], node, event, mode, out);
+        } else {
+            walkParams(arg["params"], nullptr, event, mode, out);
         }
     }
 }
