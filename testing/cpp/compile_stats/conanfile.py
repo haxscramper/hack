@@ -1,5 +1,5 @@
-from conan import ConanFile
-from conan.tools.cmake import cmake_layout
+from conan import ConanFile  # type: ignore
+from conan.tools.cmake import cmake_layout  # type: ignore
 
 
 class ExampleRecipe(ConanFile):

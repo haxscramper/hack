@@ -5,15 +5,23 @@
 #include <unordered_map>
 #include <stdexcept>
 
+#include <boost/serialization/strong_typedef.hpp>
+#include "strong_id.hpp"
+
+using SetId = StrongId<struct SetIdTag>;
+
+
 class SubsetCollection {
   public:
-    using SetId = uint32_t;
-
     // Shared handle to a roaring bitmap with the proper deleter.
     using BitmapPtr = std::shared_ptr<roaring_bitmap_t>;
 
     static BitmapPtr makeBitmap() {
         return BitmapPtr(roaring_bitmap_create(), roaring_bitmap_free);
+    }
+
+    static inline std::size_t toIndex(SetId id) noexcept {
+        return static_cast<std::size_t>(id.raw());
     }
 
     // Non-owning-copy view over a bitmap: holds only the shared_ptr.
@@ -70,7 +78,7 @@ class SubsetCollection {
 
     void add(SetId id, uint32_t value) {
         roaring_bitmap_add(at(id).get(), value);
-        roaring_bitmap_add(invertedFor(value).get(), id); // maintain
+        roaring_bitmap_add(invertedFor(value).get(), id.raw()); // maintain
                                                           // inverted index
     }
 
@@ -78,7 +86,7 @@ class SubsetCollection {
         roaring_bitmap_t* bm = at(id).get();
         roaring_bitmap_add_many(bm, n, values);
         for (size_t i = 0; i < n; ++i) {
-            roaring_bitmap_add(invertedFor(values[i]).get(), id);
+            roaring_bitmap_add(invertedFor(values[i]).get(), id.raw());
         }
     }
 
@@ -121,7 +129,7 @@ class SubsetCollection {
     }
 
     BitmapView values(SetId id) const {
-        return BitmapView(sets_.at(id)); // shares the stored bitmap, no
+        return BitmapView(sets_.at(id.raw())); // shares the stored bitmap, no
                                          // copy
     }
 
@@ -163,10 +171,10 @@ class SubsetCollection {
 
   private:
     const BitmapPtr& at(SetId id) const {
-        if (id >= sets_.size() || !sets_[id]) {
+        if (toIndex(id) >= sets_.size() || !sets_[id.raw()]) {
             throw std::out_of_range("invalid SetId");
         }
-        return sets_[id];
+        return sets_[toIndex(id)];
     }
 
     // Get (creating if needed) the inverted posting list for a value.

@@ -24,5 +24,6 @@ TEST(StringInterner, GetThrowsForInvalidId) {
     StringInterner interner;
     interner.intern("only");
 
-    EXPECT_THROW(static_cast<void>(interner.get(9999)), std::out_of_range);
+    EXPECT_THROW(
+        static_cast<void>(interner.get(StrId{9999})), std::out_of_range);
 }

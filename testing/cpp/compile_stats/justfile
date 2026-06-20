@@ -16,3 +16,6 @@ test: build
 
 bench: build
     ./build/trace_event_bench
+
+debug_test: build
+    lldb ./build/trace_event_test        

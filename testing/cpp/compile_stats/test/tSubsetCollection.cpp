@@ -18,7 +18,7 @@ std::vector<uint32_t> sortedVector(
 TEST(SubsetCollection, CreateAndAdd) {
     SubsetCollection c;
     auto             id = c.createSet();
-    EXPECT_EQ(id, 0u);
+    EXPECT_EQ(id, SetId{0u});
     c.add(id, 5);
     c.add(id, 10);
     c.add(id, 5); // duplicate is a no-op
@@ -32,8 +32,8 @@ TEST(SubsetCollection, MultipleSetIds) {
     SubsetCollection c;
     auto             a = c.createSet();
     auto             b = c.createSet();
-    EXPECT_EQ(a, 0u);
-    EXPECT_EQ(b, 1u);
+    EXPECT_EQ(a, SetId{0u});
+    EXPECT_EQ(b, SetId{1u});
     EXPECT_EQ(c.setCount(), 2u);
 }
 
@@ -85,12 +85,12 @@ TEST(SubsetCollection, SetsContainingAll) {
 
     // Sets containing both 2 and 3 -> s0, s1
     auto                  r = sortedVector(c.setsContainingAll({2u, 3u}));
-    std::vector<uint32_t> expected = {s0, s1};
+    std::vector<uint32_t> expected = {s0.raw(), s1.raw()};
     EXPECT_EQ(r, expected);
 
     // Sets containing 3 -> all
     auto                  r3  = sortedVector(c.setsContainingAll({3u}));
-    std::vector<uint32_t> all = {s0, s1, s2};
+    std::vector<uint32_t> all = {s0.raw(), s1.raw(), s2.raw()};
     EXPECT_EQ(r3, all);
 
     // Value present nowhere
@@ -111,7 +111,7 @@ TEST(SubsetCollection, SetsContainingAny) {
 
     // Any of {1, 5} -> s0, s2
     auto                  r = sortedVector(c.setsContainingAny({1u, 5u}));
-    std::vector<uint32_t> expected = {s0, s2};
+    std::vector<uint32_t> expected = {s0.raw(), s2.raw()};
     EXPECT_EQ(r, expected);
 
     auto rNone = c.setsContainingAny({999u});
@@ -145,8 +145,8 @@ TEST(SubsetCollection, OptimizePreservesContents) {
 
 TEST(SubsetCollection, InvalidSetIdThrows) {
     SubsetCollection c;
-    EXPECT_THROW(c.cardinality(0), std::out_of_range);
+    EXPECT_THROW(c.cardinality(SetId{0}), std::out_of_range);
     auto id = c.createSet();
     EXPECT_NO_THROW(c.cardinality(id));
-    EXPECT_THROW(c.cardinality(id + 1), std::out_of_range);
+    EXPECT_THROW(c.cardinality(SetId{id.raw() + 1}), std::out_of_range);
 }

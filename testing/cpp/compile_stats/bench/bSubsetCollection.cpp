@@ -62,7 +62,7 @@ static void BM_FewLargeSets_Intersection(benchmark::State& state) {
     SubsetCollection c = buildCollection(numSets, setSize, poolSize, 1234);
     c.optimizeAll();
     for (auto _ : state) {
-        uint64_t card = c.intersectionCardinality(0, 1);
+        uint64_t card = c.intersectionCardinality(SetId{0}, SetId{1});
         benchmark::DoNotOptimize(card);
     }
 }
@@ -100,7 +100,7 @@ static void BM_ManySets_SetsContainingAll(benchmark::State& state) {
     c.optimizeAll();
 
     // Pick values guaranteed to exist.
-    const auto            base  = c.values(0).toVector();
+    const auto            base  = c.values(SetId{0}).toVector();
     std::vector<uint32_t> query = {base[0], base[1]};
 
     for (auto _ : state) {
@@ -122,7 +122,7 @@ static void BM_ManySets_InvertedQueryAny(benchmark::State& state) {
     c.optimizeAll();
 
     // Pick values guaranteed to exist.
-    const auto            base = c.values(0).toVector();
+    const auto            base = c.values(SetId{0}).toVector();
     std::vector<uint32_t> query;
     query.reserve(8);
     for (int i = 0; i < 8; ++i) {
