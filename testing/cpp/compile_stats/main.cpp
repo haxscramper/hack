@@ -4,8 +4,8 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
-#include <fstream>
-#include <iostream>
+#include <filesystem>
+#include <iterator>
 #include <map>
 #include <memory>
 #include <optional>
@@ -14,30 +14,36 @@
 #include <utility>
 #include <vector>
 
+#include <CLI/CLI.hpp>
+
 #include <cppdecl/declarations/parse_simple.h>
+#include <ranges>
+#include <rapidjson/document.h>
 #include <rapidjson/error/en.h>
 #include <rapidjson/filereadstream.h>
 #include <rapidjson/reader.h>
+#include <rapidjson/stringbuffer.h>
+#include <rapidjson/writer.h>
 
 #include <quill/Backend.h>
 #include <quill/Frontend.h>
 #include <quill/LogMacros.h>
 #include <quill/Logger.h>
 #include <quill/sinks/ConsoleSink.h>
+#include <quill/sinks/FileSink.h>
 #include <quill/std/Array.h>
-#include <rapidjson/document.h>
-#include <rapidjson/stringbuffer.h>
-#include <rapidjson/writer.h>
 
 #include <cpptrace/cpptrace.hpp>
-
 #include <duckdb.hpp>
-#include <filesystem>
 
 #include "to_json.hpp"
 #include "to_json_normalized.hpp"
 #include <name_tree.hpp>
 #include <string_interner.hpp>
+
+#include <perfetto_aux.hpp>
+#include <perfetto_aux_impl_template.hpp>
+
 
 struct TraceEvent {
     std::int64_t               pid{};
@@ -225,22 +231,27 @@ struct EventInfo {
 
 class EventDatabaseWriter {
   public:
-    explicit EventDatabaseWriter(std::string path)
-        : dbPath(std::move(path)), db(openDatabase(dbPath)), con(db) {
+    explicit EventDatabaseWriter(std::string path, quill::Logger* logger)
+        : logger{logger}, dbPath(std::move(path)), db(openDatabase(dbPath)), con(db) {
         initializeSchemaAndStatements();
     }
 
     void writeEvents(std::vector<TraceEvent> const& traceEvents) {
+        TRACE_EVENT("main", "write all events");
         infos.clear();
         infos.reserve(traceEvents.size());
         nextEventId = 0;
 
-        for (auto const& ev : traceEvents) { insertEvent(ev); }
+        for (auto const& [idx, ev] : std::views::enumerate(traceEvents)) {
+            if (idx % (traceEvents.size() / 100) == 0) {
+                LOG_TRACE_L1(logger, "Event IDX [{}/{}]", idx, traceEvents.size());
+            }
+            insertEvent(ev);
+        }
 
         fillEventNesting();
         flushStringIds();
     }
-
 
   private:
     static duckdb::Value makePrefixValue(const std::vector<StrId>& ids) {
@@ -263,7 +274,7 @@ class EventDatabaseWriter {
         }
     }
 
-
+    quill::Logger*     logger;
     std::string        dbPath;
     duckdb::DuckDB     db;
     duckdb::Connection con;
@@ -274,7 +285,6 @@ class EventDatabaseWriter {
     std::unique_ptr<duckdb::PreparedStatement> insertStringIdStmt;
 
     NameTreeStore nameTree;
-
 
     std::vector<EventInfo> infos;
     int64_t                nextEventId = 0;
@@ -376,7 +386,8 @@ INSERT INTO event_parent (event_id, parent_id) VALUES (?, ?);
         std::optional<std::string> normalJson;
         std::vector<StrId>         groupingPrefix;
 
-        if (ev.name == "InstantiateFunction" && ev.detail.has_value()) {
+        if ((ev.name == "InstantiateFunction" || ev.name == "InstantiateClass")
+            && ev.detail.has_value()) {
             cppdecl::ParseQualifiedNameFlags flags            = {};
             std::string_view                 input            = ev.detail.value();
             std::string_view                 inputBeforeParse = input;
@@ -458,7 +469,6 @@ INSERT INTO event_parent (event_id, parent_id) VALUES (?, ?);
         infos.push_back({&ev, eventId, static_cast<int64_t>(ev.ts), false});
     }
 
-
     void fillEventNesting() {
         std::map<std::pair<int64_t, int64_t>, std::vector<EventInfo*>> byThread;
 
@@ -537,22 +547,47 @@ INSERT INTO event_parent (event_id, parent_id) VALUES (?, ?);
     }
 };
 
-int main(int argc, char** argv) {
-    quill::BackendOptions backendOptions;
-    quill::Backend::start(backendOptions);
+static bool hasTraceEventsArray(std::filesystem::path const& filePath) {
+    std::FILE* file = std::fopen(filePath.string().c_str(), "rb");
+    if (file == nullptr) { return false; }
 
-    auto consoleSink = quill::Frontend::create_or_get_sink<quill::ConsoleSink>(
-        "sink_id_1");
-    quill::Logger* logger = quill::Frontend::create_or_get_logger(
-        "root", std::move(consoleSink));
-    logger->set_log_level(quill::LogLevel::TraceL3);
+    char                      readBuffer[1 << 16];
+    rapidjson::FileReadStream stream(file, readBuffer, sizeof(readBuffer));
 
-    const char* inputPath = (argc > 1) ? argv[1] : "input.json";
+    rapidjson::Document doc;
+    doc.ParseStream(stream);
+    std::fclose(file);
 
-    std::FILE* file = std::fopen(inputPath, "rb");
+    if (doc.HasParseError() || !doc.IsObject()) { return false; }
+
+    auto it = doc.FindMember("traceEvents");
+    return it != doc.MemberEnd() && it->value.IsArray();
+}
+
+static std::vector<std::filesystem::path> collectTraceJsonFiles(
+    std::filesystem::path const& inputDir) {
+    std::vector<std::filesystem::path> files;
+
+    std::filesystem::recursive_directory_iterator it(
+        inputDir, std::filesystem::directory_options::skip_permission_denied);
+    std::filesystem::recursive_directory_iterator end;
+
+    for (; it != end; ++it) {
+        if (!it->is_regular_file()) { continue; }
+        if (it->path().extension() != ".json") { continue; }
+        if (!hasTraceEventsArray(it->path())) { continue; }
+        files.push_back(it->path());
+    }
+
+    std::sort(files.begin(), files.end());
+    return files;
+}
+
+static std::vector<TraceEvent> parseTraceEventsFile(
+    std::filesystem::path const& filePath) {
+    std::FILE* file = std::fopen(filePath.string().c_str(), "rb");
     if (file == nullptr) {
-        LOG_ERROR(logger, "Failed to open file '{}'", inputPath);
-        return EXIT_FAILURE;
+        throw cpptrace::runtime_error("Failed to open file: " + filePath.string());
     }
 
     char                      readBuffer[1 << 16];
@@ -565,19 +600,86 @@ int main(int argc, char** argv) {
     std::fclose(file);
 
     if (!ok) {
-        LOG_ERROR(
-            logger,
-            "JSON parse error: '{}' at offset {}",
-            rapidjson::GetParseError_En(reader.GetParseErrorCode()),
-            reader.GetErrorOffset());
+        throw cpptrace::runtime_error(
+            "JSON parse error in '" + filePath.string()
+            + "': " + rapidjson::GetParseError_En(reader.GetParseErrorCode())
+            + " at offset " + std::to_string(reader.GetErrorOffset()));
+    }
+
+    return std::move(handler.events);
+}
+
+int main(int argc, char** argv) {
+    TRACE_EVENT("main", "main");
+    CLI::App app{"trace-events to duckdb"};
+
+    std::unique_ptr<perfetto::TracingSession> tracing_session = StartProcessTracing(
+        "Perfetto track example");
+
+    std::string        inputDir;
+    std::string        outputDbPath   = "/tmp/result.duckdb";
+    std::string        logFilePath    = "/tmp/trace_events.log";
+    std::optional<int> max_trace_file = std::nullopt;
+
+    app.add_option("--input-dir", inputDir, "Input directory with trace JSON files")
+        ->required()
+        ->check(CLI::ExistingDirectory);
+
+    app.add_option("--output-db", outputDbPath, "Output DuckDB file path");
+    app.add_option(
+        "--max-trace-file", max_trace_file, "Max number of trace files for processing");
+
+    CLI11_PARSE(app, argc, argv);
+
+    quill::BackendOptions backendOptions;
+    quill::Backend::start(backendOptions);
+
+    auto consoleSink = quill::Frontend::create_or_get_sink<quill::ConsoleSink>(
+        "sink_id_1");
+    quill::Logger* logger = quill::Frontend::create_or_get_logger(
+        "root", std::move(consoleSink));
+    logger->set_log_level(quill::LogLevel::TraceL3);
+
+    auto const traceFiles = collectTraceJsonFiles(inputDir);
+
+    if (traceFiles.empty()) {
+        LOG_ERROR(logger, "No matching trace JSON files found in '{}'", inputDir);
         return EXIT_FAILURE;
     }
 
-    std::vector<TraceEvent> traceEvents = std::move(handler.events);
-    LOG_INFO(logger, "Parsed trace events: {}", traceEvents.size());
+    std::vector<TraceEvent> allEvents;
+    for (auto const& [idx, filePath] : std::views::enumerate(traceFiles)) {
+        TRACE_EVENT("main", "path read loop");
+        if (max_trace_file && max_trace_file.value() < idx) {
+            LOG_INFO(logger, "Max number of trace files read, moving on to processing");
+            break;
+        }
 
-    EventDatabaseWriter writer("/tmp/result.duckdb");
-    writer.writeEvents(traceEvents);
+        auto fileEvents = parseTraceEventsFile(filePath);
+        LOG_INFO(
+            logger,
+            "Parsed file '{}' with {} trace events",
+            filePath.string(),
+            fileEvents.size());
+
+        allEvents.insert(
+            allEvents.end(),
+            std::make_move_iterator(fileEvents.begin()),
+            std::make_move_iterator(fileEvents.end()));
+    }
+
+    LOG_INFO(
+        logger,
+        "Total files: {}, total trace events: {}",
+        traceFiles.size(),
+        allEvents.size());
+
+    EventDatabaseWriter writer(outputDbPath, logger);
+    writer.writeEvents(allEvents);
+
+    LOG_INFO(logger, "Wrote output database '{}'", outputDbPath);
+    StopTracing(std::move(tracing_session), "/tmp/t_common_main_perfetto_trace.pftrace");
+
 
     return EXIT_SUCCESS;
 }

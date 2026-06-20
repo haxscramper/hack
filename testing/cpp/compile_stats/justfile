@@ -9,7 +9,10 @@ build: configure
     cmake --build build --config RelWithDebInfo 
 
 run: build 
-    ./build/trace_event_cli
+    ./build/trace_event_cli \
+        --input-dir ~/defaultdirs/workspace/haxorg/build/haxorg_debug_instrumented \
+        --output-db /tmp/haxorg-db.duckdb \
+        --max-trace-file 5
 
 test: build
     ./build/trace_event_test        

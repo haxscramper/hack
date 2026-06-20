@@ -18,6 +18,8 @@ find_package(duckdb REQUIRED)
 find_package(roaring REQUIRED)
 find_package(GTest REQUIRED)
 find_package(benchmark REQUIRED)
+find_package(CLI11 REQUIRED)
+find_package(perfetto)
 
 add_library(
   trace_events_lib
@@ -48,9 +50,10 @@ target_link_libraries(
          cpptrace::cpptrace
          quill::quill
          duckdb::duckdb
-         roaring::roaring)
+         roaring::roaring
+         perfetto::perfetto)
 
-target_link_libraries(trace_event_cli PUBLIC trace_events_lib)
+target_link_libraries(trace_event_cli PUBLIC trace_events_lib CLI11::CLI11)
 
 target_link_libraries(trace_event_bench PUBLIC trace_events_lib
                                                benchmark::benchmark_main)
