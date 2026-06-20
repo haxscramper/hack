@@ -1,160 +1,388 @@
+// set_collection.cpp
 #include "set_collection.hpp"
 
 #include <stdexcept>
 #include <utility>
 
-SubsetCollection::BitmapPtr SubsetCollection::makeBitmap() {
-    return BitmapPtr(roaring_bitmap_create(), roaring_bitmap_free);
+SubsetCollection::View::View(std::shared_ptr<const std::vector<uint32_t>> data)
+    : data_(std::move(data)) {}
+
+uint64_t SubsetCollection::View::cardinality() const { return data_ ? data_->size() : 0; }
+
+bool SubsetCollection::View::contains(uint32_t value) const {
+    if (!data_) { return false; }
+    return std::binary_search(data_->begin(), data_->end(), value);
 }
 
-std::size_t SubsetCollection::toIndex(SetId id) noexcept {
-    return static_cast<std::size_t>(id.raw());
+std::vector<uint32_t> SubsetCollection::View::toVector() const {
+    if (!data_) { return {}; }
+    return *data_;
 }
 
-SubsetCollection::BitmapView::BitmapView(BitmapPtr bm)
-    : bm_(std::move(bm)) {}
-
-uint64_t SubsetCollection::BitmapView::cardinality() const {
-    return roaring_bitmap_get_cardinality(bm_.get());
+SubsetCollection::SubsetCollection()
+    : mgr_(Cudd_Init(0, 0, CUDD_UNIQUE_SLOTS, CUDD_CACHE_SLOTS, 0)) {
+    if (!mgr_) { throw std::runtime_error("Cudd_Init failed"); }
+    // Keep reordering off here. It was triggering GC consistency checks
+    // while we are still validating ref discipline.
+    Cudd_AutodynDisableZdd(mgr_.get());
 }
 
-bool SubsetCollection::BitmapView::contains(uint32_t value) const {
-    return roaring_bitmap_contains(bm_.get(), value);
-}
 
-std::vector<uint32_t> SubsetCollection::BitmapView::toVector() const {
-    std::vector<uint32_t> out;
-    out.resize(roaring_bitmap_get_cardinality(bm_.get()));
-    roaring_bitmap_to_uint32_array(bm_.get(), out.data());
-    return out;
-}
-
-const roaring_bitmap_t* SubsetCollection::BitmapView::raw() const {
-    return bm_.get();
-}
+SubsetCollection::~SubsetCollection() { clearCanonical(); }
 
 SetId SubsetCollection::createSet() {
-    sets.push_back(makeBitmap());
-    return static_cast<SetId>(sets.size() - 1);
+    staged_sets_.push_back({});
+    staged_dirty_set_.push_back(1);
+    postings_dirty_ = true;
+    return static_cast<SetId>(staged_sets_.size() - 1);
+}
+
+void SubsetCollection::requireValid(SetId id) const {
+    if (toIndex(id) >= staged_sets_.size()) { throw std::out_of_range("invalid SetId"); }
+}
+
+void SubsetCollection::insertSortedUnique(std::vector<uint32_t>& vec, uint32_t v) {
+    auto it = std::lower_bound(vec.begin(), vec.end(), v);
+    if (it == vec.end() || *it != v) { vec.insert(it, v); }
+}
+
+void SubsetCollection::ensureMutable(SetId id) {
+    requireValid(id);
+    const std::size_t idx = toIndex(id);
+    if (staged_dirty_set_[idx]) { return; }
+
+    staged_sets_[idx]      = *canon_values_.at(set_to_canon_.at(idx).raw());
+    staged_dirty_set_[idx] = 1;
+}
+
+const std::vector<uint32_t>& SubsetCollection::currentValues(std::size_t setIdx) const {
+    if (staged_dirty_set_[setIdx]) { return staged_sets_[setIdx]; }
+    return *canon_values_.at(set_to_canon_.at(setIdx).raw());
 }
 
 void SubsetCollection::add(SetId id, uint32_t value) {
-    roaring_bitmap_add(at(id).get(), value);
-    roaring_bitmap_add(invertedFor(value).get(), id.raw());
+    ensureMutable(id);
+    insertSortedUnique(staged_sets_[toIndex(id)], value);
+    postings_dirty_ = true;
 }
 
-void SubsetCollection::addMany(
-    SetId           id,
-    std::size_t     n,
-    const uint32_t* values) {
-    roaring_bitmap_t* bm = at(id).get();
-    roaring_bitmap_add_many(bm, n, values);
+void SubsetCollection::addMany(SetId id, std::size_t n, const uint32_t* values) {
+    ensureMutable(id);
+    auto& dst = staged_sets_[toIndex(id)];
+    for (std::size_t i = 0; i < n; ++i) { insertSortedUnique(dst, values[i]); }
+    postings_dirty_ = true;
+}
 
-    for (std::size_t i = 0; i < n; ++i) {
-        roaring_bitmap_add(invertedFor(values[i]).get(), id.raw());
+void SubsetCollection::ensureZddVar(uint32_t idx) {
+    while (static_cast<uint32_t>(Cudd_ReadZddSize(mgr_.get())) <= idx) {
+        const int varIndex = Cudd_ReadZddSize(mgr_.get());
+        DdNode*   var      = Cudd_zddIthVar(mgr_.get(), varIndex);
+        if (!var) { throw std::runtime_error("Cudd_zddIthVar failed"); }
     }
 }
 
-void SubsetCollection::optimize(SetId id) {
-    roaring_bitmap_t* bm = at(id).get();
-    roaring_bitmap_run_optimize(bm);
-    roaring_bitmap_shrink_to_fit(bm);
-}
 
-void SubsetCollection::optimizeAll() {
-    for (auto& bm : sets) {
-        roaring_bitmap_run_optimize(bm.get());
-        roaring_bitmap_shrink_to_fit(bm.get());
+DdNode* SubsetCollection::buildSingletonSetZdd(
+    const std::vector<uint32_t>& sortedUniqueValues) {
+    if (!sortedUniqueValues.empty()) { ensureZddVar(sortedUniqueValues.back()); }
+
+    DdNode* node = Cudd_ReadZddOne(mgr_.get(), 0);
+    Cudd_Ref(node);
+
+    for (uint32_t v : sortedUniqueValues) {
+        DdNode* next = Cudd_zddChange(mgr_.get(), node, static_cast<int>(v));
+        if (!next) {
+            Cudd_RecursiveDerefZdd(mgr_.get(), node);
+            throw std::runtime_error("Cudd_zddChange failed");
+        }
+        Cudd_Ref(next);
+        Cudd_RecursiveDerefZdd(mgr_.get(), node);
+        node = next;
     }
 
-    for (auto& kv : inverted) {
-        roaring_bitmap_run_optimize(kv.second.get());
-        roaring_bitmap_shrink_to_fit(kv.second.get());
-    }
+    return node; // referenced
 }
+
+
+void SubsetCollection::clearCanonical() {
+    for (DdNode* n : canon_nodes_) { Cudd_RecursiveDerefZdd(mgr_.get(), n); }
+    canon_nodes_.clear();
+    canon_values_.clear();
+    set_to_canon_.clear();
+    canon_to_sets_.clear();
+    value_to_canon_.clear();
+}
+
+void SubsetCollection::rebuildCanonical() {
+    clearCanonical();
+
+    set_to_canon_.resize(staged_sets_.size());
+    std::unordered_map<DdNode*, uint32_t> node_to_canon;
+
+    for (std::size_t setIdx = 0; setIdx < staged_sets_.size(); ++setIdx) {
+        std::vector<uint32_t> vals = currentValues(setIdx);
+        std::sort(vals.begin(), vals.end());
+        vals.erase(std::unique(vals.begin(), vals.end()), vals.end());
+
+        DdNode* node = buildSingletonSetZdd(vals); // returns Cudd_Ref'ed
+
+        auto [it, inserted] = node_to_canon.emplace(
+            node, static_cast<uint32_t>(canon_nodes_.size()));
+
+        uint32_t cid = 0;
+        if (inserted) {
+            cid = static_cast<uint32_t>(canon_nodes_.size());
+            canon_nodes_.push_back(node); // keep this ref until clearCanonical()
+            canon_values_.push_back(
+                std::make_shared<const std::vector<uint32_t>>(std::move(vals)));
+            canon_to_sets_.push_back({});
+        } else {
+            cid = it->second;
+            Cudd_RecursiveDerefZdd(mgr_.get(), node); // drop duplicate ref
+        }
+
+        set_to_canon_[setIdx] = static_cast<CanonId>(cid);
+        canon_to_sets_[cid].push_back(static_cast<uint32_t>(setIdx));
+    }
+
+    uint32_t maxV   = 0;
+    bool     hasAny = false;
+    for (const auto& vals : canon_values_) {
+        if (!vals->empty()) {
+            hasAny = true;
+            maxV   = std::max(maxV, vals->back());
+        }
+    }
+
+    value_to_canon_.clear();
+    if (hasAny) {
+        value_to_canon_.resize(static_cast<std::size_t>(maxV) + 1);
+        for (uint32_t cid = 0; cid < canon_values_.size(); ++cid) {
+            for (uint32_t v : *canon_values_[cid]) { value_to_canon_[v].push_back(cid); }
+        }
+        for (auto& posting : value_to_canon_) {
+            std::sort(posting.begin(), posting.end());
+            posting.erase(std::unique(posting.begin(), posting.end()), posting.end());
+        }
+    }
+
+    for (std::size_t i = 0; i < staged_sets_.size(); ++i) {
+        staged_sets_[i].clear();
+        staged_sets_[i].shrink_to_fit();
+        staged_dirty_set_[i] = 0;
+    }
+
+    postings_dirty_ = false;
+
+    // Intentionally no Cudd_zddReduceHeap here.
+}
+
+
+void SubsetCollection::optimize(SetId) { rebuildCanonical(); }
+
+void SubsetCollection::optimizeAll() { rebuildCanonical(); }
 
 uint64_t SubsetCollection::cardinality(SetId id) const {
-    return roaring_bitmap_get_cardinality(at(id).get());
+    requireValid(id);
+    return currentValues(toIndex(id)).size();
 }
 
 bool SubsetCollection::contains(SetId id, uint32_t value) const {
-    return roaring_bitmap_contains(at(id).get(), value);
+    requireValid(id);
+    const auto& vals = currentValues(toIndex(id));
+    return std::binary_search(vals.begin(), vals.end(), value);
 }
 
-uint64_t SubsetCollection::intersectionCardinality(SetId a, SetId b)
-    const {
-    return roaring_bitmap_and_cardinality(at(a).get(), at(b).get());
+uint64_t SubsetCollection::intersectionCardinality(SetId a, SetId b) const {
+    requireValid(a);
+    requireValid(b);
+
+    const auto& va = currentValues(toIndex(a));
+    const auto& vb = currentValues(toIndex(b));
+
+    std::size_t i = 0;
+    std::size_t j = 0;
+    uint64_t    c = 0;
+
+    while (i < va.size() && j < vb.size()) {
+        if (va[i] == vb[j]) {
+            ++c;
+            ++i;
+            ++j;
+        } else if (va[i] < vb[j]) {
+            ++i;
+        } else {
+            ++j;
+        }
+    }
+
+    return c;
 }
 
-SubsetCollection::BitmapView SubsetCollection::intersection(
-    SetId a,
-    SetId b) const {
-    BitmapPtr r(
-        roaring_bitmap_and(at(a).get(), at(b).get()), roaring_bitmap_free);
-    return BitmapView(std::move(r));
+SubsetCollection::View SubsetCollection::intersection(SetId a, SetId b) const {
+    requireValid(a);
+    requireValid(b);
+
+    const auto& va = currentValues(toIndex(a));
+    const auto& vb = currentValues(toIndex(b));
+
+    auto out = std::make_shared<std::vector<uint32_t>>();
+    out->reserve(std::min(va.size(), vb.size()));
+
+    std::set_intersection(
+        va.begin(), va.end(), vb.begin(), vb.end(), std::back_inserter(*out));
+
+    return View(std::move(out));
 }
 
-SubsetCollection::BitmapView SubsetCollection::values(SetId id) const {
-    return BitmapView(sets.at(id.raw()));
+SubsetCollection::View SubsetCollection::intersection(
+    const std::vector<SetId>& ids) const {
+    if (ids.empty()) { return View(std::make_shared<const std::vector<uint32_t>>()); }
+
+    if (ids.size() == 1) { return values(ids.front()); }
+
+    std::vector<const std::vector<uint32_t>*> inputs;
+    inputs.reserve(ids.size());
+
+    for (SetId id : ids) {
+        requireValid(id);
+        const auto& vals = currentValues(toIndex(id));
+        if (vals.empty()) {
+            return View(std::make_shared<const std::vector<uint32_t>>());
+        }
+        inputs.push_back(&vals);
+    }
+
+    std::sort(
+        inputs.begin(),
+        inputs.end(),
+        [](const std::vector<uint32_t>* a, const std::vector<uint32_t>* b) {
+            return a->size() < b->size();
+        });
+
+    std::vector<uint32_t> acc = *inputs.front();
+    std::vector<uint32_t> tmp;
+
+    for (std::size_t i = 1; i < inputs.size() && !acc.empty(); ++i) {
+        const auto& next = *inputs[i];
+        tmp.clear();
+        tmp.reserve(std::min(acc.size(), next.size()));
+
+        std::set_intersection(
+            acc.begin(), acc.end(), next.begin(), next.end(), std::back_inserter(tmp));
+
+        acc.swap(tmp);
+    }
+
+    return View(std::make_shared<const std::vector<uint32_t>>(std::move(acc)));
 }
 
-SubsetCollection::BitmapView SubsetCollection::setsContainingAll(
+
+SubsetCollection::View SubsetCollection::values(SetId id) const {
+    requireValid(id);
+    const auto& vals = currentValues(toIndex(id));
+    return View(std::make_shared<const std::vector<uint32_t>>(vals));
+}
+
+SubsetCollection::View SubsetCollection::setsContainingAll(
     const std::vector<uint32_t>& values) const {
-    if (values.empty()) { return BitmapView(makeBitmap()); }
+    if (values.empty()) { return View(std::make_shared<const std::vector<uint32_t>>()); }
 
-    const roaring_bitmap_t* first = findInverted(values[0]);
-    if (!first) { return BitmapView(makeBitmap()); }
+    auto out = std::make_shared<std::vector<uint32_t>>();
 
-    BitmapPtr acc(roaring_bitmap_copy(first), roaring_bitmap_free);
+    if (!postings_dirty_) {
+        std::vector<uint32_t> canon_acc;
+        bool                  initialized = false;
 
-    for (std::size_t i = 1; i < values.size(); ++i) {
-        const roaring_bitmap_t* posting = findInverted(values[i]);
-        if (!posting) { return BitmapView(makeBitmap()); }
+        for (uint32_t v : values) {
+            if (v >= value_to_canon_.size()) {
+                return View(std::make_shared<const std::vector<uint32_t>>());
+            }
 
-        roaring_bitmap_and_inplace(acc.get(), posting);
+            const auto& posting = value_to_canon_[v];
+            if (posting.empty()) {
+                return View(std::make_shared<const std::vector<uint32_t>>());
+            }
 
-        if (roaring_bitmap_is_empty(acc.get())) { break; }
+            if (!initialized) {
+                canon_acc   = posting;
+                initialized = true;
+            } else {
+                std::vector<uint32_t> next;
+                next.reserve(std::min(canon_acc.size(), posting.size()));
+                std::set_intersection(
+                    canon_acc.begin(),
+                    canon_acc.end(),
+                    posting.begin(),
+                    posting.end(),
+                    std::back_inserter(next));
+                canon_acc.swap(next);
+                if (canon_acc.empty()) {
+                    return View(std::make_shared<const std::vector<uint32_t>>());
+                }
+            }
+        }
+
+        for (uint32_t cid : canon_acc) {
+            const auto& setIds = canon_to_sets_[cid];
+            out->insert(out->end(), setIds.begin(), setIds.end());
+        }
+        std::sort(out->begin(), out->end());
+        return View(std::move(out));
     }
 
-    return BitmapView(std::move(acc));
+    // Slow path while staged changes exist (before optimize).
+    for (uint32_t sid = 0; sid < staged_sets_.size(); ++sid) {
+        const auto& vals = currentValues(sid);
+        bool        ok   = true;
+        for (uint32_t v : values) {
+            if (!std::binary_search(vals.begin(), vals.end(), v)) {
+                ok = false;
+                break;
+            }
+        }
+        if (ok) { out->push_back(sid); }
+    }
+
+    return View(std::move(out));
 }
 
-SubsetCollection::BitmapView SubsetCollection::setsContainingAny(
+SubsetCollection::View SubsetCollection::setsContainingAny(
     const std::vector<uint32_t>& values) const {
-    BitmapPtr acc = makeBitmap();
+    auto out = std::make_shared<std::vector<uint32_t>>();
 
-    for (uint32_t v : values) {
-        const roaring_bitmap_t* posting = findInverted(v);
-        if (posting) { roaring_bitmap_or_inplace(acc.get(), posting); }
+    if (!postings_dirty_) {
+        std::vector<uint8_t> canon_seen(canon_values_.size(), 0);
+
+        for (uint32_t v : values) {
+            if (v >= value_to_canon_.size()) { continue; }
+            for (uint32_t cid : value_to_canon_[v]) { canon_seen[cid] = 1; }
+        }
+
+        for (uint32_t cid = 0; cid < canon_seen.size(); ++cid) {
+            if (!canon_seen[cid]) { continue; }
+            const auto& setIds = canon_to_sets_[cid];
+            out->insert(out->end(), setIds.begin(), setIds.end());
+        }
+
+        std::sort(out->begin(), out->end());
+        return View(std::move(out));
     }
 
-    return BitmapView(std::move(acc));
-}
-
-std::size_t SubsetCollection::setCount() const { return sets.size(); }
-
-const SubsetCollection::BitmapPtr& SubsetCollection::at(SetId id) const {
-    if (toIndex(id) >= sets.size() || !sets[id.raw()]) {
-        throw std::out_of_range("invalid SetId");
+    // Slow path while staged changes exist (before optimize).
+    for (uint32_t sid = 0; sid < staged_sets_.size(); ++sid) {
+        const auto& vals = currentValues(sid);
+        bool        ok   = false;
+        for (uint32_t v : values) {
+            if (std::binary_search(vals.begin(), vals.end(), v)) {
+                ok = true;
+                break;
+            }
+        }
+        if (ok) { out->push_back(sid); }
     }
 
-    return sets[toIndex(id)];
+    return View(std::move(out));
 }
 
-SubsetCollection::BitmapPtr& SubsetCollection::invertedFor(
-    uint32_t value) {
-    auto it = inverted.find(value);
-    if (it == inverted.end()) {
-        it = inverted.emplace(value, makeBitmap()).first;
-    }
-
-    return it->second;
-}
-
-const roaring_bitmap_t* SubsetCollection::findInverted(
-    uint32_t value) const {
-    auto it = inverted.find(value);
-    if (it == inverted.end()) { return nullptr; }
-
-    return it->second.get();
-}
+std::size_t SubsetCollection::setCount() const { return staged_sets_.size(); }

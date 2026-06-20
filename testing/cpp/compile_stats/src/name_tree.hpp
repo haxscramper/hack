@@ -44,7 +44,7 @@ class NameTreeStore {
     /// \param doc Query document, same schema, "<query_wildcard>" names
     ///        denote unconstrained positions.
     /// \return Bitmap view of matching events.
-    SubsetCollection::BitmapView query(const rapidjson::Document& doc);
+    SubsetCollection::View query(const rapidjson::Document& doc);
 
     StringInterner&   interner();
     SubsetCollection& sets();
@@ -77,8 +77,8 @@ class NameTreeStore {
         NameTree*               parent,
         std::vector<SetId>&     out);
 
-    SetId                        emptySet();
-    SubsetCollection::BitmapView intersectAll(const std::vector<SetId>& constraints);
+    SetId                  emptySet();
+    SubsetCollection::View intersectAll(const std::vector<SetId>& constraints);
 
     std::pmr::monotonic_buffer_resource pool_{1u << 20};
     StringInterner                      interner_;

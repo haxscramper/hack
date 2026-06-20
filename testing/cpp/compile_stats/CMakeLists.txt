@@ -19,6 +19,8 @@ find_package(roaring REQUIRED)
 find_package(GTest REQUIRED)
 find_package(benchmark REQUIRED)
 
+add_subdirectory(cudd cudd)
+
 add_library(
   trace_events_lib
   src/to_json.hpp
@@ -48,7 +50,8 @@ target_link_libraries(
          cpptrace::cpptrace
          quill::quill
          duckdb::duckdb
-         roaring::roaring)
+         roaring::roaring
+         cudd)
 
 target_link_libraries(trace_event_cli PUBLIC trace_events_lib)
 
