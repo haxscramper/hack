@@ -53,38 +53,41 @@ def load_events(db_path: str) -> pd.DataFrame:
 
 
 def make_treemap(df: pd.DataFrame) -> go.Figure:
-    records: list[tuple[tuple[str, ...], float]] = []
+    records: list[tuple[tuple[str, ...], float, int]] = []
     for dur, prefix in zip(df["dur"], df["grouping_prefix"], strict=True):
         parts = tuple(prefix)
         for i in range(1, len(parts) + 1):
-            records.append((parts[:i], float(dur)))
+            records.append((parts[:i], float(dur), 1))
 
-    agg = (pd.DataFrame(records,
-                        columns=["path", "dur_us"
-                                 ]).groupby("path",
-                                            as_index=False)["dur_us"].sum())
+    agg = (pd.DataFrame(records, columns=["path", "dur_us", "count"]).groupby(
+        "path", as_index=False).agg(dur_us=("dur_us", "sum"),
+                                    count=("count", "sum")))
 
     agg["depth"] = agg["path"].map(len)
     agg = agg.sort_values(["depth", "path"], ascending=[True, True])
 
     root_id = "__root__"
     total_us = float(df["dur"].sum())
+    total_count = int(len(df))
 
     ids = [root_id]
     labels = ["all"]
     parents = [""]
     values_sec = [total_us / 1_000_000.0]
-    custom = [humanize_us(total_us)]
+    custom = [[humanize_us(total_us), total_count]]
 
-    for path, dur_us in zip(agg["path"], agg["dur_us"], strict=True):
+    for path, dur_us, count in zip(agg["path"],
+                                   agg["dur_us"],
+                                   agg["count"],
+                                   strict=True):
         node_id = "::".join(path)
-        parent_id = root_id if len(path) == 1 else " / ".join(path[:-1])
+        parent_id = root_id if len(path) == 1 else "::".join(path[:-1])
 
         ids.append(node_id)
         labels.append(path[-1])
         parents.append(parent_id)
         values_sec.append(float(dur_us) / 1_000_000.0)
-        custom.append(humanize_us(float(dur_us)))
+        custom.append([humanize_us(float(dur_us)), int(count)])
 
     fig = go.Figure(
         go.Treemap(
@@ -94,7 +97,10 @@ def make_treemap(df: pd.DataFrame) -> go.Figure:
             values=values_sec,
             branchvalues="total",
             customdata=custom,
-            hovertemplate="%{id}<br>duration=%{customdata}<extra></extra>",
+            hovertemplate=("%{id}<br>"
+                           "duration=%{customdata[0]}<br>"
+                           "values=%{customdata[1]}<extra></extra>"),
+            texttemplate="%{label}<br>%{customdata[0]}<br>n=%{customdata[1]}",
         ))
     fig.update_layout(
         title="Duration by grouping prefix",
@@ -107,21 +113,27 @@ def make_top100(df: pd.DataFrame) -> go.Figure:
     leaf = df.copy()
     leaf["path"] = leaf["grouping_prefix"].map(tuple)
 
-    top = (leaf.groupby("path", as_index=False)["dur"].sum().sort_values(
-        "dur", ascending=False).head(100).copy())
+    top = (leaf.groupby("path", as_index=False).agg(
+        dur=("dur", "sum"),
+        count=("dur", "size")).sort_values("dur",
+                                           ascending=False).head(100).copy())
 
     top["group"] = top["path"].map(lambda p: "::".join(p))
     top["dur_sec"] = top["dur"] / 1_000_000.0
     top["dur_human"] = top["dur"].map(humanize_us)
+    top["label"] = top.apply(
+        lambda r: f'{r["dur_human"]} (n={int(r["count"])})', axis=1)
 
     fig = go.Figure(
         go.Bar(
             x=top["dur_sec"],
             y=top["group"],
             orientation="h",
-            customdata=top["dur_human"],
-            hovertemplate="%{y}<br>duration=%{customdata}<extra></extra>",
-            text=top["dur_human"],
+            customdata=top[["dur_human", "count"]],
+            hovertemplate=("%{y}<br>"
+                           "duration=%{customdata[0]}<br>"
+                           "values=%{customdata[1]}<extra></extra>"),
+            text=top["label"],
             textposition="outside",
         ))
     fig.update_layout(

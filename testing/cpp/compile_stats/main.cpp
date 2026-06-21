@@ -233,7 +233,7 @@ class EventDatabaseWriter {
   public:
     explicit EventDatabaseWriter(std::string path, quill::Logger* logger)
         : logger{logger}, dbPath(std::move(path)), db(openDatabase(dbPath)), con(db) {
-        initializeSchemaAndStatements();
+        initializeSchema();
     }
 
     void writeEvents(std::vector<TraceEvent> const& traceEvents) {
@@ -242,15 +242,76 @@ class EventDatabaseWriter {
         infos.reserve(traceEvents.size());
         nextEventId = 0;
 
-        for (auto const& [idx, ev] : std::views::enumerate(traceEvents)) {
-            if (idx % (traceEvents.size() / 100) == 0) {
-                LOG_TRACE_L1(logger, "Event IDX [{}/{}]", idx, traceEvents.size());
-            }
-            insertEvent(ev);
+        auto tx_begin = con.Query("BEGIN TRANSACTION");
+        if (tx_begin->HasError()) {
+            throw cpptrace::runtime_error(
+                "duckdb begin transaction failed: " + tx_begin->GetError());
         }
 
-        fillEventNesting();
-        flushStringIds();
+        try {
+            duckdb::Appender  eventsAppender(con, "events");
+            const std::size_t total     = traceEvents.size();
+            const std::size_t logStep   = std::max<std::size_t>(1, total / 100);
+            const auto        startedAt = std::chrono::steady_clock::now();
+
+            for (std::size_t idx = 0; idx < total; ++idx) {
+                auto const& ev = traceEvents[idx];
+                insertEvent(ev, eventsAppender);
+
+                const std::size_t processed = idx + 1;
+                if (processed % logStep == 0 || processed == total) {
+                    const auto now = std::chrono::steady_clock::now();
+                    const std::chrono::duration<double> elapsed = now - startedAt;
+
+                    const double perEventSec  = elapsed.count()
+                                              / static_cast<double>(processed);
+                    const double remainingSec = perEventSec
+                                              * static_cast<double>(total - processed);
+
+                    const int    etaMinutes = static_cast<int>(remainingSec) / 60;
+                    const int    etaSeconds = static_cast<int>(remainingSec) % 60;
+                    const double percent    = (static_cast<double>(processed) * 100.0)
+                                            / static_cast<double>(total);
+
+                    auto width = std::to_string(total).size();
+
+                    LOG_TRACE_L1(
+                        logger,
+                        "{:.2f}%, ([{:>{}}/{}]) ETA: {:02d}m{:02d}s",
+                        percent,
+                        processed,
+                        width,
+                        total,
+                        etaMinutes,
+                        etaSeconds);
+                }
+            }
+
+            eventsAppender.Close();
+
+            duckdb::Appender nestedAppender(con, "event_nested");
+            duckdb::Appender parentAppender(con, "event_parent");
+            fillEventNesting(nestedAppender, parentAppender);
+            nestedAppender.Close();
+            parentAppender.Close();
+
+            duckdb::Appender stringIdsAppender(con, "string_ids");
+            flushStringIds(stringIdsAppender);
+            stringIdsAppender.Close();
+
+            auto tx_commit = con.Query("COMMIT");
+            if (tx_commit->HasError()) {
+                throw cpptrace::runtime_error(
+                    "duckdb commit transaction failed: " + tx_commit->GetError());
+            }
+        } catch (...) {
+            auto tx_rollback = con.Query("ROLLBACK");
+            if (tx_rollback->HasError()) {
+                throw cpptrace::runtime_error(
+                    "duckdb rollback failed: " + tx_rollback->GetError());
+            }
+            throw;
+        }
     }
 
   private:
@@ -261,40 +322,12 @@ class EventDatabaseWriter {
         return duckdb::Value::LIST(values);
     }
 
-    void flushStringIds() {
-        const auto n = nameTree.interner().size();
-        for (std::size_t i = 0; i < n; ++i) {
-            const StrId sid = static_cast<StrId>(static_cast<uint32_t>(i));
-            auto        r   = insertStringIdStmt->Execute(
-                static_cast<int64_t>(sid.raw()), nameTree.interner().get(sid));
-            if (r->HasError()) {
-                throw cpptrace::runtime_error(
-                    "duckdb insert string_ids failed: " + r->GetError());
-            }
-        }
-    }
-
-    quill::Logger*     logger;
-    std::string        dbPath;
-    duckdb::DuckDB     db;
-    duckdb::Connection con;
-
-    std::unique_ptr<duckdb::PreparedStatement> insertEventStmt;
-    std::unique_ptr<duckdb::PreparedStatement> insertNestedStmt;
-    std::unique_ptr<duckdb::PreparedStatement> insertParentStmt;
-    std::unique_ptr<duckdb::PreparedStatement> insertStringIdStmt;
-
-    NameTreeStore nameTree;
-
-    std::vector<EventInfo> infos;
-    int64_t                nextEventId = 0;
-
     static duckdb::DuckDB openDatabase(std::string const& path) {
         std::filesystem::remove(path);
         return duckdb::DuckDB(path);
     }
 
-    void initializeSchemaAndStatements() {
+    void initializeSchema() {
         auto createResult = con.Query(
             R"SQL(
 INSTALL json;
@@ -331,55 +364,28 @@ CREATE TABLE string_ids (
     str_id BIGINT PRIMARY KEY,
     value VARCHAR NOT NULL
 );
-
 )SQL");
 
         if (createResult->HasError()) {
             throw cpptrace::runtime_error(
                 "duckdb create table failed: " + createResult->GetError());
         }
+    }
 
-        insertStringIdStmt = con.Prepare(
-            R"SQL(
-INSERT INTO string_ids (str_id, value) VALUES (?, ?);
-)SQL");
-        if (insertStringIdStmt->HasError()) {
-            throw cpptrace::runtime_error(
-                "duckdb prepare string_ids failed: " + insertStringIdStmt->GetError());
-        }
+    void flushStringIds(duckdb::Appender& appender) {
+        const auto n = nameTree.interner().size();
+        for (std::size_t i = 0; i < n; ++i) {
+            const StrId sid = static_cast<StrId>(static_cast<uint32_t>(i));
 
-        insertEventStmt = con.Prepare(
-            R"SQL(
-INSERT INTO events (
-    event_id, pid, tid, ts, cat, ph, id, dur, name, detail, grouping_prefix, parsed_json, normal_json
-)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-)SQL");
-        if (insertEventStmt->HasError()) {
-            throw cpptrace::runtime_error(
-                "duckdb prepare events failed: " + insertEventStmt->GetError());
-        }
-
-        insertNestedStmt = con.Prepare(
-            R"SQL(
-INSERT INTO event_nested (parent_id, nested_id) VALUES (?, ?);
-)SQL");
-        if (insertNestedStmt->HasError()) {
-            throw cpptrace::runtime_error(
-                "duckdb prepare nested failed: " + insertNestedStmt->GetError());
-        }
-
-        insertParentStmt = con.Prepare(
-            R"SQL(
-INSERT INTO event_parent (event_id, parent_id) VALUES (?, ?);
-)SQL");
-        if (insertParentStmt->HasError()) {
-            throw cpptrace::runtime_error(
-                "duckdb prepare parent failed: " + insertParentStmt->GetError());
+            appender.BeginRow();
+            appender.Append(static_cast<int64_t>(sid.raw()));
+            auto const& s = nameTree.interner().get(sid);
+            appender.Append(s.c_str(), static_cast<uint32_t>(s.size()));
+            appender.EndRow();
         }
     }
 
-    void insertEvent(TraceEvent const& ev) {
+    void insertEvent(TraceEvent const& ev, duckdb::Appender& appender) {
         int64_t const eventId = ++nextEventId;
 
         std::optional<std::string> parsedJson;
@@ -402,14 +408,11 @@ INSERT INTO event_parent (event_id, parent_id) VALUES (?, ?);
             }
 
             if (result.index() == 0) {
-                {
-                    rapidjson::Document parsedDoc;
-                    parsedDoc.SetObject();
-                    auto js = cppdecl::ToJson(
-                        std::get<0>(result), parsedDoc.GetAllocator());
-                    parsedDoc.CopyFrom(js, parsedDoc.GetAllocator());
-                    parsedJson = toString(parsedDoc);
-                }
+                rapidjson::Document parsedDoc;
+                parsedDoc.SetObject();
+                auto js = cppdecl::ToJson(std::get<0>(result), parsedDoc.GetAllocator());
+                parsedDoc.CopyFrom(js, parsedDoc.GetAllocator());
+                parsedJson = toString(parsedDoc);
 
                 rapidjson::Document normalizedDoc;
                 normalizedDoc.SetObject();
@@ -430,46 +433,53 @@ INSERT INTO event_parent (event_id, parent_id) VALUES (?, ?);
             }
         }
 
-        duckdb::Value detailValue = ev.detail.has_value()
-                                      ? duckdb::Value(ev.detail.value())
-                                      : duckdb::Value();
+        appender.BeginRow();
+        appender.Append(eventId);
+        appender.Append(ev.pid);
+        appender.Append(ev.tid);
+        appender.Append(ev.ts);
+        appender.Append(ev.cat.c_str(), static_cast<uint32_t>(ev.cat.size()));
+        char ph_buf[1] = {ev.ph};
+        appender.Append(ph_buf, 1);
+        appender.Append(ev.id);
+        appender.Append(ev.dur);
+        appender.Append(ev.name.c_str(), static_cast<uint32_t>(ev.name.size()));
 
-        duckdb::Value parsedValue = parsedJson.has_value()
-                                      ? duckdb::Value(parsedJson.value())
-                                      : duckdb::Value();
-
-        duckdb::Value normalValue = normalJson.has_value()
-                                      ? duckdb::Value(normalJson.value())
-                                      : duckdb::Value();
-
-        duckdb::Value groupingPrefixValue = groupingPrefix.empty()
-                                              ? duckdb::Value()
-                                              : makePrefixValue(groupingPrefix);
-
-        auto insertResult = insertEventStmt->Execute(
-            eventId,
-            ev.pid,
-            ev.tid,
-            ev.ts,
-            ev.cat,
-            std::string(1, ev.ph),
-            ev.id,
-            ev.dur,
-            ev.name,
-            detailValue,
-            groupingPrefixValue,
-            parsedValue,
-            normalValue);
-
-        if (insertResult->HasError()) {
-            throw cpptrace::runtime_error(
-                "duckdb insert event failed: " + insertResult->GetError());
+        if (ev.detail.has_value()) {
+            auto const& s = ev.detail.value();
+            appender.Append(s.c_str(), static_cast<uint32_t>(s.size()));
+        } else {
+            appender.Append(duckdb::Value());
         }
+
+        if (groupingPrefix.empty()) {
+            appender.Append(duckdb::Value());
+        } else {
+            appender.Append(makePrefixValue(groupingPrefix));
+        }
+
+        if (parsedJson.has_value()) {
+            auto const& s = parsedJson.value();
+            appender.Append(s.c_str(), static_cast<uint32_t>(s.size()));
+        } else {
+            appender.Append(duckdb::Value());
+        }
+
+        if (normalJson.has_value()) {
+            auto const& s = normalJson.value();
+            appender.Append(s.c_str(), static_cast<uint32_t>(s.size()));
+        } else {
+            appender.Append(duckdb::Value());
+        }
+
+        appender.EndRow();
 
         infos.push_back({&ev, eventId, static_cast<int64_t>(ev.ts), false});
     }
 
-    void fillEventNesting() {
+    void fillEventNesting(
+        duckdb::Appender& nestedAppender,
+        duckdb::Appender& parentAppender) {
         std::map<std::pair<int64_t, int64_t>, std::vector<EventInfo*>> byThread;
 
         for (auto& e : infos) {
@@ -524,28 +534,39 @@ INSERT INTO event_parent (event_id, parent_id) VALUES (?, ?);
         }
 
         for (auto const& [parentId, nestedId] : nestedRows) {
-            auto r = insertNestedStmt->Execute(parentId, nestedId);
-            if (r->HasError()) {
-                throw cpptrace::runtime_error(
-                    "duckdb insert nested failed: " + r->GetError());
-            }
+            nestedAppender.BeginRow();
+            nestedAppender.Append(parentId);
+            nestedAppender.Append(nestedId);
+            nestedAppender.EndRow();
         }
 
         for (auto const& e : infos) {
-            duckdb::Value parentValue = [&]() -> duckdb::Value {
-                auto it = parentOf.find(e.eventId);
-                if (it != parentOf.end()) { return duckdb::Value(it->second); }
-                return duckdb::Value();
-            }();
+            parentAppender.BeginRow();
+            parentAppender.Append(e.eventId);
 
-            auto r = insertParentStmt->Execute(e.eventId, parentValue);
-            if (r->HasError()) {
-                throw cpptrace::runtime_error(
-                    "duckdb insert parent failed: " + r->GetError());
+            auto it = parentOf.find(e.eventId);
+            if (it != parentOf.end()) {
+                parentAppender.Append(it->second);
+            } else {
+                parentAppender.Append(duckdb::Value());
             }
+
+            parentAppender.EndRow();
         }
     }
+
+  private:
+    quill::Logger*     logger;
+    std::string        dbPath;
+    duckdb::DuckDB     db;
+    duckdb::Connection con;
+
+    NameTreeStore nameTree;
+
+    std::vector<EventInfo> infos;
+    int64_t                nextEventId = 0;
 };
+
 
 static bool hasTraceEventsArray(std::filesystem::path const& filePath) {
     std::FILE* file = std::fopen(filePath.string().c_str(), "rb");

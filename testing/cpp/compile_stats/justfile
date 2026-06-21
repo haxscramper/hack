@@ -10,9 +10,12 @@ build: configure
 
 run: build 
     ./build/trace_event_cli \
-        --input-dir ~/defaultdirs/workspace/haxorg/build/haxorg_debug_instrumented \
-        --output-db /tmp/haxorg-db.duckdb \
-        --max-trace-file 5
+        --input-dir ~/defaultdirs/workspace/haxorg/build/haxorg_debug_qt \
+        --output-db /tmp/haxorg-db.duckdb 
+
+visualize: 
+    uv run main.py --view treemap --db /tmp/haxorg-db.duckdb --out /tmp/result-treemap.html
+    uv run main.py --view top100 --db /tmp/haxorg-db.duckdb --out /tmp/result-top100.html
 
 test: build
     ./build/trace_event_test        
@@ -22,3 +25,13 @@ bench: build
 
 debug_test: build
     lldb ./build/trace_event_test        
+
+profile:
+    perf record --freq=2000 --call-graph dwarf -- ./build/trace_event_cli \
+        --input-dir ~/defaultdirs/workspace/haxorg/build/haxorg_debug_qt \
+        --output-db /tmp/haxorg-db.duckdb \
+        --max-trace-file 1
+
+profile_view:
+    hotspot perf.data
+
