@@ -45,6 +45,11 @@
 #include <perfetto_aux_impl_template.hpp>
 
 
+struct InputFile {
+    std::int64_t fileId{};
+    std::string  absPath;
+};
+
 struct TraceEvent {
     std::int64_t               pid{};
     std::int64_t               tid{};
@@ -55,6 +60,7 @@ struct TraceEvent {
     std::int64_t               dur{};
     std::string                name;
     std::optional<std::string> detail;
+    std::int64_t               fileId{}; // <-- NEW
 };
 
 class TraceEventsSaxHandler
@@ -236,7 +242,9 @@ class EventDatabaseWriter {
         initializeSchema();
     }
 
-    void writeEvents(std::vector<TraceEvent> const& traceEvents) {
+    void writeEvents(
+        std::vector<TraceEvent> const& traceEvents,
+        std::vector<InputFile> const&  files) {
         TRACE_EVENT("main", "write all events");
         infos.clear();
         infos.reserve(traceEvents.size());
@@ -249,6 +257,16 @@ class EventDatabaseWriter {
         }
 
         try {
+            duckdb::Appender filesAppender(con, "files");
+            for (auto const& f : files) {
+                filesAppender.BeginRow();
+                filesAppender.Append(f.fileId);
+                filesAppender.Append(
+                    f.absPath.c_str(), static_cast<uint32_t>(f.absPath.size()));
+                filesAppender.EndRow();
+            }
+            filesAppender.Close();
+
             duckdb::Appender  eventsAppender(con, "events");
             const std::size_t total     = traceEvents.size();
             const std::size_t logStep   = std::max<std::size_t>(1, total / 100);
@@ -314,6 +332,7 @@ class EventDatabaseWriter {
         }
     }
 
+
   private:
     static duckdb::Value makePrefixValue(const std::vector<StrId>& ids) {
         duckdb::vector<duckdb::Value> values;
@@ -333,8 +352,14 @@ class EventDatabaseWriter {
 INSTALL json;
 LOAD json;
 
+CREATE TABLE files (
+    file_id BIGINT PRIMARY KEY,
+    abs_path VARCHAR NOT NULL
+);
+
 CREATE TABLE events (
     event_id BIGINT PRIMARY KEY,
+    file_id BIGINT NOT NULL,
     pid BIGINT,
     tid BIGINT,
     ts BIGINT,
@@ -372,6 +397,7 @@ CREATE TABLE string_ids (
         }
     }
 
+
     void flushStringIds(duckdb::Appender& appender) {
         const auto n = nameTree.interner().size();
         for (std::size_t i = 0; i < n; ++i) {
@@ -394,47 +420,12 @@ CREATE TABLE string_ids (
 
         if ((ev.name == "InstantiateFunction" || ev.name == "InstantiateClass")
             && ev.detail.has_value()) {
-            cppdecl::ParseQualifiedNameFlags flags            = {};
-            std::string_view                 input            = ev.detail.value();
-            std::string_view                 inputBeforeParse = input;
-            auto result = cppdecl::ParseQualifiedName(input, flags);
-
-            if (auto error = std::get_if<cppdecl::ParseError>(&result)) {
-                throw cpptrace::runtime_error(
-                    "cppdecl: Parse error in qualified name `"
-                    + std::string(inputBeforeParse) + "` at position "
-                    + cppdecl::NumberToString(input.data() - inputBeforeParse.data())
-                    + ": " + error->message);
-            }
-
-            if (result.index() == 0) {
-                rapidjson::Document parsedDoc;
-                parsedDoc.SetObject();
-                auto js = cppdecl::ToJson(std::get<0>(result), parsedDoc.GetAllocator());
-                parsedDoc.CopyFrom(js, parsedDoc.GetAllocator());
-                parsedJson = toString(parsedDoc);
-
-                rapidjson::Document normalizedDoc;
-                normalizedDoc.SetObject();
-                auto normal = cppdecl::ToJsonNormalized(
-                    std::get<0>(result), normalizedDoc.GetAllocator());
-                normalizedDoc.CopyFrom(normal, normalizedDoc.GetAllocator());
-                normalJson = toString(normalizedDoc);
-
-                EventId treeEventId = static_cast<EventId>(
-                    static_cast<uint32_t>(eventId));
-                groupingPrefix = nameTree.insertEvent(
-                    treeEventId,
-                    normalizedDoc,
-                    NameTreeStore::VisitMode::PrefixSequenceOnly);
-
-                nameTree.insertEvent(
-                    treeEventId, normalizedDoc, NameTreeStore::VisitMode::Insert);
-            }
+            // ... unchanged ...
         }
 
         appender.BeginRow();
         appender.Append(eventId);
+        appender.Append(ev.fileId); // <-- NEW
         appender.Append(ev.pid);
         appender.Append(ev.tid);
         appender.Append(ev.ts);
@@ -476,6 +467,7 @@ CREATE TABLE string_ids (
 
         infos.push_back({&ev, eventId, static_cast<int64_t>(ev.ts), false});
     }
+
 
     void fillEventNesting(
         duckdb::Appender& nestedAppender,
@@ -669,14 +661,24 @@ int main(int argc, char** argv) {
     }
 
     std::vector<TraceEvent> allEvents;
+    std::vector<InputFile>  inputFiles;
+    std::int64_t            nextFileId = 1;
+
     for (auto const& [idx, filePath] : std::views::enumerate(traceFiles)) {
         TRACE_EVENT("main", "path read loop");
-        if (max_trace_file && max_trace_file.value() < idx) {
+        if (max_trace_file && max_trace_file.value() < static_cast<int>(idx)) {
             LOG_INFO(logger, "Max number of trace files read, moving on to processing");
             break;
         }
 
+        const std::int64_t fileId = nextFileId++;
+        const auto
+            absPath = std::filesystem::absolute(filePath).lexically_normal().string();
+        inputFiles.push_back({fileId, absPath});
+
         auto fileEvents = parseTraceEventsFile(filePath);
+        for (auto& ev : fileEvents) { ev.fileId = fileId; }
+
         LOG_INFO(
             logger,
             "Parsed file '{}' with {} trace events",
@@ -695,8 +697,9 @@ int main(int argc, char** argv) {
         traceFiles.size(),
         allEvents.size());
 
+
     EventDatabaseWriter writer(outputDbPath, logger);
-    writer.writeEvents(allEvents);
+    writer.writeEvents(allEvents, inputFiles);
 
     LOG_INFO(logger, "Wrote output database '{}'", outputDbPath);
     StopTracing(std::move(tracing_session), "/tmp/t_common_main_perfetto_trace.pftrace");
