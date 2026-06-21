@@ -23,9 +23,15 @@ bench: build
     ./build/trace_event_bench
 
 debug_test: build
-    lldb ./build/trace_event_test        
+    lldb ./build/trace_event_test 
+ 
+debug_profile: build
+    lldb -- ./build/trace_event_cli \
+        --input-dir ~/defaultdirs/workspace/haxorg/build/haxorg_release_instrumented \
+        --output-db /tmp/haxorg-db.duckdb \
+        --max-trace-file 3
 
-profile:
+profile: build
     perf record --freq=2000 --call-graph dwarf -- ./build/trace_event_cli \
         --input-dir ~/defaultdirs/workspace/haxorg/build/haxorg_release_instrumented \
         --output-db /tmp/haxorg-db.duckdb \

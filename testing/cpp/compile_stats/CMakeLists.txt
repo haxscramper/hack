@@ -33,8 +33,9 @@ add_library(
   src/name_tree.cpp)
 
 add_executable(trace_event_cli main.cpp)
-add_executable(trace_event_test test/tSubsetCollection.cpp
-                                test/tStringInterner.cpp test/tNameTree.cpp)
+add_executable(
+  trace_event_test test/tSubsetCollection.cpp test/tStringInterner.cpp
+                   test/tNameTree.cpp test/tE2E.cpp test/perf_tu.cpp)
 
 add_executable(trace_event_bench bench/bSubsetCollection.cpp)
 
