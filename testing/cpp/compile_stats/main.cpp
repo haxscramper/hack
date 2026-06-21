@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cxxabi.h>
 #include <filesystem>
 #include <iterator>
 #include <map>
@@ -420,49 +421,72 @@ CREATE TABLE string_ids (
         std::optional<std::string> normalJson;
         std::vector<StrId>         groupingPrefix;
 
-        if ((ev.name == "InstantiateFunction" || ev.name == "InstantiateClass")
-            && ev.detail.has_value()) {
-            cppdecl::ParseQualifiedNameFlags flags            = {};
-            std::string_view                 input            = ev.detail.value();
-            std::string_view                 inputBeforeParse = input;
-            auto result = cppdecl::ParseQualifiedName(input, flags);
+        std::string_view input = ev.detail.value();
+        std::string      maybe_demangled_content;
 
-            if (auto error = std::get_if<cppdecl::ParseError>(&result)) {
-                throw cpptrace::runtime_error(
-                    "cppdecl: Parse error in qualified name `"
-                    + std::string(inputBeforeParse) + "` at position "
-                    + cppdecl::NumberToString(input.data() - inputBeforeParse.data())
-                    + ": " + error->message);
-            }
-
-            if (result.index() == 0) {
-                if (set_parsed_json) {
-                    rapidjson::Document parsedDoc;
-                    parsedDoc.SetObject();
-                    auto js = cppdecl::ToJson(
-                        std::get<0>(result), parsedDoc.GetAllocator());
-                    parsedDoc.CopyFrom(js, parsedDoc.GetAllocator());
-                    parsedJson = toString(parsedDoc);
+        if (ev.detail.has_value()) {
+            if (ev.name == "InstantiateFunction" || ev.name == "InstantiateClass"
+                || ev.name == "ParseClass") {
+                // ev.detail is already demangled
+            } else {
+                if (input.starts_with('(') && input.ends_with(')')) {
+                    input.remove_prefix(1);
+                    input.remove_suffix(1);
                 }
 
-                rapidjson::Document normalizedDoc;
-                normalizedDoc.SetObject();
-                auto normal = cppdecl::ToJsonNormalized(
-                    std::get<0>(result), normalizedDoc.GetAllocator());
-                normalizedDoc.CopyFrom(normal, normalizedDoc.GetAllocator());
-                normalJson = toString(normalizedDoc);
+                int   status    = 0;
+                char* demangled = abi::__cxa_demangle(
+                    input.data(), nullptr, nullptr, &status);
+                if (status == 0) { maybe_demangled_content = std::string{demangled}; }
+                std::free(demangled);
+            }
 
-                EventId treeEventId = static_cast<EventId>(
-                    static_cast<uint32_t>(eventId));
-                groupingPrefix = nameTree.insertEvent(
-                    treeEventId,
-                    normalizedDoc,
-                    NameTreeStore::VisitMode::PrefixSequenceOnly);
+            if (!maybe_demangled_content.empty()) {
+                cppdecl::ParseQualifiedNameFlags flags = {};
+                std::string_view                 input = maybe_demangled_content.empty()
+                                                           ? ev.detail.value()
+                                                           : maybe_demangled_content;
+                std::string_view                 inputBeforeParse = input;
+                auto result = cppdecl::ParseQualifiedName(input, flags);
 
-                nameTree.insertEvent(
-                    treeEventId, normalizedDoc, NameTreeStore::VisitMode::Insert);
+                if (auto error = std::get_if<cppdecl::ParseError>(&result)) {
+                    throw cpptrace::runtime_error(
+                        "cppdecl: Parse error in qualified name `"
+                        + std::string(inputBeforeParse) + "` at position "
+                        + cppdecl::NumberToString(input.data() - inputBeforeParse.data())
+                        + ": " + error->message);
+                }
+
+                if (result.index() == 0) {
+                    if (set_parsed_json) {
+                        rapidjson::Document parsedDoc;
+                        parsedDoc.SetObject();
+                        auto js = cppdecl::ToJson(
+                            std::get<0>(result), parsedDoc.GetAllocator());
+                        parsedDoc.CopyFrom(js, parsedDoc.GetAllocator());
+                        parsedJson = toString(parsedDoc);
+                    }
+
+                    rapidjson::Document normalizedDoc;
+                    normalizedDoc.SetObject();
+                    auto normal = cppdecl::ToJsonNormalized(
+                        std::get<0>(result), normalizedDoc.GetAllocator());
+                    normalizedDoc.CopyFrom(normal, normalizedDoc.GetAllocator());
+                    normalJson = toString(normalizedDoc);
+
+                    EventId treeEventId = static_cast<EventId>(
+                        static_cast<uint32_t>(eventId));
+                    groupingPrefix = nameTree.insertEvent(
+                        treeEventId,
+                        normalizedDoc,
+                        NameTreeStore::VisitMode::PrefixSequenceOnly);
+
+                    nameTree.insertEvent(
+                        treeEventId, normalizedDoc, NameTreeStore::VisitMode::Insert);
+                }
             }
         }
+
 
         appender.BeginRow();
         appender.Append(eventId);

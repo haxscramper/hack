@@ -10,7 +10,7 @@ build: configure
 
 run: build 
     ./build/trace_event_cli \
-        --input-dir ~/defaultdirs/workspace/haxorg/build/haxorg_debug_qt \
+        --input-dir ~/defaultdirs/workspace/haxorg/build/haxorg_release_instrumented \
         --output-db /tmp/haxorg-db.duckdb
 
 visualize: 
@@ -27,9 +27,9 @@ debug_test: build
 
 profile:
     perf record --freq=2000 --call-graph dwarf -- ./build/trace_event_cli \
-        --input-dir ~/defaultdirs/workspace/haxorg/build/haxorg_debug_qt \
+        --input-dir ~/defaultdirs/workspace/haxorg/build/haxorg_release_instrumented \
         --output-db /tmp/haxorg-db.duckdb \
-        --max-trace-file 1
+        --max-trace-file 3
 
 profile_view:
     hotspot perf.data
