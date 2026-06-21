@@ -5,9 +5,12 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+import dash
 import duckdb
 import pandas as pd
+import os
 import plotly.graph_objects as go
+from dash import Input, Output, dcc, html
 
 
 def humanize_us(value_us: float) -> str:
@@ -26,14 +29,18 @@ def humanize_us(value_us: float) -> str:
 def load_events(db_path: str) -> pd.DataFrame:
     query = """
     SELECT
+        e.file_id,
+        f.abs_path,
         e.dur,
         (
             SELECT list(s.value ORDER BY u.idx)
             FROM UNNEST(e.grouping_prefix) WITH ORDINALITY AS u(str_id, idx)
             JOIN string_ids AS s
-                ON s.str_id = u.str_id
+              ON s.str_id = u.str_id
         ) AS grouping_prefix
     FROM events e
+    JOIN files f
+      ON f.file_id = e.file_id
     LEFT JOIN event_parent ep
       ON ep.event_id = e.event_id
     LEFT JOIN events p
@@ -46,13 +53,16 @@ def load_events(db_path: str) -> pd.DataFrame:
     with duckdb.connect(db_path, read_only=True) as conn:
         df = conn.execute(query).df()
 
-    df = df.dropna(subset=["dur", "grouping_prefix"]).copy()
+    df = df.dropna(
+        subset=["file_id", "abs_path", "dur", "grouping_prefix"]).copy()
     df["dur"] = pd.to_numeric(df["dur"], errors="raise")
+    df["file_id"] = pd.to_numeric(df["file_id"],
+                                  errors="raise").astype("int64")
     df = df[df["grouping_prefix"].map(len) > 0].copy()
     return df
 
 
-def make_treemap(df: pd.DataFrame) -> go.Figure:
+def make_treemap(df: pd.DataFrame, title: str) -> go.Figure:
     records: list[tuple[tuple[str, ...], float, int]] = []
     for dur, prefix in zip(df["dur"], df["grouping_prefix"], strict=True):
         parts = tuple(prefix)
@@ -103,7 +113,7 @@ def make_treemap(df: pd.DataFrame) -> go.Figure:
             texttemplate="%{label}<br>%{customdata[0]}<br>n=%{customdata[1]}",
         ))
     fig.update_layout(
-        title="Duration by grouping prefix",
+        title=title,
         margin=dict(t=60, l=10, r=10, b=10),
     )
     return fig
@@ -137,7 +147,7 @@ def make_top100(df: pd.DataFrame) -> go.Figure:
             textposition="outside",
         ))
     fig.update_layout(
-        title="Top 100 most time-consuming groups",
+        title="Top 100 most time-consuming groups (all files)",
         xaxis_title="Duration (seconds)",
         yaxis_title="Group",
         yaxis=dict(autorange="reversed"),
@@ -147,30 +157,126 @@ def make_top100(df: pd.DataFrame) -> go.Figure:
     return fig
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--db", default="/tmp/result.duckdb")
-    parser.add_argument(
-        "--view",
-        required=True,
-        choices=["treemap", "top100"],
-        help="Choose exactly one output type.",
-    )
-    parser.add_argument("--out", default="/tmp/result.html")
-    args = parser.parse_args()
+def build_file_tree(file_items: pd.DataFrame) -> tuple[Path, dict]:
+    paths = file_items["abs_path"].tolist()
+    common_root = Path(os.path.commonpath(paths))
 
-    df = load_events(args.db)
+    tree = {"dirs": {}, "files": {}}
+    for row in file_items.itertuples(index=False):
+        rel_parts = Path(row.abs_path).relative_to(common_root).parts
+        node = tree
+        for part in rel_parts[:-1]:
+            node = node["dirs"].setdefault(part, {"dirs": {}, "files": {}})
+        node["files"][rel_parts[-1]] = int(row.file_id)
+
+    return common_root, tree
+
+
+def render_file_tree(node: dict) -> html.Ul:
+    items: list[html.Li] = []
+
+    for dirname in sorted(node["dirs"]):
+        child = node["dirs"][dirname]
+        items.append(
+            html.Li([
+                html.Span(f"{dirname}/"),
+                render_file_tree(child),
+            ]))
+
+    for filename in sorted(node["files"]):
+        file_id = node["files"][filename]
+        items.append(html.Li(dcc.Link(
+            filename,
+            href=f"/file/{file_id}",
+        )))
+
+    return html.Ul(items)
+
+
+def build_app(db_path: str) -> dash.Dash:
+    df = load_events(db_path)
     if df.empty:
         raise RuntimeError("No qualifying rows found.")
 
-    if args.view == "treemap":
-        fig = make_treemap(df)
-    else:
-        fig = make_top100(df)
+    overall_treemap = make_treemap(df,
+                                   "Duration by grouping prefix (all files)")
+    overall_top100 = make_top100(df)
 
-    out_path = Path(args.out)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.write_html(str(out_path), include_plotlyjs="cdn")
+    file_items = (df[["file_id", "abs_path"]].drop_duplicates().sort_values(
+        "abs_path", ascending=True).reset_index(drop=True))
+
+    common_root, file_tree = build_file_tree(file_items)
+
+    file_figures: dict[int, go.Figure] = {}
+    for file_id, file_df in df.groupby("file_id", sort=False):
+        abs_path = file_df["abs_path"].iloc[0]
+        file_figures[int(file_id)] = make_treemap(
+            file_df, f"Duration by grouping prefix: {abs_path}")
+
+    app = dash.Dash(__name__)
+    app.title = "Event Grouping Explorer"
+
+    app.layout = html.Div(
+        [
+            dcc.Location(id="url", refresh=False),
+            html.Div(id="page-content"),
+        ],
+        style={
+            "maxWidth": "1600px",
+            "margin": "0 auto",
+            "padding": "12px"
+        },
+    )
+
+    def home_layout() -> html.Div:
+        return html.Div([
+            html.H2("Grouped views"),
+            dcc.Graph(figure=overall_treemap, style={"height": "820px"}),
+            dcc.Graph(figure=overall_top100),
+            html.H3("Per-file treemap pages"),
+            html.Div(f"Common prefix dropped: {common_root}"),
+            render_file_tree(file_tree),
+        ])
+
+    def file_layout(file_id: int) -> html.Div:
+        fig = file_figures[file_id]
+        abs_path = file_items.loc[file_items["file_id"] == file_id,
+                                  "abs_path"].iloc[0]
+        return html.Div([
+            dcc.Link("← Back to home", href="/"),
+            html.H3(abs_path),
+            dcc.Graph(figure=fig, style={"height": "900px"}),
+        ])
+
+    @app.callback(Output("page-content", "children"), Input("url", "pathname"))
+    def route(pathname: str) -> html.Div:
+        if pathname is None or pathname == "/":
+            return home_layout()
+
+        parts = [p for p in pathname.split("/") if p]
+        if len(parts) == 2 and parts[0] == "file" and parts[1].isdigit():
+            file_id = int(parts[1])
+            if file_id in file_figures:
+                return file_layout(file_id)
+
+        return html.Div([
+            dcc.Link("← Back to home", href="/"),
+            html.H3("Page not found"),
+        ])
+
+    return app
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--db", default="/tmp/result.duckdb")
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=8050)
+    parser.add_argument("--debug", action="store_true")
+    args = parser.parse_args()
+
+    app = build_app(args.db)
+    app.run(host=args.host, port=args.port, debug=args.debug)
 
 
 if __name__ == "__main__":

@@ -60,7 +60,7 @@ struct TraceEvent {
     std::int64_t               dur{};
     std::string                name;
     std::optional<std::string> detail;
-    std::int64_t               fileId{}; // <-- NEW
+    std::int64_t               fileId{};
 };
 
 class TraceEventsSaxHandler
@@ -237,6 +237,8 @@ struct EventInfo {
 
 class EventDatabaseWriter {
   public:
+    bool set_parsed_json = false;
+
     explicit EventDatabaseWriter(std::string path, quill::Logger* logger)
         : logger{logger}, dbPath(std::move(path)), db(openDatabase(dbPath)), con(db) {
         initializeSchema();
@@ -420,12 +422,51 @@ CREATE TABLE string_ids (
 
         if ((ev.name == "InstantiateFunction" || ev.name == "InstantiateClass")
             && ev.detail.has_value()) {
-            // ... unchanged ...
+            cppdecl::ParseQualifiedNameFlags flags            = {};
+            std::string_view                 input            = ev.detail.value();
+            std::string_view                 inputBeforeParse = input;
+            auto result = cppdecl::ParseQualifiedName(input, flags);
+
+            if (auto error = std::get_if<cppdecl::ParseError>(&result)) {
+                throw cpptrace::runtime_error(
+                    "cppdecl: Parse error in qualified name `"
+                    + std::string(inputBeforeParse) + "` at position "
+                    + cppdecl::NumberToString(input.data() - inputBeforeParse.data())
+                    + ": " + error->message);
+            }
+
+            if (result.index() == 0) {
+                if (set_parsed_json) {
+                    rapidjson::Document parsedDoc;
+                    parsedDoc.SetObject();
+                    auto js = cppdecl::ToJson(
+                        std::get<0>(result), parsedDoc.GetAllocator());
+                    parsedDoc.CopyFrom(js, parsedDoc.GetAllocator());
+                    parsedJson = toString(parsedDoc);
+                }
+
+                rapidjson::Document normalizedDoc;
+                normalizedDoc.SetObject();
+                auto normal = cppdecl::ToJsonNormalized(
+                    std::get<0>(result), normalizedDoc.GetAllocator());
+                normalizedDoc.CopyFrom(normal, normalizedDoc.GetAllocator());
+                normalJson = toString(normalizedDoc);
+
+                EventId treeEventId = static_cast<EventId>(
+                    static_cast<uint32_t>(eventId));
+                groupingPrefix = nameTree.insertEvent(
+                    treeEventId,
+                    normalizedDoc,
+                    NameTreeStore::VisitMode::PrefixSequenceOnly);
+
+                nameTree.insertEvent(
+                    treeEventId, normalizedDoc, NameTreeStore::VisitMode::Insert);
+            }
         }
 
         appender.BeginRow();
         appender.Append(eventId);
-        appender.Append(ev.fileId); // <-- NEW
+        appender.Append(ev.fileId);
         appender.Append(ev.pid);
         appender.Append(ev.tid);
         appender.Append(ev.ts);

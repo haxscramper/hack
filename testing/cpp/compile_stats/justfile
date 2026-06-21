@@ -11,11 +11,10 @@ build: configure
 run: build 
     ./build/trace_event_cli \
         --input-dir ~/defaultdirs/workspace/haxorg/build/haxorg_debug_qt \
-        --output-db /tmp/haxorg-db.duckdb 
+        --output-db /tmp/haxorg-db.duckdb
 
 visualize: 
-    uv run main.py --view treemap --db /tmp/haxorg-db.duckdb --out /tmp/result-treemap.html
-    uv run main.py --view top100 --db /tmp/haxorg-db.duckdb --out /tmp/result-top100.html
+    uv run main.py --db /tmp/haxorg-db.duckdb
 
 test: build
     ./build/trace_event_test        
