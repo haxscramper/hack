@@ -671,14 +671,19 @@ int main(int argc, char** argv) {
         "Perfetto track example");
 
     std::string        inputDir;
-    std::string        outputDbPath   = "/tmp/result.duckdb";
-    std::string        logFilePath    = "/tmp/trace_events.log";
-    std::optional<int> max_trace_file = std::nullopt;
+    std::string        outputDbPath    = "/tmp/result.duckdb";
+    std::string        logFilePath     = "/tmp/trace_events.log";
+    std::optional<int> max_trace_file  = std::nullopt;
+    bool               set_parsed_json = false;
 
     app.add_option("--input-dir", inputDir, "Input directory with trace JSON files")
         ->required()
         ->check(CLI::ExistingDirectory);
 
+    app.add_option(
+        "--set-parsed-json",
+        set_parsed_json,
+        "Write full parsed-demangled signature for every entry");
     app.add_option("--output-db", outputDbPath, "Output DuckDB file path");
     app.add_option(
         "--max-trace-file", max_trace_file, "Max number of trace files for processing");

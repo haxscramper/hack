@@ -157,17 +157,126 @@ def make_top100(df: pd.DataFrame) -> go.Figure:
     return fig
 
 
+def make_file_tree_treemap(file_items: pd.DataFrame,
+                           common_root: Path) -> go.Figure:
+    root_id = "__fs_root__"
+
+    dir_totals: dict[tuple[str, ...], float] = {}
+    file_nodes: list[tuple[tuple[str, ...], float]] = []
+
+    for row in file_items.itertuples(index=False):
+        rel_parts = Path(row.abs_path).relative_to(common_root).parts
+        dur_us = float(row.top_event_duration_us)
+        file_nodes.append((rel_parts, dur_us))
+
+        for i in range(1, len(rel_parts)):
+            key = rel_parts[:i]
+            dir_totals[key] = dir_totals.get(key, 0.0) + dur_us
+
+    ids = [root_id]
+    labels = ["all files"]
+    parents = [""]
+    values_sec = [
+        float(file_items["top_event_duration_us"].sum()) / 1_000_000.0
+    ]
+    custom = [[humanize_us(float(file_items["top_event_duration_us"].sum()))]]
+
+    for path, dur_us in sorted(dir_totals.items(),
+                               key=lambda it: (len(it[0]), it[0])):
+        node_id = f"dir::{ '::'.join(path) }"
+        parent_id = root_id if len(
+            path) == 1 else f"dir::{ '::'.join(path[:-1]) }"
+        ids.append(node_id)
+        labels.append(f"{path[-1]}/")
+        parents.append(parent_id)
+        values_sec.append(dur_us / 1_000_000.0)
+        custom.append([humanize_us(dur_us)])
+
+    for rel_parts, dur_us in file_nodes:
+        node_id = f"file::{ '::'.join(rel_parts) }"
+        parent_id = root_id if len(
+            rel_parts) == 1 else f"dir::{ '::'.join(rel_parts[:-1]) }"
+        ids.append(node_id)
+        labels.append(rel_parts[-1])
+        parents.append(parent_id)
+        values_sec.append(dur_us / 1_000_000.0)
+        custom.append([humanize_us(dur_us)])
+
+    fig = go.Figure(
+        go.Treemap(
+            ids=ids,
+            labels=labels,
+            parents=parents,
+            values=values_sec,
+            branchvalues="total",
+            customdata=custom,
+            hovertemplate="%{id}<br>duration=%{customdata[0]}<extra></extra>",
+            texttemplate="%{label}<br>%{customdata[0]}",
+        ))
+    fig.update_layout(
+        title="File/directory build time treemap",
+        margin=dict(t=60, l=10, r=10, b=10),
+    )
+    return fig
+
+
+def load_file_build_times(db_path: str) -> pd.DataFrame:
+    query = """
+    SELECT
+        f.file_id,
+        f.abs_path,
+        COALESCE(SUM(e.dur), 0) AS top_event_duration_us
+    FROM files AS f
+    LEFT JOIN events AS e
+        ON e.file_id = f.file_id
+    LEFT JOIN event_parent AS ep
+        ON ep.event_id = e.event_id
+    WHERE ep.parent_id IS NULL
+      AND EXISTS (
+          SELECT 1
+          FROM event_nested AS en
+          WHERE en.parent_id = e.event_id
+      )
+    GROUP BY f.file_id, f.abs_path;
+    """
+    with duckdb.connect(db_path, read_only=True) as conn:
+        df = conn.execute(query).df()
+
+    df = df.dropna(
+        subset=["file_id", "abs_path", "top_event_duration_us"]).copy()
+    df["file_id"] = pd.to_numeric(df["file_id"],
+                                  errors="raise").astype("int64")
+    df["top_event_duration_us"] = pd.to_numeric(
+        df["top_event_duration_us"], errors="raise").astype("float64")
+    return df
+
+
 def build_file_tree(file_items: pd.DataFrame) -> tuple[Path, dict]:
     paths = file_items["abs_path"].tolist()
     common_root = Path(os.path.commonpath(paths))
 
-    tree = {"dirs": {}, "files": {}}
+    tree = {"total_us": 0.0, "dirs": {}, "files": {}}
+
     for row in file_items.itertuples(index=False):
         rel_parts = Path(row.abs_path).relative_to(common_root).parts
+        dur_us = float(row.top_event_duration_us)
+
         node = tree
+        node["total_us"] += dur_us
+
         for part in rel_parts[:-1]:
-            node = node["dirs"].setdefault(part, {"dirs": {}, "files": {}})
-        node["files"][rel_parts[-1]] = int(row.file_id)
+            child = node["dirs"].setdefault(part, {
+                "total_us": 0.0,
+                "dirs": {},
+                "files": {}
+            })
+            child["total_us"] += dur_us
+            node = child
+
+        node["files"][rel_parts[-1]] = {
+            "file_id": int(row.file_id),
+            "dur_us": dur_us,
+        }
 
     return common_root, tree
 
@@ -175,20 +284,26 @@ def build_file_tree(file_items: pd.DataFrame) -> tuple[Path, dict]:
 def render_file_tree(node: dict) -> html.Ul:
     items: list[html.Li] = []
 
-    for dirname in sorted(node["dirs"]):
-        child = node["dirs"][dirname]
+    for dirname, child in sorted(
+            node["dirs"].items(),
+            key=lambda it: (-it[1]["total_us"], it[0]),
+    ):
         items.append(
             html.Li([
-                html.Span(f"{dirname}/"),
+                html.Span(f"{dirname}/ ({humanize_us(child['total_us'])})"),
                 render_file_tree(child),
             ]))
 
-    for filename in sorted(node["files"]):
-        file_id = node["files"][filename]
-        items.append(html.Li(dcc.Link(
-            filename,
-            href=f"/file/{file_id}",
-        )))
+    for filename, meta in sorted(
+            node["files"].items(),
+            key=lambda it: (-it[1]["dur_us"], it[0]),
+    ):
+        items.append(
+            html.Li(
+                dcc.Link(
+                    f"{filename} ({humanize_us(meta['dur_us'])})",
+                    href=f"/file/{meta['file_id']}",
+                )))
 
     return html.Ul(items)
 
@@ -198,14 +313,21 @@ def build_app(db_path: str) -> dash.Dash:
     if df.empty:
         raise RuntimeError("No qualifying rows found.")
 
+    file_times = load_file_build_times(db_path)
+
     overall_treemap = make_treemap(df,
                                    "Duration by grouping prefix (all files)")
     overall_top100 = make_top100(df)
 
-    file_items = (df[["file_id", "abs_path"]].drop_duplicates().sort_values(
-        "abs_path", ascending=True).reset_index(drop=True))
+    file_items = (df[["file_id", "abs_path"]].drop_duplicates().merge(
+        file_times[["file_id", "top_event_duration_us"]],
+        on="file_id",
+        how="left").fillna({
+            "top_event_duration_us": 0.0
+        }).sort_values("abs_path", ascending=True).reset_index(drop=True))
 
     common_root, file_tree = build_file_tree(file_items)
+    file_time_treemap = make_file_tree_treemap(file_items, common_root)
 
     file_figures: dict[int, go.Figure] = {}
     for file_id, file_df in df.groupby("file_id", sort=False):
@@ -233,6 +355,7 @@ def build_app(db_path: str) -> dash.Dash:
             html.H2("Grouped views"),
             dcc.Graph(figure=overall_treemap, style={"height": "820px"}),
             dcc.Graph(figure=overall_top100),
+            dcc.Graph(figure=file_time_treemap, style={"height": "820px"}),
             html.H3("Per-file treemap pages"),
             html.Div(f"Common prefix dropped: {common_root}"),
             render_file_tree(file_tree),
