@@ -21,7 +21,7 @@ from index_service.registry import (
 
 ARANGO_HOST = os.environ.get("ARANGO_HOST", "http://localhost:8529")
 ARANGO_USER = os.environ.get("ARANGO_USER", "root")
-ARANGO_PASSWORD = os.environ.get("ARANGO_ROOT_PASSWORD", "")
+ARANGO_PASSWORD = os.environ.get("ARANGO_ROOT_PASSWORD", "test")
 ARANGO_DB = "index_test"
 
 
@@ -51,12 +51,18 @@ def sample_file(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def db() -> IndexDatabase:
-    database = IndexDatabase(
-        host=ARANGO_HOST,
-        db_name=ARANGO_DB,
-        username=ARANGO_USER,
-        password=ARANGO_PASSWORD,
-    )
+    try:
+        database = IndexDatabase(
+            host=ARANGO_HOST,
+            db_name=ARANGO_DB,
+            username=ARANGO_USER,
+            password=ARANGO_PASSWORD,
+        )
+    except Exception as exc:
+        pytest.skip(
+            f"ArangoDB is not reachable: {exc}. Expected to find database running at {ARANGO_HOST}, with login {ARANGO_USER}, can login with {ARANGO_PASSWORD} for testing"
+        )
+
     database.truncate_all()
     return database
 

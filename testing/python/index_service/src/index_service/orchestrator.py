@@ -1,5 +1,6 @@
 import logging
 import os
+import socket
 import subprocess
 import sys
 import time
@@ -10,6 +11,7 @@ from pathlib import Path
 import zmq
 from beartype import beartype
 from beartype.typing import Dict, List
+
 from index_service.protocol import Message, MessageType
 
 log = logging.getLogger(__name__)
@@ -58,9 +60,12 @@ def _child_env() -> Dict[str, str]:
 
 @beartype
 def make_socket_path(socket_dir: Path, prefix: str) -> str:
-    socket_dir.mkdir(parents=True, exist_ok=True)
-    name = f"{prefix}-{uuid.uuid4().hex}.sock"
-    return f"ipc://{socket_dir / name}"
+    del socket_dir
+    del prefix
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    return f"tcp://127.0.0.1:{port}"
 
 
 @beartype
