@@ -4,6 +4,7 @@ from pathlib import Path
 from beartype import beartype
 from beartype.typing import List
 from dagster import Config, OpExecutionContext, job, op, resource
+
 from index_service.db import IndexDatabase
 from index_service.orchestrator import (
     ResourceHandle,
@@ -17,6 +18,8 @@ from index_service.registry import (
     FILE_SIZE_CONVERTER_MODULE,
     FILE_SIZE_MODULE,
     FILE_STATS_MODULE,
+    FILE_SUMMARIES_MODULE,
+    FLM_GEMMA_RESOURCE_MODULE,
     FULL_TEXT_MODULE,
 )
 
@@ -60,6 +63,20 @@ def arango_resource(context) -> IndexDatabase:
     )
 
 
+@resource(config_schema={"socket_dir": str})
+def flm_gemma_resource(context):
+    handle: ResourceHandle = start_resource(
+        "flm-gemma",
+        FLM_GEMMA_RESOURCE_MODULE,
+        Path(context.resource_config["socket_dir"]),
+        ready_timeout=120.0,
+    )
+    try:
+        yield ResourceInfo(endpoint=handle.endpoint, status="ready")
+    finally:
+        stop_resource(handle)
+
+
 @resource(config_schema={"path": str})
 def socket_dir_resource(context) -> str:
     return context.resource_config["path"]
@@ -76,6 +93,34 @@ def file_reverser_resource(context):
         yield ResourceInfo(endpoint=handle.endpoint, status="ready")
     finally:
         stop_resource(handle)
+
+
+@op(required_resource_keys={"arango", "socket_dir", "flm_gemma"})
+def file_summaries_op(context: OpExecutionContext,
+                      file_ref: FileRef) -> IndexerOutput:
+    socket_dir = Path(context.resources.socket_dir)
+    flm_gemma: ResourceInfo = context.resources.flm_gemma
+    init = {
+        "md5": file_ref.md5,
+        "paths": file_ref.paths,
+        "dependencies": {},
+        "available_resources": {
+            "flm-gemma": {
+                "endpoint": flm_gemma.endpoint,
+                "status": flm_gemma.status,
+            }
+        },
+        "config": {},
+    }
+    res = run_rpc_subprocess(FILE_SUMMARIES_MODULE, init, socket_dir, 240.0)
+    out = IndexerOutput.from_dict(res.result)
+    context.resources.arango.store_indexer_result(
+        file_ref.md5,
+        out.indexer_id,
+        out.result_type,
+        out.result,
+    )
+    return out
 
 
 @op(required_resource_keys={"arango"})
@@ -170,12 +215,14 @@ def file_size_converter_op(context: OpExecutionContext,
         "arango": arango_resource,
         "socket_dir": socket_dir_resource,
         "reverser": file_reverser_resource,
+        "flm_gemma": flm_gemma_resource,
     })
 def index_file_job() -> None:
     file_ref = provide_file_op()
     file_size_op(file_ref)
     file_stats_op(file_ref)
     full_text_op(file_ref)
+    file_summaries_op(file_ref)
 
 
 @job(resource_defs={

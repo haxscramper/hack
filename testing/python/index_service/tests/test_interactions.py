@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 from beartype import beartype
-from beartype.typing import Dict
+from beartype.typing import Dict, List
 from index_service.db import IndexDatabase
 from index_service.orchestrator import (
     run_rpc_subprocess,
@@ -16,6 +16,8 @@ from index_service.registry import (
     FILE_SIZE_CONVERTER_MODULE,
     FILE_SIZE_MODULE,
     FILE_STATS_MODULE,
+    FILE_SUMMARIES_MODULE,
+    FLM_GEMMA_RESOURCE_MODULE,
     FULL_TEXT_MODULE,
 )
 
@@ -47,6 +49,24 @@ def sample_file(tmp_path: Path) -> Path:
     path = tmp_path / "sample.txt"
     path.write_text("alpha\nbeta\ngamma\n")
     return path
+
+
+@pytest.fixture
+def sample_files(tmp_path: Path) -> List[Path]:
+    texts = [
+        "alpha beta gamma\nthis file talks about physics and light scattering\n",
+        "meeting notes\n- budget approved\n- timeline pushed by 2 weeks\n",
+        "recipe\nonion garlic tomato basil olive oil pasta\n",
+        "log entry\nservice restarted successfully after config update\n",
+        "short poem\nwind over stone\nnight over field\n",
+        "release summary\nnew indexer added and integration test updated\n",
+    ]
+    files: List[Path] = []
+    for idx, text in enumerate(texts):
+        path = tmp_path / f"doc_{idx}.txt"
+        path.write_text(text)
+        files.append(path)
+    return files
 
 
 @pytest.fixture
@@ -212,3 +232,38 @@ def test_convert_files_job(db: IndexDatabase, socket_dir: Path,
             },
         })
     assert result.success
+
+
+def test_file_summaries_indexer_with_flm(socket_dir: Path,
+                                         sample_files: List[Path]) -> None:
+    handle = start_resource("flm-gemma",
+                            FLM_GEMMA_RESOURCE_MODULE,
+                            socket_dir,
+                            ready_timeout=120.0)
+    try:
+        init = {
+            "md5": "batch-md5",
+            "paths": [str(path) for path in sample_files],
+            "dependencies": {},
+            "available_resources": {
+                "flm-gemma": {
+                    "endpoint": handle.endpoint,
+                    "status": "ready",
+                }
+            },
+            "config": {},
+        }
+        res = run_rpc_subprocess(FILE_SUMMARIES_MODULE, init, socket_dir,
+                                 240.0)
+        out = IndexerOutput.from_dict(res.result)
+
+        assert out.indexer_id == "file-summaries"
+        summaries = out.result["summaries"]
+        assert len(summaries) == len(sample_files)
+
+        for path in sample_files:
+            summary = summaries[str(path)]
+            assert isinstance(summary, str)
+            assert summary.strip() != ""
+    finally:
+        stop_resource(handle)
