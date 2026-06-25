@@ -1,0 +1,28 @@
+[project]
+name = "index-service"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "haxscramper", email = "haxscramper@gmail.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "beartype>=0.22.9",
+    "dagster>=1.13.10",
+    "pytest>=9.1.1",
+    "python-arango>=8.3.3",
+    "zmq>=0.0.0",
+]
+
+[project.scripts]
+index-service = "index_service:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+addopts = "--strict-markers --tb=short -v"
+testpaths = ["tests"]
+pythonpath = ["src"]

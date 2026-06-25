@@ -1,0 +1,5 @@
+FILE_SIZE_MODULE = "index_service.indexers.file_size"
+FILE_STATS_MODULE = "index_service.indexers.file_stats"
+FULL_TEXT_MODULE = "index_service.indexers.full_text"
+FILE_SIZE_CONVERTER_MODULE = "index_service.converters.file_size_converter"
+FILE_REVERSER_MODULE = "index_service.resources.file_reverser"
