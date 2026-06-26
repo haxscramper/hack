@@ -11,6 +11,7 @@ dependencies = [
     "beartype>=0.22.9",
     "dagster>=1.13.10",
     "openai>=2.44.0",
+    "pykka>=4.4.2",
     "pytest>=9.1.1",
     "python-arango>=8.3.3",
     "zmq>=0.0.0",

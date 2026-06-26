@@ -457,6 +457,7 @@ dependencies = [
     { name = "beartype" },
     { name = "dagster" },
     { name = "openai" },
+    { name = "pykka" },
     { name = "pytest" },
     { name = "python-arango" },
     { name = "zmq" },
@@ -467,6 +468,7 @@ requires-dist = [
     { name = "beartype", specifier = ">=0.22.9" },
     { name = "dagster", specifier = ">=1.13.10" },
     { name = "openai", specifier = ">=2.44.0" },
+    { name = "pykka", specifier = ">=4.4.2" },
     { name = "pytest", specifier = ">=9.1.1" },
     { name = "python-arango", specifier = ">=8.3.3" },
     { name = "zmq", specifier = ">=0.0.0" },
@@ -812,6 +814,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/3b/81/58d0ac84e1ef3a3843791d6954d94c0b33d526c75eeb1efbce9d0a4c4077/pyjwt-2.13.0.tar.gz", hash = "sha256:41571c89ca91598c79e8ef18a2d07367d4810fbbd6f637794879baf1b7703423", size = 107515, upload-time = "2026-05-21T19:54:36.618Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a3/5e/ecf12fdb62546d64385c158514e9b2b671f7832108ef2ecd2020ce0af2d1/pyjwt-2.13.0-py3-none-any.whl", hash = "sha256:66adcc2aff09b3f1bbd95fc1e1577df8ac8723c978552fd43304c8a290ac5728", size = 31274, upload-time = "2026-05-21T19:54:35.362Z" },
+]
+
+[[package]]
+name = "pykka"
+version = "4.4.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/9f/67/d5b45428fb3883165679495974a105405b7516e167a99e43497e1dcaa923/pykka-4.4.2.tar.gz", hash = "sha256:54fcfb9ed5ef92eb98bf9961cfdefbc73ddfbf24060e319d50fde6ec66d00d8a", size = 49255, upload-time = "2026-03-14T11:00:39.821Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/7a/0e/cb601a439285015d4c4ea876b5dd75bb56a6ca9e833e10d34db3a27c7ac0/pykka-4.4.2-py3-none-any.whl", hash = "sha256:6eed37f34daac6649d84545d4cd53e7e1cb9fccc08f6a945dac39d8212b09e6d", size = 27404, upload-time = "2026-03-14T11:00:38.621Z" },
 ]
 
 [[package]]

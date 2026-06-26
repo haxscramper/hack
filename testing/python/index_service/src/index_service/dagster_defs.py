@@ -5,6 +5,7 @@ from beartype import beartype
 from beartype.typing import List
 from dagster import Config, OpExecutionContext, job, op, resource
 
+from index_service.contracts import FileRef
 from index_service.db import IndexDatabase
 from index_service.orchestrator import (
     ResourceHandle,
@@ -22,18 +23,7 @@ from index_service.registry import (
     FLM_GEMMA_RESOURCE_MODULE,
     FULL_TEXT_MODULE,
 )
-
-
-@beartype
-@dataclass
-class FileRef:
-    """A single file to be processed by the indexing ops."""
-
-    md5: str
-    """Content identity of the file."""
-
-    paths: List[str]
-    """Last known absolute paths of the file."""
+from index_service.runtime import IndexRuntime
 
 
 class FileConfig(Config):
@@ -95,32 +85,13 @@ def file_reverser_resource(context):
         stop_resource(handle)
 
 
-@op(required_resource_keys={"arango", "socket_dir", "flm_gemma"})
-def file_summaries_op(context: OpExecutionContext,
-                      file_ref: FileRef) -> IndexerOutput:
-    socket_dir = Path(context.resources.socket_dir)
-    flm_gemma: ResourceInfo = context.resources.flm_gemma
-    init = {
-        "md5": file_ref.md5,
-        "paths": file_ref.paths,
-        "dependencies": {},
-        "available_resources": {
-            "flm-gemma": {
-                "endpoint": flm_gemma.endpoint,
-                "status": flm_gemma.status,
-            }
-        },
-        "config": {},
-    }
-    res = run_rpc_subprocess(FILE_SUMMARIES_MODULE, init, socket_dir, 240.0)
-    out = IndexerOutput.from_dict(res.result)
-    context.resources.arango.store_indexer_result(
-        file_ref.md5,
-        out.indexer_id,
-        out.result_type,
-        out.result,
-    )
-    return out
+@resource
+def index_runtime_resource(_context) -> IndexRuntime:
+    runtime = IndexRuntime()
+    try:
+        yield runtime
+    finally:
+        runtime.stop()
 
 
 @op(required_resource_keys={"arango"})
@@ -130,83 +101,95 @@ def provide_file_op(context: OpExecutionContext,
     return FileRef(md5=config.md5, paths=config.paths)
 
 
-@op(required_resource_keys={"arango", "socket_dir"})
+@beartype
+def _store_indexer_output(
+    context: OpExecutionContext,
+    file_ref: FileRef,
+    out: IndexerOutput,
+) -> None:
+    context.resources.arango.store_indexer_result(
+        file_ref.md5,
+        out.indexer_id,
+        out.result_type,
+        out.result,
+    )
+
+
+@op(required_resource_keys={"arango", "index_runtime"})
 def file_size_op(context: OpExecutionContext,
                  file_ref: FileRef) -> IndexerOutput:
-    socket_dir = Path(context.resources.socket_dir)
-    init = {
-        "md5": file_ref.md5,
-        "paths": file_ref.paths,
-        "dependencies": {},
-        "available_resources": {},
-        "config": {},
-    }
-    res = run_rpc_subprocess(FILE_SIZE_MODULE, init, socket_dir, 30.0)
-    out = IndexerOutput.from_dict(res.result)
-    context.resources.arango.store_indexer_result(file_ref.md5, out.indexer_id,
-                                                  out.result_type, out.result)
+    out = context.resources.index_runtime.run_indexers(
+        file_ref=file_ref,
+        names=["file-size"],
+    )["file-size"]
+    _store_indexer_output(context, file_ref, out)
     return out
 
 
-@op(required_resource_keys={"arango", "socket_dir"})
+@op(required_resource_keys={"arango", "index_runtime"})
 def file_stats_op(context: OpExecutionContext,
                   file_ref: FileRef) -> IndexerOutput:
-    socket_dir = Path(context.resources.socket_dir)
-    init = {
-        "md5": file_ref.md5,
-        "paths": file_ref.paths,
-        "dependencies": {},
-        "available_resources": {},
-        "config": {},
-    }
-    res = run_rpc_subprocess(FILE_STATS_MODULE, init, socket_dir, 30.0)
-    out = IndexerOutput.from_dict(res.result)
-    context.resources.arango.store_indexer_result(file_ref.md5, out.indexer_id,
-                                                  out.result_type, out.result)
+    out = context.resources.index_runtime.run_indexers(
+        file_ref=file_ref,
+        names=["file-stats"],
+    )["file-stats"]
+    _store_indexer_output(context, file_ref, out)
     return out
 
 
-@op(required_resource_keys={"arango", "socket_dir", "reverser"})
+@op(required_resource_keys={"arango", "index_runtime"})
 def full_text_op(context: OpExecutionContext,
                  file_ref: FileRef) -> IndexerOutput:
-    socket_dir = Path(context.resources.socket_dir)
-    reverser: ResourceInfo = context.resources.reverser
-    init = {
-        "md5": file_ref.md5,
-        "paths": file_ref.paths,
-        "dependencies": {},
-        "available_resources": {
-            "file-reverser": {
-                "endpoint": reverser.endpoint,
-                "status": reverser.status
-            }
-        },
-        "config": {},
-    }
-    res = run_rpc_subprocess(FULL_TEXT_MODULE, init, socket_dir, 30.0)
-    out = IndexerOutput.from_dict(res.result)
-    context.resources.arango.store_indexer_result(file_ref.md5, out.indexer_id,
-                                                  out.result_type, out.result)
+    out = context.resources.index_runtime.run_indexers(
+        file_ref=file_ref,
+        names=["full-text"],
+    )["full-text"]
+    _store_indexer_output(context, file_ref, out)
     return out
 
 
-@op(required_resource_keys={"arango", "socket_dir"})
-def file_size_converter_op(context: OpExecutionContext,
-                           config: ConverterConfig) -> ConverterOutput:
-    socket_dir = Path(context.resources.socket_dir)
-    init = {
-        "input_files": config.input_files,
-        "config": {
-            "param": config.param
-        }
-    }
-    res = run_rpc_subprocess(FILE_SIZE_CONVERTER_MODULE, init, socket_dir,
-                             30.0)
-    out = ConverterOutput.from_dict(res.result)
-    context.resources.arango.store_derivation(config.input_md5s,
-                                              out.output_files,
-                                              {"param": config.param},
-                                              out.return_value)
+@op(required_resource_keys={"arango", "index_runtime"})
+def file_summaries_op(
+    context: OpExecutionContext,
+    file_ref: FileRef,
+) -> IndexerOutput:
+    out = context.resources.index_runtime.run_indexers(
+        file_ref=file_ref,
+        names=["file-summaries"],
+    )["file-summaries"]
+    _store_indexer_output(context, file_ref, out)
+    return out
+
+
+@op(required_resource_keys={"arango", "index_runtime"})
+def file_embedding_op(
+    context: OpExecutionContext,
+    file_ref: FileRef,
+) -> IndexerOutput:
+    out = context.resources.index_runtime.run_indexers(
+        file_ref=file_ref,
+        names=["file-embedding"],
+    )["file-embedding"]
+    _store_indexer_output(context, file_ref, out)
+    return out
+
+
+@op(required_resource_keys={"arango", "index_runtime"})
+def file_size_converter_op(
+    context: OpExecutionContext,
+    config: ConverterConfig,
+) -> ConverterOutput:
+    out = context.resources.index_runtime.run_converter(
+        converter_name="file-size-converter",
+        input_files=config.input_files,
+        param=config.param,
+    )
+    context.resources.arango.store_derivation(
+        config.input_md5s,
+        out.output_files,
+        {"param": config.param},
+        out.return_value,
+    )
     return out
 
 
@@ -216,6 +199,7 @@ def file_size_converter_op(context: OpExecutionContext,
         "socket_dir": socket_dir_resource,
         "reverser": file_reverser_resource,
         "flm_gemma": flm_gemma_resource,
+        "index_runtime": index_runtime_resource,
     })
 def index_file_job() -> None:
     file_ref = provide_file_op()
@@ -223,11 +207,14 @@ def index_file_job() -> None:
     file_stats_op(file_ref)
     full_text_op(file_ref)
     file_summaries_op(file_ref)
+    file_embedding_op(file_ref)
 
 
-@job(resource_defs={
-    "arango": arango_resource,
-    "socket_dir": socket_dir_resource,
-})
+@job(
+    resource_defs={
+        "arango": arango_resource,
+        "socket_dir": socket_dir_resource,
+        "index_runtime": index_runtime_resource,
+    })
 def convert_files_job() -> None:
     file_size_converter_op()

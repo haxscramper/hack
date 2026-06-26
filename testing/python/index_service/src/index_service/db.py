@@ -1,8 +1,9 @@
+import math
 from dataclasses import dataclass
 
 from arango import ArangoClient
 from beartype import beartype
-from beartype.typing import Dict, List
+from beartype.typing import Any, Dict, List
 
 
 @beartype
@@ -101,3 +102,57 @@ class IndexDatabase:
             "return_value": return_value,
         })
         return meta["_key"]
+
+    @staticmethod
+    def reset_database(host: str, db_name: str, username: str,
+                       password: str) -> None:
+        client = ArangoClient(hosts=host)
+        sys_db = client.db("_system", username=username, password=password)
+        if sys_db.has_database(db_name):
+            sys_db.delete_database(db_name)
+        sys_db.create_database(db_name)
+
+    def full_text_search(self,
+                         query: str,
+                         limit: int = 20) -> List[Dict[str, Any]]:
+        cursor = self._db.aql.execute(
+            """
+            FOR doc IN indexer_results
+              FILTER doc.result_type == "full-text"
+              FILTER CONTAINS(LOWER(doc.result.text), LOWER(@query))
+              LIMIT @limit
+              RETURN {md5: doc.md5, text: doc.result.text}
+            """,
+            bind_vars={
+                "query": query,
+                "limit": limit
+            },
+        )
+        return list(cursor)
+
+    def vector_search(
+        self,
+        vector: List[float],
+        limit: int = 20,
+    ) -> List[Dict[str, Any]]:
+        cursor = self._db.aql.execute("""
+            FOR doc IN indexer_results
+              FILTER doc.result_type == "file-embedding"
+              RETURN {md5: doc.md5, vector: doc.result.vector}
+            """)
+        rows = list(cursor)
+
+        def cosine(a: List[float], b: List[float]) -> float:
+            dot = sum(x * y for x, y in zip(a, b))
+            na = math.sqrt(sum(x * x for x in a))
+            nb = math.sqrt(sum(y * y for y in b))
+            if na == 0.0 or nb == 0.0:
+                return 0.0
+            return dot / (na * nb)
+
+        scored = [{
+            "md5": row["md5"],
+            "score": cosine(vector, row["vector"])
+        } for row in rows]
+        scored.sort(key=lambda item: item["score"], reverse=True)
+        return scored[:limit]
