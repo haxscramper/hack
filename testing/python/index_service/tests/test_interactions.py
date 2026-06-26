@@ -195,8 +195,14 @@ def test_index_file_job(db: IndexDatabase, socket_dir: Path,
                         "socket_dir": str(socket_dir)
                     }
                 },
+                "flm_gemma": {
+                    "config": {
+                        "socket_dir": str(socket_dir)
+                    }
+                },
             },
         })
+
     assert result.success
     size_record = db.get_indexer_result("filemd5", "file-size")
     assert size_record.result["size_bytes"] == sample_file.stat().st_size
