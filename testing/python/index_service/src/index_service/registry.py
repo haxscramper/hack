@@ -1,7 +1,19 @@
-FILE_SIZE_MODULE = "index_service.indexers.file_size"
-FILE_STATS_MODULE = "index_service.indexers.file_stats"
-FULL_TEXT_MODULE = "index_service.indexers.full_text"
-FILE_SUMMARIES_MODULE = "index_service.indexers.file_summaries"
-FILE_SIZE_CONVERTER_MODULE = "index_service.converters.file_size_converter"
-FILE_REVERSER_MODULE = "index_service.resources.file_reverser"
-FLM_GEMMA_RESOURCE_MODULE = "index_service.resources.flm_gemma"
+from index_service.converters.file_size_converter import FileSizeConverterActor
+from index_service.indexers.file_embedding import FileEmbeddingIndexerActor
+from index_service.indexers.file_size import FileSizeIndexerActor
+from index_service.indexers.file_stats import FileStatsIndexerActor
+from index_service.indexers.file_summaries import FileSummariesIndexerActor
+from index_service.indexers.full_text import FullTextIndexerActor
+from index_service.resources.file_reverser import FileReverserResourceActor
+from index_service.resources.flm_gemma import FlmGemmaResourceActor
+
+DEFAULT_ACTOR_TYPES = [
+    FileReverserResourceActor,
+    FlmGemmaResourceActor,
+    FileSizeIndexerActor,
+    FileStatsIndexerActor,
+    FullTextIndexerActor,
+    FileSummariesIndexerActor,
+    FileEmbeddingIndexerActor,
+    FileSizeConverterActor,
+]

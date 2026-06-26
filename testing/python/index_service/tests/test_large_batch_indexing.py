@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from index_service.contracts import FileRef
+from index_service.protocol import FileRef
 from index_service.runtime import IndexRuntime
 
 

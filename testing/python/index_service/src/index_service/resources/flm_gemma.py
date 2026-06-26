@@ -1,26 +1,32 @@
 import os
-from dataclasses import dataclass
 
-from beartype import beartype
-from beartype.typing import Dict
-from index_service.harness import ResourceHarness
+from index_service.harness import BaseResourceActor
 from openai import OpenAI
+from pydantic import BaseModel
 
 
-@beartype
-@dataclass
-class FlmSummaryResult:
+class SummarizeRequest(BaseModel):
+    text: str
+
+
+class FlmSummaryResult(BaseModel):
     summary: str
 
 
-@beartype
-def _make_handler(client: OpenAI, model: str):
+class FlmGemmaResourceActor(BaseResourceActor):
+    actor_id = "flm-gemma"
 
-    @beartype
-    def handle(payload: Dict[str, object]) -> FlmSummaryResult:
-        text = payload["text"]
-        response = client.chat.completions.create(
-            model=model,
+    def __init__(self,
+                 client: OpenAI | None = None,
+                 model: str | None = None) -> None:
+        super().__init__()
+        base_url = os.environ.get("FLM_BASE_URL", "http://127.0.0.1:52625/v1")
+        self._model = model or os.environ.get("FLM_MODEL", "gemma4-it:e4b")
+        self._client = client or OpenAI(base_url=base_url, api_key="flm")
+
+    def handle(self, request: SummarizeRequest) -> FlmSummaryResult:
+        response = self._client.chat.completions.create(
+            model=self._model,
             messages=[
                 {
                     "role":
@@ -30,18 +36,9 @@ def _make_handler(client: OpenAI, model: str):
                 },
                 {
                     "role": "user",
-                    "content": text,
+                    "content": request.text,
                 },
             ],
         )
-        summary = response.choices[0].message.content.strip()
-        return FlmSummaryResult(summary=summary)
-
-    return handle
-
-
-if __name__ == "__main__":
-    base_url = os.environ.get("FLM_BASE_URL", "http://127.0.0.1:52625/v1")
-    model = os.environ.get("FLM_MODEL", "gemma4-it:e4b")
-    client = OpenAI(base_url=base_url, api_key="flm")
-    ResourceHarness("flm-gemma", _make_handler(client, model)).run()
+        return FlmSummaryResult(
+            summary=response.choices[0].message.content.strip())

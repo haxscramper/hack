@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from index_service.contracts import FileRef
+from index_service.protocol import FileRef
 from index_service.runtime import IndexRuntime
 
 
@@ -11,8 +11,10 @@ def test_full_text_search(db, tmp_path: Path) -> None:
     db.ensure_file("m1", [str(path)])
     runtime = IndexRuntime()
     try:
-        out = runtime.run_indexers(FileRef(md5="m1", paths=[str(path)]),
-                                   ["full-text"])["full-text"]
+        out = runtime.run_indexers(
+            FileRef(md5="m1", paths=[str(path)]),
+            ["full-text"],
+        )["full-text"]
         db.store_indexer_result("m1", out.indexer_id, out.result_type,
                                 out.result)
     finally:
@@ -34,10 +36,14 @@ def test_vector_search(db, tmp_path: Path) -> None:
 
     runtime = IndexRuntime()
     try:
-        out1 = runtime.run_indexers(FileRef(md5="m1", paths=[str(a)]),
-                                    ["file-embedding"])["file-embedding"]
-        out2 = runtime.run_indexers(FileRef(md5="m2", paths=[str(b)]),
-                                    ["file-embedding"])["file-embedding"]
+        out1 = runtime.run_indexers(
+            FileRef(md5="m1", paths=[str(a)]),
+            ["file-embedding"],
+        )["file-embedding"]
+        out2 = runtime.run_indexers(
+            FileRef(md5="m2", paths=[str(b)]),
+            ["file-embedding"],
+        )["file-embedding"]
         db.store_indexer_result("m1", out1.indexer_id, out1.result_type,
                                 out1.result)
         db.store_indexer_result("m2", out2.indexer_id, out2.result_type,

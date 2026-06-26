@@ -1,30 +1,29 @@
 from pathlib import Path
 
-from beartype import beartype
-from beartype.typing import Dict
-from index_service.harness import RpcContext, RpcHarness
-from index_service.protocol import IndexerOutput
+from index_service.harness import BaseIndexerActor
+from index_service.protocol import IndexerOutput, IndexerRequest
+from index_service.resources.flm_gemma import FlmSummaryResult, SummarizeRequest
 
 
-@beartype
-def handle(payload: Dict[str, object], ctx: RpcContext) -> IndexerOutput:
-    summaries: Dict[str, str] = {}
+class FileSummariesIndexerActor(BaseIndexerActor):
+    actor_id = "file-summaries"
+    required_resources = ("flm-gemma", )
 
-    for raw_path in payload["paths"]:
-        path = Path(raw_path)
-        text = path.read_text()
-        reply = ctx.resource_request("flm-gemma", {"text": text})
-        summaries[str(path)] = reply.payload["summary"]
-
-    return IndexerOutput(
-        indexer_id="file-summaries",
-        result_type="file-summaries",
-        result={
-            "summaries": summaries,
-            "file_count": len(summaries),
-        },
-    )
-
-
-if __name__ == "__main__":
-    RpcHarness(handle).run()
+    def handle(self, request: IndexerRequest) -> IndexerOutput:
+        summaries: dict[str, str] = {}
+        for raw_path in request.file_ref.paths:
+            text = Path(raw_path).read_text()
+            summary = self.request_resource(
+                "flm-gemma",
+                SummarizeRequest(text=text),
+                FlmSummaryResult,
+            )
+            summaries[str(raw_path)] = summary.summary
+        return IndexerOutput(
+            indexer_id=self.actor_id,
+            result_type=self.actor_id,
+            result={
+                "summaries": summaries,
+                "file_count": len(summaries)
+            },
+        )

@@ -1,27 +1,27 @@
 from pathlib import Path
 
-from beartype import beartype
-from beartype.typing import Dict
-from index_service.harness import RpcContext, RpcHarness
-from index_service.protocol import IndexerOutput
+from index_service.harness import BaseIndexerActor
+from index_service.protocol import IndexerOutput, IndexerRequest
+from index_service.resources.file_reverser import ReverseLinesRequest, ReverserResult
 
 
-@beartype
-def handle(payload: Dict[str, object], ctx: RpcContext) -> IndexerOutput:
-    path = Path(payload["paths"][0])
-    text = path.read_text()
-    lines = text.splitlines()
-    reply = ctx.resource_request("file-reverser", {"lines": lines})
-    reversed_lines = reply.payload["lines"]
-    return IndexerOutput(
-        indexer_id="full-text",
-        result_type="full-text",
-        result={
-            "text": text,
-            "reversed_lines": reversed_lines
-        },
-    )
+class FullTextIndexerActor(BaseIndexerActor):
+    actor_id = "full-text"
+    required_resources = ("file-reverser", )
 
-
-if __name__ == "__main__":
-    RpcHarness(handle).run()
+    def handle(self, request: IndexerRequest) -> IndexerOutput:
+        path = Path(request.file_ref.paths[0])
+        text = path.read_text()
+        reverse_result = self.request_resource(
+            "file-reverser",
+            ReverseLinesRequest(lines=text.splitlines()),
+            ReverserResult,
+        )
+        return IndexerOutput(
+            indexer_id=self.actor_id,
+            result_type=self.actor_id,
+            result={
+                "text": text,
+                "reversed_lines": reverse_result.lines
+            },
+        )

@@ -1,24 +1,17 @@
-from dataclasses import dataclass
-
-from beartype import beartype
-from beartype.typing import Dict, List
-from index_service.harness import ResourceHarness
+from index_service.harness import BaseResourceActor
+from pydantic import BaseModel
 
 
-@beartype
-@dataclass
-class ReverserResult:
-    """Result of reversing the order of input lines."""
-
-    lines: List[str]
-    """Input lines in reversed order."""
+class ReverseLinesRequest(BaseModel):
+    lines: list[str]
 
 
-@beartype
-def handle(payload: Dict[str, object]) -> ReverserResult:
-    lines = payload["lines"]
-    return ReverserResult(lines=list(reversed(lines)))
+class ReverserResult(BaseModel):
+    lines: list[str]
 
 
-if __name__ == "__main__":
-    ResourceHarness("file-reverser", handle).run()
+class FileReverserResourceActor(BaseResourceActor):
+    actor_id = "file-reverser"
+
+    def handle(self, request: ReverseLinesRequest) -> ReverserResult:
+        return ReverserResult(lines=list(reversed(request.lines)))

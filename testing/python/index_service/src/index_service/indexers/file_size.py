@@ -1,21 +1,16 @@
 from pathlib import Path
 
-from beartype import beartype
-from beartype.typing import Dict
-from index_service.harness import RpcContext, RpcHarness
-from index_service.protocol import IndexerOutput
+from index_service.harness import BaseIndexerActor
+from index_service.protocol import IndexerOutput, IndexerRequest
 
 
-@beartype
-def handle(payload: Dict[str, object], ctx: RpcContext) -> IndexerOutput:
-    path = Path(payload["paths"][0])
-    size = path.stat().st_size
-    return IndexerOutput(
-        indexer_id="file-size",
-        result_type="file-size",
-        result={"size_bytes": size},
-    )
+class FileSizeIndexerActor(BaseIndexerActor):
+    actor_id = "file-size"
 
-
-if __name__ == "__main__":
-    RpcHarness(handle).run()
+    def handle(self, request: IndexerRequest) -> IndexerOutput:
+        size = Path(request.file_ref.paths[0]).stat().st_size
+        return IndexerOutput(
+            indexer_id=self.actor_id,
+            result_type=self.actor_id,
+            result={"size_bytes": size},
+        )
