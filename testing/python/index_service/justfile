@@ -6,5 +6,8 @@ index:
         --db-name test_index \
         --reset True \
         --indexer exif_metadata \
-        --limit 20 \
-        "/home/haxscramper/defaultdirs/input/grabber/tensor_saved_high_res_mirror"
+        --indexer comfy_input \
+        --limit-total 100 \
+        --limit-per-path 20 \
+        "/home/haxscramper/defaultdirs/input/grabber/tensor_saved_high_res_mirror" \
+        "/home/haxscramper/software/ComfyUI/output"
