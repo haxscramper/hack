@@ -1,16 +1,13 @@
 from __future__ import annotations
 
-import json
 import logging
-import subprocess
-from typing import List, Optional, Protocol
+from typing import List, Optional, Sequence
 
 from beartype import beartype
 from PySide6.QtCore import (
     QModelIndex,
     QSize,
     Qt,
-    QTimer,
 )
 from PySide6.QtGui import QPainter, QPen
 from PySide6.QtWidgets import (
@@ -26,32 +23,24 @@ from PySide6.QtWidgets import (
     QSplitter,
     QTabBar,
     QTabWidget,
-    QTableWidget,
-    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
 
+from index_service.gui.collection_views.builder import WidgetBuilder
+from index_service.gui.collection_views.json_preview_builder import JsonWidgetBuilder
 from index_service.gui.file_preview_delegate import FilePreviewDelegate, ThumbnailCache
 from index_service.gui.query_model import QueryResultModel
 from index_service.services.db import IndexDatabase
-from index_service.services.indexers.comfy_input_indexer import ComfyInputIndexerResult
-from index_service.services.resources.wd_tagger import WdTaggerResult
 from index_service.services.types import MD5
 
 log = logging.getLogger(__name__)
 
 TILE_SIZE = 128
 BATCH_SIZE = 200
-REFLOW_DEBOUNCE_MS = 200
+
 DEFAULT_QUERY = """FOR f IN files
   RETURN { md5: f._key }"""
-
-
-class WidgetBuilder(Protocol):
-
-    def build(self, db: IndexDatabase, md5: MD5) -> QWidget:
-        ...
 
 
 @beartype
@@ -69,95 +58,6 @@ class PathsWidgetBuilder:
 
     def build(self, db: IndexDatabase, md5: MD5) -> QWidget:
         return build_paths_widget(db, md5)
-
-
-class JsonPreviewWidget(QWidget):
-
-    def __init__(self, parent: Optional[QWidget] = None) -> None:
-        super().__init__(parent)
-        self._view = QPlainTextEdit()
-        self._view.setReadOnly(True)
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(self._view)
-        self._doc: Optional[dict] = None
-        self._timer = QTimer(self)
-        self._timer.setSingleShot(True)
-        self._timer.timeout.connect(self.reflow)
-
-    def set_doc(self, doc: Optional[dict]) -> None:
-        self._doc = doc
-        self.reflow()
-
-    def resizeEvent(self, event) -> None:  # type: ignore[override]
-        super().resizeEvent(event)
-        self._timer.start(REFLOW_DEBOUNCE_MS)
-
-    def reflow(self) -> None:
-        if self._doc is None:
-            self._view.setPlainText("<no document>")
-            return
-        width = max(40, self._view.viewport().width() - 2)
-        proc = subprocess.run(
-            ["fjson", "-w", str(width)],
-            input=json.dumps(self._doc, default=str),
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        self._view.setPlainText(proc.stdout)
-
-
-class JsonWidgetBuilder:
-
-    def __init__(self, collection_name: str) -> None:
-        self._collection_name = collection_name
-
-    def build(self, db: IndexDatabase, md5: MD5) -> QWidget:
-        doc = db._db.collection(self._collection_name).get(md5.md5)
-        widget = JsonPreviewWidget()
-        widget.set_doc(doc)
-        return widget
-
-
-class WdTaggerWidgetBuilder:
-
-    def build(self, db: IndexDatabase, md5: MD5) -> QWidget:
-        doc = db._db.collection("wd_tags").get(md5.md5)
-        if doc is None:
-            widget = JsonPreviewWidget()
-            widget.set_doc(None)
-            return widget
-        result = WdTaggerResult.model_validate(doc["result"])
-        table = QTableWidget(len(result.tags), 3)
-        table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        table.setHorizontalHeaderLabels(["category", "name", "probability"])
-        for row, tag in enumerate(result.tags):
-            table.setItem(row, 0, QTableWidgetItem(tag.category))
-            table.setItem(row, 1, QTableWidgetItem(tag.name))
-            table.setItem(row, 2, QTableWidgetItem(f"{tag.probability:.4f}"))
-        table.horizontalHeader().setStretchLastSection(True)
-        return table
-
-
-class ComfyInputWidgetBuilder:
-
-    def build(self, db: IndexDatabase, md5: MD5) -> QWidget:
-        doc = db._db.collection("comfy_input").get(md5.md5)
-        if doc is None:
-            widget = JsonPreviewWidget()
-            widget.set_doc(None)
-            return widget
-        result = ComfyInputIndexerResult.model_validate(doc["result"])
-        table = QTableWidget(len(result.inputs), 2)
-        table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        table.setHorizontalHeaderLabels(["node", "inputs"])
-        for row, inp in enumerate(result.inputs):
-            table.setItem(row, 0, QTableWidgetItem(inp.node))
-            table.setItem(
-                row, 1, QTableWidgetItem(json.dumps(inp.inputs, default=str)))
-        table.horizontalHeader().setStretchLastSection(True)
-        return table
 
 
 class HorizontalTextTabBar(QTabBar):
@@ -192,6 +92,7 @@ class MainWindow(QMainWindow):
         self,
         db: IndexDatabase,
         collection_names: List[str],
+        builders: Sequence[WidgetBuilder],
         parent: Optional[QWidget] = None,
     ) -> None:
         super().__init__(parent)
@@ -201,15 +102,15 @@ class MainWindow(QMainWindow):
         self._current_md5: Optional[MD5] = None
 
         self._widget_builders: dict[str, WidgetBuilder] = {
-            "paths": PathsWidgetBuilder()
+            "paths": PathsWidgetBuilder()  # type: ignore
         }
 
         for name in self._collection_names:
-            if name == "wd_tags":
-                self._widget_builders[name] = WdTaggerWidgetBuilder()
-            elif name == "comfy_input":
-                self._widget_builders[name] = ComfyInputWidgetBuilder()
-            else:
+            for builder in builders:
+                if builder.asset_name == name:
+                    self._widget_builders[name] = builder
+
+            if name not in self._widget_builders:
                 self._widget_builders[name] = JsonWidgetBuilder(name)
 
         central = QWidget()

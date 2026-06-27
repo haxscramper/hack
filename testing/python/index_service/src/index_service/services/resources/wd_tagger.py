@@ -1,18 +1,18 @@
 from __future__ import annotations
 
-from beartype import beartype
 import logging
 from pathlib import Path
+
 import cv2
 import numpy as np
 import onnxruntime as ort
 import pandas as pd
-from pydantic import BaseModel
+from beartype import beartype
 from huggingface_hub import hf_hub_download
+from pydantic import BaseModel
 
 from index_service.services.harness import BaseResource
 from index_service.services.utils import get_xdg_cache_dir
-import logging
 
 log = logging.getLogger(__name__)
 
@@ -126,9 +126,11 @@ class WdTagger(BaseResource):
                 category = CATEGORY_MAP.get(int(row["category"]),
                                             f"cat_{int(row['category'])}")
                 result.append(
-                    WdTag(category=category,
-                          name=str(row["name"]),
-                          probability=float(prob)))
+                    WdTag(
+                        category=category,
+                        name=str(row["name"]),
+                        probability=float(prob),
+                    ))
         result.sort(key=lambda x: x.probability, reverse=True)
         return result
 

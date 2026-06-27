@@ -1,12 +1,13 @@
 import json
+import logging
 from pathlib import Path
+
+from beartype.typing import Any, Literal, cast
+from pydantic import BaseModel, Field
 
 from index_service.services.harness import BaseIndexer
 from index_service.services.indexers.exif_metadata import ExifMetadataIndexerResult
 from index_service.services.types import IndexerOutput, IndexerRequest
-from pydantic import BaseModel, Field
-from beartype.typing import Any, Literal, cast
-import logging
 
 log = logging.getLogger(__name__)
 
@@ -171,8 +172,9 @@ class ComfyInputIndexer(BaseIndexer):
         pre_data = cast(IndexerOutput, assets["exif_metadata"]).result
         assert isinstance(pre_data, ExifMetadataIndexerResult), type(pre_data)
 
-        if "exif_metadata" not in pre_data.file.original_metadata_full or "workflow" not in pre_data.file.original_metadata_full[
-                "exif_metadata"]:
+        if ("exif_metadata" not in pre_data.file.original_metadata_full
+                or "workflow"
+                not in pre_data.file.original_metadata_full["exif_metadata"]):
             return IndexerOutput(
                 indexer_id=self.asset_name,
                 result=ComfyInputIndexerResult(
