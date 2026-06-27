@@ -10,7 +10,12 @@ requires-python = ">=3.12"
 dependencies = [
     "beartype>=0.22.9",
     "dagster>=1.13.10",
+    "huggingface-hub>=1.21.0",
+    "numpy>=2.5.0",
+    "onnxruntime>=1.27.0",
     "openai>=2.44.0",
+    "opencv-python>=4.13.0.92",
+    "pandas>=3.0.3",
     "pillow>=12.2.0",
     "pykka>=4.4.2",
     "pytest>=9.1.1",
