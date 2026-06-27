@@ -1,5 +1,7 @@
+import hashlib
 import math
 from dataclasses import dataclass
+from pathlib import Path
 
 from arango import ArangoClient
 from beartype import beartype
@@ -52,6 +54,14 @@ class IndexDatabase:
     def truncate_all(self) -> None:
         for name in ["files", "indexer_results", "derivations"]:
             self._db.collection(name).truncate()
+
+    def _md5(self, path: Path) -> str:
+        digest = hashlib.md5()
+        digest.update(path.read_bytes())
+        return digest.hexdigest()
+
+    def add_path(self, path: Path) -> str:
+        return self._md5(path)
 
     def ensure_file(self, md5: str, paths: List[str]) -> None:
         files = self._db.collection("files")

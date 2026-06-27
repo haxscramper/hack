@@ -26,5 +26,9 @@ class BaseIndexer(ABC):
     dependencies: Tuple[str, ...] = ()
 
     @abstractmethod
+    def can_index(self, file_ref: FileRef, ctx: IndexerContext) -> bool:
+        return True
+
+    @abstractmethod
     def run(self, file_ref: FileRef, ctx: IndexerContext) -> IndexerOutput:
         raise NotImplementedError
