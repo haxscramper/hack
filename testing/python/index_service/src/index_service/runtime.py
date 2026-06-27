@@ -52,21 +52,28 @@ class IndexRuntime:
 
     def __init__(
         self,
-        resource_overrides: dict[str, type[BaseResource]] | None = None,
+        resource_overrides: dict[str, BaseResource | type[BaseResource]]
+        | None = None,
         db: Any = None,
         indexer_types: list[type[BaseIndexer]] | None = None,
         converter_types: list[type[BaseConverter]] | None = None,
+        resource_types: list[type[BaseResource]] | None = None,
     ) -> None:
         self._db = db
         overrides = resource_overrides or {}
         self._resource_instances: dict[str, BaseResource] = {}
-        resource_types = DEFAULT_RESOURCE_TYPES
-        for cls in resource_types:
-            key = cls.resource_key
-            if key in overrides:
-                self._resource_instances[key] = overrides[key]()
+        base_resource_types = resource_types or DEFAULT_RESOURCE_TYPES
+        for cls in base_resource_types:
+            self._resource_instances[cls.resource_key] = cls()
+        for key, override in overrides.items():
+            instance: BaseResource
+            if isinstance(override, type) and issubclass(
+                    override, BaseResource):
+                instance = override()
             else:
-                self._resource_instances[key] = cls()
+                instance = override  # type: ignore[assignment]
+            self._resource_instances[key] = instance
+
         indexer_type_list = indexer_types or DEFAULT_INDEXER_TYPES
         self._indexer_instances = {
             cls.asset_name: cls()

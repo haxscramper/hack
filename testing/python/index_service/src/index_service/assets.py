@@ -143,7 +143,8 @@ def _converter_asset_body(
 
 def build_converter_asset(converter: BaseConverter):
     upstream = list(converter.required_assets)
-    params = ["context", "config"] + [_sanitize(u) for u in upstream]
+    params = ["context", "config: ConverterConfig"
+              ] + [_sanitize(u) for u in upstream]
     upstream_dict_items = ", ".join(f"'{u}': {_sanitize(u)}" for u in upstream)
     upstream_dict = "{" + upstream_dict_items + "}" if upstream_dict_items else "{}"
     src = (
@@ -153,6 +154,7 @@ def build_converter_asset(converter: BaseConverter):
     ns: dict[str, Any] = {
         "_converter_asset_body": _converter_asset_body,
         "converter": converter,
+        "ConverterConfig": ConverterConfig,
     }
     exec(src, ns)
     fn = ns["_asset_fn"]
@@ -165,8 +167,6 @@ def build_converter_asset(converter: BaseConverter):
         name=converter.converter_id,
         ins=ins,
         required_resource_keys={
-            "arango",
-            "output_collector",
-            *converter.required_resources,
+            "arango", "output_collector", *converter.required_resources
         },
     )(fn)

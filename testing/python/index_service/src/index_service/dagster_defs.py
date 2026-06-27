@@ -51,12 +51,22 @@ class DagsterIndexRunner:
         overrides = resource_overrides or {}
         defs: dict[str, Any] = {}
         for cls in self._resource_types:
-            if cls.resource_key in overrides:
-                defs[cls.resource_key] = ResourceDefinition.hardcoded_resource(
-                    overrides[cls.resource_key])
+            key = cls.resource_key
+            if key in overrides:
+                resource_obj = overrides[key]
+                if isinstance(resource_obj, type) and issubclass(
+                        resource_obj, BaseResource):
+                    resource_obj = resource_obj()
+                defs[key] = ResourceDefinition.hardcoded_resource(resource_obj)
             else:
-                defs[cls.resource_key] = ResourceDefinition.hardcoded_resource(
-                    cls())
+                defs[key] = ResourceDefinition.hardcoded_resource(cls())
+        for key, resource_obj in overrides.items():
+            if key in defs:
+                continue
+            if isinstance(resource_obj, type) and issubclass(
+                    resource_obj, BaseResource):
+                resource_obj = resource_obj()
+            defs[key] = ResourceDefinition.hardcoded_resource(resource_obj)
         return defs
 
     def _indexer_instances(self,
