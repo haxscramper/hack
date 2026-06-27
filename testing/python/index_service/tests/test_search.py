@@ -1,7 +1,7 @@
 from pathlib import Path
 
-from index_service.protocol import FileRef
-from index_service.runtime import IndexRuntime
+from index_service.services.protocol import FileRef
+from index_service.services.runtime import IndexRuntime
 
 
 def test_full_text_search(db, tmp_path: Path) -> None:

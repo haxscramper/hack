@@ -5,13 +5,13 @@ import pytest
 from beartype.typing import cast
 from pydantic import BaseModel
 
-from index_service.converters.file_size_converter import FileSizeConverterResult
-from index_service.dagster_defs import DagsterIndexRunner
-from index_service.db import IndexDatabase
-from index_service.indexers.file_size import FileSizeIndexerResult
-from index_service.indexers.file_stats import FileStatsIndexerResult
-from index_service.protocol import FileRef
-from index_service.runtime import IndexRuntime
+from index_service.services.converters.file_size_converter import FileSizeConverterResult
+from index_service.services.dagster_defs import DagsterIndexRunner
+from index_service.services.db import IndexDatabase
+from index_service.services.indexers.file_size import FileSizeIndexerResult
+from index_service.services.indexers.file_stats import FileStatsIndexerResult
+from index_service.services.protocol import FileRef
+from index_service.services.runtime import IndexRuntime
 
 ARANGO_HOST = os.environ.get("ARANGO_HOST", "http://localhost:8529")
 ARANGO_USER = os.environ.get("ARANGO_USER", "root")
@@ -112,7 +112,7 @@ def test_db_store_derivation(db: IndexDatabase) -> None:
 
 
 def test_index_file_job(db: IndexDatabase, sample_file: Path) -> None:
-    from index_service import dagster_defs
+    from index_service.services import dagster_defs
     from tests.conftest import MockFlmGemmaResource
 
     runner = DagsterIndexRunner()
@@ -130,7 +130,7 @@ def test_index_file_job(db: IndexDatabase, sample_file: Path) -> None:
 
 
 def test_convert_files_job(db: IndexDatabase, sample_file: Path) -> None:
-    from index_service import dagster_defs
+    from index_service.services import dagster_defs
 
     runner = DagsterIndexRunner()
     result = runner.run_convert_files_job(

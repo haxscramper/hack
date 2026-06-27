@@ -8,7 +8,7 @@ from beartype import beartype
 from beartype.typing import Any, Dict, List, Optional
 from pydantic import BaseModel
 
-from index_service.protocol import AnyModel
+from index_service.services.protocol import AnyModel
 
 
 @beartype

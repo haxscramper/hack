@@ -7,7 +7,7 @@ from typing import Any
 from dagster import ResourceDefinition, RunConfig, materialize, mem_io_manager
 from pydantic import BaseModel
 
-from index_service.assets import (
+from index_service.services.assets import (
     ConverterConfig,
     FileRefConfig,
     OutputCollector,
@@ -15,9 +15,9 @@ from index_service.assets import (
     build_indexer_asset,
     file_ref,
 )
-from index_service.harness import BaseConverter, BaseIndexer, BaseResource
-from index_service.protocol import ConverterOutput, FileRef, IndexerOutput
-from index_service.runtime import IndexRuntime
+from index_service.services.harness import BaseConverter, BaseIndexer, BaseResource
+from index_service.services.protocol import ConverterOutput, FileRef, IndexerOutput
+from index_service.services.runtime import IndexRuntime
 
 
 def _touch(path: Path) -> None:

@@ -3,13 +3,13 @@ from pathlib import Path
 
 import click
 
-from index_service.dagster_defs import DagsterIndexRunner
-from index_service.db import IndexDatabase
+from index_service.services.dagster_defs import DagsterIndexRunner
+from index_service.services.db import IndexDatabase
 import sys
 from beartype.typing import Any
 
-from index_service.registry import DEFAULT_INDEXER_TYPES
-from index_service.utils import get_custom_traceback_handler
+from index_service.services.registry import DEFAULT_INDEXER_TYPES
+from index_service.services.utils import get_custom_traceback_handler
 
 logging.basicConfig(
     level=logging.DEBUG,

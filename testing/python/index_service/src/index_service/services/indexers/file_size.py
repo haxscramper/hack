@@ -1,7 +1,7 @@
 from pathlib import Path
 
-from index_service.harness import BaseIndexer
-from index_service.protocol import IndexerOutput, IndexerRequest
+from index_service.services.harness import BaseIndexer
+from index_service.services.protocol import IndexerOutput, IndexerRequest
 from pydantic import BaseModel
 
 

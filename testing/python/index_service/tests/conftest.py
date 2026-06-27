@@ -8,11 +8,11 @@ from dataclasses import dataclass
 import pytest
 from beartype.typing import Any
 
-from index_service.db import IndexDatabase
-from index_service.harness import BaseResource
-from index_service.resources.flm_gemma import FlmSummaryResult, SummarizeRequest
-from index_service.runtime import IndexRuntime
-from index_service.utils import get_custom_traceback_handler
+from index_service.services.db import IndexDatabase
+from index_service.services.harness import BaseResource
+from index_service.services.resources.flm_gemma import FlmSummaryResult, SummarizeRequest
+from index_service.services.runtime import IndexRuntime
+from index_service.services.utils import get_custom_traceback_handler
 
 ARANGO_HOST = "http://localhost:8529"
 ARANGO_USER = "root"

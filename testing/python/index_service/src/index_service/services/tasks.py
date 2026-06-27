@@ -4,8 +4,8 @@ from typing import Any
 
 from airflow.decorators import task
 
-from index_service.harness import BaseConverter, BaseIndexer
-from index_service.protocol import (
+from index_service.services.harness import BaseConverter, BaseIndexer
+from index_service.services.protocol import (
     ConverterOutput,
     ConverterRequest,
     FileRef,

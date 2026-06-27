@@ -7,7 +7,7 @@ from typing import Any
 from beartype import beartype
 from pydantic import BaseModel
 
-from index_service.protocol import (
+from index_service.services.protocol import (
     ConverterOutput,
     ConverterRequest,
     IndexerOutput,

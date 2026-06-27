@@ -5,9 +5,9 @@ from dagster import AssetIn, Config, asset
 from pydantic import BaseModel
 import dagster
 
-from index_service.db import IndexDatabase
-from index_service.harness import BaseConverter, BaseIndexer
-from index_service.protocol import (
+from index_service.services.db import IndexDatabase
+from index_service.services.harness import BaseConverter, BaseIndexer
+from index_service.services.protocol import (
     ConverterOutput,
     ConverterRequest,
     FileRef,
