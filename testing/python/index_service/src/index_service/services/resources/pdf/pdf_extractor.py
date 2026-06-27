@@ -67,7 +67,6 @@ class PdfExtractor(BaseResource):
         return get_xdg_cache_dir(
             ["pdf_extractor", f"{pdf_path.stem}_{digest}"])
 
-    @cache_indexer_run
     def handle(self, request: PdfExtractorRequest) -> PdfExtractorResult:
         pdf_path = Path(request.path)
         if not pdf_path.exists():

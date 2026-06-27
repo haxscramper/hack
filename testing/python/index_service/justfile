@@ -8,10 +8,12 @@ index:
         --indexer exif_metadata \
         --indexer comfy_input \
         --indexer wd_tags \
+        --indexer pdf_pages \
         --limit-total 100 \
         --limit-per-path 20 \
-        "/home/haxscramper/defaultdirs/input/grabber/tensor_saved_high_res_mirror" \
-        "/home/haxscramper/software/ComfyUI/output"
+        "~/defaultdirs/input/grabber/tensor_saved_high_res_mirror" \
+        "~/software/ComfyUI/output" \
+        "~/tmp/pdf_conversion_dir_small/input"
 
 view:
     uv run src/index_service/cli/cli.py view \

@@ -10,7 +10,9 @@ from index_service.services.db import IndexDatabase
 import sys
 from beartype.typing import Any
 
+from index_service.services.indexers.pdf_indexer import PdfIndexer
 from index_service.services.indexers.wd_indexer import WdTagIndexer
+from index_service.services.resources.pdf.pdf_extractor import PdfExtractor
 from index_service.services.types import FileRef
 from index_service.services.registry import DEFAULT_INDEXER_TYPES, DEFAULT_RESOURCE_TYPES
 from index_service.services.resources.wd_tagger import WdTagger
@@ -41,6 +43,8 @@ for logger_name in [
         "asyncio",
         "PIL.Image",
         "PIL.PngImagePlugin",
+        "httpcore.http11",
+        "httpx",
 ]:
     logger = logging.getLogger(logger_name)
     logger.disabled = True
@@ -61,6 +65,14 @@ def main() -> None:
     pass
 
 
+def _expand_path(
+    _ctx: click.Context,
+    _param: click.Parameter,
+    value: tuple[str, ...],
+) -> tuple[Path, ...]:
+    return tuple(Path(path).expanduser() for path in value)
+
+
 @main.command()
 @_db_options
 @click.option(
@@ -69,10 +81,13 @@ def main() -> None:
     multiple=True,
     default=[cls.asset_name for cls in DEFAULT_INDEXER_TYPES],
 )
-@click.argument("paths",
-                nargs=-1,
-                type=click.Path(exists=True, path_type=Path))
-@click.option("--reset", is_flag=True, default=False, show_default=True)
+@click.argument(
+    "paths",
+    nargs=-1,
+    type=click.Path(path_type=str),
+    callback=_expand_path,
+)
+@click.option("--reset", default=False, show_default=True)
 @click.option("--limit-total", default=None, show_default=True, type=click.INT)
 @click.option("--limit-per-path",
               default=None,
@@ -90,6 +105,8 @@ def index(
     paths: tuple[Path, ...],
 ) -> None:
     handler = get_custom_traceback_handler(show_args=False)
+
+    paths = tuple(p.expanduser().resolve().absolute() for p in paths)
 
     if reset:
         IndexDatabase.reset_database(
@@ -117,9 +134,14 @@ def index(
 
     runner = IndexRuntime(
         db=db,
-        indexer_types=[t() for t in DEFAULT_INDEXER_TYPES] + [WdTagIndexer()],
-        resource_types=[t() for t in DEFAULT_RESOURCE_TYPES] +
-        [WdTagger.from_huggingface()],
+        indexer_types=[t() for t in DEFAULT_INDEXER_TYPES] + [
+            WdTagIndexer(),
+            PdfIndexer(),
+        ],
+        resource_types=[t() for t in DEFAULT_RESOURCE_TYPES] + [
+            WdTagger.from_huggingface(),
+            PdfExtractor(),
+        ],
     )
 
     def index_file(file: Path):
@@ -158,8 +180,10 @@ def view(host: str, db_name: str, username: str, password: str) -> None:
 
     win = MainWindow(
         db,
-        collection_names=[t.asset_name for t in DEFAULT_INDEXER_TYPES] +
-        [WdTagIndexer.asset_name],
+        collection_names=[t.asset_name for t in DEFAULT_INDEXER_TYPES] + [
+            WdTagIndexer.asset_name,
+            PdfIndexer.asset_name,
+        ],
         builders=[
             ComfyInputWidgetBuilder(),
             WdTaggerWidgetBuilder(),

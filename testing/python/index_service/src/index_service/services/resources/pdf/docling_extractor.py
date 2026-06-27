@@ -10,16 +10,17 @@ from typing import Literal
 
 import fitz
 import requests
-from docling_core.types.doc.document import (
-    ContentLayer,
-    DocTagsDocument,
-    DocTagsPage,
-    DoclingDocument,
-)
 from PIL import Image as PILImage
 from pydantic import BaseModel
 
-from models import BoundingBox, DocTag
+from index_service.services.resources.pdf.page_model import DocTag
+
+from docling_core.types.doc.document import (
+    DocTagsDocument,
+    DocTagsPage,
+    DoclingDocument,
+    ContentLayer,
+)
 
 log = logging.getLogger(__name__)
 

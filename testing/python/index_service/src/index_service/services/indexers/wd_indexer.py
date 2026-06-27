@@ -21,7 +21,7 @@ class WdTagIndexer(BaseIndexer):
     required_resources = ("wd_tagger", )
 
     def can_run(self, path: Path) -> bool:
-        return path.suffix in Image.registered_extensions()
+        return path.suffix.lower() in [".png", ".webp", ".jpg", ".jpeg"]
 
     @cache_indexer_run
     def run(
