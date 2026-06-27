@@ -53,15 +53,15 @@ class IndexDatabase:
     def add_path(self, path: Path) -> str:
         return self._md5(path)
 
-    def ensure_file(self, md5: str, paths: List[str]) -> None:
+    def ensure_file(self, md5: str, path: Path) -> None:
         files = self._db.collection("files")
         if files.has(md5):
             doc = files.get(md5)
             known = set(doc["paths"])
-            known.update(paths)
+            known.update([str(path)])
             files.update({"_key": md5, "paths": sorted(known)})
         else:
-            files.insert({"_key": md5, "paths": sorted(set(paths))})
+            files.insert({"_key": md5, "paths": [str(path)]})
 
     def store_indexer_result(
         self,
@@ -75,8 +75,9 @@ class IndexDatabase:
             "_key": key,
             "md5": md5,
             "indexer_id": indexer_id,
-            "result": result.model_dump(),
+            "result": result.model_dump(mode="json"),
         }
+
         if col.has(key):
             col.replace(doc)
         else:

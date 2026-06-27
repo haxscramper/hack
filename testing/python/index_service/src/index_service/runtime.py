@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from dagster import ResourceDefinition, RunConfig, materialize, mem_io_manager
@@ -99,9 +100,10 @@ class IndexRuntime:
                 "file_ref":
                 FileRefConfig(
                     md5=file_ref_.md5,
-                    paths=list(file_ref_.paths),
+                    path=str(file_ref_.path),
                 )
             })
+        logging.getLogger("dagster").setLevel(logging.ERROR)
         result = materialize(
             assets,
             resources=self._resource_defs(collector),

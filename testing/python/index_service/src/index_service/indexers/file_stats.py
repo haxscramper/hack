@@ -6,7 +6,7 @@ from index_service.protocol import IndexerOutput, IndexerRequest
 from pydantic import BaseModel
 
 
-class FileStatsIndexerResult(BaseModel):
+class FileStatsIndexerResult(BaseModel, extra="forbid"):
     size_bytes: int
     mode: int
     mtime: float
@@ -20,7 +20,7 @@ class FileStatsIndexer(BaseIndexer):
 
     def run(self, request: IndexerRequest,
             **resources: object) -> IndexerOutput:
-        st = Path(request.file_ref.paths[0]).stat()
+        st = Path(request.file_ref.path).stat()
         return IndexerOutput(
             indexer_id=self.asset_name,
             result=FileStatsIndexerResult(

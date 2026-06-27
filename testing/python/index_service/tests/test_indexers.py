@@ -44,7 +44,7 @@ def sample_files(tmp_path: Path) -> list[Path]:
 
 def test_file_size_indexer(runtime: IndexRuntime, sample_file: Path) -> None:
     out = runtime.run_indexers(
-        FileRef(md5="abc", paths=[str(sample_file)]),
+        FileRef(md5="abc", path=sample_file),
         ["file_size"],
     )["file_size"]
 
@@ -55,7 +55,7 @@ def test_file_size_indexer(runtime: IndexRuntime, sample_file: Path) -> None:
 
 def test_file_stats_indexer(runtime: IndexRuntime, sample_file: Path) -> None:
     out = runtime.run_indexers(
-        FileRef(md5="abc", paths=[str(sample_file)]),
+        FileRef(md5="abc", path=sample_file),
         ["file_stats"],
     )["file_stats"]
 
@@ -69,7 +69,7 @@ def test_file_stats_indexer(runtime: IndexRuntime, sample_file: Path) -> None:
 def test_full_text_indexer_with_reverser(runtime: IndexRuntime,
                                          sample_file: Path) -> None:
     out = runtime.run_indexers(
-        FileRef(md5="abc", paths=[str(sample_file)]),
+        FileRef(md5="abc", path=sample_file),
         ["full_text"],
     )["full_text"]
 
@@ -85,8 +85,8 @@ def test_file_size_converter(runtime: IndexRuntime, sample_file: Path) -> None:
 
 
 def test_db_indexer_result_uniqueness(db: IndexDatabase) -> None:
-    db.ensure_file("md5x", ["/disk/a.txt"])
-    db.ensure_file("md5x", ["/disk/b.txt"])
+    db.ensure_file("md5x", Path("/disk/a.txt"))
+    db.ensure_file("md5x", Path("/disk/b.txt"))
     db.store_indexer_result("md5x", "file_size",
                             FileSizeIndexerResult(size_bytes=10))
     db.store_indexer_result("md5x", "file_size",
@@ -97,7 +97,7 @@ def test_db_indexer_result_uniqueness(db: IndexDatabase) -> None:
 
 def test_db_store_derivation(db: IndexDatabase) -> None:
 
-    class LocalDerivation(BaseModel):
+    class LocalDerivation(BaseModel, extra="forbid"):
         total_size: int
 
     key = db.store_derivation(["md5x"], [], {"param": ""},
@@ -111,10 +111,10 @@ def test_index_file_job(db: IndexDatabase, sample_file: Path) -> None:
 
     result = dagster_defs.run_index_file_job(
         arango=db,
-        md5="filemd5",
-        paths=[str(sample_file)],
+        path=sample_file,
         resource_overrides={"flm_gemma": MockFlmGemmaResource()},
     )
+
     assert result.success
     size_record = db.get_indexer_result("filemd5", "file_size")
     assert size_record.result["size_bytes"] == sample_file.stat().st_size
@@ -134,20 +134,16 @@ def test_convert_files_job(db: IndexDatabase, sample_file: Path) -> None:
     assert result.success
 
 
-def test_file_summaries_indexer_with_flm(
+def test_file_summary_indexer_with_flm(
     runtime: IndexRuntime,
     sample_files: list[Path],
 ) -> None:
-    out = runtime.run_indexers(
-        FileRef(md5="batch-md5", paths=[str(path) for path in sample_files]),
-        ["file_summaries"],
-    )["file_summaries"]
-
-    assert out.indexer_id == "file_summaries"
-    summaries = out.result.summaries
-    assert len(summaries) == len(sample_files)
 
     for path in sample_files:
-        summary = summaries[str(path)]
-        assert isinstance(summary, str)
+        out = runtime.run_indexers(
+            FileRef(md5="batch-md5", path=path),
+            ["file_summary"],
+        )["file_summary"]
+
+        summary = out.result.summary.summary
         assert summary.strip() != ""

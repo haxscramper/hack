@@ -6,7 +6,7 @@ from pydantic import BaseModel
 import logging
 
 
-class FileSizeConverterResult(BaseModel):
+class FileSizeConverterResult(BaseModel, extra="forbid"):
     sizes: dict[str, int]
     total_size: int
 

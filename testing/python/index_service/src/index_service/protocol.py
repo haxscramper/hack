@@ -1,4 +1,5 @@
 from __future__ import annotations
+from pathlib import Path
 
 from beartype import beartype
 from beartype.typing import Annotated
@@ -8,21 +9,21 @@ AnyModel = Annotated[BaseModel, PlainValidator(lambda v: v)]
 
 
 @beartype
-class FileRef(BaseModel):
+class FileRef(BaseModel, extra="forbid"):
     model_config = ConfigDict(frozen=True)
     md5: str
-    paths: list[str]
+    path: Path
 
 
 @beartype
-class IndexerOutput(BaseModel):
+class IndexerOutput(BaseModel, extra="forbid"):
     model_config = ConfigDict(frozen=True)
     indexer_id: str
     result: AnyModel
 
 
 @beartype
-class ConverterOutput(BaseModel):
+class ConverterOutput(BaseModel, extra="forbid"):
     model_config = ConfigDict(frozen=True)
     converter_id: str
     output_files: list[str]
@@ -30,12 +31,12 @@ class ConverterOutput(BaseModel):
 
 
 @beartype
-class IndexerRequest(BaseModel):
+class IndexerRequest(BaseModel, extra="forbid"):
     file_ref: FileRef
     dependency_results: dict[str, IndexerOutput] = Field(default_factory=dict)
 
 
 @beartype
-class ConverterRequest(BaseModel):
+class ConverterRequest(BaseModel, extra="forbid"):
     input_files: list[str]
     param: str = ""

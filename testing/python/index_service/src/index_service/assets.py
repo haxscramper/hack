@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Any
 
 from dagster import AssetIn, Config, asset
@@ -26,7 +27,7 @@ class OutputCollector:
 
 class FileRefConfig(dagster.Config):
     md5: str
-    paths: list[str]
+    path: str
 
 
 class ConverterConfig(Config):
@@ -37,8 +38,8 @@ class ConverterConfig(Config):
 
 @asset(required_resource_keys={"arango"})
 def file_ref(context, config: FileRefConfig) -> FileRef:
-    context.resources.arango.ensure_file(config.md5, config.paths)
-    return FileRef(md5=config.md5, paths=config.paths)
+    context.resources.arango.ensure_file(config.md5, Path(config.path))
+    return FileRef(md5=config.md5, path=Path(config.path))
 
 
 def _indexer_asset_body(
@@ -47,6 +48,10 @@ def _indexer_asset_body(
     file_ref: FileRef,
     upstream_outputs: dict[str, IndexerOutput],
 ) -> IndexerOutput:
+
+    assert indexer.can_run(
+        file_ref.path), f"{indexer.asset_name} cannot be used with {file_ref}"
+
     db = context.resources.arango
     cached = db.get_indexer_result_optional(file_ref.md5, indexer.asset_name)
     if cached is not None:

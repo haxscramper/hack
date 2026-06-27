@@ -10,13 +10,13 @@ from index_service.resources.flm_gemma import (
 from pydantic import BaseModel
 
 
-class FileSummariesIndexerResult(BaseModel):
-    summaries: dict[str, str]
+class FileSummaryIndexerResult(BaseModel, extra="forbid"):
+    summary: FlmSummaryResult
 
 
-class FileSummariesIndexer(BaseIndexer):
-    asset_name = "file_summaries"
-    result_model = FileSummariesIndexerResult
+class FileSummaryIndexer(BaseIndexer):
+    asset_name = "file_summary"
+    result_model = FileSummaryIndexerResult
     required_resources = ("flm_gemma", )
 
     def run(
@@ -25,12 +25,10 @@ class FileSummariesIndexer(BaseIndexer):
         flm_gemma: FlmGemmaResource,
         **resources: object,
     ) -> IndexerOutput:
-        summaries: dict[str, str] = {}
-        for raw_path in request.file_ref.paths:
-            text = Path(raw_path).read_text()
-            summary = flm_gemma.handle(SummarizeRequest(text=text))
-            summaries[str(raw_path)] = summary.summary
+        raw_path = request.file_ref.path
+        text = Path(raw_path).read_text()
+        summary = flm_gemma.handle(SummarizeRequest(text=text))
         return IndexerOutput(
             indexer_id=self.asset_name,
-            result=FileSummariesIndexerResult(summaries=summaries),
+            result=FileSummaryIndexerResult(summary=summary),
         )

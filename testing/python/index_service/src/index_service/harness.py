@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from pathlib import Path
 from typing import Any
 
 from beartype import beartype
@@ -29,6 +30,9 @@ class BaseIndexer(ABC):
     result_model: type[BaseModel]
     dependencies: tuple[str, ...] = ()
     required_resources: tuple[str, ...] = ()
+
+    def can_run(self, path: Path) -> bool:
+        return True
 
     @abstractmethod
     def run(self, request: IndexerRequest, **resources: Any) -> IndexerOutput:

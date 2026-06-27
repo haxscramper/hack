@@ -5,7 +5,7 @@ from index_service.protocol import IndexerOutput, IndexerRequest
 from pydantic import BaseModel
 
 
-class FullTextIndexerResult(BaseModel):
+class FullTextIndexerResult(BaseModel, extra="forbid"):
     text: str
 
 
@@ -15,7 +15,7 @@ class FullTextIndexer(BaseIndexer):
 
     def run(self, request: IndexerRequest,
             **resources: object) -> IndexerOutput:
-        path = Path(request.file_ref.paths[0])
+        path = Path(request.file_ref.path)
         text = path.read_text()
         return IndexerOutput(
             indexer_id=self.asset_name,

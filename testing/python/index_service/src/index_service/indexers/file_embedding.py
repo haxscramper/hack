@@ -6,7 +6,7 @@ from index_service.protocol import IndexerOutput, IndexerRequest
 from pydantic import BaseModel
 
 
-class FileEmbeddingIndexerResult(BaseModel):
+class FileEmbeddingIndexerResult(BaseModel, extra="forbid"):
     vector: list[float]
     dim: int
 
@@ -17,7 +17,7 @@ class FileEmbeddingIndexer(BaseIndexer):
 
     def run(self, request: IndexerRequest,
             **resources: object) -> IndexerOutput:
-        text = Path(request.file_ref.paths[0]).read_text()
+        text = Path(request.file_ref.path).read_text()
         buckets = [0.0] * 8
         for ch in text.lower():
             buckets[ord(ch) % 8] += 1.0

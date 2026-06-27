@@ -5,11 +5,11 @@ from openai import OpenAI
 from pydantic import BaseModel
 
 
-class SummarizeRequest(BaseModel):
+class SummarizeRequest(BaseModel, extra="forbid"):
     text: str
 
 
-class FlmSummaryResult(BaseModel):
+class FlmSummaryResult(BaseModel, extra="forbid"):
     summary: str
 
 

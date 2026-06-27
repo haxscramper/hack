@@ -12,12 +12,12 @@ def test_large_batch_indexing(db, tmp_path: Path,
         md5 = db.add_path(path)
 
         outputs = runtime.run_indexers(
-            FileRef(md5=md5, paths=[str(path)]),
+            FileRef(md5=md5, path=path),
             [
                 "file_size",
                 "file_stats",
                 "full_text",
-                "file_summaries",
+                "file_summary",
                 "file_embedding",
             ],
         )

@@ -2,11 +2,11 @@ from index_service.harness import BaseResource
 from pydantic import BaseModel
 
 
-class ReverseLinesRequest(BaseModel):
+class ReverseLinesRequest(BaseModel, extra="forbid"):
     lines: list[str]
 
 
-class ReverserResult(BaseModel):
+class ReverserResult(BaseModel, extra="forbid"):
     lines: list[str]
 
 

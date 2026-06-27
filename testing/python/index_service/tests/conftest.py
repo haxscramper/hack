@@ -1,5 +1,6 @@
 import logging
 import os
+from pathlib import Path
 import re
 import traceback
 from dataclasses import dataclass
@@ -99,7 +100,10 @@ def get_custom_traceback_handler(
                             for arg_name in frame_info.args.keys()),
                     )
 
-        display_filenames = [frame_info.filename for frame_info in frames_info]
+        display_filenames = [
+            Path(frame_info.filename).resolve().absolute()
+            for frame_info in frames_info
+        ]
         common_prefix = (os.path.commonpath(display_filenames)
                          if display_filenames else "")
 

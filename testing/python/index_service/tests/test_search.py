@@ -8,11 +8,11 @@ def test_full_text_search(db, tmp_path: Path) -> None:
     path = tmp_path / "a.txt"
     path.write_text("alpha beta gamma")
 
-    db.ensure_file("m1", [str(path)])
+    db.ensure_file("m1", path)
     runtime = IndexRuntime()
     try:
         out = runtime.run_indexers(
-            FileRef(md5="m1", paths=[str(path)]),
+            FileRef(md5="m1", path=path),
             ["full_text"],
         )["full_text"]
         db.store_indexer_result("m1", out.indexer_id, out.result)
@@ -30,17 +30,17 @@ def test_vector_search(db, tmp_path: Path) -> None:
     a.write_text("cat cat cat")
     b.write_text("network protocol packet")
 
-    db.ensure_file("m1", [str(a)])
-    db.ensure_file("m2", [str(b)])
+    db.ensure_file("m1", a)
+    db.ensure_file("m2", b)
 
     runtime = IndexRuntime()
     try:
         out1 = runtime.run_indexers(
-            FileRef(md5="m1", paths=[str(a)]),
+            FileRef(md5="m1", path=a),
             ["file_embedding"],
         )["file_embedding"]
         out2 = runtime.run_indexers(
-            FileRef(md5="m2", paths=[str(b)]),
+            FileRef(md5="m2", path=b),
             ["file_embedding"],
         )["file_embedding"]
         db.store_indexer_result("m1", out1.indexer_id, out1.result)

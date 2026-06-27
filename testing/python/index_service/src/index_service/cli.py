@@ -8,8 +8,29 @@ from index_service.db import IndexDatabase
 
 logging.basicConfig(
     level=logging.DEBUG,
-    format="%(levelname)s %(filename)s:%(lineno)d: %(message)s",
+    format="%(levelname)s %(name)s %(filename)s:%(lineno)d: %(message)s",
 )
+
+for logger_name in [
+        "openai._base_client",
+        "git.cmd",
+        "alembic.runtime.plugins",
+        "alembic.runtime.migration",
+        "git.util",
+        # toggle this to see database interactions in tests
+        "urllib3.connectionpool",
+        # openai uses this for connection
+        "httpcore.connection",
+        # each individual resource actor creation and start
+        "pykka",
+        # execution of individual steps is printed to stderr?
+        "dagster",
+        "dagster.builtin",
+        "asyncio",
+        "PIL.Image",
+]:
+    logger = logging.getLogger(logger_name)
+    logger.disabled = True
 
 
 @click.command()
@@ -42,7 +63,7 @@ def main(
             result = run_index_file_job(
                 arango=db,
                 md5=md5,
-                paths=[str(file)],
+                paths=file,
                 indexer_names=list(indexers),
             )
             assert result.success
