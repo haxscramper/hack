@@ -3,7 +3,7 @@ from pathlib import Path
 
 import click
 
-from index_service.dagster_defs import run_index_file_job
+from index_service.dagster_defs import DagsterIndexRunner
 from index_service.db import IndexDatabase
 import sys
 from beartype.typing import Any
