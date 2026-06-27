@@ -573,8 +573,12 @@ class ExifMetadataIndexer(BaseIndexer):
     def can_run(self, path: Path) -> bool:
         return path.suffix in [".png", ".jpg", ".webp", ".jpeg"]
 
-    def run(self, request: IndexerRequest,
-            **resources: object) -> IndexerOutput:
+    def run(
+        self,
+        request: IndexerRequest,
+        resources: dict[str, object],
+        assets: dict[str, object],
+    ) -> IndexerOutput:
 
         path = request.file_ref.path
         assert path.exists(), f"{path}"

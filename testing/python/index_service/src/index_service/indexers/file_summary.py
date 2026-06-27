@@ -22,11 +22,12 @@ class FileSummaryIndexer(BaseIndexer):
     def run(
         self,
         request: IndexerRequest,
-        flm_gemma: FlmGemmaResource,
-        **resources: object,
+        resources: dict[str, object],
+        assets: dict[str, object],
     ) -> IndexerOutput:
         raw_path = request.file_ref.path
         text = Path(raw_path).read_text()
+        flm_gemma = resources["flm_gemma"]
         summary = flm_gemma.handle(SummarizeRequest(text=text))
         return IndexerOutput(
             indexer_id=self.asset_name,

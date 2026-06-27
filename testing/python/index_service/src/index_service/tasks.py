@@ -64,7 +64,7 @@ def make_indexer_task(
     def _indexer() -> dict:
         assert context.file_ref is not None
         file_ref = context.file_ref
-        upstream = context.get_upstream_outputs(indexer.dependencies)
+        upstream = context.get_upstream_outputs(indexer.required_assets)
 
         cached = arango.get_indexer_result_optional(file_ref.md5,
                                                     indexer.asset_name)
@@ -82,7 +82,11 @@ def make_indexer_task(
                 file_ref=file_ref,
                 dependency_results=upstream,
             )
-            out = indexer.run(request, **resources)
+            out = indexer.run(
+                request,
+                resources=resources,
+                assets=dict(upstream),
+            )
             arango.store_indexer_result(file_ref.md5, indexer.asset_name,
                                         out.result)
 
@@ -108,11 +112,16 @@ def make_converter_task(
             name: resource_instances[name]
             for name in converter.required_resources
         }
+        upstream = context.get_upstream_outputs(converter.required_assets)
         request = ConverterRequest(
             input_files=list(input_files),
             param=param,
         )
-        out = converter.run(request, **resources)
+        out = converter.run(
+            request,
+            resources=resources,
+            assets=dict(upstream),
+        )
         arango.store_derivation(
             list(input_md5s),
             out.output_files,

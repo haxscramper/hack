@@ -13,8 +13,12 @@ class FileSizeIndexer(BaseIndexer):
     asset_name = "file_size"
     result_model = FileSizeIndexerResult
 
-    def run(self, request: IndexerRequest,
-            **resources: object) -> IndexerOutput:
+    def run(
+        self,
+        request: IndexerRequest,
+        resources: dict[str, object],
+        assets: dict[str, object],
+    ) -> IndexerOutput:
         size = Path(request.file_ref.path).stat().st_size
         return IndexerOutput(
             indexer_id=self.asset_name,

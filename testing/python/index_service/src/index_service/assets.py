@@ -68,7 +68,11 @@ def _indexer_asset_body(
     }
     request = IndexerRequest(file_ref=file_ref,
                              dependency_results=upstream_outputs)
-    out = indexer.run(request, **resources)
+    out = indexer.run(
+        request,
+        resources=resources,
+        assets=dict(upstream_outputs),
+    )
     db.store_indexer_result(file_ref.md5, indexer.asset_name, out.result)
     context.resources.output_collector.add(indexer.asset_name, out)
     return out
@@ -79,10 +83,10 @@ def _sanitize(name: str) -> str:
 
 
 def _build_indexer_asset_fn(indexer: BaseIndexer):
-    upstream = list(indexer.dependencies)
+    upstream = list(indexer.required_assets)
     params = ["context", "file_ref"] + [_sanitize(u) for u in upstream]
     upstream_dict_items = ", ".join(f"'{u}': {_sanitize(u)}" for u in upstream)
-    upstream_dict = "{" + upstream_dict_items + "}"
+    upstream_dict = "{" + upstream_dict_items + "}" if upstream_dict_items else "{}"
     src = (
         f"def _asset_fn({', '.join(params)}):\n"
         f"    return _indexer_asset_body(indexer, context, file_ref, {upstream_dict})\n"
@@ -98,7 +102,7 @@ def _build_indexer_asset_fn(indexer: BaseIndexer):
 def build_indexer_asset(indexer: BaseIndexer):
     fn = _build_indexer_asset_fn(indexer)
     ins: dict[str, Any] = {"file_ref": AssetIn("file_ref")}
-    for u in indexer.dependencies:
+    for u in indexer.required_assets:
         ins[_sanitize(u)] = AssetIn(u)
     return asset(
         name=indexer.asset_name,
@@ -113,6 +117,7 @@ def _converter_asset_body(
     converter: BaseConverter,
     context,
     config: ConverterConfig,
+    upstream_assets: dict[str, Any],
 ) -> ConverterOutput:
     db = context.resources.arango
     resources = {
@@ -121,7 +126,11 @@ def _converter_asset_body(
     }
     request = ConverterRequest(input_files=config.input_files,
                                param=config.param)
-    out = converter.run(request, **resources)
+    out = converter.run(
+        request,
+        resources=resources,
+        assets=dict(upstream_assets),
+    )
     db.store_derivation(
         config.input_md5s,
         out.output_files,
@@ -133,13 +142,31 @@ def _converter_asset_body(
 
 
 def build_converter_asset(converter: BaseConverter):
+    upstream = list(converter.required_assets)
+    params = ["context", "config"] + [_sanitize(u) for u in upstream]
+    upstream_dict_items = ", ".join(f"'{u}': {_sanitize(u)}" for u in upstream)
+    upstream_dict = "{" + upstream_dict_items + "}" if upstream_dict_items else "{}"
+    src = (
+        f"def _asset_fn({', '.join(params)}):\n"
+        f"    return _converter_asset_body(converter, context, config, {upstream_dict})\n"
+    )
+    ns: dict[str, Any] = {
+        "_converter_asset_body": _converter_asset_body,
+        "converter": converter,
+    }
+    exec(src, ns)
+    fn = ns["_asset_fn"]
 
-    def _asset(context, config: ConverterConfig) -> ConverterOutput:
-        return _converter_asset_body(converter, context, config)
+    ins: dict[str, Any] = {}
+    for u in upstream:
+        ins[_sanitize(u)] = AssetIn(u)
 
     return asset(
         name=converter.converter_id,
+        ins=ins,
         required_resource_keys={
-            "arango", "output_collector", *converter.required_resources
+            "arango",
+            "output_collector",
+            *converter.required_resources,
         },
-    )(_asset)
+    )(fn)

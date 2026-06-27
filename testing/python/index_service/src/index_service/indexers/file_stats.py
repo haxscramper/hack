@@ -18,8 +18,12 @@ class FileStatsIndexer(BaseIndexer):
     asset_name = "file_stats"
     result_model = FileStatsIndexerResult
 
-    def run(self, request: IndexerRequest,
-            **resources: object) -> IndexerOutput:
+    def run(
+        self,
+        request: IndexerRequest,
+        resources: dict[str, object],
+        assets: dict[str, object],
+    ) -> IndexerOutput:
         st = Path(request.file_ref.path).stat()
         return IndexerOutput(
             indexer_id=self.asset_name,

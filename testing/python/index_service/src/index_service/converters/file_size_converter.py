@@ -15,8 +15,12 @@ class FileSizeConverter(BaseConverter):
     converter_id = "file_size_converter"
     result_model = FileSizeConverterResult
 
-    def run(self, request: ConverterRequest,
-            **resources: object) -> ConverterOutput:
+    def run(
+        self,
+        request: ConverterRequest,
+        resources: dict[str, object],
+        assets: dict[str, object],
+    ) -> ConverterOutput:
         logging.info("running file size converter")
         sizes = {p: Path(p).stat().st_size for p in request.input_files}
         return ConverterOutput(

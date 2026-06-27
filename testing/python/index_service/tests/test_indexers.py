@@ -6,6 +6,7 @@ from beartype.typing import cast
 from pydantic import BaseModel
 
 from index_service.converters.file_size_converter import FileSizeConverterResult
+from index_service.dagster_defs import DagsterIndexRunner
 from index_service.db import IndexDatabase
 from index_service.indexers.file_size import FileSizeIndexerResult
 from index_service.indexers.file_stats import FileStatsIndexerResult
@@ -114,7 +115,8 @@ def test_index_file_job(db: IndexDatabase, sample_file: Path) -> None:
     from index_service import dagster_defs
     from tests.conftest import MockFlmGemmaResource
 
-    result = dagster_defs.run_index_file_job(
+    runner = DagsterIndexRunner()
+    result = runner.run_index_file_job(
         arango=db,
         path=sample_file,
         resource_overrides={"flm_gemma": MockFlmGemmaResource()},
@@ -130,7 +132,8 @@ def test_index_file_job(db: IndexDatabase, sample_file: Path) -> None:
 def test_convert_files_job(db: IndexDatabase, sample_file: Path) -> None:
     from index_service import dagster_defs
 
-    result = dagster_defs.run_convert_files_job(
+    runner = DagsterIndexRunner()
+    result = runner.run_convert_files_job(
         arango=db,
         input_files=[str(sample_file)],
         input_md5s=["filemd5"],

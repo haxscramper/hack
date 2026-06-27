@@ -94,13 +94,15 @@ def main(
 
     count = 0
 
+    runner = DagsterIndexRunner(indexer_types=DEFAULT_INDEXER_TYPES)
+
     def index_file(file: Path):
         nonlocal count
         if limit_total and limit_total < count:
             return
 
         count += 1
-        result = run_index_file_job(
+        result = runner.run_index_file_job(
             arango=db,
             path=file,
             indexer_names=list(indexers),

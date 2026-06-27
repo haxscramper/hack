@@ -15,8 +15,12 @@ class FileEmbeddingIndexer(BaseIndexer):
     asset_name = "file_embedding"
     result_model = FileEmbeddingIndexerResult
 
-    def run(self, request: IndexerRequest,
-            **resources: object) -> IndexerOutput:
+    def run(
+        self,
+        request: IndexerRequest,
+        resources: dict[str, object],
+        assets: dict[str, object],
+    ) -> IndexerOutput:
         text = Path(request.file_ref.path).read_text()
         buckets = [0.0] * 8
         for ch in text.lower():

@@ -13,8 +13,12 @@ class FullTextIndexer(BaseIndexer):
     asset_name = "full_text"
     result_model = FullTextIndexerResult
 
-    def run(self, request: IndexerRequest,
-            **resources: object) -> IndexerOutput:
+    def run(
+        self,
+        request: IndexerRequest,
+        resources: dict[str, object],
+        assets: dict[str, object],
+    ) -> IndexerOutput:
         path = Path(request.file_ref.path)
         text = path.read_text()
         return IndexerOutput(

@@ -15,7 +15,7 @@ from index_service.assets import (
     file_ref,
 )
 
-from index_service.harness import BaseResource
+from index_service.harness import BaseConverter, BaseIndexer, BaseResource
 from index_service.protocol import ConverterOutput, FileRef, IndexerOutput
 from index_service.registry import (
     DEFAULT_CONVERTER_TYPES,
@@ -54,23 +54,28 @@ class IndexRuntime:
         self,
         resource_overrides: dict[str, type[BaseResource]] | None = None,
         db: Any = None,
+        indexer_types: list[type[BaseIndexer]] | None = None,
+        converter_types: list[type[BaseConverter]] | None = None,
     ) -> None:
         self._db = db
         overrides = resource_overrides or {}
         self._resource_instances: dict[str, BaseResource] = {}
-        for cls in DEFAULT_RESOURCE_TYPES:
+        resource_types = DEFAULT_RESOURCE_TYPES
+        for cls in resource_types:
             key = cls.resource_key
             if key in overrides:
                 self._resource_instances[key] = overrides[key]()
             else:
                 self._resource_instances[key] = cls()
+        indexer_type_list = indexer_types or DEFAULT_INDEXER_TYPES
         self._indexer_instances = {
             cls.asset_name: cls()
-            for cls in DEFAULT_INDEXER_TYPES
+            for cls in indexer_type_list
         }
+        converter_type_list = converter_types or DEFAULT_CONVERTER_TYPES
         self._converter_instances = {
             cls.converter_id: cls()
-            for cls in DEFAULT_CONVERTER_TYPES
+            for cls in converter_type_list
         }
 
     def _resource_defs(self, collector: OutputCollector) -> dict[str, Any]:

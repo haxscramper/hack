@@ -21,13 +21,17 @@ class ComfyInputIndexerResult(BaseModel, extra="forbid"):
 class ComfyInputIndexer(BaseIndexer):
     asset_name = "comfy_input"
     result_model = ComfyInputIndexerResult
-    dependencies = ("exif_metadata", )
+    required_assets = ("exif_metadata", )
 
     def can_run(self, path: Path) -> bool:
         return path.suffix in [".png", ".jpg", ".webp", ".jpeg"]
 
-    def run(self, request: IndexerRequest,
-            **resources: object) -> IndexerOutput:
+    def run(
+        self,
+        request: IndexerRequest,
+        resources: dict[str, object],
+        assets: dict[str, object],
+    ) -> IndexerOutput:
 
         log.info(f"{resources}")
 

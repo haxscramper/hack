@@ -8,8 +8,8 @@ from beartype import beartype
 from pydantic import BaseModel
 
 from index_service.protocol import (
-    ConverterRequest,
     ConverterOutput,
+    ConverterRequest,
     IndexerOutput,
     IndexerRequest,
 )
@@ -28,14 +28,19 @@ class BaseResource(ABC):
 class BaseIndexer(ABC):
     asset_name: str
     result_model: type[BaseModel]
-    dependencies: tuple[str, ...] = ()
+    required_assets: tuple[str, ...] = ()
     required_resources: tuple[str, ...] = ()
 
     def can_run(self, path: Path) -> bool:
         return True
 
     @abstractmethod
-    def run(self, request: IndexerRequest, **resources: Any) -> IndexerOutput:
+    def run(
+        self,
+        request: IndexerRequest,
+        resources: dict[str, object],
+        assets: dict[str, object],
+    ) -> IndexerOutput:
         raise NotImplementedError
 
 
@@ -43,9 +48,14 @@ class BaseIndexer(ABC):
 class BaseConverter(ABC):
     converter_id: str
     result_model: type[BaseModel]
+    required_assets: tuple[str, ...] = ()
     required_resources: tuple[str, ...] = ()
 
     @abstractmethod
-    def run(self, request: ConverterRequest,
-            **resources: Any) -> ConverterOutput:
+    def run(
+        self,
+        request: ConverterRequest,
+        resources: dict[str, object],
+        assets: dict[str, object],
+    ) -> ConverterOutput:
         raise NotImplementedError
