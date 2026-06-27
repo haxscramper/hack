@@ -5,6 +5,7 @@ from dagster import AssetIn, Config, asset
 from pydantic import BaseModel
 import dagster
 
+from index_service.db import IndexDatabase
 from index_service.harness import BaseConverter, BaseIndexer
 from index_service.protocol import (
     ConverterOutput,
@@ -52,7 +53,7 @@ def _indexer_asset_body(
     assert indexer.can_run(
         file_ref.path), f"{indexer.asset_name} cannot be used with {file_ref}"
 
-    db = context.resources.arango
+    db: IndexDatabase = context.resources.arango
     cached = db.get_indexer_result_optional(file_ref.md5, indexer.asset_name)
     if cached is not None:
         out = IndexerOutput(

@@ -578,9 +578,10 @@ class ExifMetadataIndexer(BaseIndexer):
 
         path = request.file_ref.path
         assert path.exists(), f"{path}"
-        return IndexerOutput(
-            indexer_id=self.asset_name,
-            result=ExifMetadataIndexerResult(
-                file=get_image_params(Path(path),
-                                      Path(path).parent)),
-        )
+
+        params = get_image_params(Path(path), Path(path).parent)
+
+        log.info(f"{path} OK")
+
+        return IndexerOutput(indexer_id=self.asset_name,
+                             result=ExifMetadataIndexerResult(file=params))

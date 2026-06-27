@@ -4,5 +4,7 @@ test:
 index:
     uv run src/index_service/cli.py \
         --db-name test_index \
+        --reset True \
         --indexer exif_metadata \
+        --limit 20 \
         "/home/haxscramper/defaultdirs/input/grabber/tensor_saved_high_res_mirror"
