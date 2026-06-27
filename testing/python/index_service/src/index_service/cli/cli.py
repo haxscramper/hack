@@ -3,6 +3,7 @@ from pathlib import Path
 
 import click
 
+from index_service.gui.window import MainWindow
 from index_service.services.db import IndexDatabase
 import sys
 from beartype.typing import Any
@@ -13,6 +14,7 @@ from index_service.services.registry import DEFAULT_INDEXER_TYPES, DEFAULT_RESOU
 from index_service.services.resources.wd_tagger import WdTagger
 from index_service.services.runtime import IndexRuntime
 from index_service.services.utils import get_custom_traceback_handler
+from PySide6.QtWidgets import QApplication
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -42,11 +44,23 @@ for logger_name in [
     logger.disabled = True
 
 
-@click.command()
-@click.option("--host", default="http://localhost:8529", show_default=True)
-@click.option("--db-name", required=True)
-@click.option("--username", default="root", show_default=True)
-@click.option("--password", default="test", show_default=True)
+def _db_options(f):
+    f = click.option("--host",
+                     default="http://localhost:8529",
+                     show_default=True)(f)
+    f = click.option("--db-name", required=True)(f)
+    f = click.option("--username", default="root", show_default=True)(f)
+    f = click.option("--password", default="test", show_default=True)(f)
+    return f
+
+
+@click.group()
+def main() -> None:
+    pass
+
+
+@main.command()
+@_db_options
 @click.option(
     "--indexer",
     "indexers",
@@ -56,24 +70,23 @@ for logger_name in [
 @click.argument("paths",
                 nargs=-1,
                 type=click.Path(exists=True, path_type=Path))
-@click.option("--reset", default=False, show_default=True)
+@click.option("--reset", is_flag=True, default=False, show_default=True)
 @click.option("--limit-total", default=None, show_default=True, type=click.INT)
 @click.option("--limit-per-path",
               default=None,
               show_default=True,
               type=click.INT)
-def main(
+def index(
     host: str,
     db_name: str,
     username: str,
     password: str,
     reset: bool,
-    limit_total: int,
-    limit_per_path: int,
+    limit_total: int | None,
+    limit_per_path: int | None,
     indexers: tuple[str, ...],
     paths: tuple[Path, ...],
 ) -> None:
-
     handler = get_custom_traceback_handler(show_args=False)
 
     if reset:
@@ -102,12 +115,9 @@ def main(
 
     runner = IndexRuntime(
         db=db,
-        indexer_types=[t() for t in DEFAULT_INDEXER_TYPES] + [
-            WdTagIndexer(),
-        ],
-        resource_types=[t() for t in DEFAULT_RESOURCE_TYPES] + [
-            WdTagger.from_huggingface(),
-        ],
+        indexer_types=[t() for t in DEFAULT_INDEXER_TYPES] + [WdTagIndexer()],
+        resource_types=[t() for t in DEFAULT_RESOURCE_TYPES] +
+        [WdTagger.from_huggingface()],
     )
 
     def index_file(file: Path):
@@ -116,15 +126,11 @@ def main(
             return
 
         count += 1
-        runner.run_indexers(
-            db.as_ref(file),
-            list(indexers),
-        )
+        runner.run_indexers(db.as_ref(file), list(indexers))
 
     for path in paths:
         if path.is_file():
             index_file(path)
-
         else:
             count_per_path = 0
             for file in path.rglob("*"):
@@ -134,6 +140,27 @@ def main(
 
                     count_per_path += 1
                     index_file(file)
+
+
+@main.command()
+@_db_options
+def view(host: str, db_name: str, username: str, password: str) -> None:
+    app = QApplication(sys.argv)
+
+    db = IndexDatabase(
+        host=host,
+        db_name=db_name,
+        username=username,
+        password=password,
+    )
+
+    win = MainWindow(
+        db,
+        [t.asset_name
+         for t in DEFAULT_INDEXER_TYPES] + [WdTagIndexer.asset_name],
+    )
+    win.show()
+    sys.exit(app.exec())
 
 
 if __name__ == "__main__":

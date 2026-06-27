@@ -18,6 +18,7 @@ dependencies = [
     "pandas>=3.0.3",
     "pillow>=12.2.0",
     "pykka>=4.4.2",
+    "pyside6>=6.11.1",
     "pytest>=9.1.1",
     "python-arango==8.1.6",
     "rich>=15.0.0",

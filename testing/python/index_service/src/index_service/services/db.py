@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from arango import ArangoClient
+from arango.aql import AQL
+from arango.database import StandardDatabase
 from beartype import beartype
 from beartype.typing import Any, Dict, List, Optional, cast
 from pydantic import BaseModel
@@ -36,6 +38,10 @@ class IndexDatabase:
         self._db = client.db(db_name, username=username, password=password)
         self._db_name = db_name
         self.ensure_collections([])
+
+    @property
+    def db(self) -> StandardDatabase:
+        return self._db
 
     @property
     def db_name(self) -> str:
@@ -142,6 +148,10 @@ class IndexDatabase:
         if sys_db.has_database(db_name):
             sys_db.delete_database(db_name)
         sys_db.create_database(db_name)
+
+    @property
+    def aql(self) -> AQL:
+        return self.db.aql
 
     def full_text_search(self,
                          collection: str,
