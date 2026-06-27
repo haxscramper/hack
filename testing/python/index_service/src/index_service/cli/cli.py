@@ -3,11 +3,11 @@ from pathlib import Path
 
 import click
 
-from index_service.services.dagster_defs import DagsterIndexRunner
 from index_service.services.db import IndexDatabase
 import sys
 from beartype.typing import Any
 
+from index_service.services.indexers.wd_indexer import WdTagIndexer
 from index_service.services.protocol import FileRef
 from index_service.services.registry import DEFAULT_INDEXER_TYPES, DEFAULT_RESOURCE_TYPES
 from index_service.services.resources.wd_tagger import WdTagger
@@ -99,7 +99,9 @@ def main(
 
     runner = IndexRuntime(
         db=db,
-        indexer_types=[t() for t in DEFAULT_INDEXER_TYPES],
+        indexer_types=[t() for t in DEFAULT_INDEXER_TYPES] + [
+            WdTagIndexer(),
+        ],
         resource_types=[t() for t in DEFAULT_RESOURCE_TYPES] + [
             WdTagger.from_huggingface(),
         ],
@@ -111,7 +113,7 @@ def main(
             return
 
         count += 1
-        runner.run_index_file_job(
+        runner.run_indexers(
             FileRef(md5=db.get_md5(file), path=file),
             list(indexers),
         )

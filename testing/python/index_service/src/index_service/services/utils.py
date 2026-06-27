@@ -5,6 +5,15 @@ import traceback
 from rich.console import Console
 from pathlib import Path
 
+from platformdirs import user_cache_dir
+
+
+def get_xdg_cache_dir(target: list[str]) -> Path:
+    cache_dir = Path(user_cache_dir(appname="hax_index_service"))
+    result = cache_dir.joinpath(*target)
+    result.mkdir(parents=True, exist_ok=True)
+    return result
+
 
 @dataclass
 class FrameInfo:

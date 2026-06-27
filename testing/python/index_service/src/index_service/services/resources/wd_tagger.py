@@ -12,6 +12,9 @@ from huggingface_hub import hf_hub_download
 
 from index_service.services.harness import BaseResource
 from index_service.services.utils import get_xdg_cache_dir
+import logging
+
+log = logging.getLogger(__name__)
 
 
 class WdTag(BaseModel, extra="forbid"):
@@ -111,6 +114,7 @@ class WdTagger(BaseResource):
         return img
 
     def tag_image(self, image_path: Path) -> list[WdTag]:
+        log.info(f"WD tagging image {image_path}")
         input_data = self.preprocess_image(image_path)
         raw = self.session.run([self.output_name],
                                {self.input_name: input_data})[0]
@@ -125,7 +129,7 @@ class WdTagger(BaseResource):
                     WdTag(category=category,
                           name=str(row["name"]),
                           probability=float(prob)))
-        result.sort(key=lambda x: x[2], reverse=True)
+        result.sort(key=lambda x: x.probability, reverse=True)
         return result
 
     def handle(self, request: WdTaggerRequest) -> WdTaggerResult:

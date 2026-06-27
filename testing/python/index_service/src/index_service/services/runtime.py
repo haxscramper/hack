@@ -78,7 +78,15 @@ class IndexRuntime:
                     md5=file_ref_.md5,
                     path=str(file_ref_.path),
                 )
-            })
+            },
+            loggers={
+                "console": {
+                    "config": {
+                        "log_level": "WARNING",
+                    }
+                },
+            },
+        )
         logging.getLogger("dagster").setLevel(logging.ERROR)
         result = materialize(
             assets,
