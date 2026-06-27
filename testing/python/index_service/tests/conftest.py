@@ -6,7 +6,7 @@ import traceback
 from dataclasses import dataclass
 
 import pytest
-from beartype.typing import Any
+from beartype.typing import Any, Generator
 
 from index_service.services.db import IndexDatabase
 from index_service.services.harness import BaseResource
@@ -90,8 +90,9 @@ class MockFlmGemmaResource(BaseResource):
 
 
 @pytest.fixture
-def runtime(db) -> IndexRuntime:
+def runtime(db) -> Generator[IndexRuntime, None, None]:
     from index_service.services.registry import DEFAULT_RESOURCE_TYPES
+
     rt = IndexRuntime(
         db=db,
         resource_types=[
@@ -100,8 +101,4 @@ def runtime(db) -> IndexRuntime:
         ],
     )
 
-    try:
-        yield rt
-
-    finally:
-        rt.stop()
+    yield rt

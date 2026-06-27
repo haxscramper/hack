@@ -13,8 +13,9 @@ from index_service.services.assets import (
     build_indexer_asset,
     file_ref,
 )
+from index_service.services.db import IndexDatabase
 from index_service.services.harness import BaseConverter, BaseIndexer, BaseResource
-from index_service.services.protocol import ConverterOutput, FileRef, IndexerOutput
+from index_service.services.types import ConverterOutput, FileRef, IndexerOutput
 from index_service.services.registry import (
     DEFAULT_CONVERTER_TYPES,
     DEFAULT_INDEXER_TYPES,
@@ -27,12 +28,12 @@ class IndexRuntime:
 
     def __init__(
         self,
-        db: Any,
+        db: IndexDatabase,
         indexer_types: list[BaseIndexer] | None = None,
         converter_types: list[BaseConverter] | None = None,
         resource_types: list[BaseResource] | None = None,
     ) -> None:
-        self._db = db
+        self.db = db
         self._resource_instances: dict[str, BaseResource] = {
             cls.resource_key: cls
             for cls in (
@@ -51,7 +52,7 @@ class IndexRuntime:
     def _resource_defs(self, collector: OutputCollector) -> dict[str, Any]:
         defs: dict[str, Any] = {
             "io_manager": mem_io_manager,
-            "arango": ResourceDefinition.hardcoded_resource(self._db),
+            "arango": ResourceDefinition.hardcoded_resource(self.db),
             "output_collector":
             ResourceDefinition.hardcoded_resource(collector),
         }
@@ -69,13 +70,14 @@ class IndexRuntime:
             self._indexer_instances[n] for n in names
             if self._indexer_instances[n].can_run(file_ref_.path)
         ]
+
         assets = [file_ref
                   ] + [build_indexer_asset(idx) for idx in indexer_instances]
         run_config = RunConfig(
             ops={
                 "file_ref":
                 FileRefConfig(
-                    md5=file_ref_.md5,
+                    md5=file_ref_.md5.md5,
                     path=str(file_ref_.path),
                 )
             },
@@ -99,8 +101,7 @@ class IndexRuntime:
     def run_converter(
         self,
         converter_name: str,
-        input_files: list[str],
-        input_md5s: list[str],
+        input: list[FileRef],
         param: str = "",
     ) -> ConverterOutput:
         collector = OutputCollector()
@@ -110,18 +111,19 @@ class IndexRuntime:
             ops={
                 converter.converter_id:
                 ConverterConfig(
-                    input_files=list(input_files),
-                    input_md5s=list(input_md5s),
+                    input=[
+                        FileRefConfig(md5=f.md5.md5, path=str(f.path))
+                        for f in input
+                    ],
                     param=param,
                 )
             })
+
         result = materialize(
             assets,
             resources=self._resource_defs(collector),
             run_config=run_config,
         )
+
         assert result.success
         return collector.outputs[converter_name]
-
-    def stop(self) -> None:
-        pass

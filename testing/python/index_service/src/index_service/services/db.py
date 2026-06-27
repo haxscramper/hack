@@ -5,16 +5,16 @@ from pathlib import Path
 
 from arango import ArangoClient
 from beartype import beartype
-from beartype.typing import Any, Dict, List, Optional
+from beartype.typing import Any, Dict, List, Optional, cast
 from pydantic import BaseModel
 
-from index_service.services.protocol import AnyModel
+from index_service.services.types import MD5, AnyModel, FileRef
 
 
 @beartype
 @dataclass
 class IndexerResultRecord:
-    md5: str
+    md5: MD5
     indexer_id: str
     result: Dict[str, object]
 
@@ -45,35 +45,38 @@ class IndexDatabase:
         for name in ["files", "indexer_results", "derivations"]:
             self._db.collection(name).truncate()
 
-    def _md5(self, path: Path) -> str:
+    def _md5(self, path: Path) -> MD5:
         digest = hashlib.md5()
         digest.update(path.read_bytes())
-        return digest.hexdigest()
+        return MD5(md5=digest.hexdigest())
 
-    def get_md5(self, path: Path) -> str:
+    def _get_md5(self, path: Path) -> MD5:
         files = self._db.collection("files")
         md5 = self._md5(path)
-        if files.has(md5):
-            doc = files.get(md5)
+        if files.has(md5.md5):
+            doc = files.get(md5.md5)
             known = set(doc["paths"])
             known.update([str(path)])
-            files.update({"_key": md5, "paths": sorted(known)})
+            files.update({"_key": md5.md5, "paths": sorted(known)})
         else:
-            files.insert({"_key": md5, "paths": [str(path)]})
+            files.insert({"_key": md5.md5, "paths": [str(path)]})
 
         return md5
 
+    def as_ref(self, path: Path) -> FileRef:
+        return FileRef(md5=self._get_md5(path), path=path)
+
     def store_indexer_result(
         self,
-        md5: str,
+        ref: FileRef,
         indexer_id: str,
         result: AnyModel,
     ) -> None:
-        key = f"{md5}__{indexer_id}"
+        key = f"{ref.md5.md5}__{indexer_id}"
         col = self._db.collection("indexer_results")
         doc = {
             "_key": key,
-            "md5": md5,
+            "md5": ref.md5.md5,
             "indexer_id": indexer_id,
             "result": result.model_dump(mode="json"),
         }
@@ -83,42 +86,48 @@ class IndexDatabase:
         else:
             col.insert(doc)
 
-    def get_indexer_result(self, md5: str,
+    def get_indexer_result(self, md5: MD5,
                            indexer_id: str) -> IndexerResultRecord:
-        doc = self._db.collection("indexer_results").get(
-            f"{md5}__{indexer_id}")
+        doc = cast(
+            dict,
+            self._db.collection("indexer_results").get(
+                f"{md5.md5}__{indexer_id}"))
+
         assert doc, f"Cannot get evaluation results for {indexer_id}({md5})"
         return IndexerResultRecord(
-            md5=doc["md5"],
+            md5=MD5(md5=doc["md5"]),
             indexer_id=doc["indexer_id"],
             result=doc["result"],
         )
 
     def get_indexer_result_optional(
         self,
-        md5: str,
+        md5: MD5,
         indexer_id: str,
     ) -> Optional[IndexerResultRecord]:
-        doc = self._db.collection("indexer_results").get(
-            f"{md5}__{indexer_id}")
+        doc = cast(
+            dict,
+            self._db.collection("indexer_results").get(f"{md5}__{indexer_id}"))
+
         if doc is None:
             return None
+
         return IndexerResultRecord(
-            md5=doc["md5"],
+            md5=MD5(md5=doc["md5"]),
             indexer_id=doc["indexer_id"],
             result=doc["result"],
         )
 
     def store_derivation(
         self,
-        input_md5s: List[str],
+        input: list[FileRef],
         output_files: List[str],
         config: Dict[str, object],
         return_value: AnyModel,
     ) -> str:
         col = self._db.collection("derivations")
         meta = col.insert({
-            "input_md5s": input_md5s,
+            "input_md5s": [f.md5.md5 for f in input],
             "output_files": output_files,
             "config": config,
             "return_value": return_value.model_dump(),
@@ -150,6 +159,7 @@ class IndexDatabase:
                 "limit": limit
             },
         )
+
         return list(cursor)
 
     def vector_search(

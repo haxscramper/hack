@@ -17,7 +17,7 @@ from index_service.services.assets import (
 )
 from index_service.services.db import IndexDatabase
 from index_service.services.harness import BaseConverter, BaseIndexer, BaseResource
-from index_service.services.protocol import ConverterOutput, FileRef, IndexerOutput
+from index_service.services.types import MD5, ConverterOutput, FileRef, IndexerOutput
 from index_service.services.runtime import IndexRuntime
 
 
@@ -81,7 +81,7 @@ def test_chain_two_indexers(db: IndexDatabase, tmp_path: Path) -> None:
                            ])
 
     outputs = runtime.run_indexers(
-        FileRef(md5="xyz", path=file_path),
+        runtime.db.as_ref(file_path),
         ["root_indexer", "child_indexer"],
     )
     assert outputs["child_indexer"].result.value == "child-value"
@@ -159,8 +159,13 @@ def test_branching_indexers(db: IndexDatabase, tmp_path: Path) -> None:
     )
 
     runtime.run_indexers(
-        FileRef(md5="branch", path=path),
-        ["indexer_a", "indexer_b", "indexer_c", "indexer_d"],
+        runtime.db.as_ref(path),
+        [
+            "indexer_a",
+            "indexer_b",
+            "indexer_c",
+            "indexer_d",
+        ],
     )
 
     assert call_log[0] == "A"
@@ -211,7 +216,7 @@ def test_indexer_receives_resource(db: IndexDatabase, tmp_path: Path) -> None:
     )
 
     out = runtime.run_indexers(
-        FileRef(md5="res", path=file_path),
+        runtime.db.as_ref(file_path),
         ["echo_indexer"],
     )["echo_indexer"]
 
@@ -222,8 +227,11 @@ def test_converter_consumes_indexer_asset(tmp_path: Path) -> None:
 
     class StubDB:
 
-        def get_md5(self, path: Path) -> str:
-            return hashlib.md5(path.read_bytes()).hexdigest()
+        def _get_md5(self, path: Path) -> MD5:
+            return MD5(md5=hashlib.md5(path.read_bytes()).hexdigest())
+
+        def as_ref(self, path: Path) -> FileRef:
+            return FileRef(md5=self._get_md5(path), path=path)
 
         def get_indexer_result_optional(self, md5: str, indexer_id: str):
             return None
@@ -295,8 +303,7 @@ def test_converter_consumes_indexer_asset(tmp_path: Path) -> None:
             FileRefConfig(md5=md5, path=str(data_path)),
             "dependent_converter":
             ConverterConfig(
-                input_files=[str(data_path)],
-                input_md5s=[md5],
+                input=[FileRefConfig(md5=md5, path=str(data_path))],
                 param="ok",
             ),
         },

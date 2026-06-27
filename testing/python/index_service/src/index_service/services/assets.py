@@ -7,7 +7,8 @@ import dagster
 
 from index_service.services.db import IndexDatabase
 from index_service.services.harness import BaseConverter, BaseIndexer
-from index_service.services.protocol import (
+from index_service.services.types import (
+    MD5,
     ConverterOutput,
     ConverterRequest,
     FileRef,
@@ -31,16 +32,14 @@ class FileRefConfig(dagster.Config):
     path: str
 
 
-class ConverterConfig(Config):
-    input_files: list[str]
-    input_md5s: list[str]
+class ConverterConfig(dagster.Config):
+    input: list[FileRefConfig]
     param: str = ""
 
 
 @asset(required_resource_keys={"arango"})
 def file_ref(context, config: FileRefConfig) -> FileRef:
-    md5 = context.resources.arango.get_md5(Path(config.path))
-    return FileRef(md5=md5, path=Path(config.path))
+    return context.resources.arango.as_ref(Path(config.path))
 
 
 def _indexer_asset_body(
@@ -73,7 +72,7 @@ def _indexer_asset_body(
         resources=resources,
         assets=dict(upstream_outputs),
     )
-    db.store_indexer_result(file_ref.md5, indexer.asset_name, out.result)
+    db.store_indexer_result(file_ref, indexer.asset_name, out.result)
     context.resources.output_collector.add(indexer.asset_name, out)
     return out
 
@@ -102,8 +101,10 @@ def _build_indexer_asset_fn(indexer: BaseIndexer):
 def build_indexer_asset(indexer: BaseIndexer):
     fn = _build_indexer_asset_fn(indexer)
     ins: dict[str, Any] = {"file_ref": AssetIn("file_ref")}
+
     for u in indexer.required_assets:
         ins[_sanitize(u)] = AssetIn(u)
+
     return asset(
         name=indexer.asset_name,
         ins=ins,
@@ -124,19 +125,26 @@ def _converter_asset_body(
         name: getattr(context.resources, name)
         for name in converter.required_resources
     }
-    request = ConverterRequest(input_files=config.input_files,
-                               param=config.param)
+    request = ConverterRequest(
+        input_files=[
+            FileRef(md5=MD5(md5=conf.md5), path=Path(conf.path))
+            for conf in config.input
+        ],
+        param=config.param,
+    )
+
     out = converter.run(
         request,
         resources=resources,
         assets=dict(upstream_assets),
     )
     db.store_derivation(
-        config.input_md5s,
+        request.input_files,
         out.output_files,
         {"param": config.param},
         out.return_value,
     )
+
     context.resources.output_collector.add(converter.converter_id, out)
     return out
 

@@ -4,7 +4,7 @@ from pathlib import Path
 from beartype.typing import cast
 
 from index_service.services.harness import BaseIndexer
-from index_service.services.protocol import IndexerOutput, IndexerRequest
+from index_service.services.types import IndexerOutput, IndexerRequest
 from pydantic import BaseModel
 
 from index_service.services.resources.wd_tagger import WdTag, WdTagger

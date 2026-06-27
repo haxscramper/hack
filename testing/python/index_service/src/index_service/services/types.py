@@ -9,9 +9,18 @@ AnyModel = Annotated[BaseModel, PlainValidator(lambda v: v)]
 
 
 @beartype
-class FileRef(BaseModel, extra="forbid"):
+class MD5(BaseModel, extra="forbid"):
     model_config = ConfigDict(frozen=True)
     md5: str
+
+    def __repr__(self) -> str:
+        return self.md5
+
+
+@beartype
+class FileRef(BaseModel, extra="forbid"):
+    model_config = ConfigDict(frozen=True)
+    md5: MD5
     path: Path
 
 
@@ -26,7 +35,7 @@ class IndexerOutput(BaseModel, extra="forbid"):
 class ConverterOutput(BaseModel, extra="forbid"):
     model_config = ConfigDict(frozen=True)
     converter_id: str
-    output_files: list[str]
+    output_files: list[Path]
     return_value: AnyModel
 
 
@@ -38,5 +47,5 @@ class IndexerRequest(BaseModel, extra="forbid"):
 
 @beartype
 class ConverterRequest(BaseModel, extra="forbid"):
-    input_files: list[str]
+    input_files: list[FileRef]
     param: str = ""

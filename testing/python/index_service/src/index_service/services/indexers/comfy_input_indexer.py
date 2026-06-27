@@ -3,7 +3,7 @@ from pathlib import Path
 
 from index_service.services.harness import BaseIndexer
 from index_service.services.indexers.exif_metadata import ExifMetadataIndexerResult
-from index_service.services.protocol import IndexerOutput, IndexerRequest
+from index_service.services.types import IndexerOutput, IndexerRequest
 from pydantic import BaseModel, Field
 from beartype.typing import Any, Literal, cast
 import logging

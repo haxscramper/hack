@@ -9,7 +9,7 @@ from index_service.services.converters.file_size_converter import FileSizeConver
 from index_service.services.db import IndexDatabase
 from index_service.services.indexers.file_size import FileSizeIndexerResult
 from index_service.services.indexers.file_stats import FileStatsIndexerResult
-from index_service.services.protocol import FileRef
+from index_service.services.types import MD5, FileRef
 from index_service.services.runtime import IndexRuntime
 
 ARANGO_HOST = os.environ.get("ARANGO_HOST", "http://localhost:8529")
@@ -44,7 +44,7 @@ def sample_files(tmp_path: Path) -> list[Path]:
 
 def test_file_size_indexer(runtime: IndexRuntime, sample_file: Path) -> None:
     out = runtime.run_indexers(
-        FileRef(md5="abc", path=sample_file),
+        runtime.db.as_ref(sample_file),
         ["file_size"],
     )["file_size"]
 
@@ -55,7 +55,7 @@ def test_file_size_indexer(runtime: IndexRuntime, sample_file: Path) -> None:
 
 def test_file_stats_indexer(runtime: IndexRuntime, sample_file: Path) -> None:
     out = runtime.run_indexers(
-        FileRef(md5="abc", path=sample_file),
+        runtime.db.as_ref(sample_file),
         ["file_stats"],
     )["file_stats"]
 
@@ -69,7 +69,7 @@ def test_file_stats_indexer(runtime: IndexRuntime, sample_file: Path) -> None:
 def test_full_text_indexer_with_reverser(runtime: IndexRuntime,
                                          sample_file: Path) -> None:
     out = runtime.run_indexers(
-        FileRef(md5="abc", path=sample_file),
+        runtime.db.as_ref(sample_file),
         ["full_text"],
     )["full_text"]
 
@@ -79,11 +79,8 @@ def test_full_text_indexer_with_reverser(runtime: IndexRuntime,
 
 def test_file_size_converter(db: IndexDatabase, runtime: IndexRuntime,
                              sample_file: Path) -> None:
-    out = runtime.run_converter(
-        "file_size_converter",
-        input_files=[str(sample_file)],
-        input_md5s=[db.get_md5(sample_file)],
-    )
+    out = runtime.run_converter("file_size_converter",
+                                input=[db.as_ref(sample_file)])
 
     assert out.converter_id == "file_size_converter"
     assert cast(FileSizeConverterResult,
@@ -96,13 +93,13 @@ def test_db_indexer_result_uniqueness(db: IndexDatabase,
     pa.write_text("---")
     pb = tmp_path.joinpath("b.txt")
     pb.write_text("---")
-    md5a = db.get_md5(pa)
-    md5b = db.get_md5(pb)
-    db.store_indexer_result(md5a, "file_size",
+    ref_a = db.as_ref(pa)
+    ref_b = db.as_ref(pb)
+    db.store_indexer_result(ref_a, "file_size",
                             FileSizeIndexerResult(size_bytes=10))
-    db.store_indexer_result(md5b, "file_size",
+    db.store_indexer_result(ref_b, "file_size",
                             FileSizeIndexerResult(size_bytes=20))
-    record = db.get_indexer_result(md5a, "file_size")
+    record = db.get_indexer_result(ref_a.md5, "file_size")
     assert record.result["size_bytes"] == 20
 
 
@@ -111,30 +108,29 @@ def test_db_store_derivation(db: IndexDatabase) -> None:
     class LocalDerivation(BaseModel, extra="forbid"):
         total_size: int
 
-    key = db.store_derivation(["md5x"], [], {"param": ""},
-                              LocalDerivation(total_size=17))
+    key = db.store_derivation(
+        input=[FileRef(md5=MD5(md5="MD5"), path=Path("?X"))],
+        output_files=["sdf"],
+        config={"param": str()},
+        return_value=LocalDerivation(total_size=17),
+    )
+
     assert isinstance(key, str)
 
 
 def test_index_file_job(runtime: IndexRuntime, db: IndexDatabase,
                         sample_file: Path) -> None:
-    md5 = db.get_md5(sample_file)
-    runtime.run_indexers(
-        FileRef(md5=md5, path=sample_file),
-        ["file_size", "full_text"],
-    )
-    size_record = db.get_indexer_result(md5, "file_size")
+    ref = runtime.db.as_ref(sample_file)
+    runtime.run_indexers(ref, ["file_size", "full_text"])
+    size_record = db.get_indexer_result(ref.md5, "file_size")
     assert size_record.result["size_bytes"] == sample_file.stat().st_size
-    text_record = db.get_indexer_result(md5, "full_text")
+    text_record = db.get_indexer_result(ref.md5, "full_text")
     assert text_record.result["text"] == sample_file.read_text()
 
 
 def test_convert_files_job(runtime: IndexRuntime, sample_file: Path) -> None:
-    out = runtime.run_converter(
-        "file_size_converter",
-        [str(sample_file)],
-        ["filemd5"],
-    )
+    out = runtime.run_converter("file_size_converter",
+                                [runtime.db.as_ref(sample_file)])
     assert out.converter_id == "file_size_converter"
 
 
@@ -144,10 +140,8 @@ def test_file_summary_indexer_with_flm(
 ) -> None:
 
     for path in sample_files:
-        out = runtime.run_indexers(
-            FileRef(md5="batch-md5", path=path),
-            ["file_summary"],
-        )["file_summary"]
+        out = runtime.run_indexers(runtime.db.as_ref(path),
+                                   ["file_summary"])["file_summary"]
 
         summary = out.result.summary.summary
         assert summary.strip() != ""

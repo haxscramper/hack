@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from index_service.services.harness import BaseConverter
-from index_service.services.protocol import ConverterOutput, ConverterRequest
+from index_service.services.types import ConverterOutput, ConverterRequest
 from pydantic import BaseModel
 import logging
 
@@ -22,7 +22,11 @@ class FileSizeConverter(BaseConverter):
         assets: dict[str, object],
     ) -> ConverterOutput:
         logging.info("running file size converter")
-        sizes = {p: Path(p).stat().st_size for p in request.input_files}
+        sizes = {
+            str(p.path): Path(p.path).stat().st_size
+            for p in request.input_files
+        }
+
         return ConverterOutput(
             converter_id=self.converter_id,
             output_files=[],

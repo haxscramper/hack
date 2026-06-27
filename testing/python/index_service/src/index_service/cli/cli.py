@@ -8,7 +8,7 @@ import sys
 from beartype.typing import Any
 
 from index_service.services.indexers.wd_indexer import WdTagIndexer
-from index_service.services.protocol import FileRef
+from index_service.services.types import FileRef
 from index_service.services.registry import DEFAULT_INDEXER_TYPES, DEFAULT_RESOURCE_TYPES
 from index_service.services.resources.wd_tagger import WdTagger
 from index_service.services.runtime import IndexRuntime
@@ -114,7 +114,7 @@ def main(
 
         count += 1
         runner.run_indexers(
-            FileRef(md5=db.get_md5(file), path=file),
+            db.as_ref(file),
             list(indexers),
         )
 

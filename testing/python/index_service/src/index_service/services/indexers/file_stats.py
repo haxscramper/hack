@@ -2,7 +2,7 @@ from datetime import datetime
 from pathlib import Path
 
 from index_service.services.harness import BaseIndexer
-from index_service.services.protocol import IndexerOutput, IndexerRequest
+from index_service.services.types import IndexerOutput, IndexerRequest
 from pydantic import BaseModel
 
 
