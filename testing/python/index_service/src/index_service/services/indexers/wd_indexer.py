@@ -3,7 +3,7 @@ from pathlib import Path
 
 from beartype.typing import cast
 
-from index_service.services.harness import BaseIndexer
+from index_service.services.harness import BaseIndexer, cache_indexer_run
 from index_service.services.types import IndexerOutput, IndexerRequest
 from pydantic import BaseModel
 
@@ -23,6 +23,7 @@ class WdTagIndexer(BaseIndexer):
     def can_run(self, path: Path) -> bool:
         return path.suffix in Image.registered_extensions()
 
+    @cache_indexer_run
     def run(
         self,
         request: IndexerRequest,
