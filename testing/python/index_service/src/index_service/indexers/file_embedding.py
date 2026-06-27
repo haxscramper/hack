@@ -12,7 +12,7 @@ class FileEmbeddingIndexerResult(BaseModel):
 
 
 class FileEmbeddingIndexer(BaseIndexer):
-    asset_name = "file-embedding"
+    asset_name = "file_embedding"
     result_model = FileEmbeddingIndexerResult
 
     def run(self, request: IndexerRequest,

@@ -10,7 +10,7 @@ class FileSizeIndexerResult(BaseModel):
 
 
 class FileSizeIndexer(BaseIndexer):
-    asset_name = "file-size"
+    asset_name = "file_size"
     result_model = FileSizeIndexerResult
 
     def run(self, request: IndexerRequest,

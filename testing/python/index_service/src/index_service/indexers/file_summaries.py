@@ -15,7 +15,7 @@ class FileSummariesIndexerResult(BaseModel):
 
 
 class FileSummariesIndexer(BaseIndexer):
-    asset_name = "file-summaries"
+    asset_name = "file_summaries"
     result_model = FileSummariesIndexerResult
     required_resources = ("flm_gemma", )
 

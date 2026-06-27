@@ -10,7 +10,7 @@ class FullTextIndexerResult(BaseModel):
 
 
 class FullTextIndexer(BaseIndexer):
-    asset_name = "full-text"
+    asset_name = "full_text"
     result_model = FullTextIndexerResult
 
     def run(self, request: IndexerRequest,

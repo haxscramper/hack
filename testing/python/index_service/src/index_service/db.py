@@ -139,7 +139,7 @@ class IndexDatabase:
         cursor = self._db.aql.execute(
             """
             FOR doc IN indexer_results
-              FILTER doc.indexer_id == "full-text"
+              FILTER doc.indexer_id == "full_text"
               FILTER CONTAINS(LOWER(doc.result.text), LOWER(@query))
               LIMIT @limit
               RETURN {md5: doc.md5, text: doc.result.text}
@@ -158,7 +158,7 @@ class IndexDatabase:
     ) -> List[Dict[str, Any]]:
         cursor = self._db.aql.execute("""
             FOR doc IN indexer_results
-              FILTER doc.indexer_id == "file-embedding"
+              FILTER doc.indexer_id == "file_embedding"
               RETURN {md5: doc.md5, vector: doc.result.vector}
             """)
         rows = list(cursor)

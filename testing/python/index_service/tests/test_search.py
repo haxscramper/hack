@@ -13,8 +13,8 @@ def test_full_text_search(db, tmp_path: Path) -> None:
     try:
         out = runtime.run_indexers(
             FileRef(md5="m1", paths=[str(path)]),
-            ["full-text"],
-        )["full-text"]
+            ["full_text"],
+        )["full_text"]
         db.store_indexer_result("m1", out.indexer_id, out.result)
     finally:
         runtime.stop()
@@ -37,12 +37,12 @@ def test_vector_search(db, tmp_path: Path) -> None:
     try:
         out1 = runtime.run_indexers(
             FileRef(md5="m1", paths=[str(a)]),
-            ["file-embedding"],
-        )["file-embedding"]
+            ["file_embedding"],
+        )["file_embedding"]
         out2 = runtime.run_indexers(
             FileRef(md5="m2", paths=[str(b)]),
-            ["file-embedding"],
-        )["file-embedding"]
+            ["file_embedding"],
+        )["file_embedding"]
         db.store_indexer_result("m1", out1.indexer_id, out1.result)
         db.store_indexer_result("m2", out2.indexer_id, out2.result)
     finally:

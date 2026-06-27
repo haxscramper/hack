@@ -15,7 +15,7 @@ class FileStatsIndexerResult(BaseModel):
 
 
 class FileStatsIndexer(BaseIndexer):
-    asset_name = "file-stats"
+    asset_name = "file_stats"
     result_model = FileStatsIndexerResult
 
     def run(self, request: IndexerRequest,

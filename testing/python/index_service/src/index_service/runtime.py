@@ -2,14 +2,17 @@ from __future__ import annotations
 
 from typing import Any
 
-from dagster import ResourceDefinition, materialize
+from dagster import ResourceDefinition, RunConfig, materialize, mem_io_manager
 
 from index_service.assets import (
+    ConverterConfig,
+    FileRefConfig,
     OutputCollector,
     build_converter_asset,
     build_indexer_asset,
     file_ref,
 )
+
 from index_service.harness import BaseResource
 from index_service.protocol import ConverterOutput, FileRef, IndexerOutput
 from index_service.registry import (
@@ -70,6 +73,8 @@ class IndexRuntime:
 
     def _resource_defs(self, collector: OutputCollector) -> dict[str, Any]:
         defs: dict[str, Any] = {
+            "io_manager":
+            mem_io_manager,
             "arango":
             ResourceDefinition.hardcoded_resource(self._db
                                                   or _NullIndexDatabase()),
@@ -89,22 +94,21 @@ class IndexRuntime:
         indexer_instances = [self._indexer_instances[n] for n in names]
         assets = [file_ref
                   ] + [build_indexer_asset(idx) for idx in indexer_instances]
-        run_config = {
-            "ops": {
-                "file_ref": {
-                    "config": {
-                        "md5": file_ref_.md5,
-                        "paths": list(file_ref_.paths),
-                    }
-                }
-            }
-        }
+        run_config = RunConfig(
+            ops={
+                "file_ref":
+                FileRefConfig(
+                    md5=file_ref_.md5,
+                    paths=list(file_ref_.paths),
+                )
+            })
         result = materialize(
             assets,
             resources=self._resource_defs(collector),
             run_config=run_config,
         )
         assert result.success
+
         return collector.outputs
 
     def run_converter(
@@ -116,23 +120,22 @@ class IndexRuntime:
         collector = OutputCollector()
         converter = self._converter_instances[converter_name]
         assets = [build_converter_asset(converter)]
-        run_config = {
-            "ops": {
-                converter.converter_id: {
-                    "config": {
-                        "input_files": list(input_files),
-                        "input_md5s": [],
-                        "param": param,
-                    }
-                }
-            }
-        }
+        run_config = RunConfig(
+            ops={
+                converter.converter_id:
+                ConverterConfig(
+                    input_files=list(input_files),
+                    input_md5s=[],
+                    param=param,
+                )
+            })
         result = materialize(
             assets,
             resources=self._resource_defs(collector),
             run_config=run_config,
         )
         assert result.success
+
         return collector.outputs[converter_name]
 
     def stop(self) -> None:

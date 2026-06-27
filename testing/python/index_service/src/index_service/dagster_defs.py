@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from dagster import ResourceDefinition, materialize, resource
+from dagster import ResourceDefinition, RunConfig, materialize, mem_io_manager, resource
 
 from index_service.assets import (
+    ConverterConfig,
+    FileRefConfig,
     OutputCollector,
     build_converter_asset,
     build_indexer_asset,
@@ -19,7 +21,7 @@ from index_service.registry import (
 
 def _lazy_resource(cls: type) -> Any:
 
-    @resource(name=cls.resource_key)
+    @resource()
     def _r(_context):
         return cls()
 
@@ -48,6 +50,7 @@ def run_index_file_job(
 ) -> Any:
     collector = OutputCollector()
     resource_defs: dict[str, Any] = {
+        "io_manager": mem_io_manager,
         "arango": ResourceDefinition.hardcoded_resource(arango),
         "output_collector": ResourceDefinition.hardcoded_resource(collector),
     }
@@ -61,16 +64,11 @@ def run_index_file_job(
 
     assets = [file_ref
               ] + [build_indexer_asset(idx) for idx in indexer_instances]
-    run_config = {
-        "ops": {
-            "file_ref": {
-                "config": {
-                    "md5": md5,
-                    "paths": list(paths)
-                }
-            },
-        }
-    }
+    run_config = RunConfig(
+        ops={"file_ref": FileRefConfig(
+            md5=md5,
+            paths=list(paths),
+        )})
     return materialize(assets, resources=resource_defs, run_config=run_config)
 
 
@@ -83,6 +81,7 @@ def run_convert_files_job(
 ) -> Any:
     collector = OutputCollector()
     resource_defs: dict[str, Any] = {
+        "io_manager": mem_io_manager,
         "arango": ResourceDefinition.hardcoded_resource(arango),
         "output_collector": ResourceDefinition.hardcoded_resource(collector),
     }
@@ -90,16 +89,14 @@ def run_convert_files_job(
 
     converter_instances = [cls() for cls in DEFAULT_CONVERTER_TYPES]
     assets = [build_converter_asset(c) for c in converter_instances]
-    run_config = {
-        "ops": {
-            c.converter_id: {
-                "config": {
-                    "input_files": list(input_files),
-                    "input_md5s": list(input_md5s),
-                    "param": param,
-                }
-            }
+    run_config = RunConfig(
+        ops={
+            c.converter_id:
+            ConverterConfig(
+                input_files=list(input_files),
+                input_md5s=list(input_md5s),
+                param=param,
+            )
             for c in converter_instances
-        },
-    }
+        })
     return materialize(assets, resources=resource_defs, run_config=run_config)

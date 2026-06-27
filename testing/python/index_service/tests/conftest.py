@@ -180,6 +180,7 @@ def pytest_configure(config: Any) -> None:
             # execution of individual steps is printed to stderr?
             "dagster",
             "dagster.builtin",
+            "asyncio",
     ]:
         logger = logging.getLogger(logger_name)
         logger.disabled = True
