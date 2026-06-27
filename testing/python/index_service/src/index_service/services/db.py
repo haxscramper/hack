@@ -22,27 +22,32 @@ class IndexerResultRecord:
 @beartype
 class IndexDatabase:
 
-    def __init__(self, host: str, db_name: str, username: str,
-                 password: str) -> None:
+    def __init__(
+        self,
+        host: str,
+        db_name: str,
+        username: str,
+        password: str,
+    ) -> None:
         client = ArangoClient(hosts=host)
         sys_db = client.db("_system", username=username, password=password)
         if not sys_db.has_database(db_name):
             sys_db.create_database(db_name)
         self._db = client.db(db_name, username=username, password=password)
         self._db_name = db_name
-        self._ensure_collections()
+        self.ensure_collections([])
 
     @property
     def db_name(self) -> str:
         return self._db_name
 
-    def _ensure_collections(self) -> None:
-        for name in ["files", "indexer_results", "derivations"]:
+    def ensure_collections(self, names: List[str]) -> None:
+        for name in ["files", "derivations"] + names:
             if not self._db.has_collection(name):
                 self._db.create_collection(name)
 
-    def truncate_all(self) -> None:
-        for name in ["files", "indexer_results", "derivations"]:
+    def truncate_all(self, names: list[str]) -> None:
+        for name in ["files", "derivations"] + names:
             self._db.collection(name).truncate()
 
     def _md5(self, path: Path) -> MD5:
@@ -72,8 +77,8 @@ class IndexDatabase:
         indexer_id: str,
         result: AnyModel,
     ) -> None:
-        key = f"{ref.md5.md5}__{indexer_id}"
-        col = self._db.collection("indexer_results")
+        key = ref.md5.md5
+        col = self._db.collection(indexer_id)
         doc = {
             "_key": key,
             "md5": ref.md5.md5,
@@ -88,10 +93,7 @@ class IndexDatabase:
 
     def get_indexer_result(self, md5: MD5,
                            indexer_id: str) -> IndexerResultRecord:
-        doc = cast(
-            dict,
-            self._db.collection("indexer_results").get(
-                f"{md5.md5}__{indexer_id}"))
+        doc = cast(dict, self._db.collection(indexer_id).get(md5.md5))
 
         assert doc, f"Cannot get evaluation results for {indexer_id}({md5})"
         return IndexerResultRecord(
@@ -105,9 +107,7 @@ class IndexDatabase:
         md5: MD5,
         indexer_id: str,
     ) -> Optional[IndexerResultRecord]:
-        doc = cast(
-            dict,
-            self._db.collection("indexer_results").get(f"{md5}__{indexer_id}"))
+        doc = cast(dict, self._db.collection(indexer_id).get(md5.md5))
 
         if doc is None:
             return None
@@ -144,15 +144,16 @@ class IndexDatabase:
         sys_db.create_database(db_name)
 
     def full_text_search(self,
+                         collection: str,
                          query: str,
                          limit: int = 20) -> List[Dict[str, Any]]:
         cursor = self._db.aql.execute(
-            """
-            FOR doc IN indexer_results
+            f"""
+            FOR doc IN {collection}
               FILTER doc.indexer_id == "full_text"
               FILTER CONTAINS(LOWER(doc.result.text), LOWER(@query))
               LIMIT @limit
-              RETURN {md5: doc.md5, text: doc.result.text}
+              RETURN {{md5: doc.md5, text: doc.result.text}}
             """,
             bind_vars={
                 "query": query,
@@ -164,14 +165,16 @@ class IndexDatabase:
 
     def vector_search(
         self,
+        collection: str,
         vector: List[float],
         limit: int = 20,
     ) -> List[Dict[str, Any]]:
-        cursor = self._db.aql.execute("""
-            FOR doc IN indexer_results
+        cursor = self._db.aql.execute(f"""
+            FOR doc IN {collection}
               FILTER doc.indexer_id == "file_embedding"
-              RETURN {md5: doc.md5, vector: doc.result.vector}
+              RETURN {{md5: doc.md5, vector: doc.result.vector}}
             """)
+
         rows = list(cursor)
 
         def cosine(a: List[float], b: List[float]) -> float:

@@ -89,10 +89,13 @@ def main(
 
     sys.excepthook = impl
 
-    db = IndexDatabase(host=host,
-                       db_name=db_name,
-                       username=username,
-                       password=password)
+    db = IndexDatabase(
+        host=host,
+        db_name=db_name,
+        username=username,
+        password=password,
+    )
+
     logging.info(f"starting indexing for {paths}")
 
     count = 0

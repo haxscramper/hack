@@ -17,7 +17,7 @@ def test_full_text_search(db: IndexDatabase, runtime: IndexRuntime,
     )["full_text"]
     db.store_indexer_result(ref, out.indexer_id, out.result)
 
-    hits = db.full_text_search("beta")
+    hits = db.full_text_search("full_text", "beta")
     assert len(hits) == 1
     assert hits[0]["md5"] == ref.md5.md5
 
@@ -37,5 +37,5 @@ def test_vector_search(db: IndexDatabase, runtime: IndexRuntime,
     db.store_indexer_result(m1, out1.indexer_id, out1.result)
     db.store_indexer_result(m2, out2.indexer_id, out2.result)
 
-    hits = db.vector_search(out1.result.vector, limit=1)
+    hits = db.vector_search("file_embedding", out1.result.vector, limit=1)
     assert hits[0]["md5"] == m1.md5.md5

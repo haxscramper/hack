@@ -95,6 +95,8 @@ def test_db_indexer_result_uniqueness(db: IndexDatabase,
     pb.write_text("---")
     ref_a = db.as_ref(pa)
     ref_b = db.as_ref(pb)
+    db.ensure_collections(["file_size"])
+    db.truncate_all(["file_size"])
     db.store_indexer_result(ref_a, "file_size",
                             FileSizeIndexerResult(size_bytes=10))
     db.store_indexer_result(ref_b, "file_size",

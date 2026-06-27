@@ -39,15 +39,22 @@ class IndexRuntime:
             for cls in (
                 resource_types or [t() for t in DEFAULT_RESOURCE_TYPES])
         }
+
         self._indexer_instances = {
             cls.asset_name: cls
             for cls in (indexer_types or [t() for t in DEFAULT_INDEXER_TYPES])
         }
+
         self._converter_instances = {
             cls.converter_id: cls
             for cls in (
                 converter_types or [t() for t in DEFAULT_CONVERTER_TYPES])
         }
+
+        self.db.ensure_collections(list(self._indexer_instances.keys()))
+
+    def truncate_all(self):
+        self.db.truncate_all(list(self._indexer_instances.keys()))
 
     def _resource_defs(self, collector: OutputCollector) -> dict[str, Any]:
         defs: dict[str, Any] = {
