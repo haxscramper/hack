@@ -1,16 +1,17 @@
+import logging
+import os
 import re
+import traceback
+from dataclasses import dataclass
 
+import pytest
+from beartype.typing import Any
+from rich.console import Console
+
+from index_service.db import IndexDatabase
 from index_service.harness import BaseResourceActor
 from index_service.resources.flm_gemma import FlmSummaryResult, SummarizeRequest
 from index_service.runtime import IndexRuntime
-import pytest
-from index_service.db import IndexDatabase
-from rich.console import Console
-from dataclasses import dataclass
-from beartype.typing import Any
-import traceback
-import os
-import logging
 
 ARANGO_HOST = "http://localhost:8529"
 ARANGO_USER = "root"
@@ -99,8 +100,8 @@ def get_custom_traceback_handler(
                     )
 
         display_filenames = [frame_info.filename for frame_info in frames_info]
-        common_prefix = os.path.commonpath(
-            display_filenames) if display_filenames else ""
+        common_prefix = (os.path.commonpath(display_filenames)
+                         if display_filenames else "")
 
         for frame_info in frames_info:
             display_filename = frame_info.filename
@@ -118,8 +119,8 @@ def get_custom_traceback_handler(
             if show_args:
                 for arg_name, arg_value in frame_info.args.items():
                     type_info = ""
-                    available_width = console.width - max_arg_name_width - len(
-                        type_info) - 5
+                    available_width = (console.width - max_arg_name_width -
+                                       len(type_info) - 5)
 
                     if truncate_value:
                         arg_repr = repr(arg_value)
