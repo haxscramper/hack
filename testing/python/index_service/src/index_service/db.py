@@ -34,7 +34,12 @@ class IndexDatabase:
         if not sys_db.has_database(db_name):
             sys_db.create_database(db_name)
         self._db = client.db(db_name, username=username, password=password)
+        self._db_name = db_name
         self._ensure_collections()
+
+    @property
+    def db_name(self) -> str:
+        return self._db_name
 
     def _ensure_collections(self) -> None:
         for name in ["files", "indexer_results", "derivations"]:

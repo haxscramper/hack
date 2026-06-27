@@ -112,6 +112,8 @@ def test_index_file_job(
     import index_service.dagster_defs as dagster_defs
 
     monkeypatch.setattr(dagster_defs, "IndexRuntime", RuntimeWithMockFlm)
+    arango_cfg = _arango_config()
+    arango_cfg["db_name"] = db.db_name
     result = dagster_defs.index_file_job.execute_in_process(
         run_config={
             "ops": {
@@ -124,7 +126,7 @@ def test_index_file_job(
             },
             "resources": {
                 "arango": {
-                    "config": _arango_config()
+                    "config": arango_cfg
                 }
             },
         })
@@ -145,6 +147,8 @@ def test_convert_files_job(
     import index_service.dagster_defs as dagster_defs
 
     monkeypatch.setattr(dagster_defs, "IndexRuntime", RuntimeWithMockFlm)
+    arango_cfg = _arango_config()
+    arango_cfg["db_name"] = db.db_name
     result = dagster_defs.convert_files_job.execute_in_process(
         run_config={
             "ops": {
@@ -158,7 +162,7 @@ def test_convert_files_job(
             },
             "resources": {
                 "arango": {
-                    "config": _arango_config()
+                    "config": arango_cfg
                 }
             },
         })
