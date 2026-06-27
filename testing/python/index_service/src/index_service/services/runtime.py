@@ -55,16 +55,21 @@ class IndexRuntime:
         resource_overrides: dict[str, BaseResource | type[BaseResource]]
         | None = None,
         db: Any = None,
-        indexer_types: list[type[BaseIndexer]] | None = None,
-        converter_types: list[type[BaseConverter]] | None = None,
-        resource_types: list[type[BaseResource]] | None = None,
+        indexer_types: list[BaseIndexer] | None = None,
+        converter_types: list[BaseConverter] | None = None,
+        resource_types: list[BaseResource] | None = None,
     ) -> None:
         self._db = db
         overrides = resource_overrides or {}
         self._resource_instances: dict[str, BaseResource] = {}
-        base_resource_types = resource_types or DEFAULT_RESOURCE_TYPES
+
+        base_resource_types = resource_types or [
+            t() for t in DEFAULT_RESOURCE_TYPES
+        ]
+
         for cls in base_resource_types:
-            self._resource_instances[cls.resource_key] = cls()
+            self._resource_instances[cls.resource_key] = cls
+
         for key, override in overrides.items():
             instance: BaseResource
             if isinstance(override, type) and issubclass(
@@ -72,16 +77,23 @@ class IndexRuntime:
                 instance = override()
             else:
                 instance = override  # type: ignore[assignment]
+
             self._resource_instances[key] = instance
 
-        indexer_type_list = indexer_types or DEFAULT_INDEXER_TYPES
+        indexer_type_list = indexer_types or [
+            t() for t in DEFAULT_INDEXER_TYPES
+        ]
+
         self._indexer_instances = {
-            cls.asset_name: cls()
+            cls.asset_name: cls
             for cls in indexer_type_list
         }
-        converter_type_list = converter_types or DEFAULT_CONVERTER_TYPES
+
+        converter_type_list = converter_types or [
+            t() for t in DEFAULT_CONVERTER_TYPES
+        ]
         self._converter_instances = {
-            cls.converter_id: cls()
+            cls.converter_id: cls
             for cls in converter_type_list
         }
 

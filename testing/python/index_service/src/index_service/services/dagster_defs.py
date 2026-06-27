@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from beartype.typing import Any
+from beartype import beartype
 
 from dagster import ResourceDefinition, RunConfig, materialize, mem_io_manager
 
@@ -31,42 +32,43 @@ stfu = {
 }
 
 
+@beartype
 class DagsterIndexRunner:
 
     def __init__(
         self,
-        indexer_types: list[type[BaseIndexer]] | None = None,
-        converter_types: list[type[BaseConverter]] | None = None,
-        resource_types: list[type[BaseResource]] | None = None,
+        indexer_types: list[BaseIndexer] | None = None,
+        converter_types: list[BaseConverter] | None = None,
+        resource_types: list[BaseResource] | None = None,
     ) -> None:
-        self._indexer_types = indexer_types or list(DEFAULT_INDEXER_TYPES)
+        self._indexer_types = indexer_types or list(
+            [t() for t in DEFAULT_INDEXER_TYPES])
+
         self._converter_types = converter_types or list(
-            DEFAULT_CONVERTER_TYPES)
-        self._resource_types = resource_types or list(DEFAULT_RESOURCE_TYPES)
+            [t() for t in DEFAULT_CONVERTER_TYPES])
+
+        self._resource_types = resource_types or list(
+            [t() for t in DEFAULT_RESOURCE_TYPES])
 
     def _build_resource_defs(
         self,
-        resource_overrides: dict[str, Any] | None = None,
+        resource_overrides: dict[str, BaseResource] | None = None,
     ) -> dict[str, Any]:
         overrides = resource_overrides or {}
         defs: dict[str, Any] = {}
         for cls in self._resource_types:
             key = cls.resource_key
             if key in overrides:
-                resource_obj = overrides[key]
-                if isinstance(resource_obj, type) and issubclass(
-                        resource_obj, BaseResource):
-                    resource_obj = resource_obj()
-                defs[key] = ResourceDefinition.hardcoded_resource(resource_obj)
+                defs[key] = ResourceDefinition.hardcoded_resource(
+                    overrides[key])
             else:
-                defs[key] = ResourceDefinition.hardcoded_resource(cls())
+                defs[key] = ResourceDefinition.hardcoded_resource(cls)
+
         for key, resource_obj in overrides.items():
             if key in defs:
                 continue
-            if isinstance(resource_obj, type) and issubclass(
-                    resource_obj, BaseResource):
-                resource_obj = resource_obj()
             defs[key] = ResourceDefinition.hardcoded_resource(resource_obj)
+
         return defs
 
     def _indexer_instances(self,
@@ -74,8 +76,10 @@ class DagsterIndexRunner:
                            ) -> list[BaseIndexer]:
         by_name = {cls.asset_name: cls for cls in self._indexer_types}
         if names is None:
-            return [cls() for cls in self._indexer_types]
-        return [by_name[n]() for n in names]
+            return [cls for cls in self._indexer_types]
+
+        else:
+            return [by_name[n] for n in names]
 
     def run_index_file_job(
         self,
@@ -133,7 +137,7 @@ class DagsterIndexRunner:
         }
         resource_defs.update(self._build_resource_defs(resource_overrides))
 
-        converter_instances = [cls() for cls in self._converter_types]
+        converter_instances = [cls for cls in self._converter_types]
         assets = [build_converter_asset(c) for c in converter_instances]
         run_config = RunConfig(
             ops={

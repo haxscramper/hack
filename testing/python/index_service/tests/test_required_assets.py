@@ -73,7 +73,7 @@ def test_chain_two_indexers(tmp_path: Path) -> None:
     file_path = tmp_path / "doc.txt"
     _touch(file_path)
 
-    runtime = IndexRuntime(indexer_types=[RootIndexer, ChildIndexer])
+    runtime = IndexRuntime(indexer_types=[RootIndexer(), ChildIndexer()])
     outputs = runtime.run_indexers(
         FileRef(md5="xyz", path=file_path),
         ["root_indexer", "child_indexer"],
@@ -142,8 +142,13 @@ def test_branching_indexers(tmp_path: Path) -> None:
     path = tmp_path / "branch.txt"
     _touch(path)
 
-    runtime = IndexRuntime(
-        indexer_types=[IndexerA, IndexerB, IndexerC, IndexerD])
+    runtime = IndexRuntime(indexer_types=[
+        IndexerA(),
+        IndexerB(),
+        IndexerC(),
+        IndexerD(),
+    ])
+
     runtime.run_indexers(
         FileRef(md5="branch", path=path),
         ["indexer_a", "indexer_b", "indexer_c", "indexer_d"],
@@ -192,7 +197,7 @@ def test_indexer_receives_resource(tmp_path: Path) -> None:
 
     runtime = IndexRuntime(
         resource_overrides={"echo": EchoResource},
-        indexer_types=[EchoIndexer],
+        indexer_types=[EchoIndexer()],
     )
     out = runtime.run_indexers(
         FileRef(md5="res", path=file_path),
