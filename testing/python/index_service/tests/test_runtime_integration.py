@@ -7,6 +7,7 @@ from index_service.harness import BaseResourceActor
 from index_service.protocol import ConverterOutput, FileRef, IndexerOutput
 from index_service.resources.flm_gemma import FlmSummaryResult, SummarizeRequest
 from index_service.runtime import IndexRuntime
+from tests.conftest import RuntimeWithMockFlm
 
 ARANGO_HOST = os.environ.get("ARANGO_HOST", "http://localhost:8529")
 ARANGO_USER = os.environ.get("ARANGO_USER", "root")
@@ -21,21 +22,6 @@ def _arango_config() -> dict[str, str]:
         "username": ARANGO_USER,
         "password": ARANGO_PASSWORD,
     }
-
-
-class MockFlmGemmaResourceActor(BaseResourceActor):
-    actor_id = "flm-gemma"
-
-    def handle(self, request: SummarizeRequest) -> FlmSummaryResult:
-        text = request.text.strip().replace("\n", " ")
-        return FlmSummaryResult(summary=f"mock-summary: {text[:48]}")
-
-
-class RuntimeWithMockFlm(IndexRuntime):
-
-    def __init__(self) -> None:
-        super().__init__(
-            resource_overrides={"flm-gemma": MockFlmGemmaResourceActor})
 
 
 @pytest.fixture
@@ -61,33 +47,6 @@ def sample_files(tmp_path: Path) -> list[Path]:
         path.write_text(text)
         files.append(path)
     return files
-
-
-@pytest.fixture
-def runtime() -> IndexRuntime:
-    rt = RuntimeWithMockFlm()
-    try:
-        yield rt
-    finally:
-        rt.stop()
-
-
-@pytest.fixture
-def db() -> IndexDatabase:
-    try:
-        database = IndexDatabase(
-            host=ARANGO_HOST,
-            db_name=ARANGO_DB,
-            username=ARANGO_USER,
-            password=ARANGO_PASSWORD,
-        )
-    except Exception as exc:
-        pytest.skip(
-            f"ArangoDB is not reachable: {exc}. Expected at {ARANGO_HOST} with {ARANGO_USER}/{ARANGO_PASSWORD}"
-        )
-
-    database.truncate_all()
-    return database
 
 
 def test_file_size_indexer(runtime: IndexRuntime, sample_file: Path) -> None:

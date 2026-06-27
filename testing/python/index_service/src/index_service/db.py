@@ -78,8 +78,12 @@ class IndexDatabase:
 
     def get_indexer_result(self, md5: str,
                            indexer_id: str) -> IndexerResultRecord:
+
         doc = self._db.collection("indexer_results").get(
             f"{md5}__{indexer_id}")
+
+        assert doc, f"Cannot get evaluation results for {indexer_id}({md5})"
+
         return IndexerResultRecord(
             md5=doc["md5"],
             indexer_id=doc["indexer_id"],

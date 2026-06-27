@@ -6,14 +6,15 @@ readme = "README.md"
 authors = [
     { name = "haxscramper", email = "haxscramper@gmail.com" }
 ]
-requires-python = ">=3.13"
+requires-python = ">=3.12"
 dependencies = [
     "beartype>=0.22.9",
     "dagster>=1.13.10",
     "openai>=2.44.0",
     "pykka>=4.4.2",
     "pytest>=9.1.1",
-    "python-arango>=8.3.3",
+    "python-arango==8.1.6",
+    "rich>=15.0.0",
     "zmq>=0.0.0",
 ]
 
