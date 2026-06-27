@@ -154,7 +154,7 @@ def get_custom_traceback_handler(
             if rich_text:
                 lines.append(rich_text)
 
-        return "\n".join(lines)
+        return "\n" + "\n".join(lines)
 
     return impl
 

@@ -3,6 +3,11 @@ from pathlib import Path
 from index_service.harness import BaseIndexerActor
 from index_service.protocol import IndexerOutput, IndexerRequest
 from index_service.resources.flm_gemma import FlmSummaryResult, SummarizeRequest
+from pydantic import BaseModel
+
+
+class FileSummariesIndexerResult(BaseModel):
+    summaries: dict[str, str]
 
 
 class FileSummariesIndexerActor(BaseIndexerActor):
@@ -22,8 +27,5 @@ class FileSummariesIndexerActor(BaseIndexerActor):
         return IndexerOutput(
             indexer_id=self.actor_id,
             result_type=self.actor_id,
-            result={
-                "summaries": summaries,
-                "file_count": len(summaries)
-            },
+            result=FileSummariesIndexerResult(summaries=summaries),
         )

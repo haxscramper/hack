@@ -4,6 +4,9 @@ from dataclasses import dataclass
 from arango import ArangoClient
 from beartype import beartype
 from beartype.typing import Any, Dict, List
+from pydantic import BaseModel
+
+from index_service.protocol import AnyModel
 
 
 @beartype
@@ -65,7 +68,7 @@ class IndexDatabase:
         md5: str,
         indexer_id: str,
         result_type: str,
-        result: Dict[str, object],
+        result: AnyModel,
     ) -> None:
         key = f"{md5}__{indexer_id}"
         col = self._db.collection("indexer_results")
@@ -74,7 +77,7 @@ class IndexDatabase:
             "md5": md5,
             "indexer_id": indexer_id,
             "result_type": result_type,
-            "result": result,
+            "result": result.model_dump(),
         }
         if col.has(key):
             col.replace(doc)
@@ -101,14 +104,14 @@ class IndexDatabase:
         input_md5s: List[str],
         output_files: List[str],
         config: Dict[str, object],
-        return_value: Dict[str, object],
+        return_value: AnyModel,
     ) -> str:
         col = self._db.collection("derivations")
         meta = col.insert({
             "input_md5s": input_md5s,
             "output_files": output_files,
             "config": config,
-            "return_value": return_value,
+            "return_value": return_value.model_dump(),
         })
         return meta["_key"]
 

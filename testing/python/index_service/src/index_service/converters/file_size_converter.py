@@ -2,6 +2,12 @@ from pathlib import Path
 
 from index_service.harness import BaseConverterActor
 from index_service.protocol import ConverterOutput, ConverterRequest
+from pydantic import BaseModel
+
+
+class FileSizeConverterResult(BaseModel):
+    sizes: dict[str, int]
+    total_size: int
 
 
 class FileSizeConverterActor(BaseConverterActor):
@@ -12,8 +18,8 @@ class FileSizeConverterActor(BaseConverterActor):
         return ConverterOutput(
             converter_id=self.actor_id,
             output_files=[],
-            return_value={
-                "sizes": sizes,
-                "total_size": sum(sizes.values())
-            },
+            return_value=FileSizeConverterResult(
+                sizes=sizes,
+                total_size=sum(sizes.values()),
+            ),
         )

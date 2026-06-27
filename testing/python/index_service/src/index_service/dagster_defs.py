@@ -3,6 +3,7 @@ from dagster import Config, OpExecutionContext, job, op, resource
 from index_service.db import IndexDatabase
 from index_service.protocol import ConverterOutput, FileRef, IndexerOutput
 from index_service.runtime import IndexRuntime
+from beartype.typing import cast
 
 
 class FileConfig(Config):
@@ -112,12 +113,13 @@ def file_embedding_op(context: OpExecutionContext,
 @op(required_resource_keys={"arango", "index_runtime"})
 def file_size_converter_op(context: OpExecutionContext,
                            config: ConverterConfig) -> ConverterOutput:
-    out = context.resources.index_runtime.run_converter(
+    out: ConverterOutput = context.resources.index_runtime.run_converter(
         converter_name="file-size-converter",
         input_files=config.input_files,
         param=config.param,
     )
-    context.resources.arango.store_derivation(
+
+    cast(IndexDatabase, context.resources.arango).store_derivation(
         config.input_md5s,
         out.output_files,
         {"param": config.param},

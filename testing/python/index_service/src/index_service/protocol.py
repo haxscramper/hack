@@ -3,7 +3,11 @@ from __future__ import annotations
 from typing import Any
 
 from beartype import beartype
+from beartype.typing import Any, Annotated
 from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, PlainValidator
+
+AnyModel = Annotated[BaseModel, PlainValidator(lambda v: v)]
 
 
 @beartype
@@ -18,7 +22,7 @@ class IndexerOutput(BaseModel):
     model_config = ConfigDict(frozen=True)
     indexer_id: str
     result_type: str
-    result: dict[str, Any]
+    result: AnyModel
 
 
 @beartype
@@ -26,7 +30,7 @@ class ConverterOutput(BaseModel):
     model_config = ConfigDict(frozen=True)
     converter_id: str
     output_files: list[str]
-    return_value: dict[str, Any]
+    return_value: AnyModel
 
 
 @beartype

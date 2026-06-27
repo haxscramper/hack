@@ -3,6 +3,12 @@ from pathlib import Path
 
 from index_service.harness import BaseIndexerActor
 from index_service.protocol import IndexerOutput, IndexerRequest
+from pydantic import BaseModel
+
+
+class FileEmbeddingIndexerResult(BaseModel):
+    vector: list[float]
+    dim: int
 
 
 class FileEmbeddingIndexerActor(BaseIndexerActor):
@@ -19,8 +25,8 @@ class FileEmbeddingIndexerActor(BaseIndexerActor):
         return IndexerOutput(
             indexer_id=self.actor_id,
             result_type=self.actor_id,
-            result={
-                "vector": vector,
-                "dim": len(vector)
-            },
+            result=FileEmbeddingIndexerResult(
+                vector=vector,
+                dim=len(vector),
+            ),
         )

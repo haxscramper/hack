@@ -51,5 +51,5 @@ def test_vector_search(db, tmp_path: Path) -> None:
     finally:
         runtime.stop()
 
-    hits = db.vector_search(out1.result["vector"], limit=1)
+    hits = db.vector_search(out1.result.vector, limit=1)
     assert hits[0]["md5"] == "m1"
