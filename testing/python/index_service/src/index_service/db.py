@@ -5,7 +5,7 @@ from pathlib import Path
 
 from arango import ArangoClient
 from beartype import beartype
-from beartype.typing import Any, Dict, List
+from beartype.typing import Any, Dict, List, Optional
 from pydantic import BaseModel
 
 from index_service.protocol import AnyModel
@@ -14,19 +14,9 @@ from index_service.protocol import AnyModel
 @beartype
 @dataclass
 class IndexerResultRecord:
-    """A persisted indexer result fetched from the database."""
-
     md5: str
-    """Content identity of the file the result belongs to."""
-
     indexer_id: str
-    """Identity of the indexer that produced the result."""
-
-    result_type: str
-    """Category of the stored metadata."""
-
     result: Dict[str, object]
-    """The stored metadata payload."""
 
 
 @beartype
@@ -77,7 +67,6 @@ class IndexDatabase:
         self,
         md5: str,
         indexer_id: str,
-        result_type: str,
         result: AnyModel,
     ) -> None:
         key = f"{md5}__{indexer_id}"
@@ -86,7 +75,6 @@ class IndexDatabase:
             "_key": key,
             "md5": md5,
             "indexer_id": indexer_id,
-            "result_type": result_type,
             "result": result.model_dump(),
         }
         if col.has(key):
@@ -96,16 +84,27 @@ class IndexDatabase:
 
     def get_indexer_result(self, md5: str,
                            indexer_id: str) -> IndexerResultRecord:
-
         doc = self._db.collection("indexer_results").get(
             f"{md5}__{indexer_id}")
-
         assert doc, f"Cannot get evaluation results for {indexer_id}({md5})"
-
         return IndexerResultRecord(
             md5=doc["md5"],
             indexer_id=doc["indexer_id"],
-            result_type=doc["result_type"],
+            result=doc["result"],
+        )
+
+    def get_indexer_result_optional(
+        self,
+        md5: str,
+        indexer_id: str,
+    ) -> Optional[IndexerResultRecord]:
+        doc = self._db.collection("indexer_results").get(
+            f"{md5}__{indexer_id}")
+        if doc is None:
+            return None
+        return IndexerResultRecord(
+            md5=doc["md5"],
+            indexer_id=doc["indexer_id"],
             result=doc["result"],
         )
 
@@ -140,7 +139,7 @@ class IndexDatabase:
         cursor = self._db.aql.execute(
             """
             FOR doc IN indexer_results
-              FILTER doc.result_type == "full-text"
+              FILTER doc.indexer_id == "full-text"
               FILTER CONTAINS(LOWER(doc.result.text), LOWER(@query))
               LIMIT @limit
               RETURN {md5: doc.md5, text: doc.result.text}
@@ -159,7 +158,7 @@ class IndexDatabase:
     ) -> List[Dict[str, Any]]:
         cursor = self._db.aql.execute("""
             FOR doc IN indexer_results
-              FILTER doc.result_type == "file-embedding"
+              FILTER doc.indexer_id == "file-embedding"
               RETURN {md5: doc.md5, vector: doc.result.vector}
             """)
         rows = list(cursor)

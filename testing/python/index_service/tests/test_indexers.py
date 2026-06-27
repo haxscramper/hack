@@ -2,31 +2,19 @@ import os
 from pathlib import Path
 
 import pytest
-from index_service.converters.file_size_converter import FileSizeConverterResult
-from index_service.db import IndexDatabase
-from index_service.harness import BaseResourceActor
-from index_service.indexers.file_size import FileSizeIndexerResult
-from index_service.indexers.file_stats import FileStatsIndexerActor, FileStatsIndexerResult
-from index_service.protocol import ConverterOutput, FileRef, IndexerOutput
-from index_service.resources.flm_gemma import FlmSummaryResult, SummarizeRequest
-from index_service.runtime import IndexRuntime
-from tests.conftest import RuntimeWithMockFlm
 from beartype.typing import cast
 from pydantic import BaseModel
+
+from index_service.converters.file_size_converter import FileSizeConverterResult
+from index_service.db import IndexDatabase
+from index_service.indexers.file_size import FileSizeIndexerResult
+from index_service.indexers.file_stats import FileStatsIndexerResult
+from index_service.protocol import FileRef
+from index_service.runtime import IndexRuntime
 
 ARANGO_HOST = os.environ.get("ARANGO_HOST", "http://localhost:8529")
 ARANGO_USER = os.environ.get("ARANGO_USER", "root")
 ARANGO_PASSWORD = os.environ.get("ARANGO_ROOT_PASSWORD", "test")
-ARANGO_DB = "index_test"
-
-
-def _arango_config() -> dict[str, str]:
-    return {
-        "host": ARANGO_HOST,
-        "db_name": ARANGO_DB,
-        "username": ARANGO_USER,
-        "password": ARANGO_PASSWORD,
-    }
 
 
 @pytest.fixture
@@ -99,9 +87,9 @@ def test_file_size_converter(runtime: IndexRuntime, sample_file: Path) -> None:
 def test_db_indexer_result_uniqueness(db: IndexDatabase) -> None:
     db.ensure_file("md5x", ["/disk/a.txt"])
     db.ensure_file("md5x", ["/disk/b.txt"])
-    db.store_indexer_result("md5x", "file-size", "file-size",
+    db.store_indexer_result("md5x", "file-size",
                             FileSizeIndexerResult(size_bytes=10))
-    db.store_indexer_result("md5x", "file-size", "file-size",
+    db.store_indexer_result("md5x", "file-size",
                             FileSizeIndexerResult(size_bytes=20))
     record = db.get_indexer_result("md5x", "file-size")
     assert record.result["size_bytes"] == 20
@@ -114,37 +102,19 @@ def test_db_store_derivation(db: IndexDatabase) -> None:
 
     key = db.store_derivation(["md5x"], [], {"param": ""},
                               LocalDerivation(total_size=17))
-
     assert isinstance(key, str)
 
 
-def test_index_file_job(
-    db: IndexDatabase,
-    sample_file: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    import index_service.dagster_defs as dagster_defs
+def test_index_file_job(db: IndexDatabase, sample_file: Path) -> None:
+    from index_service import dagster_defs
+    from tests.conftest import MockFlmGemmaResource
 
-    monkeypatch.setattr(dagster_defs, "IndexRuntime", RuntimeWithMockFlm)
-    arango_cfg = _arango_config()
-    arango_cfg["db_name"] = db.db_name
-    result = dagster_defs.index_file_job.execute_in_process(
-        run_config={
-            "ops": {
-                "provide_file_op": {
-                    "config": {
-                        "md5": "filemd5",
-                        "paths": [str(sample_file)],
-                    }
-                }
-            },
-            "resources": {
-                "arango": {
-                    "config": arango_cfg
-                }
-            },
-        })
-
+    result = dagster_defs.run_index_file_job(
+        arango=db,
+        md5="filemd5",
+        paths=[str(sample_file)],
+        resource_overrides={"flm_gemma": MockFlmGemmaResource()},
+    )
     assert result.success
     size_record = db.get_indexer_result("filemd5", "file-size")
     assert size_record.result["size_bytes"] == sample_file.stat().st_size
@@ -152,33 +122,15 @@ def test_index_file_job(
     assert text_record.result["text"] == sample_file.read_text()
 
 
-def test_convert_files_job(
-    db: IndexDatabase,
-    sample_file: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    import index_service.dagster_defs as dagster_defs
+def test_convert_files_job(db: IndexDatabase, sample_file: Path) -> None:
+    from index_service import dagster_defs
 
-    monkeypatch.setattr(dagster_defs, "IndexRuntime", RuntimeWithMockFlm)
-    arango_cfg = _arango_config()
-    arango_cfg["db_name"] = db.db_name
-    result = dagster_defs.convert_files_job.execute_in_process(
-        run_config={
-            "ops": {
-                "file_size_converter_op": {
-                    "config": {
-                        "input_files": [str(sample_file)],
-                        "input_md5s": ["filemd5"],
-                        "param": "",
-                    }
-                }
-            },
-            "resources": {
-                "arango": {
-                    "config": arango_cfg
-                }
-            },
-        })
+    result = dagster_defs.run_convert_files_job(
+        arango=db,
+        input_files=[str(sample_file)],
+        input_md5s=["filemd5"],
+        param="",
+    )
     assert result.success
 
 

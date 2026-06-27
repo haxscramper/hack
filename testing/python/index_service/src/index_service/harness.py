@@ -1,29 +1,22 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import TypeVar
+from typing import Any
 
-import pykka
 from beartype import beartype
 from pydantic import BaseModel
 
 from index_service.protocol import (
-    ConverterOutput,
     ConverterRequest,
+    ConverterOutput,
     IndexerOutput,
     IndexerRequest,
 )
 
-RespT = TypeVar("RespT", bound=BaseModel)
-
 
 @beartype
-class BaseServiceActor(pykka.ThreadingActor, ABC):
-    actor_id: str
-
-
-@beartype
-class BaseResourceActor(BaseServiceActor, ABC):
+class BaseResource(ABC):
+    resource_key: str
 
     @abstractmethod
     def handle(self, request: BaseModel) -> BaseModel:
@@ -31,44 +24,24 @@ class BaseResourceActor(BaseServiceActor, ABC):
 
 
 @beartype
-class BaseIndexerActor(BaseServiceActor, ABC):
+class BaseIndexer(ABC):
+    asset_name: str
+    result_model: type[BaseModel]
     dependencies: tuple[str, ...] = ()
     required_resources: tuple[str, ...] = ()
 
-    def __init__(self, resources: dict[str, pykka.ActorRef]) -> None:
-        super().__init__()
-        self._resources = {
-            name: ref.proxy()
-            for name, ref in resources.items()
-        }
-
     @abstractmethod
-    def handle(self, request: IndexerRequest) -> IndexerOutput:
+    def run(self, request: IndexerRequest, **resources: Any) -> IndexerOutput:
         raise NotImplementedError
-
-    def request_resource(
-        self,
-        name: str,
-        request: BaseModel,
-        response_type: type[RespT],
-    ) -> RespT:
-        raw = self._resources[name].handle(request).get()
-        if isinstance(raw, response_type):
-            return raw
-        return response_type.model_validate(raw)
 
 
 @beartype
-class BaseConverterActor(BaseServiceActor, ABC):
+class BaseConverter(ABC):
+    converter_id: str
+    result_model: type[BaseModel]
     required_resources: tuple[str, ...] = ()
 
-    def __init__(self, resources: dict[str, pykka.ActorRef]) -> None:
-        super().__init__()
-        self._resources = {
-            name: ref.proxy()
-            for name, ref in resources.items()
-        }
-
     @abstractmethod
-    def handle(self, request: ConverterRequest) -> ConverterOutput:
+    def run(self, request: ConverterRequest,
+            **resources: Any) -> ConverterOutput:
         raise NotImplementedError

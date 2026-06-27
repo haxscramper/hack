@@ -9,7 +9,7 @@ from beartype.typing import Any
 from rich.console import Console
 
 from index_service.db import IndexDatabase
-from index_service.harness import BaseResourceActor
+from index_service.harness import BaseResource
 from index_service.resources.flm_gemma import FlmSummaryResult, SummarizeRequest
 from index_service.runtime import IndexRuntime
 
@@ -222,24 +222,17 @@ def db(request) -> IndexDatabase:
     )
 
 
-class MockFlmGemmaResourceActor(BaseResourceActor):
-    actor_id = "flm-gemma"
+class MockFlmGemmaResource(BaseResource):
+    resource_key = "flm_gemma"
 
     def handle(self, request: SummarizeRequest) -> FlmSummaryResult:
         text = request.text.strip().replace("\n", " ")
         return FlmSummaryResult(summary=f"mock-summary: {text[:48]}")
 
 
-class RuntimeWithMockFlm(IndexRuntime):
-
-    def __init__(self) -> None:
-        super().__init__(
-            resource_overrides={"flm-gemma": MockFlmGemmaResourceActor})
-
-
 @pytest.fixture
-def runtime() -> RuntimeWithMockFlm:
-    rt = RuntimeWithMockFlm()
+def runtime() -> IndexRuntime:
+    rt = IndexRuntime(resource_overrides={"flm_gemma": MockFlmGemmaResource})
     try:
         yield rt
     finally:

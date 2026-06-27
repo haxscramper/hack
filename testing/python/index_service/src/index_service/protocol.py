@@ -1,11 +1,8 @@
 from __future__ import annotations
 
-from typing import Any
-
 from beartype import beartype
-from beartype.typing import Any, Annotated
-from pydantic import BaseModel, ConfigDict, Field
-from pydantic import BaseModel, ConfigDict, PlainValidator
+from beartype.typing import Annotated
+from pydantic import BaseModel, ConfigDict, Field, PlainValidator
 
 AnyModel = Annotated[BaseModel, PlainValidator(lambda v: v)]
 
@@ -21,7 +18,6 @@ class FileRef(BaseModel):
 class IndexerOutput(BaseModel):
     model_config = ConfigDict(frozen=True)
     indexer_id: str
-    result_type: str
     result: AnyModel
 
 

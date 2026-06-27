@@ -1,12 +1,10 @@
-import hashlib
+import logging
 from pathlib import Path
 
 import click
 
-from index_service.contracts import FileRef
+from index_service.dagster_defs import run_index_file_job
 from index_service.db import IndexDatabase
-from index_service.runtime import IndexRuntime
-import logging
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -35,18 +33,20 @@ def main(
                        db_name=db_name,
                        username=username,
                        password=password)
-    runtime = IndexRuntime()
     logging.info(f"starting indexing for {paths}")
-    try:
-        for path in paths:
-            for file in path.rglob("*"):
-                md5 = db.add_path(file)
-                db.ensure_file(md5, [str(path)])
+    for path in paths:
+        for file in path.rglob("*"):
+            if not file.is_file():
+                continue
+            md5 = db.add_path(file)
+            result = run_index_file_job(
+                arango=db,
+                md5=md5,
+                paths=[str(file)],
+                indexer_names=list(indexers),
+            )
+            assert result.success
 
-                outputs = runtime.run_indexers(
-                    FileRef(md5=md5, paths=[str(path)]), list(indexers))
-                for out in outputs.values():
-                    db.store_indexer_result(md5, out.indexer_id,
-                                            out.result_type, out.result)
-    finally:
-        runtime.stop()
+
+if __name__ == "__main__":
+    main()

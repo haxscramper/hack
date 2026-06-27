@@ -1,4 +1,4 @@
-from index_service.harness import BaseResourceActor
+from index_service.harness import BaseResource
 from pydantic import BaseModel
 
 
@@ -10,8 +10,8 @@ class ReverserResult(BaseModel):
     lines: list[str]
 
 
-class FileReverserResourceActor(BaseResourceActor):
-    actor_id = "file-reverser"
+class FileReverserResource(BaseResource):
+    resource_key = "file_reverser"
 
     def handle(self, request: ReverseLinesRequest) -> ReverserResult:
         return ReverserResult(lines=list(reversed(request.lines)))

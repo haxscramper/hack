@@ -1,7 +1,7 @@
 from datetime import datetime
 from pathlib import Path
 
-from index_service.harness import BaseIndexerActor
+from index_service.harness import BaseIndexer
 from index_service.protocol import IndexerOutput, IndexerRequest
 from pydantic import BaseModel
 
@@ -14,14 +14,15 @@ class FileStatsIndexerResult(BaseModel):
     modification_time: str
 
 
-class FileStatsIndexerActor(BaseIndexerActor):
-    actor_id = "file-stats"
+class FileStatsIndexer(BaseIndexer):
+    asset_name = "file-stats"
+    result_model = FileStatsIndexerResult
 
-    def handle(self, request: IndexerRequest) -> IndexerOutput:
+    def run(self, request: IndexerRequest,
+            **resources: object) -> IndexerOutput:
         st = Path(request.file_ref.paths[0]).stat()
         return IndexerOutput(
-            indexer_id=self.actor_id,
-            result_type=self.actor_id,
+            indexer_id=self.asset_name,
             result=FileStatsIndexerResult(
                 size_bytes=st.st_size,
                 mode=st.st_mode,

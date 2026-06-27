@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from index_service.harness import BaseIndexerActor
+from index_service.harness import BaseIndexer
 from index_service.protocol import IndexerOutput, IndexerRequest
 from pydantic import BaseModel
 
@@ -9,13 +9,14 @@ class FileSizeIndexerResult(BaseModel):
     size_bytes: int
 
 
-class FileSizeIndexerActor(BaseIndexerActor):
-    actor_id = "file-size"
+class FileSizeIndexer(BaseIndexer):
+    asset_name = "file-size"
+    result_model = FileSizeIndexerResult
 
-    def handle(self, request: IndexerRequest) -> IndexerOutput:
+    def run(self, request: IndexerRequest,
+            **resources: object) -> IndexerOutput:
         size = Path(request.file_ref.paths[0]).stat().st_size
         return IndexerOutput(
-            indexer_id=self.actor_id,
-            result_type=self.actor_id,
+            indexer_id=self.asset_name,
             result=FileSizeIndexerResult(size_bytes=size),
         )

@@ -23,8 +23,7 @@ def test_large_batch_indexing(db, tmp_path: Path,
             ],
         )
         for out in outputs.values():
-            db.store_indexer_result(md5, out.indexer_id, out.result_type,
-                                    out.result)
+            db.store_indexer_result(md5, out.indexer_id, out.result)
 
     record = db.get_indexer_result("md5_42", "full-text")
     assert "alpha beta" in record.result["text"]
