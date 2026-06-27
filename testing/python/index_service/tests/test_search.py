@@ -1,15 +1,16 @@
 from pathlib import Path
 
+from index_service.services.db import IndexDatabase
 from index_service.services.protocol import FileRef
 from index_service.services.runtime import IndexRuntime
 
 
-def test_full_text_search(db, tmp_path: Path) -> None:
+def test_full_text_search(db: IndexDatabase, runtime: IndexRuntime,
+                          tmp_path: Path) -> None:
     path = tmp_path / "a.txt"
     path.write_text("alpha beta gamma")
 
     m1 = db.get_md5(path)
-    runtime = IndexRuntime()
     try:
         out = runtime.run_indexers(
             FileRef(md5=m1, path=path),
@@ -24,7 +25,8 @@ def test_full_text_search(db, tmp_path: Path) -> None:
     assert hits[0]["md5"] == m1
 
 
-def test_vector_search(db, tmp_path: Path) -> None:
+def test_vector_search(db: IndexDatabase, runtime: IndexRuntime,
+                       tmp_path: Path) -> None:
     a = tmp_path / "a.txt"
     b = tmp_path / "b.txt"
     a.write_text("cat cat cat")
@@ -33,7 +35,6 @@ def test_vector_search(db, tmp_path: Path) -> None:
     m1 = db.get_md5(a)
     m2 = db.get_md5(b)
 
-    runtime = IndexRuntime()
     try:
         out1 = runtime.run_indexers(
             FileRef(md5=m1, path=a),

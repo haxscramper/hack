@@ -15,6 +15,7 @@ from index_service.services.assets import (
     build_indexer_asset,
     file_ref,
 )
+from index_service.services.db import IndexDatabase
 from index_service.services.harness import BaseConverter, BaseIndexer, BaseResource
 from index_service.services.protocol import ConverterOutput, FileRef, IndexerOutput
 from index_service.services.runtime import IndexRuntime
@@ -24,7 +25,7 @@ def _touch(path: Path) -> None:
     path.write_text("payload")
 
 
-def test_chain_two_indexers(tmp_path: Path) -> None:
+def test_chain_two_indexers(db: IndexDatabase, tmp_path: Path) -> None:
     call_log: list[str] = []
 
     class RootModel(BaseModel):
@@ -73,7 +74,12 @@ def test_chain_two_indexers(tmp_path: Path) -> None:
     file_path = tmp_path / "doc.txt"
     _touch(file_path)
 
-    runtime = IndexRuntime(indexer_types=[RootIndexer(), ChildIndexer()])
+    runtime = IndexRuntime(db=db,
+                           indexer_types=[
+                               RootIndexer(),
+                               ChildIndexer(),
+                           ])
+
     outputs = runtime.run_indexers(
         FileRef(md5="xyz", path=file_path),
         ["root_indexer", "child_indexer"],
@@ -82,7 +88,7 @@ def test_chain_two_indexers(tmp_path: Path) -> None:
     assert call_log == ["root", "child"]
 
 
-def test_branching_indexers(tmp_path: Path) -> None:
+def test_branching_indexers(db: IndexDatabase, tmp_path: Path) -> None:
     call_log: list[str] = []
 
     class ModelA(BaseModel):
@@ -142,12 +148,15 @@ def test_branching_indexers(tmp_path: Path) -> None:
     path = tmp_path / "branch.txt"
     _touch(path)
 
-    runtime = IndexRuntime(indexer_types=[
-        IndexerA(),
-        IndexerB(),
-        IndexerC(),
-        IndexerD(),
-    ])
+    runtime = IndexRuntime(
+        db=db,
+        indexer_types=[
+            IndexerA(),
+            IndexerB(),
+            IndexerC(),
+            IndexerD(),
+        ],
+    )
 
     runtime.run_indexers(
         FileRef(md5="branch", path=path),
@@ -161,7 +170,7 @@ def test_branching_indexers(tmp_path: Path) -> None:
     assert set(call_log) == {"A", "B", "C", "D"}
 
 
-def test_indexer_receives_resource(tmp_path: Path) -> None:
+def test_indexer_receives_resource(db: IndexDatabase, tmp_path: Path) -> None:
 
     class ResourceRequest(BaseModel):
         value: str
@@ -196,13 +205,16 @@ def test_indexer_receives_resource(tmp_path: Path) -> None:
     _touch(file_path)
 
     runtime = IndexRuntime(
-        resource_overrides={"echo": EchoResource},
+        db=db,
+        resource_types=[EchoResource()],
         indexer_types=[EchoIndexer()],
     )
+
     out = runtime.run_indexers(
         FileRef(md5="res", path=file_path),
         ["echo_indexer"],
     )["echo_indexer"]
+
     assert out.result.echoed == "ping"
 
 

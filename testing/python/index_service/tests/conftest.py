@@ -90,9 +90,18 @@ class MockFlmGemmaResource(BaseResource):
 
 
 @pytest.fixture
-def runtime() -> IndexRuntime:
-    rt = IndexRuntime(resource_overrides={"flm_gemma": MockFlmGemmaResource})
+def runtime(db) -> IndexRuntime:
+    from index_service.services.registry import DEFAULT_RESOURCE_TYPES
+    rt = IndexRuntime(
+        db=db,
+        resource_types=[
+            MockFlmGemmaResource() if t.resource_key == "flm_gemma" else t()
+            for t in DEFAULT_RESOURCE_TYPES
+        ],
+    )
+
     try:
         yield rt
+
     finally:
         rt.stop()

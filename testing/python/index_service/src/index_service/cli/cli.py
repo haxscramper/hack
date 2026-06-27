@@ -8,7 +8,10 @@ from index_service.services.db import IndexDatabase
 import sys
 from beartype.typing import Any
 
-from index_service.services.registry import DEFAULT_INDEXER_TYPES
+from index_service.services.protocol import FileRef
+from index_service.services.registry import DEFAULT_INDEXER_TYPES, DEFAULT_RESOURCE_TYPES
+from index_service.services.resources.wd_tagger import WdTagger
+from index_service.services.runtime import IndexRuntime
 from index_service.services.utils import get_custom_traceback_handler
 
 logging.basicConfig(
@@ -94,7 +97,13 @@ def main(
 
     count = 0
 
-    runner = DagsterIndexRunner(indexer_types=DEFAULT_INDEXER_TYPES)
+    runner = IndexRuntime(
+        db=db,
+        indexer_types=[t() for t in DEFAULT_INDEXER_TYPES],
+        resource_types=[t() for t in DEFAULT_RESOURCE_TYPES] + [
+            WdTagger.from_huggingface(),
+        ],
+    )
 
     def index_file(file: Path):
         nonlocal count
@@ -102,12 +111,10 @@ def main(
             return
 
         count += 1
-        result = runner.run_index_file_job(
-            arango=db,
-            path=file,
-            indexer_names=list(indexers),
+        runner.run_index_file_job(
+            FileRef(md5=db.get_md5(file), path=file),
+            list(indexers),
         )
-        assert result.success
 
     for path in paths:
         if path.is_file():

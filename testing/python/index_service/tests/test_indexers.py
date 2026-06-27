@@ -6,7 +6,6 @@ from beartype.typing import cast
 from pydantic import BaseModel
 
 from index_service.services.converters.file_size_converter import FileSizeConverterResult
-from index_service.services.dagster_defs import DagsterIndexRunner
 from index_service.services.db import IndexDatabase
 from index_service.services.indexers.file_size import FileSizeIndexerResult
 from index_service.services.indexers.file_stats import FileStatsIndexerResult
@@ -78,8 +77,14 @@ def test_full_text_indexer_with_reverser(runtime: IndexRuntime,
     assert out.result.text == text
 
 
-def test_file_size_converter(runtime: IndexRuntime, sample_file: Path) -> None:
-    out = runtime.run_converter("file_size_converter", [str(sample_file)])
+def test_file_size_converter(db: IndexDatabase, runtime: IndexRuntime,
+                             sample_file: Path) -> None:
+    out = runtime.run_converter(
+        "file_size_converter",
+        input_files=[str(sample_file)],
+        input_md5s=[db.get_md5(sample_file)],
+    )
+
     assert out.converter_id == "file_size_converter"
     assert cast(FileSizeConverterResult,
                 out.return_value).total_size == sample_file.stat().st_size
@@ -111,35 +116,26 @@ def test_db_store_derivation(db: IndexDatabase) -> None:
     assert isinstance(key, str)
 
 
-def test_index_file_job(db: IndexDatabase, sample_file: Path) -> None:
-    from index_service.services import dagster_defs
-    from tests.conftest import MockFlmGemmaResource
-
-    runner = DagsterIndexRunner()
-    result = runner.run_index_file_job(
-        arango=db,
-        path=sample_file,
-        resource_overrides={"flm_gemma": MockFlmGemmaResource()},
+def test_index_file_job(runtime: IndexRuntime, db: IndexDatabase,
+                        sample_file: Path) -> None:
+    md5 = db.get_md5(sample_file)
+    runtime.run_indexers(
+        FileRef(md5=md5, path=sample_file),
+        ["file_size", "full_text"],
     )
-
-    assert result.success
-    size_record = db.get_indexer_result(db.get_md5(sample_file), "file_size")
+    size_record = db.get_indexer_result(md5, "file_size")
     assert size_record.result["size_bytes"] == sample_file.stat().st_size
-    text_record = db.get_indexer_result(db.get_md5(sample_file), "full_text")
+    text_record = db.get_indexer_result(md5, "full_text")
     assert text_record.result["text"] == sample_file.read_text()
 
 
-def test_convert_files_job(db: IndexDatabase, sample_file: Path) -> None:
-    from index_service.services import dagster_defs
-
-    runner = DagsterIndexRunner()
-    result = runner.run_convert_files_job(
-        arango=db,
-        input_files=[str(sample_file)],
-        input_md5s=["filemd5"],
-        param="",
+def test_convert_files_job(runtime: IndexRuntime, sample_file: Path) -> None:
+    out = runtime.run_converter(
+        "file_size_converter",
+        [str(sample_file)],
+        ["filemd5"],
     )
-    assert result.success
+    assert out.converter_id == "file_size_converter"
 
 
 def test_file_summary_indexer_with_flm(
