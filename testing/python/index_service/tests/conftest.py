@@ -1,16 +1,15 @@
 import logging
-import os
-from pathlib import Path
 import re
-import traceback
-from dataclasses import dataclass
 
 import pytest
 from beartype.typing import Any, Generator
 
 from index_service.services.db import IndexDatabase
 from index_service.services.harness import BaseResource
-from index_service.services.resources.flm_gemma import FlmSummaryResult, SummarizeRequest
+from index_service.services.resources.flm_gemma import (
+    FlmSummaryResult,
+    SummarizeRequest,
+)
 from index_service.services.runtime import IndexRuntime
 from index_service.services.utils import get_custom_traceback_handler
 

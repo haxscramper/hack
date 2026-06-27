@@ -10,6 +10,7 @@ requires-python = ">=3.12"
 dependencies = [
     "beartype>=0.22.9",
     "dagster>=1.13.10",
+    "fitz>=0.0.1.dev2",
     "huggingface-hub>=1.21.0",
     "numpy>=2.5.0",
     "onnxruntime>=1.27.0",
@@ -18,6 +19,7 @@ dependencies = [
     "pandas>=3.0.3",
     "pillow>=12.2.0",
     "pykka>=4.4.2",
+    "pymupdf4llm>=1.27.2.3",
     "pyside6>=6.11.1",
     "pytest>=9.1.1",
     "python-arango==8.1.6",

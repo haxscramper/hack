@@ -7,7 +7,6 @@ import cv2
 import numpy as np
 import onnxruntime as ort
 import pandas as pd
-from beartype import beartype
 from huggingface_hub import hf_hub_download
 from pydantic import BaseModel
 

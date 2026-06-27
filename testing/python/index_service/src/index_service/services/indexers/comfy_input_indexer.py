@@ -2,7 +2,7 @@ import json
 import logging
 from pathlib import Path
 
-from beartype.typing import Any, Literal, cast
+from beartype.typing import Any, cast
 from pydantic import BaseModel, Field
 
 from index_service.services.harness import BaseIndexer
