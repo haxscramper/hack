@@ -38,8 +38,8 @@ class ConverterConfig(Config):
 
 @asset(required_resource_keys={"arango"})
 def file_ref(context, config: FileRefConfig) -> FileRef:
-    context.resources.arango.ensure_file(config.md5, Path(config.path))
-    return FileRef(md5=config.md5, path=Path(config.path))
+    md5 = context.resources.arango.get_md5(Path(config.path))
+    return FileRef(md5=md5, path=Path(config.path))
 
 
 def _indexer_asset_body(

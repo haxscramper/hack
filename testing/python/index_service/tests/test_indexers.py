@@ -84,14 +84,19 @@ def test_file_size_converter(runtime: IndexRuntime, sample_file: Path) -> None:
                 out.return_value).total_size == sample_file.stat().st_size
 
 
-def test_db_indexer_result_uniqueness(db: IndexDatabase) -> None:
-    db.ensure_file("md5x", Path("/disk/a.txt"))
-    db.ensure_file("md5x", Path("/disk/b.txt"))
-    db.store_indexer_result("md5x", "file_size",
+def test_db_indexer_result_uniqueness(db: IndexDatabase,
+                                      tmp_path: Path) -> None:
+    pa = tmp_path.joinpath("a.txt")
+    pa.write_text("---")
+    pb = tmp_path.joinpath("b.txt")
+    pb.write_text("---")
+    md5a = db.get_md5(pa)
+    md5b = db.get_md5(pb)
+    db.store_indexer_result(md5a, "file_size",
                             FileSizeIndexerResult(size_bytes=10))
-    db.store_indexer_result("md5x", "file_size",
+    db.store_indexer_result(md5b, "file_size",
                             FileSizeIndexerResult(size_bytes=20))
-    record = db.get_indexer_result("md5x", "file_size")
+    record = db.get_indexer_result(md5a, "file_size")
     assert record.result["size_bytes"] == 20
 
 
@@ -116,9 +121,9 @@ def test_index_file_job(db: IndexDatabase, sample_file: Path) -> None:
     )
 
     assert result.success
-    size_record = db.get_indexer_result("filemd5", "file_size")
+    size_record = db.get_indexer_result(db.get_md5(sample_file), "file_size")
     assert size_record.result["size_bytes"] == sample_file.stat().st_size
-    text_record = db.get_indexer_result("filemd5", "full_text")
+    text_record = db.get_indexer_result(db.get_md5(sample_file), "full_text")
     assert text_record.result["text"] == sample_file.read_text()
 
 

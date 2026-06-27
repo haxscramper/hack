@@ -50,11 +50,9 @@ class IndexDatabase:
         digest.update(path.read_bytes())
         return digest.hexdigest()
 
-    def add_path(self, path: Path) -> str:
-        return self._md5(path)
-
-    def ensure_file(self, md5: str, path: Path) -> None:
+    def get_md5(self, path: Path) -> str:
         files = self._db.collection("files")
+        md5 = self._md5(path)
         if files.has(md5):
             doc = files.get(md5)
             known = set(doc["paths"])
@@ -62,6 +60,8 @@ class IndexDatabase:
             files.update({"_key": md5, "paths": sorted(known)})
         else:
             files.insert({"_key": md5, "paths": [str(path)]})
+
+        return md5
 
     def store_indexer_result(
         self,

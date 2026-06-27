@@ -59,7 +59,7 @@ def main(
         for file in path.rglob("*"):
             if not file.is_file():
                 continue
-            md5 = db.add_path(file)
+            md5 = db.get_md5(file)
             result = run_index_file_job(
                 arango=db,
                 md5=md5,

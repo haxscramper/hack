@@ -9,7 +9,7 @@ def test_large_batch_indexing(db, tmp_path: Path,
     for idx in range(20):
         path = tmp_path / f"doc_{idx}.txt"
         path.write_text(f"document {idx}\nalpha beta\n")
-        md5 = db.add_path(path)
+        md5 = db.get_md5(path)
 
         outputs = runtime.run_indexers(
             FileRef(md5=md5, path=path),

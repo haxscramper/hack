@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Any
 
 from dagster import ResourceDefinition, RunConfig, materialize, mem_io_manager
@@ -26,8 +27,8 @@ from index_service.registry import (
 class _NullIndexDatabase:
     """No-op database used when no ArangoDB connection is wired in."""
 
-    def ensure_file(self, md5: str, paths: list[str]) -> None:
-        pass
+    def get_md5(self, path: Path) -> str:
+        return ""
 
     def get_indexer_result_optional(self, md5: str, indexer_id: str) -> None:
         return None

@@ -83,7 +83,7 @@ def run_index_file_job(
     run_config = RunConfig(
         ops={
             "file_ref": FileRefConfig(
-                md5=arango.add_path(path),
+                md5=arango.get_md5(path),
                 path=str(path),
             )
         },
