@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from huggingface_hub import hf_hub_download
 
 from index_service.services.harness import BaseResource
+from index_service.services.utils import get_xdg_cache_dir
 
 
 class WdTag(BaseModel, extra="forbid"):
@@ -43,7 +44,7 @@ class WdTagger(BaseResource):
     @staticmethod
     def from_huggingface(
         threshold: float = 0.01,
-        cache_dir: Path | None = None,
+        cache_dir: Path | None = get_xdg_cache_dir(["wd_tagger"]),
     ) -> "WdTagger":
         repo_id = "SmilingWolf/wd-vit-tagger-v3"
 

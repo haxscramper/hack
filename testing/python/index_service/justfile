@@ -2,7 +2,7 @@ test:
     uv run python -m pytest -vv -ra -s --log-cli-level=DEBUG --capture=fd --disable-warnings > test_results.tmp.log
 
 index:
-    uv run src/index_service/cli.py \
+    uv run src/index_service/cli/cli.py \
         --db-name test_index \
         --reset True \
         --indexer exif_metadata \
