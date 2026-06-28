@@ -126,19 +126,20 @@ def index(
     ctx = RunContext()
     ctx.start_trace()
 
-    runner = IndexRuntime(
-        ctx=ctx,
-        db=db,
-        indexer_types=[t() for t in DEFAULT_INDEXER_TYPES] + [
-            WdTagIndexer(),
-            PdfIndexer(),
-            FFProbeIndexer(),
-        ],
-        resource_types=[t() for t in DEFAULT_RESOURCE_TYPES] + [
-            WdTagger.from_huggingface(),
-            PdfExtractor(),
-        ],
-    )
+    with ctx.trace_scope("create runner"):
+        runner = IndexRuntime(
+            ctx=ctx,
+            db=db,
+            indexer_types=[t() for t in DEFAULT_INDEXER_TYPES] + [
+                WdTagIndexer(),
+                PdfIndexer(),
+                FFProbeIndexer(),
+            ],
+            resource_types=[t() for t in DEFAULT_RESOURCE_TYPES] + [
+                WdTagger.from_huggingface(),
+                PdfExtractor(),
+            ],
+        )
 
     def index_file(file: Path):
         with ctx.trace_scope(f"index file", file=file):

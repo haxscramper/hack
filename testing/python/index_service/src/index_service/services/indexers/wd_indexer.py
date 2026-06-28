@@ -35,5 +35,5 @@ class WdTagIndexer(BaseIndexer):
         return IndexerOutput(
             indexer_id=self.asset_name,
             result=WdTagIndexerResult(
-                tags=tagger.tag_image(request.file_ref.path)),
+                tags=tagger.tag_image(ctx, request.file_ref.path)),
         )

@@ -13,8 +13,16 @@ from PIL import Image
 from pydantic import BaseModel
 
 from index_service.services.resources.wdv3_jax import Models
-from index_service.services.job_types import BaseResource
+from index_service.services.job_types import BaseResource, RunContext
 from index_service.services.utils import get_xdg_cache_dir
+
+from index_service.services.utils import get_xdg_cache_dir
+
+jax.config.update(
+    "jax_compilation_cache_dir",
+    str(get_xdg_cache_dir(["resource", "wd_tagger", "jax_cache"])))
+jax.config.update("jax_persistent_cache_min_entry_size_bytes", -1)
+jax.config.update("jax_persistent_cache_min_compile_time_secs", 0)
 
 
 class WdTag(BaseModel, extra="forbid"):
@@ -100,7 +108,7 @@ class WdTagger(BaseResource):
 
     @staticmethod
     def from_huggingface(
-        model: str = "vit",
+        model: str = "swinv2_v3",
         threshold: float = 0.01,
         cache_dir: Path | None = get_xdg_cache_dir(["resource", "wd_tagger"]),
     ) -> "WdTagger":
@@ -181,9 +189,10 @@ class WdTagger(BaseResource):
         inputs = inputs[..., ::-1]
         return inputs
 
-    def tag_image(self, image_path: Path) -> list[WdTag]:
+    def tag_image(self, ctx: RunContext, image_path: Path) -> list[WdTag]:
         input_data = self.preprocess_image(image_path)
-        probs = self.model.predict(input_data)
+        with ctx.trace_scope("predict image tags", path=image_path):
+            probs = self.model.predict(input_data)
 
         result: list[WdTag] = []
         for i, prob in enumerate(probs):
@@ -201,5 +210,6 @@ class WdTagger(BaseResource):
         result.sort(key=lambda x: x.probability, reverse=True)
         return result
 
-    def handle(self, request: WdTaggerRequest) -> WdTaggerResult:
-        return WdTaggerResult(tags=self.tag_image(Path(request.path)))
+    def handle(self, ctx: RunContext,
+               request: WdTaggerRequest) -> WdTaggerResult:
+        return WdTaggerResult(tags=self.tag_image(ctx, Path(request.path)))

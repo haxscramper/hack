@@ -102,10 +102,6 @@ def to_json_safe(value: Any) -> Any:
                 f"no serializer registered for type {type(value)!r}")
 
 
-def from_json_safe(data: Any, target_type: type[T]) -> T:
-    return TypeAdapter(target_type).validate_python(_restore_json_safe(data))
-
-
 def _restore_json_safe(data: Any) -> Any:
     if isinstance(data, dict):
         tag = data.get(_TYPE_TAG)
@@ -124,6 +120,10 @@ def _restore_json_safe(data: Any) -> Any:
         return [_restore_json_safe(v) for v in data]
 
     return data
+
+
+def from_json_safe(data: Any, target_type: type[T]) -> T:
+    return TypeAdapter(target_type).validate_python(_restore_json_safe(data))
 
 
 def model_to_json_data(model: BaseModel) -> Any:

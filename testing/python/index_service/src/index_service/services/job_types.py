@@ -124,14 +124,19 @@ def cache_indexer_run(func: Callable[P, R]) -> Callable[P, IndexerOutput]:
                 resources=resources,
                 assets=assets,
         ):
-            parsed = model_from_json_data(cache_path.read_bytes(),
-                                          IndexerOutput)
 
-            assert parsed.indexer_id == self.asset_name, (
-                f"Failed to de-serialized, parsed text indexer was {parsed.indexer_id}"
-            )
+            with ExceptionContextNote(
+                    f"loading JSON cache from {cache_path}"), ctx.trace_scope(
+                        "load cache file", file=cache_path):
+                parsed = model_from_json_data(
+                    json.loads(cache_path.read_text()),
+                    IndexerOutput,
+                )
 
-            with ExceptionContextNote(f"loading JSON cache from {cache_path}"):
+                assert parsed.indexer_id == self.asset_name, (
+                    f"Failed to de-serialized, parsed text indexer was {parsed.indexer_id}"
+                )
+
                 result_value = self.result_model.model_validate(parsed.result)
 
             return IndexerOutput(
