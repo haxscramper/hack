@@ -6,7 +6,7 @@ from typing import Any
 
 from pydantic import BaseModel
 from index_service.services.db import IndexDatabase, IndexDatabaseCommon
-from index_service.services.job_types import BaseConverter, BaseIndexer, BaseResource
+from index_service.services.job_types import BaseConverter, BaseIndexer, BaseResource, RunContext
 from index_service.services.types import MD5, ConverterOutput, FileRef, IndexerOutput
 from index_service.services.job_runtime import IndexRuntime
 
@@ -30,6 +30,7 @@ def test_chain_two_indexers(db: IndexDatabase, tmp_path: Path) -> None:
 
         def run(
             self,
+            ctx: RunContext,
             request,
             resources,
             assets,
@@ -47,6 +48,7 @@ def test_chain_two_indexers(db: IndexDatabase, tmp_path: Path) -> None:
 
         def run(
             self,
+            ctx: RunContext,
             request,
             resources,
             assets,
@@ -64,7 +66,9 @@ def test_chain_two_indexers(db: IndexDatabase, tmp_path: Path) -> None:
     file_path = tmp_path / "doc.txt"
     _touch(file_path)
 
-    runtime = IndexRuntime(db=db,
+    ctx = RunContext()
+    runtime = IndexRuntime(ctx=ctx,
+                           db=db,
                            indexer_types=[
                                RootIndexer(),
                                ChildIndexer(),
@@ -97,7 +101,8 @@ def test_branching_indexers(db: IndexDatabase, tmp_path: Path) -> None:
         asset_name = "indexer_a"
         result_model = ModelA
 
-        def run(self, request, resources, assets) -> IndexerOutput:
+        def run(self, ctx: RunContext, request, resources,
+                assets) -> IndexerOutput:
             call_log.append("A")
             return IndexerOutput(indexer_id=self.asset_name,
                                  result=ModelA(value="A"))
@@ -107,7 +112,8 @@ def test_branching_indexers(db: IndexDatabase, tmp_path: Path) -> None:
         result_model = ModelB
         required_assets = ("indexer_a", )
 
-        def run(self, request, resources, assets) -> IndexerOutput:
+        def run(self, ctx: RunContext, request, resources,
+                assets) -> IndexerOutput:
             call_log.append("B")
             assert "indexer_a" in assets
             return IndexerOutput(indexer_id=self.asset_name,
@@ -118,7 +124,8 @@ def test_branching_indexers(db: IndexDatabase, tmp_path: Path) -> None:
         result_model = ModelC
         required_assets = ("indexer_b", )
 
-        def run(self, request, resources, assets) -> IndexerOutput:
+        def run(self, ctx: RunContext, request, resources,
+                assets) -> IndexerOutput:
             call_log.append("C")
             assert "indexer_b" in assets
             return IndexerOutput(indexer_id=self.asset_name,
@@ -129,7 +136,8 @@ def test_branching_indexers(db: IndexDatabase, tmp_path: Path) -> None:
         result_model = ModelD
         required_assets = ("indexer_b", )
 
-        def run(self, request, resources, assets) -> IndexerOutput:
+        def run(self, ctx: RunContext, request, resources,
+                assets) -> IndexerOutput:
             call_log.append("D")
             assert "indexer_b" in assets
             return IndexerOutput(indexer_id=self.asset_name,
@@ -138,7 +146,9 @@ def test_branching_indexers(db: IndexDatabase, tmp_path: Path) -> None:
     path = tmp_path / "branch.txt"
     _touch(path)
 
+    ctx = RunContext()
     runtime = IndexRuntime(
+        ctx=ctx,
         db=db,
         indexer_types=[
             IndexerA(),
@@ -187,7 +197,8 @@ def test_indexer_receives_resource(db: IndexDatabase, tmp_path: Path) -> None:
         result_model = EchoModel
         required_resources = ("echo", )
 
-        def run(self, request, resources, assets) -> IndexerOutput:
+        def run(self, ctx: RunContext, request, resources,
+                assets) -> IndexerOutput:
             assert "echo" in resources
             resource = resources["echo"]
             response = resource.handle(ResourceRequest(value="ping"))
@@ -199,7 +210,9 @@ def test_indexer_receives_resource(db: IndexDatabase, tmp_path: Path) -> None:
     file_path = tmp_path / "resource.txt"
     _touch(file_path)
 
+    ctx = RunContext()
     runtime = IndexRuntime(
+        ctx=ctx,
         db=db,
         resource_types=[EchoResource()],
         indexer_types=[EchoIndexer()],
@@ -243,7 +256,8 @@ def test_converter_consumes_indexer_asset(tmp_path: Path) -> None:
         asset_name = "dependency_indexer"
         result_model = DepResult
 
-        def run(self, request, resources, assets) -> IndexerOutput:
+        def run(self, ctx: RunContext, request, resources,
+                assets) -> IndexerOutput:
             return IndexerOutput(
                 indexer_id=self.asset_name,
                 result=DepResult(token="indexed"),
@@ -257,7 +271,8 @@ def test_converter_consumes_indexer_asset(tmp_path: Path) -> None:
         result_model = ConvResult
         required_assets = ("dependency_indexer", )
 
-        def run(self, request, resources, assets) -> ConverterOutput:
+        def run(self, ctx: RunContext, request, resources,
+                assets) -> ConverterOutput:
             assert "dependency_indexer" in assets
             upstream = assets["dependency_indexer"]
             assert isinstance(upstream, IndexerOutput)
@@ -272,7 +287,9 @@ def test_converter_consumes_indexer_asset(tmp_path: Path) -> None:
     _touch(data_path)
 
     db = StubDB()
+    ctx = RunContext()
     runtime = IndexRuntime(
+        ctx=ctx,
         db=db,
         indexer_types=[DepIndexer()],
         converter_types=[DepConverter()],

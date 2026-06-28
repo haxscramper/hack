@@ -3,7 +3,7 @@ import math
 from pathlib import Path
 from pprint import pformat
 
-from index_service.services.job_types import BaseIndexer, cache_indexer_run
+from index_service.services.job_types import BaseIndexer, RunContext, cache_indexer_run
 from index_service.services.types import IndexerOutput, IndexerRequest
 from pydantic import BaseModel, Field, ConfigDict
 from beartype.typing import List, Tuple, Optional, Set, Dict, Union, Any
@@ -576,6 +576,7 @@ class ExifMetadataIndexer(BaseIndexer):
     @cache_indexer_run
     def run(
         self,
+        ctx: RunContext,
         request: IndexerRequest,
         resources: dict[str, object],
         assets: dict[str, object],

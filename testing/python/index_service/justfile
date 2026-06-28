@@ -9,6 +9,7 @@ index:
         --indexer comfy_input \
         --indexer wd_tags \
         --indexer ffprobe \
+        --perf-trace-file /tmp/indexer-trace-perf.json \
         "~/defaultdirs/input" \
         "~/software/ComfyUI/output" 
 

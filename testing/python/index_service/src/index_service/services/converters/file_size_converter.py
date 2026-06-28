@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from index_service.services.job_types import BaseConverter
+from index_service.services.job_types import BaseConverter, RunContext
 from index_service.services.types import ConverterOutput, ConverterRequest
 from pydantic import BaseModel
 import logging
@@ -17,6 +17,7 @@ class FileSizeConverter(BaseConverter):
 
     def run(
         self,
+        ctx: RunContext,
         request: ConverterRequest,
         resources: dict[str, object],
         assets: dict[str, object],

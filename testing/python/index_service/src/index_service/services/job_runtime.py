@@ -6,7 +6,7 @@ from beartype import beartype
 from beartype.typing import overload
 
 from index_service.services.db import IndexDatabase, IndexDatabaseCommon
-from index_service.services.job_types import BaseConverter, BaseIndexer, BaseResource
+from index_service.services.job_types import BaseConverter, BaseIndexer, BaseResource, RunContext
 from index_service.services.types import (
     ConverterOutput,
     ConverterRequest,
@@ -28,21 +28,25 @@ class IndexRuntime:
 
     def __init__(
         self,
+        ctx: RunContext,
         db: IndexDatabaseCommon,
         indexer_types: list[BaseIndexer] | None = None,
         converter_types: list[BaseConverter] | None = None,
         resource_types: list[BaseResource] | None = None,
     ) -> None:
         self.db = db
+        self.ctx = ctx
         self._resource_instances: dict[str, BaseResource] = {
             inst.resource_key: inst
             for inst in (
                 resource_types or [t() for t in DEFAULT_RESOURCE_TYPES])
         }
+
         self._indexer_instances: dict[str, BaseIndexer] = {
             inst.asset_name: inst
             for inst in (indexer_types or [t() for t in DEFAULT_INDEXER_TYPES])
         }
+
         self._converter_instances: dict[str, BaseConverter] = {
             inst.converter_id: inst
             for inst in (
@@ -131,7 +135,10 @@ class IndexRuntime:
                 if name in results[ref.md5.md5]
             }
             request = IndexerRequest(file_ref=ref, dependency_results=deps)
-            out = indexer.run(request, resources=resources, assets=dict(deps))
+            out = indexer.run(self.ctx,
+                              request,
+                              resources=resources,
+                              assets=dict(deps))
             return ref, out
 
         # Parallelize .run() within the stage; DB writes stay sequential.
@@ -202,7 +209,10 @@ class IndexRuntime:
             for name in converter.required_resources
         }
         request = ConverterRequest(input_files=input_files, param=param)
-        out = converter.run(request, resources=resources, assets=assets)
+        out = converter.run(self.ctx,
+                            request,
+                            resources=resources,
+                            assets=assets)
         self.db.store_derivation(
             request.input_files,
             out.output_files,

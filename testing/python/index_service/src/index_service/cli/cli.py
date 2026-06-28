@@ -15,6 +15,7 @@ import traceback
 from index_service.services.indexers.ffprobe_indexer import FFProbeIndexer
 from index_service.services.indexers.pdf_indexer import PdfIndexer
 from index_service.services.indexers.wd_indexer import WdTagIndexer
+from index_service.services.job_types import RunContext
 from index_service.services.resources.pdf.pdf_extractor import PdfExtractor
 from index_service.services.types import FileRef
 from index_service.services.default_job_types import DEFAULT_INDEXER_TYPES, DEFAULT_RESOURCE_TYPES
@@ -80,6 +81,7 @@ def _expand_path(
               default=None,
               show_default=True,
               type=click.INT)
+@click.option("--perf-trace-file", default=None, show_default=True)
 def index(
     host: str,
     db_name: str,
@@ -90,6 +92,7 @@ def index(
     limit_per_path: int | None,
     indexers: tuple[str, ...],
     paths: tuple[Path, ...],
+    perf_trace_file: str | None = None,
 ) -> None:
     stfu_logs()
     handler = get_custom_traceback_handler(show_args=False)
@@ -116,11 +119,12 @@ def index(
         password=password,
     )
 
-    logging.info(f"starting indexing for {paths}")
-
     count = 0
+    ctx = RunContext()
+    ctx.tracer.start()
 
     runner = IndexRuntime(
+        ctx=ctx,
         db=db,
         indexer_types=[t() for t in DEFAULT_INDEXER_TYPES] + [
             WdTagIndexer(),
@@ -141,18 +145,27 @@ def index(
         count += 1
         runner.run_indexer(db.as_ref(file), list(indexers))
 
-    for path in paths:
-        if path.is_file():
-            index_file(path)
-        else:
-            count_per_path = 0
-            for file in path.rglob("*"):
-                if file.is_file():
-                    if limit_per_path and limit_per_path < count_per_path:
-                        continue
+    def run_indexing():
+        for path in paths:
+            if path.is_file():
+                index_file(path)
+            else:
+                count_per_path = 0
+                for file in path.rglob("*"):
+                    if file.is_file():
+                        if limit_per_path and limit_per_path < count_per_path:
+                            continue
 
-                    count_per_path += 1
-                    index_file(file)
+                        count_per_path += 1
+                        index_file(file)
+
+    try:
+        run_indexing()
+
+    finally:
+        ctx.tracer.stop()
+        if perf_trace_file:
+            ctx.tracer.save(perf_trace_file)
 
 
 @main.command()

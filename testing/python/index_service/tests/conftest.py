@@ -5,7 +5,7 @@ import pytest
 from beartype.typing import Any, Generator
 
 from index_service.services.db import IndexDatabase
-from index_service.services.job_types import BaseResource
+from index_service.services.job_types import BaseResource, RunContext
 from index_service.services.resources.flm_gemma import (
     FlmSummaryResult,
     SummarizeRequest,
@@ -65,7 +65,8 @@ def db(request) -> IndexDatabase:
 class MockFlmGemmaResource(BaseResource):
     resource_key = "flm_gemma"
 
-    def handle(self, request: SummarizeRequest) -> FlmSummaryResult:
+    def handle(self, ctx: RunContext,
+               request: SummarizeRequest) -> FlmSummaryResult:
         text = request.text.strip().replace("\n", " ")
         return FlmSummaryResult(summary=f"mock-summary: {text[:48]}")
 
@@ -73,8 +74,10 @@ class MockFlmGemmaResource(BaseResource):
 @pytest.fixture
 def runtime(db) -> Generator[IndexRuntime, None, None]:
     from index_service.services.default_job_types import DEFAULT_RESOURCE_TYPES
+    ctx = RunContext()
 
     rt = IndexRuntime(
+        ctx=ctx,
         db=db,
         resource_types=[
             MockFlmGemmaResource() if t.resource_key == "flm_gemma" else t()

@@ -9,6 +9,7 @@ from functools import wraps
 
 from beartype import beartype
 from pydantic import BaseModel
+from viztracer import VizTracer
 
 from index_service.services.types import (
     ConverterOutput,
@@ -20,11 +21,19 @@ from index_service.services.utils import get_xdg_cache_dir
 
 
 @beartype
+class RunContext():
+    tracer: VizTracer
+
+    def __init__(self) -> None:
+        self.tracer = VizTracer(tracer_entries=0)
+
+
+@beartype
 class BaseResource(ABC):
     resource_key: str
 
     @abstractmethod
-    def handle(self, request: BaseModel) -> BaseModel:
+    def handle(self, ctx: RunContext, request: BaseModel) -> BaseModel:
         raise NotImplementedError
 
 
@@ -56,10 +65,15 @@ def cache_indexer_run(func: Callable[P, R]) -> Callable[P, IndexerOutput]:
         cache_path = (get_xdg_cache_dir([self.asset_name]) / md5_prefix /
                       md5_suffix / f"{param_hash}.json")
 
-        if cache_path.exists():
+        if cache_path.exists() and self.should_load_cache(
+                request=request,
+                resources=resources,
+                assets=assets,
+        ):
             parsed_text = json.loads(cache_path.read_text())
-            assert parsed_text[
-                "indexer_id"] == self.asset_name, f"Failed to de-serialized, parsed text indexer was {parsed_text['indexer_id']}"
+            assert parsed_text["indexer_id"] == self.asset_name, (
+                f"Failed to de-serialized, parsed text indexer was {parsed_text['indexer_id']}"
+            )
             result_value = self.result_model.model_validate(
                 parsed_text["result"])
 
@@ -70,9 +84,10 @@ def cache_indexer_run(func: Callable[P, R]) -> Callable[P, IndexerOutput]:
 
         result = func(self, request, resources, assets)  # type: ignore
 
-        payload = result.model_dump(mode="json")
-        if "result" in payload:
-            payload["result"] = result.result.model_dump(mode="json")
+        payload = {
+            "indexer_id": result.indexer_id,
+            "result": json.loads(result.result.model_dump_json()),
+        }
 
         cache_path.parent.mkdir(parents=True, exist_ok=True)
         cache_path.write_text(json.dumps(payload, indent=2))
@@ -93,6 +108,14 @@ class BaseIndexer(ABC):
     def can_run(self, path: Path) -> bool:
         return True
 
+    def should_load_cache(
+        self,
+        request: IndexerRequest,
+        resources: dict[str, object],
+        assets: dict[str, object],
+    ) -> bool:
+        return True
+
     def hash_run_parameters(
         self,
         request: IndexerRequest,
@@ -104,6 +127,7 @@ class BaseIndexer(ABC):
     @abstractmethod
     def run(
         self,
+        ctx: RunContext,
         request: IndexerRequest,
         resources: dict[str, object],
         assets: dict[str, object],
@@ -121,6 +145,7 @@ class BaseConverter(ABC):
     @abstractmethod
     def run(
         self,
+        ctx: RunContext,
         request: ConverterRequest,
         resources: dict[str, object],
         assets: dict[str, object],

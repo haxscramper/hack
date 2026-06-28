@@ -1,7 +1,7 @@
 from datetime import datetime
 from pathlib import Path
 
-from index_service.services.job_types import BaseIndexer
+from index_service.services.job_types import BaseIndexer, RunContext
 from index_service.services.types import IndexerOutput, IndexerRequest
 from pydantic import BaseModel
 
@@ -20,6 +20,7 @@ class FileStatsIndexer(BaseIndexer):
 
     def run(
         self,
+        ctx: RunContext,
         request: IndexerRequest,
         resources: dict[str, object],
         assets: dict[str, object],
