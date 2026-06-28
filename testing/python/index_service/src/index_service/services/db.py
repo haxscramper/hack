@@ -90,7 +90,13 @@ class IndexDatabase:
     def get_all_refs(self, md5: MD5) -> List[FileRef]:
         fdoc = self._db.collection("files").get(md5.md5)
         path_refs = fdoc.get("paths", []) if fdoc else []
-        return [FileRef.model_validate(p) for p in path_refs]
+        return [
+            FileRef(
+                md5=MD5.model_validate(p["md5"], ),
+                relative=p["relative"],
+                root=RootRef.model_validate(p["root"]),
+            ) for p in path_refs
+        ]
 
     def as_ref(self, root: RootRef, path: Path) -> FileRef:
         assert root.name in self.roots, f"Unknown root for file ref: '{root}', register root with `add_root()` first"
@@ -107,16 +113,24 @@ class IndexDatabase:
             root=root,
         )
 
+        result_js = result.model_dump()
+        result_js["suffix"] = _path.suffix
+        result_js["name"] = _path.name
+
         if files.has(md5.md5):
             doc = files.get(md5.md5)
             known = doc["paths"]  # type: ignore
-            known.extend([result.model_dump()])
+            known.extend([result_js])
             files.update({"_key": md5.md5, "paths": known})
 
         else:
-            files.insert({"_key": md5.md5, "paths": [result.model_dump()]})
+            files.insert({"_key": md5.md5, "paths": [result_js]})
 
         return result
+
+    def has_indexer_result(self, ref: FileRef, indexer_id: str) -> bool:
+        col = self._db.collection(indexer_id)
+        return col.has(ref.md5.md5)
 
     def store_indexer_result(
         self,

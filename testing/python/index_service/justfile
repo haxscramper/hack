@@ -5,12 +5,14 @@ index:
     uv run src/index_service/cli/cli.py index \
         --db-name test_index \
         --reset True \
-        --indexer exif_metadata \
-        --indexer comfy_input \
+        --indexer safetensor \
         --perf-trace-file /tmp/indexer-trace-perf.json \
         "~/defaultdirs/input" \
-        "~/software/ComfyUI/output" 
+        "~/software/ComfyUI/output" \
+        "~/software/ComfyUI/models"
 
+# --indexer exif_metadata \
+# --indexer comfy_input \
 # --limit-per-path 200 \
 # --indexer wd_tags \
 # --indexer ffprobe \

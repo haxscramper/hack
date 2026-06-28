@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 from datetime import datetime
+import json
 import math
 from pathlib import Path
 from typing import Any, Callable, TypeVar
@@ -134,3 +135,29 @@ def model_to_json_data(model: BaseModel) -> Any:
 
 def model_from_json_data(data: Any, model_type: type[T]) -> T:
     return from_json_safe(data, model_type)
+
+
+def try_parse_json(value: Any):
+    match value:
+        case bytes():
+            try:
+                value = value.decode("utf-8")
+            except UnicodeDecodeError:
+                return value
+
+        case str():
+            try:
+                # to recursively unpack JSON dumps that contain
+                # json strings as field values.
+                return try_parse_json(json.loads(value))
+            except json.JSONDecodeError:
+                return value
+
+        case dict():
+            return {k: try_parse_json(v) for k, v in value.items()}
+
+        case list():
+            return [try_parse_json(v) for v in value]
+
+        case _:
+            return value

@@ -94,6 +94,7 @@ class QueryResultModel(QAbstractListModel):
             return str(md5)
         if role == self.Md5Role:
             return md5
+
         if role == self.PathRole:
             if md5 not in self._paths:
                 paths = [

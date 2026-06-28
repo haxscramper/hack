@@ -4,6 +4,7 @@ from pathlib import Path
 from pprint import pformat
 
 from index_service.services.job_types import BaseIndexer, RunContext, cache_indexer_run
+from index_service.services.pydantic_utils import try_parse_json
 from index_service.services.types import IndexerOutput, IndexerRequest
 from pydantic import BaseModel, Field, ConfigDict
 from beartype.typing import List, Tuple, Optional, Set, Dict, Union, Any
@@ -289,34 +290,13 @@ class TArtV1MainData(BaseModel):
     etaNoiseSeedDelta: int = 31337
 
 
+# TODO: remove tag category parsing
 categories: List[TagCategory] = []
 categories.append(
     TagCategory.from_file(Path("~/tmp/Characters.txt").expanduser(),
                           name="Character"))
 
 WARN_IDX = 0
-
-
-def _try_parse_json(value: Any):
-    if isinstance(value, bytes):
-        try:
-            value = value.decode("utf-8")
-        except UnicodeDecodeError:
-            return value
-
-    if isinstance(value, str):
-        try:
-            return json.loads(value)
-        except json.JSONDecodeError:
-            return value
-
-    if isinstance(value, dict):
-        return {k: _try_parse_json(v) for k, v in value.items()}
-
-    if isinstance(value, list):
-        return [_try_parse_json(v) for v in value]
-
-    return value
 
 
 @beartype
@@ -432,7 +412,7 @@ def get_image_params(path: Path,
 
     res.ImagePath = path
     res.original_metadata_full["exif_metadata"] = {
-        k: _try_parse_json(v)
+        k: try_parse_json(v)
         for k, v in img.info.items()
     }
 

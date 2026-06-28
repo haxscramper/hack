@@ -20,6 +20,9 @@ from index_service.services.default_job_types import (
     DEFAULT_RESOURCE_TYPES,
 )
 from index_service.services.utils import ExceptionContextNote
+import logging
+
+log = logging.getLogger(__name__)
 
 
 @beartype
@@ -115,7 +118,13 @@ class IndexRuntime:
     ) -> None:
         to_run: list[FileRef] = []
         for ref in targets:
-            to_run.append(ref)
+            if self.db.has_indexer_result(ref, indexer.asset_name):
+                log.debug(
+                    f"{self.db.get_path(ref)} already indexed by {indexer.asset_name}"
+                )
+
+            else:
+                to_run.append(ref)
 
         resources = {
             name: self._resource_instances[name]
@@ -129,10 +138,16 @@ class IndexRuntime:
                 if name in results[ref.md5.md5]
             }
             request = IndexerRequest(file_ref=ref, dependency_results=deps)
-            out = indexer.run(ctx=self.ctx,
-                              request=request,
-                              resources=resources,
-                              assets=dict(deps))
+
+            with ExceptionContextNote(
+                    f"running indexer for '{self.db.get_path(ref)}'"):
+                out = indexer.run(
+                    ctx=self.ctx,
+                    request=request,
+                    resources=resources,
+                    assets=dict(deps),
+                )
+
             return ref, out
 
         # Parallelize .run() within the stage; DB writes stay sequential.
