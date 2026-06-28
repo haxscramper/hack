@@ -9,6 +9,7 @@ from arango.database import StandardDatabase
 from beartype import beartype
 from beartype.typing import Any, Dict, List, Optional, cast
 from pydantic import BaseModel
+from abc import ABC, abstractmethod
 
 from index_service.services.types import MD5, AnyModel, FileRef
 
@@ -22,7 +23,32 @@ class IndexerResultRecord:
 
 
 @beartype
-class IndexDatabase:
+class IndexDatabaseCommon(ABC):
+
+    @abstractmethod
+    def ensure_collections(self, names) -> None:
+        ...
+
+    @abstractmethod
+    def as_ref(self, path: Path) -> FileRef:
+        ...
+
+    @abstractmethod
+    def get_indexer_result_optional(self, md5, indexer_id):
+        ...
+
+    @abstractmethod
+    def store_indexer_result(self, ref, indexer_id, result) -> None:
+        ...
+
+    @abstractmethod
+    def store_derivation(self, input_files, output_files, config,
+                         return_value):
+        ...
+
+
+@beartype
+class IndexDatabase(IndexDatabaseCommon):
 
     def __init__(
         self,
@@ -31,6 +57,7 @@ class IndexDatabase:
         username: str,
         password: str,
     ) -> None:
+        super().__init__()
         client = ArangoClient(hosts=host)
         sys_db = client.db("_system", username=username, password=password)
         if not sys_db.has_database(db_name):

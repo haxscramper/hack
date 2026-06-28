@@ -2,7 +2,7 @@ from pathlib import Path
 
 from index_service.services.db import IndexDatabase
 from index_service.services.types import FileRef
-from index_service.services.runtime import IndexRuntime
+from index_service.services.job_runtime import IndexRuntime
 
 
 def test_large_batch_indexing(db: IndexDatabase, tmp_path: Path,
@@ -12,7 +12,7 @@ def test_large_batch_indexing(db: IndexDatabase, tmp_path: Path,
         path.write_text(f"document {idx}\nalpha beta\n")
         ref = db.as_ref(path)
 
-        outputs = runtime.run_indexers(
+        outputs = runtime.run_indexer(
             ref,
             [
                 "file_size",

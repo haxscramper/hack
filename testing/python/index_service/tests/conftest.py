@@ -5,13 +5,13 @@ import pytest
 from beartype.typing import Any, Generator
 
 from index_service.services.db import IndexDatabase
-from index_service.services.harness import BaseResource
+from index_service.services.job_types import BaseResource
 from index_service.services.resources.flm_gemma import (
     FlmSummaryResult,
     SummarizeRequest,
 )
-from index_service.services.runtime import IndexRuntime
-from index_service.services.utils import get_custom_traceback_handler
+from index_service.services.job_runtime import IndexRuntime
+from index_service.services.utils import get_custom_traceback_handler, stfu_logs
 
 ARANGO_HOST = "http://localhost:8529"
 ARANGO_USER = "root"
@@ -22,25 +22,7 @@ handler = get_custom_traceback_handler(show_args=False, )
 
 def pytest_configure(config: Any) -> None:
     "nodoc"
-    for logger_name in [
-            "openai._base_client",
-            "git.cmd",
-            "alembic.runtime.plugins",
-            "alembic.runtime.migration",
-            "git.util",
-            # toggle this to see database interactions in tests
-            "urllib3.connectionpool",
-            # openai uses this for connection
-            "httpcore.connection",
-            # each individual resource actor creation and start
-            "pykka",
-            # execution of individual steps is printed to stderr?
-            "dagster",
-            "dagster.builtin",
-            "asyncio",
-    ]:
-        logger = logging.getLogger(logger_name)
-        logger.disabled = True
+    stfu_logs()
 
 
 @pytest.hookimpl(hookwrapper=True)
@@ -90,7 +72,7 @@ class MockFlmGemmaResource(BaseResource):
 
 @pytest.fixture
 def runtime(db) -> Generator[IndexRuntime, None, None]:
-    from index_service.services.registry import DEFAULT_RESOURCE_TYPES
+    from index_service.services.default_job_types import DEFAULT_RESOURCE_TYPES
 
     rt = IndexRuntime(
         db=db,

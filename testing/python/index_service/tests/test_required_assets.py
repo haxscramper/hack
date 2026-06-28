@@ -4,21 +4,11 @@ import hashlib
 from pathlib import Path
 from typing import Any
 
-from dagster import ResourceDefinition, RunConfig, materialize, mem_io_manager
 from pydantic import BaseModel
-
-from index_service.services.assets import (
-    ConverterConfig,
-    FileRefConfig,
-    OutputCollector,
-    build_converter_asset,
-    build_indexer_asset,
-    file_ref,
-)
-from index_service.services.db import IndexDatabase
-from index_service.services.harness import BaseConverter, BaseIndexer, BaseResource
+from index_service.services.db import IndexDatabase, IndexDatabaseCommon
+from index_service.services.job_types import BaseConverter, BaseIndexer, BaseResource
 from index_service.services.types import MD5, ConverterOutput, FileRef, IndexerOutput
-from index_service.services.runtime import IndexRuntime
+from index_service.services.job_runtime import IndexRuntime
 
 
 def _touch(path: Path) -> None:
@@ -80,7 +70,7 @@ def test_chain_two_indexers(db: IndexDatabase, tmp_path: Path) -> None:
                                ChildIndexer(),
                            ])
 
-    outputs = runtime.run_indexers(
+    outputs = runtime.run_indexer(
         runtime.db.as_ref(file_path),
         ["root_indexer", "child_indexer"],
     )
@@ -158,7 +148,7 @@ def test_branching_indexers(db: IndexDatabase, tmp_path: Path) -> None:
         ],
     )
 
-    runtime.run_indexers(
+    runtime.run_indexer(
         runtime.db.as_ref(path),
         [
             "indexer_a",
@@ -215,7 +205,7 @@ def test_indexer_receives_resource(db: IndexDatabase, tmp_path: Path) -> None:
         indexer_types=[EchoIndexer()],
     )
 
-    out = runtime.run_indexers(
+    out = runtime.run_indexer(
         runtime.db.as_ref(file_path),
         ["echo_indexer"],
     )["echo_indexer"]
@@ -225,7 +215,10 @@ def test_indexer_receives_resource(db: IndexDatabase, tmp_path: Path) -> None:
 
 def test_converter_consumes_indexer_asset(tmp_path: Path) -> None:
 
-    class StubDB:
+    class StubDB(IndexDatabaseCommon):
+
+        def ensure_collections(self, names) -> None:
+            pass
 
         def _get_md5(self, path: Path) -> MD5:
             return MD5(md5=hashlib.md5(path.read_bytes()).hexdigest())
@@ -233,14 +226,13 @@ def test_converter_consumes_indexer_asset(tmp_path: Path) -> None:
         def as_ref(self, path: Path) -> FileRef:
             return FileRef(md5=self._get_md5(path), path=path)
 
-        def get_indexer_result_optional(self, md5: str, indexer_id: str):
+        def get_indexer_result_optional(self, md5, indexer_id):
             return None
 
-        def store_indexer_result(self, md5: str, indexer_id: str,
-                                 result: Any) -> None:
+        def store_indexer_result(self, ref, indexer_id, result) -> None:
             pass
 
-        def store_derivation(self, input_md5s, output_files, config,
+        def store_derivation(self, input_files, output_files, config,
                              return_value):
             return "key"
 
@@ -278,45 +270,26 @@ def test_converter_consumes_indexer_asset(tmp_path: Path) -> None:
 
     data_path = tmp_path / "data.txt"
     _touch(data_path)
-    md5 = hashlib.md5(data_path.read_bytes()).hexdigest()
 
-    collector = OutputCollector()
     db = StubDB()
-    dep_indexer = DepIndexer()
-    dep_converter = DepConverter()
-
-    resource_defs = {
-        "io_manager": mem_io_manager,
-        "arango": ResourceDefinition.hardcoded_resource(db),
-        "output_collector": ResourceDefinition.hardcoded_resource(collector),
-    }
-
-    assets = [
-        file_ref,
-        build_indexer_asset(dep_indexer),
-        build_converter_asset(dep_converter),
-    ]
-
-    run_config = RunConfig(
-        ops={
-            "file_ref":
-            FileRefConfig(md5=md5, path=str(data_path)),
-            "dependent_converter":
-            ConverterConfig(
-                input=[FileRefConfig(md5=md5, path=str(data_path))],
-                param="ok",
-            ),
-        },
-        loggers={"console": {
-            "config": {
-                "log_level": "WARNING"
-            }
-        }},
+    runtime = IndexRuntime(
+        db=db,
+        indexer_types=[DepIndexer()],
+        converter_types=[DepConverter()],
+        resource_types=[],
     )
 
-    result = materialize(assets,
-                         resources=resource_defs,
-                         run_config=run_config)
-    assert result.success
-    conv_output = collector.outputs["dependent_converter"]
+    ref = db.as_ref(data_path)
+
+    indexer_results = runtime.run_indexers([ref], ["dependency_indexer"])
+    upstream = indexer_results[ref.md5.md5]
+    assert upstream["dependency_indexer"].result.token == "indexed"
+
+    conv_output = runtime.run_converter(
+        "dependent_converter",
+        [ref],
+        param="ok",
+        assets=upstream,
+    )
+
     assert conv_output.return_value.payload == "indexed:ok"

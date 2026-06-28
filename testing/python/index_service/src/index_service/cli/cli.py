@@ -14,40 +14,16 @@ from index_service.services.indexers.pdf_indexer import PdfIndexer
 from index_service.services.indexers.wd_indexer import WdTagIndexer
 from index_service.services.resources.pdf.pdf_extractor import PdfExtractor
 from index_service.services.types import FileRef
-from index_service.services.registry import DEFAULT_INDEXER_TYPES, DEFAULT_RESOURCE_TYPES
+from index_service.services.default_job_types import DEFAULT_INDEXER_TYPES, DEFAULT_RESOURCE_TYPES
 from index_service.services.resources.wd_tagger import WdTagger
-from index_service.services.runtime import IndexRuntime
-from index_service.services.utils import get_custom_traceback_handler
+from index_service.services.job_runtime import IndexRuntime
+from index_service.services.utils import get_custom_traceback_handler, stfu_logs
 from PySide6.QtWidgets import QApplication
 
 logging.basicConfig(
     level=logging.DEBUG,
     format="%(levelname)s %(name)s %(filename)s:%(lineno)d: %(message)s",
 )
-
-for logger_name in [
-        "openai._base_client",
-        "git.cmd",
-        "alembic.runtime.plugins",
-        "alembic.runtime.migration",
-        "git.util",
-        # toggle this to see database interactions in tests
-        "urllib3.connectionpool",
-        # openai uses this for connection
-        "httpcore.connection",
-        # each individual resource actor creation and start
-        "pykka",
-        # execution of individual steps is printed to stderr?
-        "dagster",
-        "dagster.builtin",
-        "asyncio",
-        "PIL.Image",
-        "PIL.PngImagePlugin",
-        "httpcore.http11",
-        "httpx",
-]:
-    logger = logging.getLogger(logger_name)
-    logger.disabled = True
 
 
 def _db_options(f):
@@ -104,6 +80,7 @@ def index(
     indexers: tuple[str, ...],
     paths: tuple[Path, ...],
 ) -> None:
+    stfu_logs()
     handler = get_custom_traceback_handler(show_args=False)
 
     paths = tuple(p.expanduser().resolve().absolute() for p in paths)
@@ -169,6 +146,7 @@ def index(
 @main.command()
 @_db_options
 def view(host: str, db_name: str, username: str, password: str) -> None:
+    stfu_logs()
     app = QApplication(sys.argv)
 
     db = IndexDatabase(

@@ -10,7 +10,7 @@ from index_service.services.db import IndexDatabase
 from index_service.services.indexers.file_size import FileSizeIndexerResult
 from index_service.services.indexers.file_stats import FileStatsIndexerResult
 from index_service.services.types import MD5, FileRef
-from index_service.services.runtime import IndexRuntime
+from index_service.services.job_runtime import IndexRuntime
 
 ARANGO_HOST = os.environ.get("ARANGO_HOST", "http://localhost:8529")
 ARANGO_USER = os.environ.get("ARANGO_USER", "root")
@@ -43,7 +43,7 @@ def sample_files(tmp_path: Path) -> list[Path]:
 
 
 def test_file_size_indexer(runtime: IndexRuntime, sample_file: Path) -> None:
-    out = runtime.run_indexers(
+    out = runtime.run_indexer(
         runtime.db.as_ref(sample_file),
         ["file_size"],
     )["file_size"]
@@ -54,7 +54,7 @@ def test_file_size_indexer(runtime: IndexRuntime, sample_file: Path) -> None:
 
 
 def test_file_stats_indexer(runtime: IndexRuntime, sample_file: Path) -> None:
-    out = runtime.run_indexers(
+    out = runtime.run_indexer(
         runtime.db.as_ref(sample_file),
         ["file_stats"],
     )["file_stats"]
@@ -68,7 +68,7 @@ def test_file_stats_indexer(runtime: IndexRuntime, sample_file: Path) -> None:
 
 def test_full_text_indexer_with_reverser(runtime: IndexRuntime,
                                          sample_file: Path) -> None:
-    out = runtime.run_indexers(
+    out = runtime.run_indexer(
         runtime.db.as_ref(sample_file),
         ["full_text"],
     )["full_text"]
@@ -80,7 +80,7 @@ def test_full_text_indexer_with_reverser(runtime: IndexRuntime,
 def test_file_size_converter(db: IndexDatabase, runtime: IndexRuntime,
                              sample_file: Path) -> None:
     out = runtime.run_converter("file_size_converter",
-                                input=[db.as_ref(sample_file)])
+                                inputs=[db.as_ref(sample_file)])
 
     assert out.converter_id == "file_size_converter"
     assert cast(FileSizeConverterResult,
@@ -123,7 +123,7 @@ def test_db_store_derivation(db: IndexDatabase) -> None:
 def test_index_file_job(runtime: IndexRuntime, db: IndexDatabase,
                         sample_file: Path) -> None:
     ref = runtime.db.as_ref(sample_file)
-    runtime.run_indexers(ref, ["file_size", "full_text"])
+    runtime.run_indexer(ref, ["file_size", "full_text"])
     size_record = db.get_indexer_result(ref.md5, "file_size")
     assert size_record.result["size_bytes"] == sample_file.stat().st_size
     text_record = db.get_indexer_result(ref.md5, "full_text")
@@ -142,8 +142,8 @@ def test_file_summary_indexer_with_flm(
 ) -> None:
 
     for path in sample_files:
-        out = runtime.run_indexers(runtime.db.as_ref(path),
-                                   ["file_summary"])["file_summary"]
+        out = runtime.run_indexer(runtime.db.as_ref(path),
+                                  ["file_summary"])["file_summary"]
 
         summary = out.result.summary.summary
         assert summary.strip() != ""

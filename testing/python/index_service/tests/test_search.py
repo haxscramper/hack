@@ -2,7 +2,7 @@ from pathlib import Path
 
 from index_service.services.db import IndexDatabase
 from index_service.services.types import FileRef
-from index_service.services.runtime import IndexRuntime
+from index_service.services.job_runtime import IndexRuntime
 
 
 def test_full_text_search(db: IndexDatabase, runtime: IndexRuntime,
@@ -11,7 +11,7 @@ def test_full_text_search(db: IndexDatabase, runtime: IndexRuntime,
     path.write_text("alpha beta gamma")
 
     ref = runtime.db.as_ref(path)
-    out = runtime.run_indexers(
+    out = runtime.run_indexer(
         ref,
         ["full_text"],
     )["full_text"]
@@ -32,8 +32,8 @@ def test_vector_search(db: IndexDatabase, runtime: IndexRuntime,
     m1 = db.as_ref(a)
     m2 = db.as_ref(b)
 
-    out1 = runtime.run_indexers(m1, ["file_embedding"])["file_embedding"]
-    out2 = runtime.run_indexers(m2, ["file_embedding"])["file_embedding"]
+    out1 = runtime.run_indexer(m1, ["file_embedding"])["file_embedding"]
+    out2 = runtime.run_indexer(m2, ["file_embedding"])["file_embedding"]
     db.store_indexer_result(m1, out1.indexer_id, out1.result)
     db.store_indexer_result(m2, out2.indexer_id, out2.result)
 
