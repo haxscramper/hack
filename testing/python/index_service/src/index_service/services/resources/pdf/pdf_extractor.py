@@ -8,7 +8,7 @@ from typing import Annotated, Union
 import fitz
 from pydantic import BaseModel, Field
 
-from index_service.services.job_types import BaseResource, cache_indexer_run
+from index_service.services.job_types import BaseResource, RunContext, cache_indexer_run
 from index_service.services.resources.pdf.docling_extractor import DoclingExtractor, DoclingPage
 from index_service.services.resources.pdf.mypdf_extractor import MyPDFExtractor, MyPDFPage
 from index_service.services.utils import get_xdg_cache_dir
@@ -67,14 +67,17 @@ class PdfExtractor(BaseResource):
         return get_xdg_cache_dir(
             ["pdf_extractor", f"{pdf_path.stem}_{digest}"])
 
-    def handle(self, request: PdfExtractorRequest) -> PdfExtractorResult:
+    def handle(self, ctx: RunContext,
+               request: PdfExtractorRequest) -> PdfExtractorResult:
+
         pdf_path = Path(request.path)
         if not pdf_path.exists():
             raise FileNotFoundError(f"PDF not found: {pdf_path}")
 
         raster_dir = self._raster_dir(pdf_path)
 
-        with fitz.open(str(pdf_path)) as pdf:
+        with fitz.open(str(pdf_path)) as pdf, ctx.trace_scope(
+                "extract PDF", path=str(pdf_path)):
             max_pages = len(pdf)
             first_page, last_page = self._parse_page_range(
                 request.pages, max_pages)
@@ -89,11 +92,14 @@ class PdfExtractor(BaseResource):
             for page_num in range(first_page, last_page + 1):
                 if not request.ocr_only and MyPDFExtractor.page_has_selectable_text(
                         pdf, page_num):
-                    page = self.mypdf_extractor.extract_page(
-                        pdf_path, page_num)
+                    with ctx.trace_scope("mypdf page", page_num=page_num):
+                        page = self.mypdf_extractor.extract_page(
+                            pdf_path, page_num)
                 else:
-                    page = self.docling_extractor.extract_page(
-                        pdf_path, page_num, raster_dir)
+                    with ctx.trace_scope("docling page", page_num=page_num):
+                        page = self.docling_extractor.extract_page(
+                            pdf_path, page_num, raster_dir)
+
                 pages.append(page)
 
         # Clean up raster images after successful processing

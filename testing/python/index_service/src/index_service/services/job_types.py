@@ -1,18 +1,20 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from datetime import time
 import json
+import os
 from pathlib import Path
+import threading
 from beartype.typing import Any, Callable, Optional, ParamSpec, TypeVar, cast
 import hashlib
 from functools import wraps
 
 from beartype import beartype
 from pydantic import BaseModel
-import palanteer
 import contextlib
 
-from index_service.services.pydantic_utils import model_from_json_data, model_to_json_data
+from index_service.services.pydantic_utils import model_from_json_data, model_to_json_data, to_json_safe
 from index_service.services.types import (
     ConverterOutput,
     ConverterRequest,
@@ -20,6 +22,40 @@ from index_service.services.types import (
     IndexerRequest,
 )
 from index_service.services.utils import ExceptionContextNote, get_xdg_cache_dir
+import time as _time
+
+
+class TraceWriter:
+
+    def __init__(self):
+        self.events = []
+        self.lock = threading.Lock()
+
+    def begin(self, name: str, **args):
+        self._event(name, "B", args)
+
+    def end(self, name: str, **args):
+        self._event(name, "E", args)
+
+    def instant(self, name: str, **args):
+        self._event(name, "i", args)
+
+    def _event(self, name: str, phase: str, args):
+        ev = {
+            "name": name,
+            "ph": phase,
+            "ts": _time.perf_counter() * 1_000_000,  # microseconds
+            "pid": os.getpid(),
+            "tid": threading.get_ident(),
+        }
+        if args:
+            ev["args"] = args
+        with self.lock:
+            self.events.append(ev)
+
+    def save(self, path: str):
+        with open(path, "w") as f:
+            json.dump({"traceEvents": to_json_safe(self.events)}, f)
 
 
 @beartype
@@ -28,17 +64,17 @@ class RunContext():
     def __init__(self) -> None:
         pass
 
-    def start_trace(self, file: str | None):
-        palanteer.plInitAndStart("init", record_filename=file)
+    def start_trace(self):
+        self.writer = TraceWriter()
 
     @contextlib.contextmanager
-    def trace_scope(self, message: str):
-        palanteer.plBegin(message)  # type: ignore
-        yield
-        palanteer.plEnd("")  # type: ignore
+    def trace_scope(self, message: str, **args):
+        self.writer.begin(message, **args)
+        try:
+            yield
 
-    def stop_trace(self):
-        palanteer.plStopAndUninit()
+        finally:
+            self.writer.end(message)
 
 
 @beartype

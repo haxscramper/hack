@@ -1,3 +1,4 @@
+from datetime import datetime
 import logging
 from pathlib import Path
 
@@ -21,13 +22,15 @@ from index_service.services.types import FileRef
 from index_service.services.default_job_types import DEFAULT_INDEXER_TYPES, DEFAULT_RESOURCE_TYPES
 from index_service.services.resources.wd_tagger import WdTagger
 from index_service.services.job_runtime import IndexRuntime
-from index_service.services.utils import get_custom_traceback_handler, stfu_logs
+from index_service.services.utils import get_custom_traceback_handler, get_xdg_cache_dir, stfu_logs
 from PySide6.QtWidgets import QApplication
 
 logging.basicConfig(
     level=logging.DEBUG,
     format="%(levelname)s %(name)s %(filename)s:%(lineno)d: %(message)s",
 )
+
+log = logging.getLogger(__name__)
 
 
 def showwarning(message, category, filename, lineno, file=None, line=None):
@@ -121,7 +124,7 @@ def index(
 
     count = 0
     ctx = RunContext()
-    ctx.start_trace(perf_trace_file)
+    ctx.start_trace()
 
     runner = IndexRuntime(
         ctx=ctx,
@@ -138,7 +141,7 @@ def index(
     )
 
     def index_file(file: Path):
-        with ctx.trace_scope(f"index file {file}"):
+        with ctx.trace_scope(f"index file", file=file):
             nonlocal count
             if limit_total and limit_total < count:
                 return
@@ -148,7 +151,7 @@ def index(
 
     def run_indexing():
         for path in paths:
-            with ctx.trace_scope(f"index path '{path}'"):
+            with ctx.trace_scope(f"index path", path=path):
                 if path.is_file():
                     index_file(path)
                 else:
@@ -165,7 +168,16 @@ def index(
         run_indexing()
 
     finally:
-        ctx.stop_trace()
+        ctx.writer.save(
+            str(
+                get_xdg_cache_dir([
+                    "logs",
+                    "perf",
+                ]).joinpath(f"{datetime.now().isoformat()}.json")))
+
+        if perf_trace_file:
+            log.info(f"Trace file {perf_trace_file}")
+            ctx.writer.save(perf_trace_file)
 
 
 @main.command()

@@ -31,7 +31,7 @@ class PdfIndexer(BaseIndexer):
         extractor: PdfExtractor = cast(PdfExtractor,
                                        resources["pdf_extractor"])
         result: PdfExtractorResult = extractor.handle(
-            PdfExtractorRequest(path=str(request.file_ref.path)))
+            ctx, PdfExtractorRequest(path=str(request.file_ref.path)))
         return IndexerOutput(
             indexer_id=self.asset_name,
             result=PdfIndexerResult(pages=result.pages),
