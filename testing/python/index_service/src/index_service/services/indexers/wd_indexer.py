@@ -3,7 +3,7 @@ from pathlib import Path
 
 from beartype.typing import cast
 
-from index_service.services.harness import BaseIndexer, cache_indexer_run
+from index_service.services.job_types import BaseIndexer, cache_indexer_run
 from index_service.services.types import IndexerOutput, IndexerRequest
 from pydantic import BaseModel
 

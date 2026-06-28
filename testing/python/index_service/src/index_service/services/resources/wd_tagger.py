@@ -10,7 +10,7 @@ import pandas as pd
 from huggingface_hub import hf_hub_download
 from pydantic import BaseModel
 
-from index_service.services.harness import BaseResource
+from index_service.services.job_types import BaseResource
 from index_service.services.utils import get_xdg_cache_dir
 
 log = logging.getLogger(__name__)

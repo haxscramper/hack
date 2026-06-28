@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from index_service.services.harness import BaseConverter
+from index_service.services.job_types import BaseConverter
 from index_service.services.types import ConverterOutput, ConverterRequest
 from pydantic import BaseModel
 import logging

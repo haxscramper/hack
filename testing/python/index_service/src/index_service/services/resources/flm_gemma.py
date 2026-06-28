@@ -1,6 +1,6 @@
 import os
 
-from index_service.services.harness import BaseResource
+from index_service.services.job_types import BaseResource
 from openai import OpenAI
 from pydantic import BaseModel
 

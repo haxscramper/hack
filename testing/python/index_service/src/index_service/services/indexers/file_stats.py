@@ -1,7 +1,7 @@
 from datetime import datetime
 from pathlib import Path
 
-from index_service.services.harness import BaseIndexer
+from index_service.services.job_types import BaseIndexer
 from index_service.services.types import IndexerOutput, IndexerRequest
 from pydantic import BaseModel
 

@@ -88,6 +88,7 @@ class BaseIndexer(ABC):
     result_model: type[BaseModel]
     required_assets: tuple[str, ...] = ()
     required_resources: tuple[str, ...] = ()
+    max_parallel: int = 1
 
     def can_run(self, path: Path) -> bool:
         return True

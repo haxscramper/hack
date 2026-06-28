@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import logging
 from beartype.typing import Any
 import os
 import traceback
@@ -163,3 +164,30 @@ def get_custom_traceback_handler(
         return "\n" + "\n".join(lines)
 
     return impl
+
+
+def stfu_logs():
+    for logger_name in [
+            "openai._base_client",
+            "git.cmd",
+            "alembic.runtime.plugins",
+            "alembic.runtime.migration",
+            "git.util",
+            # toggle this to see database interactions in tests
+            "urllib3.connectionpool",
+            # openai uses this for connection
+            "httpcore.connection",
+            # each individual resource actor creation and start
+            "pykka",
+            # execution of individual steps is printed to stderr?
+            "dagster",
+            "dagster.builtin",
+            "asyncio",
+            "PIL.Image",
+            "PIL.PngImagePlugin",
+            "httpcore.http11",
+            "httpx",
+            "faker.factory",
+    ]:
+        logger = logging.getLogger(logger_name)
+        logger.disabled = True

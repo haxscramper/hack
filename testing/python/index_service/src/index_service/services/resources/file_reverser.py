@@ -1,4 +1,4 @@
-from index_service.services.harness import BaseResource
+from index_service.services.job_types import BaseResource
 from pydantic import BaseModel
 
 
