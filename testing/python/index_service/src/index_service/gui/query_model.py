@@ -11,6 +11,7 @@ from PySide6.QtCore import (
 )
 
 from index_service.services.db import IndexDatabase
+from index_service.services.types import MD5
 
 log = logging.getLogger(__name__)
 
@@ -95,10 +96,15 @@ class QueryResultModel(QAbstractListModel):
             return md5
         if role == self.PathRole:
             if md5 not in self._paths:
-                fdoc = self._db._db.collection("files").get(md5)
-                paths = fdoc.get("paths", []) if fdoc else []
+                paths = [
+                    self._db.get_path(p)
+                    for p in self._db.get_all_refs(MD5(md5=md5))
+                ]
+
                 self._paths[md5] = str(paths[0]) if paths else ""
+
             return self._paths[md5]
+
         if role == self.ExtraRole:
             return {k: v for k, v in doc.items() if k != "md5"}
         return None

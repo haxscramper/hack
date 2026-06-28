@@ -12,6 +12,9 @@ from beartype.typing import Any, Dict, List, cast
 from index_service.services.pydantic_utils import model_to_json_data
 from index_service.services.types import MD5, AnyModel, FileRef, RootRef
 from index_service.services.utils import ExceptionContextNote
+import logging
+
+log = logging.getLogger(__name__)
 
 
 @beartype
@@ -41,6 +44,7 @@ class IndexDatabase:
         self._db_name = db_name
         self.roots: Dict[str, Path] = dict()
         self.ensure_collections([])
+        self._load_roots_from_db()
 
     @property
     def db(self) -> StandardDatabase:
@@ -50,9 +54,16 @@ class IndexDatabase:
     def db_name(self) -> str:
         return self._db_name
 
+    def _load_roots_from_db(self):
+        for row in self._db.aql.execute(
+                "FOR doc IN roots return doc"):  # type: ignore
+            self.roots[row["_key"]] = Path(row["path"])
+
     def add_root(self, name: str, root: Path) -> RootRef:
         assert name not in self.roots, f"Duplicate root name {name}"
         self.roots[name] = root
+        db_roots = self._db.collection("roots")
+        db_roots.insert({"_key": name, "path": str(root)})
         return RootRef(name=name)
 
     def get_root(self, name: RootRef) -> Path:
@@ -62,12 +73,12 @@ class IndexDatabase:
         return self.roots[ref.root.name].joinpath(ref.relative)
 
     def ensure_collections(self, names: List[str]) -> None:
-        for name in ["files", "derivations"] + names:
+        for name in ["roots", "files", "derivations"] + names:
             if not self._db.has_collection(name):
                 self._db.create_collection(name)
 
     def truncate_all(self, names: list[str]) -> None:
-        for name in ["files", "derivations"] + names:
+        for name in ["roots", "files", "derivations"] + names:
             self._db.collection(name).truncate()
 
     def _md5(self, path: Path) -> MD5:
@@ -75,26 +86,36 @@ class IndexDatabase:
         digest.update(path.read_bytes())
         return MD5(md5=digest.hexdigest())
 
-    def _get_md5(self, path: Path) -> MD5:
-        files = self._db.collection("files")
-        md5 = self._md5(path)
-        if files.has(md5.md5):
-            doc = files.get(md5.md5)
-            known = set(doc["paths"])
-            known.update([str(path)])
-            files.update({"_key": md5.md5, "paths": sorted(known)})
-        else:
-            files.insert({"_key": md5.md5, "paths": [str(path)]})
-
-        return md5
+    def get_all_refs(self, md5: MD5) -> List[FileRef]:
+        fdoc = self._db.collection("files").get(md5.md5)
+        path_refs = fdoc.get("paths", []) if fdoc else []
+        return [FileRef.model_validate(p) for p in path_refs]
 
     def as_ref(self, root: RootRef, path: Path) -> FileRef:
         assert root.name in self.roots, f"Unknown root for file ref: '{root}', register root with `add_root()` first"
-        return FileRef(
-            md5=self._get_md5(path),
-            relative=str(path.relative_to(self.get_root(root))),
+
+        relative = str(path.relative_to(self.get_root(root)))
+
+        files = self._db.collection("files")
+        _path = self.get_root(root).joinpath(relative)
+        md5 = self._md5(_path)
+
+        result = FileRef(
+            md5=md5,
+            relative=relative,
             root=root,
         )
+
+        if files.has(md5.md5):
+            doc = files.get(md5.md5)
+            known = doc["paths"]  # type: ignore
+            known.extend([result.model_dump()])
+            files.update({"_key": md5.md5, "paths": known})
+
+        else:
+            files.insert({"_key": md5.md5, "paths": [result.model_dump()]})
+
+        return result
 
     def store_indexer_result(
         self,
