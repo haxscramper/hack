@@ -1,18 +1,18 @@
 import json
+import logging
 import math
+import re
+from datetime import datetime
 from pathlib import Path
 from pprint import pformat
 
+from beartype import beartype
+from beartype.typing import Any, Dict, List, Optional, Set, Tuple, Union
 from index_service.services.job_types import BaseIndexer, RunContext, cache_indexer_run
 from index_service.services.pydantic_utils import try_parse_json
 from index_service.services.types import IndexerOutput, IndexerRequest
-from pydantic import BaseModel, Field, ConfigDict
-from beartype.typing import List, Tuple, Optional, Set, Dict, Union, Any
-import re
-from datetime import datetime
-from beartype import beartype
-import logging
 from PIL import Image
+from pydantic import BaseModel, ConfigDict, Field
 
 log = logging.getLogger(__name__)
 
@@ -334,10 +334,12 @@ class PromptParser:
         def add_tag(text: str, amplifier: float = 1.0, level: int = 0):
             cats = self.categories(text.strip())
             result.append(
-                Tag(text=cats.no_alias(text.strip()) if cats else text.strip(),
+                Tag(
+                    text=cats.no_alias(text.strip()) if cats else text.strip(),
                     amplifier=amplifier,
                     parens=level,
-                    category=cats))
+                    category=cats,
+                ))
 
         for token in tokens:
             if token == "":
@@ -451,7 +453,7 @@ def get_image_params(path: Path,
         if json_metadata:
             full_json = metadata["generation_data"]
         else:
-            generation = metadata["generation_data"].strip('\x00')
+            generation = metadata["generation_data"].strip("\x00")
             try:
                 full_json = json.loads(generation)
 
@@ -493,7 +495,8 @@ def get_image_params(path: Path,
         for _, node in prompt.items():
             if node["class_type"] == "BNK_CLIPTextEncodeAdvanced":
                 text = node["inputs"]["text"]
-                if "EasyNegative" in text or "bad anatomy" in text or "negative" in text:
+                if ("EasyNegative" in text or "bad anatomy" in text
+                        or "negative" in text):
                     res.negative_prompt = text
 
                 else:
@@ -535,13 +538,11 @@ class ExifMetadataIndexer(BaseIndexer):
     asset_name = "exif_metadata"
     result_model = ExifMetadataIndexerResult
 
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+
     def can_run(self, path: Path) -> bool:
         return path.suffix in [".png", ".jpg", ".webp", ".jpeg"]
-
-    def should_load_cache(self, request: IndexerRequest,
-                          resources: Dict[str, object],
-                          assets: Dict[str, object]) -> bool:
-        return False
 
     @cache_indexer_run
     def run(

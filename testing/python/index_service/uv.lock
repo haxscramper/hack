@@ -116,6 +116,15 @@ wheels = [
 ]
 
 [[package]]
+name = "boltons"
+version = "26.0.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/7a/1f/60df922ae497d838c58b48caa518251e2c8e228d7fe93792fee69a3858d6/boltons-26.0.0.tar.gz", hash = "sha256:5566d6cfd5a1e873d8e8476496287a9f92979964611ad9a9cecb6b0ef29b1edd", size = 225129, upload-time = "2026-06-19T06:10:41.226Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/00/01/4001033457f25ecdc2b1ffd513ca0b76200b9ea009dd64f6c1aad2dde133/boltons-26.0.0-py3-none-any.whl", hash = "sha256:ba077cac51b27532299634f87f5589b4080fa94a011b4d43a9247f775e9215c7", size = 195559, upload-time = "2026-06-19T06:10:39.865Z" },
+]
+
+[[package]]
 name = "certifi"
 version = "2026.6.17"
 source = { registry = "https://pypi.org/simple" }
@@ -485,6 +494,18 @@ epy = [
 ]
 
 [[package]]
+name = "face"
+version = "26.0.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "boltons" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/53/fd/f84f0600bd72953d5a322f0dedbd4f900e2cedab718e6b6a093ae2d16aae/face-26.0.1.tar.gz", hash = "sha256:8183d94bc248baaea855a9f8445f97a22a9988908e60abddccc6e251da77c4c6", size = 51754, upload-time = "2026-06-17T23:14:39.938Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/0a/24/0159c48d19c8b05e6969ee809bbbecc5a5c863f7e38c9327e2c63cb06f0f/face-26.0.1-py3-none-any.whl", hash = "sha256:ab0a83c37c9789dce658a67a9a80eafaa113c9ec37c5a9d950ff5480542a062d", size = 57572, upload-time = "2026-06-17T23:14:38.711Z" },
+]
+
+[[package]]
 name = "faker"
 version = "40.23.0"
 source = { registry = "https://pypi.org/simple" }
@@ -569,6 +590,20 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/10/a1/ae4e3e5003468d6391d2c77b6fa1cd73bd5d13511d81c642d7b28ac90ed4/fsspec-2026.6.0.tar.gz", hash = "sha256:f5bac145310fe30e16e1471bd6840b2d990d609e872251d7e674241822abf01a", size = 313646, upload-time = "2026-06-16T01:57:28.105Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/e5/22/4222d7ddf3da30f363edaa98e329c2bce6c65497c9cb2810931c8b2c0fbc/fsspec-2026.6.0-py3-none-any.whl", hash = "sha256:02e0b71817df9b2169dc30a16832045764def1191b43dcff5bb85bdee212d2a1", size = 203949, upload-time = "2026-06-16T01:57:26.358Z" },
+]
+
+[[package]]
+name = "glom"
+version = "25.12.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "attrs" },
+    { name = "boltons" },
+    { name = "face" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/78/74/8387f95565ba7c30cd152a585b275ebb9a834d1d32782425c5d2fe0a102c/glom-25.12.0.tar.gz", hash = "sha256:1ae7da88be3693df40ad27bdf57a765a55c075c86c971bcddd67927403eb0069", size = 196128, upload-time = "2025-12-29T06:29:07.274Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a7/e6/4129d9a3baa72d747533bb33376543ccadd9a7f9944e5a6e3ae2e245f5d6/glom-25.12.0-py3-none-any.whl", hash = "sha256:b9f21e77f71a6576a43864e85066b8cc3f0f778d0d50961563f8981377a6dcb1", size = 103295, upload-time = "2025-12-29T06:29:06.074Z" },
 ]
 
 [[package]]
@@ -697,6 +732,7 @@ dependencies = [
     { name = "einops" },
     { name = "fitz" },
     { name = "flax" },
+    { name = "glom" },
     { name = "huggingface-hub" },
     { name = "jax", extra = ["rocm7-local"] },
     { name = "msgpack" },
@@ -724,6 +760,7 @@ requires-dist = [
     { name = "einops", specifier = ">=0.8.2" },
     { name = "fitz", specifier = ">=0.0.1.dev2" },
     { name = "flax", specifier = ">=0.12.7" },
+    { name = "glom", specifier = ">=25.12.0" },
     { name = "huggingface-hub", specifier = ">=1.21.0" },
     { name = "jax", extras = ["rocm7-local"], specifier = ">=0.10.2" },
     { name = "msgpack", specifier = ">=1.2.1" },

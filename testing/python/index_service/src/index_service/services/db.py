@@ -92,8 +92,8 @@ class IndexDatabase:
             self._db.collection(name).truncate()
 
     def _md5(self, path: Path) -> MD5:
-        digest = hashlib.md5()
-        digest.update(path.read_bytes())
+        with path.open("rb") as f:
+            digest = hashlib.file_digest(f, "md5")
         return MD5(md5=digest.hexdigest())
 
     def get_all_refs(self, md5: MD5) -> List[FileRef]:

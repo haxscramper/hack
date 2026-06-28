@@ -15,6 +15,9 @@ class FileEmbeddingIndexer(BaseIndexer):
     asset_name = "file_embedding"
     result_model = FileEmbeddingIndexerResult
 
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+
     def run(
         self,
         ctx: RunContext,

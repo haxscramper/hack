@@ -2,13 +2,11 @@ from datetime import datetime
 from pathlib import Path
 
 from beartype.typing import cast
-
 from index_service.services.job_types import BaseIndexer, RunContext, cache_indexer_run
-from index_service.services.types import IndexerOutput, IndexerRequest
-from pydantic import BaseModel
-
 from index_service.services.resources.wd_tagger import WdTag, WdTagger
+from index_service.services.types import IndexerOutput, IndexerRequest
 from PIL import Image
+from pydantic import BaseModel
 
 
 class WdTagIndexerResult(BaseModel, extra="forbid"):
@@ -19,6 +17,9 @@ class WdTagIndexer(BaseIndexer):
     asset_name = "wd_tags"
     result_model = WdTagIndexerResult
     required_resources = ("wd_tagger", )
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
 
     def can_run(self, path: Path) -> bool:
         return path.suffix.lower() in [".png", ".webp", ".jpg", ".jpeg"]

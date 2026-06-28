@@ -13,6 +13,9 @@ class FileSizeIndexer(BaseIndexer):
     asset_name = "file_size"
     result_model = FileSizeIndexerResult
 
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+
     def run(
         self,
         ctx: RunContext,

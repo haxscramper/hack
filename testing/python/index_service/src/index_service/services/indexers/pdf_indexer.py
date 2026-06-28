@@ -1,9 +1,13 @@
 from pathlib import Path
 
 from beartype.typing import cast
-
 from index_service.services.job_types import BaseIndexer, RunContext, cache_indexer_run
-from index_service.services.resources.pdf.pdf_extractor import PdfExtractor, PdfExtractorRequest, PdfExtractorResult, PdfPage
+from index_service.services.resources.pdf.pdf_extractor import (
+    PdfExtractor,
+    PdfExtractorRequest,
+    PdfExtractorResult,
+    PdfPage,
+)
 from index_service.services.types import IndexerOutput, IndexerRequest
 from pydantic import BaseModel
 
@@ -16,6 +20,9 @@ class PdfIndexer(BaseIndexer):
     asset_name = "pdf_pages"
     result_model = PdfIndexerResult
     required_resources = ("pdf_extractor", )
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
 
     def can_run(self, path: Path) -> bool:
         return path.suffix.lower() == ".pdf"

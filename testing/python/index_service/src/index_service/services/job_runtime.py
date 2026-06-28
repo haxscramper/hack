@@ -118,12 +118,7 @@ class IndexRuntime:
     ) -> None:
         to_run: list[FileRef] = []
         for ref in targets:
-            if self.db.has_indexer_result(ref, indexer.asset_name):
-                log.debug(
-                    f"{self.db.get_path(ref)} already indexed by {indexer.asset_name}"
-                )
-
-            else:
+            if not self.db.has_indexer_result(ref, indexer.asset_name):
                 to_run.append(ref)
 
         resources = {

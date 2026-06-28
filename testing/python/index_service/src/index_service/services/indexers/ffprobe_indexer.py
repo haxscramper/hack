@@ -1,13 +1,12 @@
+import json
 from datetime import datetime
 from pathlib import Path
 
-from beartype.typing import cast, Any
 from beartype import beartype
-from plumbum import local
-import json
-
+from beartype.typing import Any, cast
 from index_service.services.job_types import BaseIndexer, RunContext, cache_indexer_run
 from index_service.services.types import IndexerOutput, IndexerRequest
+from plumbum import local
 from pydantic import BaseModel
 
 
@@ -76,9 +75,10 @@ def run_ffprobe(path: Path) -> FFProbeInfoModel | None:
         video_stream.get("width")) if video_stream is not None else None
     height = parse_int(
         video_stream.get("height")) if video_stream is not None else None
-    resolution = f"{width}x{height}" if width is not None and height is not None else None
-    fps = parse_fps(video_stream.get(
-        "avg_frame_rate")) if video_stream is not None else None
+    resolution = (f"{width}x{height}"
+                  if width is not None and height is not None else None)
+    fps = (parse_fps(video_stream.get("avg_frame_rate"))
+           if video_stream is not None else None)
 
     return FFProbeInfoModel(
         duration_seconds=parse_float(format_raw.get("duration")),
@@ -100,6 +100,9 @@ class FFProbeIndexerResult(BaseModel, extra="forbid"):
 class FFProbeIndexer(BaseIndexer):
     asset_name = "ffprobe"
     result_model = FFProbeIndexerResult
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
 
     def can_run(self, path: Path) -> bool:
         return path.suffix.lower() in {".webm", ".mp4"}

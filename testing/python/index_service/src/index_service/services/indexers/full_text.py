@@ -13,6 +13,9 @@ class FullTextIndexer(BaseIndexer):
     asset_name = "full_text"
     result_model = FullTextIndexerResult
 
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+
     def run(
         self,
         ctx: RunContext,

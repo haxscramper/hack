@@ -12,7 +12,7 @@ index:
         "~/software/ComfyUI/output" \
         "~/software/ComfyUI/models"
         
-# --reset True \
+# --enable-cache exif_metadata \
 # --indexer safetensor \
 # --indexer exif_metadata \
 # --indexer comfy_input \

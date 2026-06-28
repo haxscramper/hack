@@ -129,12 +129,7 @@ def cache_indexer_run(func: Callable[P, R]) -> Callable[P, IndexerOutput]:
             md5_suffix,
         ]).joinpath(f"{param_hash}.json")
 
-        if cache_path.exists() and self.should_load_cache(
-                request=request,
-                resources=resources,
-                assets=assets,
-        ):
-
+        if cache_path.exists() and self.should_load_cache:
             with ExceptionContextNote(
                     f"loading JSON cache from {cache_path}"), ctx.trace_scope(
                         "load cache file", file=cache_path):
@@ -180,16 +175,13 @@ class BaseIndexer(ABC):
     required_assets: tuple[str, ...] = ()
     required_resources: tuple[str, ...] = ()
     max_parallel: int = 1
+    should_load_cache: bool = True
+
+    def __init__(self, **kwargs) -> None:
+        for key, value in dict(**kwargs).items():
+            setattr(self, key, value)
 
     def can_run(self, path: Path) -> bool:
-        return True
-
-    def should_load_cache(
-        self,
-        request: IndexerRequest,
-        resources: dict[str, object],
-        assets: dict[str, object],
-    ) -> bool:
         return True
 
     def hash_run_parameters(

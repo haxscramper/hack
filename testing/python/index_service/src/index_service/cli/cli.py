@@ -14,6 +14,8 @@ from beartype.typing import Any
 import warnings
 import traceback
 
+from index_service.services.indexers.comfy_input_indexer import ComfyInputIndexer
+from index_service.services.indexers.exif_metadata import ExifMetadataIndexer
 from index_service.services.indexers.ffprobe_indexer import FFProbeIndexer
 from index_service.services.indexers.image_generation import GenerationParamsIndexer
 from index_service.services.indexers.pdf_indexer import PdfIndexer
@@ -67,13 +69,24 @@ def _expand_path(
     return tuple(Path(path).expanduser() for path in value)
 
 
+_INDEXER_TYPES = [t for t in DEFAULT_INDEXER_TYPES] + [
+    WdTagIndexer,
+    PdfIndexer,
+    FFProbeIndexer,
+    SafetensorIndexer,
+    GenerationParamsIndexer,
+    ExifMetadataIndexer,
+    ComfyInputIndexer,
+]
+
+
 @main.command()
 @_db_options
 @click.option(
     "--indexer",
     "indexers",
     multiple=True,
-    default=[cls.asset_name for cls in DEFAULT_INDEXER_TYPES],
+    default=[cls.asset_name for cls in _INDEXER_TYPES],
 )
 @click.argument(
     "paths",
@@ -88,12 +101,16 @@ def _expand_path(
               show_default=True,
               type=click.INT)
 @click.option("--perf-trace-file", default=None, show_default=True)
+@click.option("--enable-cache",
+              multiple=True,
+              default=[cls.asset_name for cls in _INDEXER_TYPES])
 def index(
     host: str,
     db_name: str,
     username: str,
     password: str,
     reset: bool,
+    enable_cache: tuple[str, ...],
     limit_total: int | None,
     limit_per_path: int | None,
     indexers: tuple[str, ...],
@@ -133,12 +150,9 @@ def index(
         runner = IndexRuntime(
             ctx=ctx,
             db=db,
-            indexer_types=[t() for t in DEFAULT_INDEXER_TYPES] + [
-                WdTagIndexer(),
-                PdfIndexer(),
-                FFProbeIndexer(),
-                SafetensorIndexer(),
-                GenerationParamsIndexer(),
+            indexer_types=[
+                t(should_load_cache=t.asset_name in enable_cache)
+                for t in _INDEXER_TYPES
             ],
             resource_types=[t() for t in DEFAULT_RESOURCE_TYPES] + [
                 WdTagger.from_huggingface(),
@@ -175,12 +189,24 @@ def index(
         run_indexing()
 
     finally:
+        assert ctx.writer
+        perf_dir = get_xdg_cache_dir([
+            "logs",
+            "perf",
+        ])
+        perf_dir.mkdir(parents=True, exist_ok=True)
+
         ctx.writer.save(
-            str(
-                get_xdg_cache_dir([
-                    "logs",
-                    "perf",
-                ]).joinpath(f"{datetime.now().isoformat()}.json")))
+            str(perf_dir.joinpath(f"{datetime.now().isoformat()}.json")))
+
+        perf_files = sorted(
+            perf_dir.glob("*.json"),
+            key=lambda path: path.stat().st_mtime,
+            reverse=True,
+        )
+
+        for old_file in perf_files[10:]:
+            old_file.unlink()
 
         if perf_trace_file:
             log.info(f"Trace file {perf_trace_file}")
@@ -202,12 +228,7 @@ def view(host: str, db_name: str, username: str, password: str) -> None:
 
     win = MainWindow(
         db,
-        collection_names=[t.asset_name for t in DEFAULT_INDEXER_TYPES] + [
-            WdTagIndexer.asset_name,
-            PdfIndexer.asset_name,
-            SafetensorIndexer.asset_name,
-            GenerationParamsIndexer.asset_name,
-        ],
+        collection_names=[t.asset_name for t in _INDEXER_TYPES],
         builders=[
             ComfyInputWidgetBuilder(),
             WdTaggerWidgetBuilder(),

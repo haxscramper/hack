@@ -13,6 +13,7 @@ dependencies = [
     "einops>=0.8.2",
     "fitz>=0.0.1.dev2",
     "flax>=0.12.7",
+    "glom>=25.12.0",
     "huggingface-hub>=1.21.0",
     "jax[rocm7-local]>=0.10.2",
     "msgpack>=1.2.1",

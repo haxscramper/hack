@@ -1,9 +1,10 @@
 import json
 import logging
+import glom
 from pathlib import Path
 
-from beartype.typing import Any, cast
-from pydantic import BaseModel, Field
+from beartype.typing import Any, ClassVar, cast
+from pydantic import BaseModel, Field, model_validator, model_serializer
 
 from index_service.services.job_types import BaseIndexer, RunContext
 from index_service.services.indexers.exif_metadata import ExifMetadataIndexerResult
@@ -89,6 +90,32 @@ class Link(BaseModel, extra="allow"):
     type: str | list[str] | float
     parentId: float | None = None
 
+    _ARRAY_FIELDS: ClassVar[tuple[str, ...]] = (
+        "id",
+        "origin_id",
+        "origin_slot",
+        "target_id",
+        "target_slot",
+        "type",
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _from_array(cls, data):
+        if isinstance(data, (list, tuple)):
+            d = dict(zip(cls._ARRAY_FIELDS, data))
+            if len(data) > len(cls._ARRAY_FIELDS):
+                d["parentId"] = data[len(cls._ARRAY_FIELDS)]
+            return d
+        return data
+
+    @model_serializer
+    def _to_array(self):
+        arr = [getattr(self, f) for f in self._ARRAY_FIELDS]
+        if self.parentId is not None:
+            arr.append(self.parentId)
+        return arr
+
 
 class Reroute(BaseModel, extra="allow"):
     id: float
@@ -138,15 +165,26 @@ class ComfyWorkflow1_0(BaseModel, extra="allow"):
     state: State = Field(default_factory=lambda: State())
     groups: list[Group] | None = None
     nodes: list[Node]
-    links: list[Link | list[int | str]] | None = None
+    links: list[Link] | None = None
     reroutes: list[Reroute] | None = None
     extra: Extra | None = None
     models: list[ModelItem] | None = None
 
 
+class ComfyInputLink(BaseModel, extra="forbid"):
+    origin_slot: int
+    origin_id: str
+    target_slot: int
+
+
 class ComfyInput(BaseModel, extra="forbid"):
     node: str
+    node_id: str
+    title: str | None = None
     inputs: dict[str, Any] | list[Any]
+    links: list[ComfyInputLink] = Field(
+        description=
+        "Incoming links to the node -- origin slot/id is a dependee node")
 
 
 class ComfyInputIndexerResult(BaseModel, extra="forbid"):
@@ -158,6 +196,9 @@ class ComfyInputIndexer(BaseIndexer):
     asset_name = "comfy_input"
     result_model = ComfyInputIndexerResult
     required_assets = ("exif_metadata", )
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
 
     def can_run(self, path: Path) -> bool:
         return path.suffix in [".png", ".jpg", ".webp", ".jpeg"]
@@ -196,7 +237,17 @@ class ComfyInputIndexer(BaseIndexer):
                     result.inputs.append(
                         ComfyInput(
                             node=node.type,
+                            node_id=str(node.id),
                             inputs=node.widgets_values,
+                            title=glom.glom(node, "_meta.title", default=None),
+                            links=[
+                                ComfyInputLink(
+                                    target_slot=int(l.target_slot),
+                                    origin_slot=int(l.origin_slot),
+                                    origin_id=str(l.origin_id),
+                                ) for l in workflow.links
+                                if l.target_id == node.id
+                            ] if workflow.links else list(),
                         ))
 
             return IndexerOutput(indexer_id=self.asset_name, result=result)

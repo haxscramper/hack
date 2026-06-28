@@ -18,6 +18,9 @@ class FileStatsIndexer(BaseIndexer):
     asset_name = "file_stats"
     result_model = FileStatsIndexerResult
 
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+
     def run(
         self,
         ctx: RunContext,

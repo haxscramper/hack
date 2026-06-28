@@ -1,15 +1,14 @@
 import json
+import logging
 import struct
 from collections import Counter
 from pathlib import Path
 
 from beartype.typing import Any
-
 from index_service.services.job_types import BaseIndexer, RunContext, cache_indexer_run
 from index_service.services.pydantic_utils import try_parse_json
 from index_service.services.types import IndexerOutput, IndexerRequest
 from pydantic import BaseModel
-import logging
 
 log = logging.getLogger(__name__)
 
@@ -88,6 +87,9 @@ def _parse(path: Path) -> SafetensorIndexerResult:
 class SafetensorIndexer(BaseIndexer):
     asset_name = "safetensor"
     result_model = SafetensorIndexerResult
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
 
     def can_run(self, path: Path) -> bool:
         return path.suffix.lower() in [".safetensors"]

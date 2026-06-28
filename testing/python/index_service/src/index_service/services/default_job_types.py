@@ -21,8 +21,6 @@ DEFAULT_INDEXER_TYPES: list[type[BaseIndexer]] = [
     FullTextIndexer,
     FileSummaryIndexer,
     FileEmbeddingIndexer,
-    ExifMetadataIndexer,
-    ComfyInputIndexer,
 ]
 
 DEFAULT_CONVERTER_TYPES: list[type[BaseConverter]] = [

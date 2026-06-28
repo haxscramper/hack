@@ -1,14 +1,13 @@
 from pathlib import Path
 
 from beartype.typing import cast
-
 from index_service.services.job_types import BaseIndexer, RunContext
-from index_service.services.types import IndexerOutput, IndexerRequest
 from index_service.services.resources.flm_gemma import (
     FlmGemmaResource,
     FlmSummaryResult,
     SummarizeRequest,
 )
+from index_service.services.types import IndexerOutput, IndexerRequest
 from pydantic import BaseModel
 
 
@@ -20,6 +19,9 @@ class FileSummaryIndexer(BaseIndexer):
     asset_name = "file_summary"
     result_model = FileSummaryIndexerResult
     required_resources = ("flm_gemma", )
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
 
     def run(
         self,
