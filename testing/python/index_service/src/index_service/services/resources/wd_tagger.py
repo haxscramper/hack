@@ -1,19 +1,20 @@
 from __future__ import annotations
 
-import logging
+import json
 from pathlib import Path
+from typing import Any, Callable
 
-import cv2
+import flax
+import jax
 import numpy as np
-import onnxruntime as ort
 import pandas as pd
 from huggingface_hub import hf_hub_download
+from PIL import Image
 from pydantic import BaseModel
 
+from index_service.services.resources.wdv3_jax import Models
 from index_service.services.job_types import BaseResource
 from index_service.services.utils import get_xdg_cache_dir
-
-log = logging.getLogger(__name__)
 
 
 class WdTag(BaseModel, extra="forbid"):
@@ -39,21 +40,84 @@ CATEGORY_MAP = {
     9: "rating",
 }
 
+MODEL_REPO_MAP = {
+    "eva02_large": "SmilingWolf/wd-eva02-large-tagger-v3",
+    "vit": "SmilingWolf/wd-vit-tagger-v3",
+    "vit_large": "SmilingWolf/wd-vit-large-tagger-v3",
+    "swinv2_v2": "SmilingWolf/wd-v1-4-swinv2-tagger-v2",
+    "swinv2_v3": "SmilingWolf/wd-swinv2-tagger-v3",
+    "convnext": "SmilingWolf/wd-convnext-tagger-v3",
+}
+
+
+@flax.struct.dataclass
+class PredModel:
+    apply_fun: Callable = flax.struct.field(pytree_node=False)
+    params: Any = flax.struct.field(pytree_node=True)
+
+    def jit_predict(self, x):
+        x = x / 127.5 - 1
+        x = self.apply_fun(self.params, x, train=False)
+        x = flax.linen.sigmoid(x)
+        x = jax.numpy.float32(x)
+        return x
+
+    def predict(self, x):
+        preds = self.jit_predict(x)
+        preds = jax.device_get(preds)
+        return preds[0]
+
+
+def pil_ensure_rgb(image: Image.Image) -> Image.Image:
+    if image.mode not in ["RGB", "RGBA"]:
+        image = image.convert(
+            "RGBA") if "transparency" in image.info else image.convert("RGB")
+
+    if image.mode == "RGBA":
+        canvas = Image.new("RGBA", image.size, (255, 255, 255))
+        canvas.alpha_composite(image)
+        image = canvas.convert("RGB")
+
+    return image
+
+
+def pil_pad_square(image: Image.Image) -> Image.Image:
+    w, h = image.size
+    px = max(image.size)
+    canvas = Image.new("RGB", (px, px), (255, 255, 255))
+    canvas.paste(image, ((px - w) // 2, (px - h) // 2))
+    return canvas
+
+
+def pil_resize(image: Image.Image, target_size: int) -> Image.Image:
+    if max(image.size) != target_size:
+        image = image.resize((target_size, target_size), Image.BICUBIC)
+    return image
+
 
 class WdTagger(BaseResource):
     resource_key = "wd_tagger"
 
     @staticmethod
     def from_huggingface(
+        model: str = "vit",
         threshold: float = 0.01,
         cache_dir: Path | None = get_xdg_cache_dir(["wd_tagger"]),
     ) -> "WdTagger":
-        repo_id = "SmilingWolf/wd-vit-tagger-v3"
+        repo_id = MODEL_REPO_MAP[model]
 
-        model_path = Path(
+        weights_path = Path(
             hf_hub_download(
                 repo_id=repo_id,
-                filename="model.onnx",
+                filename="model.msgpack",
+                repo_type="model",
+                cache_dir=cache_dir,
+            ))
+
+        config_path = Path(
+            hf_hub_download(
+                repo_id=repo_id,
+                filename="sw_jax_cv_config.json",
                 repo_type="model",
                 cache_dir=cache_dir,
             ))
@@ -67,58 +131,61 @@ class WdTagger(BaseResource):
             ))
 
         return WdTagger(
-            model_path=model_path,
+            model_name=model,
+            model_path=weights_path,
+            config_path=config_path,
             tags_csv_path=tags_csv_path,
             threshold=threshold,
         )
 
-    def __init__(self,
-                 model_path: Path,
-                 tags_csv_path: Path,
-                 threshold: float = 0.01):
+    def __init__(
+        self,
+        model_name: str,
+        model_path: Path,
+        config_path: Path,
+        tags_csv_path: Path,
+        threshold: float = 0.01,
+    ):
+        self.model_name = model_name
         self.model_path = model_path
+        self.config_path = config_path
         self.tags_csv_path = tags_csv_path
         self.threshold = threshold
         self.tags_df = pd.read_csv(str(tags_csv_path))
 
-        target_ep = "MIGraphXExecutionProvider"
-        available = ort.get_available_providers()
-        if target_ep not in available:
-            target_ep = "CPUExecutionProvider"
-            logging.warning(
-                "MIGraphXExecutionProvider not found, falling back to CPUExecutionProvider"
-            )
+        with open(model_path, "rb") as f:
+            data = f.read()
 
-        sess_options = ort.SessionOptions()
-        self.session = ort.InferenceSession(
-            str(model_path),
-            sess_options=sess_options,
-            providers=[target_ep],
+        restored = flax.serialization.msgpack_restore(data)["model"]
+        variables = {"params": restored["params"], **restored["constants"]}
+
+        with open(config_path) as f:
+            model_config = json.load(f)
+
+        model_builder = Models.model_registry[model_config["model_name"]]()
+        model = model_builder.build(
+            config=model_builder,
+            **model_config["model_args"],
         )
-        self.input_name = self.session.get_inputs()[0].name
-        self.output_name = self.session.get_outputs()[0].name
 
-    def preprocess_image(self,
-                         image_path: Path,
-                         target_size: int = 448) -> np.ndarray:
-        img = cv2.imread(str(image_path))
-        if img is None:
-            raise FileNotFoundError(f"Could not load image: {image_path}")
+        self.model = PredModel(model.apply, params=variables)
+        self.target_size = int(model_config["image_size"])
 
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        img = cv2.resize(img, (target_size, target_size),
-                         interpolation=cv2.INTER_AREA)
-        img = img.astype(np.float32)
-        img = np.expand_dims(img, axis=0)
-        return img
+    def preprocess_image(self, image_path: Path) -> np.ndarray:
+        img = Image.open(image_path)
+        img = pil_ensure_rgb(img)
+        img = pil_pad_square(img)
+        img = pil_resize(img, self.target_size)
+        inputs = np.array(img)
+        inputs = np.expand_dims(inputs, axis=0)
+        inputs = inputs[..., ::-1]
+        return inputs
 
     def tag_image(self, image_path: Path) -> list[WdTag]:
-        log.info(f"WD tagging image {image_path}")
         input_data = self.preprocess_image(image_path)
-        raw = self.session.run([self.output_name],
-                               {self.input_name: input_data})[0]
-        probs = raw[0]
-        result: list[WdTag] = list()
+        probs = self.model.predict(input_data)
+
+        result: list[WdTag] = []
         for i, prob in enumerate(probs):
             if prob >= self.threshold:
                 row = self.tags_df.iloc[i]
@@ -130,6 +197,7 @@ class WdTagger(BaseResource):
                         name=str(row["name"]),
                         probability=float(prob),
                     ))
+
         result.sort(key=lambda x: x.probability, reverse=True)
         return result
 

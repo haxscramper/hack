@@ -190,9 +190,12 @@ def stfu_logs():
             "httpcore.http11",
             "httpx",
             "faker.factory",
+            "jax._src",
     ]:
         logger = logging.getLogger(logger_name)
-        logger.disabled = True
+        logger.setLevel(logging.CRITICAL + 1)
+        logger.propagate = False
+        logger.handlers.clear()
 
 
 class ExceptionContextNote:
