@@ -113,15 +113,7 @@ class IndexRuntime:
     ) -> None:
         to_run: list[FileRef] = []
         for ref in targets:
-            cached = self.db.get_indexer_result_optional(
-                ref.md5, indexer.asset_name)
-            if cached is not None:
-                results[ref.md5.md5][indexer.asset_name] = IndexerOutput(
-                    indexer_id=indexer.asset_name,
-                    result=indexer.result_model.model_validate(cached.result),
-                )
-            else:
-                to_run.append(ref)
+            to_run.append(ref)
 
         resources = {
             name: self._resource_instances[name]

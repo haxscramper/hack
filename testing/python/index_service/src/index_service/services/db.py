@@ -41,10 +41,6 @@ class IndexDatabaseCommon(ABC):
         ...
 
     @abstractmethod
-    def get_indexer_result_optional(self, md5, indexer_id):
-        ...
-
-    @abstractmethod
     def store_indexer_result(self, ref, indexer_id, result) -> None:
         ...
 
@@ -156,22 +152,6 @@ class IndexDatabase(IndexDatabaseCommon):
         doc = cast(dict, self._db.collection(indexer_id).get(md5.md5))
 
         assert doc, f"Cannot get evaluation results for {indexer_id}({md5})"
-        return IndexerResultRecord(
-            md5=MD5(md5=doc["md5"]),
-            indexer_id=doc["indexer_id"],
-            result=doc["result"],
-        )
-
-    def get_indexer_result_optional(
-        self,
-        md5: MD5,
-        indexer_id: str,
-    ) -> Optional[IndexerResultRecord]:
-        doc = cast(dict, self._db.collection(indexer_id).get(md5.md5))
-
-        if doc is None:
-            return None
-
         return IndexerResultRecord(
             md5=MD5(md5=doc["md5"]),
             indexer_id=doc["indexer_id"],

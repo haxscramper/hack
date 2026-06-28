@@ -239,9 +239,6 @@ def test_converter_consumes_indexer_asset(tmp_path: Path) -> None:
         def as_ref(self, path: Path) -> FileRef:
             return FileRef(md5=self._get_md5(path), path=path)
 
-        def get_indexer_result_optional(self, md5, indexer_id):
-            return None
-
         def store_indexer_result(self, ref, indexer_id, result) -> None:
             pass
 
