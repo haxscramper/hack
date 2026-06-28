@@ -134,7 +134,6 @@ class IndexRuntime:
         def work(ref: FileRef) -> tuple[FileRef, IndexerOutput]:
             assets: dict[str, IndexerOutput | None] = dict()
             for name in indexer.required_assets:
-                log.info(f"{name}")
                 if self.db.has_indexer_result(ref, name):
                     assets[name] = self.get_indexer_result(ref.md5, name)
                 else:
