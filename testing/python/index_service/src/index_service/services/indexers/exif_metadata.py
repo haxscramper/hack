@@ -5,7 +5,7 @@ from pprint import pformat
 
 from index_service.services.job_types import BaseIndexer
 from index_service.services.types import IndexerOutput, IndexerRequest
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from beartype.typing import List, Tuple, Optional, Set, Dict, Union, Any
 import re
 from datetime import datetime

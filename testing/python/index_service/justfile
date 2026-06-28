@@ -8,12 +8,11 @@ index:
         --indexer exif_metadata \
         --indexer comfy_input \
         --indexer wd_tags \
-        --indexer pdf_pages \
-        --limit-total 100 \
-        --limit-per-path 20 \
-        "~/defaultdirs/input/grabber/tensor_saved_high_res_mirror" \
-        "~/software/ComfyUI/output" \
-        "~/tmp/pdf_conversion_dir_small/input"
+        --indexer ffprobe \
+        "~/defaultdirs/input" \
+        "~/software/ComfyUI/output" 
+
+# --indexer pdf_pages \
 
 view:
     uv run src/index_service/cli/cli.py view \

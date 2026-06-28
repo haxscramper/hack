@@ -1,4 +1,7 @@
+import base64
+from datetime import datetime
 import hashlib
+import json
 import math
 from dataclasses import dataclass
 from pathlib import Path
@@ -11,7 +14,10 @@ from beartype.typing import Any, Dict, List, Optional, cast
 from pydantic import BaseModel
 from abc import ABC, abstractmethod
 
+from pydantic_core import PydanticSerializationError, to_jsonable_python
+
 from index_service.services.types import MD5, AnyModel, FileRef
+from index_service.services.utils import ExceptionContextNote
 
 
 @beartype
@@ -112,17 +118,74 @@ class IndexDatabase(IndexDatabaseCommon):
     ) -> None:
         key = ref.md5.md5
         col = self._db.collection(indexer_id)
+
+        def to_json_safe(value: Any) -> Any:
+            match value:
+                case None | bool() | int() | str():
+                    return value
+
+                case bytes():
+                    try:
+                        return value.decode("utf-8")
+                    except UnicodeDecodeError:
+                        return {
+                            "base64_binary":
+                            base64.b64encode(value).decode("ascii"),
+                        }
+
+                case float():
+                    if math.isnan(value) or math.isinf(value):
+                        return None
+                    return value
+
+                case dict():
+                    result = dict()
+                    for k, v in value.items():
+                        with ExceptionContextNote(f"field:{k}"):
+                            result[k] = to_json_safe(v)
+
+                    return result
+
+                case list() | tuple():
+                    return [to_json_safe(v) for v in value]
+
+                case _:
+                    try:
+                        return to_json_safe(to_jsonable_python(value))
+                    except PydanticSerializationError as err:
+                        return str(err)
+
+        result_j = to_json_safe(result.model_dump(mode="python"))
         doc = {
             "_key": key,
             "md5": ref.md5.md5,
             "indexer_id": indexer_id,
-            "result": result.model_dump(mode="json"),
+            "result": result_j,
         }
 
-        if col.has(key):
-            col.replace(doc)
-        else:
-            col.insert(doc)
+        def diagnose_document(doc):
+            try:
+                text = json.dumps(doc, allow_nan=False, indent=2)
+            except Exception as e:
+                raise RuntimeError(f"json.dumps failed: {e}") from e
+
+            try:
+                json.loads(text)
+            except json.JSONDecodeError as e:
+                start = max(0, e.pos - 120)
+                end = min(len(text), e.pos + 120)
+                snippet = text[start:end]
+                raise RuntimeError(
+                    f"Invalid JSON at line {e.lineno}, column {e.colno}, pos {e.pos}\n"
+                    f"{snippet}") from e
+
+            return text
+
+        with ExceptionContextNote(lambda: diagnose_document(doc)):
+            if col.has(key):
+                col.replace(doc)
+            else:
+                col.insert(doc)
 
     def get_indexer_result(self, md5: MD5,
                            indexer_id: str) -> IndexerResultRecord:

@@ -12,6 +12,7 @@ from beartype.typing import Any
 import warnings
 import traceback
 
+from index_service.services.indexers.ffprobe_indexer import FFProbeIndexer
 from index_service.services.indexers.pdf_indexer import PdfIndexer
 from index_service.services.indexers.wd_indexer import WdTagIndexer
 from index_service.services.resources.pdf.pdf_extractor import PdfExtractor
@@ -124,6 +125,7 @@ def index(
         indexer_types=[t() for t in DEFAULT_INDEXER_TYPES] + [
             WdTagIndexer(),
             PdfIndexer(),
+            FFProbeIndexer(),
         ],
         resource_types=[t() for t in DEFAULT_RESOURCE_TYPES] + [
             WdTagger.from_huggingface(),

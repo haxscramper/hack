@@ -19,6 +19,7 @@ from index_service.services.default_job_types import (
     DEFAULT_INDEXER_TYPES,
     DEFAULT_RESOURCE_TYPES,
 )
+from index_service.services.utils import ExceptionContextNote
 
 
 @beartype
@@ -141,7 +142,9 @@ class IndexRuntime:
             completed = [work(ref) for ref in to_run]
 
         for ref, out in completed:
-            self.db.store_indexer_result(ref, indexer.asset_name, out.result)
+            with ExceptionContextNote(f"indexer asset: {indexer.asset_name}"):
+                self.db.store_indexer_result(ref, indexer.asset_name,
+                                             out.result)
             results[ref.md5.md5][indexer.asset_name] = out
 
     @overload

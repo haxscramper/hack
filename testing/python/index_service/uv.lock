@@ -745,6 +745,7 @@ dependencies = [
     { name = "pandas" },
     { name = "pillow" },
     { name = "platformdirs" },
+    { name = "plumbum" },
     { name = "pykka" },
     { name = "pymupdf4llm" },
     { name = "pyside6" },
@@ -767,6 +768,7 @@ requires-dist = [
     { name = "pandas", specifier = ">=3.0.3" },
     { name = "pillow", specifier = ">=12.2.0" },
     { name = "platformdirs", specifier = ">=4.10.0" },
+    { name = "plumbum", specifier = ">=2.0.1" },
     { name = "pykka", specifier = ">=4.4.2" },
     { name = "pymupdf4llm", specifier = ">=1.27.2.3" },
     { name = "pyside6", specifier = ">=6.11.1" },
@@ -1648,6 +1650,18 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/f9/e2/3e91f31a7d2b083fe6ef3fa267035b518369d9511ffab804f839851d2779/pluggy-1.6.0.tar.gz", hash = "sha256:7dcc130b76258d33b90f61b658791dede3486c3e6bfb003ee5c9bfb396dd22f3", size = 69412, upload-time = "2025-05-15T12:30:07.975Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/54/20/4d324d65cc6d9205fabedc306948156824eb9f0ee1633355a8f7ec5c66bf/pluggy-1.6.0-py3-none-any.whl", hash = "sha256:e920276dd6813095e9377c0bc5566d94c932c33b27a3e3945d8389c374dd4746", size = 20538, upload-time = "2025-05-15T12:30:06.134Z" },
+]
+
+[[package]]
+name = "plumbum"
+version = "2.0.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "typing-extensions", marker = "python_full_version < '3.13'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/0c/6a/1d1b143420fcdfc8902f2db6b7d1d2325211461c5f2a43c849de7afad688/plumbum-2.0.1.tar.gz", hash = "sha256:61623f856dcb09eb20dcd5aa708dfb3cd04b6f4ab10224d39303b163bb1c4c61", size = 377668, upload-time = "2026-06-08T14:44:06.17Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/59/2d/d741fbbbcba7eb6f9f1a829373c558114d59cb882b95f941aa0dc060861f/plumbum-2.0.1-py3-none-any.whl", hash = "sha256:27a454980f91689aae8f18242a36daaf2636219171cf0e6a849744aa1d6fff85", size = 164460, upload-time = "2026-06-08T14:44:04.75Z" },
 ]
 
 [[package]]

@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 import logging
-from beartype.typing import Any
+from beartype.typing import Any, Callable, Literal
 import os
 import traceback
 from rich.console import Console
@@ -185,9 +185,33 @@ def stfu_logs():
             "asyncio",
             "PIL.Image",
             "PIL.PngImagePlugin",
+            "PIL.TiffImagePlugin",
+            "PIL",
             "httpcore.http11",
             "httpx",
             "faker.factory",
     ]:
         logger = logging.getLogger(logger_name)
         logger.disabled = True
+
+
+class ExceptionContextNote:
+    """
+    If context body raises an exception, add a note to it.
+    """
+
+    def __init__(self, note: str | Callable) -> None:
+        self.note = note
+
+    def __enter__(self) -> "ExceptionContextNote":
+        return self
+
+    def __exit__(self, exc_type: Any, exc_value: Any,
+                 traceback: Any) -> Literal[False]:
+        if exc_value is not None:
+            if not hasattr(exc_value, "__notes__"):
+                exc_value.__notes__ = []
+            exc_value.__notes__.append(
+                self.note if isinstance(self.note, str) else self.note())
+
+        return False
