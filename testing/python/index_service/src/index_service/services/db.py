@@ -8,8 +8,9 @@ from arango import ArangoClient
 from arango.aql import AQL
 from arango.database import StandardDatabase
 from beartype import beartype
-from beartype.typing import Any, Dict, List, cast
-from index_service.services.pydantic_utils import model_to_json_data
+from beartype.typing import Any, Dict, List, Optional, cast
+from openai import BaseModel
+from index_service.services.pydantic_utils import model_from_json_data, model_to_json_data
 from index_service.services.types import MD5, AnyModel, FileRef, RootRef
 from index_service.services.utils import ExceptionContextNote
 import logging
@@ -156,6 +157,16 @@ class IndexDatabase:
                 col.replace(doc)
             else:
                 col.insert(doc)
+
+    def get_indexer_result_type(self, md5: MD5, indexer_id: str,
+                                type) -> Optional[AnyModel]:
+        doc = cast(dict, self._db.collection(indexer_id).get(md5.md5))
+        if doc:
+            return type.model_validate(
+                model_from_json_data(doc["result"], type))
+
+        else:
+            return None
 
     def get_indexer_result(self, md5: MD5,
                            indexer_id: str) -> IndexerResultRecord:

@@ -30,11 +30,13 @@ def register_type(
     _LOADERS[name] = load
 
 
+# FIXME: The file paths are dumped using `{"__type__": "Path", "data": "<class 'pathlib.Path'>"},`
+# which is invalid.
 register_type(
     Path,
     "Path",
-    lambda it: str(Path),
-    lambda it: Path(it),
+    dump=lambda it: str(Path),
+    load=lambda it: Path(it),
 )
 
 register_type(

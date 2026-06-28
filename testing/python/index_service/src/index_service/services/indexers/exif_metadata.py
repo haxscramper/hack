@@ -21,8 +21,16 @@ RX_DELETE = re.compile(r"[- _,()/\\:]")
 @beartype
 class LoRATag(BaseModel, extra="forbid"):
     id2: str
-    id3: str
-    weight: str
+    id3: str | None
+    weight: str | float
+
+
+def try_float(val: str) -> float | str:
+    try:
+        return float(val)
+
+    except ValueError:
+        return val
 
 
 @beartype
@@ -146,42 +154,6 @@ class ImageParams(BaseModel, extra="forbid"):
         assert self.parsed_negative_prompt
         return ",".join(it.text for it in self.parsed_negative_prompt
                         if isinstance(it, Tag))
-
-    def get_infinite_browser_extra(self) -> dict:
-        assert self.parsed_prompt
-        meta = {
-            "Model":
-            self.model,
-            "Lora hashes":
-            ",".join(f"{it.name}" for it in self.loras),
-            "Steps":
-            self.steps,
-            "TA defaulted":
-            json.dumps(self.get_defaulted_tensor_art_prompt(), indent=2),
-        }
-        extra = dict(
-            lora=[dict(name=it.name, value=it.weight) for it in self.loras],
-            meta=meta,
-            pos_prompt=[
-                it.text for it in self.parsed_prompt if isinstance(it, Tag)
-            ],
-        )
-
-        return extra
-
-    def get_defaulted_tensor_art_prompt(self) -> dict:
-        return dict(
-            prompt=self.prompt,
-            negativePrompt="",
-            width=896,
-            height=1088,
-            samplerName=self.sampler,
-            steps=25,
-            cfgScale=self.cfgScale,
-            clipSkip=self.clipSkip,
-            sdVae=self.sdVae,
-            etaNoiseSeedDelta=self.etaNoiseSeedDelta,
-        )
 
     def get_tensor_art_prompt(self) -> dict:
         return dict(
@@ -403,7 +375,20 @@ class PromptParser:
             elif re.match(r"^<[^>]+>$", token):
                 parts = token[1:-1].split(":")
                 if len(parts) == 3:
-                    result.append(LoRATag(parts[0], parts[1], parts[2]))
+                    result.append(
+                        LoRATag(
+                            id2=parts[0],
+                            id3=parts[1],
+                            weight=try_float(parts[2]),
+                        ))
+
+                elif len(parts) == 2:
+                    result.append(
+                        LoRATag(
+                            id2=parts[0],
+                            id3=None,
+                            weight=try_float(parts[1]),
+                        ))
 
             elif ":" in token:
                 tag, amp, *other = token.split(":")

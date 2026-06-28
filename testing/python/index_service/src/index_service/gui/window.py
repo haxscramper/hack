@@ -70,19 +70,30 @@ class HorizontalTextTabBar(QTabBar):
     def paintEvent(self, event) -> None:  # type: ignore[override]
         painter = QPainter(self)
         pal = self.palette()
-        group = pal.ColorGroup.Current if self.isEnabled(
-        ) else pal.ColorGroup.Disabled
+        group = (pal.ColorGroup.Current
+                 if self.isEnabled() else pal.ColorGroup.Disabled)
+
         for i in range(self.count()):
             rect = self.tabRect(i)
-            if i == self.currentIndex():
-                painter.fillRect(rect, pal.color(group, pal.ColorRole.Button))
+            selected = self.currentIndex() == i
+
+            if selected:
+                painter.fillRect(rect, pal.color(group,
+                                                 pal.ColorRole.Highlight))
+                text_color = pal.color(group, pal.ColorRole.HighlightedText)
             else:
                 painter.fillRect(rect, pal.color(group, pal.ColorRole.Window))
+                text_color = pal.color(group, pal.ColorRole.WindowText)
+
             painter.setPen(QPen(pal.color(group, pal.ColorRole.Mid)))
-            painter.drawRect(rect)
-            painter.setPen(pal.color(group, pal.ColorRole.WindowText))
-            painter.drawText(rect, Qt.AlignmentFlag.AlignCenter,
-                             self.tabText(i))
+            painter.drawRect(rect.adjusted(0, 0, -1, -1))
+
+            painter.setPen(text_color)
+            painter.drawText(
+                rect,
+                Qt.AlignmentFlag.AlignCenter,
+                self.tabText(i),
+            )
 
 
 @beartype
@@ -156,14 +167,14 @@ class MainWindow(QMainWindow):
         splitter.addWidget(left)
         splitter.addWidget(self._list)
         splitter.addWidget(self._tabs)
-        splitter.setSizes([240, 720, 240])
+        splitter.setSizes([240, 720, 340])
         splitter.setStretchFactor(0, 1)
         splitter.setStretchFactor(1, 3)
         splitter.setStretchFactor(2, 1)
 
         self.setCentralWidget(central)
         self.setWindowTitle("Index Service Viewer")
-        self.resize(1200, 700)
+        self.resize(1400, 700)
 
     def _on_tab_changed(self, index: int) -> None:
         if index >= 0:

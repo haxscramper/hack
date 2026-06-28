@@ -7,14 +7,13 @@ index:
         --reset True \
         --indexer exif_metadata \
         --indexer comfy_input \
-        --indexer wd_tags \
-        --indexer ffprobe \
-        --limit-per-path 20 \
         --perf-trace-file /tmp/indexer-trace-perf.json \
         "~/defaultdirs/input" \
         "~/software/ComfyUI/output" 
 
-
+# --limit-per-path 200 \
+# --indexer wd_tags \
+# --indexer ffprobe \
 # --indexer pdf_pages \
 
 view:

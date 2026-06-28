@@ -5,6 +5,7 @@ from pathlib import Path
 import click
 
 from index_service.gui.collection_views.comfy_input_builder import ComfyInputWidgetBuilder
+from index_service.gui.collection_views.exif_preview_builder import ExifPreviewrWidgetBuilder
 from index_service.gui.collection_views.wd_tagger_builder import WdTaggerWidgetBuilder
 from index_service.gui.window import MainWindow
 from index_service.services.db import IndexDatabase
@@ -204,6 +205,7 @@ def view(host: str, db_name: str, username: str, password: str) -> None:
         builders=[
             ComfyInputWidgetBuilder(),
             WdTaggerWidgetBuilder(),
+            ExifPreviewrWidgetBuilder(),
         ],
     )
 
