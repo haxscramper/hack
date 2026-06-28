@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import logging
+import os
 import re
 from pathlib import Path
+import sys
+import tempfile
 from typing import Any, Literal
 
 import fitz
@@ -505,7 +510,28 @@ def _populate_tags_from_page_chunk(root_tag: DocTag, page_chunk: dict,
             ))
 
 
-# --- Extractor ---
+@contextlib.contextmanager
+def _silence_pymupdf4llm():
+    # Flush Python-level buffers so their content isn't redirected.
+    sys.stdout.flush()
+    sys.stderr.flush()
+
+    saved_out_fd = os.dup(1)
+    saved_err_fd = os.dup(2)
+
+    with tempfile.TemporaryFile(mode="w+b") as out_tmp, \
+            tempfile.TemporaryFile(mode="w+b") as err_tmp:
+        os.dup2(out_tmp.fileno(), 1)
+        os.dup2(err_tmp.fileno(), 2)
+        try:
+            yield out_tmp, err_tmp
+        finally:
+            sys.stdout.flush()
+            sys.stderr.flush()
+            os.dup2(saved_out_fd, 1)
+            os.dup2(saved_err_fd, 2)
+            os.close(saved_out_fd)
+            os.close(saved_err_fd)
 
 
 class MyPDFExtractor:
@@ -522,11 +548,19 @@ class MyPDFExtractor:
 
         root_tag = DocTag(id=f"page{page_num}-root", tag_name="root", text="")
 
-        chunks = pymupdf4llm.to_markdown(
-            str(pdf_path),
-            pages=[page_num - 1],
-            page_chunks=True,
-        )
+        with _silence_pymupdf4llm() as (out, err):
+            try:
+                chunks = pymupdf4llm.to_markdown(
+                    str(pdf_path),
+                    pages=[page_num - 1],
+                    page_chunks=True,
+                )
+            except Exception as e:
+                captured = (out.getvalue() + err.getvalue()).strip()
+                raise RuntimeError(
+                    f"pymupdf4llm failed on page {page_num}: {e}" +
+                    (f"\n--- captured output ---\n{captured}"
+                     if captured else "")) from e
 
         if not chunks:
             return MyPDFPage(

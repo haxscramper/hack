@@ -9,6 +9,8 @@ from index_service.gui.window import MainWindow
 from index_service.services.db import IndexDatabase
 import sys
 from beartype.typing import Any
+import warnings
+import traceback
 
 from index_service.services.indexers.pdf_indexer import PdfIndexer
 from index_service.services.indexers.wd_indexer import WdTagIndexer
@@ -24,6 +26,14 @@ logging.basicConfig(
     level=logging.DEBUG,
     format="%(levelname)s %(name)s %(filename)s:%(lineno)d: %(message)s",
 )
+
+
+def showwarning(message, category, filename, lineno, file=None, line=None):
+    print(f"{filename}:{lineno}: {category.__name__}: {message}")
+    traceback.print_stack()
+
+
+warnings.showwarning = showwarning
 
 
 def _db_options(f):
@@ -127,7 +137,7 @@ def index(
             return
 
         count += 1
-        runner.run_indexers(db.as_ref(file), list(indexers))
+        runner.run_indexer(db.as_ref(file), list(indexers))
 
     for path in paths:
         if path.is_file():
