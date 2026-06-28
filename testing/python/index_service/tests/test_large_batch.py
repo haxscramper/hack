@@ -7,10 +7,12 @@ from index_service.services.job_runtime import IndexRuntime
 
 def test_large_batch_indexing(db: IndexDatabase, tmp_path: Path,
                               runtime: IndexRuntime) -> None:
+
+    root = db.add_root("root", tmp_path)
     for idx in range(20):
         path = tmp_path / f"doc_{idx}.txt"
         path.write_text(f"document {idx}\nalpha beta\n")
-        ref = db.as_ref(path)
+        ref = db.as_ref(root, path)
 
         outputs = runtime.run_indexer(
             ref,
@@ -26,7 +28,7 @@ def test_large_batch_indexing(db: IndexDatabase, tmp_path: Path,
             db.store_indexer_result(ref, out.indexer_id, out.result)
 
     record = db.get_indexer_result(
-        db.as_ref(tmp_path.joinpath("doc_0.txt")).md5,
+        db.as_ref(root, tmp_path.joinpath("doc_0.txt")).md5,
         "full_text",
     )
 

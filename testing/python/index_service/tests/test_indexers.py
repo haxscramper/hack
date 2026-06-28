@@ -43,8 +43,9 @@ def sample_files(tmp_path: Path) -> list[Path]:
 
 
 def test_file_size_indexer(runtime: IndexRuntime, sample_file: Path) -> None:
+    root = runtime.db.add_root("main", sample_file.parent)
     out = runtime.run_indexer(
-        runtime.db.as_ref(sample_file),
+        runtime.db.as_ref(root, sample_file),
         ["file_size"],
     )["file_size"]
 
@@ -54,8 +55,9 @@ def test_file_size_indexer(runtime: IndexRuntime, sample_file: Path) -> None:
 
 
 def test_file_stats_indexer(runtime: IndexRuntime, sample_file: Path) -> None:
+    root = runtime.db.add_root("root", sample_file)
     out = runtime.run_indexer(
-        runtime.db.as_ref(sample_file),
+        runtime.db.as_ref(root, sample_file),
         ["file_stats"],
     )["file_stats"]
 
@@ -68,8 +70,9 @@ def test_file_stats_indexer(runtime: IndexRuntime, sample_file: Path) -> None:
 
 def test_full_text_indexer_with_reverser(runtime: IndexRuntime,
                                          sample_file: Path) -> None:
+    root = runtime.db.add_root("root", sample_file.parent)
     out = runtime.run_indexer(
-        runtime.db.as_ref(sample_file),
+        runtime.db.as_ref(root, sample_file),
         ["full_text"],
     )["full_text"]
 
@@ -79,8 +82,9 @@ def test_full_text_indexer_with_reverser(runtime: IndexRuntime,
 
 def test_file_size_converter(db: IndexDatabase, runtime: IndexRuntime,
                              sample_file: Path) -> None:
+    root = runtime.db.add_root("root", sample_file.parent)
     out = runtime.run_converter("file_size_converter",
-                                inputs=[db.as_ref(sample_file)])
+                                inputs=[db.as_ref(root, sample_file)])
 
     assert out.converter_id == "file_size_converter"
     assert cast(FileSizeConverterResult,
@@ -89,12 +93,13 @@ def test_file_size_converter(db: IndexDatabase, runtime: IndexRuntime,
 
 def test_db_indexer_result_uniqueness(db: IndexDatabase,
                                       tmp_path: Path) -> None:
+    root = db.add_root("root", tmp_path)
     pa = tmp_path.joinpath("a.txt")
     pa.write_text("---")
     pb = tmp_path.joinpath("b.txt")
     pb.write_text("---")
-    ref_a = db.as_ref(pa)
-    ref_b = db.as_ref(pb)
+    ref_a = db.as_ref(root, pa)
+    ref_b = db.as_ref(root, pb)
     db.ensure_collections(["file_size"])
     db.truncate_all(["file_size"])
     db.store_indexer_result(ref_a, "file_size",
@@ -110,8 +115,9 @@ def test_db_store_derivation(db: IndexDatabase) -> None:
     class LocalDerivation(BaseModel, extra="forbid"):
         total_size: int
 
+    root = db.add_root("root", Path("?"))
     key = db.store_derivation(
-        input=[FileRef(md5=MD5(md5="MD5"), path=Path("?X"))],
+        input=[FileRef(md5=MD5(md5="MD5"), relative="?X", root=root)],
         output_files=["sdf"],
         config={"param": str()},
         return_value=LocalDerivation(total_size=17),
@@ -122,7 +128,8 @@ def test_db_store_derivation(db: IndexDatabase) -> None:
 
 def test_index_file_job(runtime: IndexRuntime, db: IndexDatabase,
                         sample_file: Path) -> None:
-    ref = runtime.db.as_ref(sample_file)
+    root = runtime.db.add_root("root", sample_file.parent)
+    ref = runtime.db.as_ref(root, sample_file)
     runtime.run_indexer(ref, ["file_size", "full_text"])
     size_record = db.get_indexer_result(ref.md5, "file_size")
     assert size_record.result["size_bytes"] == sample_file.stat().st_size
@@ -131,8 +138,9 @@ def test_index_file_job(runtime: IndexRuntime, db: IndexDatabase,
 
 
 def test_convert_files_job(runtime: IndexRuntime, sample_file: Path) -> None:
+    root = runtime.db.add_root("root", sample_file.parent)
     out = runtime.run_converter("file_size_converter",
-                                [runtime.db.as_ref(sample_file)])
+                                [runtime.db.as_ref(root, sample_file)])
     assert out.converter_id == "file_size_converter"
 
 
@@ -141,8 +149,11 @@ def test_file_summary_indexer_with_flm(
     sample_files: list[Path],
 ) -> None:
 
+    root = runtime.db.add_root(
+        "root", Path(os.path.commonpath(str(s) for s in sample_files)))
+
     for path in sample_files:
-        out = runtime.run_indexer(runtime.db.as_ref(path),
+        out = runtime.run_indexer(runtime.db.as_ref(root, path),
                                   ["file_summary"])["file_summary"]
 
         summary = out.result.summary.summary

@@ -587,7 +587,7 @@ class ExifMetadataIndexer(BaseIndexer):
         assets: dict[str, object],
     ) -> IndexerOutput:
 
-        path = request.file_ref.path
+        path = ctx.get_path(request.file_ref)
         assert path.exists(), f"{path}"
 
         params = get_image_params(Path(path), Path(path).parent)

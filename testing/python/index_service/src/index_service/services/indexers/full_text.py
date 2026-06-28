@@ -20,7 +20,7 @@ class FullTextIndexer(BaseIndexer):
         resources: dict[str, object],
         assets: dict[str, object],
     ) -> IndexerOutput:
-        path = Path(request.file_ref.path)
+        path = ctx.get_path(request.file_ref)
         text = path.read_text()
         return IndexerOutput(
             indexer_id=self.asset_name,

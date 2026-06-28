@@ -18,7 +18,7 @@ from index_service.services.indexers.pdf_indexer import PdfIndexer
 from index_service.services.indexers.wd_indexer import WdTagIndexer
 from index_service.services.job_types import RunContext
 from index_service.services.resources.pdf.pdf_extractor import PdfExtractor
-from index_service.services.types import FileRef
+from index_service.services.types import FileRef, RootRef
 from index_service.services.default_job_types import DEFAULT_INDEXER_TYPES, DEFAULT_RESOURCE_TYPES
 from index_service.services.resources.wd_tagger import WdTagger
 from index_service.services.job_runtime import IndexRuntime
@@ -123,7 +123,7 @@ def index(
     )
 
     count = 0
-    ctx = RunContext()
+    ctx = RunContext(db)
     ctx.start_trace()
 
     with ctx.trace_scope("create runner"):
@@ -141,20 +141,21 @@ def index(
             ],
         )
 
-    def index_file(file: Path):
+    def index_file(root: RootRef, file: Path):
         with ctx.trace_scope(f"index file", file=file):
             nonlocal count
             if limit_total and limit_total < count:
                 return
 
             count += 1
-            runner.run_indexer(db.as_ref(file), list(indexers))
+            runner.run_indexer(db.as_ref(root, file), list(indexers))
 
     def run_indexing():
         for path in paths:
+            root = db.add_root(path.name, path)
             with ctx.trace_scope(f"index path", path=path):
                 if path.is_file():
-                    index_file(path)
+                    index_file(root, path)
                 else:
                     count_per_path = 0
                     for file in path.rglob("*"):
@@ -163,7 +164,7 @@ def index(
                                 continue
 
                             count_per_path += 1
-                            index_file(file)
+                            index_file(root, file)
 
     try:
         run_indexing()

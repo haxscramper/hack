@@ -20,7 +20,7 @@ class FileSizeIndexer(BaseIndexer):
         resources: dict[str, object],
         assets: dict[str, object],
     ) -> IndexerOutput:
-        size = Path(request.file_ref.path).stat().st_size
+        size = ctx.get_path(request.file_ref).stat().st_size
         return IndexerOutput(
             indexer_id=self.asset_name,
             result=FileSizeIndexerResult(size_bytes=size),

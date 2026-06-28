@@ -22,7 +22,7 @@ class FileEmbeddingIndexer(BaseIndexer):
         resources: dict[str, object],
         assets: dict[str, object],
     ) -> IndexerOutput:
-        text = Path(request.file_ref.path).read_text()
+        text = ctx.get_path(request.file_ref).read_text()
         buckets = [0.0] * 8
         for ch in text.lower():
             buckets[ord(ch) % 8] += 1.0

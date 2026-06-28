@@ -25,7 +25,7 @@ class FileStatsIndexer(BaseIndexer):
         resources: dict[str, object],
         assets: dict[str, object],
     ) -> IndexerOutput:
-        st = Path(request.file_ref.path).stat()
+        st = ctx.get_path(request.file_ref).stat()
         return IndexerOutput(
             indexer_id=self.asset_name,
             result=FileStatsIndexerResult(

@@ -74,7 +74,7 @@ class MockFlmGemmaResource(BaseResource):
 @pytest.fixture
 def runtime(db) -> Generator[IndexRuntime, None, None]:
     from index_service.services.default_job_types import DEFAULT_RESOURCE_TYPES
-    ctx = RunContext()
+    ctx = RunContext(db)
 
     rt = IndexRuntime(
         ctx=ctx,

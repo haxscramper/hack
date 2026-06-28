@@ -1,6 +1,6 @@
 import os
 
-from index_service.services.job_types import BaseResource
+from index_service.services.job_types import BaseResource, RunContext
 from openai import OpenAI
 from pydantic import BaseModel
 
@@ -23,7 +23,8 @@ class FlmGemmaResource(BaseResource):
         self._model = model or os.environ.get("FLM_MODEL", "gemma4-it:e4b")
         self._client = client or OpenAI(base_url=base_url, api_key="flm")
 
-    def handle(self, request: SummarizeRequest) -> FlmSummaryResult:
+    def handle(self, ctx: RunContext,
+               request: SummarizeRequest) -> FlmSummaryResult:
         response = self._client.chat.completions.create(
             model=self._model,
             messages=[

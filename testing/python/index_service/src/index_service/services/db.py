@@ -1,5 +1,3 @@
-import base64
-from datetime import datetime
 import hashlib
 import json
 import math
@@ -10,14 +8,9 @@ from arango import ArangoClient
 from arango.aql import AQL
 from arango.database import StandardDatabase
 from beartype import beartype
-from beartype.typing import Any, Dict, List, Optional, cast
-from pydantic import BaseModel
-from abc import ABC, abstractmethod
-
-from pydantic_core import PydanticSerializationError, to_jsonable_python
-
+from beartype.typing import Any, Dict, List, cast
 from index_service.services.pydantic_utils import model_to_json_data
-from index_service.services.types import MD5, AnyModel, FileRef
+from index_service.services.types import MD5, AnyModel, FileRef, RootRef
 from index_service.services.utils import ExceptionContextNote
 
 
@@ -30,28 +23,7 @@ class IndexerResultRecord:
 
 
 @beartype
-class IndexDatabaseCommon(ABC):
-
-    @abstractmethod
-    def ensure_collections(self, names) -> None:
-        ...
-
-    @abstractmethod
-    def as_ref(self, path: Path) -> FileRef:
-        ...
-
-    @abstractmethod
-    def store_indexer_result(self, ref, indexer_id, result) -> None:
-        ...
-
-    @abstractmethod
-    def store_derivation(self, input_files, output_files, config,
-                         return_value):
-        ...
-
-
-@beartype
-class IndexDatabase(IndexDatabaseCommon):
+class IndexDatabase:
 
     def __init__(
         self,
@@ -67,6 +39,7 @@ class IndexDatabase(IndexDatabaseCommon):
             sys_db.create_database(db_name)
         self._db = client.db(db_name, username=username, password=password)
         self._db_name = db_name
+        self.roots: Dict[str, Path] = dict()
         self.ensure_collections([])
 
     @property
@@ -76,6 +49,17 @@ class IndexDatabase(IndexDatabaseCommon):
     @property
     def db_name(self) -> str:
         return self._db_name
+
+    def add_root(self, name: str, root: Path) -> RootRef:
+        assert name not in self.roots, f"Duplicate root name {name}"
+        self.roots[name] = root
+        return RootRef(name=name)
+
+    def get_root(self, name: RootRef) -> Path:
+        return self.roots[name.name]
+
+    def get_path(self, ref: FileRef) -> Path:
+        return self.roots[ref.root.name].joinpath(ref.relative)
 
     def ensure_collections(self, names: List[str]) -> None:
         for name in ["files", "derivations"] + names:
@@ -104,8 +88,13 @@ class IndexDatabase(IndexDatabaseCommon):
 
         return md5
 
-    def as_ref(self, path: Path) -> FileRef:
-        return FileRef(md5=self._get_md5(path), path=path)
+    def as_ref(self, root: RootRef, path: Path) -> FileRef:
+        assert root.name in self.roots, f"Unknown root for file ref: '{root}', register root with `add_root()` first"
+        return FileRef(
+            md5=self._get_md5(path),
+            relative=str(path.relative_to(self.get_root(root))),
+            root=root,
+        )
 
     def store_indexer_result(
         self,
@@ -172,7 +161,7 @@ class IndexDatabase(IndexDatabaseCommon):
             "config": config,
             "return_value": return_value.model_dump(),
         })
-        return meta["_key"]
+        return meta["_key"]  # type: ignore
 
     @staticmethod
     def reset_database(host: str, db_name: str, username: str,
@@ -199,13 +188,13 @@ class IndexDatabase(IndexDatabaseCommon):
               LIMIT @limit
               RETURN {{md5: doc.md5, text: doc.result.text}}
             """,
-            bind_vars={
+            bind_vars={  # type: ignore
                 "query": query,
                 "limit": limit
             },
         )
 
-        return list(cursor)
+        return list(cursor)  # type: ignore
 
     def vector_search(
         self,
@@ -219,7 +208,7 @@ class IndexDatabase(IndexDatabaseCommon):
               RETURN {{md5: doc.md5, vector: doc.result.vector}}
             """)
 
-        rows = list(cursor)
+        rows = list(cursor)  # type: ignore
 
         def cosine(a: List[float], b: List[float]) -> float:
             dot = sum(x * y for x, y in zip(a, b))

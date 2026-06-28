@@ -24,7 +24,7 @@ class FileSizeConverter(BaseConverter):
     ) -> ConverterOutput:
         logging.info("running file size converter")
         sizes = {
-            str(p.path): Path(p.path).stat().st_size
+            str(ctx.get_path(p)): ctx.get_path(p).stat().st_size
             for p in request.input_files
         }
 

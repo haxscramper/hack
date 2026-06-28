@@ -22,10 +22,17 @@ class MD5(BaseModel, extra="forbid"):
 
 
 @beartype
+class RootRef(BaseModel, extra="forbid"):
+    model_config = ConfigDict(frozen=True)
+    name: str
+
+
+@beartype
 class FileRef(BaseModel, extra="forbid"):
     model_config = ConfigDict(frozen=True)
     md5: MD5
-    path: Path
+    relative: str
+    root: RootRef
 
 
 @beartype

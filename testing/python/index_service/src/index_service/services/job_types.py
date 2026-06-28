@@ -14,10 +14,12 @@ from beartype import beartype
 from pydantic import BaseModel
 import contextlib
 
+from index_service.services.db import IndexDatabase
 from index_service.services.pydantic_utils import model_from_json_data, model_to_json_data, to_json_safe
 from index_service.services.types import (
     ConverterOutput,
     ConverterRequest,
+    FileRef,
     IndexerOutput,
     IndexerRequest,
 )
@@ -61,8 +63,11 @@ class TraceWriter:
 @beartype
 class RunContext():
 
-    def __init__(self) -> None:
-        pass
+    def __init__(self, db: IndexDatabase) -> None:
+        self._db = db
+
+    def get_path(self, ref: FileRef) -> Path:
+        return self._db.get_path(ref)
 
     def start_trace(self):
         self.writer = TraceWriter()

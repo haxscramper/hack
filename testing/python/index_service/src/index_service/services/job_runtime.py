@@ -5,7 +5,7 @@ from graphlib import TopologicalSorter
 from beartype import beartype
 from beartype.typing import overload
 
-from index_service.services.db import IndexDatabase, IndexDatabaseCommon
+from index_service.services.db import IndexDatabase
 from index_service.services.job_types import BaseConverter, BaseIndexer, BaseResource, RunContext
 from index_service.services.types import (
     ConverterOutput,
@@ -29,7 +29,7 @@ class IndexRuntime:
     def __init__(
         self,
         ctx: RunContext,
-        db: IndexDatabaseCommon,
+        db: IndexDatabase,
         indexer_types: list[BaseIndexer] | None = None,
         converter_types: list[BaseConverter] | None = None,
         resource_types: list[BaseResource] | None = None,
@@ -96,7 +96,9 @@ class IndexRuntime:
 
         for name in order:
             indexer = self._indexer_instances[name]
-            targets = [f for f in files if indexer.can_run(f.path)]
+            targets = [
+                f for f in files if indexer.can_run(self.db.get_path(f))
+            ]
             self._run_indexer_stage(indexer, targets, results)
 
         return results

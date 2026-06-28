@@ -10,7 +10,8 @@ def test_full_text_search(db: IndexDatabase, runtime: IndexRuntime,
     path = tmp_path / "a.txt"
     path.write_text("alpha beta gamma")
 
-    ref = runtime.db.as_ref(path)
+    root = db.add_root("root", tmp_path)
+    ref = runtime.db.as_ref(root, path)
     out = runtime.run_indexer(
         ref,
         ["full_text"],
@@ -29,8 +30,9 @@ def test_vector_search(db: IndexDatabase, runtime: IndexRuntime,
     a.write_text("cat cat cat")
     b.write_text("network protocol packet")
 
-    m1 = db.as_ref(a)
-    m2 = db.as_ref(b)
+    root = db.add_root("root", tmp_path)
+    m1 = db.as_ref(root, a)
+    m2 = db.as_ref(root, b)
 
     out1 = runtime.run_indexer(m1, ["file_embedding"])["file_embedding"]
     out2 = runtime.run_indexer(m2, ["file_embedding"])["file_embedding"]

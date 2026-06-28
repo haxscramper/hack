@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel
-from index_service.services.db import IndexDatabase, IndexDatabaseCommon
+from index_service.services.db import IndexDatabase
 from index_service.services.job_types import BaseConverter, BaseIndexer, BaseResource, RunContext
 from index_service.services.types import MD5, ConverterOutput, FileRef, IndexerOutput
 from index_service.services.job_runtime import IndexRuntime
@@ -66,16 +66,19 @@ def test_chain_two_indexers(db: IndexDatabase, tmp_path: Path) -> None:
     file_path = tmp_path / "doc.txt"
     _touch(file_path)
 
-    ctx = RunContext()
-    runtime = IndexRuntime(ctx=ctx,
-                           db=db,
-                           indexer_types=[
-                               RootIndexer(),
-                               ChildIndexer(),
-                           ])
+    ctx = RunContext(db)
+    runtime = IndexRuntime(
+        ctx=ctx,
+        db=db,
+        indexer_types=[
+            RootIndexer(),
+            ChildIndexer(),
+        ],
+    )
 
+    root = db.add_root("root", file_path.parent)
     outputs = runtime.run_indexer(
-        runtime.db.as_ref(file_path),
+        runtime.db.as_ref(root, file_path),
         ["root_indexer", "child_indexer"],
     )
     assert outputs["child_indexer"].result.value == "child-value"
@@ -146,7 +149,7 @@ def test_branching_indexers(db: IndexDatabase, tmp_path: Path) -> None:
     path = tmp_path / "branch.txt"
     _touch(path)
 
-    ctx = RunContext()
+    ctx = RunContext(db)
     runtime = IndexRuntime(
         ctx=ctx,
         db=db,
@@ -158,8 +161,9 @@ def test_branching_indexers(db: IndexDatabase, tmp_path: Path) -> None:
         ],
     )
 
+    root = db.add_root("root", tmp_path)
     runtime.run_indexer(
-        runtime.db.as_ref(path),
+        runtime.db.as_ref(root, path),
         [
             "indexer_a",
             "indexer_b",
@@ -210,7 +214,7 @@ def test_indexer_receives_resource(db: IndexDatabase, tmp_path: Path) -> None:
     file_path = tmp_path / "resource.txt"
     _touch(file_path)
 
-    ctx = RunContext()
+    ctx = RunContext(db)
     runtime = IndexRuntime(
         ctx=ctx,
         db=db,
@@ -218,33 +222,17 @@ def test_indexer_receives_resource(db: IndexDatabase, tmp_path: Path) -> None:
         indexer_types=[EchoIndexer()],
     )
 
+    root = db.add_root("root", tmp_path)
     out = runtime.run_indexer(
-        runtime.db.as_ref(file_path),
+        runtime.db.as_ref(root, file_path),
         ["echo_indexer"],
     )["echo_indexer"]
 
     assert out.result.echoed == "ping"
 
 
-def test_converter_consumes_indexer_asset(tmp_path: Path) -> None:
-
-    class StubDB(IndexDatabaseCommon):
-
-        def ensure_collections(self, names) -> None:
-            pass
-
-        def _get_md5(self, path: Path) -> MD5:
-            return MD5(md5=hashlib.md5(path.read_bytes()).hexdigest())
-
-        def as_ref(self, path: Path) -> FileRef:
-            return FileRef(md5=self._get_md5(path), path=path)
-
-        def store_indexer_result(self, ref, indexer_id, result) -> None:
-            pass
-
-        def store_derivation(self, input_files, output_files, config,
-                             return_value):
-            return "key"
+def test_converter_consumes_indexer_asset(tmp_path: Path,
+                                          db: IndexDatabase) -> None:
 
     class DepResult(BaseModel):
         token: str
@@ -283,8 +271,7 @@ def test_converter_consumes_indexer_asset(tmp_path: Path) -> None:
     data_path = tmp_path / "data.txt"
     _touch(data_path)
 
-    db = StubDB()
-    ctx = RunContext()
+    ctx = RunContext(db)
     runtime = IndexRuntime(
         ctx=ctx,
         db=db,
@@ -293,7 +280,8 @@ def test_converter_consumes_indexer_asset(tmp_path: Path) -> None:
         resource_types=[],
     )
 
-    ref = db.as_ref(data_path)
+    root = db.add_root("root", tmp_path)
+    ref = db.as_ref(root, data_path)
 
     indexer_results = runtime.run_indexers([ref], ["dependency_indexer"])
     upstream = indexer_results[ref.md5.md5]

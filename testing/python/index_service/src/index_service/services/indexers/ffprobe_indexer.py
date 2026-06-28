@@ -115,5 +115,5 @@ class FFProbeIndexer(BaseIndexer):
         return IndexerOutput(
             indexer_id=self.asset_name,
             result=FFProbeIndexerResult(
-                probe=run_ffprobe(request.file_ref.path)),
+                probe=run_ffprobe(ctx.get_path(request.file_ref))),
         )
