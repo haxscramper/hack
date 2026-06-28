@@ -16,6 +16,7 @@ from abc import ABC, abstractmethod
 
 from pydantic_core import PydanticSerializationError, to_jsonable_python
 
+from index_service.services.pydantic_utils import model_to_json_data
 from index_service.services.types import MD5, AnyModel, FileRef
 from index_service.services.utils import ExceptionContextNote
 
@@ -118,44 +119,7 @@ class IndexDatabase(IndexDatabaseCommon):
     ) -> None:
         key = ref.md5.md5
         col = self._db.collection(indexer_id)
-
-        def to_json_safe(value: Any) -> Any:
-            match value:
-                case None | bool() | int() | str():
-                    return value
-
-                case bytes():
-                    try:
-                        return value.decode("utf-8")
-                    except UnicodeDecodeError:
-                        return {
-                            "base64_binary":
-                            base64.b64encode(value).decode("ascii"),
-                        }
-
-                case float():
-                    if math.isnan(value) or math.isinf(value):
-                        return None
-                    return value
-
-                case dict():
-                    result = dict()
-                    for k, v in value.items():
-                        with ExceptionContextNote(f"field:{k}"):
-                            result[k] = to_json_safe(v)
-
-                    return result
-
-                case list() | tuple():
-                    return [to_json_safe(v) for v in value]
-
-                case _:
-                    try:
-                        return to_json_safe(to_jsonable_python(value))
-                    except PydanticSerializationError as err:
-                        return str(err)
-
-        result_j = to_json_safe(result.model_dump(mode="python"))
+        result_j = model_to_json_data(result)
         doc = {
             "_key": key,
             "md5": ref.md5.md5,

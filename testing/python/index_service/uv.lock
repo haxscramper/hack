@@ -817,10 +817,12 @@ dependencies = [
     { name = "flax" },
     { name = "huggingface-hub" },
     { name = "jax", extra = ["rocm7-local"] },
+    { name = "msgpack" },
     { name = "numpy" },
     { name = "onnxruntime" },
     { name = "openai" },
     { name = "opencv-python" },
+    { name = "palanteer" },
     { name = "pandas" },
     { name = "pillow" },
     { name = "platformdirs" },
@@ -843,10 +845,12 @@ requires-dist = [
     { name = "flax", specifier = ">=0.12.7" },
     { name = "huggingface-hub", specifier = ">=1.21.0" },
     { name = "jax", extras = ["rocm7-local"], specifier = ">=0.10.2" },
+    { name = "msgpack", specifier = ">=1.2.1" },
     { name = "numpy", specifier = ">=2.5.0" },
     { name = "onnxruntime", specifier = ">=1.27.0" },
     { name = "openai", specifier = ">=2.44.0" },
     { name = "opencv-python", specifier = ">=4.13.0.92" },
+    { name = "palanteer", specifier = ">=0.8.0" },
     { name = "pandas", specifier = ">=3.0.3" },
     { name = "pillow", specifier = ">=12.2.0" },
     { name = "platformdirs", specifier = ">=4.10.0" },
@@ -1805,6 +1809,16 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/d7/f1/e7a6dd94a8d4a5626c03e4e99c87f241ba9e350cd9e6d75123f992427270/packaging-26.2.tar.gz", hash = "sha256:ff452ff5a3e828ce110190feff1178bb1f2ea2281fa2075aadb987c2fb221661", size = 228134, upload-time = "2026-04-24T20:15:23.917Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/df/b2/87e62e8c3e2f4b32e5fe99e0b86d576da1312593b39f47d8ceef365e95ed/packaging-26.2-py3-none-any.whl", hash = "sha256:5fc45236b9446107ff2415ce77c807cee2862cb6fac22b8a73826d0693b0980e", size = 100195, upload-time = "2026-04-24T20:15:22.081Z" },
+]
+
+[[package]]
+name = "palanteer"
+version = "0.8.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/96/3b/0068ffdb46ea7fe261d6397672667c8678bcc4dcaf75d13becb9e4a5a7d5/palanteer-0.8.0.tar.gz", hash = "sha256:abf0a4c78477cd0d04f17b28e726624cdc526571f00a991d7665559e80430a16", size = 80724, upload-time = "2025-03-25T22:25:10.096Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/36/66/cc636ca1f069814c4922a2ea5e60b1c553bb2f03425205bb25b2d5e3239e/palanteer-0.8.0-cp312-cp312-win_amd64.whl", hash = "sha256:4478c210ef2e728053697761388784222e90bf60288ef8282eff23fc5f26d7a9", size = 62481, upload-time = "2025-03-25T22:25:02.719Z" },
+    { url = "https://files.pythonhosted.org/packages/71/c4/c0f370c27b33b4ce57ac8aeace33a96a3a767c14d5104fe5401d38d12ef6/palanteer-0.8.0-cp313-cp313-win_amd64.whl", hash = "sha256:4fdee1697ef901264424a4600ebc84296a89ce56e0653f44d8ea50ff115c6fc9", size = 62482, upload-time = "2025-03-25T22:25:04.064Z" },
 ]
 
 [[package]]

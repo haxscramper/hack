@@ -3,9 +3,13 @@ from pathlib import Path
 
 from beartype import beartype
 from beartype.typing import Annotated
-from pydantic import BaseModel, ConfigDict, Field, PlainValidator
+from pydantic import BaseModel, ConfigDict, Field, PlainValidator, PlainSerializer
 
-AnyModel = Annotated[BaseModel, PlainValidator(lambda v: v)]
+AnyModel = Annotated[
+    BaseModel,
+    PlainValidator(lambda v: v),
+    PlainSerializer(lambda v: v.model_dump(), return_type=dict),
+]
 
 
 @beartype

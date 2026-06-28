@@ -9,23 +9,36 @@ from functools import wraps
 
 from beartype import beartype
 from pydantic import BaseModel
-from viztracer import VizTracer
+import palanteer
+import contextlib
 
+from index_service.services.pydantic_utils import model_from_json_data, model_to_json_data
 from index_service.services.types import (
     ConverterOutput,
     ConverterRequest,
     IndexerOutput,
     IndexerRequest,
 )
-from index_service.services.utils import get_xdg_cache_dir
+from index_service.services.utils import ExceptionContextNote, get_xdg_cache_dir
 
 
 @beartype
 class RunContext():
-    tracer: VizTracer
 
     def __init__(self) -> None:
-        self.tracer = VizTracer(tracer_entries=0)
+        pass
+
+    def start_trace(self, file: str | None):
+        palanteer.plInitAndStart("init", record_filename=file)
+
+    @contextlib.contextmanager
+    def trace_scope(self, message: str):
+        palanteer.plBegin(message)  # type: ignore
+        yield
+        palanteer.plEnd("")  # type: ignore
+
+    def stop_trace(self):
+        palanteer.plStopAndUninit()
 
 
 @beartype
@@ -46,6 +59,7 @@ def cache_indexer_run(func: Callable[P, R]) -> Callable[P, IndexerOutput]:
     @wraps(func)
     def wrapper(
         self: BaseIndexer,
+        ctx: RunContext,
         request: IndexerRequest,
         resources: dict[str, object],
         assets: dict[str, object],
@@ -62,36 +76,43 @@ def cache_indexer_run(func: Callable[P, R]) -> Callable[P, IndexerOutput]:
                     assets=assets,
                 )).encode("utf-8")).hexdigest()
 
-        cache_path = (get_xdg_cache_dir([self.asset_name]) / md5_prefix /
-                      md5_suffix / f"{param_hash}.json")
+        cache_path = get_xdg_cache_dir([
+            "indexer",
+            self.asset_name,
+            md5_prefix,
+            md5_suffix,
+        ]).joinpath(f"{param_hash}.json")
 
         if cache_path.exists() and self.should_load_cache(
                 request=request,
                 resources=resources,
                 assets=assets,
         ):
-            parsed_text = json.loads(cache_path.read_text())
-            assert parsed_text["indexer_id"] == self.asset_name, (
-                f"Failed to de-serialized, parsed text indexer was {parsed_text['indexer_id']}"
+            parsed = model_from_json_data(cache_path.read_bytes(),
+                                          IndexerOutput)
+
+            assert parsed.indexer_id == self.asset_name, (
+                f"Failed to de-serialized, parsed text indexer was {parsed.indexer_id}"
             )
-            result_value = self.result_model.model_validate(
-                parsed_text["result"])
+
+            with ExceptionContextNote(f"loading JSON cache from {cache_path}"):
+                result_value = self.result_model.model_validate(parsed.result)
 
             return IndexerOutput(
                 indexer_id=self.asset_name,
                 result=result_value,
             )
 
-        result = func(self, request, resources, assets)  # type: ignore
-
-        payload = {
-            "indexer_id": result.indexer_id,
-            "result": json.loads(result.result.model_dump_json()),
-        }
+        result = func(
+            self,  # type: ignore
+            ctx=ctx,  # type: ignore
+            request=request,  # type: ignore
+            resources=resources,  # type: ignore
+            assets=assets  # type: ignore
+        )
 
         cache_path.parent.mkdir(parents=True, exist_ok=True)
-        cache_path.write_text(json.dumps(payload, indent=2))
-
+        cache_path.write_text(json.dumps(model_to_json_data(result)))
         return result
 
     return wrapper

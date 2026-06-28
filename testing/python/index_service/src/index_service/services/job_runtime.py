@@ -135,8 +135,8 @@ class IndexRuntime:
                 if name in results[ref.md5.md5]
             }
             request = IndexerRequest(file_ref=ref, dependency_results=deps)
-            out = indexer.run(self.ctx,
-                              request,
+            out = indexer.run(ctx=self.ctx,
+                              request=request,
                               resources=resources,
                               assets=dict(deps))
             return ref, out

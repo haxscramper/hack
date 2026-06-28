@@ -121,7 +121,7 @@ def index(
 
     count = 0
     ctx = RunContext()
-    ctx.tracer.start()
+    ctx.start_trace(perf_trace_file)
 
     runner = IndexRuntime(
         ctx=ctx,
@@ -138,34 +138,34 @@ def index(
     )
 
     def index_file(file: Path):
-        nonlocal count
-        if limit_total and limit_total < count:
-            return
+        with ctx.trace_scope(f"index file {file}"):
+            nonlocal count
+            if limit_total and limit_total < count:
+                return
 
-        count += 1
-        runner.run_indexer(db.as_ref(file), list(indexers))
+            count += 1
+            runner.run_indexer(db.as_ref(file), list(indexers))
 
     def run_indexing():
         for path in paths:
-            if path.is_file():
-                index_file(path)
-            else:
-                count_per_path = 0
-                for file in path.rglob("*"):
-                    if file.is_file():
-                        if limit_per_path and limit_per_path < count_per_path:
-                            continue
+            with ctx.trace_scope(f"index path '{path}'"):
+                if path.is_file():
+                    index_file(path)
+                else:
+                    count_per_path = 0
+                    for file in path.rglob("*"):
+                        if file.is_file():
+                            if limit_per_path and limit_per_path < count_per_path:
+                                continue
 
-                        count_per_path += 1
-                        index_file(file)
+                            count_per_path += 1
+                            index_file(file)
 
     try:
         run_indexing()
 
     finally:
-        ctx.tracer.stop()
-        if perf_trace_file:
-            ctx.tracer.save(perf_trace_file)
+        ctx.stop_trace()
 
 
 @main.command()

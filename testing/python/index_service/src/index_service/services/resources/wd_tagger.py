@@ -102,7 +102,7 @@ class WdTagger(BaseResource):
     def from_huggingface(
         model: str = "vit",
         threshold: float = 0.01,
-        cache_dir: Path | None = get_xdg_cache_dir(["wd_tagger"]),
+        cache_dir: Path | None = get_xdg_cache_dir(["resource", "wd_tagger"]),
     ) -> "WdTagger":
         repo_id = MODEL_REPO_MAP[model]
 

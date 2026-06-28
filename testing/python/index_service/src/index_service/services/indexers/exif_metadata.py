@@ -573,6 +573,11 @@ class ExifMetadataIndexer(BaseIndexer):
     def can_run(self, path: Path) -> bool:
         return path.suffix in [".png", ".jpg", ".webp", ".jpeg"]
 
+    def should_load_cache(self, request: IndexerRequest,
+                          resources: Dict[str, object],
+                          assets: Dict[str, object]) -> bool:
+        return False
+
     @cache_indexer_run
     def run(
         self,
