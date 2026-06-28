@@ -36,7 +36,7 @@ def register_type(
 register_type(
     Path,
     "Path",
-    dump=lambda it: str(Path),
+    dump=lambda it: str(it),
     load=lambda it: Path(it),
 )
 

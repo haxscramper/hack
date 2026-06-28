@@ -103,13 +103,13 @@ def parse_spatial_tags(raw_xml: str, page_num: int) -> list[DocTag]:
                     height=p.bbox.b - p.bbox.t,
                 )
 
-        child_tag = DocTag(
+        nested_tag = DocTag(
             id=f"page{page_num}-{tag_name}-{tag_counter}",
             tag_name=tag_name,
             text=text_content,
             bbox=bbox,
         )
-        root_tag.children.append(child_tag)
+        root_tag.nested.append(nested_tag)
         tag_counter += 1
 
     return [root_tag]

@@ -4,6 +4,7 @@ import hashlib
 from pathlib import Path
 from typing import Any
 
+from beartype.typing import cast
 from pydantic import BaseModel
 from index_service.services.db import IndexDatabase
 from index_service.services.job_types import BaseConverter, BaseIndexer, BaseResource, RunContext
@@ -21,7 +22,7 @@ def test_chain_two_indexers(db: IndexDatabase, tmp_path: Path) -> None:
     class RootModel(BaseModel):
         value: str
 
-    class ChildModel(BaseModel):
+    class NestedModel(BaseModel):
         value: str
 
     class RootIndexer(BaseIndexer):
@@ -41,9 +42,9 @@ def test_chain_two_indexers(db: IndexDatabase, tmp_path: Path) -> None:
                 result=RootModel(value="root-value"),
             )
 
-    class ChildIndexer(BaseIndexer):
-        asset_name = "child_indexer"
-        result_model = ChildModel
+    class NestedIndexer(BaseIndexer):
+        asset_name = "nested_indexer"
+        result_model = NestedModel
         required_assets = ("root_indexer", )
 
         def run(
@@ -53,14 +54,14 @@ def test_chain_two_indexers(db: IndexDatabase, tmp_path: Path) -> None:
             resources,
             assets,
         ) -> IndexerOutput:
-            call_log.append("child")
+            call_log.append("nested")
             assert "root_indexer" in assets
             root_output = assets["root_indexer"]
             assert isinstance(root_output, IndexerOutput)
             assert root_output.result.value == "root-value"
             return IndexerOutput(
                 indexer_id=self.asset_name,
-                result=ChildModel(value="child-value"),
+                result=NestedModel(value="nested-value"),
             )
 
     file_path = tmp_path / "doc.txt"
@@ -72,17 +73,19 @@ def test_chain_two_indexers(db: IndexDatabase, tmp_path: Path) -> None:
         db=db,
         indexer_types=[
             RootIndexer(),
-            ChildIndexer(),
+            NestedIndexer(),
         ],
     )
 
     root = db.add_root("root", file_path.parent)
-    outputs = runtime.run_indexer(
-        runtime.db.as_ref(root, file_path),
-        ["root_indexer", "child_indexer"],
-    )
-    assert outputs["child_indexer"].result.value == "child-value"
-    assert call_log == ["root", "child"]
+    ref = runtime.db.as_ref(root, file_path)
+    runtime.run_indexer(ref, ["root_indexer", "nested_indexer"])
+
+    outputs = runtime.get_indexer_result(ref, "nested_indexer")
+    assert isinstance(outputs.result, NestedModel)
+
+    assert outputs.result.value == "nested-value"
+    assert call_log == ["root", "nested"]
 
 
 def test_branching_indexers(db: IndexDatabase, tmp_path: Path) -> None:
@@ -223,11 +226,11 @@ def test_indexer_receives_resource(db: IndexDatabase, tmp_path: Path) -> None:
     )
 
     root = db.add_root("root", tmp_path)
-    out = runtime.run_indexer(
-        runtime.db.as_ref(root, file_path),
-        ["echo_indexer"],
-    )["echo_indexer"]
+    ref = runtime.db.as_ref(root, file_path)
+    runtime.run_indexer(ref, ["echo_indexer"])
+    out = runtime.get_indexer_result(ref, "echo_indexer")
 
+    assert isinstance(out.result, EchoModel)
     assert out.result.echoed == "ping"
 
 
@@ -284,14 +287,15 @@ def test_converter_consumes_indexer_asset(tmp_path: Path,
     ref = db.as_ref(root, data_path)
 
     indexer_results = runtime.run_indexers([ref], ["dependency_indexer"])
-    upstream = indexer_results[ref.md5.md5]
-    assert upstream["dependency_indexer"].result.token == "indexed"
+    assert runtime.db.has_indexer_result(ref, "dependency_indexer")
+    upstream = runtime.get_indexer_result(ref.md5, "dependency_indexer")
+    assert upstream.result.token == "indexed"
 
     conv_output = runtime.run_converter(
         "dependent_converter",
         [ref],
         param="ok",
-        assets=upstream,
+        assets=dict(dependency_indexer=upstream),
     )
 
     assert conv_output.return_value.payload == "indexed:ok"

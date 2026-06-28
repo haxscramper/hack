@@ -8,6 +8,7 @@ from beartype.typing import overload
 from index_service.services.db import IndexDatabase
 from index_service.services.job_types import BaseConverter, BaseIndexer, BaseResource, RunContext
 from index_service.services.types import (
+    MD5,
     ConverterOutput,
     ConverterRequest,
     FileRef,
@@ -79,21 +80,13 @@ class IndexRuntime:
     def truncate_all(self) -> None:
         self.db.truncate_all(list(self._indexer_instances.keys()))
 
-    def run_indexers(
-        self,
-        files: list[FileRef],
-        names: list[str],
-    ) -> dict[str, dict[str, IndexerOutput]]:
+    def run_indexers(self, files: list[FileRef], names: list[str]) -> None:
         """Run the requested indexers (plus their dependencies) over all files.
 
         Execution is batched per indexer type, in dependency order: every file
         passes through one indexer before the next indexer starts. Returns a
         mapping md5 -> {indexer_id: IndexerOutput}.
         """
-        results: dict[str, dict[str, IndexerOutput]] = {
-            f.md5.md5: {}
-            for f in files
-        }
         requested = self._expand_requested(names)
         order = [n for n in self._indexer_order if n in requested]
 
@@ -102,19 +95,26 @@ class IndexRuntime:
             targets = [
                 f for f in files if indexer.can_run(self.db.get_path(f))
             ]
-            self._run_indexer_stage(indexer, targets, results)
+            self._run_indexer_stage(indexer, targets)
 
-        return results
+    def get_indexer_result(self, md5: MD5 | FileRef,
+                           name: str) -> IndexerOutput:
+        return IndexerOutput(
+            indexer_id=name,
+            result=self.db.get_indexer_result_type(  # type: ignore
+                md5 if isinstance(md5, MD5) else md5.md5,
+                name,
+                self._indexer_instances[name].result_model,
+            ),
+        )
 
-    def run_indexer(self, file: FileRef,
-                    names: list[str]) -> dict[str, IndexerOutput]:
-        return self.run_indexers([file], names)[file.md5.md5]
+    def run_indexer(self, file: FileRef, names: list[str]):
+        self.run_indexers([file], names)
 
     def _run_indexer_stage(
         self,
         indexer: BaseIndexer,
         targets: list[FileRef],
-        results: dict[str, dict[str, IndexerOutput]],
     ) -> None:
         to_run: list[FileRef] = []
         for ref in targets:
@@ -132,20 +132,24 @@ class IndexRuntime:
         }
 
         def work(ref: FileRef) -> tuple[FileRef, IndexerOutput]:
-            deps = {
-                name: results[ref.md5.md5][name]
-                for name in indexer.required_assets
-                if name in results[ref.md5.md5]
-            }
-            request = IndexerRequest(file_ref=ref, dependency_results=deps)
+            assets: dict[str, IndexerOutput | None] = dict()
+            for name in indexer.required_assets:
+                log.info(f"{name}")
+                if self.db.has_indexer_result(ref, name):
+                    assets[name] = self.get_indexer_result(ref.md5, name)
+                else:
+                    assets[name] = None
+
+            request = IndexerRequest(file_ref=ref, dependency_results=assets)
 
             with ExceptionContextNote(
-                    f"running indexer for '{self.db.get_path(ref)}'"):
+                    f"running indexer '{indexer.asset_name}' for '{self.db.get_path(ref)} {ref.md5}'"
+            ), self.ctx.trace_scope("index", file=str(self.db.get_path(ref))):
                 out = indexer.run(
                     ctx=self.ctx,
                     request=request,
-                    resources=resources,
-                    assets=dict(deps),
+                    resources=resources,  # type: ignore
+                    assets=assets,  # type: ignore
                 )
 
             return ref, out
@@ -159,9 +163,11 @@ class IndexRuntime:
 
         for ref, out in completed:
             with ExceptionContextNote(f"indexer asset: {indexer.asset_name}"):
-                self.db.store_indexer_result(ref, indexer.asset_name,
-                                             out.result)
-            results[ref.md5.md5][indexer.asset_name] = out
+                self.db.store_indexer_result(
+                    ref,
+                    indexer.asset_name,
+                    out.result,
+                )
 
     @overload
     def run_converter(

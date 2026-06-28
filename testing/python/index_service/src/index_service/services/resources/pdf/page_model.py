@@ -18,16 +18,9 @@ class DocTag(BaseModel):
     attributes: Dict[str, Any] = Field(default_factory=dict)
 
     # Tree Structure
-    children: List['DocTag'] = Field(default_factory=list)
+    nested: List['DocTag'] = Field(default_factory=list)
 
     # User Annotations (GUI overrides)
     user_removed: bool = False
     user_edited_text: Optional[str] = None
     user_tag_override: Optional[str] = None
-
-
-class PageData(BaseModel):
-    page_number: int
-    raw_docling_response: str
-    spatial_tags: List[DocTag] = Field(default_factory=list)
-    image_cache_path: str

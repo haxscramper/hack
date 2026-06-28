@@ -112,7 +112,7 @@ def _collect_block_attributes(block: dict) -> dict[str, Any]:
     return attrs
 
 
-def _attach_table_children(
+def _attach_table_nested(
     table_tag: DocTag,
     block: dict,
     page_num: int,
@@ -124,7 +124,7 @@ def _attach_table_children(
     if not isinstance(rows, list):
         return
 
-    child_counter = 1
+    nested_counter = 1
     for row in rows:
         if not isinstance(row, list):
             continue
@@ -142,35 +142,35 @@ def _attach_table_children(
             continue
 
         row_tag = DocTag(
-            id=f"page{page_num}-table-{parent_counter}-row-{child_counter}",
+            id=f"page{page_num}-table-{parent_counter}-row-{nested_counter}",
             tag_name="text",
             text=row_text,
             bbox=None,
         )
-        table_tag.children.append(row_tag)
-        child_counter += 1
+        table_tag.nested.append(row_tag)
+        nested_counter += 1
 
 
 def _extend_parent_bbox(parent: DocTag,
-                        child_bbox: BoundingBox | None) -> None:
-    if child_bbox is None:
+                        nested_bbox: BoundingBox | None) -> None:
+    if nested_bbox is None:
         return
 
     if parent.bbox is None:
         parent.bbox = BoundingBox(
-            x=child_bbox.x,
-            y=child_bbox.y,
-            width=child_bbox.width,
-            height=child_bbox.height,
+            x=nested_bbox.x,
+            y=nested_bbox.y,
+            width=nested_bbox.width,
+            height=nested_bbox.height,
         )
         return
 
-    x0 = min(parent.bbox.x, child_bbox.x)
-    y0 = min(parent.bbox.y, child_bbox.y)
+    x0 = min(parent.bbox.x, nested_bbox.x)
+    y0 = min(parent.bbox.y, nested_bbox.y)
     x1 = max(parent.bbox.x + parent.bbox.width,
-             child_bbox.x + child_bbox.width)
+             nested_bbox.x + nested_bbox.width)
     y1 = max(parent.bbox.y + parent.bbox.height,
-             child_bbox.y + child_bbox.height)
+             nested_bbox.y + nested_bbox.height)
 
     parent.bbox = BoundingBox(
         x=x0,
@@ -408,7 +408,7 @@ def _populate_tags_from_page_chunk(root_tag: DocTag, page_chunk: dict,
                         text="",
                         bbox=bbox,
                     )
-                    root_tag.children.append(current_list_tag)
+                    root_tag.nested.append(current_list_tag)
                     tag_counter += 1
 
                 item_tag = DocTag(
@@ -418,14 +418,14 @@ def _populate_tags_from_page_chunk(root_tag: DocTag, page_chunk: dict,
                     bbox=bbox,
                     attributes=_collect_block_attributes(block),
                 )
-                current_list_tag.children.append(item_tag)
+                current_list_tag.nested.append(item_tag)
                 _extend_parent_bbox(current_list_tag, bbox)
                 tag_counter += 1
                 continue
 
             current_list_tag = None
 
-            child_tag = DocTag(
+            nested_tag = DocTag(
                 id=f"page{page_num}-{tag_name}-{tag_counter}",
                 tag_name=tag_name,
                 text=text,
@@ -434,8 +434,8 @@ def _populate_tags_from_page_chunk(root_tag: DocTag, page_chunk: dict,
             )
 
             if tag_name == "table":
-                _attach_table_children(
-                    child_tag,
+                _attach_table_nested(
+                    nested_tag,
                     block,
                     page_num,
                     tag_counter,
@@ -443,7 +443,7 @@ def _populate_tags_from_page_chunk(root_tag: DocTag, page_chunk: dict,
                     page_height,
                 )
 
-            root_tag.children.append(child_tag)
+            root_tag.nested.append(nested_tag)
             tag_counter += 1
         return
 
@@ -471,7 +471,7 @@ def _populate_tags_from_page_chunk(root_tag: DocTag, page_chunk: dict,
                         text="",
                         bbox=bbox,
                     )
-                    root_tag.children.append(current_list_tag)
+                    root_tag.nested.append(current_list_tag)
                     tag_counter += 1
 
                 item_tag = DocTag(
@@ -481,27 +481,27 @@ def _populate_tags_from_page_chunk(root_tag: DocTag, page_chunk: dict,
                     bbox=bbox,
                     attributes=attrs,
                 )
-                current_list_tag.children.append(item_tag)
+                current_list_tag.nested.append(item_tag)
                 _extend_parent_bbox(current_list_tag, bbox)
                 tag_counter += 1
                 continue
 
             current_list_tag = None
 
-            child_tag = DocTag(
+            nested_tag = DocTag(
                 id=f"page{page_num}-{tag_name}-{tag_counter}",
                 tag_name=tag_name,
                 text=text,
                 bbox=bbox,
                 attributes=attrs,
             )
-            root_tag.children.append(child_tag)
+            root_tag.nested.append(nested_tag)
             tag_counter += 1
         return
 
     text = page_chunk.get("text", "")
     if text.strip():
-        root_tag.children.append(
+        root_tag.nested.append(
             DocTag(
                 id=f"page{page_num}-text-{tag_counter}",
                 tag_name="text",

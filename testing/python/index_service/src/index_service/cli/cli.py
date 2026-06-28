@@ -15,6 +15,7 @@ import warnings
 import traceback
 
 from index_service.services.indexers.ffprobe_indexer import FFProbeIndexer
+from index_service.services.indexers.image_generation import GenerationParamsIndexer
 from index_service.services.indexers.pdf_indexer import PdfIndexer
 from index_service.services.indexers.safetensor_indexer import SafetensorIndexer
 from index_service.services.indexers.wd_indexer import WdTagIndexer
@@ -137,6 +138,7 @@ def index(
                 PdfIndexer(),
                 FFProbeIndexer(),
                 SafetensorIndexer(),
+                GenerationParamsIndexer(),
             ],
             resource_types=[t() for t in DEFAULT_RESOURCE_TYPES] + [
                 WdTagger.from_huggingface(),
@@ -204,6 +206,7 @@ def view(host: str, db_name: str, username: str, password: str) -> None:
             WdTagIndexer.asset_name,
             PdfIndexer.asset_name,
             SafetensorIndexer.asset_name,
+            GenerationParamsIndexer.asset_name,
         ],
         builders=[
             ComfyInputWidgetBuilder(),

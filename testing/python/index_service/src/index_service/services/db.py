@@ -61,10 +61,19 @@ class IndexDatabase:
             self.roots[row["_key"]] = Path(row["path"])
 
     def add_root(self, name: str, root: Path) -> RootRef:
-        assert name not in self.roots, f"Duplicate root name {name}"
-        self.roots[name] = root
+        assert name not in self.roots or self.roots[
+            name] == root, f"Duplicate root name {name} with a different path, stored {self.roots[name]}, trying to set {root}"
+
         db_roots = self._db.collection("roots")
-        db_roots.insert({"_key": name, "path": str(root)})
+        if name in self.roots:
+            assert db_roots.has(
+                name
+            ), f"logical error, roots cache is populated, but the DB does not have the value for {name}"
+
+        else:
+            self.roots[name] = root
+            db_roots.insert({"_key": name, "path": str(root)})
+
         return RootRef(name=name)
 
     def get_root(self, name: RootRef) -> Path:

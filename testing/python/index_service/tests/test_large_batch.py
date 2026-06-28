@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from index_service.services.db import IndexDatabase
+from index_service.services.indexers.full_text import FullTextIndexerResult
 from index_service.services.types import FileRef
 from index_service.services.job_runtime import IndexRuntime
 
@@ -14,7 +15,7 @@ def test_large_batch_indexing(db: IndexDatabase, tmp_path: Path,
         path.write_text(f"document {idx}\nalpha beta\n")
         ref = db.as_ref(root, path)
 
-        outputs = runtime.run_indexer(
+        runtime.run_indexer(
             ref,
             [
                 "file_size",
@@ -24,12 +25,12 @@ def test_large_batch_indexing(db: IndexDatabase, tmp_path: Path,
                 "file_embedding",
             ],
         )
-        for out in outputs.values():
-            db.store_indexer_result(ref, out.indexer_id, out.result)
 
-    record = db.get_indexer_result(
-        db.as_ref(root, tmp_path.joinpath("doc_0.txt")).md5,
+    record = runtime.get_indexer_result(
+        db.as_ref(root, tmp_path.joinpath("doc_0.txt")),
         "full_text",
     )
 
-    assert "alpha beta" in record.result["text"]
+    assert isinstance(record.result, FullTextIndexerResult)
+
+    assert "alpha beta" in record.result.text

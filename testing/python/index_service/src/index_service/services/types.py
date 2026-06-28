@@ -53,7 +53,8 @@ class ConverterOutput(BaseModel, extra="forbid"):
 @beartype
 class IndexerRequest(BaseModel, extra="forbid"):
     file_ref: FileRef
-    dependency_results: dict[str, IndexerOutput] = Field(default_factory=dict)
+    dependency_results: dict[str, IndexerOutput
+                             | None] = Field(default_factory=dict)
 
 
 @beartype

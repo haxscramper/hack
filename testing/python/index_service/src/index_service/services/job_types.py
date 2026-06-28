@@ -65,6 +65,7 @@ class RunContext():
 
     def __init__(self, db: IndexDatabase) -> None:
         self._db = db
+        self.writer = None
 
     def get_path(self, ref: FileRef) -> Path:
         return self._db.get_path(ref)
@@ -74,12 +75,16 @@ class RunContext():
 
     @contextlib.contextmanager
     def trace_scope(self, message: str, **args):
-        self.writer.begin(message, **args)
-        try:
-            yield
+        if self.writer:
+            self.writer.begin(message, **args)
+            try:
+                yield
 
-        finally:
-            self.writer.end(message)
+            finally:
+                self.writer.end(message)
+
+        else:
+            yield
 
 
 @beartype
@@ -158,7 +163,11 @@ def cache_indexer_run(func: Callable[P, R]) -> Callable[P, IndexerOutput]:
         )
 
         cache_path.parent.mkdir(parents=True, exist_ok=True)
-        cache_path.write_text(json.dumps(model_to_json_data(result)))
+        cache_path.write_text(
+            json.dumps(
+                model_to_json_data(result),
+                indent=2,
+            ))
         return result
 
     return wrapper

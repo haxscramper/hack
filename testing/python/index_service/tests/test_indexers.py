@@ -44,10 +44,9 @@ def sample_files(tmp_path: Path) -> list[Path]:
 
 def test_file_size_indexer(runtime: IndexRuntime, sample_file: Path) -> None:
     root = runtime.db.add_root("main", sample_file.parent)
-    out = runtime.run_indexer(
-        runtime.db.as_ref(root, sample_file),
-        ["file_size"],
-    )["file_size"]
+    ref = runtime.db.as_ref(root, sample_file)
+    runtime.run_indexer(ref, ["file_size"])
+    out = runtime.get_indexer_result(ref.md5, "file_size")
 
     assert out.indexer_id == "file_size"
     assert cast(FileSizeIndexerResult,
@@ -56,10 +55,9 @@ def test_file_size_indexer(runtime: IndexRuntime, sample_file: Path) -> None:
 
 def test_file_stats_indexer(runtime: IndexRuntime, sample_file: Path) -> None:
     root = runtime.db.add_root("root", sample_file)
-    out = runtime.run_indexer(
-        runtime.db.as_ref(root, sample_file),
-        ["file_stats"],
-    )["file_stats"]
+    ref = runtime.db.as_ref(root, sample_file)
+    runtime.run_indexer(ref, ["file_stats"])
+    out = runtime.get_indexer_result(ref.md5, "file_stats")
 
     assert out.indexer_id == "file_stats"
     assert cast(FileStatsIndexerResult,
@@ -71,10 +69,9 @@ def test_file_stats_indexer(runtime: IndexRuntime, sample_file: Path) -> None:
 def test_full_text_indexer_with_reverser(runtime: IndexRuntime,
                                          sample_file: Path) -> None:
     root = runtime.db.add_root("root", sample_file.parent)
-    out = runtime.run_indexer(
-        runtime.db.as_ref(root, sample_file),
-        ["full_text"],
-    )["full_text"]
+    ref = runtime.db.as_ref(root, sample_file)
+    runtime.run_indexer(ref, ["full_text"])
+    out = runtime.get_indexer_result(ref, "full_text")
 
     text = sample_file.read_text()
     assert out.result.text == text
@@ -153,8 +150,9 @@ def test_file_summary_indexer_with_flm(
         "root", Path(os.path.commonpath(str(s) for s in sample_files)))
 
     for path in sample_files:
-        out = runtime.run_indexer(runtime.db.as_ref(root, path),
-                                  ["file_summary"])["file_summary"]
+        ref = runtime.db.as_ref(root, path)
+        runtime.run_indexer(ref, ["file_summary"])
+        out = runtime.get_indexer_result(ref, "file_summary")
 
         summary = out.result.summary.summary
         assert summary.strip() != ""
