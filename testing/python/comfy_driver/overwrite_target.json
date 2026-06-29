@@ -1,0 +1,1105 @@
+{
+  "id"          : "add1b828-b56a-4a84-bc3d-78f4121d95a4",
+  "revision"    : 0,
+  "last_node_id": 68,
+  "last_link_id": 113,
+  "nodes"       : [
+    {
+      "id"            : 44,
+      "type"          : "JSONParserNode",
+      "pos"           : [-330, 680],
+      "size"          : [210, 132],
+      "flags"         : {"collapsed": true},
+      "order"         : 5,
+      "mode"          : 0,
+      "inputs"        : [
+        {
+          "localized_name": "json_string",
+          "name"          : "json_string",
+          "type"          : "STRING",
+          "widget"        : {"name": "json_string"},
+          "link"          : 85
+        },
+        {
+          "localized_name": "path",
+          "name"          : "path",
+          "type"          : "STRING",
+          "widget"        : {"name": "path"},
+          "link"          : null
+        }
+      ],
+      "outputs"       : [
+        {
+          "localized_name": "parsed_data",
+          "name"          : "parsed_data",
+          "type"          : "STRING",
+          "links"         : [83]
+        },
+        {
+          "localized_name": "array_size",
+          "name"          : "array_size",
+          "type"          : "INT",
+          "links"         : null
+        }
+      ],
+      "properties"    : {
+        "cnr_id"           : "comfyui-simple-json-node",
+        "ver"              : "7fd5864c1dcb16f3da267aea829ca32abff68b96",
+        "Node name for S&R": "JSONParserNode",
+        "aux_id"           : "Q-Bug4/Comfyui-Simple-Json-Node"
+      },
+      "widgets_values": ["", "width"]
+    },
+    {
+      "id"            : 45,
+      "type"          : "ComfyNumberConvert",
+      "pos"           : [-130, 680],
+      "size"          : [140, 46],
+      "flags"         : {"collapsed": true},
+      "order"         : 12,
+      "mode"          : 0,
+      "inputs"        : [
+        {
+          "label"         : "value",
+          "localized_name": "value",
+          "name"          : "value",
+          "type"          : "INT,FLOAT,STRING,BOOLEAN",
+          "link"          : 83
+        }
+      ],
+      "outputs"       : [
+        { "localized_name": "FLOAT", "name": "FLOAT", "type": "FLOAT", "links": null },
+        { "localized_name": "INT",   "name": "INT",   "type": "INT",   "links": [84] }
+      ],
+      "properties"    : {
+        "cnr_id"           : "comfy-core",
+        "ver"              : "0.26.0",
+        "Node name for S&R": "ComfyNumberConvert"
+      },
+      "widgets_values": []
+    },
+    {
+      "id"            : 47,
+      "type"          : "ComfyNumberConvert",
+      "pos"           : [-130, 740],
+      "size"          : [140, 46],
+      "flags"         : {"collapsed": true},
+      "order"         : 13,
+      "mode"          : 0,
+      "inputs"        : [
+        {
+          "label"         : "value",
+          "localized_name": "value",
+          "name"          : "value",
+          "type"          : "INT,FLOAT,STRING,BOOLEAN",
+          "link"          : 87
+        }
+      ],
+      "outputs"       : [
+        { "localized_name": "FLOAT", "name": "FLOAT", "type": "FLOAT", "links": null },
+        { "localized_name": "INT",   "name": "INT",   "type": "INT",   "links": [88] }
+      ],
+      "properties"    : {
+        "cnr_id"           : "comfy-core",
+        "ver"              : "0.26.0",
+        "Node name for S&R": "ComfyNumberConvert"
+      },
+      "widgets_values": []
+    },
+    {
+      "id"            : 62,
+      "type"          : "JSONParserNode",
+      "pos"           : [-730, 260],
+      "size"          : [210, 132],
+      "flags"         : {},
+      "order"         : 9,
+      "mode"          : 0,
+      "inputs"        : [
+        {
+          "localized_name": "json_string",
+          "name"          : "json_string",
+          "type"          : "STRING",
+          "widget"        : {"name": "json_string"},
+          "link"          : 103
+        },
+        {
+          "localized_name": "path",
+          "name"          : "path",
+          "type"          : "STRING",
+          "widget"        : {"name": "path"},
+          "link"          : null
+        }
+      ],
+      "outputs"       : [
+        {
+          "localized_name": "parsed_data",
+          "name"          : "parsed_data",
+          "type"          : "STRING",
+          "links"         : [105, 106]
+        },
+        {
+          "localized_name": "array_size",
+          "name"          : "array_size",
+          "type"          : "INT",
+          "links"         : null
+        }
+      ],
+      "properties"    : {
+        "cnr_id"           : "comfyui-simple-json-node",
+        "ver"              : "7fd5864c1dcb16f3da267aea829ca32abff68b96",
+        "Node name for S&R": "JSONParserNode"
+      },
+      "widgets_values": ["", "loras"]
+    },
+    {
+      "id"            : 63,
+      "type"          : "ConsoleDebug+",
+      "pos"           : [-490, 260],
+      "size"          : [270, 58],
+      "flags"         : {},
+      "order"         : 16,
+      "mode"          : 0,
+      "inputs"        : [
+        {"localized_name": "value", "name": "value", "type": "*", "link": 105},
+        {
+          "localized_name": "prefix",
+          "name"          : "prefix",
+          "shape"         : 7,
+          "type"          : "STRING",
+          "widget"        : {"name": "prefix"},
+          "link"          : null
+        }
+      ],
+      "outputs"       : [],
+      "properties"    : {
+        "cnr_id"           : "comfyui_essentials",
+        "ver"              : "9d9f4bedfc9f0321c19faf71855e228c93bd0dc9",
+        "Node name for S&R": "ConsoleDebug+"
+      },
+      "widgets_values": ["Value:"]
+    },
+    {
+      "id"            : 61,
+      "type"          : "ApplyLorasFromJson",
+      "pos"           : [-490, 0],
+      "size"          : [400, 204],
+      "flags"         : {},
+      "order"         : 18,
+      "mode"          : 0,
+      "inputs"        : [
+        {"localized_name": "model", "name": "model", "type": "MODEL", "link": 112},
+        {
+          "localized_name": "clip",
+          "name"          : "clip",
+          "shape"         : 7,
+          "type"          : "CLIP",
+          "link"          : 113
+        },
+        {
+          "localized_name": "json_text",
+          "name"          : "json_text",
+          "type"          : "STRING",
+          "widget"        : {"name": "json_text"},
+          "link"          : 106
+        },
+        {
+          "localized_name": "lora_name_field",
+          "name"          : "lora_name_field",
+          "type"          : "STRING",
+          "widget"        : {"name": "lora_name_field"},
+          "link"          : null
+        },
+        {
+          "localized_name": "model_weight_field",
+          "name"          : "model_weight_field",
+          "type"          : "STRING",
+          "widget"        : {"name": "model_weight_field"},
+          "link"          : null
+        },
+        {
+          "localized_name": "clip_weight_field",
+          "name"          : "clip_weight_field",
+          "type"          : "STRING",
+          "widget"        : {"name": "clip_weight_field"},
+          "link"          : null
+        }
+      ],
+      "outputs"       : [
+        { "localized_name": "MODEL", "name": "MODEL", "type": "MODEL", "links": [101] },
+        { "localized_name": "CLIP", "name": "CLIP", "type": "CLIP", "links": [99, 100] }
+      ],
+      "properties"    : {"Node name for S&R": "ApplyLorasFromJson"},
+      "widgets_values": ["", "model", "weight", "weight"]
+    },
+    {
+      "id"            : 49,
+      "type"          : "ComfyNumberConvert",
+      "pos"           : [-130, 560],
+      "size"          : [140, 46],
+      "flags"         : {"collapsed": true},
+      "order"         : 14,
+      "mode"          : 0,
+      "inputs"        : [
+        {
+          "label"         : "value",
+          "localized_name": "value",
+          "name"          : "value",
+          "type"          : "INT,FLOAT,STRING,BOOLEAN",
+          "link"          : 90
+        }
+      ],
+      "outputs"       : [
+        { "localized_name": "FLOAT", "name": "FLOAT", "type": "FLOAT", "links": null },
+        { "localized_name": "INT",   "name": "INT",   "type": "INT",   "links": [91] }
+      ],
+      "properties"    : {
+        "cnr_id"           : "comfy-core",
+        "ver"              : "0.26.0",
+        "Node name for S&R": "ComfyNumberConvert"
+      },
+      "widgets_values": []
+    },
+    {
+      "id"            : 53,
+      "type"          : "JSONParserNode",
+      "pos"           : [-330, 620],
+      "size"          : [210, 132],
+      "flags"         : {"collapsed": true},
+      "order"         : 8,
+      "mode"          : 0,
+      "inputs"        : [
+        {
+          "localized_name": "json_string",
+          "name"          : "json_string",
+          "type"          : "STRING",
+          "widget"        : {"name": "json_string"},
+          "link"          : 94
+        },
+        {
+          "localized_name": "path",
+          "name"          : "path",
+          "type"          : "STRING",
+          "widget"        : {"name": "path"},
+          "link"          : null
+        }
+      ],
+      "outputs"       : [
+        {
+          "localized_name": "parsed_data",
+          "name"          : "parsed_data",
+          "type"          : "STRING",
+          "links"         : [95]
+        },
+        {
+          "localized_name": "array_size",
+          "name"          : "array_size",
+          "type"          : "INT",
+          "links"         : null
+        }
+      ],
+      "properties"    : {
+        "cnr_id"           : "comfyui-simple-json-node",
+        "ver"              : "7fd5864c1dcb16f3da267aea829ca32abff68b96",
+        "Node name for S&R": "JSONParserNode",
+        "aux_id"           : "Q-Bug4/Comfyui-Simple-Json-Node"
+      },
+      "widgets_values": ["", "cfg"]
+    },
+    {
+      "id"            : 54,
+      "type"          : "ComfyNumberConvert",
+      "pos"           : [-130, 620],
+      "size"          : [140, 46],
+      "flags"         : {"collapsed": true},
+      "order"         : 15,
+      "mode"          : 0,
+      "inputs"        : [
+        {
+          "label"         : "value",
+          "localized_name": "value",
+          "name"          : "value",
+          "type"          : "INT,FLOAT,STRING,BOOLEAN",
+          "link"          : 95
+        }
+      ],
+      "outputs"       : [
+        { "localized_name": "FLOAT", "name": "FLOAT", "type": "FLOAT", "links": [96] },
+        { "localized_name": "INT",   "name": "INT",   "type": "INT",   "links": null }
+      ],
+      "properties"    : {
+        "cnr_id"           : "comfy-core",
+        "ver"              : "0.26.0",
+        "Node name for S&R": "ComfyNumberConvert"
+      },
+      "widgets_values": []
+    },
+    {
+      "id"            : 48,
+      "type"          : "JSONParserNode",
+      "pos"           : [-330, 560],
+      "size"          : [210, 132],
+      "flags"         : {"collapsed": true},
+      "order"         : 7,
+      "mode"          : 0,
+      "inputs"        : [
+        {
+          "localized_name": "json_string",
+          "name"          : "json_string",
+          "type"          : "STRING",
+          "widget"        : {"name": "json_string"},
+          "link"          : 89
+        },
+        {
+          "localized_name": "path",
+          "name"          : "path",
+          "type"          : "STRING",
+          "widget"        : {"name": "path"},
+          "link"          : null
+        }
+      ],
+      "outputs"       : [
+        {
+          "localized_name": "parsed_data",
+          "name"          : "parsed_data",
+          "type"          : "STRING",
+          "links"         : [90]
+        },
+        {
+          "localized_name": "array_size",
+          "name"          : "array_size",
+          "type"          : "INT",
+          "links"         : null
+        }
+      ],
+      "properties"    : {
+        "cnr_id"           : "comfyui-simple-json-node",
+        "ver"              : "7fd5864c1dcb16f3da267aea829ca32abff68b96",
+        "Node name for S&R": "JSONParserNode",
+        "aux_id"           : "Q-Bug4/Comfyui-Simple-Json-Node"
+      },
+      "widgets_values": ["", "steps"]
+    },
+    {
+      "id"            : 43,
+      "type"          : "JSONParserNode",
+      "pos"           : [-330, 500],
+      "size"          : [210, 132],
+      "flags"         : {"collapsed": true},
+      "order"         : 4,
+      "mode"          : 0,
+      "inputs"        : [
+        {
+          "localized_name": "json_string",
+          "name"          : "json_string",
+          "type"          : "STRING",
+          "widget"        : {"name": "json_string"},
+          "link"          : 82
+        },
+        {
+          "localized_name": "path",
+          "name"          : "path",
+          "type"          : "STRING",
+          "widget"        : {"name": "path"},
+          "link"          : null
+        }
+      ],
+      "outputs"       : [
+        {
+          "localized_name": "parsed_data",
+          "name"          : "parsed_data",
+          "type"          : "STRING",
+          "links"         : [81]
+        },
+        {
+          "localized_name": "array_size",
+          "name"          : "array_size",
+          "type"          : "INT",
+          "links"         : null
+        }
+      ],
+      "properties"    : {
+        "cnr_id"           : "comfyui-simple-json-node",
+        "ver"              : "7fd5864c1dcb16f3da267aea829ca32abff68b96",
+        "Node name for S&R": "JSONParserNode",
+        "aux_id"           : "Q-Bug4/Comfyui-Simple-Json-Node"
+      },
+      "widgets_values": ["", "negative"]
+    },
+    {
+      "id"            : 42,
+      "type"          : "JSONParserNode",
+      "pos"           : [-330, 440],
+      "size"          : [210, 132],
+      "flags"         : {"collapsed": true},
+      "order"         : 3,
+      "mode"          : 0,
+      "inputs"        : [
+        {
+          "localized_name": "json_string",
+          "name"          : "json_string",
+          "type"          : "STRING",
+          "widget"        : {"name": "json_string"},
+          "link"          : 72
+        },
+        {
+          "localized_name": "path",
+          "name"          : "path",
+          "type"          : "STRING",
+          "widget"        : {"name": "path"},
+          "link"          : null
+        }
+      ],
+      "outputs"       : [
+        {
+          "localized_name": "parsed_data",
+          "name"          : "parsed_data",
+          "type"          : "STRING",
+          "links"         : [80]
+        },
+        {
+          "localized_name": "array_size",
+          "name"          : "array_size",
+          "type"          : "INT",
+          "links"         : null
+        }
+      ],
+      "properties"    : {
+        "cnr_id"           : "comfyui-simple-json-node",
+        "ver"              : "7fd5864c1dcb16f3da267aea829ca32abff68b96",
+        "Node name for S&R": "JSONParserNode",
+        "aux_id"           : "Q-Bug4/Comfyui-Simple-Json-Node"
+      },
+      "widgets_values": ["", "positive"]
+    },
+    {
+      "id"            : 10,
+      "type"          : "CLIPTextEncode",
+      "pos"           : [30, 500],
+      "size"          : [616.415630919048, 144.39707273785416],
+      "flags"         : {"collapsed": true},
+      "order"         : 21,
+      "mode"          : 0,
+      "inputs"        : [
+        {"localized_name": "clip", "name": "clip", "type": "CLIP", "link": 100},
+        {
+          "localized_name": "text",
+          "name"          : "text",
+          "type"          : "STRING",
+          "widget"        : {"name": "text"},
+          "link"          : 81
+        }
+      ],
+      "outputs"       : [
+        {
+          "localized_name": "CONDITIONING",
+          "name"          : "CONDITIONING",
+          "type"          : "CONDITIONING",
+          "links"         : [5]
+        }
+      ],
+      "title"         : "CLIP Text Encode (Negative Prompt)",
+      "properties"    : {
+        "cnr_id"           : "comfy-core",
+        "ver"              : "0.3.65",
+        "Node name for S&R": "CLIPTextEncode",
+        "enableTabs"       : false,
+        "tabWidth"         : 65,
+        "tabXOffset"       : 10,
+        "hasSecondTab"     : false,
+        "secondTabText"    : "Send Back",
+        "secondTabOffset"  : 80,
+        "secondTabWidth"   : 65
+      },
+      "widgets_values": [
+        "<negative prompt value>"
+      ],
+      "color"         : "#223",
+      "bgcolor"       : "#335"
+    },
+    {
+      "id"            : 14,
+      "type"          : "CLIPTextEncode",
+      "pos"           : [30.77948683999996, 443.1794901500004],
+      "size"          : [277.9, 88],
+      "flags"         : {"collapsed": true},
+      "order"         : 20,
+      "mode"          : 0,
+      "inputs"        : [
+        {"localized_name": "clip", "name": "clip", "type": "CLIP", "link": 99},
+        {
+          "localized_name": "text",
+          "name"          : "text",
+          "type"          : "STRING",
+          "widget"        : {"name": "text"},
+          "link"          : 80
+        }
+      ],
+      "outputs"       : [
+        {
+          "localized_name": "CONDITIONING",
+          "name"          : "CONDITIONING",
+          "type"          : "CONDITIONING",
+          "links"         : [4]
+        }
+      ],
+      "title"         : "CLIP Text Encode (Positive Prompt)",
+      "properties"    : {
+        "cnr_id"           : "comfy-core",
+        "ver"              : "0.3.65",
+        "Node name for S&R": "CLIPTextEncode",
+        "enableTabs"       : false,
+        "tabWidth"         : 65,
+        "tabXOffset"       : 10,
+        "hasSecondTab"     : false,
+        "secondTabText"    : "Send Back",
+        "secondTabOffset"  : 80,
+        "secondTabWidth"   : 65
+      },
+      "widgets_values": [
+        "<positive prompt input field>"
+      ],
+      "color"         : "#232",
+      "bgcolor"       : "#353"
+    },
+    {
+      "id"            : 5,
+      "type"          : "KSampler",
+      "pos"           : [450.61590790600826, 407.54610289944856],
+      "size"          : [210, 262],
+      "flags"         : {},
+      "order"         : 22,
+      "mode"          : 0,
+      "inputs"        : [
+        {"localized_name": "model", "name": "model", "type": "MODEL", "link": 101},
+        {
+          "localized_name": "positive",
+          "name"          : "positive",
+          "type"          : "CONDITIONING",
+          "link"          : 4
+        },
+        {
+          "localized_name": "negative",
+          "name"          : "negative",
+          "type"          : "CONDITIONING",
+          "link"          : 5
+        },
+        {
+          "localized_name": "latent_image",
+          "name"          : "latent_image",
+          "type"          : "LATENT",
+          "link"          : 6
+        },
+        {
+          "localized_name": "seed",
+          "name"          : "seed",
+          "type"          : "INT",
+          "widget"        : {"name": "seed"},
+          "link"          : 110
+        },
+        {
+          "localized_name": "steps",
+          "name"          : "steps",
+          "type"          : "INT",
+          "widget"        : {"name": "steps"},
+          "link"          : 91
+        },
+        {
+          "localized_name": "cfg",
+          "name"          : "cfg",
+          "type"          : "FLOAT",
+          "widget"        : {"name": "cfg"},
+          "link"          : 96
+        },
+        {
+          "localized_name": "sampler_name",
+          "name"          : "sampler_name",
+          "type"          : "COMBO",
+          "widget"        : {"name": "sampler_name"},
+          "link"          : null
+        },
+        {
+          "localized_name": "scheduler",
+          "name"          : "scheduler",
+          "type"          : "COMBO",
+          "widget"        : {"name": "scheduler"},
+          "link"          : null
+        },
+        {
+          "localized_name": "denoise",
+          "name"          : "denoise",
+          "type"          : "FLOAT",
+          "widget"        : {"name": "denoise"},
+          "link"          : null
+        }
+      ],
+      "outputs"       : [
+        {
+          "localized_name": "LATENT",
+          "name"          : "LATENT",
+          "type"          : "LATENT",
+          "slot_index"    : 0,
+          "links"         : [1]
+        }
+      ],
+      "properties"    : {
+        "cnr_id"           : "comfy-core",
+        "ver"              : "0.3.40",
+        "Node name for S&R": "KSampler",
+        "enableTabs"       : false,
+        "tabWidth"         : 65,
+        "tabXOffset"       : 10,
+        "hasSecondTab"     : false,
+        "secondTabText"    : "Send Back",
+        "secondTabOffset"  : 80,
+        "secondTabWidth"   : 65
+      },
+      "widgets_values": [1, "fixed", 25, 5, "euler_ancestral", "normal", 1]
+    },
+    {
+      "id"            : 21,
+      "type"          : "VAELoader",
+      "pos"           : [450, 730],
+      "size"          : [340.30237447045033, 58],
+      "flags"         : {},
+      "order"         : 0,
+      "mode"          : 0,
+      "inputs"        : [
+        {
+          "localized_name": "vae_name",
+          "name"          : "vae_name",
+          "type"          : "COMBO",
+          "widget"        : {"name": "vae_name"},
+          "link"          : null
+        }
+      ],
+      "outputs"       : [
+        { "localized_name": "VAE", "name": "VAE", "type": "VAE", "links": [46] }
+      ],
+      "properties"    : {
+        "cnr_id"           : "comfy-core",
+        "ver"              : "0.24.0",
+        "Node name for S&R": "VAELoader"
+      },
+      "widgets_values": ["SDXL Anime VAE decoder Only B1.safetensors"]
+    },
+    {
+      "id"            : 8,
+      "type"          : "SaveImage",
+      "pos"           : [1020, 560],
+      "size"          : [430.4732574227287, 436.3868591385866],
+      "flags"         : {"collapsed": false},
+      "order"         : 24,
+      "mode"          : 0,
+      "inputs"        : [
+        {"localized_name": "images", "name": "images", "type": "IMAGE", "link": 8},
+        {
+          "localized_name": "filename_prefix",
+          "name"          : "filename_prefix",
+          "type"          : "STRING",
+          "widget"        : {"name": "filename_prefix"},
+          "link"          : null
+        }
+      ],
+      "outputs"       : [
+        {"localized_name": "images", "name": "images", "type": "IMAGE", "links": null}
+      ],
+      "properties"    : {
+        "cnr_id"           : "comfy-core",
+        "ver"              : "0.11.1",
+        "Node name for S&R": "SaveImage",
+        "enableTabs"       : false,
+        "tabWidth"         : 65,
+        "tabXOffset"       : 10,
+        "hasSecondTab"     : false,
+        "secondTabText"    : "Send Back",
+        "secondTabOffset"  : 80,
+        "secondTabWidth"   : 65
+      },
+      "widgets_values": ["Anima"]
+    },
+    {
+      "id"            : 3,
+      "type"          : "VAEDecode",
+      "pos"           : [840, 560],
+      "size"          : [140, 46],
+      "flags"         : {},
+      "order"         : 23,
+      "mode"          : 0,
+      "inputs"        : [
+        {"localized_name": "samples", "name": "samples", "type": "LATENT", "link":  1},
+        {"localized_name": "vae",     "name": "vae",     "type": "VAE",    "link": 46}
+      ],
+      "outputs"       : [
+        {
+          "localized_name": "IMAGE",
+          "name"          : "IMAGE",
+          "type"          : "IMAGE",
+          "slot_index"    : 0,
+          "links"         : [8]
+        }
+      ],
+      "properties"    : {
+        "cnr_id"           : "comfy-core",
+        "ver"              : "0.3.40",
+        "Node name for S&R": "VAEDecode",
+        "enableTabs"       : false,
+        "tabWidth"         : 65,
+        "tabXOffset"       : 10,
+        "hasSecondTab"     : false,
+        "secondTabText"    : "Send Back",
+        "secondTabOffset"  : 80,
+        "secondTabWidth"   : 65
+      },
+      "widgets_values": []
+    },
+    {
+      "id"            : 46,
+      "type"          : "JSONParserNode",
+      "pos"           : [-330, 740],
+      "size"          : [210, 132],
+      "flags"         : {"collapsed": true},
+      "order"         : 6,
+      "mode"          : 0,
+      "inputs"        : [
+        {
+          "localized_name": "json_string",
+          "name"          : "json_string",
+          "type"          : "STRING",
+          "widget"        : {"name": "json_string"},
+          "link"          : 86
+        },
+        {
+          "localized_name": "path",
+          "name"          : "path",
+          "type"          : "STRING",
+          "widget"        : {"name": "path"},
+          "link"          : null
+        }
+      ],
+      "outputs"       : [
+        {
+          "localized_name": "parsed_data",
+          "name"          : "parsed_data",
+          "type"          : "STRING",
+          "links"         : [87]
+        },
+        {
+          "localized_name": "array_size",
+          "name"          : "array_size",
+          "type"          : "INT",
+          "links"         : null
+        }
+      ],
+      "properties"    : {
+        "cnr_id"           : "comfyui-simple-json-node",
+        "ver"              : "7fd5864c1dcb16f3da267aea829ca32abff68b96",
+        "Node name for S&R": "JSONParserNode",
+        "aux_id"           : "Q-Bug4/Comfyui-Simple-Json-Node"
+      },
+      "widgets_values": ["", "height"]
+    },
+    {
+      "id"            : 66,
+      "type"          : "JSONParserNode",
+      "pos"           : [-330, 800],
+      "size"          : [210, 132],
+      "flags"         : {"collapsed": true},
+      "order"         : 10,
+      "mode"          : 0,
+      "inputs"        : [
+        {
+          "localized_name": "json_string",
+          "name"          : "json_string",
+          "type"          : "STRING",
+          "widget"        : {"name": "json_string"},
+          "link"          : 108
+        },
+        {
+          "localized_name": "path",
+          "name"          : "path",
+          "type"          : "STRING",
+          "widget"        : {"name": "path"},
+          "link"          : null
+        }
+      ],
+      "outputs"       : [
+        {
+          "localized_name": "parsed_data",
+          "name"          : "parsed_data",
+          "type"          : "STRING",
+          "links"         : [109]
+        },
+        {
+          "localized_name": "array_size",
+          "name"          : "array_size",
+          "type"          : "INT",
+          "links"         : null
+        }
+      ],
+      "properties"    : {
+        "cnr_id"           : "comfyui-simple-json-node",
+        "ver"              : "7fd5864c1dcb16f3da267aea829ca32abff68b96",
+        "Node name for S&R": "JSONParserNode",
+        "aux_id"           : "Q-Bug4/Comfyui-Simple-Json-Node"
+      },
+      "widgets_values": ["", "seed"]
+    },
+    {
+      "id"            : 67,
+      "type"          : "ComfyNumberConvert",
+      "pos"           : [-130, 800],
+      "size"          : [140, 46],
+      "flags"         : {"collapsed": true},
+      "order"         : 17,
+      "mode"          : 0,
+      "inputs"        : [
+        {
+          "label"         : "value",
+          "localized_name": "value",
+          "name"          : "value",
+          "type"          : "INT,FLOAT,STRING,BOOLEAN",
+          "link"          : 109
+        }
+      ],
+      "outputs"       : [
+        { "localized_name": "FLOAT", "name": "FLOAT", "type": "FLOAT", "links": null  },
+        { "localized_name": "INT",   "name": "INT",   "type": "INT",   "links": [110] }
+      ],
+      "properties"    : {
+        "cnr_id"           : "comfy-core",
+        "ver"              : "0.26.0",
+        "Node name for S&R": "ComfyNumberConvert"
+      },
+      "widgets_values": []
+    },
+    {
+      "id"            : 13,
+      "type"          : "EmptyLatentImage",
+      "pos"           : [50, 640],
+      "size"          : [210, 106],
+      "flags"         : {"collapsed": false},
+      "order"         : 19,
+      "mode"          : 0,
+      "inputs"        : [
+        {
+          "localized_name": "width",
+          "name"          : "width",
+          "type"          : "INT",
+          "widget"        : {"name": "width"},
+          "link"          : 84
+        },
+        {
+          "localized_name": "height",
+          "name"          : "height",
+          "type"          : "INT",
+          "widget"        : {"name": "height"},
+          "link"          : 88
+        },
+        {
+          "localized_name": "batch_size",
+          "name"          : "batch_size",
+          "type"          : "INT",
+          "widget"        : {"name": "batch_size"},
+          "link"          : null
+        }
+      ],
+      "outputs"       : [
+        { "localized_name": "LATENT", "name": "LATENT", "type": "LATENT", "links": [6] }
+      ],
+      "properties"    : {
+        "cnr_id"           : "comfy-core",
+        "ver"              : "0.3.40",
+        "Node name for S&R": "EmptyLatentImage",
+        "enableTabs"       : false,
+        "tabWidth"         : 65,
+        "tabXOffset"       : 10,
+        "hasSecondTab"     : false,
+        "secondTabText"    : "Send Back",
+        "secondTabOffset"  : 80,
+        "secondTabWidth"   : 65
+      },
+      "widgets_values": [1024, 1536, 1]
+    },
+    {
+      "id"            : 41,
+      "type"          : "JSONParserNode",
+      "pos"           : [-810, 540],
+      "size"          : [400, 200],
+      "flags"         : {"collapsed": false},
+      "order"         : 2,
+      "mode"          : 0,
+      "inputs"        : [
+        {
+          "localized_name": "json_string",
+          "name"          : "json_string",
+          "type"          : "STRING",
+          "widget"        : {"name": "json_string"},
+          "link"          : 107
+        },
+        {
+          "localized_name": "path",
+          "name"          : "path",
+          "type"          : "STRING",
+          "widget"        : {"name": "path"},
+          "link"          : null
+        }
+      ],
+      "outputs"       : [
+        {
+          "localized_name": "parsed_data",
+          "name"          : "parsed_data",
+          "type"          : "STRING",
+          "links"         : [72, 82, 85, 86, 89, 94, 103, 108, 111]
+        },
+        {
+          "localized_name": "array_size",
+          "name"          : "array_size",
+          "type"          : "INT",
+          "links"         : null
+        }
+      ],
+      "properties"    : {
+        "cnr_id"           : "comfyui-simple-json-node",
+        "ver"              : "7fd5864c1dcb16f3da267aea829ca32abff68b96",
+        "Node name for S&R": "JSONParserNode",
+        "aux_id"           : "Q-Bug4/Comfyui-Simple-Json-Node"
+      },
+      "widgets_values": ["", "result"]
+    },
+    {
+      "id"            : 68,
+      "type"          : "LoadCheckpointPartsFromJson",
+      "pos"           : [-920, 0],
+      "size"          : [400, 200],
+      "flags"         : {},
+      "order"         : 11,
+      "mode"          : 0,
+      "inputs"        : [
+        {
+          "localized_name": "json_text",
+          "name"          : "json_text",
+          "type"          : "STRING",
+          "widget"        : {"name": "json_text"},
+          "link"          : 111
+        },
+        {
+          "localized_name": "checkpoint_name_field",
+          "name"          : "checkpoint_name_field",
+          "type"          : "STRING",
+          "widget"        : {"name": "checkpoint_name_field"},
+          "link"          : null
+        },
+        {
+          "localized_name": "clip_name_field",
+          "name"          : "clip_name_field",
+          "type"          : "STRING",
+          "widget"        : {"name": "clip_name_field"},
+          "link"          : null
+        },
+        {
+          "localized_name": "vae_name_field",
+          "name"          : "vae_name_field",
+          "type"          : "STRING",
+          "widget"        : {"name": "vae_name_field"},
+          "link"          : null
+        }
+      ],
+      "outputs"       : [
+        { "localized_name": "MODEL", "name": "MODEL", "type": "MODEL", "links": [112] },
+        { "localized_name": "CLIP",  "name": "CLIP",  "type": "CLIP",  "links": [113] },
+        { "localized_name": "VAE",   "name": "VAE",   "type": "VAE",   "links": null  }
+      ],
+      "properties"    : {"Node name for S&R": "LoadCheckpointPartsFromJson"},
+      "widgets_values": ["", "checkpoint", "clip", "vae"]
+    },
+    {
+      "id"            : 64,
+      "type"          : "PrimitiveStringMultiline",
+      "pos"           : [-1350, 540],
+      "size"          : [469.9329346447198, 537.8650831058678],
+      "flags"         : {},
+      "order"         : 1,
+      "mode"          : 0,
+      "inputs"        : [
+        {
+          "localized_name": "value",
+          "name"          : "value",
+          "type"          : "STRING",
+          "widget"        : {"name": "value"},
+          "link"          : null
+        }
+      ],
+      "outputs"       : [
+        { "localized_name": "STRING", "name": "STRING", "type": "STRING", "links": [107] }
+      ],
+      "title"         : "input_json_parameter",
+      "properties"    : {
+        "cnr_id"           : "comfy-core",
+        "ver"              : "0.26.0",
+        "Node name for S&R": "PrimitiveStringMultiline"
+      },
+      "widgets_values": [
+        "<input JSON field>"
+      ]
+    }
+  ],
+  "links"       : [
+    [  1,  5, 0,  3, 0, "LATENT"      ],
+    [  4, 14, 0,  5, 1, "CONDITIONING"],
+    [  5, 10, 0,  5, 2, "CONDITIONING"],
+    [  6, 13, 0,  5, 3, "LATENT"      ],
+    [  8,  3, 0,  8, 0, "IMAGE"       ],
+    [ 46, 21, 0,  3, 1, "VAE"         ],
+    [ 72, 41, 0, 42, 0, "STRING"      ],
+    [ 80, 42, 0, 14, 1, "STRING"      ],
+    [ 81, 43, 0, 10, 1, "STRING"      ],
+    [ 82, 41, 0, 43, 0, "STRING"      ],
+    [ 83, 44, 0, 45, 0, "STRING"      ],
+    [ 84, 45, 1, 13, 0, "INT"         ],
+    [ 85, 41, 0, 44, 0, "STRING"      ],
+    [ 86, 41, 0, 46, 0, "STRING"      ],
+    [ 87, 46, 0, 47, 0, "STRING"      ],
+    [ 88, 47, 1, 13, 1, "INT"         ],
+    [ 89, 41, 0, 48, 0, "STRING"      ],
+    [ 90, 48, 0, 49, 0, "STRING"      ],
+    [ 91, 49, 1,  5, 5, "INT"         ],
+    [ 94, 41, 0, 53, 0, "STRING"      ],
+    [ 95, 53, 0, 54, 0, "STRING"      ],
+    [ 96, 54, 0,  5, 6, "FLOAT"       ],
+    [ 99, 61, 1, 14, 0, "CLIP"        ],
+    [100, 61, 1, 10, 0, "CLIP"        ],
+    [101, 61, 0,  5, 0, "MODEL"       ],
+    [103, 41, 0, 62, 0, "STRING"      ],
+    [105, 62, 0, 63, 0, "STRING"      ],
+    [106, 62, 0, 61, 2, "STRING"      ],
+    [107, 64, 0, 41, 0, "STRING"      ],
+    [108, 41, 0, 66, 0, "STRING"      ],
+    [109, 66, 0, 67, 0, "STRING"      ],
+    [110, 67, 1,  5, 4, "INT"         ],
+    [111, 41, 0, 68, 0, "STRING"      ],
+    [112, 68, 0, 61, 0, "MODEL"       ],
+    [113, 68, 1, 61, 1, "CLIP"        ]
+  ],
+  "groups"      : [],
+  "config"      : {},
+  "extra"       : {
+    "ds"            : {
+      "scale" : 4.665073802097552,
+      "offset": [-140.63340398027225, -366.65895831233627]
+    },
+    "reroutes"      : [
+      { "id": 1, "parentId": 3, "pos": [-760, 424], "linkIds": [103] },
+      { "id": 2, "parentId": 1, "pos": [-760, 314], "linkIds": [103] },
+      { "id": 3,                "pos": [-390, 424], "linkIds": [103] },
+      { "id": 4,                "pos": [ 350, 774], "linkIds": [110] },
+      { "id": 5, "parentId": 4, "pos": [ 360, 514], "linkIds": [110] },
+      { "id": 6, "parentId": 7, "pos": [-950, 444], "linkIds": [111] },
+      { "id": 7,                "pos": [-390, 464], "linkIds": [111] },
+      { "id": 8, "parentId": 6, "pos": [-960,  74], "linkIds": [111] }
+    ],
+    "linkExtensions": [
+      {"id": 103, "parentId": 2}, {"id": 110, "parentId": 5}, {"id": 111, "parentId": 8}
+    ]
+  },
+  "version"     : 0.4
+}
