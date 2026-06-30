@@ -22,7 +22,7 @@ from PySide6.QtCore import (
     QThreadPool,
     Signal,
 )
-from PySide6.QtGui import QColor, QImage, QPainter
+from PySide6.QtGui import QColor, QImage, QPainter, QTextOption
 from PySide6.QtWidgets import (
     QAbstractItemDelegate,
     QApplication,
@@ -34,7 +34,9 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLineEdit,
     QMessageBox,
+    QPlainTextEdit,
     QPushButton,
+    QSpinBox,
     QStyle,
     QStyledItemDelegate,
     QStyleOptionButton,
@@ -358,7 +360,7 @@ class ModelComboDelegate(QStyledItemDelegate):
         return cb
 
     def updateEditorGeometry(self, editor, option, index):
-        margin_x = 6
+        margin_x = 1
         available_w = max(0, option.rect.width() - (2 * margin_x))
         editor_h = min(36, max(0, option.rect.height() - 4))
         y = option.rect.y() + (option.rect.height() - editor_h) // 2
@@ -668,6 +670,64 @@ class LoraDelegate(QStyledItemDelegate):
             )
 
         painter.restore()
+
+
+class PromptEdit(QPlainTextEdit):
+
+    def __init__(self, text: str, parent=None):
+        super().__init__(parent)
+        self.setPlainText(text)
+        self.setWordWrapMode(QTextOption.WrapMode.WordWrap)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+
+
+class PromptDelegate(QStyledItemDelegate):
+
+    def createEditor(self, parent, option, index):
+        return PromptEdit(index.data(Qt.EditRole) or "", parent)
+
+    def setEditorData(self, editor, index):
+        editor.setPlainText(index.data(Qt.EditRole) or "")
+
+    def setModelData(self, editor, model, index):
+        model.setData(index, editor.toPlainText(), Qt.EditRole)
+
+    def updateEditorGeometry(self, editor, option, index):
+        editor.setGeometry(option.rect.adjusted(2, 2, -2, -2))
+
+    def sizeHint(self, option, index):
+        h = max(option.rect.height(), EDITOR_H * 3)
+        return QSize(option.rect.width(), h)
+
+
+class NumberDelegate(QStyledItemDelegate):
+
+    def __init__(self, decimals: bool, parent=None):
+        super().__init__(parent)
+        self._decimals = decimals
+
+    def createEditor(self, parent, option, index):
+        if self._decimals:
+            sb = QDoubleSpinBox(parent)
+            sb.setDecimals(3)
+            sb.setSingleStep(0.05)
+        else:
+            sb = QSpinBox(parent)
+            sb.setSingleStep(1)
+        sb.setMaximumHeight(EDITOR_H)
+        sb.setFixedHeight(EDITOR_H)
+        return sb
+
+    def updateEditorGeometry(self, editor, option, index):
+        y = option.rect.y() + (option.rect.height() - EDITOR_H) // 2
+        editor.setGeometry(option.rect.x(), y, max(0, option.rect.width()),
+                           EDITOR_H)
+
+    def setEditorData(self, editor, index):
+        editor.setValue(index.data(Qt.EditRole))
+
+    def setModelData(self, editor, model, index):
+        model.setData(index, editor.value(), Qt.EditRole)
 
 
 class ButtonDelegate(QStyledItemDelegate):
@@ -983,6 +1043,16 @@ class MainWindow(QWidget):
         self.run_delegate = ButtonDelegate(self.view, self)
         self.run_delegate.clicked.connect(self._on_run)
         self.view.setItemDelegateForColumn(COL_RUN, self.run_delegate)
+
+        self.view.setItemDelegateForColumn(COL_WIDTH,
+                                           NumberDelegate(False, self))
+        self.view.setItemDelegateForColumn(COL_HEIGHT,
+                                           NumberDelegate(False, self))
+        self.view.setItemDelegateForColumn(COL_STEPS,
+                                           NumberDelegate(False, self))
+        self.view.setItemDelegateForColumn(COL_CFG, NumberDelegate(True, self))
+        self.view.setItemDelegateForColumn(COL_POSITIVE, PromptDelegate(self))
+        self.view.setItemDelegateForColumn(COL_NEGATIVE, PromptDelegate(self))
 
     def _on_run(self, proxy_index: QModelIndex) -> None:
         self.view.commit_active_editor()
