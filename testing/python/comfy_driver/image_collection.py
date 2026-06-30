@@ -371,8 +371,12 @@ class ImageLoader(QRunnable):
         real = resolve_image_path(self.path)
         img = QImage(real)
         if not img.isNull():
-            img = img.scaled(THUMB, THUMB, Qt.KeepAspectRatio,
-                             Qt.SmoothTransformation)
+            img = img.scaled(
+                THUMB,
+                THUMB,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
         self.cache[self.path] = img
         self.signals.done.emit(self.path)
 
@@ -396,16 +400,18 @@ class ImageDelegate(QStyledItemDelegate):
         return QSize(THUMB + 8, THUMB + 8)
 
     def paint(self, painter, option, index) -> None:
-        path = index.data(Qt.DisplayRole)
+        path = index.data(Qt.ItemDataRole.DisplayRole)
         img = self.cache.get(path)
         if img is None:
             if path not in self.pending:
                 self.pending.add(path)
                 self.pool.start(ImageLoader(path, self.cache, self.signals))
-            painter.drawText(option.rect, Qt.AlignCenter, "loading…")
+            painter.drawText(option.rect, Qt.AlignmentFlag.AlignCenter,
+                             "loading…")
             return
         if img.isNull():
-            painter.drawText(option.rect, Qt.AlignCenter, "no image")
+            painter.drawText(option.rect, Qt.AlignmentFlag.AlignCenter,
+                             "no image")
             return
         x = option.rect.x() + (option.rect.width() - img.width()) // 2
         y = option.rect.y() + (option.rect.height() - img.height()) // 2
@@ -428,11 +434,11 @@ class ImagePreviewDialog(QDialog):
 
         scroll = QScrollArea(self)
         scroll.setWidgetResizable(True)
-        scroll.setAlignment(Qt.AlignCenter)
+        scroll.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(scroll)
 
         self.label = QLabel(scroll)
-        self.label.setAlignment(Qt.AlignCenter)
+        self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         scroll.setWidget(self.label)
 
         real = resolve_image_path(path)
@@ -503,7 +509,7 @@ class ModelComboDelegate(QStyledItemDelegate):
                           index: QModelIndex) -> list[tuple[str, str]]:
         opts = self._options
         if self._filter_by_type:
-            current = (index.data(Qt.EditRole) or "").strip()
+            current = (index.data(Qt.ItemDataRole.EditRole) or "").strip()
             current_payload = self._registry.resolve_payload(
                 current, self._kind)
             current_type = self._registry.type_for_payload(
@@ -521,8 +527,8 @@ class ModelComboDelegate(QStyledItemDelegate):
         cb.setMaxVisibleItems(14)
         cb.setMaximumHeight(EDITOR_H)
 
-        default_text = (index.data(Qt.DisplayRole) or index.data(Qt.EditRole)
-                        or "").strip()
+        default_text = (index.data(Qt.ItemDataRole.DisplayRole)
+                        or index.data(Qt.ItemDataRole.EditRole) or "").strip()
 
         if self._allow_empty:
             cb.addItem("", "")
@@ -543,24 +549,27 @@ class ModelComboDelegate(QStyledItemDelegate):
 
     def setEditorData(self, editor, index):
         payload = self._registry.resolve_payload(
-            index.data(Qt.EditRole) or "", self._kind)
+            index.data(Qt.ItemDataRole.EditRole) or "", self._kind)
         for i in range(editor.count()):
             if (editor.itemData(i) or "") == payload:
                 editor.setCurrentIndex(i)
                 return
-        editor.setCurrentText(index.data(Qt.EditRole) or "")
+        editor.setCurrentText(index.data(Qt.ItemDataRole.EditRole) or "")
 
     def setModelData(self, editor, model, index):
         text = editor.currentText().strip()
         payload = editor.currentData()
         if payload:
-            model.setData(index, payload, Qt.EditRole)
+            model.setData(index, payload, Qt.ItemDataRole.EditRole)
             return
-        model.setData(index, self._registry.resolve_payload(text, self._kind),
-                      Qt.EditRole)
+        model.setData(
+            index,
+            self._registry.resolve_payload(text, self._kind),
+            Qt.ItemDataRole.EditRole,
+        )
 
     def paint(self, painter, option, index):
-        value = (index.data(Qt.DisplayRole) or "").strip()
+        value = (index.data(Qt.ItemDataRole.DisplayRole) or "").strip()
         payload, replaced = self._registry.resolve_with_replacement(
             value, self._kind)
 
@@ -590,14 +599,18 @@ class ModelComboDelegate(QStyledItemDelegate):
 
         painter.save()
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        painter.setPen(Qt.NoPen)
+        painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(bg)
         painter.drawRoundedRect(r, 6, 6)
         painter.setPen(fg)
-        shown = option.fontMetrics.elidedText(text, Qt.ElideMiddle,
+        shown = option.fontMetrics.elidedText(text,
+                                              Qt.TextElideMode.ElideMiddle,
                                               r.width() - 10)
-        painter.drawText(r.adjusted(5, 0, -5, 0),
-                         Qt.AlignVCenter | Qt.AlignLeft, shown)
+        painter.drawText(
+            r.adjusted(5, 0, -5, 0),
+            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+            shown,
+        )
         painter.restore()
 
 
@@ -701,13 +714,14 @@ class LoraEditorWidget(QWidget):
         is_missing = color in (COLOR_BAD, COLOR_WARN)
 
         if is_missing:
-            on_item.setFlags(Qt.ItemIsSelectable)
-            on_item.setCheckState(Qt.Unchecked)
+            on_item.setFlags(Qt.ItemFlag.ItemIsSelectable)
+            on_item.setCheckState(Qt.CheckState.Unchecked)
         else:
-            on_item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsUserCheckable
-                             | Qt.ItemIsSelectable)
-            on_item.setCheckState(
-                Qt.Checked if lora.get("enabled", True) else Qt.Unchecked)
+            on_item.setFlags(Qt.ItemFlag.ItemIsEnabled
+                             | Qt.ItemFlag.ItemIsUserCheckable
+                             | Qt.ItemFlag.ItemIsSelectable)
+            on_item.setCheckState(Qt.CheckState.Checked if lora.get(
+                "enabled", True) else Qt.CheckState.Unchecked)
         self.table.setItem(r, 0, on_item)
 
         payload = self._registry.resolve_payload(lora.get("model", ""), "lora")
@@ -740,7 +754,8 @@ class LoraEditorWidget(QWidget):
         out = []
         for r in range(self.table.rowCount()):
             on_item = self.table.item(r, 0)
-            enabled = on_item.checkState() == Qt.Checked if on_item else True
+            enabled = on_item.checkState(
+            ) == Qt.CheckState.Checked if on_item else True
 
             cb = self.table.cellWidget(r, 1)
             model_text = cb.currentText().strip() if cb else ""
@@ -767,7 +782,7 @@ class LoraDelegate(QStyledItemDelegate):
 
     def createEditor(self, parent, option, index):
         ckpt_idx = index.sibling(index.row(), COL_CHECKPOINT)
-        ckpt = (ckpt_idx.data(Qt.EditRole) or "").strip()
+        ckpt = (ckpt_idx.data(Qt.ItemDataRole.EditRole) or "").strip()
         ckpt_payload = self._registry.resolve_payload(ckpt, "checkpoint")
         ckpt_type = self._registry.type_for_payload(ckpt_payload, "checkpoint")
         if ckpt_type is not None:
@@ -780,15 +795,15 @@ class LoraDelegate(QStyledItemDelegate):
         return LoraEditorWidget(opts, self._registry, parent)
 
     def setEditorData(self, editor, index):
-        editor.set_loras(index.data(Qt.UserRole) or [])
+        editor.set_loras(index.data(Qt.ItemDataRole.UserRole) or [])
 
     def setModelData(self, editor, model, index):
-        model.setData(index, editor.loras(), Qt.EditRole)
+        model.setData(index, editor.loras(), Qt.ItemDataRole.EditRole)
 
     def paint(self, painter, option, index):
-        loras = index.data(Qt.UserRole) or []
+        loras = index.data(Qt.ItemDataRole.UserRole) or []
         if not loras:
-            painter.drawText(option.rect, Qt.AlignCenter, "—")
+            painter.drawText(option.rect, Qt.AlignmentFlag.AlignCenter, "—")
             return
 
         painter.save()
@@ -806,7 +821,7 @@ class LoraDelegate(QStyledItemDelegate):
         x_weight = x_model + model_w
 
         painter.setPen(option.palette.mid().color())
-        painter.setBrush(Qt.NoBrush)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawRect(r)
 
         for i, lora in enumerate(loras):
@@ -854,19 +869,23 @@ class LoraDelegate(QStyledItemDelegate):
             on_text = "☑" if enabled else "☐"
             painter.drawText(
                 r.__class__(x_on + 4, y, on_w - 8, row_rect.height()),
-                Qt.AlignVCenter | Qt.AlignHCenter,
+                Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignHCenter,
                 on_text,
             )
 
             painter.drawText(
                 r.__class__(x_model + 6, y, model_w - 12, row_rect.height()),
-                Qt.AlignVCenter | Qt.AlignLeft | Qt.TextSingleLine,
+                Qt.AlignmentFlag.AlignVCenter
+                | Qt.AlignmentFlag.AlignLeft
+                | Qt.TextFlag.TextSingleLine,
                 model,
             )
 
             painter.drawText(
                 r.__class__(x_weight + 6, y, weight_w - 10, row_rect.height()),
-                Qt.AlignVCenter | Qt.AlignRight | Qt.TextSingleLine,
+                Qt.AlignmentFlag.AlignVCenter
+                | Qt.AlignmentFlag.AlignRight
+                | Qt.TextFlag.TextSingleLine,
                 f"{weight:g}",
             )
 
@@ -879,19 +898,20 @@ class PromptEdit(QPlainTextEdit):
         super().__init__(parent)
         self.setPlainText(text)
         self.setWordWrapMode(QTextOption.WrapMode.WordWrap)
-        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
 
 class PromptDelegate(QStyledItemDelegate):
 
     def createEditor(self, parent, option, index):
-        return PromptEdit(index.data(Qt.EditRole) or "", parent)
+        return PromptEdit(index.data(Qt.ItemDataRole.EditRole) or "", parent)
 
     def setEditorData(self, editor, index):
-        editor.setPlainText(index.data(Qt.EditRole) or "")
+        editor.setPlainText(index.data(Qt.ItemDataRole.EditRole) or "")
 
     def setModelData(self, editor, model, index):
-        model.setData(index, editor.toPlainText(), Qt.EditRole)
+        model.setData(index, editor.toPlainText(), Qt.ItemDataRole.EditRole)
 
     def updateEditorGeometry(self, editor, option, index):
         editor.setGeometry(option.rect.adjusted(2, 2, -2, -2))
@@ -928,10 +948,10 @@ class NumberDelegate(QStyledItemDelegate):
                            EDITOR_H)
 
     def setEditorData(self, editor, index):
-        editor.setValue(index.data(Qt.EditRole))
+        editor.setValue(index.data(Qt.ItemDataRole.EditRole))
 
     def setModelData(self, editor, model, index):
-        model.setData(index, editor.value(), Qt.EditRole)
+        model.setData(index, editor.value(), Qt.ItemDataRole.EditRole)
 
 
 class ButtonDelegate(QStyledItemDelegate):
@@ -962,13 +982,13 @@ class ButtonDelegate(QStyledItemDelegate):
     def editorEvent(self, event, model, option, index):
         br = self._button_rect(option.rect)
 
-        if event.type() == QEvent.MouseButtonPress and br.contains(
+        if event.type() == QEvent.Type.MouseButtonPress and br.contains(
                 event.pos()):
             self._pressed = QPersistentModelIndex(index)
             self._view.viewport().update(option.rect)
             return True
 
-        if event.type() == QEvent.MouseButtonRelease:
+        if event.type() == QEvent.Type.MouseButtonRelease:
             hit = br.contains(event.pos())
             was_pressed = (self._pressed.isValid()
                            and self._pressed.row() == index.row()
@@ -1008,26 +1028,30 @@ class GenerationModel(QAbstractTableModel):
     def columnCount(self, parent=QModelIndex()) -> int:
         return len(HEADERS)
 
-    def headerData(self, section, orientation, role=Qt.DisplayRole):
-        if role == Qt.DisplayRole and orientation == Qt.Horizontal:
+    def headerData(self,
+                   section,
+                   orientation,
+                   role=Qt.ItemDataRole.DisplayRole):
+        if (role == Qt.ItemDataRole.DisplayRole
+                and orientation == Qt.Orientation.Horizontal):
             return HEADERS[section]
         return None
 
     def flags(self, index):
-        base = Qt.ItemIsEnabled | Qt.ItemIsSelectable
+        base = Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
         if index.column() in EDITABLE_COLS | {COL_LORAS}:
-            return base | Qt.ItemIsEditable
+            return base | Qt.ItemFlag.ItemIsEditable
         return base
 
-    def data(self, index, role=Qt.DisplayRole):
+    def data(self, index, role=Qt.ItemDataRole.DisplayRole):
         row = self.rows[index.row()]
         res = row["result"]
         col = index.column()
 
-        if role == Qt.UserRole and col == COL_LORAS:
+        if role == Qt.ItemDataRole.UserRole and col == COL_LORAS:
             return res.get("loras", [])
 
-        if role in (Qt.DisplayRole, Qt.EditRole):
+        if role in (Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole):
             if col == COL_IMAGE:
                 return row["path"]
             if col == COL_POSITIVE:
@@ -1048,7 +1072,7 @@ class GenerationModel(QAbstractTableModel):
                 return row.get("md5", "")
             return None
 
-        if role == Qt.BackgroundRole:
+        if role == Qt.ItemDataRole.BackgroundRole:
             if col == COL_CHECKPOINT:
                 return self.registry.color_for(res.get("checkpoint", ""),
                                                "checkpoint")
@@ -1067,17 +1091,18 @@ class GenerationModel(QAbstractTableModel):
                 if any(c == COLOR_REPLACED for c in colors):
                     return COLOR_REPLACED
 
-        if role == Qt.ToolTipRole and col in (COL_POSITIVE, COL_NEGATIVE):
+        if role == Qt.ItemDataRole.ToolTipRole and col in (COL_POSITIVE,
+                                                           COL_NEGATIVE):
             return res.get("positive" if col == COL_POSITIVE else "negative",
                            "")
 
-        if role == Qt.ToolTipRole and col == COL_MD5:
+        if role == Qt.ItemDataRole.ToolTipRole and col == COL_MD5:
             return row.get("md5", "")
 
         return None
 
-    def setData(self, index, value, role=Qt.EditRole):
-        if role != Qt.EditRole:
+    def setData(self, index, value, role=Qt.ItemDataRole.EditRole):
+        if role != Qt.ItemDataRole.EditRole:
             return False
         res = self.rows[index.row()]["result"]
         col = index.column()
@@ -1156,7 +1181,7 @@ class MainWindow(QWidget):
         self.proxy = QSortFilterProxyModel(self)
         self.proxy.setSourceModel(self.model)
         self.proxy.setFilterKeyColumn(COL_POSITIVE)
-        self.proxy.setFilterCaseSensitivity(Qt.CaseInsensitive)
+        self.proxy.setFilterCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
 
         layout = QVBoxLayout(self)
 
@@ -1255,7 +1280,8 @@ class MainWindow(QWidget):
         if proxy_index.column() != COL_IMAGE:
             return
         src = self.proxy.mapToSource(proxy_index)
-        path = self.model.index(src.row(), COL_IMAGE).data(Qt.DisplayRole)
+        path = self.model.index(src.row(),
+                                COL_IMAGE).data(Qt.ItemDataRole.DisplayRole)
         if not path:
             return
         dlg = ImagePreviewDialog(path, self)
@@ -1272,10 +1298,12 @@ class MainWindow(QWidget):
             ov = self.registry.replacement_overrides[ckpt_payload]
             if "steps" in ov:
                 steps_idx = self.model.index(src.row(), COL_STEPS)
-                self.model.setData(steps_idx, int(ov["steps"]), Qt.EditRole)
+                self.model.setData(steps_idx, int(ov["steps"]),
+                                   Qt.ItemDataRole.EditRole)
             if "cfg" in ov:
                 cfg_idx = self.model.index(src.row(), COL_CFG)
-                self.model.setData(cfg_idx, float(ov["cfg"]), Qt.EditRole)
+                self.model.setData(cfg_idx, float(ov["cfg"]),
+                                   Qt.ItemDataRole.EditRole)
 
         self._send_to_comfy(row)
 
