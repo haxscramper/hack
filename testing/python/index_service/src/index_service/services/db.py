@@ -87,6 +87,14 @@ class IndexDatabase:
             if not self._db.has_collection(name):
                 self._db.create_collection(name)
 
+        files = self._db.collection("files")
+        if "idx_paths_suffix" not in files.indexes():  # type: ignore
+            files.add_index({
+                "type": "persistent",
+                "fields": ["paths[*].suffix"],
+                "name": "idx_paths_suffix",
+            })
+
     def truncate_all(self, names: list[str]) -> None:
         for name in ["roots", "files", "derivations"] + names:
             self._db.collection(name).truncate()

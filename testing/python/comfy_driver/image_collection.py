@@ -14,6 +14,7 @@ from PySide6.QtCore import (
     QEvent,
     QModelIndex,
     QObject,
+    QPersistentModelIndex,
     QRunnable,
     QSize,
     QSortFilterProxyModel,
@@ -21,7 +22,7 @@ from PySide6.QtCore import (
     QThreadPool,
     Signal,
 )
-from PySide6.QtGui import QColor, QImage
+from PySide6.QtGui import QColor, QImage, QPainter
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -51,7 +52,7 @@ RUN_BTN_W = 64
 RUN_BTN_H = 26
 MODEL_EXTS = {".safetensors", ".ckpt", ".pt", ".pth", ".bin"}
 IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".bmp")
-THUMB = 128
+THUMB = 228
 
 (
     COL_IMAGE,
@@ -94,6 +95,12 @@ EDITABLE_COLS = {
 
 COLOR_WARN = QColor(255, 165, 0)
 COLOR_BAD = QColor(220, 80, 80)
+COLOR_OK = QColor(70, 150, 90)
+
+EDITOR_H = 28
+MIN_W_CHECKPOINT = 260
+MIN_W_VAE = 200
+MIN_W_LORAS = 420
 
 AQL = """
 FOR gp IN generation_params
@@ -311,11 +318,17 @@ class ModelComboDelegate(QStyledItemDelegate):
     def createEditor(self, parent, option, index):
         cb = QComboBox(parent)
         cb.setEditable(True)
+        cb.setMaxVisibleItems(14)
         if self._allow_empty:
             cb.addItem("", "")
         for display, payload in self._options:
             cb.addItem(display, payload)
         return cb
+
+    def updateEditorGeometry(self, editor, option, index):
+        y = option.rect.y() + (option.rect.height() - EDITOR_H) // 2
+        editor.setGeometry(option.rect.x() + 4, y,
+                           option.rect.width() - 8, EDITOR_H)
 
     def setEditorData(self, editor, index):
         payload = self._registry.resolve_payload(
@@ -334,6 +347,39 @@ class ModelComboDelegate(QStyledItemDelegate):
             return
         model.setData(index, self._registry.resolve_payload(text, self._kind),
                       Qt.EditRole)
+
+    def paint(self, painter, option, index):
+        value = (index.data(Qt.DisplayRole) or "").strip()
+        text = value if value else "—"
+
+        status = self._registry.color_for(value, self._kind)
+        if not value:
+            bg = QColor(110, 110, 110, 45)
+            fg = option.palette.text().color()
+        elif status == COLOR_BAD:
+            bg = QColor(220, 80, 80, 60)
+            fg = option.palette.text().color()
+        elif status == COLOR_WARN:
+            bg = QColor(255, 165, 0, 60)
+            fg = option.palette.text().color()
+        else:
+            bg = QColor(70, 150, 90, 50)
+            fg = option.palette.text().color()
+
+        r = option.rect.adjusted(6, (option.rect.height() - 22) // 2, -6,
+                                 -(option.rect.height() - 22) // 2)
+
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(bg)
+        painter.drawRoundedRect(r, 6, 6)
+        painter.setPen(fg)
+        shown = option.fontMetrics.elidedText(text, Qt.ElideMiddle,
+                                              r.width() - 10)
+        painter.drawText(r.adjusted(5, 0, -5, 0),
+                         Qt.AlignVCenter | Qt.AlignLeft, shown)
+        painter.restore()
 
 
 class LoraEditorWidget(QWidget):
@@ -374,11 +420,38 @@ class LoraEditorWidget(QWidget):
         btn_row.addStretch()
         layout.addLayout(btn_row)
 
+    def _resort_combo_by_similarity(self, cb: QComboBox, text: str) -> None:
+        needle = self._registry.normalize_payload(text)
+        if needle:
+            ranked = sorted(
+                self._options,
+                key=lambda item: SequenceMatcher(None, needle, item[1]).ratio(
+                ),
+                reverse=True,
+            )
+        else:
+            ranked = self._options
+
+        current_text = cb.currentText()
+        cb.blockSignals(True)
+        cb.clear()
+        for display, payload in ranked:
+            cb.addItem(display, payload)
+        cb.setCurrentText(current_text)
+        cb.blockSignals(False)
+
     def _mk_combo(self, payload: str = "") -> QComboBox:
         cb = QComboBox(self.table)
         cb.setEditable(True)
+        cb.setMaxVisibleItems(14)
+
         for display, p in self._options:
             cb.addItem(display, p)
+
+        if cb.lineEdit() is not None:
+            cb.lineEdit().textEdited.connect(
+                lambda t, combo=cb: self._resort_combo_by_similarity(combo, t))
+
         if payload:
             for i in range(cb.count()):
                 if cb.itemData(i) == payload:
@@ -470,30 +543,93 @@ class LoraDelegate(QStyledItemDelegate):
             painter.drawText(option.rect, Qt.AlignCenter, "—")
             return
 
-        line_h = max(14, option.rect.height() // max(len(loras), 1))
-        y = option.rect.y()
-        for lora in loras:
-            enabled = lora.get("enabled", True)
-            model = lora.get("model", "")
-            weight = lora.get("weight", 1.0)
-            prefix = "[x]" if enabled else "[ ]"
-            text = f"{prefix} {model}: {weight:g}"
-            painter.setPen(
-                QColor(70, 70, 70) if not enabled else option.palette.text().
-                color())
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+
+        r = option.rect.adjusted(4, 4, -4, -4)
+        row_h = 22
+
+        # Fixed "table-like" columns, no wrapping/jiggling.
+        on_w = 34
+        weight_w = 84
+        model_w = max(0, r.width() - on_w - weight_w)
+
+        x_on = r.x()
+        x_model = x_on + on_w
+        x_weight = x_model + model_w
+
+        # Draw outer border once.
+        painter.setPen(option.palette.mid().color())
+        painter.setBrush(Qt.NoBrush)
+        painter.drawRect(r)
+
+        for i, lora in enumerate(loras):
+            y = r.y() + i * row_h
+            if y >= r.bottom():
+                break  # deterministic clipping; no reflow/reorder/no ellipsis markers
+
+            row_rect = r.__class__(r.x(), y, r.width(),
+                                   min(row_h,
+                                       r.bottom() - y + 1))
+
+            enabled = bool(lora.get("enabled", True))
+            model = str(lora.get("model", "") or "")
+            weight = float(lora.get("weight", 1.0))
+
+            if not enabled:
+                bg = QColor(120, 120, 120, 35)
+            else:
+                status = self._registry.color_for(model, "lora")
+                if status == COLOR_BAD:
+                    bg = QColor(220, 80, 80, 55)
+                elif status == COLOR_WARN:
+                    bg = QColor(255, 165, 0, 55)
+                else:
+                    bg = QColor(70, 150, 90, 45)
+
+            painter.fillRect(row_rect, bg)
+
+            # Horizontal row separator
+            painter.setPen(option.palette.mid().color())
+            painter.drawLine(r.x(), y, r.right(), y)
+
+            # Vertical column separators
+            painter.drawLine(x_model, y, x_model, y + row_rect.height() - 1)
+            painter.drawLine(x_weight, y, x_weight, y + row_rect.height() - 1)
+
+            # On
+            painter.setPen(option.palette.text().color())
+            on_text = "☑" if enabled else "☐"
             painter.drawText(
-                option.rect.x() + 4,
-                y,
-                option.rect.width() - 8,
-                line_h,
-                Qt.AlignVCenter | Qt.AlignLeft,
-                text,
+                r.__class__(x_on + 4, y, on_w - 8, row_rect.height()),
+                Qt.AlignVCenter | Qt.AlignHCenter,
+                on_text,
             )
-            y += line_h
+
+            # LoRA model: draw full text in fixed column, no eliding
+            painter.drawText(
+                r.__class__(x_model + 6, y, model_w - 12, row_rect.height()),
+                Qt.AlignVCenter | Qt.AlignLeft | Qt.TextSingleLine,
+                model,
+            )
+
+            # Weight
+            painter.drawText(
+                r.__class__(x_weight + 6, y, weight_w - 10, row_rect.height()),
+                Qt.AlignVCenter | Qt.AlignRight | Qt.TextSingleLine,
+                f"{weight:g}",
+            )
+
+        painter.restore()
 
 
 class ButtonDelegate(QStyledItemDelegate):
     clicked = Signal(QModelIndex)
+
+    def __init__(self, view: QTableView, parent=None):
+        super().__init__(parent)
+        self._view = view
+        self._pressed = QPersistentModelIndex()
 
     def _button_rect(self, rect):
         x = rect.x() + (rect.width() - RUN_BTN_W) // 2
@@ -504,14 +640,34 @@ class ButtonDelegate(QStyledItemDelegate):
         opt = QStyleOptionButton()
         opt.rect = self._button_rect(option.rect)
         opt.text = "Run"
-        opt.state = QStyle.State_Enabled | QStyle.State_Raised
+        opt.state = QStyle.State_Enabled
+        if (self._pressed.isValid() and self._pressed.row() == index.row()
+                and self._pressed.column() == index.column()):
+            opt.state |= QStyle.State_Sunken
+        else:
+            opt.state |= QStyle.State_Raised
         QApplication.style().drawControl(QStyle.CE_PushButton, opt, painter)
 
     def editorEvent(self, event, model, option, index):
-        if event.type() == QEvent.MouseButtonRelease and self._button_rect(
-                option.rect).contains(event.pos()):
-            self.clicked.emit(index)
+        br = self._button_rect(option.rect)
+
+        if event.type() == QEvent.MouseButtonPress and br.contains(
+                event.pos()):
+            self._pressed = QPersistentModelIndex(index)
+            self._view.viewport().update(option.rect)
             return True
+
+        if event.type() == QEvent.MouseButtonRelease:
+            hit = br.contains(event.pos())
+            was_pressed = (self._pressed.isValid()
+                           and self._pressed.row() == index.row()
+                           and self._pressed.column() == index.column())
+            self._pressed = QPersistentModelIndex()
+            self._view.viewport().update(option.rect)
+            if was_pressed and hit:
+                self.clicked.emit(index)
+                return True
+
         return False
 
 
@@ -663,10 +819,18 @@ class MainWindow(QWidget):
 
         layout = QVBoxLayout(self)
 
+        search_row = QHBoxLayout()
         self.search = QLineEdit()
         self.search.setPlaceholderText("Filter by positive prompt…")
-        self.search.textChanged.connect(self.proxy.setFilterFixedString)
-        layout.addWidget(self.search)
+        self.search.returnPressed.connect(self._apply_filter)
+
+        apply_filter_btn = QPushButton("Apply filter")
+        apply_filter_btn.setFixedHeight(EDITOR_H)
+        apply_filter_btn.clicked.connect(self._apply_filter)
+
+        search_row.addWidget(self.search)
+        search_row.addWidget(apply_filter_btn)
+        layout.addLayout(search_row)
 
         self.view = QTableView()
         self.view.setModel(self.proxy)
@@ -703,7 +867,18 @@ class MainWindow(QWidget):
         self.view.setColumnWidth(COL_NEGATIVE,
                                  max(self.view.columnWidth(COL_NEGATIVE), 320))
 
+        self.view.setColumnWidth(
+            COL_CHECKPOINT,
+            max(self.view.columnWidth(COL_CHECKPOINT), MIN_W_CHECKPOINT))
+        self.view.setColumnWidth(
+            COL_VAE, max(self.view.columnWidth(COL_VAE), MIN_W_VAE))
+        self.view.setColumnWidth(
+            COL_LORAS, max(self.view.columnWidth(COL_LORAS), MIN_W_LORAS))
+
         self.resize(1400, 800)
+
+    def _apply_filter(self) -> None:
+        self.proxy.setFilterFixedString(self.search.text())
 
     def _setup_delegates(self) -> None:
         self.image_delegate = ImageDelegate(self.view)
@@ -732,7 +907,7 @@ class MainWindow(QWidget):
         self.view.setItemDelegateForColumn(COL_LORAS,
                                            LoraDelegate(self.registry, self))
 
-        self.run_delegate = ButtonDelegate(self)
+        self.run_delegate = ButtonDelegate(self.view, self)
         self.run_delegate.clicked.connect(self._on_run)
         self.view.setItemDelegateForColumn(COL_RUN, self.run_delegate)
 

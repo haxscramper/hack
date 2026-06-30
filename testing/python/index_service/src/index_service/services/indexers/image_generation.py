@@ -246,6 +246,9 @@ class GenerationParamsIndexer(BaseIndexer):
 
         def run():
             if comfy.note == "no workflow data detected":
+                # TODO: Extract original seed information.
+                # TODO: Do not fill generation parameters for files
+                # that have no generation data originally
                 sampler, scheduler = _normalize_sampler_name(exif.file.sampler)
                 return GenerationParamsIndexerResult(
                     positive=exif.file.prompt,
