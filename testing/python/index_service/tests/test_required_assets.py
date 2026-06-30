@@ -75,6 +75,8 @@ def test_chain_two_indexers(db: IndexDatabase, tmp_path: Path) -> None:
             RootIndexer(),
             NestedIndexer(),
         ],
+        resource_types=[],
+        converter_types=[],
     )
 
     root = db.add_root("root", file_path.parent)
@@ -162,6 +164,8 @@ def test_branching_indexers(db: IndexDatabase, tmp_path: Path) -> None:
             IndexerC(),
             IndexerD(),
         ],
+        resource_types=[],
+        converter_types=[],
     )
 
     root = db.add_root("root", tmp_path)
@@ -223,6 +227,7 @@ def test_indexer_receives_resource(db: IndexDatabase, tmp_path: Path) -> None:
         db=db,
         resource_types=[EchoResource()],
         indexer_types=[EchoIndexer()],
+        converter_types=[],
     )
 
     root = db.add_root("root", tmp_path)

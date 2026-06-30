@@ -1,27 +1,28 @@
 from __future__ import annotations
 
+import logging
 from concurrent.futures import ThreadPoolExecutor
 from graphlib import TopologicalSorter
+
 from beartype import beartype
-from beartype.typing import overload
+from beartype.typing import Sequence, overload
 
 from index_service.services.core.db import IndexDatabase
-from index_service.services.core.job_types import BaseConverter, BaseIndexer, BaseResource, RunContext
+from index_service.services.core.job_types import (
+    BaseConverter,
+    BaseIndexer,
+    BaseResource,
+    RunContext,
+)
 from index_service.services.core.types import (
-    FileHash,
     ConverterOutput,
     ConverterRequest,
+    FileHash,
     FileRef,
     IndexerOutput,
     IndexerRequest,
 )
-from index_service.services.default_job_types import (
-    DEFAULT_CONVERTER_TYPES,
-    DEFAULT_INDEXER_TYPES,
-    DEFAULT_RESOURCE_TYPES,
-)
 from index_service.services.utils import ExceptionContextNote
-import logging
 
 log = logging.getLogger(__name__)
 
@@ -34,27 +35,25 @@ class IndexRuntime:
         self,
         ctx: RunContext,
         db: IndexDatabase,
-        indexer_types: list[BaseIndexer] | None = None,
-        converter_types: list[BaseConverter] | None = None,
-        resource_types: list[BaseResource] | None = None,
+        indexer_types: Sequence[BaseIndexer],
+        converter_types: Sequence[BaseConverter],
+        resource_types: Sequence[BaseResource],
     ) -> None:
         self.db = db
         self.ctx = ctx
         self._resource_instances: dict[str, BaseResource] = {
             inst.resource_key: inst
-            for inst in (
-                resource_types or [t() for t in DEFAULT_RESOURCE_TYPES])
+            for inst in resource_types
         }
 
         self._indexer_instances: dict[str, BaseIndexer] = {
             inst.asset_name: inst
-            for inst in (indexer_types or [t() for t in DEFAULT_INDEXER_TYPES])
+            for inst in indexer_types
         }
 
         self._converter_instances: dict[str, BaseConverter] = {
             inst.converter_id: inst
-            for inst in (
-                converter_types or [t() for t in DEFAULT_CONVERTER_TYPES])
+            for inst in converter_types
         }
 
         self.db.ensure_collections(list(self._indexer_instances.keys()))
@@ -136,9 +135,13 @@ class IndexRuntime:
 
             request = IndexerRequest(file_ref=ref, dependency_results=assets)
 
-            with ExceptionContextNote(
-                    f"running indexer '{indexer.asset_name}' for '{self.db.get_path(ref)} {ref.hash}'"
-            ), self.ctx.trace_scope("index", file=str(self.db.get_path(ref))):
+            with (
+                    ExceptionContextNote(
+                        f"running indexer '{indexer.asset_name}' for '{self.db.get_path(ref)} {ref.hash}'"
+                    ),
+                    self.ctx.trace_scope("index",
+                                         file=str(self.db.get_path(ref))),
+            ):
                 out = indexer.run(
                     ctx=self.ctx,
                     request=request,

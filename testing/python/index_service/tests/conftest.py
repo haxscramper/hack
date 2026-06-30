@@ -73,7 +73,7 @@ class MockFlmGemmaResource(BaseResource):
 
 @pytest.fixture
 def runtime(db) -> Generator[IndexRuntime, None, None]:
-    from index_service.services.default_job_types import DEFAULT_RESOURCE_TYPES
+    from index_service.services.default_job_types import DEFAULT_RESOURCE_TYPES, DEFAULT_INDEXER_TYPES, DEFAULT_CONVERTER_TYPES
     ctx = RunContext(db)
 
     rt = IndexRuntime(
@@ -83,6 +83,8 @@ def runtime(db) -> Generator[IndexRuntime, None, None]:
             MockFlmGemmaResource() if t.resource_key == "flm_gemma" else t()
             for t in DEFAULT_RESOURCE_TYPES
         ],
+        indexer_types=[t() for t in DEFAULT_INDEXER_TYPES],
+        converter_types=[t() for t in DEFAULT_CONVERTER_TYPES],
     )
 
     yield rt
