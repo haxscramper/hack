@@ -8,7 +8,7 @@ from typing import Annotated, Union
 import fitz
 from pydantic import BaseModel, Field
 
-from index_service.services.job_types import BaseResource, RunContext, cache_indexer_run
+from index_service.services.core.job_types import BaseResource, RunContext, cache_indexer_run
 from index_service.services.resources.pdf.docling_extractor import DoclingExtractor, DoclingPage
 from index_service.services.resources.pdf.mypdf_extractor import MyPDFExtractor, MyPDFPage
 from index_service.services.utils import get_xdg_cache_dir

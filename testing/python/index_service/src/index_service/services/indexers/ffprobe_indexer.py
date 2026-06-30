@@ -4,8 +4,8 @@ from pathlib import Path
 
 from beartype import beartype
 from beartype.typing import Any, cast
-from index_service.services.job_types import BaseIndexer, RunContext, cache_indexer_run
-from index_service.services.types import IndexerOutput, IndexerRequest
+from index_service.services.core.job_types import BaseIndexer, RunContext, cache_indexer_run
+from index_service.services.core.types import IndexerOutput, IndexerRequest
 from plumbum import local
 from pydantic import BaseModel
 

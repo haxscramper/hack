@@ -14,9 +14,9 @@ from index_service.services.indexers.exif_metadata import (
     ExifMetadataIndexer,
     ExifMetadataIndexerResult,
 )
-from index_service.services.job_types import BaseIndexer, RunContext, cache_indexer_run
+from index_service.services.core.job_types import BaseIndexer, RunContext, cache_indexer_run
 from index_service.services.pydantic_utils import to_json_safe
-from index_service.services.types import IndexerOutput, IndexerRequest
+from index_service.services.core.types import IndexerOutput, IndexerRequest
 from pydantic import BaseModel
 
 log = logging.getLogger(__name__)

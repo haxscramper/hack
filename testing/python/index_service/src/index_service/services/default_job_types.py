@@ -1,5 +1,5 @@
 from index_service.services.converters.file_size_converter import FileSizeConverter
-from index_service.services.job_types import BaseConverter, BaseIndexer, BaseResource
+from index_service.services.core.job_types import BaseConverter, BaseIndexer, BaseResource
 from index_service.services.indexers.file_embedding import FileEmbeddingIndexer
 from index_service.services.indexers.file_size import FileSizeIndexer
 from index_service.services.indexers.file_stats import FileStatsIndexer

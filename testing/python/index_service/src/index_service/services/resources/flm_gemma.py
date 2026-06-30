@@ -1,6 +1,6 @@
 import os
 
-from index_service.services.job_types import BaseResource, RunContext
+from index_service.services.core.job_types import BaseResource, RunContext
 from openai import OpenAI
 from pydantic import BaseModel
 

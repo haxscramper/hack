@@ -13,7 +13,7 @@ from PIL import Image
 from pydantic import BaseModel
 
 from index_service.services.resources.wdv3_jax import Models
-from index_service.services.job_types import BaseResource, RunContext
+from index_service.services.core.job_types import BaseResource, RunContext
 from index_service.services.utils import get_xdg_cache_dir
 
 from index_service.services.utils import get_xdg_cache_dir

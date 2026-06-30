@@ -11,7 +11,7 @@ from beartype import beartype
 from beartype.typing import Any, Dict, List, Optional, cast
 from openai import BaseModel
 from index_service.services.pydantic_utils import model_from_json_data, model_to_json_data
-from index_service.services.types import FileHash, AnyModel, FileRef, RootRef
+from index_service.services.core.types import FileHash, AnyModel, FileRef, RootRef
 from index_service.services.utils import ExceptionContextNote
 import logging
 

@@ -3,10 +3,10 @@ from beartype.typing import Optional, cast
 
 from index_service.gui.collection_views.builder import WidgetBuilder
 from index_service.gui.collection_views.json_preview_widget import JsonPreviewWidget
-from index_service.services.db import IndexDatabase
+from index_service.services.core.db import IndexDatabase
 from index_service.services.indexers.wd_indexer import WdTagIndexer, WdTagIndexerResult
 from index_service.services.resources.wd_tagger import WdTaggerResult
-from index_service.services.types import FileHash
+from index_service.services.core.types import FileHash
 
 
 class WdTaggerWidgetBuilder(WidgetBuilder):

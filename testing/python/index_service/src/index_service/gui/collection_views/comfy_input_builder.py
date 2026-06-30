@@ -4,9 +4,9 @@ from PySide6.QtWidgets import QAbstractItemView, QTableWidget, QTableWidgetItem,
 
 from index_service.gui.collection_views.builder import WidgetBuilder
 from index_service.gui.collection_views.json_preview_widget import JsonPreviewWidget
-from index_service.services.db import IndexDatabase
+from index_service.services.core.db import IndexDatabase
 from index_service.services.indexers.comfy_input_indexer import ComfyInputIndexer, ComfyInputIndexerResult
-from index_service.services.types import FileHash
+from index_service.services.core.types import FileHash
 
 
 class ComfyInputWidgetBuilder(WidgetBuilder):

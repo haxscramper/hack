@@ -4,13 +4,13 @@ import re
 import pytest
 from beartype.typing import Any, Generator
 
-from index_service.services.db import IndexDatabase
-from index_service.services.job_types import BaseResource, RunContext
+from index_service.services.core.db import IndexDatabase
+from index_service.services.core.job_types import BaseResource, RunContext
 from index_service.services.resources.flm_gemma import (
     FlmSummaryResult,
     SummarizeRequest,
 )
-from index_service.services.job_runtime import IndexRuntime
+from index_service.services.core.job_runtime import IndexRuntime
 from index_service.services.utils import get_custom_traceback_handler, stfu_logs
 
 ARANGO_HOST = "http://localhost:8529"

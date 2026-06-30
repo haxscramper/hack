@@ -8,7 +8,7 @@ from index_service.gui.collection_views.comfy_input_builder import ComfyInputWid
 from index_service.gui.collection_views.exif_preview_builder import ExifPreviewrWidgetBuilder
 from index_service.gui.collection_views.wd_tagger_builder import WdTaggerWidgetBuilder
 from index_service.gui.window import MainWindow
-from index_service.services.db import IndexDatabase
+from index_service.services.core.db import IndexDatabase
 import sys
 from beartype.typing import Any
 import warnings
@@ -21,12 +21,12 @@ from index_service.services.indexers.image_generation import GenerationParamsInd
 from index_service.services.indexers.pdf_indexer import PdfIndexer
 from index_service.services.indexers.safetensor_indexer import SafetensorIndexer
 from index_service.services.indexers.wd_indexer import WdTagIndexer
-from index_service.services.job_types import RunContext
+from index_service.services.core.job_types import RunContext
 from index_service.services.resources.pdf.pdf_extractor import PdfExtractor
-from index_service.services.types import FileRef, RootRef
+from index_service.services.core.types import FileRef, RootRef
 from index_service.services.default_job_types import DEFAULT_INDEXER_TYPES, DEFAULT_RESOURCE_TYPES
 from index_service.services.resources.wd_tagger import WdTagger
-from index_service.services.job_runtime import IndexRuntime
+from index_service.services.core.job_runtime import IndexRuntime
 from index_service.services.utils import get_custom_traceback_handler, get_xdg_cache_dir, stfu_logs
 from PySide6.QtWidgets import QApplication
 

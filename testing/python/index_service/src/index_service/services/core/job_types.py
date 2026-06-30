@@ -14,9 +14,9 @@ from beartype import beartype
 from pydantic import BaseModel
 import contextlib
 
-from index_service.services.db import IndexDatabase
+from index_service.services.core.db import IndexDatabase
 from index_service.services.pydantic_utils import model_from_json_data, model_to_json_data, to_json_safe
-from index_service.services.types import (
+from index_service.services.core.types import (
     ConverterOutput,
     ConverterRequest,
     FileRef,

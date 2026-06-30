@@ -20,14 +20,14 @@ from PySide6.QtWidgets import (
 
 from index_service.gui.collection_views.builder import WidgetBuilder
 from index_service.gui.collection_views.json_preview_widget import JsonPreviewWidget
-from index_service.services.db import IndexDatabase
+from index_service.services.core.db import IndexDatabase
 from index_service.services.indexers.exif_metadata import (
     ExifMetadataIndexer,
     ExifMetadataIndexerResult,
     ImageParams,
 )
 from index_service.services.pydantic_utils import model_to_json_data
-from index_service.services.types import FileHash
+from index_service.services.core.types import FileHash
 
 
 class ExifPreviewrWidgetBuilder(WidgetBuilder):

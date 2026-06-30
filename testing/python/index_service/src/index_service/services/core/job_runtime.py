@@ -5,9 +5,9 @@ from graphlib import TopologicalSorter
 from beartype import beartype
 from beartype.typing import overload
 
-from index_service.services.db import IndexDatabase
-from index_service.services.job_types import BaseConverter, BaseIndexer, BaseResource, RunContext
-from index_service.services.types import (
+from index_service.services.core.db import IndexDatabase
+from index_service.services.core.job_types import BaseConverter, BaseIndexer, BaseResource, RunContext
+from index_service.services.core.types import (
     FileHash,
     ConverterOutput,
     ConverterRequest,

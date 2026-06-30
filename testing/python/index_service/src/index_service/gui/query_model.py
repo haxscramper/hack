@@ -10,8 +10,8 @@ from PySide6.QtCore import (
     Qt,
 )
 
-from index_service.services.db import IndexDatabase
-from index_service.services.types import FileHash
+from index_service.services.core.db import IndexDatabase
+from index_service.services.core.types import FileHash
 
 log = logging.getLogger(__name__)
 

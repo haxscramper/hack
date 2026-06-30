@@ -8,9 +8,9 @@ from pprint import pformat
 
 from beartype import beartype
 from beartype.typing import Any, Dict, List, Optional, Set, Tuple, Union
-from index_service.services.job_types import BaseIndexer, RunContext, cache_indexer_run
+from index_service.services.core.job_types import BaseIndexer, RunContext, cache_indexer_run
 from index_service.services.pydantic_utils import try_parse_json
-from index_service.services.types import IndexerOutput, IndexerRequest
+from index_service.services.core.types import IndexerOutput, IndexerRequest
 from PIL import Image
 from pydantic import BaseModel, ConfigDict, Field
 

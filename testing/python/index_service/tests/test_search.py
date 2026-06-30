@@ -1,8 +1,8 @@
 from pathlib import Path
 
-from index_service.services.db import IndexDatabase
-from index_service.services.types import FileRef
-from index_service.services.job_runtime import IndexRuntime
+from index_service.services.core.db import IndexDatabase
+from index_service.services.core.types import FileRef
+from index_service.services.core.job_runtime import IndexRuntime
 
 
 def test_full_text_search(db: IndexDatabase, runtime: IndexRuntime,

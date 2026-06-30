@@ -1,7 +1,7 @@
 from pathlib import Path
 
-from index_service.services.job_types import BaseConverter, RunContext
-from index_service.services.types import ConverterOutput, ConverterRequest
+from index_service.services.core.job_types import BaseConverter, RunContext
+from index_service.services.core.types import ConverterOutput, ConverterRequest
 from pydantic import BaseModel
 import logging
 

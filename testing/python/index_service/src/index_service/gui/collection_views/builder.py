@@ -1,7 +1,7 @@
 from typing import Protocol
 
-from index_service.services.db import IndexDatabase
-from index_service.services.types import FileHash
+from index_service.services.core.db import IndexDatabase
+from index_service.services.core.types import FileHash
 from PySide6.QtWidgets import QWidget
 from abc import ABC, abstractmethod
 

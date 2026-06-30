@@ -6,11 +6,11 @@ from beartype.typing import cast
 from pydantic import BaseModel
 
 from index_service.services.converters.file_size_converter import FileSizeConverterResult
-from index_service.services.db import IndexDatabase
+from index_service.services.core.db import IndexDatabase
 from index_service.services.indexers.file_size import FileSizeIndexerResult
 from index_service.services.indexers.file_stats import FileStatsIndexerResult
-from index_service.services.types import FileHash, FileRef
-from index_service.services.job_runtime import IndexRuntime
+from index_service.services.core.types import FileHash, FileRef
+from index_service.services.core.job_runtime import IndexRuntime
 
 ARANGO_HOST = os.environ.get("ARANGO_HOST", "http://localhost:8529")
 ARANGO_USER = os.environ.get("ARANGO_USER", "root")

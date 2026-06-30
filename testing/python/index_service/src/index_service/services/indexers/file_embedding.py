@@ -1,8 +1,8 @@
 import math
 from pathlib import Path
 
-from index_service.services.job_types import BaseIndexer, RunContext
-from index_service.services.types import IndexerOutput, IndexerRequest
+from index_service.services.core.job_types import BaseIndexer, RunContext
+from index_service.services.core.types import IndexerOutput, IndexerRequest
 from pydantic import BaseModel
 
 
