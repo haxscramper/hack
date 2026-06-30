@@ -632,17 +632,18 @@ class LoraEditorWidget(QWidget):
         self.table.setHorizontalHeaderLabels(["On", "LoRA", "Weight"])
         self.table.horizontalHeader().setVisible(False)
         self.table.horizontalHeader().setSectionResizeMode(
-            0, QHeaderView.Fixed)
+            0, QHeaderView.ResizeMode.Fixed)
         self.table.horizontalHeader().setSectionResizeMode(
-            1, QHeaderView.Stretch)
+            1, QHeaderView.ResizeMode.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(
-            2, QHeaderView.Fixed)
+            2, QHeaderView.ResizeMode.Fixed)
         self.table.setColumnWidth(0, LORA_ON_W)
         self.table.setColumnWidth(2, LORA_WEIGHT_W)
 
         self.table.verticalHeader().setVisible(False)
         self.table.verticalHeader().setDefaultSectionSize(LORA_ROW_H)
-        self.table.verticalHeader().setSectionResizeMode(QHeaderView.Fixed)
+        self.table.verticalHeader().setSectionResizeMode(
+            QHeaderView.ResizeMode.Fixed)
 
         self.table.setShowGrid(True)
         self.table.setWordWrap(False)
@@ -971,13 +972,14 @@ class ButtonDelegate(QStyledItemDelegate):
         opt = QStyleOptionButton()
         opt.rect = self._button_rect(option.rect)
         opt.text = "Run"
-        opt.state = QStyle.State_Enabled
+        opt.state = QStyle.StateFlag.State_Enabled
         if (self._pressed.isValid() and self._pressed.row() == index.row()
                 and self._pressed.column() == index.column()):
-            opt.state |= QStyle.State_Sunken
+            opt.state |= QStyle.StateFlag.State_Sunken
         else:
-            opt.state |= QStyle.State_Raised
-        QApplication.style().drawControl(QStyle.CE_PushButton, opt, painter)
+            opt.state |= QStyle.StateFlag.State_Raised
+        QApplication.style().drawControl(QStyle.ControlElement.CE_PushButton,
+                                         opt, painter)
 
     def editorEvent(self, event, model, option, index):
         br = self._button_rect(option.rect)
@@ -1152,7 +1154,7 @@ class RunFriendlyTableView(QTableView):
         if editor is None:
             return
         self.commitData(editor)
-        self.closeEditor(editor, QAbstractItemDelegate.NoHint)
+        self.closeEditor(editor, QAbstractItemDelegate.EndEditHint.NoHint)
 
     def mousePressEvent(self, event):
         pos = event.position().toPoint()
@@ -1211,7 +1213,7 @@ class MainWindow(QWidget):
         self._setup_delegates()
 
         header = self.view.horizontalHeader()
-        header.setSectionResizeMode(QHeaderView.Interactive)
+        header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         header.setStretchLastSection(False)
 
         self.view.setColumnWidth(COL_IMAGE, THUMB + 12)
