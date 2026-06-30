@@ -88,6 +88,7 @@ class NetworkData:
 
 
 class AssemblyStep(QGraphicsItem):
+
     def __init__(self) -> None:
         QGraphicsItem.__init__(self)
 
@@ -113,9 +114,9 @@ class AssemblyStep(QGraphicsItem):
         pen = QPen()
 
         # Draw background white rectangle
-        brush.setColor(Qt.white)
-        pen.setColor(Qt.white)
-        brush.setStyle(Qt.SolidPattern)
+        brush.setColor(Qt.GlobalColor.white)
+        pen.setColor(Qt.GlobalColor.white)
+        brush.setStyle(Qt.BrushStyle.SolidPattern)
 
         painter.setBrush(brush)
         painter.setPen(pen)
@@ -125,19 +126,20 @@ class AssemblyStep(QGraphicsItem):
         # Draw build step itself
         pen.setWidth(2)
 
-        brush.setStyle(Qt.SolidPattern)
+        brush.setStyle(Qt.BrushStyle.SolidPattern)
         brush.setColor(QColor("orange"))
-        pen.setColor(Qt.black)
+        pen.setColor(Qt.GlobalColor.black)
 
         painter.setBrush(brush)
         painter.setPen(pen)
 
         painter.drawRect(self.boundingRect())
-        painter.drawText(rectUnder(self.boundingRect()), Qt.AlignCenter,
-                         str(self.assemblyTime))
+        painter.drawText(rectUnder(self.boundingRect()),
+                         Qt.AlignmentFlag.AlignCenter, str(self.assemblyTime))
 
 
 class AssemblyItem(QGraphicsItem):
+
     def __init__(self) -> None:
         QGraphicsItem.__init__(self)
 
@@ -161,9 +163,9 @@ class AssemblyItem(QGraphicsItem):
         brush = QBrush()
         pen = QPen()
 
-        brush.setColor(Qt.white)
-        pen.setColor(Qt.white)
-        brush.setStyle(Qt.SolidPattern)
+        brush.setColor(Qt.GlobalColor.white)
+        pen.setColor(Qt.GlobalColor.white)
+        brush.setStyle(Qt.BrushStyle.SolidPattern)
 
         painter.setBrush(brush)
         painter.setPen(pen)
@@ -173,9 +175,9 @@ class AssemblyItem(QGraphicsItem):
         painter.drawEllipse(widenRect(self.boundingRect(), 5))
 
         pen.setWidth(2)
-        brush.setStyle(Qt.SolidPattern)
-        brush.setColor(Qt.green)
-        pen.setColor(Qt.black)
+        brush.setStyle(Qt.BrushStyle.SolidPattern)
+        brush.setColor(Qt.GlobalColor.green)
+        pen.setColor(Qt.GlobalColor.black)
 
         painter.setBrush(brush)
         painter.setPen(pen)
@@ -184,12 +186,13 @@ class AssemblyItem(QGraphicsItem):
         rectUnder: QRectF = QRectF(boundRect.bottomLeft(),
                                    boundRect.bottomRight() + QPointF(0, 30))
 
-        painter.drawText(rectUnder, Qt.AlignCenter, self.caption)
+        painter.drawText(rectUnder, Qt.AlignmentFlag.AlignCenter, self.caption)
 
 
 def connectLines(scene: QGraphicsScene,
                  assemblySteps: MutableMapping[str, AssemblyStep],
                  assemblyItems: MutableMapping[str, AssemblyItem]) -> None:
+
     def configureLine(line: QGraphicsLineItem) -> None:
         pass
 
@@ -203,9 +206,7 @@ def connectLines(scene: QGraphicsScene,
         step.resutl = res
 
         configureLine(
-            scene.addLine(res.center.x(),
-                          res.center.y(),
-                          step.center.x(),
+            scene.addLine(res.center.x(), res.center.y(), step.center.x(),
                           step.center.y()))
 
 
@@ -247,9 +248,9 @@ def positionBuildSteps(nextSteps: List[AssemblyStep], buildLevel: int) -> None:
     logdown()
 
 
-def buildDependencies(assemblySteps: MutableMapping[str, AssemblyStep],
-                      assemblyItems: MutableMapping[str, AssemblyItem]
-                      ) -> None:
+def buildDependencies(
+        assemblySteps: MutableMapping[str, AssemblyStep],
+        assemblyItems: MutableMapping[str, AssemblyItem]) -> None:
     for stepName, step in assemblySteps.items():
         dependecies: List[str] = step.networkData.depsName
 
@@ -298,6 +299,7 @@ def arrangeNodes(assemblyItems: Mapping[str, AssemblyItem]) -> None:
 
 
 class AssemblyView(QGraphicsView):
+
     def __init__(self) -> None:
         QGraphicsView.__init__(self)
 
@@ -345,8 +347,8 @@ class AssemblyView(QGraphicsView):
         self.grab(self.sceneRect().toRect()).save("scene.png")
 
 
-
 class MainWindow(QMainWindow):
+
     def __init__(self) -> None:
         QMainWindow.__init__(self)
         self.view = AssemblyView()
@@ -414,7 +416,6 @@ class MainWindow(QMainWindow):
 
         if isGuiMode:
             self.view.update()
-
 
         print("Done")
 

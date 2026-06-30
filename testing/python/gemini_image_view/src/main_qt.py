@@ -354,8 +354,8 @@ class ThumbnailDelegate(QStyledItemDelegate):
 
         scaled = pix.scaled(
             self.thumb_size - QSize(6, 6),
-            Qt.KeepAspectRatio,
-            Qt.SmoothTransformation,
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
         )
         canvas = QPixmap(self.thumb_size)
         canvas.fill(QColor("#202020"))
@@ -402,7 +402,7 @@ class ThumbnailDelegate(QStyledItemDelegate):
             option.rect.width(),
             option.rect.height() - self.thumb_size.height() - 5,
         )
-        painter.setPen(Qt.white)
+        painter.setPen(Qt.GlobalColor.white)
         font = painter.font()
         font.setPointSize(9)
         painter.setFont(font)
@@ -439,15 +439,15 @@ class ScaledImageLabel(QLabel):
     def __init__(self, pixmap, parent=None):
         super().__init__(parent)
         self.original_pixmap = pixmap
-        self.setAlignment(Qt.AlignCenter)
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setMinimumSize(1, 1)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
         if not self.original_pixmap.isNull():
-            scaled = self.original_pixmap.scaled(event.size(),
-                                                 Qt.KeepAspectRatio,
-                                                 Qt.SmoothTransformation)
+            scaled = self.original_pixmap.scaled(
+                event.size(), Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation)
             super().setPixmap(scaled)
 
 
@@ -463,7 +463,7 @@ class PreviewDialog(QDialog):
         pix = QPixmap(image_path)
         if pix.isNull():
             label = QLabel("Could not load image.")
-            label.setAlignment(Qt.AlignCenter)
+            label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             layout.addWidget(label)
             self.resize(400, 300)
             return
@@ -479,8 +479,9 @@ class PreviewDialog(QDialog):
         max_h = int(screen.height() * 0.9)
 
         if w > max_w or h > max_h:
-            scaled = pix.scaled(max_w, max_h, Qt.KeepAspectRatio,
-                                Qt.SmoothTransformation)
+            scaled = pix.scaled(max_w, max_h,
+                                Qt.AspectRatioMode.KeepAspectRatio,
+                                Qt.TransformationMode.SmoothTransformation)
             self.resize(scaled.width(), scaled.height())
         else:
             self.resize(w, h)
@@ -499,8 +500,8 @@ class ClickableImageLabel(QLabel):
         self.thumb_size = thumb_size
         self.selection_order: Optional[int] = None
         self.setFixedSize(thumb_size)
-        self.setAlignment(Qt.AlignCenter)
-        self.setFrameShape(QFrame.Box)
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.setFrameShape(QFrame.Shape.Box)
         self.setLineWidth(1)
         self.setStyleSheet("background: #222; color: white;")
         self.refresh_pixmap()
@@ -512,8 +513,8 @@ class ClickableImageLabel(QLabel):
             return
         scaled = pix.scaled(
             self.thumb_size - QSize(6, 6),
-            Qt.KeepAspectRatio,
-            Qt.SmoothTransformation,
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
         )
         canvas = QPixmap(self.thumb_size)
         canvas.fill(QColor("#202020"))
@@ -527,20 +528,21 @@ class ClickableImageLabel(QLabel):
             rect_w = 28
             rect_h = 28
             painter.setBrush(QColor(20, 120, 255, 220))
-            painter.setPen(Qt.NoPen)
+            painter.setPen(Qt.PenStyle.NoPen)
             painter.drawRoundedRect(4, 4, rect_w, rect_h, 6, 6)
 
-            painter.setPen(QPen(Qt.white))
+            painter.setPen(QPen(Qt.GlobalColor.white))
             font = QFont()
             font.setBold(True)
             painter.setFont(font)
-            painter.drawText(4, 4, rect_w, rect_h, Qt.AlignCenter,
+            painter.drawText(4, 4, rect_w, rect_h,
+                             Qt.AlignmentFlag.AlignCenter,
                              str(self.selection_order))
 
             pen = QPen(QColor(20, 120, 255))
             pen.setWidth(3)
             painter.setPen(pen)
-            painter.setBrush(Qt.NoBrush)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawRect(1, 1,
                              self.thumb_size.width() - 2,
                              self.thumb_size.height() - 2)
@@ -553,12 +555,12 @@ class ClickableImageLabel(QLabel):
         self.refresh_pixmap()
 
     def mousePressEvent(self, event):
-        if event.button() == Qt.LeftButton:
+        if event.button() == Qt.MouseButton.LeftButton:
             self.selectRequested.emit(self.image_path)
         super().mousePressEvent(event)
 
     def mouseDoubleClickEvent(self, event):
-        if event.button() == Qt.LeftButton:
+        if event.button() == Qt.MouseButton.LeftButton:
             self.openRequested.emit(self.image_path)
         super().mouseDoubleClickEvent(event)
 
@@ -568,7 +570,7 @@ class CopyableTextBox(QFrame):
     def __init__(self, text: str, parent=None):
         super().__init__(parent)
         self.text = text
-        self.setFrameShape(QFrame.StyledPanel)
+        self.setFrameShape(QFrame.Shape.StyledPanel)
 
         layout = QVBoxLayout(self)
         top = QHBoxLayout()
@@ -586,7 +588,8 @@ class CopyableTextBox(QFrame):
 
         text_label = QLabel(text)
         text_label.setWordWrap(True)
-        text_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        text_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse)
         layout.addWidget(text_label)
 
     def copy_text(self):
@@ -598,23 +601,23 @@ class ResultImageWidget(QFrame):
     def __init__(self, image_path: str, parent=None):
         super().__init__(parent)
         self.image_path = image_path
-        self.setFrameShape(QFrame.StyledPanel)
+        self.setFrameShape(QFrame.Shape.StyledPanel)
 
         # Set a fixed size to prevent the widget from taking up excess horizontal space
         self.setFixedSize(QSize(130, 160))
 
         layout = QVBoxLayout(self)
-        layout.setAlignment(Qt.AlignCenter)
+        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.setContentsMargins(5, 5, 5, 5)
 
         self.label = ClickableImageLabel(image_path, QSize(110, 110))
         self.label.openRequested.connect(self.show_preview)
-        layout.addWidget(self.label, alignment=Qt.AlignCenter)
+        layout.addWidget(self.label, alignment=Qt.AlignmentFlag.AlignCenter)
 
         copy_btn = QPushButton("Copy")
         copy_btn.setFixedWidth(60)
         copy_btn.clicked.connect(self.copy_path)
-        layout.addWidget(copy_btn, alignment=Qt.AlignCenter)
+        layout.addWidget(copy_btn, alignment=Qt.AlignmentFlag.AlignCenter)
 
     def copy_path(self):
         QApplication.clipboard().setText(self.image_path)
@@ -629,7 +632,7 @@ class ResultRunWidget(QFrame):
     def __init__(self, run_data: HistoryEntry, parent=None):
         super().__init__(parent)
         self.run_data = run_data
-        self.setFrameShape(QFrame.Box)
+        self.setFrameShape(QFrame.Shape.Box)
         self.setLineWidth(1)
 
         layout = QVBoxLayout(self)
@@ -696,7 +699,8 @@ class ResultRunWidget(QFrame):
                     for p in in_imgs:
                         lbl = QLabel(p)
                         lbl.setWordWrap(True)
-                        lbl.setTextInteractionFlags(Qt.TextSelectableByMouse)
+                        lbl.setTextInteractionFlags(
+                            Qt.TextInteractionFlag.TextSelectableByMouse)
                         layout.addWidget(lbl)
 
                 out_images = [
@@ -894,18 +898,19 @@ class MainWindow(QMainWindow):
 
         root = QHBoxLayout(central)
 
-        splitter = QSplitter(Qt.Horizontal)
+        splitter = QSplitter(Qt.Orientation.Horizontal)
         root.addWidget(splitter)
 
         # Left pane: results/history
         self.results_container = QWidget()
         self.results_layout = QVBoxLayout(self.results_container)
-        self.results_layout.setAlignment(Qt.AlignTop)
+        self.results_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
         self.results_scroll = QScrollArea()
         self.results_scroll.setWidgetResizable(True)
         self.results_scroll.setMinimumWidth(100)
-        self.results_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.results_scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.results_scroll.setWidget(self.results_container)
         splitter.addWidget(self.results_scroll)
 
@@ -916,7 +921,7 @@ class MainWindow(QMainWindow):
         form = QFormLayout()
 
         self.api_key_edit = QLineEdit()
-        self.api_key_edit.setEchoMode(QLineEdit.Password)
+        self.api_key_edit.setEchoMode(QLineEdit.EchoMode.Password)
         self.api_key_edit.setPlaceholderText(
             "Uses GEMINI_API_KEY env var if left blank")
         form.addRow("API Key:", self.api_key_edit)

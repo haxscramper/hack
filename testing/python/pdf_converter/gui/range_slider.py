@@ -100,7 +100,7 @@ class RangeSlider(QWidget):
         lower_x = self._valueToPos(self._lower)
         upper_x = self._valueToPos(self._upper)
 
-        painter.setPen(Qt.NoPen)
+        painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QColor("#c8c8c8"))
         painter.drawRoundedRect(groove_rect, 3, 3)
 
@@ -122,8 +122,10 @@ class RangeSlider(QWidget):
         upper_center_x = self._valueToPos(self._upper)
         center_y = self.height() // 2
 
-        lower_hit = self._pointInHandle(pos.x(), pos.y(), lower_center_x, center_y)
-        upper_hit = self._pointInHandle(pos.x(), pos.y(), upper_center_x, center_y)
+        lower_hit = self._pointInHandle(pos.x(), pos.y(), lower_center_x,
+                                        center_y)
+        upper_hit = self._pointInHandle(pos.x(), pos.y(), upper_center_x,
+                                        center_y)
 
         if lower_hit and upper_hit:
             if abs(pos.x() - lower_center_x) <= abs(pos.x() - upper_center_x):
@@ -169,7 +171,8 @@ class RangeSlider(QWidget):
         return self.minimumSizeHint()
 
     def minimumSizeHint(self):
-        return self.size().expandedTo(self.rect().size()).grownBy(self.contentsMargins())
+        return self.size().expandedTo(self.rect().size()).grownBy(
+            self.contentsMargins())
 
     def _grooveRect(self) -> QRect:
         y = (self.height() - self._groove_height) // 2
@@ -210,7 +213,9 @@ class RangeSlider(QWidget):
 
 
 if __name__ == "__main__":
+
     class Demo(QWidget):
+
         def __init__(self):
             super().__init__()
 
@@ -220,7 +225,8 @@ if __name__ == "__main__":
             self.slider.setUpperValue(80)
 
             self.label = QLabel()
-            self._updateLabel(self.slider.lowerValue(), self.slider.upperValue())
+            self._updateLabel(self.slider.lowerValue(),
+                              self.slider.upperValue())
 
             self.slider.rangeChanged.connect(self._updateLabel)
 
@@ -232,7 +238,6 @@ if __name__ == "__main__":
 
         def _updateLabel(self, lower: int, upper: int) -> None:
             self.label.setText(f"Selected range: {lower} - {upper}")
-
 
     app = QApplication(sys.argv)
     window = Demo()

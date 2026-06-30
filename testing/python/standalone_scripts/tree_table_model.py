@@ -120,14 +120,16 @@ class FileTreeModel(QAbstractItemModel):
 
         return self.createIndex(parent.row(), 0, parent)
 
-    def data(self, index: QModelIndex, role: int = Qt.DisplayRole):
+    def data(self,
+             index: QModelIndex,
+             role: int = Qt.ItemDataRole.DisplayRole):
         if not index.isValid():
             return None
 
         node: FileNode = index.internalPointer()
         column = index.column()
 
-        if role == Qt.DisplayRole:
+        if role == Qt.ItemDataRole.DisplayRole:
             if column == 0:
                 return node.name
             if column == 1:
@@ -137,10 +139,11 @@ class FileTreeModel(QAbstractItemModel):
             if column == 3:
                 return f"{node.proportion * 100:.2f}%"
 
-        if role == Qt.TextAlignmentRole and column in (1, 3):
-            return int(Qt.AlignRight | Qt.AlignVCenter)
+        if role == Qt.ItemDataRole.TextAlignmentRole and column in (1, 3):
+            return int(Qt.AlignmentFlag.AlignRight
+                       | Qt.AlignmentFlag.AlignVCenter)
 
-        if role == Qt.UserRole:
+        if role == Qt.ItemDataRole.UserRole:
             if column == 1:
                 return node.size
             if column == 2:
@@ -153,8 +156,8 @@ class FileTreeModel(QAbstractItemModel):
     def headerData(self,
                    section: int,
                    orientation: Qt.Orientation,
-                   role: int = Qt.DisplayRole):
-        if orientation == Qt.Horizontal and role == Qt.DisplayRole:
+                   role: int = Qt.ItemDataRole.DisplayRole):
+        if orientation == Qt.Orientation.Horizontal and role == Qt.ItemDataRole.DisplayRole:
             return self.HEADERS[section]
         return None
 
@@ -182,10 +185,10 @@ def main() -> int:
     view.setSortingEnabled(False)
 
     header = view.header()
-    header.setSectionResizeMode(0, QHeaderView.Stretch)
-    header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
-    header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
-    header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
+    header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+    header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+    header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+    header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
 
     view.resize(1100, 700)
     view.expandToDepth(0)
