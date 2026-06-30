@@ -23,7 +23,7 @@ from PySide6.QtCore import (
     QThreadPool,
     Signal,
 )
-from PySide6.QtGui import QColor, QImage, QPainter, QTextOption
+from PySide6.QtGui import QColor, QImage, QPainter, QPixmap, QTextOption
 from PySide6.QtWidgets import (
     QAbstractItemDelegate,
     QApplication,
@@ -33,10 +33,12 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox,
     QHBoxLayout,
     QHeaderView,
+    QLabel,
     QLineEdit,
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
+    QScrollArea,
     QSpinBox,
     QStyle,
     QStyledItemDelegate,
@@ -408,6 +410,48 @@ class ImageDelegate(QStyledItemDelegate):
         x = option.rect.x() + (option.rect.width() - img.width()) // 2
         y = option.rect.y() + (option.rect.height() - img.height()) // 2
         painter.drawImage(x, y, img)
+
+
+class ImagePreviewDialog(QDialog):
+
+    def __init__(self, path: str, parent=None):
+        super().__init__(parent)
+        self._path = path
+        self.setWindowTitle(Path(path).name)
+        self.resize(1024, 768)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(4, 4, 4, 4)
+        layout.setSpacing(4)
+
+        from PySide6.QtWidgets import QScrollArea
+
+        scroll = QScrollArea(self)
+        scroll.setWidgetResizable(True)
+        scroll.setAlignment(Qt.AlignCenter)
+        layout.addWidget(scroll)
+
+        self.label = QLabel(scroll)
+        self.label.setAlignment(Qt.AlignCenter)
+        scroll.setWidget(self.label)
+
+        real = resolve_image_path(path)
+        pix = QPixmap(real)
+        if pix.isNull():
+            self.label.setText(f"Could not load image:\n{real}")
+        else:
+            self.label.setPixmap(pix)
+
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        copy_btn = QPushButton("Copy", self)
+        copy_btn.setFixedHeight(EDITOR_H)
+        copy_btn.clicked.connect(self._copy_path)
+        btn_row.addWidget(copy_btn)
+        layout.addLayout(btn_row)
+
+    def _copy_path(self) -> None:
+        QApplication.clipboard().setText(self._path)
 
 
 # ---------------------------------------------------------------------------
@@ -1136,6 +1180,7 @@ class MainWindow(QWidget):
                                   | QTableView.EditKeyPressed)
         self.view.setWordWrap(True)
         self.view.verticalHeader().setDefaultSectionSize(THUMB + 8)
+        self.view.doubleClicked.connect(self._on_double_clicked)
         layout.addWidget(self.view)
 
         self._setup_delegates()
@@ -1205,6 +1250,16 @@ class MainWindow(QWidget):
         self.view.setItemDelegateForColumn(COL_CFG, NumberDelegate(True, self))
         self.view.setItemDelegateForColumn(COL_POSITIVE, PromptDelegate(self))
         self.view.setItemDelegateForColumn(COL_NEGATIVE, PromptDelegate(self))
+
+    def _on_double_clicked(self, proxy_index: QModelIndex) -> None:
+        if proxy_index.column() != COL_IMAGE:
+            return
+        src = self.proxy.mapToSource(proxy_index)
+        path = self.model.index(src.row(), COL_IMAGE).data(Qt.DisplayRole)
+        if not path:
+            return
+        dlg = ImagePreviewDialog(path, self)
+        dlg.exec()
 
     def _on_run(self, proxy_index: QModelIndex) -> None:
         self.view.commit_active_editor()
