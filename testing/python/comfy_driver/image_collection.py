@@ -24,6 +24,7 @@ from PySide6.QtCore import (
 )
 from PySide6.QtGui import QColor, QImage, QPainter
 from PySide6.QtWidgets import (
+    QAbstractItemDelegate,
     QApplication,
     QComboBox,
     QDialog,
@@ -96,6 +97,10 @@ EDITABLE_COLS = {
 COLOR_WARN = QColor(255, 165, 0)
 COLOR_BAD = QColor(220, 80, 80)
 COLOR_OK = QColor(70, 150, 90)
+
+LORA_ROW_H = 22
+LORA_ON_W = 34
+LORA_WEIGHT_W = 84
 
 EDITOR_H = 28
 MIN_W_CHECKPOINT = 260
@@ -326,9 +331,7 @@ class ModelComboDelegate(QStyledItemDelegate):
         return cb
 
     def updateEditorGeometry(self, editor, option, index):
-        y = option.rect.y() + (option.rect.height() - EDITOR_H) // 2
-        editor.setGeometry(option.rect.x() + 4, y,
-                           option.rect.width() - 8, EDITOR_H)
+        editor.setGeometry(option.rect.adjusted(4, 4, -4, -4))
 
     def setEditorData(self, editor, index):
         payload = self._registry.resolve_payload(
@@ -393,31 +396,41 @@ class LoraEditorWidget(QWidget):
         self._registry = registry
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(2, 2, 2, 2)
+        layout.setContentsMargins(4, 4, 4, 4)
         layout.setSpacing(2)
 
         self.table = QTableWidget(0, 3, self)
         self.table.setHorizontalHeaderLabels(["On", "LoRA", "Weight"])
+        self.table.horizontalHeader().setVisible(False)
         self.table.horizontalHeader().setSectionResizeMode(
-            0, QHeaderView.ResizeToContents)
+            0, QHeaderView.Fixed)
         self.table.horizontalHeader().setSectionResizeMode(
             1, QHeaderView.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(
-            2, QHeaderView.ResizeToContents)
+            2, QHeaderView.Fixed)
+        self.table.setColumnWidth(0, LORA_ON_W)
+        self.table.setColumnWidth(2, LORA_WEIGHT_W)
+
         self.table.verticalHeader().setVisible(False)
+        self.table.verticalHeader().setDefaultSectionSize(LORA_ROW_H)
+        self.table.verticalHeader().setSectionResizeMode(QHeaderView.Fixed)
+
+        self.table.setShowGrid(True)
+        self.table.setWordWrap(False)
         layout.addWidget(self.table)
 
         btn_row = QHBoxLayout()
         btn_row.setContentsMargins(0, 0, 0, 0)
+        btn_row.setSpacing(2)
         add = QPushButton("+", self)
         rem = QPushButton("-", self)
-        add.setFixedWidth(28)
-        rem.setFixedWidth(28)
+        add.setFixedWidth(24)
+        rem.setFixedWidth(24)
         add.clicked.connect(self._add_row)
         rem.clicked.connect(self._remove_row)
+        btn_row.addStretch()
         btn_row.addWidget(add)
         btn_row.addWidget(rem)
-        btn_row.addStretch()
         layout.addLayout(btn_row)
 
     def _resort_combo_by_similarity(self, cb: QComboBox, text: str) -> None:
@@ -464,6 +477,7 @@ class LoraEditorWidget(QWidget):
         lora = lora or {"enabled": True, "model": "", "weight": 1.0}
         r = self.table.rowCount()
         self.table.insertRow(r)
+        self.table.setRowHeight(r, LORA_ROW_H)
 
         on_item = QTableWidgetItem()
         on_item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsUserCheckable
@@ -796,6 +810,32 @@ class GenerationModel(QAbstractTableModel):
 # ---------------------------------------------------------------------------
 
 
+class RunFriendlyTableView(QTableView):
+
+    def _active_delegate_editor(self):
+        vp = self.viewport()
+        w = QApplication.focusWidget()
+        while w is not None:
+            if w.parentWidget() is vp:
+                return w
+            w = w.parentWidget()
+        return None
+
+    def commit_active_editor(self) -> None:
+        editor = self._active_delegate_editor()
+        if editor is None:
+            return
+        self.commitData(editor)
+        self.closeEditor(editor, QAbstractItemDelegate.NoHint)
+
+    def mousePressEvent(self, event):
+        pos = event.position().toPoint()
+        idx = self.indexAt(pos)
+        if idx.isValid() and idx.column() == COL_RUN:
+            self.commit_active_editor()
+        super().mousePressEvent(event)
+
+
 class MainWindow(QWidget):
 
     def __init__(
@@ -832,7 +872,7 @@ class MainWindow(QWidget):
         search_row.addWidget(apply_filter_btn)
         layout.addLayout(search_row)
 
-        self.view = QTableView()
+        self.view = RunFriendlyTableView()
         self.view.setModel(self.proxy)
         self.view.setSortingEnabled(True)
         self.view.setEditTriggers(QTableView.DoubleClicked
@@ -912,6 +952,7 @@ class MainWindow(QWidget):
         self.view.setItemDelegateForColumn(COL_RUN, self.run_delegate)
 
     def _on_run(self, proxy_index: QModelIndex) -> None:
+        self.view.commit_active_editor()
         src = self.proxy.mapToSource(proxy_index)
         self._send_to_comfy(self.model.rows[src.row()])
 
