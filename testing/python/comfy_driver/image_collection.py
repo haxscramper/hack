@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+import argparse
 import json
 import random
 import urllib.request
@@ -7,8 +8,8 @@ from dataclasses import dataclass
 from difflib import SequenceMatcher
 from pathlib import Path
 
-import click
 from arango import ArangoClient
+from pydantic import BaseModel, Field
 from PySide6.QtCore import (
     QAbstractTableModel,
     QEvent,
@@ -66,8 +67,8 @@ THUMB = 228
     COL_STEPS,
     COL_CFG,
     COL_CHECKPOINT,
-    COL_VAE,
     COL_LORAS,
+    COL_MD5,
     COL_RUN,
 ) = range(11)
 
@@ -80,8 +81,8 @@ HEADERS = [
     "Steps",
     "CFG",
     "Checkpoint",
-    "VAE",
     "LoRAs",
+    "MD5",
     "",
 ]
 
@@ -93,12 +94,12 @@ EDITABLE_COLS = {
     COL_STEPS,
     COL_CFG,
     COL_CHECKPOINT,
-    COL_VAE,
 }
 
 COLOR_WARN = QColor(255, 165, 0)
 COLOR_BAD = QColor(220, 80, 80)
 COLOR_OK = QColor(70, 150, 90)
+COLOR_REPLACED = QColor(150, 80, 220)
 
 LORA_ROW_H = 22
 LORA_ON_W = 34
@@ -106,16 +107,16 @@ LORA_WEIGHT_W = 84
 
 EDITOR_H = 28
 MIN_W_CHECKPOINT = 260
-MIN_W_VAE = 200
 MIN_W_LORAS = 420
+MIN_W_MD5 = 220
 
 AQL = """
 FOR gp IN generation_params
   FILTER gp.result.positive != "" AND gp.result.negative != ""
-  LET f = DOCUMENT("files", gp.md5)
+  LET f = DOCUMENT(@@files, gp.md5)
   FILTER f != null
   FOR p IN f.paths
-    LET root = DOCUMENT(@roots, p.root.name)
+    LET root = DOCUMENT(@@roots, p.root.name)
     RETURN {
       path: CONCAT(root.path, "/", p.relative),
       md5: gp.md5,
@@ -123,6 +124,50 @@ FOR gp IN generation_params
       result: gp.result
     }
 """
+
+SAFETENSOR_AQL = """
+FOR doc IN @@safetensor
+  LET f = DOCUMENT(@@files, doc.md5)
+  FILTER f != null
+  FOR p IN f.paths
+    LET root = DOCUMENT(@@roots, p.root.name)
+    RETURN {
+      arch: doc.result.metadata.`modelspec.architecture`,
+      md5: doc.md5,
+      root: root.path,
+      relative: p.relative
+    }
+"""
+
+KIND_SUBDIRS = {
+    "checkpoint": ["checkpoints", "diffusion_models"],
+    "lora": ["loras"],
+    "vae": ["vae"],
+    "clip": ["text_encoders", "clip"],
+}
+
+# ---------------------------------------------------------------------------
+# Config
+# ---------------------------------------------------------------------------
+
+
+class Config(BaseModel):
+    comfy_dir: Path
+    workflow_path: Path
+    comfy_url: str = "http://127.0.0.1:8188"
+    arango_url: str = "http://127.0.0.1:8529"
+    db_name: str = "test_index"
+    username: str = "root"
+    password: str = "test"
+    roots_collection: str = "roots"
+    files_collection: str = "files"
+    safetensor_collection: str = "safetensor"
+    model_replacements: dict[str, str] = Field(default_factory=dict)
+    arch_type_map: dict[str, str] = Field(default_factory=dict)
+    model_arch_map: dict[str, str] = Field(default_factory=dict)
+    default_vae: dict[str, str] = Field(default_factory=dict)
+    default_clip: dict[str, str] = Field(default_factory=dict)
+
 
 # ---------------------------------------------------------------------------
 # Model registry / scanning
@@ -140,60 +185,87 @@ def strip_ext(name: str) -> str:
 
 @dataclass(frozen=True)
 class ModelEntry:
-    display: str  # relative path without suffix
-    payload: str  # basename without suffix (what is sent to comfy)
+    display: str
+    payload: str
+    arch: str | None
+    type: str | None
 
 
-def scan_models(comfy_dir: Path, subdir: str) -> list[ModelEntry]:
+def scan_models(comfy_dir: Path, subdir: str) -> list[tuple[str, str, str]]:
     base = comfy_dir / "models" / subdir
-    out: dict[str, str] = {}
+    out: list[tuple[str, str, str]] = []
     if base.exists():
         for p in base.rglob("*"):
             if not p.is_file() or p.suffix.lower() not in MODEL_EXTS:
                 continue
             rel = p.relative_to(base).with_suffix("").as_posix()
             payload = p.stem
-            out[rel] = payload
-    return [ModelEntry(display=k, payload=v) for k, v in sorted(out.items())]
+            arch_key = f"{subdir}/{rel}"
+            out.append((rel, payload, arch_key))
+    return out
 
 
 class ModelRegistry:
 
-    def __init__(self, comfy_dir: Path):
-        self.checkpoints = scan_models(comfy_dir, "checkpoints")
-        self.loras = scan_models(comfy_dir, "loras")
-        self.vae = scan_models(comfy_dir, "vae")
+    def __init__(
+        self,
+        comfy_dir: Path,
+        arch_info: dict[str, str | None],
+        config: Config,
+    ):
+        self.model_replacements = {
+            self._norm_key(k): (self.normalize_payload(v) or v.strip())
+            for k, v in config.model_replacements.items()
+        }
+        self.arch_type_map = dict(config.arch_type_map)
+        self.model_arch_map = {
+            self._norm_key(k): v
+            for k, v in config.model_arch_map.items()
+        }
 
-        self._payload_sets = {
-            "checkpoint": {e.payload
-                           for e in self.checkpoints},
-            "lora": {e.payload
-                     for e in self.loras},
-            "vae": {e.payload
-                    for e in self.vae},
+        self._entries: dict[str, list[ModelEntry]] = {}
+        self._payload_sets: dict[str, set[str]] = {}
+        self._display_to_payload: dict[str, dict[str, str]] = {}
+        self._payload_to_entry: dict[str, dict[str, ModelEntry]] = {}
+
+        for kind, subdirs in KIND_SUBDIRS.items():
+            entries: list[ModelEntry] = []
+            for subdir in subdirs:
+                for rel, payload, arch_key in scan_models(comfy_dir, subdir):
+                    arch = arch_info.get(arch_key) or self.model_arch_map.get(
+                        payload)
+                    type_ = self.arch_type_map.get(arch) if arch else None
+                    entries.append(
+                        ModelEntry(display=rel,
+                                   payload=payload,
+                                   arch=arch,
+                                   type=type_))
+            entries.sort(key=lambda e: e.display.casefold())
+            self._entries[kind] = entries
+            self._payload_sets[kind] = {e.payload for e in entries}
+            self._display_to_payload[kind] = {
+                e.display: e.payload
+                for e in entries
+            }
+            self._payload_to_entry[kind] = {e.payload: e for e in entries}
+
+        self.default_vae = {
+            k: self.resolve_payload(v, "vae")
+            for k, v in config.default_vae.items()
         }
-        self._display_to_payload = {
-            "checkpoint": {
-                e.display: e.payload
-                for e in self.checkpoints
-            },
-            "lora": {
-                e.display: e.payload
-                for e in self.loras
-            },
-            "vae": {
-                e.display: e.payload
-                for e in self.vae
-            },
+        self.default_clip = {
+            k: self.resolve_payload(v, "clip")
+            for k, v in config.default_clip.items()
         }
+
+    def _norm_key(self, k: str) -> str:
+        if not k:
+            return ""
+        n = self.normalize_payload(k)
+        return n or k.strip()
 
     def options(self, kind: str) -> list[tuple[str, str]]:
-        entries = {
-            "checkpoint": self.checkpoints,
-            "lora": self.loras,
-            "vae": self.vae,
-        }[kind]
-        return [(e.display, e.payload) for e in entries]
+        return [(e.display, e.payload) for e in self._entries[kind]]
 
     def normalize_payload(self, value: str) -> str:
         if not value:
@@ -201,30 +273,57 @@ class ModelRegistry:
         s = strip_ext(value.strip())
         return Path(s).name
 
-    def resolve_payload(self, value: str, kind: str) -> str:
+    def _resolve_display_to_payload(self, value: str, kind: str) -> str:
+        value = (value or "").strip()
         if not value:
             return ""
-        value = value.strip()
         m = self._display_to_payload[kind]
         if value in m:
             return m[value]
         return self.normalize_payload(value)
 
+    def resolve_with_replacement(self, value: str,
+                                 kind: str) -> tuple[str, bool]:
+        raw = (value or "").strip()
+        payload = self._resolve_display_to_payload(raw, kind)
+        if payload and payload in self._payload_sets[kind]:
+            return payload, False
+        repl = self.model_replacements.get(raw) or self.model_replacements.get(
+            payload)
+        if repl:
+            repl_payload = self._resolve_display_to_payload(
+                repl, kind) or self.normalize_payload(repl)
+            return repl_payload, True
+        return payload, False
+
+    def resolve_payload(self, value: str, kind: str) -> str:
+        payload, _ = self.resolve_with_replacement(value, kind)
+        return payload
+
+    def type_for_payload(self, payload: str, kind: str) -> str | None:
+        e = self._payload_to_entry[kind].get(payload)
+        return e.type if e else None
+
+    def is_known_payload(self, payload: str, kind: str) -> bool:
+        return payload in self._payload_sets[kind]
+
     def color_for(self, value: str, kind: str):
-        payload = self.resolve_payload(value, kind)
+        payload, replaced = self.resolve_with_replacement(value, kind)
         if not payload:
             return None
-        candidates = self._payload_sets[kind]
-        if payload in candidates:
+        if replaced:
+            return COLOR_REPLACED
+        if payload in self._payload_sets[kind]:
             return None
         best = max(
-            (SequenceMatcher(None, payload, c).ratio() for c in candidates),
+            (SequenceMatcher(None, payload, c).ratio()
+             for c in self._payload_sets[kind]),
             default=0.0,
         )
         return COLOR_WARN if best >= 0.7 else COLOR_BAD
 
     def has(self, value: str, kind: str) -> bool:
-        payload = self.resolve_payload(value, kind)
+        payload, _ = self.resolve_with_replacement(value, kind)
         return payload in self._payload_sets[kind]
 
 
@@ -314,6 +413,7 @@ class ModelComboDelegate(QStyledItemDelegate):
         allow_empty: bool,
         registry: ModelRegistry,
         kind: str,
+        filter_by_type: bool = False,
         parent=None,
     ):
         super().__init__(parent)
@@ -321,12 +421,15 @@ class ModelComboDelegate(QStyledItemDelegate):
         self._allow_empty = allow_empty
         self._registry = registry
         self._kind = kind
+        self._filter_by_type = filter_by_type
 
-    def _sorted_options(self, default_text: str) -> list[tuple[str, str]]:
+    def _sorted_options(
+            self, default_text: str,
+            options: list[tuple[str, str]]) -> list[tuple[str, str]]:
         needle = (default_text or "").strip().casefold()
 
         if not needle:
-            return sorted(self._options, key=lambda item: item[0].casefold())
+            return sorted(options, key=lambda item: item[0].casefold())
 
         def similarity(item: tuple[str, str]) -> float:
             display, payload = item
@@ -338,9 +441,25 @@ class ModelComboDelegate(QStyledItemDelegate):
             )
 
         return sorted(
-            self._options,
+            options,
             key=lambda item: (-similarity(item), item[0].casefold()),
         )
+
+    def _filtered_options(self, default_text: str,
+                          index: QModelIndex) -> list[tuple[str, str]]:
+        opts = self._options
+        if self._filter_by_type:
+            current = (index.data(Qt.EditRole) or "").strip()
+            current_payload = self._registry.resolve_payload(
+                current, self._kind)
+            current_type = self._registry.type_for_payload(
+                current_payload, self._kind)
+            if current_type is not None:
+                opts = [
+                    o for o in opts if self._registry.type_for_payload(
+                        o[1], self._kind) == current_type
+                ]
+        return self._sorted_options(default_text, opts)
 
     def createEditor(self, parent, option, index):
         cb = QComboBox(parent)
@@ -354,7 +473,7 @@ class ModelComboDelegate(QStyledItemDelegate):
         if self._allow_empty:
             cb.addItem("", "")
 
-        for display, payload in self._sorted_options(default_text):
+        for display, payload in self._filtered_options(default_text, index):
             cb.addItem(display, payload)
 
         return cb
@@ -393,16 +512,15 @@ class ModelComboDelegate(QStyledItemDelegate):
         status = self._registry.color_for(value, self._kind)
         if not value:
             bg = QColor(110, 110, 110, 45)
-            fg = option.palette.text().color()
         elif status == COLOR_BAD:
             bg = QColor(220, 80, 80, 60)
-            fg = option.palette.text().color()
         elif status == COLOR_WARN:
             bg = QColor(255, 165, 0, 60)
-            fg = option.palette.text().color()
+        elif status == COLOR_REPLACED:
+            bg = QColor(150, 80, 220, 60)
         else:
             bg = QColor(70, 150, 90, 50)
-            fg = option.palette.text().color()
+        fg = option.palette.text().color()
 
         r = option.rect.adjusted(6, (option.rect.height() - 22) // 2, -6,
                                  -(option.rect.height() - 22) // 2)
@@ -577,8 +695,18 @@ class LoraDelegate(QStyledItemDelegate):
         self._registry = registry
 
     def createEditor(self, parent, option, index):
-        return LoraEditorWidget(self._registry.options("lora"), self._registry,
-                                parent)
+        ckpt_idx = index.sibling(index.row(), COL_CHECKPOINT)
+        ckpt = (ckpt_idx.data(Qt.EditRole) or "").strip()
+        ckpt_payload = self._registry.resolve_payload(ckpt, "checkpoint")
+        ckpt_type = self._registry.type_for_payload(ckpt_payload, "checkpoint")
+        if ckpt_type is not None:
+            opts = [
+                o for o in self._registry.options("lora")
+                if self._registry.type_for_payload(o[1], "lora") == ckpt_type
+            ]
+        else:
+            opts = self._registry.options("lora")
+        return LoraEditorWidget(opts, self._registry, parent)
 
     def setEditorData(self, editor, index):
         editor.set_loras(index.data(Qt.UserRole) or [])
@@ -598,7 +726,6 @@ class LoraDelegate(QStyledItemDelegate):
         r = option.rect.adjusted(4, 4, -4, -4)
         row_h = 22
 
-        # Fixed "table-like" columns, no wrapping/jiggling.
         on_w = 34
         weight_w = 84
         model_w = max(0, r.width() - on_w - weight_w)
@@ -607,7 +734,6 @@ class LoraDelegate(QStyledItemDelegate):
         x_model = x_on + on_w
         x_weight = x_model + model_w
 
-        # Draw outer border once.
         painter.setPen(option.palette.mid().color())
         painter.setBrush(Qt.NoBrush)
         painter.drawRect(r)
@@ -615,7 +741,7 @@ class LoraDelegate(QStyledItemDelegate):
         for i, lora in enumerate(loras):
             y = r.y() + i * row_h
             if y >= r.bottom():
-                break  # deterministic clipping; no reflow/reorder/no ellipsis markers
+                break
 
             row_rect = r.__class__(r.x(), y, r.width(),
                                    min(row_h,
@@ -633,20 +759,19 @@ class LoraDelegate(QStyledItemDelegate):
                     bg = QColor(220, 80, 80, 55)
                 elif status == COLOR_WARN:
                     bg = QColor(255, 165, 0, 55)
+                elif status == COLOR_REPLACED:
+                    bg = QColor(150, 80, 220, 55)
                 else:
                     bg = QColor(70, 150, 90, 45)
 
             painter.fillRect(row_rect, bg)
 
-            # Horizontal row separator
             painter.setPen(option.palette.mid().color())
             painter.drawLine(r.x(), y, r.right(), y)
 
-            # Vertical column separators
             painter.drawLine(x_model, y, x_model, y + row_rect.height() - 1)
             painter.drawLine(x_weight, y, x_weight, y + row_rect.height() - 1)
 
-            # On
             painter.setPen(option.palette.text().color())
             on_text = "☑" if enabled else "☐"
             painter.drawText(
@@ -655,14 +780,12 @@ class LoraDelegate(QStyledItemDelegate):
                 on_text,
             )
 
-            # LoRA model: draw full text in fixed column, no eliding
             painter.drawText(
                 r.__class__(x_model + 6, y, model_w - 12, row_rect.height()),
                 Qt.AlignVCenter | Qt.AlignLeft | Qt.TextSingleLine,
                 model,
             )
 
-            # Weight
             painter.drawText(
                 r.__class__(x_weight + 6, y, weight_w - 10, row_rect.height()),
                 Qt.AlignVCenter | Qt.AlignRight | Qt.TextSingleLine,
@@ -837,16 +960,14 @@ class GenerationModel(QAbstractTableModel):
                 return res.get("cfg", 4.5)
             if col == COL_CHECKPOINT:
                 return res.get("checkpoint", "")
-            if col == COL_VAE:
-                return res.get("vae") or ""
+            if col == COL_MD5:
+                return row.get("md5", "")
             return None
 
         if role == Qt.BackgroundRole:
             if col == COL_CHECKPOINT:
                 return self.registry.color_for(res.get("checkpoint", ""),
                                                "checkpoint")
-            if col == COL_VAE:
-                return self.registry.color_for(res.get("vae") or "", "vae")
             if col == COL_LORAS:
                 colors = []
                 for l in res.get("loras", []):
@@ -859,10 +980,15 @@ class GenerationModel(QAbstractTableModel):
                     return COLOR_BAD
                 if any(c == COLOR_WARN for c in colors):
                     return COLOR_WARN
+                if any(c == COLOR_REPLACED for c in colors):
+                    return COLOR_REPLACED
 
         if role == Qt.ToolTipRole and col in (COL_POSITIVE, COL_NEGATIVE):
             return res.get("positive" if col == COL_POSITIVE else "negative",
                            "")
+
+        if role == Qt.ToolTipRole and col == COL_MD5:
+            return row.get("md5", "")
 
         return None
 
@@ -886,8 +1012,6 @@ class GenerationModel(QAbstractTableModel):
                 res["cfg"] = float(value)
             elif col == COL_CHECKPOINT:
                 res["checkpoint"] = value
-            elif col == COL_VAE:
-                res["vae"] = value or None
             elif col == COL_LORAS:
                 res["loras"] = value
             else:
@@ -989,12 +1113,10 @@ class MainWindow(QWidget):
                 COL_STEPS,
                 COL_CFG,
                 COL_CHECKPOINT,
-                COL_VAE,
                 COL_LORAS,
         ]:
             self.view.resizeColumnToContents(c)
 
-        # keep prompt columns user-resizable too
         self.view.setColumnWidth(COL_POSITIVE,
                                  max(self.view.columnWidth(COL_POSITIVE), 320))
         self.view.setColumnWidth(COL_NEGATIVE,
@@ -1004,9 +1126,8 @@ class MainWindow(QWidget):
             COL_CHECKPOINT,
             max(self.view.columnWidth(COL_CHECKPOINT), MIN_W_CHECKPOINT))
         self.view.setColumnWidth(
-            COL_VAE, max(self.view.columnWidth(COL_VAE), MIN_W_VAE))
-        self.view.setColumnWidth(
             COL_LORAS, max(self.view.columnWidth(COL_LORAS), MIN_W_LORAS))
+        self.view.setColumnWidth(COL_MD5, MIN_W_MD5)
 
         self.resize(1400, 800)
 
@@ -1024,16 +1145,7 @@ class MainWindow(QWidget):
                 allow_empty=False,
                 registry=self.registry,
                 kind="checkpoint",
-                parent=self,
-            ),
-        )
-        self.view.setItemDelegateForColumn(
-            COL_VAE,
-            ModelComboDelegate(
-                self.registry.options("vae"),
-                allow_empty=True,
-                registry=self.registry,
-                kind="vae",
+                filter_by_type=True,
                 parent=self,
             ),
         )
@@ -1062,34 +1174,53 @@ class MainWindow(QWidget):
     def _send_to_comfy(self, row: dict) -> None:
         res = dict(row["result"])
 
-        checkpoint_payload = self.registry.resolve_payload(
+        ckpt_payload, _ = self.registry.resolve_with_replacement(
             res.get("checkpoint", ""), "checkpoint")
-        vae_payload = self.registry.resolve_payload(
-            res.get("vae", "") or "", "vae")
+        ckpt_type = self.registry.type_for_payload(ckpt_payload, "checkpoint")
+
+        vae_value = res.get("vae") or ""
+        vae_payload, _ = self.registry.resolve_with_replacement(
+            vae_value, "vae")
+        if not vae_payload and ckpt_type and ckpt_type in self.registry.default_vae:
+            vae_payload = self.registry.default_vae[ckpt_type]
+
+        clip_value = res.get("clip") or ""
+        clip_payload = None
+        if clip_value:
+            clip_payload, _ = self.registry.resolve_with_replacement(
+                clip_value, "clip")
+        if not clip_payload and ckpt_type and ckpt_type in self.registry.default_clip:
+            clip_payload = self.registry.default_clip[ckpt_type]
+
         active_loras = [
             l for l in res.get("loras", []) if l.get("enabled", True)
         ]
 
         missing = []
-        if checkpoint_payload and not self.registry.has(
-                checkpoint_payload, "checkpoint"):
+        if ckpt_payload and not self.registry.has(res.get("checkpoint", ""),
+                                                  "checkpoint"):
             missing.append(f"checkpoint: {res.get('checkpoint')}")
 
         normalized_loras = []
         for l in active_loras:
-            payload_name = self.registry.resolve_payload(
+            payload_name, _ = self.registry.resolve_with_replacement(
                 l.get("model", ""), "lora")
             if not payload_name:
                 continue
-            if not self.registry.has(payload_name, "lora"):
+            if not self.registry.has(l.get("model", ""), "lora"):
                 missing.append(f"lora: {l.get('model')}")
             normalized_loras.append({
                 "model": payload_name,
                 "weight": float(l.get("weight", 1.0)),
             })
 
-        if vae_payload and not self.registry.has(vae_payload, "vae"):
-            missing.append(f"vae: {res.get('vae')}")
+        if vae_payload and not self.registry.is_known_payload(
+                vae_payload, "vae"):
+            missing.append(f"vae: {vae_value or vae_payload}")
+
+        if clip_payload and not self.registry.is_known_payload(
+                clip_payload, "clip"):
+            missing.append(f"clip: {clip_value or clip_payload}")
 
         if missing:
             QMessageBox.critical(
@@ -1100,8 +1231,9 @@ class MainWindow(QWidget):
             )
             return
 
-        res["checkpoint"] = checkpoint_payload
+        res["checkpoint"] = ckpt_payload
         res["vae"] = vae_payload or None
+        res["clip"] = clip_payload or None
         res["loras"] = normalized_loras
         res["seed"] = random.randint(0, 2**32 - 1)
 
@@ -1142,49 +1274,56 @@ class MainWindow(QWidget):
 
 
 # ---------------------------------------------------------------------------
-# CLI
+# Entry point
 # ---------------------------------------------------------------------------
 
 
-@click.command()
-@click.option(
-    "--comfy-dir",
-    required=True,
-    type=click.Path(exists=True, file_okay=False, path_type=Path),
-    help="Path to the local ComfyUI installation.",
-)
-@click.option(
-    "--workflow",
-    "workflow_path",
-    required=True,
-    type=click.Path(exists=True, dir_okay=False, path_type=Path),
-    help="Path to the saved API-format workflow JSON.",
-)
-@click.option("--comfy-url", default="http://127.0.0.1:8188")
-@click.option("--arango-url", default="http://127.0.0.1:8529")
-@click.option("--db", "db_name", default="test_index")
-@click.option("--username", default="root")
-@click.option("--password", default="test")
-@click.option("--roots-collection", default="roots")
-def main(
-    comfy_dir: Path,
-    workflow_path: Path,
-    comfy_url: str,
-    arango_url: str,
-    db_name: str,
-    username: str,
-    password: str,
-    roots_collection: str,
-) -> None:
-    client = ArangoClient(hosts=arango_url)
-    db = client.db(db_name, username=username, password=password)
-    cursor = db.aql.execute(AQL, bind_vars={"roots": roots_collection})
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Generation Params Explorer")
+    parser.add_argument(
+        "config",
+        type=Path,
+        help="Path to the JSON configuration file (matches the Config schema).",
+    )
+    args = parser.parse_args()
+
+    config = Config.model_validate_json(
+        args.config.read_text(encoding="utf-8"))
+
+    client = ArangoClient(hosts=config.arango_url)
+    db = client.db(config.db_name,
+                   username=config.username,
+                   password=config.password)
+
+    cursor = db.aql.execute(
+        AQL,
+        bind_vars={
+            "@files": config.files_collection,
+            "@roots": config.roots_collection,
+        },
+    )
     rows = list(cursor)
 
-    registry = ModelRegistry(comfy_dir)
+    arch_cursor = db.aql.execute(
+        SAFETENSOR_AQL,
+        bind_vars={
+            "@safetensor": config.safetensor_collection,
+            "@files": config.files_collection,
+            "@roots": config.roots_collection,
+        },
+    )
+    arch_info: dict[str, str | None] = {}
+    for doc in arch_cursor:
+        rel = doc.get("relative")
+        if not rel:
+            continue
+        key = Path(rel).with_suffix("").as_posix()
+        arch_info[key] = doc.get("arch")
+
+    registry = ModelRegistry(config.comfy_dir, arch_info, config)
 
     app = QApplication([])
-    window = MainWindow(rows, registry, workflow_path, comfy_url)
+    window = MainWindow(rows, registry, config.workflow_path, config.comfy_url)
     window.show()
     app.exec()
 
