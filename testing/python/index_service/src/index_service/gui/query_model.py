@@ -11,14 +11,14 @@ from PySide6.QtCore import (
 )
 
 from index_service.services.db import IndexDatabase
-from index_service.services.types import MD5
+from index_service.services.types import FileHash
 
 log = logging.getLogger(__name__)
 
 
 @beartype
 class QueryResultModel(QAbstractListModel):
-    Md5Role = Qt.ItemDataRole.UserRole + 1
+    HashRole = Qt.ItemDataRole.UserRole + 1
     PathRole = Qt.ItemDataRole.UserRole + 2
     ExtraRole = Qt.ItemDataRole.UserRole + 3
 
@@ -89,23 +89,23 @@ class QueryResultModel(QAbstractListModel):
         if row < 0 or row >= len(self._rows):
             return None
         doc = self._rows[row]
-        md5 = doc.get("md5")
+        hash = doc.get("hash")
         if role == Qt.ItemDataRole.DisplayRole:
-            return str(md5)
-        if role == self.Md5Role:
-            return md5
+            return str(hash)
+        if role == self.HashRole:
+            return hash
 
         if role == self.PathRole:
-            if md5 not in self._paths:
+            if hash not in self._paths:
                 paths = [
                     self._db.get_path(p)
-                    for p in self._db.get_all_refs(MD5(md5=md5))
+                    for p in self._db.get_all_refs(FileHash(hash=hash))
                 ]
 
-                self._paths[md5] = str(paths[0]) if paths else ""
+                self._paths[hash] = str(paths[0]) if paths else ""
 
-            return self._paths[md5]
+            return self._paths[hash]
 
         if role == self.ExtraRole:
-            return {k: v for k, v in doc.items() if k != "md5"}
+            return {k: v for k, v in doc.items() if k != "hash"}
         return None

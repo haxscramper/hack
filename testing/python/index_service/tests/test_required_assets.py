@@ -8,7 +8,7 @@ from beartype.typing import cast
 from pydantic import BaseModel
 from index_service.services.db import IndexDatabase
 from index_service.services.job_types import BaseConverter, BaseIndexer, BaseResource, RunContext
-from index_service.services.types import MD5, ConverterOutput, FileRef, IndexerOutput
+from index_service.services.types import FileHash, ConverterOutput, FileRef, IndexerOutput
 from index_service.services.job_runtime import IndexRuntime
 
 
@@ -288,7 +288,7 @@ def test_converter_consumes_indexer_asset(tmp_path: Path,
 
     indexer_results = runtime.run_indexers([ref], ["dependency_indexer"])
     assert runtime.db.has_indexer_result(ref, "dependency_indexer")
-    upstream = runtime.get_indexer_result(ref.md5, "dependency_indexer")
+    upstream = runtime.get_indexer_result(ref.hash, "dependency_indexer")
     assert upstream.result.token == "indexed"
 
     conv_output = runtime.run_converter(

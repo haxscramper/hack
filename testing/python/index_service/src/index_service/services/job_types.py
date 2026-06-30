@@ -110,11 +110,11 @@ def cache_indexer_run(func: Callable[P, R]) -> Callable[P, IndexerOutput]:
         resources: dict[str, object],
         assets: dict[str, object],
     ) -> IndexerOutput:
-        md5 = request.file_ref.md5.md5
-        md5_prefix = md5[:2]
-        md5_suffix = md5[2:]
+        hash = request.file_ref.hash.hash
+        hash_prefix = hash[:2]
+        hash_suffix = hash[2:]
 
-        param_hash = hashlib.md5(
+        param_hash = hashlib.sha256(
             str(
                 self.hash_run_parameters(
                     request=request,
@@ -125,8 +125,8 @@ def cache_indexer_run(func: Callable[P, R]) -> Callable[P, IndexerOutput]:
         cache_path = get_xdg_cache_dir([
             "indexer",
             self.asset_name,
-            md5_prefix,
-            md5_suffix,
+            hash_prefix,
+            hash_suffix,
         ]).joinpath(f"{param_hash}.json")
 
         if cache_path.exists() and self.should_load_cache:

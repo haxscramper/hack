@@ -8,7 +8,7 @@ from beartype.typing import overload
 from index_service.services.db import IndexDatabase
 from index_service.services.job_types import BaseConverter, BaseIndexer, BaseResource, RunContext
 from index_service.services.types import (
-    MD5,
+    FileHash,
     ConverterOutput,
     ConverterRequest,
     FileRef,
@@ -85,7 +85,7 @@ class IndexRuntime:
 
         Execution is batched per indexer type, in dependency order: every file
         passes through one indexer before the next indexer starts. Returns a
-        mapping md5 -> {indexer_id: IndexerOutput}.
+        mapping hash -> {indexer_id: IndexerOutput}.
         """
         requested = self._expand_requested(names)
         order = [n for n in self._indexer_order if n in requested]
@@ -97,12 +97,12 @@ class IndexRuntime:
             ]
             self._run_indexer_stage(indexer, targets)
 
-    def get_indexer_result(self, md5: MD5 | FileRef,
+    def get_indexer_result(self, hash: FileHash | FileRef,
                            name: str) -> IndexerOutput:
         return IndexerOutput(
             indexer_id=name,
             result=self.db.get_indexer_result_type(  # type: ignore
-                md5 if isinstance(md5, MD5) else md5.md5,
+                hash if isinstance(hash, FileHash) else hash.hash,
                 name,
                 self._indexer_instances[name].result_model,
             ),
@@ -130,14 +130,14 @@ class IndexRuntime:
             assets: dict[str, IndexerOutput | None] = dict()
             for name in indexer.required_assets:
                 if self.db.has_indexer_result(ref, name):
-                    assets[name] = self.get_indexer_result(ref.md5, name)
+                    assets[name] = self.get_indexer_result(ref.hash, name)
                 else:
                     assets[name] = None
 
             request = IndexerRequest(file_ref=ref, dependency_results=assets)
 
             with ExceptionContextNote(
-                    f"running indexer '{indexer.asset_name}' for '{self.db.get_path(ref)} {ref.md5}'"
+                    f"running indexer '{indexer.asset_name}' for '{self.db.get_path(ref)} {ref.hash}'"
             ), self.ctx.trace_scope("index", file=str(self.db.get_path(ref))):
                 out = indexer.run(
                     ctx=self.ctx,

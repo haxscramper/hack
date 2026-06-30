@@ -27,17 +27,17 @@ from index_service.services.indexers.exif_metadata import (
     ImageParams,
 )
 from index_service.services.pydantic_utils import model_to_json_data
-from index_service.services.types import MD5
+from index_service.services.types import FileHash
 
 
 class ExifPreviewrWidgetBuilder(WidgetBuilder):
     asset_name = ExifMetadataIndexer.asset_name
 
-    def build(self, db: IndexDatabase, md5: MD5) -> QWidget:
+    def build(self, db: IndexDatabase, hash: FileHash) -> QWidget:
         result = cast(
             Optional[ExifMetadataIndexerResult],
             db.get_indexer_result_type(
-                md5,
+                hash,
                 ExifMetadataIndexer.asset_name,
                 ExifMetadataIndexer.result_model,
             ),
@@ -56,7 +56,7 @@ class ExifPreviewrWidgetBuilder(WidgetBuilder):
 
         else:
             params = result.file
-            path = db.get_path(db.get_all_refs(md5)[0])
+            path = db.get_path(db.get_all_refs(hash)[0])
             return self._build_preview(params, path)
 
     def _build_preview(self, params: ImageParams, path: Path) -> QWidget:

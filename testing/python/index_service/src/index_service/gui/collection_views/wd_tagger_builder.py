@@ -6,17 +6,17 @@ from index_service.gui.collection_views.json_preview_widget import JsonPreviewWi
 from index_service.services.db import IndexDatabase
 from index_service.services.indexers.wd_indexer import WdTagIndexer, WdTagIndexerResult
 from index_service.services.resources.wd_tagger import WdTaggerResult
-from index_service.services.types import MD5
+from index_service.services.types import FileHash
 
 
 class WdTaggerWidgetBuilder(WidgetBuilder):
     asset_name = WdTagIndexer.asset_name
 
-    def build(self, db: IndexDatabase, md5: MD5) -> QWidget:
+    def build(self, db: IndexDatabase, hash: FileHash) -> QWidget:
         result = cast(
             Optional[WdTagIndexerResult],
             db.get_indexer_result_type(
-                md5,
+                hash,
                 WdTagIndexer.asset_name,
                 WdTagIndexer.result_model,
             ))

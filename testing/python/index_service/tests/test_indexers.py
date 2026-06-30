@@ -9,7 +9,7 @@ from index_service.services.converters.file_size_converter import FileSizeConver
 from index_service.services.db import IndexDatabase
 from index_service.services.indexers.file_size import FileSizeIndexerResult
 from index_service.services.indexers.file_stats import FileStatsIndexerResult
-from index_service.services.types import MD5, FileRef
+from index_service.services.types import FileHash, FileRef
 from index_service.services.job_runtime import IndexRuntime
 
 ARANGO_HOST = os.environ.get("ARANGO_HOST", "http://localhost:8529")
@@ -46,7 +46,7 @@ def test_file_size_indexer(runtime: IndexRuntime, sample_file: Path) -> None:
     root = runtime.db.add_root("main", sample_file.parent)
     ref = runtime.db.as_ref(root, sample_file)
     runtime.run_indexer(ref, ["file_size"])
-    out = runtime.get_indexer_result(ref.md5, "file_size")
+    out = runtime.get_indexer_result(ref.hash, "file_size")
 
     assert out.indexer_id == "file_size"
     assert cast(FileSizeIndexerResult,
@@ -57,7 +57,7 @@ def test_file_stats_indexer(runtime: IndexRuntime, sample_file: Path) -> None:
     root = runtime.db.add_root("root", sample_file)
     ref = runtime.db.as_ref(root, sample_file)
     runtime.run_indexer(ref, ["file_stats"])
-    out = runtime.get_indexer_result(ref.md5, "file_stats")
+    out = runtime.get_indexer_result(ref.hash, "file_stats")
 
     assert out.indexer_id == "file_stats"
     assert cast(FileStatsIndexerResult,
@@ -103,7 +103,7 @@ def test_db_indexer_result_uniqueness(db: IndexDatabase,
                             FileSizeIndexerResult(size_bytes=10))
     db.store_indexer_result(ref_b, "file_size",
                             FileSizeIndexerResult(size_bytes=20))
-    record = db.get_indexer_result(ref_a.md5, "file_size")
+    record = db.get_indexer_result(ref_a.hash, "file_size")
     assert record.result["size_bytes"] == 20
 
 
@@ -114,7 +114,7 @@ def test_db_store_derivation(db: IndexDatabase) -> None:
 
     root = db.add_root("root", Path("?"))
     key = db.store_derivation(
-        input=[FileRef(md5=MD5(md5="MD5"), relative="?X", root=root)],
+        input=[FileRef(hash=FileHash(hash="hash"), relative="?X", root=root)],
         output_files=["sdf"],
         config={"param": str()},
         return_value=LocalDerivation(total_size=17),
@@ -128,9 +128,9 @@ def test_index_file_job(runtime: IndexRuntime, db: IndexDatabase,
     root = runtime.db.add_root("root", sample_file.parent)
     ref = runtime.db.as_ref(root, sample_file)
     runtime.run_indexer(ref, ["file_size", "full_text"])
-    size_record = db.get_indexer_result(ref.md5, "file_size")
+    size_record = db.get_indexer_result(ref.hash, "file_size")
     assert size_record.result["size_bytes"] == sample_file.stat().st_size
-    text_record = db.get_indexer_result(ref.md5, "full_text")
+    text_record = db.get_indexer_result(ref.hash, "full_text")
     assert text_record.result["text"] == sample_file.read_text()
 
 

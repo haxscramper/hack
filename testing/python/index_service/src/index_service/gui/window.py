@@ -32,7 +32,7 @@ from index_service.gui.collection_views.json_preview_builder import JsonWidgetBu
 from index_service.gui.file_preview_delegate import FilePreviewDelegate, ThumbnailCache
 from index_service.gui.query_model import QueryResultModel
 from index_service.services.db import IndexDatabase
-from index_service.services.types import MD5
+from index_service.services.types import FileHash
 
 log = logging.getLogger(__name__)
 
@@ -40,12 +40,12 @@ TILE_SIZE = 128
 BATCH_SIZE = 200
 
 DEFAULT_QUERY = """FOR f IN files
-  RETURN { md5: f._key }"""
+  RETURN { hash: f._key }"""
 
 
 @beartype
-def build_paths_widget(db: IndexDatabase, md5: MD5) -> QWidget:
-    fdoc = db._db.collection("files").get(md5.md5)
+def build_paths_widget(db: IndexDatabase, hash: FileHash) -> QWidget:
+    fdoc = db._db.collection("files").get(hash.hash)
     paths = fdoc.get("paths", []) if fdoc else []
     view = QListWidget()
     view.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -56,8 +56,8 @@ def build_paths_widget(db: IndexDatabase, md5: MD5) -> QWidget:
 
 class PathsWidgetBuilder:
 
-    def build(self, db: IndexDatabase, md5: MD5) -> QWidget:
-        return build_paths_widget(db, md5)
+    def build(self, db: IndexDatabase, hash: FileHash) -> QWidget:
+        return build_paths_widget(db, hash)
 
 
 class HorizontalTextTabBar(QTabBar):
@@ -110,7 +110,7 @@ class MainWindow(QMainWindow):
         self._db = db
         self._collection_names = list(collection_names)
         self._model = QueryResultModel(db, BATCH_SIZE)
-        self._current_md5: Optional[MD5] = None
+        self._current_hash: Optional[FileHash] = None
 
         self._widget_builders: dict[str, WidgetBuilder] = {
             "paths": PathsWidgetBuilder()  # type: ignore
@@ -194,19 +194,19 @@ class MainWindow(QMainWindow):
         self._list.setItemDelegate(FilePreviewDelegate(self._cache, TILE_SIZE))
 
     def _on_clicked(self, index: QModelIndex) -> None:
-        md5_str = index.data(QueryResultModel.Md5Role)
-        if not md5_str:
+        hash_str = index.data(QueryResultModel.HashRole)
+        if not hash_str:
             return
-        md5 = MD5(md5=md5_str)
-        self._current_md5 = md5
-        log.info(f"Selected md5={md5.md5}")
-        self._populate_right_pane(md5)
+        hash = FileHash(hash=hash_str)
+        self._current_hash = hash
+        log.info(f"Selected hash={hash.hash}")
+        self._populate_right_pane(hash)
 
-    def _populate_right_pane(self, md5: MD5) -> None:
+    def _populate_right_pane(self, hash: FileHash) -> None:
         prev = self._tabs.currentIndex()
         self._tabs.clear()
         for name, builder in self._widget_builders.items():
-            widget = builder.build(self._db, md5)
+            widget = builder.build(self._db, hash)
             self._tabs.addTab(widget, name)
         target = prev if 0 <= prev < self._tabs.count() else 0
         self._tabs.setCurrentIndex(target)

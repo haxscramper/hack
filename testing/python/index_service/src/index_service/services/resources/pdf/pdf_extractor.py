@@ -62,7 +62,7 @@ class PdfExtractor(BaseResource):
 
     @staticmethod
     def _raster_dir(pdf_path: Path) -> Path:
-        digest = hashlib.md5(str(
+        digest = hashlib.sha256(str(
             pdf_path.absolute()).encode()).hexdigest()[:16]
         return get_xdg_cache_dir(
             ["pdf_extractor", f"{pdf_path.stem}_{digest}"])

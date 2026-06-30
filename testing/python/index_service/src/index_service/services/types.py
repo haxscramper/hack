@@ -13,12 +13,12 @@ AnyModel = Annotated[
 
 
 @beartype
-class MD5(BaseModel, extra="forbid"):
+class FileHash(BaseModel, extra="forbid"):
     model_config = ConfigDict(frozen=True)
-    md5: str
+    hash: str
 
     def __repr__(self) -> str:
-        return self.md5
+        return self.hash
 
 
 @beartype
@@ -30,7 +30,7 @@ class RootRef(BaseModel, extra="forbid"):
 @beartype
 class FileRef(BaseModel, extra="forbid"):
     model_config = ConfigDict(frozen=True)
-    md5: MD5
+    hash: FileHash
     relative: str
     root: RootRef
 

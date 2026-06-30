@@ -130,7 +130,7 @@ class FilePreviewDelegate(QStyledItemDelegate):
             painter.drawPixmap(x, y, pix)
         else:
             label = (Path(path).name
-                     if path else index.data(QueryResultModel.Md5Role))
+                     if path else index.data(QueryResultModel.HashRole))
             painter.drawText(
                 content,
                 Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap,

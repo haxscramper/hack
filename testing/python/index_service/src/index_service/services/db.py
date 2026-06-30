@@ -11,7 +11,7 @@ from beartype import beartype
 from beartype.typing import Any, Dict, List, Optional, cast
 from openai import BaseModel
 from index_service.services.pydantic_utils import model_from_json_data, model_to_json_data
-from index_service.services.types import MD5, AnyModel, FileRef, RootRef
+from index_service.services.types import FileHash, AnyModel, FileRef, RootRef
 from index_service.services.utils import ExceptionContextNote
 import logging
 
@@ -21,7 +21,7 @@ log = logging.getLogger(__name__)
 @beartype
 @dataclass
 class IndexerResultRecord:
-    md5: MD5
+    hash: FileHash
     indexer_id: str
     result: Dict[str, object]
 
@@ -99,17 +99,18 @@ class IndexDatabase:
         for name in ["roots", "files", "derivations"] + names:
             self._db.collection(name).truncate()
 
-    def _md5(self, path: Path) -> MD5:
+    def _hash(self, path: Path) -> FileHash:
         with path.open("rb") as f:
-            digest = hashlib.file_digest(f, "md5")
-        return MD5(md5=digest.hexdigest())
+            digest = hashlib.file_digest(f, "sha256")
 
-    def get_all_refs(self, md5: MD5) -> List[FileRef]:
-        fdoc = self._db.collection("files").get(md5.md5)
+        return FileHash(hash=digest.hexdigest())
+
+    def get_all_refs(self, hash: FileHash) -> List[FileRef]:
+        fdoc = self._db.collection("files").get(hash.hash)
         path_refs = fdoc.get("paths", []) if fdoc else []
         return [
             FileRef(
-                md5=MD5.model_validate(p["md5"], ),
+                hash=FileHash.model_validate(p["hash"], ),
                 relative=p["relative"],
                 root=RootRef.model_validate(p["root"]),
             ) for p in path_refs
@@ -122,10 +123,10 @@ class IndexDatabase:
 
         files = self._db.collection("files")
         _path = self.get_root(root).joinpath(relative)
-        md5 = self._md5(_path)
+        hash = self._hash(_path)
 
         result = FileRef(
-            md5=md5,
+            hash=hash,
             relative=relative,
             root=root,
         )
@@ -134,20 +135,20 @@ class IndexDatabase:
         result_js["suffix"] = _path.suffix
         result_js["name"] = _path.name
 
-        if files.has(md5.md5):
-            doc = files.get(md5.md5)
+        if files.has(hash.hash):
+            doc = files.get(hash.hash)
             known = doc["paths"]  # type: ignore
             known.extend([result_js])
-            files.update({"_key": md5.md5, "paths": known})
+            files.update({"_key": hash.hash, "paths": known})
 
         else:
-            files.insert({"_key": md5.md5, "paths": [result_js]})
+            files.insert({"_key": hash.hash, "paths": [result_js]})
 
         return result
 
     def has_indexer_result(self, ref: FileRef, indexer_id: str) -> bool:
         col = self._db.collection(indexer_id)
-        return col.has(ref.md5.md5)
+        return col.has(ref.hash.hash)
 
     def store_indexer_result(
         self,
@@ -155,12 +156,12 @@ class IndexDatabase:
         indexer_id: str,
         result: AnyModel,
     ) -> None:
-        key = ref.md5.md5
+        key = ref.hash.hash
         col = self._db.collection(indexer_id)
         result_j = model_to_json_data(result)
         doc = {
             "_key": key,
-            "md5": ref.md5.md5,
+            "hash": ref.hash.hash,
             "indexer_id": indexer_id,
             "result": result_j,
         }
@@ -189,9 +190,9 @@ class IndexDatabase:
             else:
                 col.insert(doc)
 
-    def get_indexer_result_type(self, md5: MD5, indexer_id: str,
+    def get_indexer_result_type(self, hash: FileHash, indexer_id: str,
                                 type) -> Optional[AnyModel]:
-        doc = cast(dict, self._db.collection(indexer_id).get(md5.md5))
+        doc = cast(dict, self._db.collection(indexer_id).get(hash.hash))
         if doc:
             return type.model_validate(
                 model_from_json_data(doc["result"], type))
@@ -199,13 +200,13 @@ class IndexDatabase:
         else:
             return None
 
-    def get_indexer_result(self, md5: MD5,
+    def get_indexer_result(self, hash: FileHash,
                            indexer_id: str) -> IndexerResultRecord:
-        doc = cast(dict, self._db.collection(indexer_id).get(md5.md5))
+        doc = cast(dict, self._db.collection(indexer_id).get(hash.hash))
 
-        assert doc, f"Cannot get evaluation results for {indexer_id}({md5})"
+        assert doc, f"Cannot get evaluation results for {indexer_id}({hash})"
         return IndexerResultRecord(
-            md5=MD5(md5=doc["md5"]),
+            hash=FileHash(hash=doc["hash"]),
             indexer_id=doc["indexer_id"],
             result=doc["result"],
         )
@@ -219,7 +220,7 @@ class IndexDatabase:
     ) -> str:
         col = self._db.collection("derivations")
         meta = col.insert({
-            "input_md5s": [f.md5.md5 for f in input],
+            "input_hashes": [f.hash.hash for f in input],
             "output_files": output_files,
             "config": config,
             "return_value": return_value.model_dump(),
@@ -249,7 +250,7 @@ class IndexDatabase:
               FILTER doc.indexer_id == "full_text"
               FILTER CONTAINS(LOWER(doc.result.text), LOWER(@query))
               LIMIT @limit
-              RETURN {{md5: doc.md5, text: doc.result.text}}
+              RETURN {{hash: doc.hash, text: doc.result.text}}
             """,
             bind_vars={  # type: ignore
                 "query": query,
@@ -268,7 +269,7 @@ class IndexDatabase:
         cursor = self._db.aql.execute(f"""
             FOR doc IN {collection}
               FILTER doc.indexer_id == "file_embedding"
-              RETURN {{md5: doc.md5, vector: doc.result.vector}}
+              RETURN {{hash: doc.hash, vector: doc.result.vector}}
             """)
 
         rows = list(cursor)  # type: ignore
@@ -282,7 +283,7 @@ class IndexDatabase:
             return dot / (na * nb)
 
         scored = [{
-            "md5": row["md5"],
+            "hash": row["hash"],
             "score": cosine(vector, row["vector"])
         } for row in rows]
         scored.sort(key=lambda item: item["score"], reverse=True)
