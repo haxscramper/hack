@@ -1,11 +1,14 @@
 #!/usr/bin/env python
 
 import json
+import logging
 from pathlib import Path
 
 import comfy.sd
 import comfy.utils
 import folder_paths
+
+log = logging.getLogger(__name__)
 
 
 class LoadCheckpointPartsFromJson:
@@ -33,24 +36,24 @@ class LoadCheckpointPartsFromJson:
     FUNCTION = "load"
     CATEGORY = "loaders"
 
-    def _resolve_path(self, category, name):
+    def _resolve_path(self, category, name: str):
         direct_path = folder_paths.get_full_path(category, name)
         if direct_path is not None:
             return direct_path
 
         candidates = [name]
-        if Path(name).suffix == "":
+        if not name.endswith(".safetensors"):
             candidates.append(f"{name}.safetensors")
-            candidates.append(f"{name}.ckpt")
-            candidates.append(f"{name}.pt")
 
-        base_dir = Path(folder_paths.get_folder_paths(category)[0])
+        log.info(f"candidates: {candidates}")
 
         for candidate in candidates:
             candidate_name = Path(candidate).name
-            for path in base_dir.rglob(candidate_name):
-                if path.is_file():
-                    return str(path)
+            for base_dir in folder_paths.get_folder_paths(category):
+                for path in Path(base_dir).rglob(candidate_name):
+                    log.info(f"path: {path}")
+                    if path.is_file():
+                        return str(path)
 
         return None
 
@@ -83,17 +86,23 @@ class LoadCheckpointPartsFromJson:
         if checkpoint_name is not None:
             checkpoint_path = self._resolve_path("checkpoints",
                                                  checkpoint_name)
+
+            if checkpoint_path is None:
+                checkpoint_path = self._resolve_path("diffusion_models",
+                                                     checkpoint_name)
+
             if checkpoint_path is None:
                 raise FileNotFoundError(
                     f"Checkpoint '{checkpoint_name}' not found")
 
-            model, checkpoint_clip, checkpoint_vae, _ = comfy.sd.load_checkpoint_guess_config(
-                checkpoint_path,
-                output_vae=True,
-                output_clip=True,
-                embedding_directory=folder_paths.get_folder_paths(
-                    "embeddings"),
-            )
+            model, checkpoint_clip, checkpoint_vae, _ = (
+                comfy.sd.load_checkpoint_guess_config(
+                    checkpoint_path,
+                    output_vae=True,
+                    output_clip=True,
+                    embedding_directory=folder_paths.get_folder_paths(
+                        "embeddings"),
+                ))
 
             clip = checkpoint_clip
             vae = checkpoint_vae

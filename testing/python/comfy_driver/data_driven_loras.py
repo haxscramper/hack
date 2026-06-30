@@ -46,16 +46,16 @@ class ApplyLorasFromJson:
             return direct_path
 
         candidates = [lora_name]
-        if Path(lora_name).suffix == "":
+        if not lora_name.lower().endswith(".safetensors"):
             candidates.append(f"{lora_name}.safetensors")
 
-        loras_dir = Path(folder_paths.get_folder_paths("loras")[0])
-
-        for candidate in candidates:
-            candidate_name = Path(candidate).name
-            for path in loras_dir.rglob(candidate_name):
-                if path.is_file():
-                    return str(path)
+        for loras_root in folder_paths.get_folder_paths("loras"):
+            loras_dir = Path(loras_root)
+            for candidate in candidates:
+                candidate_name = Path(candidate).name
+                for path in loras_dir.rglob(candidate_name):
+                    if path.is_file():
+                        return str(path)
 
         return None
 
@@ -83,8 +83,8 @@ class ApplyLorasFromJson:
         for index, item in enumerate(loras):
             lora_name = item[lora_name_field]
             model_weight = float(item[model_weight_field])
-            clip_weight = (float(item[clip_weight_field])
-                           if clip is not None else 0.0)
+            clip_weight = float(
+                item[clip_weight_field]) if clip is not None else 0.0
 
             lora_path = self._resolve_lora_path(lora_name)
             if lora_path is None:

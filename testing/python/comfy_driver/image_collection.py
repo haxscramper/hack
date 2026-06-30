@@ -167,6 +167,7 @@ class Config(BaseModel):
     model_arch_map: dict[str, str] = Field(default_factory=dict)
     default_vae: dict[str, str] = Field(default_factory=dict)
     default_clip: dict[str, str] = Field(default_factory=dict)
+    replacement_overrides: dict[str, dict] = Field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -221,6 +222,11 @@ class ModelRegistry:
         self.model_arch_map = {
             self._norm_key(k): v
             for k, v in config.model_arch_map.items()
+        }
+
+        self.replacement_overrides = {
+            self._norm_key(k): v
+            for k, v in config.replacement_overrides.items()
         }
 
         self._entries: dict[str, list[ModelEntry]] = {}
@@ -299,6 +305,10 @@ class ModelRegistry:
     def resolve_payload(self, value: str, kind: str) -> str:
         payload, _ = self.resolve_with_replacement(value, kind)
         return payload
+
+    def display_for_payload(self, payload: str, kind: str) -> str:
+        e = self._payload_to_entry[kind].get(payload)
+        return e.display if e else payload
 
     def type_for_payload(self, payload: str, kind: str) -> str | None:
         e = self._payload_to_entry[kind].get(payload)
@@ -507,7 +517,16 @@ class ModelComboDelegate(QStyledItemDelegate):
 
     def paint(self, painter, option, index):
         value = (index.data(Qt.DisplayRole) or "").strip()
-        text = value if value else "—"
+        payload, replaced = self._registry.resolve_with_replacement(
+            value, self._kind)
+
+        if not value:
+            text = "—"
+        elif replaced:
+            text = self._registry.display_for_payload(payload,
+                                                      self._kind) or payload
+        else:
+            text = value
 
         status = self._registry.color_for(value, self._kind)
         if not value:
@@ -633,10 +652,18 @@ class LoraEditorWidget(QWidget):
         self.table.setRowHeight(r, LORA_ROW_H)
 
         on_item = QTableWidgetItem()
-        on_item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsUserCheckable
-                         | Qt.ItemIsSelectable)
-        on_item.setCheckState(
-            Qt.Checked if lora.get("enabled", True) else Qt.Unchecked)
+        model_value = lora.get("model", "")
+        color = self._registry.color_for(model_value, "lora")
+        is_missing = color in (COLOR_BAD, COLOR_WARN)
+
+        if is_missing:
+            on_item.setFlags(Qt.ItemIsSelectable)
+            on_item.setCheckState(Qt.Unchecked)
+        else:
+            on_item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsUserCheckable
+                             | Qt.ItemIsSelectable)
+            on_item.setCheckState(
+                Qt.Checked if lora.get("enabled", True) else Qt.Unchecked)
         self.table.setItem(r, 0, on_item)
 
         payload = self._registry.resolve_payload(lora.get("model", ""), "lora")
@@ -748,7 +775,14 @@ class LoraDelegate(QStyledItemDelegate):
                                        r.bottom() - y + 1))
 
             enabled = bool(lora.get("enabled", True))
-            model = str(lora.get("model", "") or "")
+            raw_model = str(lora.get("model", "") or "")
+            model_payload, model_replaced = self._registry.resolve_with_replacement(
+                raw_model, "lora")
+            if model_replaced:
+                model = (self._registry.display_for_payload(
+                    model_payload, "lora") or model_payload)
+            else:
+                model = raw_model
             weight = float(lora.get("weight", 1.0))
 
             if not enabled:
@@ -837,6 +871,9 @@ class NumberDelegate(QStyledItemDelegate):
         else:
             sb = QSpinBox(parent)
             sb.setSingleStep(1)
+            sb.setMinimum(0)
+            sb.setMaximum(8192)
+
         sb.setMaximumHeight(EDITOR_H)
         sb.setFixedHeight(EDITOR_H)
         return sb
@@ -917,6 +954,9 @@ class GenerationModel(QAbstractTableModel):
             for l in loras:
                 if "enabled" not in l:
                     l["enabled"] = True
+                color = self.registry.color_for(l.get("model", ""), "lora")
+                if color in (COLOR_BAD, COLOR_WARN):
+                    l["enabled"] = False
 
     def rowCount(self, parent=QModelIndex()) -> int:
         return 0 if parent.isValid() else len(self.rows)
@@ -1169,7 +1209,20 @@ class MainWindow(QWidget):
     def _on_run(self, proxy_index: QModelIndex) -> None:
         self.view.commit_active_editor()
         src = self.proxy.mapToSource(proxy_index)
-        self._send_to_comfy(self.model.rows[src.row()])
+        row = self.model.rows[src.row()]
+
+        ckpt_payload, replaced = self.registry.resolve_with_replacement(
+            row["result"].get("checkpoint", ""), "checkpoint")
+        if replaced and ckpt_payload in self.registry.replacement_overrides:
+            ov = self.registry.replacement_overrides[ckpt_payload]
+            if "steps" in ov:
+                steps_idx = self.model.index(src.row(), COL_STEPS)
+                self.model.setData(steps_idx, int(ov["steps"]), Qt.EditRole)
+            if "cfg" in ov:
+                cfg_idx = self.model.index(src.row(), COL_CFG)
+                self.model.setData(cfg_idx, float(ov["cfg"]), Qt.EditRole)
+
+        self._send_to_comfy(row)
 
     def _send_to_comfy(self, row: dict) -> None:
         res = dict(row["result"])
