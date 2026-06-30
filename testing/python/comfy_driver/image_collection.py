@@ -320,18 +320,51 @@ class ModelComboDelegate(QStyledItemDelegate):
         self._registry = registry
         self._kind = kind
 
+    def _sorted_options(self, default_text: str) -> list[tuple[str, str]]:
+        needle = (default_text or "").strip().casefold()
+
+        if not needle:
+            return sorted(self._options, key=lambda item: item[0].casefold())
+
+        def similarity(item: tuple[str, str]) -> float:
+            display, payload = item
+            d = (display or "").casefold()
+            p = (payload or "").casefold()
+            return max(
+                SequenceMatcher(None, needle, d).ratio(),
+                SequenceMatcher(None, needle, p).ratio(),
+            )
+
+        return sorted(
+            self._options,
+            key=lambda item: (-similarity(item), item[0].casefold()),
+        )
+
     def createEditor(self, parent, option, index):
         cb = QComboBox(parent)
         cb.setEditable(True)
         cb.setMaxVisibleItems(14)
+        cb.setMaximumHeight(EDITOR_H)
+
+        default_text = (index.data(Qt.DisplayRole) or index.data(Qt.EditRole)
+                        or "").strip()
+
         if self._allow_empty:
             cb.addItem("", "")
-        for display, payload in self._options:
+
+        for display, payload in self._sorted_options(default_text):
             cb.addItem(display, payload)
+
         return cb
 
     def updateEditorGeometry(self, editor, option, index):
-        editor.setGeometry(option.rect.adjusted(4, 4, -4, -4))
+        margin_x = 6
+        available_w = max(0, option.rect.width() - (2 * margin_x))
+        editor_h = min(36, max(0, option.rect.height() - 4))
+        y = option.rect.y() + (option.rect.height() - editor_h) // 2
+
+        editor.setGeometry(option.rect.x() + margin_x, y, available_w,
+                           editor_h)
 
     def setEditorData(self, editor, index):
         payload = self._registry.resolve_payload(
@@ -735,13 +768,13 @@ class GenerationModel(QAbstractTableModel):
             if col == COL_NEGATIVE:
                 return res.get("negative", "")
             if col == COL_WIDTH:
-                return res.get("width", 0)
+                return res.get("width", 1024)
             if col == COL_HEIGHT:
-                return res.get("height", 0)
+                return res.get("height", 1360)
             if col == COL_STEPS:
-                return res.get("steps", 0)
+                return res.get("steps", 30)
             if col == COL_CFG:
-                return res.get("cfg", 0.0)
+                return res.get("cfg", 4.5)
             if col == COL_CHECKPOINT:
                 return res.get("checkpoint", "")
             if col == COL_VAE:
