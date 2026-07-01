@@ -42,8 +42,17 @@ class PlannedIndexerBatch:
 class ExecutionPlan:
     batches: list[PlannedIndexerBatch]
 
-    def get_indexer_names(self) -> set[str]:
-        return {it.indexer_name for it in self.batches}
+    def total_runs(self) -> int:
+        return sum(len(batch.file_refs) for batch in self.batches)
+
+    def get_indexer_names(self) -> list[str]:
+        names: list[str] = []
+        seen: set[str] = set()
+        for batch in self.batches:
+            if batch.indexer_name not in seen:
+                seen.add(batch.indexer_name)
+                names.append(batch.indexer_name)
+        return names
 
 
 @beartype
@@ -124,6 +133,16 @@ class IndexRuntime:
             self, indexer: BaseIndexer) -> dict[str, BaseResource]:
         names = self._resource_closure(indexer.required_resources)
         return {name: self._resource_instances[name] for name in names}
+
+    def can_share_batch(self, left: str, right: str) -> bool:
+        left_sig = self._exclusive_signature(left)
+        right_sig = self._exclusive_signature(right)
+
+        for res_name in set(left_sig.keys()) & set(right_sig.keys()):
+            if left_sig[res_name] != right_sig[res_name]:
+                return False
+
+        return True
 
     def _exclusive_signature(self, indexer_name: str) -> dict[str, str]:
         indexer = self._indexer_instances[indexer_name]

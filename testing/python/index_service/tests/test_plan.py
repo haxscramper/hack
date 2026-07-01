@@ -132,7 +132,7 @@ def test_plan_sub_batching(db: IndexDatabase, tmp_path: Path):
 
     plan = rt.create_plan(files, ["a"])
     assert len(plan.batches) == 1
-    subs = plan.batches[0].sub_batches()
+    subs = plan.batches[0].sub_batches
     assert len(subs) == 5
     assert all(len(s) == 4 for s in subs)
 
@@ -219,21 +219,21 @@ def test_exclusive_transitive_same_consumer(db: IndexDatabase):
 
 
 def test_exclusive_transitive_via_multiple_resources(db: IndexDatabase):
-    """A→B→C→R (R exclusive, chain of 3 resources) → direct consumer is C."""
+    """A→B→C→R and X→C→R (R exclusive) share same direct consumer C → can share."""
     res_r = _make_resource("R", exclusive=True)
     res_c = _make_resource("C", required_resources=("R", ))
     res_b = _make_resource("B", required_resources=("C", ))
     idx_a = _make_indexer("a", required_resources=("B", ))
+    idx_x = _make_indexer("x", required_resources=("C", ))
 
     ctx = RunContext(db)
     rt = IndexRuntime(
         ctx=ctx,
         db=db,
-        indexer_types=[idx_a],
+        indexer_types=[idx_a, idx_x],
         resource_types=[res_r, res_c, res_b],
     )
-    consumers = rt._exclusive_direct_consumers("a")
-    assert consumers == {"R": "C"}
+    assert rt.can_share_batch("a", "x") is True
 
 
 def test_exclusive_transitive_via_multiple_indexers(db: IndexDatabase):
@@ -323,7 +323,10 @@ class SummaryIndexer(BaseIndexer):
 
     def run(self, ctx, request, resources, assets):
         resp = resources["model_server"].handle(
-            _ModelRequest(model="gemma-26b", text="sample"))
+            ctx,
+            _ModelRequest(model="gemma-26b", text="x"),
+            resources,
+        )
         return IndexerOutput(
             indexer_id=self.asset_name,
             result=_SummaryResult(summary=resp.result),
@@ -366,7 +369,11 @@ def test_stateful_resource_churn_across_models(db: IndexDatabase,
 
         def run(self, ctx, request, resources, assets):
             resp = resources["model_server"].handle(
-                _ModelRequest(model=self._model, text="sample"))
+                ctx,
+                _ModelRequest(model="gemma-26b", text="sample"),
+                resources,
+            )
+
             return IndexerOutput(
                 indexer_id=self.asset_name,
                 result=_SummaryResult(summary=resp.result),
@@ -400,7 +407,11 @@ def test_stateful_resource_churn_across_batches(db: IndexDatabase,
 
         def run(self, ctx, request, resources, assets):
             resp = resources["model_server"].handle(
-                _ModelRequest(model="gemma-26b", text="x"))
+                ctx,
+                _ModelRequest(model="gemma-26b", text="x"),
+                resources,
+            )
+
             return IndexerOutput(
                 indexer_id=self.asset_name,
                 result=_SummaryResult(summary=resp.result),
@@ -414,7 +425,11 @@ def test_stateful_resource_churn_across_batches(db: IndexDatabase,
 
         def run(self, ctx, request, resources, assets):
             resp = resources["model_server"].handle(
-                _ModelRequest(model="llama-70b", text="x"))
+                ctx,
+                _ModelRequest(model="llama-70b", text="x"),
+                resources,
+            )
+
             return IndexerOutput(
                 indexer_id=self.asset_name,
                 result=_SummaryResult(summary=resp.result),
@@ -545,7 +560,8 @@ def test_resource_dependency_chain(db: IndexDatabase, tmp_path: Path):
         required_resources = ("res_a", )
 
         def handle(self, ctx, request: ReqB, resources):
-            resp_a = resources["res_a"].handle(ReqA(text=request.text))
+            resp_a = resources["res_a"].handle(ctx, ReqA(text=request.text),
+                                               resources)
             return RespB(value=f"B({resp_a.value})")
 
     class DepResult(BaseModel):
@@ -557,7 +573,8 @@ def test_resource_dependency_chain(db: IndexDatabase, tmp_path: Path):
         required_resources = ("res_b", )
 
         def run(self, ctx, request, resources, assets):
-            resp = resources["res_b"].handle(ReqB(text="hello"))
+            resp = resources["res_b"].handle(ctx, ReqB(text="hello"),
+                                             resources)
             return IndexerOutput(
                 indexer_id=self.asset_name,
                 result=DepResult(value=resp.value),
@@ -599,11 +616,11 @@ def test_plan_is_inspectable_and_rearrangeable(db: IndexDatabase,
 
     plan = rt.create_plan(files, ["a", "b"])
     assert plan.total_runs() == 10
-    assert plan.indexer_names() == ["a", "b"]
+    assert plan.get_indexer_names() == ["a", "b"]
 
     # Rearrange: reverse batch order
     plan.batches.reverse()
-    assert plan.indexer_names() == ["b", "a"]
+    assert plan.get_indexer_names() == ["b", "a"]
 
     # Execute rearranged plan
     rt.execute_plan(plan)
