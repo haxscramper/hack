@@ -1,21 +1,20 @@
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
-from datetime import time
+import contextlib
+import hashlib
 import json
 import os
-from pathlib import Path
 import threading
-from beartype.typing import Any, Callable, Optional, ParamSpec, TypeVar, cast
-import hashlib
+import time as _time
+from abc import ABC, abstractmethod
 from functools import wraps
+from pathlib import Path
 
 from beartype import beartype
+from beartype.typing import Callable, ParamSpec, TypeVar
 from pydantic import BaseModel
-import contextlib
 
 from index_service.services.core.db import IndexDatabase
-from index_service.services.pydantic_utils import model_from_json_data, model_to_json_data, to_json_safe
 from index_service.services.core.types import (
     ConverterOutput,
     ConverterRequest,
@@ -23,8 +22,12 @@ from index_service.services.core.types import (
     IndexerOutput,
     IndexerRequest,
 )
+from index_service.services.pydantic_utils import (
+    model_from_json_data,
+    model_to_json_data,
+    to_json_safe,
+)
 from index_service.services.utils import ExceptionContextNote, get_xdg_cache_dir
-import time as _time
 
 
 class TraceWriter:
@@ -46,7 +49,7 @@ class TraceWriter:
         ev = {
             "name": name,
             "ph": phase,
-            "ts": _time.perf_counter() * 1_000_000,  # microseconds
+            "ts": _time.perf_counter() * 1_000_000,
             "pid": os.getpid(),
             "tid": threading.get_ident(),
         }
@@ -61,7 +64,7 @@ class TraceWriter:
 
 
 @beartype
-class RunContext():
+class RunContext:
 
     def __init__(self, db: IndexDatabase) -> None:
         self._db = db
@@ -79,10 +82,8 @@ class RunContext():
             self.writer.begin(message, **args)
             try:
                 yield
-
             finally:
                 self.writer.end(message)
-
         else:
             yield
 
@@ -90,9 +91,16 @@ class RunContext():
 @beartype
 class BaseResource(ABC):
     resource_key: str
+    required_resources: tuple[str, ...] = ()
+    exclusive: bool = False
 
     @abstractmethod
-    def handle(self, ctx: RunContext, request: BaseModel) -> BaseModel:
+    def handle(
+        self,
+        ctx: RunContext,
+        request: BaseModel,
+        resources: dict[str, BaseResource],
+    ) -> BaseModel:
         raise NotImplementedError
 
 
@@ -110,9 +118,9 @@ def cache_indexer_run(func: Callable[P, R]) -> Callable[P, IndexerOutput]:
         resources: dict[str, object],
         assets: dict[str, object],
     ) -> IndexerOutput:
-        hash = request.file_ref.hash.hash
-        hash_prefix = hash[:2]
-        hash_suffix = hash[2:]
+        hash_value = request.file_ref.hash.hash
+        hash_prefix = hash_value[:2]
+        hash_suffix = hash_value[2:]
 
         param_hash = hashlib.sha256(
             str(
@@ -122,26 +130,24 @@ def cache_indexer_run(func: Callable[P, R]) -> Callable[P, IndexerOutput]:
                     assets=assets,
                 )).encode("utf-8")).hexdigest()
 
-        cache_path = get_xdg_cache_dir([
-            "indexer",
-            self.asset_name,
-            hash_prefix,
-            hash_suffix,
-        ]).joinpath(f"{param_hash}.json")
+        cache_path = get_xdg_cache_dir(
+            ["indexer", self.asset_name, hash_prefix,
+             hash_suffix]).joinpath(f"{param_hash}.json")
 
         if cache_path.exists() and self.should_load_cache:
-            with ExceptionContextNote(
-                    f"loading JSON cache from {cache_path}"), ctx.trace_scope(
-                        "load cache file", file=cache_path):
+            with (
+                    ExceptionContextNote(
+                        f"loading JSON cache from {cache_path}"),
+                    ctx.trace_scope(
+                        "load cache file",
+                        file=cache_path,
+                    ),
+            ):
                 parsed = model_from_json_data(
                     json.loads(cache_path.read_text()),
                     IndexerOutput,
                 )
-
-                assert parsed.indexer_id == self.asset_name, (
-                    f"Failed to de-serialized, parsed text indexer was {parsed.indexer_id}"
-                )
-
+                assert parsed.indexer_id == self.asset_name
                 result_value = self.result_model.model_validate(parsed.result)
 
             return IndexerOutput(
@@ -154,15 +160,11 @@ def cache_indexer_run(func: Callable[P, R]) -> Callable[P, IndexerOutput]:
             ctx=ctx,  # type: ignore
             request=request,  # type: ignore
             resources=resources,  # type: ignore
-            assets=assets  # type: ignore
+            assets=assets,  # type: ignore
         )
 
         cache_path.parent.mkdir(parents=True, exist_ok=True)
-        cache_path.write_text(
-            json.dumps(
-                model_to_json_data(result),
-                indent=2,
-            ))
+        cache_path.write_text(json.dumps(model_to_json_data(result), indent=2))
         return result
 
     return wrapper
