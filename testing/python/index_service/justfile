@@ -1,21 +1,22 @@
-test: 
+test:
     uv run python -m pytest -vv -ra -s --log-cli-level=DEBUG --capture=fd --disable-warnings > test_results.tmp.log
 
 index:
     uv run src/index_service/cli/cli.py index \
         --reset True \
         --db-name test_index \
-        --indexer comfy_input \
-        --indexer exif_metadata \
-        --indexer safetensor \
-        --indexer generation_params \
+        --indexer file_summary \
+        --resource text_summary \
+        --resource flm_server \
         --perf-trace-file /tmp/indexer-trace-perf.json \
-        "~/defaultdirs/input" \
-        "~/software/ComfyUI/output" \
-        "~/software/ComfyUI/models"
-        
-# --enable-cache exif_metadata \
+        "~/defaultdirs/temporary_interchange/content_root_for_indexing/"
 
+# --indexer comfy_input \
+# --indexer exif_metadata \
+# --indexer safetensor \
+# --indexer generation_params \
+
+# --enable-cache exif_metadata \
 # --indexer exif_metadata \
 # --indexer comfy_input \
 # --limit-per-path 200 \

@@ -5,12 +5,12 @@ import pytest
 from beartype.typing import Any, Generator
 
 from index_service.services.core.db import IndexDatabase
-from index_service.services.core.job_types import BaseResource, RunContext
-from index_service.services.resources.flm_gemma import (
-    FlmSummaryResult,
-    SummarizeRequest,
-)
 from index_service.services.core.job_runtime import IndexRuntime
+from index_service.services.core.job_types import BaseResource, RunContext
+from index_service.services.resources.text_summary import (
+    SummarizeRequest,
+    TextSummaryResult,
+)
 from index_service.services.utils import get_custom_traceback_handler, stfu_logs
 
 ARANGO_HOST = "http://localhost:8529"
@@ -62,25 +62,35 @@ def db(request) -> IndexDatabase:
     )
 
 
-class MockFlmGemmaResource(BaseResource):
-    resource_key = "flm_gemma"
+class MockTextSummaryResource(BaseResource):
+    resource_key = "text_summary"
 
-    def handle(self, ctx: RunContext,
-               request: SummarizeRequest) -> FlmSummaryResult:
+    def handle(
+        self,
+        ctx: RunContext,
+        request: SummarizeRequest,
+        resources: dict[str, BaseResource],
+    ) -> TextSummaryResult:
         text = request.text.strip().replace("\n", " ")
-        return FlmSummaryResult(summary=f"mock-summary: {text[:48]}")
+        return TextSummaryResult(summary=f"mock-summary: {text[:48]}")
 
 
 @pytest.fixture
 def runtime(db) -> Generator[IndexRuntime, None, None]:
-    from index_service.services.default_job_types import DEFAULT_RESOURCE_TYPES, DEFAULT_INDEXER_TYPES, DEFAULT_CONVERTER_TYPES
+    from index_service.services.default_job_types import (
+        DEFAULT_CONVERTER_TYPES,
+        DEFAULT_INDEXER_TYPES,
+        DEFAULT_RESOURCE_TYPES,
+    )
+
     ctx = RunContext(db)
 
     rt = IndexRuntime(
         ctx=ctx,
         db=db,
         resource_types=[
-            MockFlmGemmaResource() if t.resource_key == "flm_gemma" else t()
+            MockTextSummaryResource()
+            if t.resource_key == "text_summary" else t()
             for t in DEFAULT_RESOURCE_TYPES
         ],
         indexer_types=[t() for t in DEFAULT_INDEXER_TYPES],

@@ -31,6 +31,7 @@ from index_service.services.indexers.image_generation import GenerationParamsInd
 from index_service.services.indexers.pdf_indexer import PdfIndexer
 from index_service.services.indexers.safetensor_indexer import SafetensorIndexer
 from index_service.services.indexers.wd_indexer import WdTagIndexer
+from index_service.services.resources.flm_server import FlmServerResource
 from index_service.services.resources.pdf.pdf_extractor import PdfExtractor
 from index_service.services.resources.wd_tagger import WdTagger
 from index_service.services.utils import (
@@ -88,6 +89,12 @@ _INDEXER_TYPES = [t for t in DEFAULT_INDEXER_TYPES] + [
     ComfyInputIndexer,
 ]
 
+_RESOURCE_TYPES = [t for t in DEFAULT_RESOURCE_TYPES] + [
+    FlmServerResource,
+    WdTagger,
+    PdfExtractor,
+]
+
 
 @main.command()
 @_db_options
@@ -96,6 +103,16 @@ _INDEXER_TYPES = [t for t in DEFAULT_INDEXER_TYPES] + [
     "indexers",
     multiple=True,
     default=[cls.asset_name for cls in _INDEXER_TYPES],
+    type=click.Choice([cls.asset_name for cls in _INDEXER_TYPES],
+                      case_sensitive=True),
+)
+@click.option(
+    "--resource",
+    "resources",
+    multiple=True,
+    default=[cls.resource_key for cls in _RESOURCE_TYPES],
+    type=click.Choice([cls.resource_key for cls in _RESOURCE_TYPES],
+                      case_sensitive=True),
 )
 @click.argument(
     "paths",
@@ -123,6 +140,7 @@ def index(
     limit_total: int | None,
     limit_per_path: int | None,
     indexers: tuple[str, ...],
+    resources: tuple[str, ...],
     paths: tuple[Path, ...],
     perf_trace_file: str | None = None,
 ) -> None:
@@ -151,22 +169,39 @@ def index(
         password=password,
     )
 
-    count = 0
     ctx = RunContext(db)
     ctx.start_trace()
+
+    resource_instances = list()
+    for t in _RESOURCE_TYPES:
+        if t.resource_key in resources:
+            for dep in t.required_resources:
+                assert dep in resources, f"Indexer '{t.resource_key}' requires resource '{dep}' to be enabled"
+
+            if t == WdTagger:
+                resource_instances.append(WdTagger.from_huggingface())
+
+            else:
+                resource_instances.append(t())
+
+    indexer_instances = list()
+    for t in _INDEXER_TYPES:
+        if t.asset_name in indexers:
+            for dep in t.required_resources:
+                assert dep in resources, f"Indexer '{t.asset_name}' requires resource '{dep}' to be enabled"
+
+            for dep in t.required_assets:
+                assert dep in indexers, f"Indexer '{t.asset_name}' requires indexer '{dep}' to be enabled"
+
+            indexer_instances.append(
+                t(should_load_cache=t.asset_name in enable_cache))
 
     with ctx.trace_scope("create runner"):
         runner = IndexRuntime(
             ctx=ctx,
             db=db,
-            indexer_types=[
-                t(should_load_cache=t.asset_name in enable_cache)
-                for t in _INDEXER_TYPES
-            ],
-            resource_types=[t() for t in DEFAULT_RESOURCE_TYPES] + [
-                WdTagger.from_huggingface(),
-                PdfExtractor(),
-            ],
+            indexer_types=indexer_instances,
+            resource_types=resource_instances,
         )
 
     try:

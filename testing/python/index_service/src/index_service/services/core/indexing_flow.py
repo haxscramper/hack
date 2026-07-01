@@ -47,6 +47,7 @@ def run_indexing_per_root_plan(
     limit_per_path: int | None,
 ) -> None:
     indexed_total = 0
+    log.info("constructing index jobs plan")
 
     for path in paths:
         if limit_total is not None and indexed_total >= limit_total:

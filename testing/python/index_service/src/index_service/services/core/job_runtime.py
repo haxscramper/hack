@@ -377,7 +377,7 @@ class IndexRuntime:
 
         total_sub_batches = len(batch.sub_batches)
         for sub_idx, chunk in enumerate(batch.sub_batches, start=1):
-            log.info(
+            log.debug(
                 "sub-batch {}/{}: indexer={} size={}".format(
                     sub_idx, total_sub_batches, batch.indexer_name,
                     len(chunk)), )
@@ -400,6 +400,8 @@ class IndexRuntime:
                             f"indexer asset: {indexer.asset_name}"):
                         self.db.store_indexer_result(ref, indexer.asset_name,
                                                      out.result)
+
+        log.info("finished indexer batch")
 
     @overload
     def run_converter(
