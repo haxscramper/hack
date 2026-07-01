@@ -1,9 +1,14 @@
 from pathlib import Path
 
+import magic
 from beartype.typing import cast
 from pydantic import BaseModel
 
-from index_service.services.core.job_types import BaseIndexer, RunContext
+from index_service.services.core.job_types import (
+    BaseIndexer,
+    RunContext,
+    cache_indexer_run,
+)
 from index_service.services.core.types import IndexerOutput, IndexerRequest
 from index_service.services.resources.text_summary import (
     SummarizeRequest,
@@ -23,7 +28,20 @@ class FileSummaryIndexer(BaseIndexer):
 
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
+        self._magic = magic.Magic(mime=True)
 
+    def can_run(self, path: Path) -> bool:
+        if not path.exists():
+            return False
+
+        mime = self._magic.from_file(str(path.resolve()))
+        if mime.startswith("text/"):
+            return True
+
+        else:
+            return False
+
+    @cache_indexer_run
     def run(
         self,
         ctx: RunContext,
@@ -33,7 +51,12 @@ class FileSummaryIndexer(BaseIndexer):
     ) -> IndexerOutput:
         text = ctx.get_path(request.file_ref).read_text()
         flm_gemma = cast(TextSummaryResource, resources["text_summary"])
-        summary = flm_gemma.handle(ctx, SummarizeRequest(text=text))
+        summary = flm_gemma.handle(
+            ctx,
+            SummarizeRequest(text=text),
+            resources=resources,
+        )
+
         return IndexerOutput(
             indexer_id=self.asset_name,
             result=FileSummaryIndexerResult(summary=summary),

@@ -1,5 +1,6 @@
 # index_service/services/resources/flm_server.py
 import atexit
+import logging
 import os
 import subprocess
 import threading
@@ -10,6 +11,8 @@ from openai import OpenAI
 from pydantic import BaseModel, Field
 
 from index_service.services.core.job_types import BaseResource, RunContext
+
+log = logging.getLogger(__name__)
 
 
 class FlmMessage(BaseModel, extra="forbid"):
@@ -63,6 +66,10 @@ class FlmServerResource(BaseResource):
         self._client = OpenAI(base_url=self._base_url, api_key=self._api_key)
         self._proc: subprocess.Popen[bytes] | None = None
         self._lock = threading.Lock()
+        self._stdout_log_path = "/tmp/hax-index-flm-serve-stdout.log"
+        self._stderr_log_path = "/tmp/hax-index-flm-serve-stderr.log"
+        self._stdout_log_file = None
+        self._stderr_log_file = None
 
         atexit.register(self.close)
         self._ensure_server_running()
@@ -77,11 +84,21 @@ class FlmServerResource(BaseResource):
             return False
 
     def _start_server_locked(self) -> None:
-        self._proc = subprocess.Popen(
-            self._serve_cmd,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
+        self._stdout_log_file = open(self._stdout_log_path, "ab")
+        self._stderr_log_file = open(self._stderr_log_path, "ab")
+
+        try:
+            self._proc = subprocess.Popen(
+                self._serve_cmd,
+                stdout=self._stdout_log_file,
+                stderr=self._stderr_log_file,
+            )
+        except Exception:
+            self._stdout_log_file.close()
+            self._stderr_log_file.close()
+            self._stdout_log_file = None
+            self._stderr_log_file = None
+            raise
 
         deadline = time.monotonic() + self._startup_timeout_sec
         while time.monotonic() < deadline:
@@ -96,18 +113,24 @@ class FlmServerResource(BaseResource):
             "Failed to start `flm serve` and reach healthy state.")
 
     def _stop_server_locked(self) -> None:
-        if self._proc is None:
-            return
+        if self._proc is not None:
+            if self._proc.poll() is None:
+                self._proc.terminate()
+                try:
+                    self._proc.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    self._proc.kill()
+                    self._proc.wait(timeout=3)
 
-        if self._proc.poll() is None:
-            self._proc.terminate()
-            try:
-                self._proc.wait(timeout=3)
-            except subprocess.TimeoutExpired:
-                self._proc.kill()
-                self._proc.wait(timeout=3)
+            self._proc = None
 
-        self._proc = None
+        if self._stdout_log_file is not None:
+            self._stdout_log_file.close()
+            self._stdout_log_file = None
+
+        if self._stderr_log_file is not None:
+            self._stderr_log_file.close()
+            self._stderr_log_file = None
 
     def _restart_server_locked(self) -> None:
         self._stop_server_locked()
@@ -118,6 +141,25 @@ class FlmServerResource(BaseResource):
             if self._is_server_healthy():
                 return
             self._restart_server_locked()
+
+    def _create_completion(self, request: FlmRequest):
+        params: dict[str, Any] = {
+            "model": request.model,
+            "messages": [msg.model_dump() for msg in request.messages],
+        }
+        if request.temperature is not None:
+            params["temperature"] = request.temperature
+        if request.max_tokens is not None:
+            params["max_tokens"] = request.max_tokens
+
+        completion = self._client.chat.completions.create(**params)
+
+        if getattr(completion, "error", None) is not None:
+            raise RuntimeError(f"FLM completion error: {completion.error}")
+        if not completion.choices:
+            raise RuntimeError(f"FLM completion has no choices: {completion}")
+
+        return completion
 
     def close(self) -> None:
         with self._lock:
@@ -132,23 +174,14 @@ class FlmServerResource(BaseResource):
         self._ensure_server_running()
 
         try:
-            completion = self._client.chat.completions.create(
-                model=request.model,
-                messages=[msg.model_dump() for msg in request.messages],
-                temperature=request.temperature,
-                max_tokens=request.max_tokens,
-            )
+            completion = self._create_completion(request)
         except Exception:
+            log.error("exception when running requests", exc_info=True)
             with self._lock:
                 self._restart_server_locked()
+            completion = self._create_completion(request)
 
-            completion = self._client.chat.completions.create(
-                model=request.model,
-                messages=[msg.model_dump() for msg in request.messages],
-                temperature=request.temperature,
-                max_tokens=request.max_tokens,
-            )
-
+        log.debug(f"completion = {completion}")
         content = completion.choices[0].message.content or ""
         usage = completion.usage.model_dump(
         ) if completion.usage is not None else None

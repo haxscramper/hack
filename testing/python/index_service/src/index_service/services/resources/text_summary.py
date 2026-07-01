@@ -3,7 +3,11 @@ import os
 
 from pydantic import BaseModel
 
-from index_service.services.core.job_types import BaseResource, RunContext
+from index_service.services.core.job_types import (
+    BaseResource,
+    RunContext,
+    cache_indexer_run,
+)
 from index_service.services.resources.flm_server import (
     FlmMessage,
     FlmRequest,

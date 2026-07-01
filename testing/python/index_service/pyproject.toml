@@ -31,6 +31,7 @@ dependencies = [
     "pyside6>=6.11.1",
     "pytest>=9.1.1",
     "python-arango==8.1.6",
+    "python-magic>=0.4.27",
     "rich>=15.0.0",
     "zmq>=0.0.0",
 ]
