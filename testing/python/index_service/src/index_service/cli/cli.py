@@ -1,19 +1,29 @@
-from datetime import datetime
 import logging
+import sys
+import traceback
+import warnings
+from datetime import datetime
 from pathlib import Path
 
 import click
+from beartype.typing import Any
+from PySide6.QtWidgets import QApplication
 
-from index_service.gui.collection_views.comfy_input_builder import ComfyInputWidgetBuilder
-from index_service.gui.collection_views.exif_preview_builder import ExifPreviewrWidgetBuilder
+from index_service.gui.collection_views.comfy_input_builder import (
+    ComfyInputWidgetBuilder, )
+from index_service.gui.collection_views.exif_preview_builder import (
+    ExifPreviewrWidgetBuilder, )
 from index_service.gui.collection_views.wd_tagger_builder import WdTaggerWidgetBuilder
 from index_service.gui.window import MainWindow
 from index_service.services.core.db import IndexDatabase
-import sys
-from beartype.typing import Any
-import warnings
-import traceback
-
+from index_service.services.core.indexing_flow import run_indexing_per_root_plan
+from index_service.services.core.job_runtime import IndexRuntime
+from index_service.services.core.job_types import RunContext
+from index_service.services.core.types import FileRef, RootRef
+from index_service.services.default_job_types import (
+    DEFAULT_INDEXER_TYPES,
+    DEFAULT_RESOURCE_TYPES,
+)
 from index_service.services.indexers.comfy_input_indexer import ComfyInputIndexer
 from index_service.services.indexers.exif_metadata import ExifMetadataIndexer
 from index_service.services.indexers.ffprobe_indexer import FFProbeIndexer
@@ -21,14 +31,13 @@ from index_service.services.indexers.image_generation import GenerationParamsInd
 from index_service.services.indexers.pdf_indexer import PdfIndexer
 from index_service.services.indexers.safetensor_indexer import SafetensorIndexer
 from index_service.services.indexers.wd_indexer import WdTagIndexer
-from index_service.services.core.job_types import RunContext
 from index_service.services.resources.pdf.pdf_extractor import PdfExtractor
-from index_service.services.core.types import FileRef, RootRef
-from index_service.services.default_job_types import DEFAULT_INDEXER_TYPES, DEFAULT_RESOURCE_TYPES
 from index_service.services.resources.wd_tagger import WdTagger
-from index_service.services.core.job_runtime import IndexRuntime
-from index_service.services.utils import get_custom_traceback_handler, get_xdg_cache_dir, stfu_logs
-from PySide6.QtWidgets import QApplication
+from index_service.services.utils import (
+    get_custom_traceback_handler,
+    get_xdg_cache_dir,
+    stfu_logs,
+)
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -160,33 +169,16 @@ def index(
             ],
         )
 
-    def index_file(root: RootRef, file: Path):
-        with ctx.trace_scope(f"index file", file=file):
-            nonlocal count
-            if limit_total and limit_total < count:
-                return
-
-            count += 1
-            runner.run_indexer(db.as_ref(root, file), list(indexers))
-
-    def run_indexing():
-        for path in paths:
-            root = db.add_root(path.name, path)
-            with ctx.trace_scope(f"index path", path=path):
-                if path.is_file():
-                    index_file(root, path)
-                else:
-                    count_per_path = 0
-                    for file in path.rglob("*"):
-                        if file.is_file():
-                            if limit_per_path and limit_per_path < count_per_path:
-                                continue
-
-                            count_per_path += 1
-                            index_file(root, file)
-
     try:
-        run_indexing()
+        run_indexing_per_root_plan(
+            db=db,
+            runner=runner,
+            ctx=ctx,
+            paths=paths,
+            indexers=indexers,
+            limit_total=limit_total,
+            limit_per_path=limit_per_path,
+        )
 
     finally:
         assert ctx.writer

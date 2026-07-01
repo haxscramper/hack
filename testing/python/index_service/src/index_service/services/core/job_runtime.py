@@ -7,6 +7,7 @@ from graphlib import TopologicalSorter
 
 from beartype import beartype
 from beartype.typing import Sequence, overload
+from graphviz import Digraph
 
 from index_service.services.core.db import IndexDatabase
 from index_service.services.core.job_types import (
@@ -41,6 +42,8 @@ class PlannedIndexerBatch:
 @dataclass(frozen=True)
 class ExecutionPlan:
     batches: list[PlannedIndexerBatch]
+    windows: list[list[str]]
+    dependencies: dict[str, tuple[str, ...]]
 
     def total_runs(self) -> int:
         return sum(len(batch.file_refs) for batch in self.batches)
@@ -53,6 +56,50 @@ class ExecutionPlan:
                 seen.add(batch.indexer_name)
                 names.append(batch.indexer_name)
         return names
+
+    def to_text(self) -> str:
+        lines: list[str] = []
+        lines.append("ExecutionPlan")
+        lines.append("  windows: " + str(len(self.windows)))
+        for window_id, names in enumerate(self.windows):
+            lines.append("    - window " + str(window_id) + ": " +
+                         ", ".join(names))
+
+        lines.append("  batches: " + str(len(self.batches)))
+        for batch_idx, batch in enumerate(self.batches, start=1):
+            lines.append("    - batch " + str(batch_idx) + "/" +
+                         str(len(self.batches)) + ": indexer=" +
+                         batch.indexer_name + ", window=" +
+                         str(batch.window_id) + ", files=" +
+                         str(len(batch.file_refs)) + ", sub_batches=" +
+                         str(len(batch.sub_batches)))
+            for sub_idx, sub in enumerate(batch.sub_batches, start=1):
+                lines.append("      - sub_batch " + str(sub_idx) + "/" +
+                             str(len(batch.sub_batches)) + ": size=" +
+                             str(len(sub)))
+
+        return "\n".join(lines)
+
+    def to_graphviz(self) -> Digraph:
+        dot = Digraph("index_execution_plan")
+        dot.attr(rankdir="LR")
+
+        for window_id, names in enumerate(self.windows):
+            cluster_name = "cluster_window_" + str(window_id)
+            with dot.subgraph(name=cluster_name) as sub:
+                sub.attr(label="window " + str(window_id))
+                sub.attr(rank="same")
+                for name in names:
+                    sub.node(name, label=name)
+
+        for name in self.dependencies:
+            dot.node(name, label=name)
+
+        for node, deps in self.dependencies.items():
+            for dep in deps:
+                dot.edge(dep, node)
+
+        return dot
 
 
 @beartype
@@ -201,6 +248,14 @@ class IndexRuntime:
     def create_plan(self, files: list[FileRef],
                     names: list[str]) -> ExecutionPlan:
         windows = self.build_windows(names)
+        requested = {name for window in windows for name in window}
+        dependencies = {
+            name:
+            tuple(dep for dep in self._indexer_instances[name].required_assets
+                  if dep in requested)
+            for name in sorted(requested)
+        }
+
         planned: list[PlannedIndexerBatch] = []
 
         for window_id, window in enumerate(windows):
@@ -226,18 +281,56 @@ class IndexRuntime:
                         window_id=window_id,
                     ))
 
-        return ExecutionPlan(batches=planned)
+        return ExecutionPlan(
+            batches=planned,
+            windows=windows,
+            dependencies=dependencies,
+        )
 
     def execute_plan(self, plan: ExecutionPlan) -> None:
-        for batch in plan.batches:
-            self._run_indexer_batch(batch)
+        total_batches = len(plan.batches)
+        for batch_idx, batch in enumerate(plan.batches, start=1):
+            log.info(
+                "batch {}/{}: indexer={} window={} files={} sub_batches={}".
+                format(
+                    batch_idx,
+                    total_batches,
+                    batch.indexer_name,
+                    batch.window_id,
+                    len(batch.file_refs),
+                    len(batch.sub_batches),
+                ), )
+
+            with self.ctx.trace_scope(
+                    "execute batch",
+                    batch=batch_idx,
+                    total_batches=total_batches,
+                    indexer=batch.indexer_name,
+                    window=batch.window_id,
+                    files=len(batch.file_refs),
+                    sub_batches=len(batch.sub_batches),
+            ):
+                self._run_indexer_batch(batch)
 
     def truncate_all(self) -> None:
         self.db.truncate_all(list(self._indexer_instances.keys()))
 
     def run_indexers(self, files: list[FileRef], names: list[str]) -> None:
-        plan = self.create_plan(files, names)
-        self.execute_plan(plan)
+        with self.ctx.trace_scope(
+                "plan construction",
+                files=len(files),
+                indexers=len(names),
+        ):
+            plan = self.create_plan(files, names)
+
+        log.info(f"\n{plan.to_text()}")
+
+        with self.ctx.trace_scope(
+                "plan execution",
+                batches=len(plan.batches),
+                total_runs=plan.total_runs(),
+        ):
+            self.execute_plan(plan)
 
     def get_indexer_result(self, hash: FileHash | FileRef,
                            name: str) -> IndexerOutput:
@@ -282,19 +375,31 @@ class IndexRuntime:
                 )
             return ref, out
 
-        for chunk in batch.sub_batches:
-            if len(chunk) > 1 and indexer.max_parallel > 1:
-                with ThreadPoolExecutor(
-                        max_workers=indexer.max_parallel) as ex:
-                    completed = list(ex.map(work, chunk))
-            else:
-                completed = [work(ref) for ref in chunk]
+        total_sub_batches = len(batch.sub_batches)
+        for sub_idx, chunk in enumerate(batch.sub_batches, start=1):
+            log.info(
+                "sub-batch {}/{}: indexer={} size={}".format(
+                    sub_idx, total_sub_batches, batch.indexer_name,
+                    len(chunk)), )
+            with self.ctx.trace_scope(
+                    "execute sub-batch",
+                    indexer=batch.indexer_name,
+                    sub_batch=sub_idx,
+                    total_sub_batches=total_sub_batches,
+                    size=len(chunk),
+            ):
+                if len(chunk) > 1 and indexer.max_parallel > 1:
+                    with ThreadPoolExecutor(
+                            max_workers=indexer.max_parallel) as ex:
+                        completed = list(ex.map(work, chunk))
+                else:
+                    completed = [work(ref) for ref in chunk]
 
-            for ref, out in completed:
-                with ExceptionContextNote(
-                        f"indexer asset: {indexer.asset_name}"):
-                    self.db.store_indexer_result(ref, indexer.asset_name,
-                                                 out.result)
+                for ref, out in completed:
+                    with ExceptionContextNote(
+                            f"indexer asset: {indexer.asset_name}"):
+                        self.db.store_indexer_result(ref, indexer.asset_name,
+                                                     out.result)
 
     @overload
     def run_converter(
