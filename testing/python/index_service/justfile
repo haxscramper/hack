@@ -5,11 +5,12 @@ index:
     uv run src/index_service/cli/cli.py index \
         --reset True \
         --db-name test_index \
-        --indexer file_summary \
-        --resource text_summary \
-        --resource flm_server \
         --perf-trace-file /tmp/indexer-trace-perf.json \
         "~/defaultdirs/temporary_interchange/content_root_for_indexing/"
+
+# --indexer file_summary \
+# --resource text_summary \
+# --resource flm_server \
 
 # --indexer comfy_input \
 # --indexer exif_metadata \

@@ -1,15 +1,30 @@
 from __future__ import annotations
+
 from pathlib import Path
 
 from beartype import beartype
 from beartype.typing import Annotated
-from pydantic import BaseModel, ConfigDict, Field, PlainValidator, PlainSerializer
+from pydantic import BaseModel, ConfigDict, Field, PlainSerializer, PlainValidator
 
 AnyModel = Annotated[
     BaseModel,
     PlainValidator(lambda v: v),
     PlainSerializer(lambda v: v.model_dump(), return_type=dict),
 ]
+
+
+class IndexLink(BaseModel, extra="forbid"):
+    from_: str
+    to_: str
+
+
+class IndexDocument(BaseModel, extra="forbid"):
+    hash: str
+
+
+class MultiDocumentModel(BaseModel, extra="forbid"):
+    links: list[IndexLink]
+    documents: list[IndexDocument]
 
 
 @beartype

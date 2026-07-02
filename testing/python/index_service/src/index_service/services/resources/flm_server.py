@@ -186,7 +186,6 @@ class FlmServerResource(BaseResource):
                 self._restart_server_locked()
             completion = self._create_completion(request)
 
-        log.debug(f"completion = {completion}")
         content = completion.choices[0].message.content or ""
         usage = completion.usage.model_dump(
         ) if completion.usage is not None else None
