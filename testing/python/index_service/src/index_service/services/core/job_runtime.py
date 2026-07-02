@@ -62,21 +62,17 @@ class ExecutionPlan:
         lines.append("ExecutionPlan")
         lines.append("  windows: " + str(len(self.windows)))
         for window_id, names in enumerate(self.windows):
-            lines.append("    - window " + str(window_id) + ": " +
-                         ", ".join(names))
+            lines.append("    - window " + str(window_id) + ": " + ", ".join(names))
 
         lines.append("  batches: " + str(len(self.batches)))
         for batch_idx, batch in enumerate(self.batches, start=1):
-            lines.append("    - batch " + str(batch_idx) + "/" +
-                         str(len(self.batches)) + ": indexer=" +
-                         batch.indexer_name + ", window=" +
-                         str(batch.window_id) + ", files=" +
-                         str(len(batch.file_refs)) + ", sub_batches=" +
-                         str(len(batch.sub_batches)))
+            lines.append("    - batch " + str(batch_idx) + "/" + str(len(self.batches)) +
+                         ": indexer=" + batch.indexer_name + ", window=" +
+                         str(batch.window_id) + ", files=" + str(len(batch.file_refs)) +
+                         ", sub_batches=" + str(len(batch.sub_batches)))
             for sub_idx, sub in enumerate(batch.sub_batches, start=1):
                 lines.append("      - sub_batch " + str(sub_idx) + "/" +
-                             str(len(batch.sub_batches)) + ": size=" +
-                             str(len(sub)))
+                             str(len(batch.sub_batches)) + ": size=" + str(len(sub)))
 
         return "\n".join(lines)
 
@@ -116,19 +112,17 @@ class IndexRuntime:
         self.db = db
         self.ctx = ctx
         self._resource_instances: dict[str, BaseResource] = {
-            inst.resource_key: inst
-            for inst in resource_types
+            inst.resource_key: inst for inst in resource_types
         }
         self._indexer_instances: dict[str, BaseIndexer] = {
-            inst.asset_name: inst
-            for inst in indexer_types
+            inst.asset_name: inst for inst in indexer_types
         }
         self._converter_instances: dict[str, BaseConverter] = {
-            inst.converter_id: inst
-            for inst in converter_types
+            inst.converter_id: inst for inst in converter_types
         }
 
-        self.db.ensure_collections(list(self._indexer_instances.keys()))
+        self.db.ensure_collections(list(self._indexer_instances.values()))  # type: ignore
+
         self._indexer_order = self._compute_order()
 
     def _compute_order(self) -> list[str]:
@@ -141,9 +135,7 @@ class IndexRuntime:
         ts: TopologicalSorter[str] = TopologicalSorter()
         for name, idx in self._indexer_instances.items():
             if name in requested:
-                ts.add(
-                    name,
-                    *[dep for dep in idx.required_assets if dep in requested])
+                ts.add(name, *[dep for dep in idx.required_assets if dep in requested])
 
         layers: list[list[str]] = []
         ts.prepare()
@@ -176,8 +168,7 @@ class IndexRuntime:
             stack.extend(self._resource_instances[name].required_resources)
         return out
 
-    def _resources_for_indexer(
-            self, indexer: BaseIndexer) -> dict[str, BaseResource]:
+    def _resources_for_indexer(self, indexer: BaseIndexer) -> dict[str, BaseResource]:
         names = self._resource_closure(indexer.required_resources)
         return {name: self._resource_instances[name] for name in names}
 
@@ -245,15 +236,14 @@ class IndexRuntime:
             windows.extend(self._group_layer_into_windows(layer))
         return windows
 
-    def create_plan(self, files: list[FileRef],
-                    names: list[str]) -> ExecutionPlan:
+    def create_plan(self, files: list[FileRef], names: list[str]) -> ExecutionPlan:
         windows = self.build_windows(names)
         requested = {name for window in windows for name in window}
         dependencies = {
             name:
-            tuple(dep for dep in self._indexer_instances[name].required_assets
-                  if dep in requested)
-            for name in sorted(requested)
+                tuple(dep
+                      for dep in self._indexer_instances[name].required_assets
+                      if dep in requested) for name in sorted(requested)
         }
 
         planned: list[PlannedIndexerBatch] = []
@@ -262,9 +252,8 @@ class IndexRuntime:
             for name in window:
                 indexer = self._indexer_instances[name]
                 stage_files = [
-                    ref for ref in files
-                    if indexer.can_run(self.db.get_path(ref))
-                    and not self.db.has_indexer_result(ref, name)
+                    ref for ref in files if indexer.can_run(self.db.get_path(ref)) and
+                    not self.db.has_indexer_result(ref, name)
                 ]
                 if not stage_files:
                     continue
@@ -291,15 +280,14 @@ class IndexRuntime:
         total_batches = len(plan.batches)
         for batch_idx, batch in enumerate(plan.batches, start=1):
             log.info(
-                "batch {}/{}: indexer={} window={} files={} sub_batches={}".
-                format(
+                "batch {}/{}: indexer={} window={} files={} sub_batches={}".format(
                     batch_idx,
                     total_batches,
                     batch.indexer_name,
                     batch.window_id,
                     len(batch.file_refs),
                     len(batch.sub_batches),
-                ), )
+                ),)
 
             with self.ctx.trace_scope(
                     "execute batch",
@@ -332,8 +320,7 @@ class IndexRuntime:
         ):
             self.execute_plan(plan)
 
-    def get_indexer_result(self, hash: FileHash | FileRef,
-                           name: str) -> IndexerOutput:
+    def get_indexer_result(self, hash: FileHash | FileRef, name: str) -> IndexerOutput:
         return IndexerOutput(
             indexer_id=name,
             result=self.db.get_indexer_result_type(  # type: ignore
@@ -364,8 +351,7 @@ class IndexRuntime:
                     ExceptionContextNote(
                         f"running indexer '{indexer.asset_name}' for '{self.db.get_path(ref)} {ref.hash}'"
                     ),
-                    self.ctx.trace_scope("index",
-                                         file=str(self.db.get_path(ref))),
+                    self.ctx.trace_scope("index", file=str(self.db.get_path(ref))),
             ):
                 out = indexer.run(
                     ctx=self.ctx,
@@ -378,9 +364,9 @@ class IndexRuntime:
         total_sub_batches = len(batch.sub_batches)
         for sub_idx, chunk in enumerate(batch.sub_batches, start=1):
             log.debug(
-                "sub-batch {}/{}: indexer={} size={}".format(
-                    sub_idx, total_sub_batches, batch.indexer_name,
-                    len(chunk)), )
+                "sub-batch {}/{}: indexer={} size={}".format(sub_idx, total_sub_batches,
+                                                             batch.indexer_name,
+                                                             len(chunk)),)
             with self.ctx.trace_scope(
                     "execute sub-batch",
                     indexer=batch.indexer_name,
@@ -389,15 +375,13 @@ class IndexRuntime:
                     size=len(chunk),
             ):
                 if len(chunk) > 1 and indexer.max_parallel > 1:
-                    with ThreadPoolExecutor(
-                            max_workers=indexer.max_parallel) as ex:
+                    with ThreadPoolExecutor(max_workers=indexer.max_parallel) as ex:
                         completed = list(ex.map(work, chunk))
                 else:
                     completed = [work(ref) for ref in chunk]
 
                 for ref, out in completed:
-                    with ExceptionContextNote(
-                            f"indexer asset: {indexer.asset_name}"):
+                    with ExceptionContextNote(f"indexer asset: {indexer.asset_name}"):
                         self.db.store_indexer_output(ref, out)
 
         log.info("finished indexer batch")
@@ -439,10 +423,7 @@ class IndexRuntime:
             batches = [inputs]  # type: ignore[list-item]
             single = True
 
-        outputs = [
-            self._run_converter_one(converter, b, param, assets)
-            for b in batches
-        ]
+        outputs = [self._run_converter_one(converter, b, param, assets) for b in batches]
         return outputs[0] if single else outputs
 
     def _run_converter_one(
@@ -453,14 +434,10 @@ class IndexRuntime:
         assets: dict[str, IndexerOutput],
     ) -> ConverterOutput:
         resources = {
-            name: self._resource_instances[name]
-            for name in converter.required_resources
+            name: self._resource_instances[name] for name in converter.required_resources
         }
         request = ConverterRequest(input_files=input_files, param=param)
-        out = converter.run(self.ctx,
-                            request,
-                            resources=resources,
-                            assets=assets)
+        out = converter.run(self.ctx, request, resources=resources, assets=assets)
         self.db.store_derivation(
             request.input_files,
             out.output_files,

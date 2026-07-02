@@ -9,7 +9,7 @@ from arango import ArangoClient
 from arango.aql import AQL
 from arango.database import StandardDatabase
 from beartype import beartype
-from beartype.typing import Any, Dict, List, Optional, cast
+from beartype.typing import Any, Dict, List, Optional, cast, Sequence, Protocol
 from openai import BaseModel
 
 from index_service.services.core.types import (
@@ -21,12 +21,20 @@ from index_service.services.core.types import (
     RootRef,
 )
 from index_service.services.pydantic_utils import (
+    arango_schema_for_model,
     model_from_json_data,
     model_to_json_data,
 )
 from index_service.services.utils import ExceptionContextNote
 
 log = logging.getLogger(__name__)
+
+
+@beartype
+class BaseIndexProtocol(Protocol):
+    asset_name: str
+    result_model: type[BaseModel]
+    edge_collection_name: str
 
 
 @beartype
@@ -67,8 +75,7 @@ class IndexDatabase:
         return self._db_name
 
     def _load_roots_from_db(self):
-        for row in self._db.aql.execute(
-                "FOR doc IN roots return doc"):  # type: ignore
+        for row in self._db.aql.execute("FOR doc IN roots return doc"):  # type: ignore
             self.roots[row["_key"]] = Path(row["path"])
 
     def add_root(self, name: str, root: Path) -> RootRef:
@@ -94,13 +101,29 @@ class IndexDatabase:
     def get_path(self, ref: FileRef) -> Path:
         return self.roots[ref.root.name].joinpath(ref.relative)
 
-    def ensure_collections(self, names: List[str]) -> None:
-        for name in ["roots", "files", "derivations"] + names:
+    def ensure_collections(self, indexers: Sequence[BaseIndexProtocol]) -> None:
+        for name in ["roots", "files", "derivations"]:
             if not self._db.has_collection(name):
                 self._db.create_collection(name)
 
+        for indexer in indexers:
+            expected_schema = self._arango_collection_schema_for_indexer(indexer)
+
+            if not self._db.has_collection(indexer.asset_name):
+                self._db.create_collection(
+                    indexer.asset_name,
+                    schema=expected_schema,
+                )
+            else:
+                collection = self._db.collection(indexer.asset_name)
+                actual_schema = collection.properties().get("schema")
+                if actual_schema != expected_schema:
+                    raise RuntimeError(
+                        f"schema mismatch for collection {indexer.asset_name!r}: "
+                        f"expected {expected_schema!r}, got {actual_schema!r}")
+
         files = self._db.collection("files")
-        if "idx_paths_suffix" not in files.indexes():  # type: ignore
+        if not any(idx.get("name") == "idx_paths_suffix" for idx in files.indexes()):
             files.add_index({
                 "type": "persistent",
                 "fields": ["paths[*].suffix"],
@@ -122,7 +145,7 @@ class IndexDatabase:
         path_refs = fdoc.get("paths", []) if fdoc else []
         return [
             FileRef(
-                hash=FileHash.model_validate(p["hash"], ),
+                hash=FileHash.model_validate(p["hash"],),
                 relative=p["relative"],
                 root=RootRef.model_validate(p["root"]),
             ) for p in path_refs
@@ -130,8 +153,7 @@ class IndexDatabase:
 
     def as_ref(self, root: RootRef, path: Path) -> FileRef:
         assert root.name in self.roots, (
-            f"Unknown root for file ref: '{root}', register root with `add_root()` first"
-        )
+            f"Unknown root for file ref: '{root}', register root with `add_root()` first")
 
         relative = str(path.relative_to(self.get_root(root)))
 
@@ -164,8 +186,36 @@ class IndexDatabase:
         col = self._db.collection(indexer_id)
         return col.has(ref.hash.hash)
 
-    def _store_indexer_document_one(self, key: str, indexer_id: str,
-                                    result: AnyModel):
+    def _arango_collection_schema_for_indexer(
+            self, indexer: BaseIndexProtocol) -> dict[str, Any]:
+        return {
+            "level":
+                "strict",
+            "message":
+                f"invalid document shape for {indexer.result_model.__name__} schema was {arango_schema_for_model(indexer.result_model)}",
+            "rule": {
+                "type": "object",
+                "properties": {
+                    "_key": {
+                        "type": "string"
+                    },
+                    "_id": {
+                        "type": "string"
+                    },
+                    "_rev": {
+                        "type": "string"
+                    },
+                    "indexer_id": {
+                        "type": "string"
+                    },
+                    "result": arango_schema_for_model(indexer.result_model),
+                },
+                "required": ["_key", "indexer_id", "result"],
+                "additionalProperties": False,
+            },
+        }
+
+    def _store_indexer_document_one(self, key: str, indexer_id: str, result: AnyModel):
         col = self._db.collection(indexer_id)
         result_j = model_to_json_data(result)
         doc = {
@@ -220,14 +270,12 @@ class IndexDatabase:
                                 type) -> Optional[AnyModel]:
         doc = cast(dict, self._db.collection(indexer_id).get(hash.hash))
         if doc:
-            return type.model_validate(
-                model_from_json_data(doc["result"], type))
+            return type.model_validate(model_from_json_data(doc["result"], type))
 
         else:
             return None
 
-    def get_indexer_result(self, hash: FileHash,
-                           indexer_id: str) -> IndexerResultRecord:
+    def get_indexer_result(self, hash: FileHash, indexer_id: str) -> IndexerResultRecord:
         doc = cast(dict, self._db.collection(indexer_id).get(hash.hash))
 
         assert doc, f"Cannot get evaluation results for {indexer_id}({hash})"
@@ -254,8 +302,7 @@ class IndexDatabase:
         return meta["_key"]  # type: ignore
 
     @staticmethod
-    def reset_database(host: str, db_name: str, username: str,
-                       password: str) -> None:
+    def reset_database(host: str, db_name: str, username: str, password: str) -> None:
         client = ArangoClient(hosts=host)
         sys_db = client.db("_system", username=username, password=password)
         if sys_db.has_database(db_name):

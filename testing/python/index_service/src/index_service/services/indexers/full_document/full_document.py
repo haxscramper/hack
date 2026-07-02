@@ -21,8 +21,6 @@ from index_service.services.core.types import (
 from index_service.services.indexers.full_document.from_pandoc import pandoc_to_document
 from index_service.services.indexers.full_document.full_document_types import _flatten
 
-AnyModel = BaseModel
-
 log = logging.getLogger(__name__)
 
 

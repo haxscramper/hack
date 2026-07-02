@@ -11,7 +11,7 @@ from functools import wraps
 from pathlib import Path
 
 from beartype import beartype
-from beartype.typing import Callable, ParamSpec, TypeVar
+from beartype.typing import Callable, Optional, ParamSpec, TypeVar
 from pydantic import BaseModel
 
 from index_service.services.core.db import IndexDatabase
@@ -136,8 +136,7 @@ def cache_indexer_run(func: Callable[P, R]) -> Callable[P, IndexerOutput]:
 
         if cache_path.exists() and self.should_load_cache:
             with (
-                    ExceptionContextNote(
-                        f"loading JSON cache from {cache_path}"),
+                    ExceptionContextNote(f"loading JSON cache from {cache_path}"),
                     ctx.trace_scope(
                         "load cache file",
                         file=cache_path,
@@ -178,6 +177,7 @@ class BaseIndexer(ABC):
     required_resources: tuple[str, ...] = ()
     max_parallel: int = 1
     should_load_cache: bool = True
+    edge_collection_name: Optional[str] = None
 
     def __init__(self, **kwargs) -> None:
         for key, value in dict(**kwargs).items():
