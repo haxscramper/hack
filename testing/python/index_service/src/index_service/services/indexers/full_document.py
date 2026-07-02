@@ -22,7 +22,7 @@ AnyModel = BaseModel
 log = logging.getLogger(__name__)
 
 
-class NestedLinkMeta(BaseModel, extra="forbid"):
+class DocumentLink(IndexLink, extra="forbid"):
     order: int
     relation: Literal["nested"] = "nested"
 
@@ -271,16 +271,15 @@ def _flatten(
     parent_hash: str | None,
     order: int,
 ) -> None:
-    # Store the block without its nested blocks; structure lives in links.
-    data = block.model_copy(update={"nested": []})
-    documents.append(IndexDocument(hash=block.hash, data=data))
+    documents.append(block.model_copy(update={"nested": []}))
     if parent_hash is not None:
         links.append(
-            IndexLink(
+            DocumentLink(
                 from_=parent_hash,
                 to_=block.hash,
-                extra=NestedLinkMeta(order=order),
+                order=order,
             ))
+
     for i, nested in enumerate(block.nested):
         _flatten(nested, documents, links, block.hash, i)
 
