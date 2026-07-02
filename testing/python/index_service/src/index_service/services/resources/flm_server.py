@@ -143,12 +143,17 @@ class FlmServerResource(BaseResource):
             self._restart_server_locked()
 
     def _create_completion(self, request: FlmRequest):
+        log.info(
+            f"message sizes: {[len(msg.content) for msg in request.messages]}")
+
         params: dict[str, Any] = {
             "model": request.model,
             "messages": [msg.model_dump() for msg in request.messages],
         }
+
         if request.temperature is not None:
             params["temperature"] = request.temperature
+
         if request.max_tokens is not None:
             params["max_tokens"] = request.max_tokens
 

@@ -17,6 +17,7 @@ dependencies = [
     "graphviz>=0.21",
     "huggingface-hub>=1.21.0",
     "jax[rocm7-local]>=0.10.2",
+    "langchain-text-splitters>=1.1.2",
     "msgpack>=1.2.1",
     "numpy>=2.5.0",
     "onnxruntime>=1.27.0",
@@ -33,6 +34,7 @@ dependencies = [
     "python-arango==8.1.6",
     "python-magic>=0.4.27",
     "rich>=15.0.0",
+    "tiktoken>=0.13.0",
     "zmq>=0.0.0",
 ]
 

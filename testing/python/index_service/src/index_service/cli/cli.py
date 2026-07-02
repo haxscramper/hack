@@ -31,6 +31,7 @@ from index_service.services.indexers.image_generation import GenerationParamsInd
 from index_service.services.indexers.pdf_indexer import PdfIndexer
 from index_service.services.indexers.safetensor_indexer import SafetensorIndexer
 from index_service.services.indexers.wd_indexer import WdTagIndexer
+from index_service.services.log_config import JsonlFormatter, keep_last_files
 from index_service.services.resources.flm_server import FlmServerResource
 from index_service.services.resources.pdf.pdf_extractor import PdfExtractor
 from index_service.services.resources.wd_tagger import WdTagger
@@ -130,6 +131,16 @@ _RESOURCE_TYPES = [t for t in DEFAULT_RESOURCE_TYPES] + [
 @click.option("--enable-cache",
               multiple=True,
               default=[cls.asset_name for cls in _INDEXER_TYPES])
+@click.option("--logfile",
+              default=None,
+              show_default=True,
+              type=click.Path(path_type=str))
+@click.option(
+    "--logfile-format",
+    type=click.Choice(["text", "json"], case_sensitive=True),
+    default="text",
+    show_default=True,
+)
 def index(
     host: str,
     db_name: str,
@@ -143,9 +154,49 @@ def index(
     resources: tuple[str, ...],
     paths: tuple[Path, ...],
     perf_trace_file: str | None = None,
+    logfile: str | None = None,
+    logfile_format: str = "text",
 ) -> None:
     stfu_logs()
     handler = get_custom_traceback_handler(show_args=False)
+
+    run_text_dir = get_xdg_cache_dir(["logs", "run", "text"])
+    run_json_dir = get_xdg_cache_dir(["logs", "run", "json"])
+    perf_dir = get_xdg_cache_dir(["logs", "perf"])
+
+    run_text_dir.mkdir(parents=True, exist_ok=True)
+    run_json_dir.mkdir(parents=True, exist_ok=True)
+    perf_dir.mkdir(parents=True, exist_ok=True)
+
+    timestamp = datetime.now().isoformat()
+    text_log_format = (
+        "%(asctime)s %(levelname)s %(name)s %(filename)s:%(lineno)d: %(message)s"
+    )
+
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+
+    run_text_file = run_text_dir / f"{timestamp}.log"
+    run_text_handler = logging.FileHandler(run_text_file)
+    run_text_handler.setFormatter(logging.Formatter(text_log_format))
+    root_logger.addHandler(run_text_handler)
+
+    run_json_file = run_json_dir / f"{timestamp}.jsonl"
+    run_json_handler = logging.FileHandler(run_json_file)
+    run_json_handler.setFormatter(JsonlFormatter())
+    root_logger.addHandler(run_json_handler)
+
+    if logfile:
+        user_handler = logging.FileHandler(logfile)
+        if logfile_format == "json":
+            user_handler.setFormatter(JsonlFormatter())
+        else:
+            user_handler.setFormatter(logging.Formatter(text_log_format))
+        root_logger.addHandler(user_handler)
+
+    keep_last_files(run_text_dir, "*.log", 20)
+    keep_last_files(run_json_dir, "*.jsonl", 20)
+    keep_last_files(perf_dir, "*.json", 20)
 
     paths = tuple(p.expanduser().resolve().absolute() for p in paths)
 
@@ -176,11 +227,12 @@ def index(
     for t in _RESOURCE_TYPES:
         if t.resource_key in resources:
             for dep in t.required_resources:
-                assert dep in resources, f"Indexer '{t.resource_key}' requires resource '{dep}' to be enabled"
+                assert dep in resources, (
+                    f"Indexer '{t.resource_key}' requires resource '{dep}' to be enabled"
+                )
 
             if t == WdTagger:
                 resource_instances.append(WdTagger.from_huggingface())
-
             else:
                 resource_instances.append(t())
 
@@ -188,10 +240,14 @@ def index(
     for t in _INDEXER_TYPES:
         if t.asset_name in indexers:
             for dep in t.required_resources:
-                assert dep in resources, f"Indexer '{t.asset_name}' requires resource '{dep}' to be enabled"
+                assert dep in resources, (
+                    f"Indexer '{t.asset_name}' requires resource '{dep}' to be enabled"
+                )
 
             for dep in t.required_assets:
-                assert dep in indexers, f"Indexer '{t.asset_name}' requires indexer '{dep}' to be enabled"
+                assert dep in indexers, (
+                    f"Indexer '{t.asset_name}' requires indexer '{dep}' to be enabled"
+                )
 
             indexer_instances.append(
                 t(should_load_cache=t.asset_name in enable_cache))
@@ -217,23 +273,11 @@ def index(
 
     finally:
         assert ctx.writer
-        perf_dir = get_xdg_cache_dir([
-            "logs",
-            "perf",
-        ])
-        perf_dir.mkdir(parents=True, exist_ok=True)
 
         ctx.writer.save(
             str(perf_dir.joinpath(f"{datetime.now().isoformat()}.json")))
 
-        perf_files = sorted(
-            perf_dir.glob("*.json"),
-            key=lambda path: path.stat().st_mtime,
-            reverse=True,
-        )
-
-        for old_file in perf_files[10:]:
-            old_file.unlink()
+        keep_last_files(perf_dir, "*.json", 20)
 
         if perf_trace_file:
             log.info(f"Trace file {perf_trace_file}")
