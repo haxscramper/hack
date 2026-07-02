@@ -9,7 +9,7 @@ from index_service.services.converters.file_size_converter import FileSizeConver
 from index_service.services.core.db import IndexDatabase
 from index_service.services.indexers.file_size import FileSizeIndexerResult
 from index_service.services.indexers.file_stats import FileStatsIndexerResult
-from index_service.services.core.types import FileHash, FileRef
+from index_service.services.core.types import FileHash, FileRef, IndexerOutput
 from index_service.services.core.job_runtime import IndexRuntime
 
 ARANGO_HOST = os.environ.get("ARANGO_HOST", "http://localhost:8529")
@@ -99,10 +99,16 @@ def test_db_indexer_result_uniqueness(db: IndexDatabase,
     ref_b = db.as_ref(root, pb)
     db.ensure_collections(["file_size"])
     db.truncate_all(["file_size"])
-    db.store_indexer_result(ref_a, "file_size",
-                            FileSizeIndexerResult(size_bytes=10))
-    db.store_indexer_result(ref_b, "file_size",
-                            FileSizeIndexerResult(size_bytes=20))
+    db.store_indexer_output(
+        ref_a,
+        IndexerOutput(indexer_id="file_size",
+                      result=FileSizeIndexerResult(size_bytes=10)))
+
+    db.store_indexer_output(
+        ref_b,
+        IndexerOutput(indexer_id="file_size",
+                      result=FileSizeIndexerResult(size_bytes=20)))
+
     record = db.get_indexer_result(ref_a.hash, "file_size")
     assert record.result["size_bytes"] == 20
 

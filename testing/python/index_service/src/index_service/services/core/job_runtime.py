@@ -398,8 +398,7 @@ class IndexRuntime:
                 for ref, out in completed:
                     with ExceptionContextNote(
                             f"indexer asset: {indexer.asset_name}"):
-                        self.db.store_indexer_result(ref, indexer.asset_name,
-                                                     out.result)
+                        self.db.store_indexer_output(ref, out)
 
         log.info("finished indexer batch")
 

@@ -1,10 +1,12 @@
+from argparse import ArgumentError
 import hashlib
 import json
 import logging
 from pathlib import Path
 from typing import Annotated, Literal, Union
 
-from beartype.typing import ClassVar, Sequence
+import magic
+from beartype.typing import ClassVar, Sequence, cast
 from plumbum.cmd import pandoc
 from pydantic import BaseModel, Field
 
@@ -125,6 +127,25 @@ for _cls in (
     _cls.model_rebuild()
 
 
+def _build(
+        cls: type[DocumentBlock],
+        *,
+        nested: Sequence[DocumentBlock] = (),
+        **kwargs,
+) -> DocumentBlock:
+    """Construct a block with its hash computed inline from its own payload
+    plus the hashes of already-built nested children."""
+    nested = list(nested)
+    block = cls.model_construct(hash="", nested=nested, **kwargs)
+    payload = block.model_dump(exclude={"id", "nested", "hash"})
+    hasher = hashlib.sha256()
+    hasher.update(json.dumps(payload, sort_keys=True).encode())
+    for n in nested:
+        hasher.update(n.hash.encode())
+    block.hash = hasher.hexdigest()
+    return block
+
+
 def _merge_text(nodes: list) -> list:
     """Collapse adjacent StyledText runs sharing identical styles."""
     merged: list = []
@@ -144,42 +165,60 @@ def _convert_inlines(inlines: list,
     styles = styles or {}
     out: list = []
     for il in inlines:
-        t = il["t"]
-        if t == "Str":
-            out.append(StyledText(text=il["c"], styles=TextStyles(**styles)))
-        elif t == "Space":
-            out.append(StyledText(text=" ", styles=TextStyles(**styles)))
-        elif t in ("SoftBreak", "LineBreak"):
-            out.append(StyledText(text="\n", styles=TextStyles(**styles)))
-        elif t == "Emph":
-            out += _convert_inlines(il["c"], {**styles, "italic": True})
-        elif t == "Strong":
-            out += _convert_inlines(il["c"], {**styles, "bold": True})
-        elif t == "Strikeout":
-            out += _convert_inlines(il["c"], {**styles, "strike": True})
-        elif t == "Underline":
-            out += _convert_inlines(il["c"], {**styles, "underline": True})
-        elif t == "Code":
-            out.append(
-                StyledText(text=il["c"][1],
-                           styles=TextStyles(**{
-                               **styles, "code": True
-                           })))
-        elif t == "Link":
-            _, link_inlines, target = il["c"]
-            out.append(
-                Link(href=target[0], content=_convert_inlines(link_inlines)))
-        elif t in ("Superscript", "Subscript", "SmallCaps", "Span", "Quoted"):
-            payload = il["c"]
-            nested = payload[-1] if isinstance(payload, list) else payload
-            out += _convert_inlines(nested, styles)
+        match il:
+            case {"t": "Str"}:
+                out.append(
+                    StyledText(text=il["c"], styles=TextStyles(**styles)))
+
+            case {"t": "Space"}:
+                out.append(StyledText(text=" ", styles=TextStyles(**styles)))
+
+            case {"t": "SoftBreak" | "LineBreak"}:
+                out.append(StyledText(text="\n", styles=TextStyles(**styles)))
+
+            case {"t": "Emph"}:
+                out += _convert_inlines(il["c"], {**styles, "italic": True})
+
+            case {"t": "Strong"}:
+                out += _convert_inlines(il["c"], {**styles, "bold": True})
+
+            case {"t": "Strikeout"}:
+                out += _convert_inlines(il["c"], {**styles, "strike": True})
+
+            case {"t": "Underline"}:
+                out += _convert_inlines(il["c"], {**styles, "underline": True})
+
+            case {"t": "Code"}:
+                out.append(
+                    StyledText(text=il["c"][1],
+                               styles=TextStyles(**{
+                                   **styles, "code": True
+                               })))
+            case {"t": "Link"}:
+                _, link_inlines, target = il["c"]
+                out.append(
+                    Link(href=target[0],
+                         content=_convert_inlines(link_inlines)))
+
+            case {
+                "t":
+                "Superscript" | "Subscript" | "SmallCaps" | "Span" | "Quoted"
+            }:
+                payload = il["c"]
+                nested = payload[-1] if isinstance(payload, list) else payload
+                out += _convert_inlines(nested, styles)
+
+            case str():
+                out.append(StyledText(text=il))
+
+            case _:
+                raise RuntimeError(f"Unhandled inline element: {il}")
+
     return _merge_text(out)
 
 
 def _convert_list_items(items: list,
                         item_type: str) -> Sequence[DocumentBlock]:
-    """Each pandoc list item is a list of blocks; the first becomes the item
-    content, remaining blocks (including nested lists) become nested."""
     cls = {
         "bulletListItem": BulletListItem,
         "numberedListItem": NumberedListItem,
@@ -193,7 +232,7 @@ def _convert_list_items(items: list,
             continue
         head = blocks[0]
         content = getattr(head, "content", [])
-        result.append(cls(content=content, nested=blocks[1:]))
+        result.append(_build(cls, content=content, nested=blocks[1:]))
     return result
 
 
@@ -201,13 +240,15 @@ def _convert_block(pb: dict) -> Sequence[DocumentBlock]:
     t = pb["t"]
     match t:
         case "Para" | "Plain":
-            return [Paragraph(content=_convert_inlines(pb["c"]))]
+            return [_build(Paragraph, content=_convert_inlines(pb["c"]))]
 
         case "Header":
             level, _attr, inlines = pb["c"]
+            clamped = cast(Literal[1, 2, 3], min(max(level, 1), 3))
             return [
-                Heading(
-                    props=HeadingProps(level=min(max(level, 1), 3)),
+                _build(
+                    Heading,
+                    props=HeadingProps(level=clamped),
                     content=_convert_inlines(inlines),
                 )
             ]
@@ -217,7 +258,8 @@ def _convert_block(pb: dict) -> Sequence[DocumentBlock]:
             classes = attr[1]
             lang = classes[0] if classes else "text"
             return [
-                Code(
+                _build(
+                    Code,
                     props=CodeBlockProps(language=lang),
                     content=[StyledText(text=code)],
                 )
@@ -233,14 +275,16 @@ def _convert_block(pb: dict) -> Sequence[DocumentBlock]:
             nested: list = []
             for inner in pb["c"]:
                 nested += _convert_block(inner)
-            return [Quote(nested=nested)]
+            return [_build(Quote, nested=nested)]
 
         case "HorizontalRule":
             return []
 
         case _:
             log.warning(f"Implicitly handled document block of type '{t}'")
-            return [Paragraph(content=_convert_inlines(pb.get("c", [])))]
+            return [
+                _build(Paragraph, content=_convert_inlines(pb.get("c", [])))
+            ]
 
 
 def pandoc_to_document(path: Path) -> Document:
@@ -248,7 +292,7 @@ def pandoc_to_document(path: Path) -> Document:
     nested: list = []
     for pb in ast["blocks"]:
         nested += _convert_block(pb)
-    return Document(nested=nested)
+    return _build(Document, nested=nested)
 
 
 def _assign_hashes(block) -> str:
@@ -289,11 +333,20 @@ class DocumentBlockIndexerResult(MultiDocumentModel, extra="forbid"):
 
 
 class DocumentBlockIndexer(BaseIndexer):
-    asset_name = "full_document"
+    asset_name = "document_block"
     result_model = DocumentBlockIndexerResult
 
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
+        self._magic = magic.Magic(mime=True)
+
+    def can_run(self, path: Path) -> bool:
+        mime = self._magic.from_file(str(path.resolve()))
+        if mime.startswith("text/"):
+            return True
+
+        else:
+            return False
 
     def run(
         self,

@@ -1,5 +1,6 @@
 import hashlib
 import json
+import logging
 import math
 from dataclasses import dataclass
 from pathlib import Path
@@ -10,10 +11,20 @@ from arango.database import StandardDatabase
 from beartype import beartype
 from beartype.typing import Any, Dict, List, Optional, cast
 from openai import BaseModel
-from index_service.services.pydantic_utils import model_from_json_data, model_to_json_data
-from index_service.services.core.types import FileHash, AnyModel, FileRef, RootRef
+
+from index_service.services.core.types import (
+    AnyModel,
+    FileHash,
+    FileRef,
+    IndexerOutput,
+    MultiDocumentModel,
+    RootRef,
+)
+from index_service.services.pydantic_utils import (
+    model_from_json_data,
+    model_to_json_data,
+)
 from index_service.services.utils import ExceptionContextNote
-import logging
 
 log = logging.getLogger(__name__)
 
@@ -61,14 +72,15 @@ class IndexDatabase:
             self.roots[row["_key"]] = Path(row["path"])
 
     def add_root(self, name: str, root: Path) -> RootRef:
-        assert name not in self.roots or self.roots[
-            name] == root, f"Duplicate root name {name} with a different path, stored {self.roots[name]}, trying to set {root}"
+        assert name not in self.roots or self.roots[name] == root, (
+            f"Duplicate root name {name} with a different path, stored {self.roots[name]}, trying to set {root}"
+        )
 
         db_roots = self._db.collection("roots")
         if name in self.roots:
-            assert db_roots.has(
-                name
-            ), f"logical error, roots cache is populated, but the DB does not have the value for {name}"
+            assert db_roots.has(name), (
+                f"logical error, roots cache is populated, but the DB does not have the value for {name}"
+            )
 
         else:
             self.roots[name] = root
@@ -117,7 +129,9 @@ class IndexDatabase:
         ]
 
     def as_ref(self, root: RootRef, path: Path) -> FileRef:
-        assert root.name in self.roots, f"Unknown root for file ref: '{root}', register root with `add_root()` first"
+        assert root.name in self.roots, (
+            f"Unknown root for file ref: '{root}', register root with `add_root()` first"
+        )
 
         relative = str(path.relative_to(self.get_root(root)))
 
@@ -150,18 +164,12 @@ class IndexDatabase:
         col = self._db.collection(indexer_id)
         return col.has(ref.hash.hash)
 
-    def store_indexer_result(
-        self,
-        ref: FileRef,
-        indexer_id: str,
-        result: AnyModel,
-    ) -> None:
-        key = ref.hash.hash
+    def _store_indexer_document_one(self, key: str, indexer_id: str,
+                                    result: AnyModel):
         col = self._db.collection(indexer_id)
         result_j = model_to_json_data(result)
         doc = {
             "_key": key,
-            "hash": ref.hash.hash,
             "indexer_id": indexer_id,
             "result": result_j,
         }
@@ -189,6 +197,24 @@ class IndexDatabase:
                 col.replace(doc)
             else:
                 col.insert(doc)
+
+    def store_indexer_output(
+        self,
+        ref: FileRef,
+        out: IndexerOutput,
+    ) -> None:
+        if isinstance(out.result, MultiDocumentModel):
+            for document in out.result.documents:
+                self._store_indexer_document_one(
+                    key=document.hash,
+                    indexer_id=out.indexer_id,
+                    result=document,
+                )
+
+        else:
+            self._store_indexer_document_one(key=ref.hash.hash,
+                                             indexer_id=out.indexer_id,
+                                             result=out.result)
 
     def get_indexer_result_type(self, hash: FileHash, indexer_id: str,
                                 type) -> Optional[AnyModel]:
@@ -250,11 +276,11 @@ class IndexDatabase:
               FILTER doc.indexer_id == "full_text"
               FILTER CONTAINS(LOWER(doc.result.text), LOWER(@query))
               LIMIT @limit
-              RETURN {{hash: doc.hash, text: doc.result.text}}
+              RETURN {{hash: doc._key, text: doc.result.text}}
             """,
             bind_vars={  # type: ignore
                 "query": query,
-                "limit": limit
+                "limit": limit,
             },
         )
 
@@ -269,7 +295,7 @@ class IndexDatabase:
         cursor = self._db.aql.execute(f"""
             FOR doc IN {collection}
               FILTER doc.indexer_id == "file_embedding"
-              RETURN {{hash: doc.hash, vector: doc.result.vector}}
+              RETURN {{hash: doc._key, vector: doc.result.vector}}
             """)
 
         rows = list(cursor)  # type: ignore

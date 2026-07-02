@@ -36,8 +36,8 @@ def test_vector_search(db: IndexDatabase, runtime: IndexRuntime,
     runtime.run_indexer(m2, ["file_embedding"])
     out2 = runtime.get_indexer_result(m2, "file_embedding")
 
-    db.store_indexer_result(m1, out1.indexer_id, out1.result)
-    db.store_indexer_result(m2, out2.indexer_id, out2.result)
+    db.store_indexer_output(m1, out1)
+    db.store_indexer_output(m2, out2)
 
     hits = db.vector_search("file_embedding", out1.result.vector, limit=1)
     assert hits[0]["hash"] == m1.hash.hash

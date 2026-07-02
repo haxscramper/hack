@@ -27,6 +27,7 @@ from index_service.services.default_job_types import (
 from index_service.services.indexers.comfy_input_indexer import ComfyInputIndexer
 from index_service.services.indexers.exif_metadata import ExifMetadataIndexer
 from index_service.services.indexers.ffprobe_indexer import FFProbeIndexer
+from index_service.services.indexers.full_document import DocumentBlockIndexer
 from index_service.services.indexers.image_generation import GenerationParamsIndexer
 from index_service.services.indexers.pdf_indexer import PdfIndexer
 from index_service.services.indexers.safetensor_indexer import SafetensorIndexer
@@ -88,6 +89,7 @@ _INDEXER_TYPES = [t for t in DEFAULT_INDEXER_TYPES] + [
     GenerationParamsIndexer,
     ExifMetadataIndexer,
     ComfyInputIndexer,
+    DocumentBlockIndexer,
 ]
 
 _RESOURCE_TYPES = [t for t in DEFAULT_RESOURCE_TYPES] + [
@@ -174,7 +176,7 @@ def index(
     )
 
     root_logger = logging.getLogger()
-    root_logger.setLevel(logging.INFO)
+    root_logger.setLevel(logging.DEBUG)
 
     run_text_file = run_text_dir / f"{timestamp}.log"
     run_text_handler = logging.FileHandler(run_text_file)

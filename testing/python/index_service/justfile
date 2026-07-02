@@ -5,6 +5,8 @@ index:
     uv run src/index_service/cli/cli.py index \
         --reset True \
         --db-name test_index \
+        --indexer document_block \
+        --logfile /tmp/index-log.log \
         --perf-trace-file /tmp/indexer-trace-perf.json \
         "~/defaultdirs/temporary_interchange/content_root_for_indexing/"
 

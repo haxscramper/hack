@@ -27,6 +27,14 @@ class MultiDocumentModel(BaseModel, extra="forbid"):
     documents: list[IndexDocument]
 
 
+class IndexerOutputError(BaseModel, extra="forbid"):
+    description: str
+
+
+class IndexerNotApplicable(BaseModel, extra="forbid"):
+    reason: str
+
+
 @beartype
 class FileHash(BaseModel, extra="forbid"):
     model_config = ConfigDict(frozen=True)
@@ -62,7 +70,7 @@ class ConverterOutput(BaseModel, extra="forbid"):
     model_config = ConfigDict(frozen=True)
     converter_id: str
     output_files: list[Path]
-    return_value: AnyModel
+    return_value: AnyModel | IndexerOutputError | IndexerNotApplicable
 
 
 @beartype
