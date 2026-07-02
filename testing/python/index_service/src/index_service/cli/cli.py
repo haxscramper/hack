@@ -10,9 +10,9 @@ from beartype.typing import Any
 from PySide6.QtWidgets import QApplication
 
 from index_service.gui.collection_views.comfy_input_builder import (
-    ComfyInputWidgetBuilder, )
+    ComfyInputWidgetBuilder,)
 from index_service.gui.collection_views.exif_preview_builder import (
-    ExifPreviewrWidgetBuilder, )
+    ExifPreviewrWidgetBuilder,)
 from index_service.gui.collection_views.wd_tagger_builder import WdTaggerWidgetBuilder
 from index_service.gui.window import MainWindow
 from index_service.services.core.db import IndexDatabase
@@ -27,7 +27,7 @@ from index_service.services.default_job_types import (
 from index_service.services.indexers.comfy_input_indexer import ComfyInputIndexer
 from index_service.services.indexers.exif_metadata import ExifMetadataIndexer
 from index_service.services.indexers.ffprobe_indexer import FFProbeIndexer
-from index_service.services.indexers.full_document import DocumentBlockIndexer
+from index_service.services.indexers.full_document.full_document import DocumentBlockIndexer
 from index_service.services.indexers.image_generation import GenerationParamsIndexer
 from index_service.services.indexers.pdf_indexer import PdfIndexer
 from index_service.services.indexers.safetensor_indexer import SafetensorIndexer
@@ -59,9 +59,7 @@ warnings.showwarning = showwarning
 
 
 def _db_options(f):
-    f = click.option("--host",
-                     default="http://localhost:8529",
-                     show_default=True)(f)
+    f = click.option("--host", default="http://localhost:8529", show_default=True)(f)
     f = click.option("--db-name", required=True)(f)
     f = click.option("--username", default="root", show_default=True)(f)
     f = click.option("--password", default="test", show_default=True)(f)
@@ -106,16 +104,14 @@ _RESOURCE_TYPES = [t for t in DEFAULT_RESOURCE_TYPES] + [
     "indexers",
     multiple=True,
     default=[cls.asset_name for cls in _INDEXER_TYPES],
-    type=click.Choice([cls.asset_name for cls in _INDEXER_TYPES],
-                      case_sensitive=True),
+    type=click.Choice([cls.asset_name for cls in _INDEXER_TYPES], case_sensitive=True),
 )
 @click.option(
     "--resource",
     "resources",
     multiple=True,
     default=[cls.resource_key for cls in _RESOURCE_TYPES],
-    type=click.Choice([cls.resource_key for cls in _RESOURCE_TYPES],
-                      case_sensitive=True),
+    type=click.Choice([cls.resource_key for cls in _RESOURCE_TYPES], case_sensitive=True),
 )
 @click.argument(
     "paths",
@@ -125,10 +121,7 @@ _RESOURCE_TYPES = [t for t in DEFAULT_RESOURCE_TYPES] + [
 )
 @click.option("--reset", default=False, show_default=True)
 @click.option("--limit-total", default=None, show_default=True, type=click.INT)
-@click.option("--limit-per-path",
-              default=None,
-              show_default=True,
-              type=click.INT)
+@click.option("--limit-per-path", default=None, show_default=True, type=click.INT)
 @click.option("--perf-trace-file", default=None, show_default=True)
 @click.option("--enable-cache",
               multiple=True,
@@ -172,8 +165,7 @@ def index(
 
     timestamp = datetime.now().isoformat()
     text_log_format = (
-        "%(asctime)s %(levelname)s %(name)s %(filename)s:%(lineno)d: %(message)s"
-    )
+        "%(asctime)s %(levelname)s %(name)s %(filename)s:%(lineno)d: %(message)s")
 
     root_logger = logging.getLogger()
     root_logger.setLevel(logging.DEBUG)
@@ -230,8 +222,7 @@ def index(
         if t.resource_key in resources:
             for dep in t.required_resources:
                 assert dep in resources, (
-                    f"Indexer '{t.resource_key}' requires resource '{dep}' to be enabled"
-                )
+                    f"Indexer '{t.resource_key}' requires resource '{dep}' to be enabled")
 
             if t == WdTagger:
                 resource_instances.append(WdTagger.from_huggingface())
@@ -243,16 +234,13 @@ def index(
         if t.asset_name in indexers:
             for dep in t.required_resources:
                 assert dep in resources, (
-                    f"Indexer '{t.asset_name}' requires resource '{dep}' to be enabled"
-                )
+                    f"Indexer '{t.asset_name}' requires resource '{dep}' to be enabled")
 
             for dep in t.required_assets:
                 assert dep in indexers, (
-                    f"Indexer '{t.asset_name}' requires indexer '{dep}' to be enabled"
-                )
+                    f"Indexer '{t.asset_name}' requires indexer '{dep}' to be enabled")
 
-            indexer_instances.append(
-                t(should_load_cache=t.asset_name in enable_cache))
+            indexer_instances.append(t(should_load_cache=t.asset_name in enable_cache))
 
     with ctx.trace_scope("create runner"):
         runner = IndexRuntime(
@@ -276,8 +264,7 @@ def index(
     finally:
         assert ctx.writer
 
-        ctx.writer.save(
-            str(perf_dir.joinpath(f"{datetime.now().isoformat()}.json")))
+        ctx.writer.save(str(perf_dir.joinpath(f"{datetime.now().isoformat()}.json")))
 
         keep_last_files(perf_dir, "*.json", 20)
 

@@ -1,0 +1,353 @@
+import json
+import logging
+from pathlib import Path
+
+import plumbum
+from beartype.typing import Literal, Sequence, cast
+
+from index_service.services.indexers.full_document.full_document_types import (
+    BulletListItem,
+    Code,
+    CodeBlockProps,
+    Div,
+    DivProps,
+    Document,
+    DocumentBlock,
+    Heading,
+    HeadingProps,
+    InlineContent,
+    Link,
+    NumberedListItem,
+    Paragraph,
+    Quote,
+    StyledText,
+    Table,
+    TableCell,
+    TableCellProps,
+    TableContent,
+    TableProps,
+    TableRow,
+    TextAlignment,
+    TextStyles,
+    _build,
+    _merge_text,
+)
+
+log = logging.getLogger(__name__)
+
+
+def _convert_inlines(
+    inlines: list,
+    styles: dict | None = None,
+) -> list[InlineContent]:
+    styles = styles or {}
+    out: list[InlineContent] = []
+    for il in inlines:
+        match il:
+            case {"t": "Str"}:
+                out.append(StyledText(text=il["c"], styles=TextStyles(**styles)))
+
+            case {"t": "Space"}:
+                out.append(StyledText(text=" ", styles=TextStyles(**styles)))
+
+            case {"t": "SoftBreak" | "LineBreak"}:
+                out.append(StyledText(text="\n", styles=TextStyles(**styles)))
+
+            case {"t": "Emph"}:
+                out += _convert_inlines(il["c"], {**styles, "italic": True})
+
+            case {"t": "Strong"}:
+                out += _convert_inlines(il["c"], {**styles, "bold": True})
+
+            case {"t": "Strikeout"}:
+                out += _convert_inlines(il["c"], {**styles, "strike": True})
+
+            case {"t": "Underline"}:
+                out += _convert_inlines(il["c"], {**styles, "underline": True})
+
+            case {"t": "Code"}:
+                out.append(
+                    StyledText(
+                        text=il["c"][1],
+                        styles=TextStyles(**{
+                            **styles, "code": True
+                        }),
+                    ))
+
+            case {"t": "Link"}:
+                _, link_inlines, target = il["c"]
+                out.append(Link(
+                    href=target[0],
+                    content=_convert_inlines(link_inlines)))  # type: ignore[arg-type]
+
+            case {"t": "Superscript" | "Subscript" | "SmallCaps" | "Span" | "Quoted"}:
+                payload = il["c"]
+                nested = payload[-1] if isinstance(payload, list) else payload
+                out += _convert_inlines(nested, styles)
+
+            case str():
+                out.append(StyledText(text=il))
+
+            case _:
+                raise RuntimeError(f"Unhandled inline element: {il}")
+
+    return _merge_text(out)
+
+
+def _inline_text(inlines: list[InlineContent]) -> str:
+    parts: list[str] = []
+    for item in inlines:
+        if isinstance(item, StyledText):
+            parts.append(item.text)
+        elif isinstance(item, Link):
+            parts.append("".join(seg.text for seg in item.content))
+    return "".join(parts)
+
+
+def _extract_caption_text(blocks: list[dict]) -> str | None:
+    lines: list[str] = []
+    for block in blocks:
+        if block["t"] in {"Plain", "Para"}:
+            text = _inline_text(_convert_inlines(block["c"])).strip()
+            if text:
+                lines.append(text)
+    if not lines:
+        return None
+    return "\n".join(lines)
+
+
+def _attach_caption(block: DocumentBlock, caption: str) -> None:
+    props = getattr(block, "props", None)
+    if props is None:
+        return
+    if "caption" not in props.__class__.model_fields:
+        return
+
+
+def _convert_list_items(items: list, item_type: str) -> Sequence[DocumentBlock]:
+    cls = {
+        "bulletListItem": BulletListItem,
+        "numberedListItem": NumberedListItem,
+    }[item_type]
+    result = []
+    for item in items:
+        blocks: list = []
+        for pb in item:
+            blocks += _convert_block(pb)
+        if not blocks:
+            continue
+        head = blocks[0]
+        content = getattr(head, "content", [])
+        result.append(_build(cls, content=content, nested=blocks[1:]))
+    return result
+
+
+# add helpers near other conversion helpers
+
+
+def _pandoc_alignment_to_text_alignment(alignment: object) -> TextAlignment:
+    tag = alignment.get("t") if isinstance(alignment, dict) else str(alignment)
+    return {
+        "AlignLeft": "left",
+        "AlignCenter": "center",
+        "AlignRight": "right",
+        "AlignDefault": "left",
+    }.get(tag, "left")
+
+
+def _blocks_to_inline_content(blocks: list[dict]) -> list[InlineContent]:
+    out: list[InlineContent] = []
+    for block in blocks:
+        match block.get("t"):
+            case "Plain" | "Para":
+                chunk = _convert_inlines(block["c"])
+            case "CodeBlock":
+                chunk = [StyledText(text=block["c"][1], styles=TextStyles(code=True))]
+            case _:
+                chunk = []
+
+        if chunk:
+            if out:
+                out.append(StyledText(text="\n"))
+            out.extend(chunk)
+
+    return _merge_text(out)
+
+
+def _extract_table_caption(caption_obj: object) -> str | None:
+    if isinstance(caption_obj, list):
+        if caption_obj and isinstance(caption_obj[0], dict) and "t" in caption_obj[0]:
+            return _extract_caption_text(caption_obj)
+
+        for part in caption_obj:
+            text = _extract_table_caption(part)
+            if text:
+                return text
+
+    if isinstance(caption_obj, dict):
+        for key in ("long", "blocks", "c"):
+            if key in caption_obj:
+                text = _extract_table_caption(caption_obj[key])
+                if text:
+                    return text
+
+    return None
+
+
+def _row_to_table_row(row_obj: list, *, is_header: bool) -> TableRow:
+    _row_attr, cells_obj = row_obj
+    cells: list[TableCell] = []
+
+    for cell_obj in cells_obj:
+        _cell_attr, alignment, row_span, col_span, blocks = cell_obj
+        cells.append(
+            TableCell(
+                props=TableCellProps(
+                    textAlignment=_pandoc_alignment_to_text_alignment(alignment),
+                    rowSpan=max(1, int(row_span)),
+                    colSpan=max(1, int(col_span)),
+                    isHeader=is_header,
+                ),
+                content=_blocks_to_inline_content(blocks),
+            ))
+
+    return TableRow(cells=cells)
+
+
+def _convert_table(pb: dict) -> Table:
+    attr, caption, _colspecs, thead, tbodies, tfoot = pb["c"]
+    _identifier, _classes, _keyvals = attr
+
+    rows: list[TableRow] = []
+
+    # thead: [attr, rows]
+    if isinstance(thead, list) and len(thead) == 2:
+        for row in thead[1]:
+            rows.append(_row_to_table_row(row, is_header=True))
+
+    # tbodies: [[attr, row_head_cols, head_rows, body_rows], ...]
+    for tbody in tbodies:
+        if not isinstance(tbody, list) or len(tbody) != 4:
+            continue
+        for row in tbody[2]:
+            rows.append(_row_to_table_row(row, is_header=True))
+        for row in tbody[3]:
+            rows.append(_row_to_table_row(row, is_header=False))
+
+    # tfoot: [attr, rows]
+    if isinstance(tfoot, list) and len(tfoot) == 2:
+        for row in tfoot[1]:
+            rows.append(_row_to_table_row(row, is_header=False))
+
+    return cast(
+        Table,
+        _build(
+            Table,
+            props=TableProps(caption=_extract_table_caption(caption)),
+            content=TableContent(rows=rows),
+        ),
+    )
+
+
+def _convert_block(pb: dict) -> Sequence[DocumentBlock]:
+    t = pb["t"]
+    match t:
+        case "Para" | "Plain":
+            return [_build(Paragraph, content=_convert_inlines(pb["c"]))]
+
+        case "Header":
+            level, _attr, inlines = pb["c"]
+            clamped = cast(Literal[1, 2, 3], min(max(level, 1), 3))
+            return [
+                _build(
+                    Heading,
+                    props=HeadingProps(level=clamped),
+                    content=_convert_inlines(inlines),
+                )
+            ]
+
+        case "CodeBlock":
+            attr, code = pb["c"]
+            classes = attr[1]
+            lang = classes[0] if classes else "text"
+            return [
+                _build(
+                    Code,
+                    props=CodeBlockProps(language=lang),
+                    content=[StyledText(text=code)],
+                )
+            ]
+
+        case "BulletList":
+            return _convert_list_items(pb["c"], "bulletListItem")
+
+        case "OrderedList":
+            return _convert_list_items(pb["c"][1], "numberedListItem")
+
+        case "BlockQuote":
+            nested: list = []
+            for inner in pb["c"]:
+                nested += _convert_block(inner)
+            return [_build(Quote, nested=nested)]
+
+        case "HorizontalRule":
+            return []
+
+        case "Table":
+            return [_convert_table(pb)]
+
+        case "Div":
+            attr, inner = pb["c"]
+            identifier, classes, keyvals = attr
+
+            if "captioned-content" in classes:
+                caption: str | None = None
+                remaining = inner
+
+                if remaining and remaining[0].get("t") == "Div":
+                    cap_attr, cap_blocks = remaining[0]["c"]
+                    _cap_identifier, cap_classes, _cap_keyvals = cap_attr
+                    if "caption" in cap_classes:
+                        caption = _extract_caption_text(cap_blocks)
+                        remaining = remaining[1:]
+
+                converted: list[DocumentBlock] = []
+                for child in remaining:
+                    converted += _convert_block(child)
+
+                if caption and converted:
+                    _attach_caption(converted[0], caption)
+
+                return converted
+
+            nested: list[DocumentBlock] = []
+            for child in inner:
+                nested += _convert_block(child)
+
+            return [
+                _build(
+                    Div,
+                    props=DivProps(
+                        identifier=identifier,
+                        classes=classes,
+                        attributes={
+                            k: v for k, v in keyvals
+                        },
+                    ),
+                    nested=nested,
+                )
+            ]
+
+        case _:
+            log.warning(f"Implicitly handled document block of type '{t}'")
+            return [_build(Paragraph, content=_convert_inlines(pb.get("c", [])))]
+
+
+def pandoc_to_document(path: Path) -> Document:
+    pandoc = plumbum.local["pandoc"]
+    ast = json.loads(pandoc("-t", "json", str(path)))
+    Path("/tmp/pandoc-result.json").write_text(json.dumps(ast, indent=2))
+    nested: list = []
+    for pb in ast["blocks"]:
+        nested += _convert_block(pb)
+    return _build(Document, nested=nested)
