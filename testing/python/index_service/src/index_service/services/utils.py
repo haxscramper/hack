@@ -65,8 +65,7 @@ def get_custom_traceback_handler(
                 runtime_types = {}
 
                 if show_args:
-                    arg_names = frame.f_code.co_varnames[:frame.f_code.
-                                                         co_argcount]
+                    arg_names = frame.f_code.co_varnames[:frame.f_code.co_argcount]
                     for arg_name in arg_names:
                         if arg_name in frame.f_locals:
                             args[arg_name] = frame.f_locals[arg_name]
@@ -97,14 +96,11 @@ def get_custom_traceback_handler(
                 if frame_info.args:
                     max_arg_name_width = max(
                         max_arg_name_width,
-                        max(
-                            len(arg_name)
-                            for arg_name in frame_info.args.keys()),
+                        max(len(arg_name) for arg_name in frame_info.args.keys()),
                     )
 
         display_filenames = [
-            Path(frame_info.filename).resolve().absolute()
-            for frame_info in frames_info
+            Path(frame_info.filename).resolve().absolute() for frame_info in frames_info
         ]
         common_prefix = (os.path.commonpath(display_filenames)
                          if display_filenames else "")
@@ -113,8 +109,7 @@ def get_custom_traceback_handler(
             display_filename = frame_info.filename
             if common_prefix:
                 try:
-                    display_filename = os.path.relpath(frame_info.filename,
-                                                       common_prefix)
+                    display_filename = os.path.relpath(frame_info.filename, common_prefix)
                 except ValueError:
                     display_filename = frame_info.filename
 
@@ -138,16 +133,14 @@ def get_custom_traceback_handler(
                     else:
                         import pprint
 
-                        formatted_value = pprint.pformat(arg_value,
-                                                         width=available_width)
+                        formatted_value = pprint.pformat(arg_value, width=available_width)
                         value_lines = formatted_value.split("\n")
 
                         lines.append(
                             f"  {arg_name}{type_info:<{max_arg_name_width - len(arg_name)}} = {value_lines[0]}"
                         )
                         for line in value_lines[1:]:
-                            lines.append(
-                                f"  {'':<{max_arg_name_width}}   {line}")
+                            lines.append(f"  {'':<{max_arg_name_width}}   {line}")
 
         lines.append(f"{exc_type.__name__} : {exc_value}")
 
@@ -170,8 +163,7 @@ def stfu_logs():
     for logger_name in [
             "openai._base_client",
             "git.cmd",
-            "alembic.runtime.plugins",
-            "alembic.runtime.migration",
+            "alembic",
             "git.util",
             # toggle this to see database interactions in tests
             "urllib3.connectionpool",
@@ -191,6 +183,7 @@ def stfu_logs():
             "httpx",
             "faker.factory",
             "jax._src",
+            "plumbum",
     ]:
         logger = logging.getLogger(logger_name)
         logger.setLevel(logging.CRITICAL + 1)
@@ -209,8 +202,7 @@ class ExceptionContextNote:
     def __enter__(self) -> "ExceptionContextNote":
         return self
 
-    def __exit__(self, exc_type: Any, exc_value: Any,
-                 traceback: Any) -> Literal[False]:
+    def __exit__(self, exc_type: Any, exc_value: Any, traceback: Any) -> Literal[False]:
         if exc_value is not None:
             if not hasattr(exc_value, "__notes__"):
                 exc_value.__notes__ = []

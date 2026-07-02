@@ -5,6 +5,7 @@ import logging
 from pathlib import Path
 from typing import Annotated, Literal, Union
 
+from index_service.services.utils import ExceptionContextNote
 import magic
 from beartype.typing import ClassVar, Sequence, cast
 from pydantic import BaseModel, Field
@@ -32,6 +33,7 @@ class DocumentBlockIndexerResult(MultiDocumentModel, extra="forbid"):
 class DocumentBlockIndexer(BaseIndexer):
     asset_name = "document_block"
     result_model = DocumentBlockIndexerResult
+    max_parallel = 8
 
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
@@ -39,7 +41,7 @@ class DocumentBlockIndexer(BaseIndexer):
 
     def can_run(self, path: Path) -> bool:
         mime = self._magic.from_file(str(path.resolve()))
-        if mime.startswith("text/"):
+        if mime.startswith("text/") and not mime.startswith("text/x-script"):
             return True
 
         else:
@@ -54,6 +56,8 @@ class DocumentBlockIndexer(BaseIndexer):
     ) -> IndexerOutput:
         path = ctx.get_path(request.file_ref)
 
+        mime = self._magic.from_file(str(path.resolve()))
+        log.info(f"Converting {path} to full document, using mime {mime}")
         root = pandoc_to_document(path)
 
         documents: list[IndexDocument] = []
