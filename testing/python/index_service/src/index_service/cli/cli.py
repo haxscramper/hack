@@ -179,17 +179,17 @@ def index(
     root_logger.setLevel(logging.DEBUG)
 
     run_text_file = run_text_dir / f"{timestamp}.log"
-    run_text_handler = logging.FileHandler(run_text_file)
+    run_text_handler = logging.FileHandler(run_text_file, mode="w+")
     run_text_handler.setFormatter(logging.Formatter(text_log_format))
     root_logger.addHandler(run_text_handler)
 
     run_json_file = run_json_dir / f"{timestamp}.jsonl"
-    run_json_handler = logging.FileHandler(run_json_file)
+    run_json_handler = logging.FileHandler(run_json_file, mode="w+")
     run_json_handler.setFormatter(JsonlFormatter())
     root_logger.addHandler(run_json_handler)
 
     if logfile:
-        user_handler = logging.FileHandler(logfile)
+        user_handler = logging.FileHandler(logfile, mode="w+")
         if logfile_format == "json":
             user_handler.setFormatter(JsonlFormatter())
         else:

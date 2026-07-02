@@ -57,7 +57,11 @@ class Link(BaseModel, extra="forbid"):
 InlineContent = Annotated[Union[StyledText, Link], Field(discriminator="type")]
 
 
-class DefaultProps(BaseModel, extra="forbid"):
+class CaptionProps(BaseModel, extra="forbid"):
+    caption: str | None = None
+
+
+class DefaultProps(CaptionProps, extra="forbid"):
     textColor: str = "default"
     backgroundColor: str = "default"
     textAlignment: TextAlignment = "left"
@@ -67,8 +71,14 @@ class HeadingProps(DefaultProps):
     level: Literal[1, 2, 3] = 1
 
 
-class CodeBlockProps(BaseModel, extra="forbid"):
+class CodeBlockProps(CaptionProps, extra="forbid"):
     language: str = "text"
+
+
+class DivProps(CaptionProps, extra="forbid"):
+    identifier: str = ""
+    classes: list[str] = Field(default_factory=list)
+    attributes: dict[str, str] = Field(default_factory=dict)
 
 
 class DocumentBlock(IndexDocument, extra="forbid"):
@@ -115,6 +125,11 @@ class Quote(DocumentBlock):
     content: list[InlineContent] = Field(default_factory=list)
 
 
+class Div(DocumentBlock):
+    type: Literal["div"] = "div"
+    props: DivProps = Field(default_factory=DivProps)
+
+
 for _cls in (
         Document,
         Paragraph,
@@ -123,6 +138,7 @@ for _cls in (
         BulletListItem,
         NumberedListItem,
         Quote,
+        Div,
 ):
     _cls.model_rebuild()
 
@@ -146,24 +162,27 @@ def _build(
     return block
 
 
-def _merge_text(nodes: list) -> list:
-    """Collapse adjacent StyledText runs sharing identical styles."""
-    merged: list = []
+def _merge_text(nodes: list[InlineContent]) -> list[InlineContent]:
+    merged: list[InlineContent] = []
     for node in nodes:
         if (isinstance(node, StyledText) and merged
                 and isinstance(merged[-1], StyledText)
                 and merged[-1].styles == node.styles):
-            merged[-1] = StyledText(text=merged[-1].text + node.text,
-                                    styles=node.styles)
+            merged[-1] = StyledText(
+                text=merged[-1].text + node.text,
+                styles=node.styles,
+            )
         else:
             merged.append(node)
     return merged
 
 
-def _convert_inlines(inlines: list,
-                     styles: dict | None = None) -> list[StyledText]:
+def _convert_inlines(
+    inlines: list,
+    styles: dict | None = None,
+) -> list[InlineContent]:
     styles = styles or {}
-    out: list = []
+    out: list[InlineContent] = []
     for il in inlines:
         match il:
             case {"t": "Str"}:
@@ -190,15 +209,19 @@ def _convert_inlines(inlines: list,
 
             case {"t": "Code"}:
                 out.append(
-                    StyledText(text=il["c"][1],
-                               styles=TextStyles(**{
-                                   **styles, "code": True
-                               })))
+                    StyledText(
+                        text=il["c"][1],
+                        styles=TextStyles(**{
+                            **styles, "code": True
+                        }),
+                    ))
+
             case {"t": "Link"}:
                 _, link_inlines, target = il["c"]
                 out.append(
                     Link(href=target[0],
-                         content=_convert_inlines(link_inlines)))
+                         content=_convert_inlines(
+                             link_inlines)))  # type: ignore[arg-type]
 
             case {
                 "t":
@@ -215,6 +238,36 @@ def _convert_inlines(inlines: list,
                 raise RuntimeError(f"Unhandled inline element: {il}")
 
     return _merge_text(out)
+
+
+def _inline_text(inlines: list[InlineContent]) -> str:
+    parts: list[str] = []
+    for item in inlines:
+        if isinstance(item, StyledText):
+            parts.append(item.text)
+        elif isinstance(item, Link):
+            parts.append("".join(seg.text for seg in item.content))
+    return "".join(parts)
+
+
+def _extract_caption_text(blocks: list[dict]) -> str | None:
+    lines: list[str] = []
+    for block in blocks:
+        if block["t"] in {"Plain", "Para"}:
+            text = _inline_text(_convert_inlines(block["c"])).strip()
+            if text:
+                lines.append(text)
+    if not lines:
+        return None
+    return "\n".join(lines)
+
+
+def _attach_caption(block: DocumentBlock, caption: str) -> None:
+    props = getattr(block, "props", None)
+    if props is None:
+        return
+    if "caption" not in props.__class__.model_fields:
+        return
 
 
 def _convert_list_items(items: list,
@@ -280,6 +333,49 @@ def _convert_block(pb: dict) -> Sequence[DocumentBlock]:
         case "HorizontalRule":
             return []
 
+        case "Div":
+            attr, inner = pb["c"]
+            identifier, classes, keyvals = attr
+
+            if "captioned-content" in classes:
+                caption: str | None = None
+                remaining = inner
+
+                if remaining and remaining[0].get("t") == "Div":
+                    cap_attr, cap_blocks = remaining[0]["c"]
+                    _cap_identifier, cap_classes, _cap_keyvals = cap_attr
+                    if "caption" in cap_classes:
+                        caption = _extract_caption_text(cap_blocks)
+                        remaining = remaining[1:]
+
+                converted: list[DocumentBlock] = []
+                for child in remaining:
+                    converted += _convert_block(child)
+
+                if caption and converted:
+                    _attach_caption(converted[0], caption)
+
+                return converted
+
+            nested: list[DocumentBlock] = []
+            for child in inner:
+                nested += _convert_block(child)
+
+            return [
+                _build(
+                    Div,
+                    props=DivProps(
+                        identifier=identifier,
+                        classes=classes,
+                        attributes={
+                            k: v
+                            for k, v in keyvals
+                        },
+                    ),
+                    nested=nested,
+                )
+            ]
+
         case _:
             log.warning(f"Implicitly handled document block of type '{t}'")
             return [
@@ -289,6 +385,7 @@ def _convert_block(pb: dict) -> Sequence[DocumentBlock]:
 
 def pandoc_to_document(path: Path) -> Document:
     ast = json.loads(pandoc("-t", "json", str(path)))
+    Path("/tmp/pandoc-result.json").write_text(json.dumps(ast, indent=2))
     nested: list = []
     for pb in ast["blocks"]:
         nested += _convert_block(pb)
