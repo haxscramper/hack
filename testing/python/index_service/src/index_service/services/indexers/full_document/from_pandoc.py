@@ -17,9 +17,12 @@ from index_service.services.indexers.full_document.full_document_types import (
     HeadingProps,
     InlineContent,
     Link,
+    Markup,
+    Math,
     NumberedListItem,
     Paragraph,
     Quote,
+    RawBlock,
     StyledText,
     Table,
     TableCell,
@@ -30,51 +33,54 @@ from index_service.services.indexers.full_document.full_document_types import (
     TextAlignment,
     TextStyles,
     _build,
-    _merge_text,
+    merge_text,
 )
 
 log = logging.getLogger(__name__)
 
 
 def _convert_inlines(
-    inlines: list,
-    styles: dict | None = None,
+        inlines: list,
+        styles: TextStyles = TextStyles(),
 ) -> list[InlineContent]:
     styles = styles or {}
     out: list[InlineContent] = []
     for il in inlines:
         match il:
             case {"t": "Str"}:
-                out.append(StyledText(text=il["c"], styles=TextStyles(**styles)))
+                out.append(StyledText(text=il["c"], styles=styles))
 
             case {"t": "Space"}:
-                out.append(StyledText(text=" ", styles=TextStyles(**styles)))
+                out.append(StyledText(text=" ", styles=styles))
 
             case {"t": "SoftBreak" | "LineBreak"}:
-                out.append(StyledText(text="\n", styles=TextStyles(**styles)))
+                out.append(StyledText(text="\n", styles=styles))
 
             case {"t": "Emph"}:
-                out += _convert_inlines(il["c"], {**styles, "italic": True})
+                out += _convert_inlines(il["c"], styles.extend(Markup.ITALIC))
 
             case {"t": "Strong"}:
-                out += _convert_inlines(il["c"], {**styles, "bold": True})
+                out += _convert_inlines(il["c"], styles.extend(Markup.BOLD))
 
             case {"t": "Strikeout"}:
-                out += _convert_inlines(il["c"], {**styles, "strike": True})
+                out += _convert_inlines(il["c"], styles.extend(Markup.STRIKE))
 
             case {"t": "Underline"}:
-                out += _convert_inlines(il["c"], {**styles, "underline": True})
+                out += _convert_inlines(il["c"], styles.extend(Markup.UNDERLINE))
 
             case {"t": "Code"}:
-                out.append(
-                    StyledText(
-                        text=il["c"][1],
-                        styles=TextStyles(**{
-                            **styles, "code": True
-                        }),
-                    ))
+                out.append(StyledText(
+                    text=il["c"][1],
+                    styles=styles.extend(Markup.CODE),
+                ))
 
             case {"t": "Link"}:
+                _, link_inlines, target = il["c"]
+                out.append(Link(
+                    href=target[0],
+                    content=_convert_inlines(link_inlines)))  # type: ignore[arg-type]
+
+            case {"t": "Image"}:
                 _, link_inlines, target = il["c"]
                 out.append(Link(
                     href=target[0],
@@ -85,13 +91,20 @@ def _convert_inlines(
                 nested = payload[-1] if isinstance(payload, list) else payload
                 out += _convert_inlines(nested, styles)
 
+            case {"t": "Math"}:
+                out.append(StyledText(text=il["c"][1], styles=styles.extend(Markup.MATH)))
+
+            case {"t": "RawInline"}:
+                out.append(
+                    StyledText(text="".join(il["c"]), styles=styles.extend(Markup.RAW)))
+
             case str():
                 out.append(StyledText(text=il))
 
             case _:
                 raise RuntimeError(f"Unhandled inline element: {il}")
 
-    return _merge_text(out)
+    return merge_text(out)
 
 
 def _inline_text(inlines: list[InlineContent]) -> str:
@@ -171,7 +184,7 @@ def _blocks_to_inline_content(blocks: list[dict]) -> list[InlineContent]:
                 out.append(StyledText(text="\n"))
             out.extend(chunk)
 
-    return _merge_text(out)
+    return merge_text(out)
 
 
 def _extract_table_caption(caption_obj: object) -> str | None:
@@ -253,7 +266,7 @@ def _convert_block(pb: dict) -> Sequence[DocumentBlock]:
     t = pb["t"]
     match t:
         case "Para" | "Plain":
-            return [_build(Paragraph, content=_convert_inlines(pb["c"]))]
+            return [_build(Paragraph, content=_convert_inlines(pb["c"], TextStyles()))]
 
         case "Header":
             level, _attr, inlines = pb["c"]
@@ -262,7 +275,7 @@ def _convert_block(pb: dict) -> Sequence[DocumentBlock]:
                 _build(
                     Heading,
                     props=HeadingProps(level=clamped),
-                    content=_convert_inlines(inlines),
+                    content=_convert_inlines(inlines, TextStyles()),
                 )
             ]
 
@@ -284,6 +297,30 @@ def _convert_block(pb: dict) -> Sequence[DocumentBlock]:
         case "OrderedList":
             return _convert_list_items(pb["c"][1], "numberedListItem")
 
+        case "DefinitionList":
+            blocks: list[DocumentBlock] = []
+            for term_inlines, definitions in pb["c"]:
+                term = _convert_inlines(term_inlines)
+
+                for def_blocks in definitions:
+                    definition_inlines: list[InlineContent] = []
+                    for db in def_blocks:
+                        match db:
+                            case {"t": "Plain" | "Para"}:
+                                definition_inlines += _convert_inlines(db.get("c", []))
+                            case _:
+                                blocks += _convert_block(db)
+
+                    if definition_inlines:
+                        blocks.append(
+                            _build(
+                                Paragraph,
+                                content=merge_text(term + [StyledText(text=" :: ")] +
+                                                   definition_inlines),
+                            ))
+
+            return blocks
+
         case "BlockQuote":
             nested: list = []
             for inner in pb["c"]:
@@ -295,6 +332,13 @@ def _convert_block(pb: dict) -> Sequence[DocumentBlock]:
 
         case "Table":
             return [_convert_table(pb)]
+
+        case "RawBlock":
+            return [_build(
+                RawBlock,
+                content=pb["c"][1],
+                lang=pb["c"][0],
+            )]
 
         case "Div":
             attr, inner = pb["c"]
@@ -339,7 +383,7 @@ def _convert_block(pb: dict) -> Sequence[DocumentBlock]:
             ]
 
         case _:
-            log.warning(f"Implicitly handled document block of type '{t}'")
+            raise ValueError(f"Implicitly handled document block of type '{t}': {pb}")
             return [_build(Paragraph, content=_convert_inlines(pb.get("c", [])))]
 
 

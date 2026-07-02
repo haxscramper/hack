@@ -2,7 +2,8 @@ import hashlib
 import json
 import logging
 from beartype.typing import Literal, Annotated, Sequence, Union
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_serializer, field_validator
+import enum
 
 from index_service.services.core.types import IndexDocument, IndexLink
 
@@ -17,14 +18,34 @@ class DocumentLink(IndexLink, extra="forbid"):
 TextAlignment = Literal["left", "center", "right", "justify"]
 
 
+class Markup(str, enum.Enum):
+    BOLD = "bold"
+    ITALIC = "italic"
+    UNDERLINE = "underline"
+    STRIKE = "strike"
+    CODE = "code"
+    MATH = "math"
+    RAW = "raw"
+
+
 class TextStyles(BaseModel, extra="forbid"):
-    bold: bool | None = None
-    italic: bool | None = None
-    underline: bool | None = None
-    strike: bool | None = None
-    code: bool | None = None
+    markup: set[Markup] = set()
     textColor: str | None = None
     backgroundColor: str | None = None
+
+    @field_serializer("markup")
+    def serialize_markup(self, value: set[Markup]) -> list[str]:
+        return sorted(item.value for item in value)
+
+    @field_validator("markup", mode="before")
+    @classmethod
+    def deserialize_markup(cls, value):
+        if isinstance(value, list):
+            return {Markup(item) for item in value}
+        return value
+
+    def extend(self, value: Markup) -> "TextStyles":
+        return TextStyles().model_copy(update=dict(markup=self.markup | {value}))
 
 
 class StyledText(BaseModel, extra="forbid"):
@@ -80,6 +101,11 @@ class Paragraph(DocumentBlock):
     content: list[InlineContent] = Field(default_factory=list)
 
 
+class Math(DocumentBlock):
+    type: Literal["math"] = "math"
+    content: list[InlineContent] = Field(default_factory=list)
+
+
 class Heading(DocumentBlock):
     type: Literal["heading"] = "heading"
     props: HeadingProps = Field(default_factory=HeadingProps)
@@ -90,6 +116,12 @@ class Code(DocumentBlock):
     type: Literal["codeBlock"] = "codeBlock"
     props: CodeBlockProps = Field(default_factory=CodeBlockProps)
     content: list[StyledText] = Field(default_factory=list)
+
+
+class RawBlock(DocumentBlock, extra="forbid"):
+    type: Literal["rawBlock"] = "rawBlock"
+    content: str
+    lang: str
 
 
 class BulletListItem(DocumentBlock):
@@ -183,7 +215,7 @@ def _build(
     return block
 
 
-def _merge_text(nodes: list[InlineContent]) -> list[InlineContent]:
+def merge_text(nodes: list[InlineContent]) -> list[InlineContent]:
     merged: list[InlineContent] = []
     for node in nodes:
         if (isinstance(node, StyledText) and merged and
