@@ -5,7 +5,7 @@ import math
 from dataclasses import dataclass
 from pathlib import Path
 
-from arango import ArangoClient
+from arango import ArangoClient, DocumentInsertError
 from arango.aql import AQL
 from arango.database import StandardDatabase
 from beartype import beartype
@@ -189,29 +189,18 @@ class IndexDatabase:
     def _arango_collection_schema_for_indexer(
             self, indexer: BaseIndexProtocol) -> dict[str, Any]:
         return {
-            "level":
-                "strict",
-            "message":
-                f"invalid document shape for {indexer.result_model.__name__} schema was {arango_schema_for_model(indexer.result_model)}",
+            "level": "strict",
+            "message": f"invalid document shape for {indexer.result_model.__name__}",
             "rule": {
                 "type": "object",
                 "properties": {
-                    "_key": {
-                        "type": "string"
-                    },
-                    "_id": {
-                        "type": "string"
-                    },
-                    "_rev": {
-                        "type": "string"
-                    },
                     "indexer_id": {
                         "type": "string"
                     },
                     "result": arango_schema_for_model(indexer.result_model),
                 },
-                "required": ["_key", "indexer_id", "result"],
-                "additionalProperties": False,
+                "required": ["indexer_id", "result"],
+                "additionalProperties": True,
             },
         }
 
@@ -223,6 +212,11 @@ class IndexDatabase:
             "indexer_id": indexer_id,
             "result": result_j,
         }
+
+        # log.info(doc)
+        # import json, math
+        # log.debug(json.dumps(doc["result"]))
+        # log.debug([v for v in doc["result"]["vector"] if not math.isfinite(v)])
 
         def diagnose_document(doc):
             try:
@@ -243,10 +237,14 @@ class IndexDatabase:
             return text
 
         with ExceptionContextNote(lambda: diagnose_document(doc)):
-            if col.has(key):
-                col.replace(doc)
-            else:
-                col.insert(doc)
+            try:
+                if col.has(key):
+                    col.replace(doc)
+                else:
+                    col.insert(doc)
+
+            except DocumentInsertError as err:
+                raise err from None
 
     def store_indexer_output(
         self,
@@ -280,7 +278,7 @@ class IndexDatabase:
 
         assert doc, f"Cannot get evaluation results for {indexer_id}({hash})"
         return IndexerResultRecord(
-            hash=FileHash(hash=doc["hash"]),
+            hash=FileHash(hash=doc["_key"]),
             indexer_id=doc["indexer_id"],
             result=doc["result"],
         )

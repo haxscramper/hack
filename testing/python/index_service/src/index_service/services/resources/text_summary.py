@@ -3,7 +3,7 @@ import logging
 
 import tiktoken
 from langchain_text_splitters import TokenTextSplitter
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 log = logging.getLogger(__name__)
 
@@ -20,8 +20,7 @@ from index_service.services.resources.flm_server import (
 _SUMMARIZE_SYSTEM_PROMPT = "You summarize text files in 5-10 concise sentences."
 _COMBINE_SYSTEM_PROMPT = (
     "You are given summaries of consecutive sections of a single text file. "
-    "Produce one coherent summary of the whole file in 5-10 concise sentences."
-)
+    "Produce one coherent summary of the whole file in 5-10 concise sentences.")
 
 
 class SummarizeRequest(BaseModel, extra="forbid"):
@@ -36,17 +35,17 @@ class ChunkSummary(BaseModel, extra="forbid"):
 
 class TextSummaryResult(BaseModel, extra="forbid"):
     summary: str
-    chunked: bool
-    chunk_count: int
-    chunk_token_size: int
-    chunk_overlap: int
-    total_token_count: int
-    chunk_summaries: list[ChunkSummary]
+    chunked: bool = False
+    chunk_count: int = 1
+    chunk_token_size: int = 0
+    chunk_overlap: int = 0
+    total_token_count: int = 1
+    chunk_summaries: list[ChunkSummary] = Field(default_factory=list)
 
 
 class TextSummaryResource(BaseResource):
     resource_key = "text_summary"
-    required_resources = ("flm_server", )
+    required_resources = ("flm_server",)
 
     def __init__(
         self,
@@ -72,15 +71,13 @@ class TextSummaryResource(BaseResource):
             chunk_overlap=chunk_overlap_tokens,
         )
 
-    def _resolve_flm(self, resources: dict[str,
-                                           BaseResource]) -> FlmServerResource:
+    def _resolve_flm(self, resources: dict[str, BaseResource]) -> FlmServerResource:
         flm = resources.get("flm_server")
         if flm is None:
             raise KeyError("Missing required resource: flm_server")
         if not isinstance(flm, FlmServerResource):
             raise TypeError(
-                "Resource `flm_server` must be an instance of FlmServerResource"
-            )
+                "Resource `flm_server` must be an instance of FlmServerResource")
         return flm
 
     def _summarize(
@@ -155,8 +152,8 @@ class TextSummaryResource(BaseResource):
                     summary=chunk_summary,
                 ))
 
-        combined = "\n\n".join(f"Section {c.index + 1}: {c.summary}"
-                               for c in chunk_summaries)
+        combined = "\n\n".join(
+            f"Section {c.index + 1}: {c.summary}" for c in chunk_summaries)
         final_summary = self._summarize(
             ctx,
             flm,

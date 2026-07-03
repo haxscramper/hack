@@ -35,64 +35,10 @@ def try_float(val: str) -> float | str:
 
 
 @beartype
-class TagCategory(BaseModel, extra="forbid"):
-    tags: Set[str]
-    name: str
-    aliases: Dict[str, str] = Field(default_factory=dict)
-
-    @beartype
-    @staticmethod
-    def clean_text(tag: str) -> str:
-        return re.sub(RX_DELETE, "", tag).lower()
-
-    @beartype
-    def no_alias(self, tag: str) -> str:
-        clean = TagCategory.clean_text(tag)
-        if clean in self.aliases:
-            return self.aliases[clean]
-
-        else:
-            return clean
-
-    @beartype
-    def matches(self, tag: str) -> bool:
-        return self.no_alias(tag) in self.tags
-
-    @beartype
-    @staticmethod
-    def from_file(path: Path, name: Optional[str] = None) -> "TagCategory":
-        result = TagCategory(name=name or path.stem.lower(), tags=set())
-        for line in path.read_text().splitlines():
-            if line.startswith("#"):
-                continue
-
-            else:
-                if "," in line:
-                    multiple = [
-                        TagCategory.clean_text(it) for it in line.split(",")
-                    ]
-                    line = multiple[0]
-                    for item in multiple[1:]:
-                        result.aliases[TagCategory.clean_text(item)] = line
-
-                def add(text: str):
-                    result.tags.add(TagCategory.clean_text(text))
-
-                add(line)
-                if "(" in line:
-                    add(line.split("(")[0])
-
-        log.info(result.aliases)
-
-        return result
-
-
-@beartype
 class Tag(BaseModel, extra="forbid"):
     text: str
     amplifier: float = 1.0
     parens: int = 0
-    category: Optional[TagCategory] = None
 
     def __repr__(self) -> str:
         if self.amplifier == 1.0:
@@ -105,7 +51,7 @@ class Tag(BaseModel, extra="forbid"):
             "(" * self.parens,
             result,
             ")" * self.parens,
-            ":" + self.category.name if self.category else "",
+            ":",
         )
 
 
@@ -118,7 +64,7 @@ class ModelParam(BaseModel, extra="forbid"):
 
 
 class ImageTags(BaseModel, extra="forbid"):
-    Character: Optional[str] = None
+    pass
 
 
 class ImageParams(BaseModel, extra="forbid"):
@@ -148,13 +94,12 @@ class ImageParams(BaseModel, extra="forbid"):
 
     def get_tag_formatted_prompt(self) -> str:
         assert self.parsed_prompt
-        return ",".join(it.text for it in self.parsed_prompt
-                        if isinstance(it, Tag))
+        return ",".join(it.text for it in self.parsed_prompt if isinstance(it, Tag))
 
     def get_tag_formatted_negative_prompt(self) -> str:
         assert self.parsed_negative_prompt
-        return ",".join(it.text for it in self.parsed_negative_prompt
-                        if isinstance(it, Tag))
+        return ",".join(
+            it.text for it in self.parsed_negative_prompt if isinstance(it, Tag))
 
     def get_tensor_art_prompt(self) -> dict:
         return dict(
@@ -290,28 +235,14 @@ class TArtV1MainData(BaseModel):
     etaNoiseSeedDelta: int = 31337
 
 
-# TODO: remove tag category parsing
-categories: List[TagCategory] = []
-categories.append(
-    TagCategory.from_file(Path("~/tmp/Characters.txt").expanduser(),
-                          name="Character"))
-
 WARN_IDX = 0
 
 
 @beartype
 class PromptParser:
 
-    def __init__(self, category_dicts: List[TagCategory]):
+    def __init__(self):
         self.break_token = "BREAK"
-        self.category_dicts = category_dicts
-
-    def categories(self, tag: str) -> Optional[TagCategory]:
-        for cat in self.category_dicts:
-            if cat.matches(tag):
-                return cat
-
-        return None
 
     def parse(self, prompt: str) -> List[ParsedTag]:
         tokens = self.tokenize(prompt)
@@ -332,14 +263,11 @@ class PromptParser:
         current_level = 0
 
         def add_tag(text: str, amplifier: float = 1.0, level: int = 0):
-            cats = self.categories(text.strip())
-            result.append(
-                Tag(
-                    text=cats.no_alias(text.strip()) if cats else text.strip(),
-                    amplifier=amplifier,
-                    parens=level,
-                    category=cats,
-                ))
+            result.append(Tag(
+                text=text.strip(),
+                amplifier=amplifier,
+                parens=level,
+            ))
 
         for token in tokens:
             if token == "":
@@ -390,9 +318,7 @@ class PromptParser:
 
 
 @beartype
-def get_image_params(path: Path,
-                     reference_dir: Path,
-                     fast: bool = False) -> ImageParams:
+def get_image_params(path: Path, reference_dir: Path, fast: bool = False) -> ImageParams:
     json_path = path.with_suffix(".json")
 
     res = ImageParams(
@@ -414,8 +340,7 @@ def get_image_params(path: Path,
 
     res.ImagePath = path
     res.original_metadata_full["exif_metadata"] = {
-        k: try_parse_json(v)
-        for k, v in img.info.items()
+        k: try_parse_json(v) for k, v in img.info.items()
     }
 
     if path.with_suffix(".txt").exists():
@@ -443,11 +368,10 @@ def get_image_params(path: Path,
                             name = lora
                             weight = 1.0
 
-                        res.loras.append(
-                            ModelParam(
-                                name=name,
-                                weight=float(weight),
-                            ))
+                        res.loras.append(ModelParam(
+                            name=name,
+                            weight=float(weight),
+                        ))
 
     elif "generation_data" in metadata:
         if json_metadata:
@@ -474,11 +398,10 @@ def get_image_params(path: Path,
             res.sdVae = load.sdVae
             res.etaNoiseSeedDelta = load.etaNoiseSeedDelta
             for lora in load.models:
-                res.loras.append(
-                    ModelParam(
-                        name=lora.modelFileName,
-                        weight=lora.weight,
-                    ))
+                res.loras.append(ModelParam(
+                    name=lora.modelFileName,
+                    weight=lora.weight,
+                ))
 
         except Exception as e:
             # log.warning(f"{path}", exc_info=e)
@@ -495,8 +418,8 @@ def get_image_params(path: Path,
         for _, node in prompt.items():
             if node["class_type"] == "BNK_CLIPTextEncodeAdvanced":
                 text = node["inputs"]["text"]
-                if ("EasyNegative" in text or "bad anatomy" in text
-                        or "negative" in text):
+                if ("EasyNegative" in text or "bad anatomy" in text or
+                        "negative" in text):
                     res.negative_prompt = text
 
                 else:
@@ -506,26 +429,10 @@ def get_image_params(path: Path,
     #     log.warning(f"No generation data for {path}")
 
     if res.prompt:
-        parser = PromptParser(category_dicts=categories)
+        parser = PromptParser()
         res.parsed_prompt = parser.parse(res.prompt)
         if res.negative_prompt:
             res.parsed_negative_prompt = parser.parse(res.negative_prompt)
-
-        for lora in res.loras:
-            cats = parser.categories(lora.name)
-            if cats and cats.name == "Character":
-                res.tags.Character = cats.no_alias(lora.name)
-
-        for tag in res.parsed_prompt:
-            if isinstance(tag, Tag):
-                if tag.category and tag.category.name == "Character":
-                    res.tags.Character = TagCategory.clean_text(
-                        tag.category.no_alias(tag.text))
-
-        if not res.tags.Character:
-            global WARN_IDX
-            # log.warning(f"[{WARN_IDX}] {res.parsed_prompt} + {res.loras} no character")
-            WARN_IDX += 1
 
     return res
 

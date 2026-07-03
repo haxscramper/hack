@@ -7,7 +7,7 @@ from pydantic import BaseModel
 
 from index_service.services.converters.file_size_converter import FileSizeConverterResult
 from index_service.services.core.db import IndexDatabase
-from index_service.services.indexers.file_size import FileSizeIndexerResult
+from index_service.services.indexers.file_size import FileSizeIndexer, FileSizeIndexerResult
 from index_service.services.indexers.file_stats import FileStatsIndexerResult
 from index_service.services.core.types import FileHash, FileRef, IndexerOutput
 from index_service.services.core.job_runtime import IndexRuntime
@@ -62,8 +62,7 @@ def test_file_stats_indexer(runtime: IndexRuntime, sample_file: Path) -> None:
     assert out.indexer_id == "file_stats"
     assert cast(FileStatsIndexerResult,
                 out.result).size_bytes == sample_file.stat().st_size
-    assert cast(FileStatsIndexerResult,
-                out.result).mtime == sample_file.stat().st_mtime
+    assert cast(FileStatsIndexerResult, out.result).mtime == sample_file.stat().st_mtime
 
 
 def test_full_text_indexer_with_reverser(runtime: IndexRuntime,
@@ -88,8 +87,7 @@ def test_file_size_converter(db: IndexDatabase, runtime: IndexRuntime,
                 out.return_value).total_size == sample_file.stat().st_size
 
 
-def test_db_indexer_result_uniqueness(db: IndexDatabase,
-                                      tmp_path: Path) -> None:
+def test_db_indexer_result_uniqueness(db: IndexDatabase, tmp_path: Path) -> None:
     root = db.add_root("root", tmp_path)
     pa = tmp_path.joinpath("a.txt")
     pa.write_text("---")
@@ -97,7 +95,7 @@ def test_db_indexer_result_uniqueness(db: IndexDatabase,
     pb.write_text("---")
     ref_a = db.as_ref(root, pa)
     ref_b = db.as_ref(root, pb)
-    db.ensure_collections(["file_size"])
+    db.ensure_collections([FileSizeIndexer()])
     db.truncate_all(["file_size"])
     db.store_indexer_output(
         ref_a,
@@ -152,8 +150,8 @@ def test_file_summary_indexer_with_flm(
     sample_files: list[Path],
 ) -> None:
 
-    root = runtime.db.add_root(
-        "root", Path(os.path.commonpath(str(s) for s in sample_files)))
+    root = runtime.db.add_root("root",
+                               Path(os.path.commonpath(str(s) for s in sample_files)))
 
     for path in sample_files:
         ref = runtime.db.as_ref(root, path)
