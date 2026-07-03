@@ -12,6 +12,9 @@ from typing import Annotated, Any, Callable, TypeVar, Union, get_args, get_origi
 import PIL.TiffImagePlugin
 from pydantic import BaseModel, TypeAdapter
 from pydantic_core import PydanticSerializationError
+import logging
+
+log = logging.getLogger(__name__)
 
 T = TypeVar("T")
 
@@ -218,8 +221,11 @@ def _annotation_to_arango_schema(annotation: Any) -> dict[str, Any]:
 
 
 def arango_schema_for_model(model_type: type[BaseModel]) -> dict[str, Any]:
+    log.debug(f"arango schema for {model_type}")
     model_type.model_rebuild()
-    return _annotation_to_arango_schema(model_type)
+    result = _annotation_to_arango_schema(model_type)
+    log.debug(f"{result}")
+    return result
 
 
 def to_json_safe(value: Any) -> Any:

@@ -188,6 +188,12 @@ class IndexDatabase:
 
     def _arango_collection_schema_for_indexer(
             self, indexer: BaseIndexProtocol) -> dict[str, Any]:
+        if issubclass(indexer.result_model, MultiDocumentModel):
+            result_schema = arango_schema_for_model(indexer.result_model.document_type)
+
+        else:
+            result_schema = arango_schema_for_model(indexer.result_model)
+
         return {
             "level": "strict",
             "message": f"invalid document shape for {indexer.result_model.__name__}",
@@ -197,7 +203,7 @@ class IndexDatabase:
                     "indexer_id": {
                         "type": "string"
                     },
-                    "result": arango_schema_for_model(indexer.result_model),
+                    "result": result_schema,
                 },
                 "required": ["indexer_id", "result"],
                 "additionalProperties": True,

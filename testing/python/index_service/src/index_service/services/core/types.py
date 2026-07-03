@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from beartype import beartype
-from beartype.typing import Annotated
+from beartype.typing import Annotated, Any, ClassVar
 from pydantic import BaseModel, ConfigDict, Field, PlainSerializer, PlainValidator
 
 AnyModel = Annotated[
@@ -23,6 +23,9 @@ class IndexDocument(BaseModel, extra="forbid"):
 
 
 class MultiDocumentModel(BaseModel, extra="forbid"):
+    link_type: ClassVar[Any]
+    document_type: ClassVar[Any]
+
     links: list[IndexLink]
     documents: list[IndexDocument]
 
@@ -76,8 +79,7 @@ class ConverterOutput(BaseModel, extra="forbid"):
 @beartype
 class IndexerRequest(BaseModel, extra="forbid"):
     file_ref: FileRef
-    dependency_results: dict[str, IndexerOutput
-                             | None] = Field(default_factory=dict)
+    dependency_results: dict[str, IndexerOutput | None] = Field(default_factory=dict)
 
 
 @beartype

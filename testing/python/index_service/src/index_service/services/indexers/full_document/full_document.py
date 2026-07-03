@@ -7,7 +7,7 @@ from typing import Annotated, Literal, Union
 
 from index_service.services.utils import ExceptionContextNote
 import magic
-from beartype.typing import ClassVar, Sequence, cast
+from beartype.typing import ClassVar, Sequence, cast, Annotated, Union, Any
 from pydantic import BaseModel, Field
 
 from index_service.services.core.job_types import BaseIndexer, RunContext
@@ -21,11 +21,22 @@ from index_service.services.core.types import (
 from index_service.services.indexers.full_document.from_pandoc import pandoc_to_document
 from index_service.services.indexers.full_document.full_document_types import _flatten
 
+import index_service.services.indexers.full_document.full_document_types as doc_types
+
 log = logging.getLogger(__name__)
 
 
 class DocumentBlockIndexerResult(MultiDocumentModel, extra="forbid"):
-    pass
+    document_type: ClassVar[Any] = Annotated[Union[
+        doc_types.Document,
+        doc_types.Paragraph,
+        doc_types.Math,
+        doc_types.Heading,
+        doc_types.Code,
+    ],
+                                             Field(discriminator="type")]
+
+    link_type: ClassVar[type] = IndexLink
 
 
 class DocumentBlockIndexer(BaseIndexer):
