@@ -1,5 +1,9 @@
 test:
-    uv run python -m pytest -vv -ra --log-level=DEBUG --capture=tee-sys --disable-warnings > test_results.tmp.log 2>&1
+    uv run python -m pytest -vv -ra \
+        --log-level=DEBUG \
+        --capture=tee-sys \
+        --disable-warnings \
+         > test_results.tmp.log 2>&1
 
 index:
     uv run src/index_service/cli/cli.py index \

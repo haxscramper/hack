@@ -1,21 +1,32 @@
+import json
 import os
 from pathlib import Path
+from pprint import pformat
 
 import pytest
-from beartype.typing import cast
+from beartype.typing import Any, TypeVar, cast
 from pydantic import BaseModel
+import glom
 
 from index_service.services.converters.file_size_converter import FileSizeConverterResult
 from index_service.services.core.db import IndexDatabase
+from index_service.services.indexers.chunk_indexing.chunking import ChunkDocument, ChunkFile, ChunkLink
 from index_service.services.indexers.file_size import FileSizeIndexer, FileSizeIndexerResult
 from index_service.services.indexers.file_stats import FileStatsIndexerResult
 from index_service.services.core.types import FileHash, FileRef, IndexerOutput
 from index_service.services.core.job_runtime import IndexRuntime
 from index_service.services.indexers.chunk_indexing.full_text import FullTextIndexerResult
+import logging
+import functools
+
+from index_service.services.pydantic_utils import dump_with_type
+
+log = logging.getLogger(__name__)
 
 ARANGO_HOST = os.environ.get("ARANGO_HOST", "http://localhost:8529")
 ARANGO_USER = os.environ.get("ARANGO_USER", "root")
 ARANGO_PASSWORD = os.environ.get("ARANGO_ROOT_PASSWORD", "test")
+T = TypeVar("T")
 
 
 @pytest.fixture
@@ -73,8 +84,56 @@ def test_full_text_indexer_with_reverser(runtime: IndexRuntime,
     runtime.run_indexer(ref, ["full_text"])
     out = runtime.get_indexer_result(ref, "full_text")
 
+    assert isinstance(out.result, FullTextIndexerResult)
     text = sample_file.read_text()
-    assert out.result.text == text
+
+    log.debug("dump with type")
+    log.debug(json.dumps(dump_with_type(out), indent=2))
+
+    def obj_has_field_value(obj: object, field: str, value: Any) -> bool:
+        return getattr(obj, field) == value
+
+    main_file = glom.glom(
+        out.result.documents,
+        glom.Iter().first(
+            # NOTE: adding `cast`, or moving the handling to the separate function has not
+            # here, the typing error from pylanc still pops up, no matter what I do.
+            functools.partial(  # type: ignore
+                obj_has_field_value,
+                field="type",
+                value="chunkFile",
+            ),
+            default=None))
+
+    assert main_file is not None
+    assert isinstance(main_file, ChunkFile)
+    assert main_file.hash == main_file.file_hash
+
+    chunk_document = glom.glom(
+        out.result.documents,
+        glom.Iter().first(
+            lambda it: it.type == "chunk",  # type: ignore
+            default=None))
+
+    assert chunk_document is not None
+    assert isinstance(chunk_document, ChunkDocument)
+    # full text does not guarantee 100% correct recall wrt. markup formatting
+    # spaces, indentation etc. -- the elements pass through several layers
+    # of normalization and splitting.
+    assert chunk_document.text in text
+    assert chunk_document.file_hash != chunk_document.hash
+    assert chunk_document.file_hash == main_file.file_hash
+
+    link = glom.glom(
+        out.result.edges,
+        glom.Iter().first(
+            lambda it: it.relation == "chunk",  # type: ignore
+            default=None))
+
+    assert link is not None
+    assert isinstance(link, ChunkLink)
+    assert link.from_ == main_file.hash
+    assert link.to_ == chunk_document.hash
 
 
 def test_file_size_converter(db: IndexDatabase, runtime: IndexRuntime,

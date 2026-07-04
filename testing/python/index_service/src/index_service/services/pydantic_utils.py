@@ -194,3 +194,19 @@ def try_parse_json(value: Any):
 
         case _:
             return value
+
+
+def dump_with_type(obj):
+    if isinstance(obj, BaseModel):
+        data = {}
+        for name, value in obj:
+            data[name] = dump_with_type(value)
+        data["__type__"] = obj.__class__.__name__
+        return data
+    if isinstance(obj, list):
+        return [dump_with_type(item) for item in obj]
+    if isinstance(obj, tuple):
+        return [dump_with_type(item) for item in obj]
+    if isinstance(obj, dict):
+        return {key: dump_with_type(value) for key, value in obj.items()}
+    return obj
