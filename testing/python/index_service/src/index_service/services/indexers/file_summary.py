@@ -9,7 +9,7 @@ from index_service.services.core.job_types import (
     RunContext,
     cache_indexer_run,
 )
-from index_service.services.core.types import IndexerOutput, IndexerRequest
+from index_service.services.core.types import IndexDocument, IndexerOutput, IndexerRequest
 from index_service.services.resources.text_summary import (
     SummarizeRequest,
     TextSummaryResource,
@@ -17,14 +17,14 @@ from index_service.services.resources.text_summary import (
 )
 
 
-class FileSummaryIndexerResult(BaseModel, extra="forbid"):
+class FileSummaryIndexerResult(IndexDocument, extra="forbid"):
     summary: TextSummaryResult
 
 
 class FileSummaryIndexer(BaseIndexer):
     asset_name = "file_summary"
     result_model = FileSummaryIndexerResult
-    required_resources = ("text_summary", )
+    required_resources = ("text_summary",)
 
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
@@ -59,5 +59,8 @@ class FileSummaryIndexer(BaseIndexer):
 
         return IndexerOutput(
             indexer_id=self.asset_name,
-            result=FileSummaryIndexerResult(summary=summary),
+            result=FileSummaryIndexerResult(
+                summary=summary,
+                hash=request.get_hash_str(),
+            ),
         )

@@ -113,7 +113,7 @@ def get_custom_traceback_handler(
                 except ValueError:
                     display_filename = frame_info.filename
 
-            header = (f'File "{display_filename}", line {frame_info.line_no}, '
+            header = (f'File {frame_info.filename}:{frame_info.line_no} '
                       f"in {frame_info.func_name}")
             lines.append(f"{header} : {frame_info.code_line}")
 

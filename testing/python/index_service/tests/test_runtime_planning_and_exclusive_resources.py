@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from index_service.services.core.db import IndexDatabase
 from index_service.services.core.job_runtime import IndexRuntime
 from index_service.services.core.job_types import BaseIndexer, BaseResource, RunContext
-from index_service.services.core.types import FileRef, IndexerOutput
+from index_service.services.core.types import FileRef, IndexDocument, IndexerOutput
 
 
 def _make_refs(db: IndexDatabase, tmp_path: Path, n: int) -> list[FileRef]:
@@ -30,10 +30,8 @@ class NoopIndexer(BaseIndexer):
     asset_name = "noop"
     result_model = SimpleResult
 
-    def run(self, ctx: RunContext, request, resources,
-            assets) -> IndexerOutput:
-        return IndexerOutput(indexer_id=self.asset_name,
-                             result=SimpleResult(value="ok"))
+    def run(self, ctx: RunContext, request, resources, assets) -> IndexerOutput:
+        return IndexerOutput(indexer_id=self.asset_name, result=SimpleResult(value="ok"))
 
 
 def test_plan_structure_and_topological_batches(db: IndexDatabase,
@@ -44,7 +42,7 @@ def test_plan_structure_and_topological_batches(db: IndexDatabase,
 
     class B(NoopIndexer):
         asset_name = "b"
-        required_assets = ("a", )
+        required_assets = ("a",)
 
     refs = _make_refs(db, tmp_path, 3)
     rt = IndexRuntime(
@@ -95,18 +93,18 @@ def test_exclusive_direct_conflict_splits_windows(db: IndexDatabase,
 
     class Gemma(BaseResource):
         resource_key = "gemma"
-        required_resources = ("llama", )
+        required_resources = ("llama",)
 
         def handle(self, ctx: RunContext, request: BaseModel, resources):
             return resources["llama"].handle(ctx, request, resources)
 
     class A(NoopIndexer):
         asset_name = "a"
-        required_resources = ("llama", )
+        required_resources = ("llama",)
 
     class B(NoopIndexer):
         asset_name = "b"
-        required_resources = ("gemma", )
+        required_resources = ("gemma",)
 
     rt = IndexRuntime(
         ctx=RunContext(db),
@@ -120,8 +118,8 @@ def test_exclusive_direct_conflict_splits_windows(db: IndexDatabase,
     assert len(windows) == 2
 
 
-def test_exclusive_transitive_same_direct_consumer_same_window(
-        db: IndexDatabase, tmp_path: Path) -> None:
+def test_exclusive_transitive_same_direct_consumer_same_window(db: IndexDatabase,
+                                                               tmp_path: Path) -> None:
 
     class Llama(BaseResource):
         resource_key = "llama"
@@ -132,18 +130,18 @@ def test_exclusive_transitive_same_direct_consumer_same_window(
 
     class Gemma(BaseResource):
         resource_key = "gemma"
-        required_resources = ("llama", )
+        required_resources = ("llama",)
 
         def handle(self, ctx: RunContext, request: BaseModel, resources):
             return resources["llama"].handle(ctx, request, resources)
 
     class Summary(NoopIndexer):
         asset_name = "summary"
-        required_resources = ("gemma", )
+        required_resources = ("gemma",)
 
     class Elaborate(NoopIndexer):
         asset_name = "elaborate"
-        required_resources = ("gemma", )
+        required_resources = ("gemma",)
 
     rt = IndexRuntime(
         ctx=RunContext(db),
@@ -158,8 +156,8 @@ def test_exclusive_transitive_same_direct_consumer_same_window(
     assert set(windows[0]) == {"summary", "elaborate"}
 
 
-def test_exclusive_transitive_different_direct_consumers_split(
-        db: IndexDatabase, tmp_path: Path) -> None:
+def test_exclusive_transitive_different_direct_consumers_split(db: IndexDatabase,
+                                                               tmp_path: Path) -> None:
 
     class Llama(BaseResource):
         resource_key = "llama"
@@ -170,25 +168,25 @@ def test_exclusive_transitive_different_direct_consumers_split(
 
     class Gemma(BaseResource):
         resource_key = "gemma"
-        required_resources = ("llama", )
+        required_resources = ("llama",)
 
         def handle(self, ctx: RunContext, request: BaseModel, resources):
             return resources["llama"].handle(ctx, request, resources)
 
     class Mistral(BaseResource):
         resource_key = "mistral"
-        required_resources = ("llama", )
+        required_resources = ("llama",)
 
         def handle(self, ctx: RunContext, request: BaseModel, resources):
             return resources["llama"].handle(ctx, request, resources)
 
     class Summary(NoopIndexer):
         asset_name = "summary"
-        required_resources = ("gemma", )
+        required_resources = ("gemma",)
 
     class Extract(NoopIndexer):
         asset_name = "extract"
-        required_resources = ("mistral", )
+        required_resources = ("mistral",)
 
     rt = IndexRuntime(
         ctx=RunContext(db),
@@ -209,7 +207,7 @@ def test_stateful_resource_model_load_not_churned(db: IndexDatabase,
         model: str
         prompt: str
 
-    class LlamaResponse(BaseModel):
+    class LlamaResponse(IndexDocument):
         text: str
 
     class GemmaRequest(BaseModel):
@@ -229,11 +227,11 @@ def test_stateful_resource_model_load_not_churned(db: IndexDatabase,
                 if self.current_model != request.model:
                     self.current_model = request.model
                     self.load_count += 1
-            return LlamaResponse(text=f"{request.model}:{request.prompt}")
+            return LlamaResponse(text=f"{request.model}:{request.prompt}", hash="123")
 
     class Gemma(BaseResource):
         resource_key = "gemma"
-        required_resources = ("llama", )
+        required_resources = ("llama",)
 
         def handle(self, ctx: RunContext, request: GemmaRequest, resources):
             llama = resources["llama"]
@@ -243,22 +241,21 @@ def test_stateful_resource_model_load_not_churned(db: IndexDatabase,
                 resources,
             )
 
-    class SummaryResult(BaseModel):
+    class SummaryResult(IndexDocument):
         summary: str
 
     class SummaryIndexer(BaseIndexer):
         asset_name = "summary"
         result_model = SummaryResult
-        required_resources = ("gemma", )
+        required_resources = ("gemma",)
         max_parallel = 4
 
-        def run(self, ctx: RunContext, request, resources,
-                assets) -> IndexerOutput:
+        def run(self, ctx: RunContext, request, resources, assets) -> IndexerOutput:
             gemma = resources["gemma"]
             out = gemma.handle(ctx, GemmaRequest(prompt="x"), resources)
             return IndexerOutput(
                 indexer_id=self.asset_name,
-                result=SummaryResult(summary=out.text),
+                result=SummaryResult(summary=out.text, hash="99999"),
             )
 
     llama = Llama()
@@ -275,10 +272,9 @@ def test_stateful_resource_model_load_not_churned(db: IndexDatabase,
     assert llama.load_count == 1
 
 
-def test_max_parallel_execution_bound(db: IndexDatabase,
-                                      tmp_path: Path) -> None:
+def test_max_parallel_execution_bound(db: IndexDatabase, tmp_path: Path) -> None:
 
-    class PResult(BaseModel):
+    class PResult(IndexDocument):
         value: str
 
     class ParallelIndexer(BaseIndexer):
@@ -292,8 +288,7 @@ def test_max_parallel_execution_bound(db: IndexDatabase,
             self.peak = 0
             self.lock = threading.Lock()
 
-        def run(self, ctx: RunContext, request, resources,
-                assets) -> IndexerOutput:
+        def run(self, ctx: RunContext, request, resources, assets) -> IndexerOutput:
             with self.lock:
                 self.active += 1
                 self.peak = max(self.peak, self.active)
@@ -301,7 +296,7 @@ def test_max_parallel_execution_bound(db: IndexDatabase,
             with self.lock:
                 self.active -= 1
             return IndexerOutput(indexer_id=self.asset_name,
-                                 result=PResult(value="ok"))
+                                 result=PResult(value="ok", hash="...."))
 
     idx = ParallelIndexer()
     rt = IndexRuntime(

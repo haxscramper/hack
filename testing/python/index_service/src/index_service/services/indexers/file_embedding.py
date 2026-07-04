@@ -2,11 +2,11 @@ import math
 from pathlib import Path
 
 from index_service.services.core.job_types import BaseIndexer, RunContext
-from index_service.services.core.types import IndexerOutput, IndexerRequest
+from index_service.services.core.types import IndexDocument, IndexerOutput, IndexerRequest
 from pydantic import BaseModel
 
 
-class FileEmbeddingIndexerResult(BaseModel, extra="forbid"):
+class FileEmbeddingIndexerResult(IndexDocument, extra="forbid"):
     vector: list[float]
     dim: int
 
@@ -33,5 +33,9 @@ class FileEmbeddingIndexer(BaseIndexer):
         vector = buckets if norm == 0.0 else [x / norm for x in buckets]
         return IndexerOutput(
             indexer_id=self.asset_name,
-            result=FileEmbeddingIndexerResult(vector=vector, dim=len(vector)),
+            result=FileEmbeddingIndexerResult(
+                vector=vector,
+                dim=len(vector),
+                hash=request.get_hash_str(),
+            ),
         )

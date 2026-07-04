@@ -1,11 +1,12 @@
 test:
-    uv run python -m pytest -vv -ra -s --log-cli-level=DEBUG --capture=fd --disable-warnings > test_results.tmp.log
+    uv run python -m pytest -vv -ra --log-level=DEBUG --capture=tee-sys --disable-warnings > test_results.tmp.log 2>&1
 
 index:
     uv run src/index_service/cli/cli.py index \
         --reset True \
         --db-name test_index \
         --indexer document_block \
+        --indexer full_text \
         --logfile /tmp/index-log.log \
         --perf-trace-file /tmp/indexer-trace-perf.json \
         "~/defaultdirs/temporary_interchange/content_root_for_indexing/"

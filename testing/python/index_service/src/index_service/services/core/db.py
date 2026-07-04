@@ -9,13 +9,15 @@ from arango import ArangoClient, DocumentInsertError
 from arango.aql import AQL
 from arango.database import StandardDatabase
 from beartype import beartype
-from beartype.typing import Any, Dict, List, Optional, cast, Sequence, Protocol
+from beartype.typing import Any, Dict, List, Optional, TypeVar, cast, Sequence, Protocol
 from openai import BaseModel
 
 from index_service.services.core.types import (
     AnyModel,
     FileHash,
     FileRef,
+    IndexLink,
+    IndexMultiDocument,
     IndexerOutput,
     MultiDocumentModel,
     RootRef,
@@ -26,6 +28,8 @@ from index_service.services.pydantic_utils import (
     model_to_json_data,
 )
 from index_service.services.utils import ExceptionContextNote
+
+T = TypeVar("T")
 
 log = logging.getLogger(__name__)
 
@@ -324,7 +328,7 @@ class IndexDatabase:
         from index_service.services.core.types import IndexDocument
         assert isinstance(result, IndexDocument), (
             "Final documents inserted into the arango collection must "
-            f"be derived from the IndexDocumnet, but type {type(result)} does not match")
+            f"be derived from the IndexDocument, but type {type(result)} does not match")
 
         col = self._db.collection(indexer_id)
         result_j = model_to_json_data(result)
@@ -410,24 +414,44 @@ class IndexDatabase:
                                              indexer_id=out.indexer_id,
                                              result=out.result)
 
-    def get_indexer_result_type(self, hash: FileHash, indexer_id: str,
-                                type) -> Optional[AnyModel]:
-        doc = cast(dict, self._db.collection(indexer_id).get(hash.hash))
-        if doc:
-            return type.model_validate(model_from_json_data(doc["result"], type))
+    def get_indexer_result(self, hash: FileHash, indexer_id: str, type: type[T]) -> T:
+        if issubclass(type, MultiDocumentModel):
+            documents: list[IndexMultiDocument] = list()
+            links: list[IndexLink] = list()
+
+            for doc in self._db.aql.execute(  # type: ignore
+                    f"""
+                FOR doc IN {indexer_id}
+                FILTER doc.file_hash == @hash
+                RETURN doc
+                """,
+                    bind_vars={  # type: ignore
+                        "hash": hash.hash
+                    },
+            ):
+                documents.append(
+                    type.document_type.model_validate(
+                        model_from_json_data(doc["result"], type)))
+
+            for edge in self._db.aql.execute(  # type: ignore
+                    f"""
+                FOR edge IN {self.get_edge_name(indexer_id)}
+                FILTER edge.file_hash == @hash
+                RETURN edge
+                """,
+                    bind_vars={  # type: ignore
+                        "hash": hash.hash
+                    },
+            ):
+                links.append(
+                    type.link_type.model_validate(
+                        model_from_json_data(edge["result"], type)))
+
+            return type(documents=documents, links=links)  # type: ignore
 
         else:
-            return None
-
-    def get_indexer_result(self, hash: FileHash, indexer_id: str) -> IndexerResultRecord:
-        doc = cast(dict, self._db.collection(indexer_id).get(hash.hash))
-
-        assert doc, f"Cannot get evaluation results for {indexer_id}({hash})"
-        return IndexerResultRecord(
-            hash=FileHash(hash=doc["_key"]),
-            indexer_id=doc["indexer_id"],
-            result=doc["result"],
-        )
+            doc = cast(dict, self._db.collection(indexer_id).get(hash.hash))
+            return type.model_validate(model_from_json_data(doc["result"], type))
 
     def store_derivation(
         self,

@@ -8,7 +8,7 @@ from beartype.typing import cast
 from pydantic import BaseModel
 from index_service.services.core.db import IndexDatabase
 from index_service.services.core.job_types import BaseConverter, BaseIndexer, BaseResource, RunContext
-from index_service.services.core.types import FileHash, ConverterOutput, FileRef, IndexerOutput
+from index_service.services.core.types import FileHash, ConverterOutput, FileRef, IndexDocument, IndexerOutput
 from index_service.services.core.job_runtime import IndexRuntime
 
 
@@ -19,10 +19,10 @@ def _touch(path: Path) -> None:
 def test_chain_two_indexers(db: IndexDatabase, tmp_path: Path) -> None:
     call_log: list[str] = []
 
-    class RootModel(BaseModel):
+    class RootModel(IndexDocument):
         value: str
 
-    class NestedModel(BaseModel):
+    class NestedModel(IndexDocument):
         value: str
 
     class RootIndexer(BaseIndexer):
@@ -39,13 +39,13 @@ def test_chain_two_indexers(db: IndexDatabase, tmp_path: Path) -> None:
             call_log.append("root")
             return IndexerOutput(
                 indexer_id=self.asset_name,
-                result=RootModel(value="root-value"),
+                result=RootModel(value="root-value", hash="kuer"),
             )
 
     class NestedIndexer(BaseIndexer):
         asset_name = "nested_indexer"
         result_model = NestedModel
-        required_assets = ("root_indexer", )
+        required_assets = ("root_indexer",)
 
         def run(
             self,
@@ -61,7 +61,7 @@ def test_chain_two_indexers(db: IndexDatabase, tmp_path: Path) -> None:
             assert root_output.result.value == "root-value"
             return IndexerOutput(
                 indexer_id=self.asset_name,
-                result=NestedModel(value="nested-value"),
+                result=NestedModel(value="nested-value", hash="---()"),
             )
 
     file_path = tmp_path / "doc.txt"
@@ -93,63 +93,59 @@ def test_chain_two_indexers(db: IndexDatabase, tmp_path: Path) -> None:
 def test_branching_indexers(db: IndexDatabase, tmp_path: Path) -> None:
     call_log: list[str] = []
 
-    class ModelA(BaseModel):
+    class ModelA(IndexDocument):
         value: str
 
-    class ModelB(BaseModel):
+    class ModelB(IndexDocument):
         value: str
 
-    class ModelC(BaseModel):
+    class ModelC(IndexDocument):
         value: str
 
-    class ModelD(BaseModel):
+    class ModelD(IndexDocument):
         value: str
 
     class IndexerA(BaseIndexer):
         asset_name = "indexer_a"
         result_model = ModelA
 
-        def run(self, ctx: RunContext, request, resources,
-                assets) -> IndexerOutput:
+        def run(self, ctx: RunContext, request, resources, assets) -> IndexerOutput:
             call_log.append("A")
             return IndexerOutput(indexer_id=self.asset_name,
-                                 result=ModelA(value="A"))
+                                 result=ModelA(value="A", hash="io45emasdf,j345e"))
 
     class IndexerB(BaseIndexer):
         asset_name = "indexer_b"
         result_model = ModelB
-        required_assets = ("indexer_a", )
+        required_assets = ("indexer_a",)
 
-        def run(self, ctx: RunContext, request, resources,
-                assets) -> IndexerOutput:
+        def run(self, ctx: RunContext, request, resources, assets) -> IndexerOutput:
             call_log.append("B")
             assert "indexer_a" in assets
             return IndexerOutput(indexer_id=self.asset_name,
-                                 result=ModelB(value="B"))
+                                 result=ModelB(value="B", hash="io45em34q56q,j345e"))
 
     class IndexerC(BaseIndexer):
         asset_name = "indexer_c"
         result_model = ModelC
-        required_assets = ("indexer_b", )
+        required_assets = ("indexer_b",)
 
-        def run(self, ctx: RunContext, request, resources,
-                assets) -> IndexerOutput:
+        def run(self, ctx: RunContext, request, resources, assets) -> IndexerOutput:
             call_log.append("C")
             assert "indexer_b" in assets
             return IndexerOutput(indexer_id=self.asset_name,
-                                 result=ModelC(value="C"))
+                                 result=ModelC(value="C", hash="io45sd gsdgem,j345e"))
 
     class IndexerD(BaseIndexer):
         asset_name = "indexer_d"
         result_model = ModelD
-        required_assets = ("indexer_b", )
+        required_assets = ("indexer_b",)
 
-        def run(self, ctx: RunContext, request, resources,
-                assets) -> IndexerOutput:
+        def run(self, ctx: RunContext, request, resources, assets) -> IndexerOutput:
             call_log.append("D")
             assert "indexer_b" in assets
             return IndexerOutput(indexer_id=self.asset_name,
-                                 result=ModelD(value="D"))
+                                 result=ModelD(value="D", hash="io45edgkgyjm,j345e"))
 
     path = tmp_path / "branch.txt"
     _touch(path)
@@ -200,22 +196,21 @@ def test_indexer_receives_resource(db: IndexDatabase, tmp_path: Path) -> None:
         def handle(self, request: ResourceRequest) -> ResourceResponse:
             return ResourceResponse(value=request.value)
 
-    class EchoModel(BaseModel):
+    class EchoModel(IndexDocument):
         echoed: str
 
     class EchoIndexer(BaseIndexer):
         asset_name = "echo_indexer"
         result_model = EchoModel
-        required_resources = ("echo", )
+        required_resources = ("echo",)
 
-        def run(self, ctx: RunContext, request, resources,
-                assets) -> IndexerOutput:
+        def run(self, ctx: RunContext, request, resources, assets) -> IndexerOutput:
             assert "echo" in resources
             resource = resources["echo"]
             response = resource.handle(ResourceRequest(value="ping"))
             return IndexerOutput(
                 indexer_id=self.asset_name,
-                result=EchoModel(echoed=response.value),
+                result=EchoModel(echoed=response.value, hash="999"),
             )
 
     file_path = tmp_path / "resource.txt"
@@ -239,21 +234,19 @@ def test_indexer_receives_resource(db: IndexDatabase, tmp_path: Path) -> None:
     assert out.result.echoed == "ping"
 
 
-def test_converter_consumes_indexer_asset(tmp_path: Path,
-                                          db: IndexDatabase) -> None:
+def test_converter_consumes_indexer_asset(tmp_path: Path, db: IndexDatabase) -> None:
 
-    class DepResult(BaseModel):
+    class DepResult(IndexDocument):
         token: str
 
     class DepIndexer(BaseIndexer):
         asset_name = "dependency_indexer"
         result_model = DepResult
 
-        def run(self, ctx: RunContext, request, resources,
-                assets) -> IndexerOutput:
+        def run(self, ctx: RunContext, request, resources, assets) -> IndexerOutput:
             return IndexerOutput(
                 indexer_id=self.asset_name,
-                result=DepResult(token="indexed"),
+                result=DepResult(token="indexed", hash="89345"),
             )
 
     class ConvResult(BaseModel):
@@ -262,10 +255,9 @@ def test_converter_consumes_indexer_asset(tmp_path: Path,
     class DepConverter(BaseConverter):
         converter_id = "dependent_converter"
         result_model = ConvResult
-        required_assets = ("dependency_indexer", )
+        required_assets = ("dependency_indexer",)
 
-        def run(self, ctx: RunContext, request, resources,
-                assets) -> ConverterOutput:
+        def run(self, ctx: RunContext, request, resources, assets) -> ConverterOutput:
             assert "dependency_indexer" in assets
             upstream = assets["dependency_indexer"]
             assert isinstance(upstream, IndexerOutput)

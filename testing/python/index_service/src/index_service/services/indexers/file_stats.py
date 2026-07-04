@@ -2,11 +2,11 @@ from datetime import datetime
 from pathlib import Path
 
 from index_service.services.core.job_types import BaseIndexer, RunContext
-from index_service.services.core.types import IndexerOutput, IndexerRequest
+from index_service.services.core.types import IndexDocument, IndexerOutput, IndexerRequest
 from pydantic import BaseModel
 
 
-class FileStatsIndexerResult(BaseModel, extra="forbid"):
+class FileStatsIndexerResult(IndexDocument, extra="forbid"):
     size_bytes: int
     mode: int
     mtime: float
@@ -32,11 +32,11 @@ class FileStatsIndexer(BaseIndexer):
         return IndexerOutput(
             indexer_id=self.asset_name,
             result=FileStatsIndexerResult(
+                hash=request.get_hash_str(),
                 size_bytes=st.st_size,
                 mode=st.st_mode,
                 mtime=st.st_mtime,
                 ctime=st.st_ctime,
-                modification_time=datetime.fromtimestamp(
-                    st.st_mtime).isoformat(),
+                modification_time=datetime.fromtimestamp(st.st_mtime).isoformat(),
             ),
         )

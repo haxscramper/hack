@@ -17,12 +17,14 @@ ARANGO_HOST = "http://localhost:8529"
 ARANGO_USER = "root"
 ARANGO_PASSWORD = "test"
 
-handler = get_custom_traceback_handler(show_args=False, )
+handler = get_custom_traceback_handler(show_args=False,)
 
 
 def pytest_configure(config: Any) -> None:
     "nodoc"
     stfu_logs()
+
+    # logging.getLogger("index_service.services.core.job_runtime").setLevel(logging.INFO)
 
 
 @pytest.hookimpl(hookwrapper=True)
@@ -89,11 +91,10 @@ def runtime(db) -> Generator[IndexRuntime, None, None]:
         ctx=ctx,
         db=db,
         resource_types=[
-            MockTextSummaryResource()
-            if t.resource_key == "text_summary" else t()
+            MockTextSummaryResource() if t.resource_key == "text_summary" else t()
             for t in DEFAULT_RESOURCE_TYPES
         ],
-        indexer_types=[t() for t in DEFAULT_INDEXER_TYPES],
+        indexer_types=[t(should_load_cache=False) for t in DEFAULT_INDEXER_TYPES],
         converter_types=[t() for t in DEFAULT_CONVERTER_TYPES],
     )
 

@@ -3,6 +3,7 @@ from pathlib import Path
 from index_service.services.core.db import IndexDatabase
 from index_service.services.core.types import FileRef
 from index_service.services.core.job_runtime import IndexRuntime
+from index_service.services.indexers.full_text import FullTextIndexer
 
 
 def test_full_text_search(db: IndexDatabase, runtime: IndexRuntime,
@@ -19,8 +20,7 @@ def test_full_text_search(db: IndexDatabase, runtime: IndexRuntime,
     assert hits[0]["hash"] == ref.hash.hash
 
 
-def test_vector_search(db: IndexDatabase, runtime: IndexRuntime,
-                       tmp_path: Path) -> None:
+def test_vector_search(db: IndexDatabase, runtime: IndexRuntime, tmp_path: Path) -> None:
     a = tmp_path / "a.txt"
     b = tmp_path / "b.txt"
     a.write_text("cat cat cat")

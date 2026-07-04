@@ -5,7 +5,7 @@ from beartype.typing import Literal, Annotated, Sequence, Union
 from pydantic import BaseModel, Field, field_serializer, field_validator
 import enum
 
-from index_service.services.core.types import IndexDocument, IndexLink
+from index_service.services.core.types import IndexDocument, IndexLink, IndexMultiDocument
 
 log = logging.getLogger(__name__)
 
@@ -87,7 +87,7 @@ class DivProps(CaptionProps, extra="forbid"):
     attributes: dict[str, str] = Field(default_factory=dict)
 
 
-class DocumentBlock(IndexDocument, extra="forbid"):
+class DocumentBlock(IndexMultiDocument, extra="forbid"):
     nested: Sequence["DocumentBlock"] = Field(default_factory=list)
 
 
@@ -196,13 +196,14 @@ for _cls in (
 def build(
         cls: type[DocumentBlock],
         *,
+        file_hash: str,
         nested: Sequence[DocumentBlock] = (),
         **kwargs,
 ) -> DocumentBlock:
     """Construct a block with its hash computed inline from its own payload
     plus the hashes of already-built nested children."""
     nested = list(nested)
-    block = cls.model_construct(hash="", nested=nested, **kwargs)
+    block = cls.model_construct(hash="", file_hash=file_hash, nested=nested, **kwargs)
     payload = block.model_dump(exclude={"id", "nested", "hash"})
     hasher = hashlib.sha256()
     hasher.update(json.dumps(payload, sort_keys=True).encode())
@@ -235,11 +236,13 @@ def _flatten(
 ) -> None:
     documents.append(block.model_copy(update={"nested": []}))
     if parent_hash is not None:
-        links.append(DocumentLink(
-            from_=parent_hash,
-            to_=block.hash,
-            order=order,
-        ))
+        links.append(
+            DocumentLink(
+                from_=parent_hash,
+                to_=block.hash,
+                order=order,
+                file_hash=block.file_hash,
+            ))
 
     for i, nested in enumerate(block.nested):
         _flatten(nested, documents, links, block.hash, i)

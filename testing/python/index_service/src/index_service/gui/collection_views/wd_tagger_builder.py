@@ -15,7 +15,7 @@ class WdTaggerWidgetBuilder(WidgetBuilder):
     def build(self, db: IndexDatabase, hash: FileHash) -> QWidget:
         result = cast(
             Optional[WdTagIndexerResult],
-            db.get_indexer_result_type(
+            db.get_indexer_result(
                 hash,
                 WdTagIndexer.asset_name,
                 WdTagIndexer.result_model,
@@ -29,12 +29,10 @@ class WdTaggerWidgetBuilder(WidgetBuilder):
         else:
             table = QTableWidget(len(result.tags), 3)
             table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-            table.setHorizontalHeaderLabels(
-                ["category", "name", "probability"])
+            table.setHorizontalHeaderLabels(["category", "name", "probability"])
             for row, tag in enumerate(result.tags):
                 table.setItem(row, 0, QTableWidgetItem(tag.category))
                 table.setItem(row, 1, QTableWidgetItem(tag.name))
-                table.setItem(row, 2,
-                              QTableWidgetItem(f"{tag.probability:.4f}"))
+                table.setItem(row, 2, QTableWidgetItem(f"{tag.probability:.4f}"))
             table.horizontalHeader().setStretchLastSection(True)
             return table

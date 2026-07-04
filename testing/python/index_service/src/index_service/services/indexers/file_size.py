@@ -1,11 +1,11 @@
 from pathlib import Path
 
 from index_service.services.core.job_types import BaseIndexer, RunContext
-from index_service.services.core.types import IndexerOutput, IndexerRequest
+from index_service.services.core.types import IndexDocument, IndexerOutput, IndexerRequest
 from pydantic import BaseModel
 
 
-class FileSizeIndexerResult(BaseModel, extra="forbid"):
+class FileSizeIndexerResult(IndexDocument, extra="forbid"):
     size_bytes: int
 
 
@@ -26,5 +26,8 @@ class FileSizeIndexer(BaseIndexer):
         size = ctx.get_path(request.file_ref).stat().st_size
         return IndexerOutput(
             indexer_id=self.asset_name,
-            result=FileSizeIndexerResult(size_bytes=size),
+            result=FileSizeIndexerResult(
+                size_bytes=size,
+                hash=request.get_hash_str(),
+            ),
         )

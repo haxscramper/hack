@@ -279,7 +279,7 @@ class IndexRuntime:
     def execute_plan(self, plan: ExecutionPlan) -> None:
         total_batches = len(plan.batches)
         for batch_idx, batch in enumerate(plan.batches, start=1):
-            log.info(
+            log.debug(
                 "batch {}/{}: indexer={} window={} files={} sub_batches={}".format(
                     batch_idx,
                     total_batches,
@@ -321,9 +321,11 @@ class IndexRuntime:
             self.execute_plan(plan)
 
     def get_indexer_result(self, hash: FileHash | FileRef, name: str) -> IndexerOutput:
+        assert name in self._indexer_instances
+        assert self._indexer_instances[name].result_model
         return IndexerOutput(
             indexer_id=name,
-            result=self.db.get_indexer_result_type(  # type: ignore
+            result=self.db.get_indexer_result(  # type: ignore
                 hash if isinstance(hash, FileHash) else hash.hash,
                 name,
                 self._indexer_instances[name].result_model,
@@ -384,7 +386,7 @@ class IndexRuntime:
                     with ExceptionContextNote(f"indexer asset: {indexer.asset_name}"):
                         self.db.store_indexer_output(ref, out)
 
-        log.info("finished indexer batch")
+        log.debug("finished indexer batch")
 
     @overload
     def run_converter(

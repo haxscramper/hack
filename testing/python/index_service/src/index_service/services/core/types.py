@@ -14,6 +14,7 @@ AnyModel = Annotated[
 
 
 class IndexLink(BaseModel, extra="forbid"):
+    file_hash: str
     from_: str
     to_: str
 
@@ -22,12 +23,20 @@ class IndexDocument(BaseModel, extra="forbid"):
     hash: str
 
 
+class IndexMultiDocument(IndexDocument, extra="forbid"):
+    file_hash: str = Field(
+        description=
+        "Hash of the original file -- `.hash` field in all cases refers to *this* "
+        "specific document, but if the query needs to re-assemble the information "
+        "extracted from the file, grouping by `file_hash` is the way to go. ")
+
+
 class MultiDocumentModel(BaseModel, extra="forbid"):
     link_type: ClassVar[Any]
     document_type: ClassVar[Any]
 
     links: list[IndexLink]
-    documents: list[IndexDocument]
+    documents: list[IndexMultiDocument]
 
 
 class IndexerOutputError(BaseModel, extra="forbid"):
@@ -80,6 +89,9 @@ class ConverterOutput(BaseModel, extra="forbid"):
 class IndexerRequest(BaseModel, extra="forbid"):
     file_ref: FileRef
     dependency_results: dict[str, IndexerOutput | None] = Field(default_factory=dict)
+
+    def get_hash_str(self) -> str:
+        return self.file_ref.hash.hash
 
 
 @beartype

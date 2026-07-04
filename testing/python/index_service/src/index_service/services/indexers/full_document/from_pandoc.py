@@ -136,7 +136,8 @@ def _attach_caption(block: DocumentBlock, caption: str) -> None:
         return
 
 
-def _convert_list_items(items: list, item_type: str) -> Sequence[DocumentBlock]:
+def _convert_list_items(items: list, item_type: str,
+                        file_hash: str) -> Sequence[DocumentBlock]:
     cls = {
         "bulletListItem": BulletListItem,
         "numberedListItem": NumberedListItem,
@@ -145,12 +146,12 @@ def _convert_list_items(items: list, item_type: str) -> Sequence[DocumentBlock]:
     for item in items:
         blocks: list = []
         for pb in item:
-            blocks += _convert_block(pb)
+            blocks += _convert_block(pb, file_hash=file_hash)
         if not blocks:
             continue
         head = blocks[0]
         content = getattr(head, "content", [])
-        result.append(build(cls, content=content, nested=blocks[1:]))
+        result.append(build(cls, content=content, nested=blocks[1:], file_hash=file_hash))
     return result
 
 
@@ -206,7 +207,7 @@ def _extract_table_caption(caption_obj: object) -> str | None:
     return None
 
 
-def _row_to_table_row(row_obj: list, *, is_header: bool) -> TableRow:
+def _row_to_table_row(row_obj: list, *, is_header: bool, file_hash: str) -> TableRow:
     _row_attr, cells_obj = row_obj
     cells: list[TableCell] = []
 
@@ -216,6 +217,7 @@ def _row_to_table_row(row_obj: list, *, is_header: bool) -> TableRow:
             build(  # type: ignore
                 TableCell,
                 nested=[],
+                file_hash=file_hash,
                 props=TableCellProps(
                     textAlignment=_pandoc_alignment_to_text_alignment(alignment),
                     rowSpan=max(1, int(row_span)),
@@ -225,10 +227,15 @@ def _row_to_table_row(row_obj: list, *, is_header: bool) -> TableRow:
                 content=_blocks_to_inline_content(blocks),
             ))
 
-    return build(TableRow, nested=list(), cells=cells)  # type: ignore
+    return build(
+        TableRow,
+        nested=list(),
+        cells=cells,
+        file_hash=file_hash,
+    )  # type: ignore
 
 
-def _convert_table(pb: dict) -> Table:
+def _convert_table(pb: dict, file_hash: str) -> Table:
     attr, caption, _colspecs, thead, tbodies, tfoot = pb["c"]
     _identifier, _classes, _keyvals = attr
 
@@ -237,16 +244,16 @@ def _convert_table(pb: dict) -> Table:
     # thead: [attr, rows]
     if isinstance(thead, list) and len(thead) == 2:
         for row in thead[1]:
-            rows.append(_row_to_table_row(row, is_header=True))
+            rows.append(_row_to_table_row(row, is_header=True, file_hash=file_hash))
 
     # tbodies: [[attr, row_head_cols, head_rows, body_rows], ...]
     for tbody in tbodies:
         if not isinstance(tbody, list) or len(tbody) != 4:
             continue
         for row in tbody[2]:
-            rows.append(_row_to_table_row(row, is_header=True))
+            rows.append(_row_to_table_row(row, is_header=True, file_hash=file_hash))
         for row in tbody[3]:
-            rows.append(_row_to_table_row(row, is_header=False))
+            rows.append(_row_to_table_row(row, is_header=False, file_hash=file_hash))
 
     # tfoot: [attr, rows]
     if isinstance(tfoot, list) and len(tfoot) == 2:
@@ -259,15 +266,22 @@ def _convert_table(pb: dict) -> Table:
             Table,
             props=TableProps(caption=_extract_table_caption(caption)),
             nested=rows,
+            file_hash=file_hash,
         ),
     )
 
 
-def _convert_block(pb: dict) -> Sequence[DocumentBlock]:
+def _convert_block(pb: dict, file_hash: str) -> Sequence[DocumentBlock]:
     t = pb["t"]
     match t:
         case "Para" | "Plain":
-            return [build(Paragraph, content=_convert_inlines(pb["c"], TextStyles()))]
+            return [
+                build(
+                    Paragraph,
+                    file_hash=file_hash,
+                    content=_convert_inlines(pb["c"], TextStyles()),
+                )
+            ]
 
         case "Header":
             level, _attr, inlines = pb["c"]
@@ -275,6 +289,7 @@ def _convert_block(pb: dict) -> Sequence[DocumentBlock]:
             return [
                 build(
                     Heading,
+                    file_hash=file_hash,
                     props=HeadingProps(level=clamped),
                     content=_convert_inlines(inlines, TextStyles()),
                 )
@@ -287,16 +302,19 @@ def _convert_block(pb: dict) -> Sequence[DocumentBlock]:
             return [
                 build(
                     Code,
+                    file_hash=file_hash,
                     props=CodeBlockProps(language=lang),
                     content=[StyledText(text=code)],
                 )
             ]
 
         case "BulletList":
-            return _convert_list_items(pb["c"], "bulletListItem")
+            return _convert_list_items(pb["c"], "bulletListItem", file_hash=file_hash)
 
         case "OrderedList":
-            return _convert_list_items(pb["c"][1], "numberedListItem")
+            return _convert_list_items(pb["c"][1],
+                                       "numberedListItem",
+                                       file_hash=file_hash)
 
         case "DefinitionList":
             blocks: list[DocumentBlock] = []
@@ -310,12 +328,13 @@ def _convert_block(pb: dict) -> Sequence[DocumentBlock]:
                             case {"t": "Plain" | "Para"}:
                                 definition_inlines += _convert_inlines(db.get("c", []))
                             case _:
-                                blocks += _convert_block(db)
+                                blocks += _convert_block(db, file_hash=file_hash)
 
                     if definition_inlines:
                         blocks.append(
                             build(
                                 Paragraph,
+                                file_hash=file_hash,
                                 content=merge_text(term + [StyledText(text=" :: ")] +
                                                    definition_inlines),
                             ))
@@ -325,21 +344,24 @@ def _convert_block(pb: dict) -> Sequence[DocumentBlock]:
         case "BlockQuote":
             nested: list = []
             for inner in pb["c"]:
-                nested += _convert_block(inner)
-            return [build(Quote, nested=nested)]
+                nested += _convert_block(inner, file_hash=file_hash)
+            return [build(Quote, file_hash=file_hash, nested=nested)]
 
         case "HorizontalRule":
             return []
 
         case "Table":
-            return [_convert_table(pb)]
+            return [_convert_table(pb, file_hash=file_hash)]
 
         case "RawBlock":
-            return [build(
-                RawBlock,
-                content=pb["c"][1],
-                lang=pb["c"][0],
-            )]
+            return [
+                build(
+                    RawBlock,
+                    file_hash=file_hash,
+                    content=pb["c"][1],
+                    lang=pb["c"][0],
+                )
+            ]
 
         case "Div":
             attr, inner = pb["c"]
@@ -358,7 +380,7 @@ def _convert_block(pb: dict) -> Sequence[DocumentBlock]:
 
                 converted: list[DocumentBlock] = []
                 for child in remaining:
-                    converted += _convert_block(child)
+                    converted += _convert_block(child, file_hash=file_hash)
 
                 if caption and converted:
                     _attach_caption(converted[0], caption)
@@ -367,7 +389,7 @@ def _convert_block(pb: dict) -> Sequence[DocumentBlock]:
 
             nested: list[DocumentBlock] = []
             for child in inner:
-                nested += _convert_block(child)
+                nested += _convert_block(child, file_hash=file_hash)
 
             return [
                 build(
@@ -379,6 +401,7 @@ def _convert_block(pb: dict) -> Sequence[DocumentBlock]:
                             k: v for k, v in keyvals
                         },
                     ),
+                    file_hash=file_hash,
                     nested=nested,
                 )
             ]
@@ -388,11 +411,14 @@ def _convert_block(pb: dict) -> Sequence[DocumentBlock]:
             return [build(Paragraph, content=_convert_inlines(pb.get("c", [])))]
 
 
-def pandoc_to_document(path: Path) -> Document:
+def pandoc_to_document(path: Path, file_hash: str) -> Document:
     pandoc = plumbum.local["pandoc"]
     ast = json.loads(pandoc("-t", "json", str(path)))
     Path("/tmp/pandoc-result.json").write_text(json.dumps(ast, indent=2))
     nested: list = []
     for pb in ast["blocks"]:
-        nested += _convert_block(pb)
-    return build(Document, nested=nested)
+        nested += _convert_block(
+            pb,
+            file_hash=file_hash,
+        )
+    return build(Document, nested=nested, file_hash=file_hash)

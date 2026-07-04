@@ -11,6 +11,7 @@ from index_service.services.indexers.file_size import FileSizeIndexer, FileSizeI
 from index_service.services.indexers.file_stats import FileStatsIndexerResult
 from index_service.services.core.types import FileHash, FileRef, IndexerOutput
 from index_service.services.core.job_runtime import IndexRuntime
+from index_service.services.indexers.full_text import FullTextIndexerResult
 
 ARANGO_HOST = os.environ.get("ARANGO_HOST", "http://localhost:8529")
 ARANGO_USER = os.environ.get("ARANGO_USER", "root")
@@ -100,15 +101,27 @@ def test_db_indexer_result_uniqueness(db: IndexDatabase, tmp_path: Path) -> None
     db.store_indexer_output(
         ref_a,
         IndexerOutput(indexer_id="file_size",
-                      result=FileSizeIndexerResult(size_bytes=10)))
+                      result=FileSizeIndexerResult(
+                          size_bytes=10,
+                          hash=ref_a.hash.hash,
+                      )))
 
     db.store_indexer_output(
         ref_b,
         IndexerOutput(indexer_id="file_size",
-                      result=FileSizeIndexerResult(size_bytes=20)))
+                      result=FileSizeIndexerResult(
+                          size_bytes=20,
+                          hash=ref_b.hash.hash,
+                      )))
 
-    record = db.get_indexer_result(ref_a.hash, "file_size")
-    assert record.result["size_bytes"] == 20
+    record = db.get_indexer_result(
+        ref_a.hash,
+        "file_size",
+        FileSizeIndexerResult,
+    )
+
+    assert record
+    assert record.size_bytes == 20
 
 
 def test_db_store_derivation(db: IndexDatabase) -> None:
@@ -132,10 +145,12 @@ def test_index_file_job(runtime: IndexRuntime, db: IndexDatabase,
     root = runtime.db.add_root("root", sample_file.parent)
     ref = runtime.db.as_ref(root, sample_file)
     runtime.run_indexer(ref, ["file_size", "full_text"])
-    size_record = db.get_indexer_result(ref.hash, "file_size")
-    assert size_record.result["size_bytes"] == sample_file.stat().st_size
-    text_record = db.get_indexer_result(ref.hash, "full_text")
-    assert text_record.result["text"] == sample_file.read_text()
+    size_record = db.get_indexer_result(ref.hash, "file_size", FileSizeIndexerResult)
+    assert size_record
+    assert size_record.size_bytes == sample_file.stat().st_size
+    text_record = db.get_indexer_result(ref.hash, "full_text", FullTextIndexerResult)
+    assert text_record
+    assert text_record.text == sample_file.read_text()
 
 
 def test_convert_files_job(runtime: IndexRuntime, sample_file: Path) -> None:

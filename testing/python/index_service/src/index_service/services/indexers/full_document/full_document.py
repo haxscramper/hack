@@ -78,12 +78,16 @@ class DocumentBlockIndexer(BaseIndexer):
 
         mime = self._magic.from_file(str(path.resolve()))
         log.info(f"Converting {path} to full document, using mime {mime}")
-        root = pandoc_to_document(path)
+        root = pandoc_to_document(path, file_hash=request.get_hash_str())
 
         documents: list[IndexDocument] = []
         links: list[IndexLink] = []
 
-        file = doc_types.File(hash=request.file_ref.hash.hash)
+        file = doc_types.File(
+            hash=request.file_ref.hash.hash,
+            file_hash=request.get_hash_str(),
+        )
+
         documents.append(file)
         _flatten(root, documents, links, parent_hash=file.hash, order=0)
 

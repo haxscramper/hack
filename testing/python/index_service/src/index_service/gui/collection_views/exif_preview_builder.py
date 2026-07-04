@@ -36,7 +36,7 @@ class ExifPreviewrWidgetBuilder(WidgetBuilder):
     def build(self, db: IndexDatabase, hash: FileHash) -> QWidget:
         result = cast(
             Optional[ExifMetadataIndexerResult],
-            db.get_indexer_result_type(
+            db.get_indexer_result(
                 hash,
                 ExifMetadataIndexer.asset_name,
                 ExifMetadataIndexer.result_model,
@@ -48,8 +48,7 @@ class ExifPreviewrWidgetBuilder(WidgetBuilder):
             widget.set_doc(None)
             return widget
 
-        elif not (result.file.parsed_prompt
-                  and result.file.parsed_negative_prompt):
+        elif not (result.file.parsed_prompt and result.file.parsed_negative_prompt):
             widget = JsonPreviewWidget()
             widget.set_doc(model_to_json_data(result))
             return widget
@@ -69,8 +68,7 @@ class ExifPreviewrWidgetBuilder(WidgetBuilder):
         pixmap = QPixmap(str(path.resolve()))
         if not pixmap.isNull():
             img_label.setPixmap(
-                pixmap.scaledToWidth(
-                    300, Qt.TransformationMode.SmoothTransformation))
+                pixmap.scaledToWidth(300, Qt.TransformationMode.SmoothTransformation))
 
         img_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         outer.addWidget(img_label)
@@ -87,8 +85,7 @@ class ExifPreviewrWidgetBuilder(WidgetBuilder):
         data_table.setHorizontalHeaderLabels(["value"])
         data_table.setVerticalHeaderLabels(
             ["PROMPT TEXT", "NEGATIVE PROMPT", "TAGS", "MODEL"])
-        data_table.horizontalHeader().setSectionResizeMode(
-            QHeaderView.ResizeMode.Stretch)
+        data_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         data_table.verticalHeader().setSectionResizeMode(
             QHeaderView.ResizeMode.ResizeToContents)
 
@@ -109,8 +106,7 @@ class ExifPreviewrWidgetBuilder(WidgetBuilder):
 
         def copy_button(label: str, payload: str) -> QPushButton:
             btn = QPushButton(label)
-            btn.clicked.connect(
-                lambda: QApplication.clipboard().setText(payload))
+            btn.clicked.connect(lambda: QApplication.clipboard().setText(payload))
             return btn
 
         button_row.addWidget(copy_button("Copy prompt", paste))
@@ -119,8 +115,7 @@ class ExifPreviewrWidgetBuilder(WidgetBuilder):
 
         if params.generation_data:
             gen = QLabel(params.generation_data)
-            gen.setTextInteractionFlags(
-                Qt.TextInteractionFlag.TextSelectableByMouse)
+            gen.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
             gen.setWordWrap(True)
             outer.addWidget(gen)
 

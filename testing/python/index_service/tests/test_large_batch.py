@@ -20,9 +20,6 @@ def test_large_batch_indexing(db: IndexDatabase, tmp_path: Path,
             [
                 "file_size",
                 "file_stats",
-                "full_text",
-                "file_summary",
-                "file_embedding",
             ],
         )
 

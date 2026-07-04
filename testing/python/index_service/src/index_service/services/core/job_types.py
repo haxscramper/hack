@@ -28,6 +28,9 @@ from index_service.services.pydantic_utils import (
     to_json_safe,
 )
 from index_service.services.utils import ExceptionContextNote, get_xdg_cache_dir
+import logging
+
+log = logging.getLogger(__name__)
 
 
 class TraceWriter:
@@ -146,6 +149,7 @@ def cache_indexer_run(func: Callable[P, R]) -> Callable[P, IndexerOutput]:
                     json.loads(cache_path.read_text()),
                     IndexerOutput,
                 )
+                log.info(f"{parsed.result}")
                 assert parsed.indexer_id == self.asset_name
                 result_value = self.result_model.model_validate(parsed.result)
 
