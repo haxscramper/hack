@@ -42,6 +42,7 @@ class DocumentBlockIndexerResult(MultiDocumentModel, extra="forbid"):
             doc_types.RawBlock,
             doc_types.TableRow,
             doc_types.TableCell,
+            doc_types.File,
         ],
         Field(discriminator="type"),
     ]
@@ -81,9 +82,15 @@ class DocumentBlockIndexer(BaseIndexer):
 
         documents: list[IndexDocument] = []
         links: list[IndexLink] = []
-        _flatten(root, documents, links, parent_hash=None, order=0)
+
+        file = doc_types.File(hash=request.file_ref.hash.hash)
+        documents.append(file)
+        _flatten(root, documents, links, parent_hash=file.hash, order=0)
 
         return IndexerOutput(
             indexer_id=self.asset_name,
-            result=MultiDocumentModel(documents=documents, links=links),
+            result=DocumentBlockIndexerResult(
+                documents=documents,
+                links=links,
+            ),
         )

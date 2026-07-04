@@ -106,10 +106,12 @@ class IndexDatabase:
 
     def ensure_collections(self, indexers: Sequence[BaseIndexProtocol]) -> None:
 
-        def _ensure_collection_with_schema(name: str,
-                                           expected_schema: dict[str, Any],
-                                           *,
-                                           edge: bool = False) -> None:
+        def _ensure_collection_with_schema(
+            name: str,
+            expected_schema: dict[str, Any],
+            *,
+            edge: bool = False,
+        ) -> None:
             if not self._db.has_collection(name):
                 self._db.create_collection(
                     name,
@@ -124,9 +126,13 @@ class IndexDatabase:
                 raise RuntimeError(f"schema mismatch for collection {name!r}: "
                                    f"expected {expected_schema!r}, got {actual_schema!r}")
 
+        graph_name = "indexer_graph"
+
         for name in ["roots", "files", "derivations"]:
             if not self._db.has_collection(name):
                 self._db.create_collection(name)
+
+        edge_definitions: list[dict[str, Any]] = []
 
         for indexer in indexers:
             document_schema, edge_schema = self._arango_collection_schema_for_indexer(
@@ -139,11 +145,19 @@ class IndexDatabase:
             )
 
             if edge_schema is not None:
+                edge_name = self.get_edge_name(indexer.asset_name)
+
                 _ensure_collection_with_schema(
-                    self.get_edge_name(indexer.asset_name),
+                    edge_name,
                     edge_schema,
                     edge=True,
                 )
+
+                edge_definitions.append({
+                    "edge_collection": edge_name,
+                    "from_vertex_collections": [indexer.asset_name],
+                    "to_vertex_collections": [indexer.asset_name],
+                })
 
         files = self._db.collection("files")
         if not any(idx.get("name") == "idx_paths_suffix" for idx in files.indexes()):
@@ -152,6 +166,33 @@ class IndexDatabase:
                 "fields": ["paths[*].suffix"],
                 "name": "idx_paths_suffix",
             })
+
+        if edge_definitions:
+            if not self._db.has_graph(graph_name):
+                self._db.create_graph(
+                    graph_name,
+                    edge_definitions=edge_definitions,
+                )
+            else:
+                graph = self._db.graph(graph_name)
+                existing = {
+                    definition["edge_collection"]: definition
+                    for definition in graph.properties()["edge_definitions"]
+                }
+
+                for definition in edge_definitions:
+                    edge_collection = definition["edge_collection"]
+                    current = existing.get(edge_collection)
+                    if current is None:
+                        graph.create_edge_definition(
+                            edge_collection=definition["edge_collection"],
+                            from_vertex_collections=definition["from_vertex_collections"],
+                            to_vertex_collections=definition["to_vertex_collections"],
+                        )
+                    elif current != definition:
+                        raise RuntimeError(
+                            f"graph edge definition mismatch for {edge_collection!r}: "
+                            f"expected {definition!r}, got {current!r}")
 
     def truncate_all(self, names: list[str]) -> None:
         for name in ["roots", "files", "derivations"] + names:

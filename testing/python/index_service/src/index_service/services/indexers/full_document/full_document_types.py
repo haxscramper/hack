@@ -91,6 +91,10 @@ class DocumentBlock(IndexDocument, extra="forbid"):
     nested: Sequence["DocumentBlock"] = Field(default_factory=list)
 
 
+class File(DocumentBlock):
+    type: Literal["file"] = "file"
+
+
 class Document(DocumentBlock):
     type: Literal["document"] = "document"
 
