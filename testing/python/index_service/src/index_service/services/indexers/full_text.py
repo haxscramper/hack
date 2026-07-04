@@ -10,6 +10,8 @@ from index_service.services.indexers.full_document.full_document import Document
 
 import logging
 
+from index_service.services.indexers.full_document.full_document_types import DocumentBlock, DocumentLink
+
 log = logging.getLogger(__name__)
 
 
@@ -40,10 +42,13 @@ class FullTextIndexer(BaseIndexer):
         path = ctx.get_path(request.file_ref)
         if full_document:
             log.info(f"full text can use document block: {full_document}")
+            log.debug(full_document.model_dump_json(indent=2))
             for d in full_document.documents:
+                assert isinstance(d, DocumentBlock)
                 log.debug(f"{d}")
 
             for e in full_document.edges:
+                assert isinstance(e, DocumentLink)
                 log.debug(f"{e}")
 
             return IndexerOutput(
