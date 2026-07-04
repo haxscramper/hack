@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from index_service.services.core.db import IndexDatabase
-from index_service.services.indexers.full_text import FullTextIndexerResult
+from index_service.services.indexers.chunk_indexing.full_text import FullTextIndexerResult
 from index_service.services.core.types import FileRef
 from index_service.services.core.job_runtime import IndexRuntime
 

@@ -11,7 +11,7 @@ from index_service.services.indexers.file_size import FileSizeIndexer, FileSizeI
 from index_service.services.indexers.file_stats import FileStatsIndexerResult
 from index_service.services.core.types import FileHash, FileRef, IndexerOutput
 from index_service.services.core.job_runtime import IndexRuntime
-from index_service.services.indexers.full_text import FullTextIndexerResult
+from index_service.services.indexers.chunk_indexing.full_text import FullTextIndexerResult
 
 ARANGO_HOST = os.environ.get("ARANGO_HOST", "http://localhost:8529")
 ARANGO_USER = os.environ.get("ARANGO_USER", "root")

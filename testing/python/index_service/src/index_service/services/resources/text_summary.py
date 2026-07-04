@@ -1,15 +1,25 @@
 # index_service/services/resources/text_summary.py
 import logging
+from typing import Any, ClassVar, Literal, Union
 
-import tiktoken
-from langchain_text_splitters import TokenTextSplitter
 from pydantic import BaseModel, Field
+from beartype.typing import Annotated
 
 log = logging.getLogger(__name__)
 
 from index_service.services.core.job_types import (
     BaseResource,
     RunContext,
+)
+from index_service.services.core.types import MultiDocumentModel
+from index_service.services.indexers.chunk_indexing.chunking import (
+    ChunkConfig,
+    ChunkUnit,
+    Chunker,
+    ChunkDocument,
+    ChunkFile,
+    ChunkLink,
+    chunks_to_multidoc,
 )
 from index_service.services.resources.flm_server import (
     FlmMessage,
@@ -25,22 +35,24 @@ _COMBINE_SYSTEM_PROMPT = (
 
 class SummarizeRequest(BaseModel, extra="forbid"):
     text: str
+    file_hash: str
 
 
-class ChunkSummary(BaseModel, extra="forbid"):
-    index: int
-    token_count: int
+class SummaryChunk(ChunkDocument, extra="forbid"):
     summary: str
 
 
-class TextSummaryResult(BaseModel, extra="forbid"):
-    summary: str
-    chunked: bool = False
-    chunk_count: int = 1
-    chunk_token_size: int = 0
-    chunk_overlap: int = 0
-    total_token_count: int = 1
-    chunk_summaries: list[ChunkSummary] = Field(default_factory=list)
+class SummaryFile(ChunkFile, extra="forbid"):
+    summary: str = ""
+
+
+class TextSummaryResult(MultiDocumentModel, extra="forbid"):
+    document_type: ClassVar[Any] = Annotated[
+        Union[SummaryFile, SummaryChunk],
+        Field(discriminator="type"),
+    ]
+    edge_type: ClassVar[Any] = ChunkLink
+    summary: str = ""
 
 
 class TextSummaryResource(BaseResource):
@@ -56,19 +68,12 @@ class TextSummaryResource(BaseResource):
         encoding_name: str = "o200k_base",
     ) -> None:
         self._model = model
-        self._context_window_tokens = context_window_tokens
-        self._output_reserve_tokens = output_reserve_tokens
-        self._chunk_overlap_tokens = chunk_overlap_tokens
-        self._encoding_name = encoding_name
-        # Leave headroom for the system prompt and the generated output so a
-        # single chunk plus prompt always fits inside the model context.
         self._chunk_token_size = context_window_tokens - output_reserve_tokens
-        self._encoder = tiktoken.get_encoding(encoding_name)
-
-        self._splitter = TokenTextSplitter(
+        self._config = ChunkConfig(
+            unit=ChunkUnit.TOKENS,
+            max_size=self._chunk_token_size,
+            start_overlap_max=chunk_overlap_tokens,
             encoding_name=encoding_name,
-            chunk_size=self._chunk_token_size,
-            chunk_overlap=chunk_overlap_tokens,
         )
 
     def _resolve_flm(self, resources: dict[str, BaseResource]) -> FlmServerResource:
@@ -80,14 +85,7 @@ class TextSummaryResource(BaseResource):
                 "Resource `flm_server` must be an instance of FlmServerResource")
         return flm
 
-    def _summarize(
-        self,
-        ctx: RunContext,
-        flm: FlmServerResource,
-        resources: dict[str, BaseResource],
-        text: str,
-        system_prompt: str,
-    ) -> str:
+    def _summarize(self, ctx, flm, resources, text, system_prompt) -> str:
         flm_response = flm.handle(
             ctx=ctx,
             request=FlmRequest(
@@ -108,66 +106,28 @@ class TextSummaryResource(BaseResource):
         resources: dict[str, BaseResource],
     ) -> TextSummaryResult:
         flm = self._resolve_flm(resources)
+        chunker = Chunker(self._config)
+        chunks = chunker.chunk_text(request.text, request.file_hash)
 
-        total_tokens = len(self._encoder.encode(request.text))
+        summ: dict[str, str] = {}
+        for c in chunks:
+            summ[c.hash] = self._summarize(ctx, flm, resources, c.text,
+                                           _SUMMARIZE_SYSTEM_PROMPT)
 
-        if total_tokens <= self._chunk_token_size:
-            summary = self._summarize(
-                ctx,
-                flm,
-                resources,
-                request.text,
-                _SUMMARIZE_SYSTEM_PROMPT,
-            )
-            return TextSummaryResult(
-                summary=summary,
-                chunked=False,
-                chunk_count=1,
-                chunk_token_size=self._chunk_token_size,
-                chunk_overlap=self._chunk_overlap_tokens,
-                total_token_count=total_tokens,
-                chunk_summaries=[
-                    ChunkSummary(
-                        index=0,
-                        token_count=total_tokens,
-                        summary=summary,
-                    )
-                ],
-            )
+        if len(chunks) <= 1:
+            file_summary = summ[chunks[0].hash] if chunks else ""
+        else:
+            combined = "\n\n".join(
+                f"Section {i + 1}: {summ[c.hash]}" for i, c in enumerate(chunks))
+            file_summary = self._summarize(ctx, flm, resources, combined,
+                                           _COMBINE_SYSTEM_PROMPT)
 
-        chunks = self._splitter.split_text(request.text)
-        chunk_summaries: list[ChunkSummary] = []
-        for index, chunk in enumerate(chunks):
-            chunk_summary = self._summarize(
-                ctx,
-                flm,
-                resources,
-                chunk,
-                _SUMMARIZE_SYSTEM_PROMPT,
-            )
-            chunk_summaries.append(
-                ChunkSummary(
-                    index=index,
-                    token_count=len(self._encoder.encode(chunk)),
-                    summary=chunk_summary,
-                ))
-
-        combined = "\n\n".join(
-            f"Section {c.index + 1}: {c.summary}" for c in chunk_summaries)
-        final_summary = self._summarize(
-            ctx,
-            flm,
-            resources,
-            combined,
-            _COMBINE_SYSTEM_PROMPT,
+        documents, edges = chunks_to_multidoc(
+            chunks,
+            request.file_hash,
+            SummaryChunk,
+            file_cls=SummaryFile,
+            per_chunk=lambda c: {"summary": summ[c.hash]},
+            file_kwargs={"summary": file_summary},
         )
-
-        return TextSummaryResult(
-            summary=final_summary,
-            chunked=True,
-            chunk_count=len(chunk_summaries),
-            chunk_token_size=self._chunk_token_size,
-            chunk_overlap=self._chunk_overlap_tokens,
-            total_token_count=total_tokens,
-            chunk_summaries=chunk_summaries,
-        )
+        return TextSummaryResult(summary=file_summary, documents=documents, edges=edges)
