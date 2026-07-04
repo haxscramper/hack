@@ -20,7 +20,7 @@ from index_service.services.core.types import (
     MultiDocumentModel,
     RootRef,
 )
-from index_service.services.pydantic_arango_schema import arango_schema_for_model
+from index_service.services.pydantic_arango_schema import ArangoSchema, arango_schema_for_model
 from index_service.services.pydantic_utils import (
     model_from_json_data,
     model_to_json_data,
@@ -105,25 +105,45 @@ class IndexDatabase:
         return f"{indexer}_edge"
 
     def ensure_collections(self, indexers: Sequence[BaseIndexProtocol]) -> None:
+
+        def _ensure_collection_with_schema(name: str,
+                                           expected_schema: dict[str, Any],
+                                           *,
+                                           edge: bool = False) -> None:
+            if not self._db.has_collection(name):
+                self._db.create_collection(
+                    name,
+                    edge=edge,
+                    schema=expected_schema,
+                )
+                return
+
+            collection = self._db.collection(name)
+            actual_schema = collection.properties().get("schema")
+            if actual_schema != expected_schema:
+                raise RuntimeError(f"schema mismatch for collection {name!r}: "
+                                   f"expected {expected_schema!r}, got {actual_schema!r}")
+
         for name in ["roots", "files", "derivations"]:
             if not self._db.has_collection(name):
                 self._db.create_collection(name)
 
         for indexer in indexers:
-            expected_schema = self._arango_collection_schema_for_indexer(indexer)
+            document_schema, edge_schema = self._arango_collection_schema_for_indexer(
+                indexer)
 
-            if not self._db.has_collection(indexer.asset_name):
-                self._db.create_collection(
-                    indexer.asset_name,
-                    schema=expected_schema,
+            _ensure_collection_with_schema(
+                indexer.asset_name,
+                document_schema,
+                edge=False,
+            )
+
+            if edge_schema is not None:
+                _ensure_collection_with_schema(
+                    self.get_edge_name(indexer.asset_name),
+                    edge_schema,
+                    edge=True,
                 )
-            else:
-                collection = self._db.collection(indexer.asset_name)
-                actual_schema = collection.properties().get("schema")
-                if actual_schema != expected_schema:
-                    raise RuntimeError(
-                        f"schema mismatch for collection {indexer.asset_name!r}: "
-                        f"expected {expected_schema!r}, got {actual_schema!r}")
 
         files = self._db.collection("files")
         if not any(idx.get("name") == "idx_paths_suffix" for idx in files.indexes()):
@@ -190,33 +210,56 @@ class IndexDatabase:
         return col.has(ref.hash.hash)
 
     def _arango_collection_schema_for_indexer(
-            self, indexer: BaseIndexProtocol) -> dict[str, Any]:
+            self, indexer: BaseIndexProtocol
+    ) -> tuple[dict[str, Any], Optional[dict[str, Any]]]:
+
+        def _collection_schema(payload: ArangoSchema, message: str) -> dict[str, Any]:
+            rule: dict[str, Any] = {
+                "type": "object",
+                "properties": {
+                    "indexer_id": {
+                        "type": "string"
+                    },
+                    "result": payload.schema,
+                },
+                "required": ["indexer_id", "result"],
+                "additionalProperties": True,
+            }
+
+            if payload.definitions:
+                rule["definitions"] = payload.definitions
+
+            return {
+                "level": "strict",
+                "message": message,
+                "rule": rule,
+            }
+
         if issubclass(indexer.result_model, MultiDocumentModel):
-            result = arango_schema_for_model(indexer.result_model.document_type)
+            document_payload = arango_schema_for_model(indexer.result_model.document_type)
+            document_schema = _collection_schema(
+                document_payload,
+                f"invalid document shape for {indexer.result_model.__name__}",
+            )
+
+            edge_schema: Optional[dict[str, Any]] = None
+            link_type = indexer.result_model.link_type
+            if link_type is not None:
+                edge_payload = arango_schema_for_model(link_type)
+                edge_schema = _collection_schema(
+                    edge_payload,
+                    f"invalid edge shape for {indexer.result_model.__name__}",
+                )
+
+            return document_schema, edge_schema
 
         else:
-            result = arango_schema_for_model(indexer.result_model)
-
-        rule: dict[str, Any] = {
-            "type": "object",
-            "properties": {
-                "indexer_id": {
-                    "type": "string"
-                },
-                "result": result.schema,
-            },
-            "required": ["indexer_id", "result"],
-            "additionalProperties": True,
-        }
-
-        if result.definitions:
-            rule["definitions"] = result.definitions
-
-        return {
-            "level": "strict",
-            "message": f"invalid document shape for {indexer.result_model.__name__}",
-            "rule": rule,
-        }
+            result_payload = arango_schema_for_model(indexer.result_model)
+            document_schema = _collection_schema(
+                result_payload,
+                f"invalid document shape for {indexer.result_model.__name__}",
+            )
+            return document_schema, None
 
     def _diagnose_document(self, doc):
         try:
@@ -260,19 +303,44 @@ class IndexDatabase:
             except DocumentInsertError as err:
                 raise err from None
 
-    def _store_indexer_edge_one(self, key: str, indexer_id: str, result: AnyModel):
+    def _store_indexer_edge_one(self, indexer_id: str, result: AnyModel):
+        from index_service.services.core.types import IndexLink
+
+        assert isinstance(result, IndexLink), (
+            "Final edges inserted into the arango collection must "
+            f"be derived from the IndexLink, but type {type(result)} does not match")
+
         col = self._db.collection(self.get_edge_name(indexer_id))
         result_j = model_to_json_data(result)
+        from_ = f"{indexer_id}/{result.from_}"
+        to_ = f"{indexer_id}/{result.to_}"
         doc = {
-            "_from": result.from_,  # type: ignore
-            "_to": result.to_,  # type: ignore
+            "_from": from_,
+            "_to": to_,
             "indexer_id": indexer_id,
             "result": result_j,
         }
 
+        query = f"""
+    FOR e IN {self.get_edge_name(indexer_id)}
+        FILTER e._from == @_from
+        FILTER e._to == @_to
+        LIMIT 1
+        RETURN e._key
+    """
+
+        bind_vars = {
+            "_from": from_,
+            "_to": to_,
+        }
+
         with ExceptionContextNote(lambda: self._diagnose_document(doc)):
             try:
-                if col.has(key):
+                cursor = self._db.aql.execute(query, bind_vars=bind_vars)
+                existing_key = next(cursor, None)
+
+                if existing_key is not None:
+                    doc["_key"] = existing_key
                     col.replace(doc)
                 else:
                     col.insert(doc)
@@ -292,6 +360,9 @@ class IndexDatabase:
                     indexer_id=out.indexer_id,
                     result=document,
                 )
+
+            for edge in out.result.links:
+                self._store_indexer_edge_one(out.indexer_id, edge)
 
         else:
             self._store_indexer_document_one(key=ref.hash.hash,

@@ -46,7 +46,7 @@ class DocumentBlockIndexerResult(MultiDocumentModel, extra="forbid"):
         Field(discriminator="type"),
     ]
 
-    link_type: ClassVar[type] = IndexLink
+    link_type: ClassVar[type] = doc_types.DocumentLink
 
 
 class DocumentBlockIndexer(BaseIndexer):

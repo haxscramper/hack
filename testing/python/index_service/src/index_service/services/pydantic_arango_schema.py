@@ -173,5 +173,4 @@ def arango_schema_for_model(annotation: Any) -> ArangoSchema:
     ctx = _SchemaContext()
     schema = _annotation_to_arango_schema(annotation, ctx)
     result = ArangoSchema(schema=schema, definitions=ctx.definitions)
-    log.debug(f"{result}")
     return result
