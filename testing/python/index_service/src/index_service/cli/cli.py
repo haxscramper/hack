@@ -261,6 +261,10 @@ def index(
             limit_per_path=limit_per_path,
         )
 
+    except Exception as ex:
+        log.critical(f"{ex}", exc_info=ex)
+        raise ex from None
+
     finally:
         assert ctx.writer
 

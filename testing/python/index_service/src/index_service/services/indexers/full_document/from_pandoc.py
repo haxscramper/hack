@@ -27,12 +27,11 @@ from index_service.services.indexers.full_document.full_document_types import (
     Table,
     TableCell,
     TableCellProps,
-    TableContent,
     TableProps,
     TableRow,
     TextAlignment,
     TextStyles,
-    _build,
+    build,
     merge_text,
 )
 
@@ -151,7 +150,7 @@ def _convert_list_items(items: list, item_type: str) -> Sequence[DocumentBlock]:
             continue
         head = blocks[0]
         content = getattr(head, "content", [])
-        result.append(_build(cls, content=content, nested=blocks[1:]))
+        result.append(build(cls, content=content, nested=blocks[1:]))
     return result
 
 
@@ -214,7 +213,9 @@ def _row_to_table_row(row_obj: list, *, is_header: bool) -> TableRow:
     for cell_obj in cells_obj:
         _cell_attr, alignment, row_span, col_span, blocks = cell_obj
         cells.append(
-            TableCell(
+            build(  # type: ignore
+                TableCell,
+                nested=[],
                 props=TableCellProps(
                     textAlignment=_pandoc_alignment_to_text_alignment(alignment),
                     rowSpan=max(1, int(row_span)),
@@ -224,7 +225,7 @@ def _row_to_table_row(row_obj: list, *, is_header: bool) -> TableRow:
                 content=_blocks_to_inline_content(blocks),
             ))
 
-    return TableRow(cells=cells)
+    return build(TableRow, nested=list(), cells=cells)  # type: ignore
 
 
 def _convert_table(pb: dict) -> Table:
@@ -254,10 +255,10 @@ def _convert_table(pb: dict) -> Table:
 
     return cast(
         Table,
-        _build(
+        build(
             Table,
             props=TableProps(caption=_extract_table_caption(caption)),
-            content=TableContent(rows=rows),
+            nested=rows,
         ),
     )
 
@@ -266,13 +267,13 @@ def _convert_block(pb: dict) -> Sequence[DocumentBlock]:
     t = pb["t"]
     match t:
         case "Para" | "Plain":
-            return [_build(Paragraph, content=_convert_inlines(pb["c"], TextStyles()))]
+            return [build(Paragraph, content=_convert_inlines(pb["c"], TextStyles()))]
 
         case "Header":
             level, _attr, inlines = pb["c"]
             clamped = cast(Literal[1, 2, 3], min(max(level, 1), 3))
             return [
-                _build(
+                build(
                     Heading,
                     props=HeadingProps(level=clamped),
                     content=_convert_inlines(inlines, TextStyles()),
@@ -284,7 +285,7 @@ def _convert_block(pb: dict) -> Sequence[DocumentBlock]:
             classes = attr[1]
             lang = classes[0] if classes else "text"
             return [
-                _build(
+                build(
                     Code,
                     props=CodeBlockProps(language=lang),
                     content=[StyledText(text=code)],
@@ -313,7 +314,7 @@ def _convert_block(pb: dict) -> Sequence[DocumentBlock]:
 
                     if definition_inlines:
                         blocks.append(
-                            _build(
+                            build(
                                 Paragraph,
                                 content=merge_text(term + [StyledText(text=" :: ")] +
                                                    definition_inlines),
@@ -325,7 +326,7 @@ def _convert_block(pb: dict) -> Sequence[DocumentBlock]:
             nested: list = []
             for inner in pb["c"]:
                 nested += _convert_block(inner)
-            return [_build(Quote, nested=nested)]
+            return [build(Quote, nested=nested)]
 
         case "HorizontalRule":
             return []
@@ -334,7 +335,7 @@ def _convert_block(pb: dict) -> Sequence[DocumentBlock]:
             return [_convert_table(pb)]
 
         case "RawBlock":
-            return [_build(
+            return [build(
                 RawBlock,
                 content=pb["c"][1],
                 lang=pb["c"][0],
@@ -369,7 +370,7 @@ def _convert_block(pb: dict) -> Sequence[DocumentBlock]:
                 nested += _convert_block(child)
 
             return [
-                _build(
+                build(
                     Div,
                     props=DivProps(
                         identifier=identifier,
@@ -384,7 +385,7 @@ def _convert_block(pb: dict) -> Sequence[DocumentBlock]:
 
         case _:
             raise ValueError(f"Implicitly handled document block of type '{t}': {pb}")
-            return [_build(Paragraph, content=_convert_inlines(pb.get("c", [])))]
+            return [build(Paragraph, content=_convert_inlines(pb.get("c", [])))]
 
 
 def pandoc_to_document(path: Path) -> Document:
@@ -394,4 +395,4 @@ def pandoc_to_document(path: Path) -> Document:
     nested: list = []
     for pb in ast["blocks"]:
         nested += _convert_block(pb)
-    return _build(Document, nested=nested)
+    return build(Document, nested=nested)

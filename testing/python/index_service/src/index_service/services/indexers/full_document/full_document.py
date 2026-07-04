@@ -27,14 +27,24 @@ log = logging.getLogger(__name__)
 
 
 class DocumentBlockIndexerResult(MultiDocumentModel, extra="forbid"):
-    document_type: ClassVar[Any] = Annotated[Union[
-        doc_types.Document,
-        doc_types.Paragraph,
-        doc_types.Math,
-        doc_types.Heading,
-        doc_types.Code,
-    ],
-                                             Field(discriminator="type")]
+    document_type: ClassVar[Any] = Annotated[
+        Union[
+            doc_types.Document,
+            doc_types.Paragraph,
+            doc_types.Math,
+            doc_types.Heading,
+            doc_types.Code,
+            doc_types.BulletListItem,
+            doc_types.NumberedListItem,
+            doc_types.Quote,
+            doc_types.Div,
+            doc_types.Table,
+            doc_types.RawBlock,
+            doc_types.TableRow,
+            doc_types.TableCell,
+        ],
+        Field(discriminator="type"),
+    ]
 
     link_type: ClassVar[type] = IndexLink
 

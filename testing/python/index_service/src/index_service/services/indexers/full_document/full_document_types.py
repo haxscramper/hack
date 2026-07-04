@@ -156,20 +156,14 @@ class TableCellProps(DefaultProps, extra="forbid"):
     isHeader: bool = False
 
 
-class TableCell(BaseModel, extra="forbid"):
+class TableCell(DocumentBlock, extra="forbid"):
     type: Literal["tableCell"] = "tableCell"
     props: TableCellProps = Field(default_factory=TableCellProps)
     content: list[InlineContent] = Field(default_factory=list)
 
 
-class TableRow(BaseModel, extra="forbid"):
+class TableRow(DocumentBlock, extra="forbid"):
     type: Literal["tableRow"] = "tableRow"
-    cells: list[TableCell] = Field(default_factory=list)
-
-
-class TableContent(BaseModel, extra="forbid"):
-    type: Literal["tableContent"] = "tableContent"
-    rows: list[TableRow] = Field(default_factory=list)
 
 
 class TableProps(CaptionProps, extra="forbid"):
@@ -179,7 +173,6 @@ class TableProps(CaptionProps, extra="forbid"):
 class Table(DocumentBlock):
     type: Literal["table"] = "table"
     props: TableProps = Field(default_factory=TableProps)
-    content: TableContent = Field(default_factory=TableContent)
 
 
 for _cls in (
@@ -196,7 +189,7 @@ for _cls in (
     _cls.model_rebuild()
 
 
-def _build(
+def build(
         cls: type[DocumentBlock],
         *,
         nested: Sequence[DocumentBlock] = (),

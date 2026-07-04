@@ -20,8 +20,8 @@ from index_service.services.core.types import (
     MultiDocumentModel,
     RootRef,
 )
+from index_service.services.pydantic_arango_schema import arango_schema_for_model
 from index_service.services.pydantic_utils import (
-    arango_schema_for_model,
     model_from_json_data,
     model_to_json_data,
 )
@@ -189,25 +189,30 @@ class IndexDatabase:
     def _arango_collection_schema_for_indexer(
             self, indexer: BaseIndexProtocol) -> dict[str, Any]:
         if issubclass(indexer.result_model, MultiDocumentModel):
-            result_schema = arango_schema_for_model(indexer.result_model.document_type)
+            result = arango_schema_for_model(indexer.result_model.document_type)
 
         else:
-            result_schema = arango_schema_for_model(indexer.result_model)
+            result = arango_schema_for_model(indexer.result_model)
+
+        rule: dict[str, Any] = {
+            "type": "object",
+            "properties": {
+                "indexer_id": {
+                    "type": "string"
+                },
+                "result": result.schema,
+            },
+            "required": ["indexer_id", "result"],
+            "additionalProperties": True,
+        }
+
+        if result.definitions:
+            rule["definitions"] = result.definitions
 
         return {
             "level": "strict",
             "message": f"invalid document shape for {indexer.result_model.__name__}",
-            "rule": {
-                "type": "object",
-                "properties": {
-                    "indexer_id": {
-                        "type": "string"
-                    },
-                    "result": result_schema,
-                },
-                "required": ["indexer_id", "result"],
-                "additionalProperties": True,
-            },
+            "rule": rule,
         }
 
     def _store_indexer_document_one(self, key: str, indexer_id: str, result: AnyModel):
