@@ -16,7 +16,7 @@ from index_service.services.core.types import (
     AnyModel,
     FileHash,
     FileRef,
-    IndexLink,
+    IndexEdge,
     IndexMultiDocument,
     IndexerOutput,
     MultiDocumentModel,
@@ -288,9 +288,9 @@ class IndexDatabase:
             )
 
             edge_schema: Optional[dict[str, Any]] = None
-            link_type = indexer.result_model.link_type
-            if link_type is not None:
-                edge_payload = arango_schema_for_model(link_type)
+            edge_type = indexer.result_model.edge_type
+            if edge_type is not None:
+                edge_payload = arango_schema_for_model(edge_type)
                 edge_schema = _collection_schema(
                     edge_payload,
                     f"invalid edge shape for {indexer.result_model.__name__}",
@@ -349,9 +349,9 @@ class IndexDatabase:
                 raise err from None
 
     def _store_indexer_edge_one(self, indexer_id: str, result: AnyModel):
-        from index_service.services.core.types import IndexLink
+        from index_service.services.core.types import IndexEdge
 
-        assert isinstance(result, IndexLink), (
+        assert isinstance(result, IndexEdge), (
             "Final edges inserted into the arango collection must "
             f"be derived from the IndexLink, but type {type(result)} does not match")
 
@@ -406,7 +406,7 @@ class IndexDatabase:
                     result=document,
                 )
 
-            for edge in out.result.links:
+            for edge in out.result.edges:
                 self._store_indexer_edge_one(out.indexer_id, edge)
 
         else:
@@ -414,15 +414,24 @@ class IndexDatabase:
                                              indexer_id=out.indexer_id,
                                              result=out.result)
 
-    def get_indexer_result(self, hash: FileHash, indexer_id: str, type: type[T]) -> T:
-        if issubclass(type, MultiDocumentModel):
+    def get_indexer_result(self, hash: FileHash, indexer_id: str,
+                           model_type: type[T]) -> T:
+        if issubclass(model_type, MultiDocumentModel):
+            assert isinstance(model_type.document_type,
+                              model_type), str(type(model_type.document_type))
+            assert isinstance(model_type.edge_type,
+                              model_type), str(type(model_type.edge_type))
+            assert issubclass(model_type.document_type,
+                              IndexMultiDocument), str(model_type.document_type)
+            assert issubclass(model_type.edge_type, IndexEdge), str(model_type.edge_type)
             documents: list[IndexMultiDocument] = list()
-            links: list[IndexLink] = list()
+            edges: list[IndexEdge] = list()
+            log.debug(f"extracting full document index for hash {hash.hash}")
 
             for doc in self._db.aql.execute(  # type: ignore
                     f"""
                 FOR doc IN {indexer_id}
-                FILTER doc.file_hash == @hash
+                FILTER doc.result.file_hash == @hash
                 RETURN doc
                 """,
                     bind_vars={  # type: ignore
@@ -430,28 +439,29 @@ class IndexDatabase:
                     },
             ):
                 documents.append(
-                    type.document_type.model_validate(
-                        model_from_json_data(doc["result"], type)))
+                    model_type.document_type.model_validate(
+                        model_from_json_data(doc["result"], model_type)))
 
             for edge in self._db.aql.execute(  # type: ignore
                     f"""
                 FOR edge IN {self.get_edge_name(indexer_id)}
-                FILTER edge.file_hash == @hash
+                FILTER edge.result.file_hash == @hash
                 RETURN edge
                 """,
                     bind_vars={  # type: ignore
                         "hash": hash.hash
                     },
             ):
-                links.append(
-                    type.link_type.model_validate(
-                        model_from_json_data(edge["result"], type)))
+                edges.append(
+                    model_type.edge_type.model_validate(
+                        model_from_json_data(edge["result"], model_type)))
 
-            return type(documents=documents, links=links)  # type: ignore
+            return model_type(documents=documents, edges=edges)  # type: ignore
 
         else:
             doc = cast(dict, self._db.collection(indexer_id).get(hash.hash))
-            return type.model_validate(model_from_json_data(doc["result"], type))
+            return model_type.model_validate(
+                model_from_json_data(doc["result"], model_type))
 
     def store_derivation(
         self,

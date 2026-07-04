@@ -5,12 +5,12 @@ from beartype.typing import Literal, Annotated, Sequence, Union
 from pydantic import BaseModel, Field, field_serializer, field_validator
 import enum
 
-from index_service.services.core.types import IndexDocument, IndexLink, IndexMultiDocument
+from index_service.services.core.types import IndexDocument, IndexEdge, IndexMultiDocument
 
 log = logging.getLogger(__name__)
 
 
-class DocumentLink(IndexLink, extra="forbid"):
+class DocumentLink(IndexEdge, extra="forbid"):
     order: int
     relation: Literal["nested"] = "nested"
 
@@ -230,7 +230,7 @@ def merge_text(nodes: list[InlineContent]) -> list[InlineContent]:
 def _flatten(
     block: DocumentBlock,
     documents: list[IndexDocument],
-    links: list[IndexLink],
+    links: list[IndexEdge],
     parent_hash: str | None,
     order: int,
 ) -> None:

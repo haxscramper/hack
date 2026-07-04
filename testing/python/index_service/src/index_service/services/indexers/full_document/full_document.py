@@ -15,7 +15,7 @@ from index_service.services.core.types import (
     IndexDocument,
     IndexerOutput,
     IndexerRequest,
-    IndexLink,
+    IndexEdge,
     MultiDocumentModel,
 )
 from index_service.services.indexers.full_document.from_pandoc import pandoc_to_document
@@ -47,7 +47,7 @@ class DocumentBlockIndexerResult(MultiDocumentModel, extra="forbid"):
         Field(discriminator="type"),
     ]
 
-    link_type: ClassVar[type] = doc_types.DocumentLink
+    edge_type: ClassVar[type] = doc_types.DocumentLink
 
 
 class DocumentBlockIndexer(BaseIndexer):
@@ -81,7 +81,7 @@ class DocumentBlockIndexer(BaseIndexer):
         root = pandoc_to_document(path, file_hash=request.get_hash_str())
 
         documents: list[IndexDocument] = []
-        links: list[IndexLink] = []
+        links: list[IndexEdge] = []
 
         file = doc_types.File(
             hash=request.file_ref.hash.hash,
@@ -95,6 +95,6 @@ class DocumentBlockIndexer(BaseIndexer):
             indexer_id=self.asset_name,
             result=DocumentBlockIndexerResult(
                 documents=documents,
-                links=links,
+                edges=links,
             ),
         )

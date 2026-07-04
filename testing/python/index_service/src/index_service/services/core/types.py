@@ -13,7 +13,7 @@ AnyModel = Annotated[
 ]
 
 
-class IndexLink(BaseModel, extra="forbid"):
+class IndexEdge(BaseModel, extra="forbid"):
     file_hash: str
     from_: str
     to_: str
@@ -32,10 +32,10 @@ class IndexMultiDocument(IndexDocument, extra="forbid"):
 
 
 class MultiDocumentModel(BaseModel, extra="forbid"):
-    link_type: ClassVar[Any]
+    edge_type: ClassVar[Any]
     document_type: ClassVar[Any]
 
-    links: list[IndexLink]
+    edges: list[IndexEdge]
     documents: list[IndexMultiDocument]
 
 

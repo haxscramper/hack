@@ -311,7 +311,7 @@ class IndexRuntime:
         ):
             plan = self.create_plan(files, names)
 
-        log.info(f"\n{plan.to_text()}")
+        log.debug(f"\n{plan.to_text()}")
 
         with self.ctx.trace_scope(
                 "plan execution",

@@ -24,7 +24,7 @@ def pytest_configure(config: Any) -> None:
     "nodoc"
     stfu_logs()
 
-    # logging.getLogger("index_service.services.core.job_runtime").setLevel(logging.INFO)
+    logging.getLogger("index_service.services.core.job_runtime").setLevel(logging.INFO)
 
 
 @pytest.hookimpl(hookwrapper=True)
