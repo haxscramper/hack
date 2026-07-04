@@ -101,6 +101,9 @@ class IndexDatabase:
     def get_path(self, ref: FileRef) -> Path:
         return self.roots[ref.root.name].joinpath(ref.relative)
 
+    def get_edge_name(self, indexer: str) -> str:
+        return f"{indexer}_edge"
+
     def ensure_collections(self, indexers: Sequence[BaseIndexProtocol]) -> None:
         for name in ["roots", "files", "derivations"]:
             if not self._db.has_collection(name):
@@ -215,7 +218,30 @@ class IndexDatabase:
             "rule": rule,
         }
 
+    def _diagnose_document(self, doc):
+        try:
+            text = json.dumps(doc, allow_nan=False, indent=2)
+        except Exception as e:
+            raise RuntimeError(f"json.dumps failed: {e}") from e
+
+        try:
+            json.loads(text)
+        except json.JSONDecodeError as e:
+            start = max(0, e.pos - 120)
+            end = min(len(text), e.pos + 120)
+            snippet = text[start:end]
+            raise RuntimeError(
+                f"Invalid JSON at line {e.lineno}, column {e.colno}, pos {e.pos}\n"
+                f"{snippet}") from e
+
+        return text
+
     def _store_indexer_document_one(self, key: str, indexer_id: str, result: AnyModel):
+        from index_service.services.core.types import IndexDocument
+        assert isinstance(result, IndexDocument), (
+            "Final documents inserted into the arango collection must "
+            f"be derived from the IndexDocumnet, but type {type(result)} does not match")
+
         col = self._db.collection(indexer_id)
         result_j = model_to_json_data(result)
         doc = {
@@ -224,30 +250,27 @@ class IndexDatabase:
             "result": result_j,
         }
 
-        # log.info(doc)
-        # import json, math
-        # log.debug(json.dumps(doc["result"]))
-        # log.debug([v for v in doc["result"]["vector"] if not math.isfinite(v)])
-
-        def diagnose_document(doc):
+        with ExceptionContextNote(lambda: self._diagnose_document(doc)):
             try:
-                text = json.dumps(doc, allow_nan=False, indent=2)
-            except Exception as e:
-                raise RuntimeError(f"json.dumps failed: {e}") from e
+                if col.has(key):
+                    col.replace(doc)
+                else:
+                    col.insert(doc)
 
-            try:
-                json.loads(text)
-            except json.JSONDecodeError as e:
-                start = max(0, e.pos - 120)
-                end = min(len(text), e.pos + 120)
-                snippet = text[start:end]
-                raise RuntimeError(
-                    f"Invalid JSON at line {e.lineno}, column {e.colno}, pos {e.pos}\n"
-                    f"{snippet}") from e
+            except DocumentInsertError as err:
+                raise err from None
 
-            return text
+    def _store_indexer_edge_one(self, key: str, indexer_id: str, result: AnyModel):
+        col = self._db.collection(self.get_edge_name(indexer_id))
+        result_j = model_to_json_data(result)
+        doc = {
+            "_from": result.from_,  # type: ignore
+            "_to": result.to_,  # type: ignore
+            "indexer_id": indexer_id,
+            "result": result_j,
+        }
 
-        with ExceptionContextNote(lambda: diagnose_document(doc)):
+        with ExceptionContextNote(lambda: self._diagnose_document(doc)):
             try:
                 if col.has(key):
                     col.replace(doc)
