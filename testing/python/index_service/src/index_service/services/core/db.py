@@ -11,6 +11,7 @@ from arango.database import StandardDatabase
 from beartype import beartype
 from beartype.typing import Any, Dict, List, Optional, TypeVar, cast, Sequence, Protocol
 from openai import BaseModel
+from pydantic import TypeAdapter
 
 from index_service.services.core.types import (
     AnyModel,
@@ -417,15 +418,13 @@ class IndexDatabase:
     def get_indexer_result(self, hash: FileHash, indexer_id: str,
                            model_type: type[T]) -> T:
         if issubclass(model_type, MultiDocumentModel):
-            assert isinstance(model_type.document_type,
-                              model_type), str(type(model_type.document_type))
-            assert isinstance(model_type.edge_type,
-                              model_type), str(type(model_type.edge_type))
-            assert issubclass(model_type.document_type,
-                              IndexMultiDocument), str(model_type.document_type)
             assert issubclass(model_type.edge_type, IndexEdge), str(model_type.edge_type)
-            documents: list[IndexMultiDocument] = list()
-            edges: list[IndexEdge] = list()
+
+            document_adapter = TypeAdapter(model_type.document_type)
+            edge_adapter = TypeAdapter(model_type.edge_type)
+
+            documents: list[IndexMultiDocument] = []
+            edges: list[IndexEdge] = []
             log.debug(f"extracting full document index for hash {hash.hash}")
 
             for doc in self._db.aql.execute(  # type: ignore
@@ -434,13 +433,11 @@ class IndexDatabase:
                 FILTER doc.result.file_hash == @hash
                 RETURN doc
                 """,
-                    bind_vars={  # type: ignore
-                        "hash": hash.hash
-                    },
+                    bind_vars={"hash": hash.hash},  # type: ignore
             ):
                 documents.append(
-                    model_type.document_type.model_validate(
-                        model_from_json_data(doc["result"], model_type)))
+                    document_adapter.validate_python(
+                        model_from_json_data(doc["result"], model_type.document_type)))
 
             for edge in self._db.aql.execute(  # type: ignore
                     f"""
@@ -448,13 +445,11 @@ class IndexDatabase:
                 FILTER edge.result.file_hash == @hash
                 RETURN edge
                 """,
-                    bind_vars={  # type: ignore
-                        "hash": hash.hash
-                    },
+                    bind_vars={"hash": hash.hash},  # type: ignore
             ):
                 edges.append(
-                    model_type.edge_type.model_validate(
-                        model_from_json_data(edge["result"], model_type)))
+                    edge_adapter.validate_python(
+                        model_from_json_data(edge["result"], model_type.edge_type)))
 
             return model_type(documents=documents, edges=edges)  # type: ignore
 
