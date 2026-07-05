@@ -2,10 +2,10 @@ from typing import Any, ClassVar, Union
 
 import glom
 from pydantic import Field
-from beartype.typing import Annotated
+from beartype.typing import Annotated, Optional
 
 from index_service.services.core.job_types import BaseIndexer, RunContext
-from index_service.services.core.types import IndexerOutput, IndexerRequest, MultiDocumentModel
+from index_service.services.core.types import FullTextIndexConfig, IndexerOutput, IndexerRequest, MultiDocumentModel, VectorIndexConfig
 from index_service.services.indexers.chunk_indexing.chunking import (
     ChunkConfig,
     ChunkUnit,
@@ -23,9 +23,14 @@ import logging
 log = logging.getLogger(__name__)
 
 
+class FullTextChunk(ChunkDocument, extra="forbid"):
+    full_text_index: ClassVar[Optional[FullTextIndexConfig]] = FullTextIndexConfig(
+        index_path="result.text",)
+
+
 class FullTextIndexerResult(MultiDocumentModel, extra="forbid"):
     document_type: ClassVar[Any] = Annotated[
-        Union[ChunkFile, ChunkDocument],
+        Union[ChunkFile, FullTextChunk],
         Field(discriminator="type"),
     ]
     edge_type: ClassVar[Any] = ChunkLink
@@ -37,7 +42,7 @@ class FullTextIndexer(BaseIndexer):
     required_assets = ("document_block",)
 
     def get_document_type_bases(self) -> list[Any]:
-        return [ChunkFile, ChunkDocument]
+        return [ChunkFile, FullTextChunk]
 
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)

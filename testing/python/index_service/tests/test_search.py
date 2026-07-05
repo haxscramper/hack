@@ -19,9 +19,18 @@ def test_full_text_search(db: IndexDatabase, runtime: IndexRuntime,
 
     root = db.add_root("root", tmp_path)
     ref = runtime.db.as_ref(root, path)
-    runtime.run_indexer(ref, ["full_text"])
-    out = runtime.get_indexer_result(ref, "full_text")
-    hits = db.full_text_search("full_text", "beta")
+    fts_name = FullTextIndexer.asset_name
+    runtime.run_indexer(ref, [fts_name])
+    out = runtime.get_indexer_result(ref, fts_name)
+
+    db.enable_index(runtime.get_indexer(fts_name))  # type: ignore
+
+    hits = db.full_text_search(
+        fts_name,
+        "beta",
+        indexer=runtime.get_indexer(fts_name),  # type: ignore
+    )
+
     assert len(hits) == 1
     assert hits[0]["hash"] == ref.hash.hash
 

@@ -27,9 +27,16 @@ class VectorIndexConfig(BaseModel, extra="forbid"):
     sparse: bool = True
 
 
+class FullTextIndexConfig(BaseModel, extra="forbid"):
+    index_path: str
+    analyzer: str = "text_en"
+    bm25: bool = True  # use BM25 scoring, else TFIDF
+
+
 class IndexDocument(BaseModel, extra="forbid"):
     hash: str
     vector_index: ClassVar[Optional[VectorIndexConfig]] = None
+    full_text_index: ClassVar[Optional[FullTextIndexConfig]] = None
 
 
 class IndexMultiDocument(IndexDocument, extra="forbid"):

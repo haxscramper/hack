@@ -19,6 +19,7 @@ from index_service.services.core.types import (
     AnyModel,
     FileHash,
     FileRef,
+    FullTextIndexConfig,
     IndexDocument,
     IndexEdge,
     IndexMultiDocument,
@@ -147,6 +148,12 @@ class IndexDatabase:
     def get_path(self, ref: FileRef) -> Path:
         return self.roots[ref.root.name].joinpath(ref.relative)
 
+    @staticmethod
+    def _view_name(asset_name: str, base: type,
+                   full_text_index: FullTextIndexConfig) -> str:
+        return (f"fts_{asset_name}_{base.__name__}_"
+                f"{full_text_index.index_path.replace('.', '_')}")
+
     def get_edge_name(self, indexer: str) -> str:
         return f"{indexer}_edge"
 
@@ -174,6 +181,29 @@ class IndexDatabase:
                 }
 
                 collection.add_index(index_def)
+
+            if base.full_text_index is not None:
+                full_text_index = base.full_text_index
+                view_name = self._view_name(indexer.asset_name, base, full_text_index)
+
+                view_props = {
+                    "links": {
+                        indexer.asset_name: {
+                            "fields": {
+                                full_text_index.index_path: {
+                                    "analyzers": [full_text_index.analyzer],
+                                },
+                            },
+                            "includeAllFields": False,
+                        },
+                    },
+                }
+
+                existing = {v["name"] for v in self._db.views()}
+                if view_name in existing:
+                    self._db.view(view_name).update_properties(view_props)
+                else:
+                    self._db.create_arangosearch_view(view_name, properties=view_props)
 
     def ensure_collections(self, indexers: Sequence[BaseIndexProtocol]) -> None:
 
@@ -552,25 +582,74 @@ class IndexDatabase:
     def aql(self) -> AQL:
         return self.db.aql
 
-    def full_text_search(self,
-                         collection: str,
-                         query: str,
-                         limit: int = 20) -> List[Dict[str, Any]]:
+    def full_text_search(
+        self,
+        collection: str,
+        query: str,
+        indexer: BaseIndexProtocol,
+        limit: int = 20,
+    ) -> list[tuple[IndexDocument, float]]:
+        full_text_base = next(
+            (base for base in indexer.get_document_type_bases()
+             if base.full_text_index is not None),
+            None,
+        )
+
+        assert full_text_base is not None, (
+            f"No full text index configured for indexer {indexer.asset_name}, "
+            f"none of the document bases {indexer.get_document_type_bases()} "
+            f"have full text index type set")
+
+        full_text_index: FullTextIndexConfig = full_text_base.full_text_index
+        assert full_text_index is not None
+
+        view_name = self._view_name(indexer.asset_name, full_text_base, full_text_index)
+
+        score_fn = "BM25" if full_text_index.bm25 else "TFIDF"
+
+        log.debug(f"Using view {view_name} field {full_text_index.index_path} "
+                  f"for collection {collection}")
+
+        aql = f"""
+        FOR d IN {view_name}
+            SEARCH ANALYZER(
+                PHRASE(d.{full_text_index.index_path}, @query, @analyzer),
+                @analyzer
+            )
+            LET score = {score_fn}(d)
+            SORT score DESC
+            LIMIT @limit
+            RETURN {{
+                doc: d,
+                score: score
+            }}
+        """
+
+        log.debug(aql)
+
         cursor = self._db.aql.execute(
-            f"""
-            FOR doc IN {collection}
-              FILTER doc.indexer_id == "full_text"
-              FILTER CONTAINS(LOWER(doc.result.text), LOWER(@query))
-              LIMIT @limit
-              RETURN {{hash: doc._key, text: doc.result.text}}
-            """,
+            aql,
             bind_vars={  # type: ignore
                 "query": query,
+                "analyzer": full_text_index.analyzer,
                 "limit": limit,
             },
         )
 
-        return list(cursor)  # type: ignore
+        result = list()
+
+        for entry in cursor:  # type: ignore
+            if issubclass(indexer.result_model, MultiDocumentModel):
+                doc_type = indexer.result_model.document_type
+
+            else:
+                doc_type = indexer.result_model
+
+            result.append((TypeAdapter(doc_type).validate_python(
+                model_from_json_data(entry["doc"]["result"],
+                                     doc_type)), float(entry["score"])))
+
+        return result
 
     def vector_search(
         self,
