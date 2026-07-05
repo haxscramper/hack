@@ -186,14 +186,20 @@ class IndexDatabase:
                 full_text_index = base.full_text_index
                 view_name = self._view_name(indexer.asset_name, base, full_text_index)
 
+                # 1) Convert dot-notation path into ArangoDB nested fields dictionary
+                parts = full_text_index.index_path.split('.')
+
+                # Start from the innermost field
+                nested_fields = {parts[-1]: {"analyzers": [full_text_index.analyzer],}}
+
+                # Wrap it with "fields": {...} for every parent segment
+                for part in reversed(parts[:-1]):
+                    nested_fields = {part: {"fields": nested_fields}}
+
                 view_props = {
                     "links": {
                         indexer.asset_name: {
-                            "fields": {
-                                full_text_index.index_path: {
-                                    "analyzers": [full_text_index.analyzer],
-                                },
-                            },
+                            "fields": nested_fields,
                             "includeAllFields": False,
                         },
                     },
@@ -590,6 +596,7 @@ class IndexDatabase:
         limit: int = 20,
         wait_for_sync: bool = False,
     ) -> list[tuple[IndexDocument, float]]:
+
         full_text_base = next(
             (base for base in indexer.get_document_type_bases()
              if base.full_text_index is not None),
@@ -601,7 +608,7 @@ class IndexDatabase:
             f"none of the document bases {indexer.get_document_type_bases()} "
             f"have full text index type set")
 
-        full_text_index: FullTextIndexConfig = full_text_base.full_text_index
+        full_text_index = full_text_base.full_text_index
         assert full_text_index is not None
 
         view_name = self._view_name(indexer.asset_name, full_text_base, full_text_index)
@@ -613,10 +620,14 @@ class IndexDatabase:
 
         sync = "OPTIONS { waitForSync: true }" if wait_for_sync else ""
 
+        # 2) Safely format path keys with backticks (handles dashes/reserved words gracefully)
+        # E.g. "result.text" -> "`result`.`text`"
+        safe_path = ".".join(f"`{p}`" for p in full_text_index.index_path.split("."))
+
         aql = f"""
-        FOR d IN {view_name}
+        FOR d IN `{view_name}`
             SEARCH ANALYZER(
-                PHRASE(d.{full_text_index.index_path}, @query, @analyzer),
+                PHRASE(d.{safe_path}, @query, @analyzer),
                 @analyzer
             )
             {sync}
@@ -648,7 +659,6 @@ class IndexDatabase:
         for entry in cursor:  # type: ignore
             if issubclass(indexer.result_model, MultiDocumentModel):
                 doc_type = indexer.result_model.document_type
-
             else:
                 doc_type = indexer.result_model
 

@@ -5,7 +5,7 @@ from index_service.services.core.db import IndexDatabase
 from index_service.services.core.types import FileRef
 from index_service.services.core.job_runtime import IndexRuntime
 from index_service.services.indexers.chunk_indexing.file_embedding import EmbeddingChunk, FileEmbeddingIndexerResult
-from index_service.services.indexers.chunk_indexing.full_text import FullTextIndexer
+from index_service.services.indexers.chunk_indexing.full_text import FullTextChunk, FullTextIndexer
 from index_service.services.pydantic_utils import dump_with_type, first_by_field_value
 import logging
 
@@ -33,7 +33,9 @@ def test_full_text_search(db: IndexDatabase, runtime: IndexRuntime,
     )
 
     assert len(hits) == 1
-    assert hits[0]["hash"] == ref.hash.hash
+    hit0 = hits[0][0]
+    assert isinstance(hit0, FullTextChunk)
+    assert hit0.file_hash == ref.hash.hash
 
 
 def test_vector_search(db: IndexDatabase, runtime: IndexRuntime, tmp_path: Path) -> None:
@@ -75,5 +77,6 @@ def test_vector_search(db: IndexDatabase, runtime: IndexRuntime, tmp_path: Path)
 
     assert len(hits) == 1
     hit0 = hits[0][0]
+
     assert isinstance(hit0, EmbeddingChunk)
     assert hit0.file_hash == file_1.hash.hash
