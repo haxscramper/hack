@@ -1,6 +1,7 @@
 from dataclasses import dataclass
+import enum
 import logging
-from beartype.typing import Any, Callable, Literal
+from beartype.typing import Any, Callable, Literal, Optional, Set
 import os
 import traceback
 from rich.console import Console
@@ -189,6 +190,132 @@ def stfu_logs():
         logger.setLevel(logging.CRITICAL + 1)
         logger.propagate = False
         logger.handlers.clear()
+
+
+def dump_with_type(
+    obj: Any,
+    include_single_underscore_attrs: bool = False,
+    include_double_underscore_attrs: bool = False,
+    skip_cyclic_data: bool = True,
+    override_callback: Optional[Callable] = None,
+    with_stable_formatting: bool = True,
+) -> Any:
+    visited: Set[Any] = set()
+
+    def aux(obj: Any) -> Any:
+        if override_callback:
+            override_result = override_callback(obj)
+            if override_result:
+                return override_result
+
+        if isinstance(obj, (int, float, str, bool, type(None))):
+            return obj
+
+        elif isinstance(obj, (enum.Enum, enum.IntEnum, enum.StrEnum)):
+            return str(obj)
+
+        if skip_cyclic_data and id(obj) in visited:
+            if with_stable_formatting:
+                return f"cycle {type(obj)}"
+
+            else:
+                return f"cycle {type(obj)} {id(obj)}"
+
+        visited.add(id(obj))
+
+        # Handle different data types
+        if isinstance(obj, dict):
+            result = {}
+            for key, value in obj.items():
+                result[str(key)] = aux(value)
+
+            return result
+
+        elif isinstance(obj, (list, tuple, set, frozenset)):
+            return [aux(item) for item in obj]
+
+        elif callable(obj):
+            return f"{obj}"
+
+        else:
+
+            def include_attr(name: str) -> bool:
+                has_double = name.startswith("__")
+                has_single = name.startswith("_")
+                is_regular = not has_single
+                return (has_double and include_double_underscore_attrs) or (
+                    not has_double and has_single and
+                    include_single_underscore_attrs) or is_regular
+
+            try:
+                hasattr(obj, "__dict__")
+
+            except TypeError as e:
+                if "Unregistered" in str(e):
+                    return str(e)
+
+                else:
+                    raise e from None
+
+            if hasattr(obj, "__dict__"):
+                result = {}
+                for key, value in obj.__dict__.items():
+                    if include_attr(key):
+                        result[key] = aux(value)
+                result["__type__"] = str(type(obj))
+                return result
+
+            elif hasattr(obj, "__slots__"):
+                result = {}
+                for slot_name in obj.__slots__:
+                    if include_attr(slot_name):
+                        value = getattr(obj, slot_name)
+                        result[slot_name] = aux(value)
+                result["__type__"] = str(type(obj))
+                return result
+
+            elif hasattr(obj, "keys") and hasattr(obj, "__getitem__"):
+                keys = obj.keys()
+                if all(isinstance(it, str) for it in keys):
+                    return {key: aux(obj[key]) for key in keys}
+
+                else:
+                    return [[aux(key), aux(obj[key])] for key in keys]
+
+            elif hasattr(obj, "__len__") and hasattr(obj, "__getitem__"):
+                return [aux(obj[i]) for i in range(0, len(obj))]
+
+            elif hasattr(obj, "__iter__"):
+                return [aux(item) for item in obj]
+
+            elif hasattr(obj, "__str__") or hasattr(obj, "__repr__"):
+                return f"{type(obj)} = {obj}"
+
+            elif hasattr(obj, "__int__"):
+                return f"{type(obj)} = {int(obj)}"
+
+            else:
+                return f"unhandled {type(obj)}"
+
+    return aux(obj)
+
+
+class ExceptionDump:
+    """
+    If context body raises an exception, add a full dump of the exception object
+    """
+
+    def __enter__(self) -> "ExceptionDump":
+        return self
+
+    def __exit__(self, exc_type: Any, exc_value: Any, traceback: Any) -> Literal[False]:
+        import json
+        if exc_value is not None:
+            if not hasattr(exc_value, "__notes__"):
+                exc_value.__notes__ = []
+            exc_value.__notes__.append(json.dumps(dump_with_type(exc_value), indent=2))
+
+        return False
 
 
 class ExceptionContextNote:

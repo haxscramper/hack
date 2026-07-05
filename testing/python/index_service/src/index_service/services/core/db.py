@@ -33,7 +33,7 @@ from index_service.services.pydantic_utils import (
     model_from_json_data,
     model_to_json_data,
 )
-from index_service.services.utils import ExceptionContextNote
+from index_service.services.utils import ExceptionContextNote, ExceptionDump
 
 T = TypeVar("T")
 
@@ -584,38 +584,42 @@ class IndexDatabase:
              if base.vector_index is not None),
             None,
         )
+
         assert vector_base is not None, (
             f"No vector index configured for indexer {indexer.asset_name}, "
             f"none of the document bases {indexer.get_document_type_bases()} "
             f"have vector index type set")
 
-        vector_index = vector_base.vector_index
+        vector_index: VectorIndexConfig = vector_base.vector_index
         assert vector_index is not None
+
+        assert len(vector) == vector_index.vector_dimensions
 
         log.debug(
             f"Using index path {vector_index.index_path} in collection {collection}")
 
-        metric_fn = {
-            "cosine": "APPROX_NEAR_COSINE",
-            "l2": "APPROX_NEAR_L2",
-            "ip": "APPROX_NEAR_INNER_PRODUCT",
+        metric_fn, sort_dir = {
+            "cosine": ("APPROX_NEAR_COSINE", "DESC"),
+            "l2": ("APPROX_NEAR_L2", "ASC"),
+            "ip": ("APPROX_NEAR_INNER_PRODUCT", "DESC"),
         }[vector_index.vector_metric]
 
         query = f"""
-        FOR doc IN {collection}
-        FILTER doc.indexer_id == @indexer_id
-        SORT {metric_fn}(doc.{vector_index.index_path}, @query_vector) DESC
-        LIMIT @limit
-        RETURN {{
-            hash: doc.hash,
-            score: {metric_fn}(doc.{vector_index.index_path}, @query_vector)
-        }}
+        FOR d IN {collection}
+            LET score = {metric_fn}(d.{vector_index.index_path}, @query_vector)
+            SORT score {sort_dir}
+            LIMIT @limit
+            RETURN {{
+                doc: d,
+                score: score
+            }}
         """
+
+        log.debug(query)
 
         cursor = self._db.aql.execute(
             query,
             bind_vars={
-                "indexer_id": indexer.asset_name,
                 "query_vector": vector,
                 "limit": limit,
             },

@@ -14,6 +14,7 @@ import PIL.TiffImagePlugin
 from pydantic import BaseModel, TypeAdapter
 from pydantic_core import PydanticSerializationError
 import logging
+from index_service.services.utils import dump_with_type
 
 log = logging.getLogger(__name__)
 
@@ -195,22 +196,6 @@ def try_parse_json(value: Any):
 
         case _:
             return value
-
-
-def dump_with_type(obj):
-    if isinstance(obj, BaseModel):
-        data = {}
-        for name, value in obj:
-            data[name] = dump_with_type(value)
-        data["__type__"] = obj.__class__.__name__
-        return data
-    if isinstance(obj, list):
-        return [dump_with_type(item) for item in obj]
-    if isinstance(obj, tuple):
-        return [dump_with_type(item) for item in obj]
-    if isinstance(obj, dict):
-        return {key: dump_with_type(value) for key, value in obj.items()}
-    return obj
 
 
 def first_by_field_value(obj: list[T], field: str, value: Any) -> Optional[T]:
