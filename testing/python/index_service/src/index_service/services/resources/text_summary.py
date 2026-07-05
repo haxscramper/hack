@@ -52,7 +52,6 @@ class TextSummaryResult(MultiDocumentModel, extra="forbid"):
         Field(discriminator="type"),
     ]
     edge_type: ClassVar[Any] = ChunkLink
-    summary: str = ""
 
 
 class TextSummaryResource(BaseResource):
@@ -85,7 +84,14 @@ class TextSummaryResource(BaseResource):
                 "Resource `flm_server` must be an instance of FlmServerResource")
         return flm
 
-    def _summarize(self, ctx, flm, resources, text, system_prompt) -> str:
+    def _summarize(
+        self,
+        ctx: RunContext,
+        flm: FlmServerResource,
+        resources: dict[str, BaseResource],
+        text: str,
+        system_prompt: str,
+    ) -> str:
         flm_response = flm.handle(
             ctx=ctx,
             request=FlmRequest(
@@ -130,4 +136,8 @@ class TextSummaryResource(BaseResource):
             per_chunk=lambda c: {"summary": summ[c.hash]},
             file_kwargs={"summary": file_summary},
         )
-        return TextSummaryResult(summary=file_summary, documents=documents, edges=edges)
+
+        return TextSummaryResult(
+            documents=documents,
+            edges=edges,
+        )

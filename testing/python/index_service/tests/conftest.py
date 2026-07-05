@@ -7,11 +7,16 @@ from beartype.typing import Any, Generator
 from index_service.services.core.db import IndexDatabase
 from index_service.services.core.job_runtime import IndexRuntime
 from index_service.services.core.job_types import BaseResource, RunContext
+from index_service.services.resources.flm_server import FlmRequest, FlmResponse, FlmServerResource
 from index_service.services.resources.text_summary import (
     SummarizeRequest,
+    TextSummaryResource,
     TextSummaryResult,
 )
 from index_service.services.utils import get_custom_traceback_handler, stfu_logs
+import logging
+
+log = logging.getLogger(__name__)
 
 ARANGO_HOST = "http://localhost:8529"
 ARANGO_USER = "root"
@@ -64,17 +69,26 @@ def db(request) -> IndexDatabase:
     )
 
 
-class MockTextSummaryResource(BaseResource):
-    resource_key = "text_summary"
+class MockFlmServerResource(FlmServerResource):
 
-    def handle(
-        self,
-        ctx: RunContext,
-        request: SummarizeRequest,
-        resources: dict[str, BaseResource],
-    ) -> TextSummaryResult:
-        text = request.text.strip().replace("\n", " ")
-        return TextSummaryResult(summary=f"mock-summary: {text[:48]}")
+    def __init__(self,
+                 base_url: str | None = None,
+                 api_key: str = "flm",
+                 host: str | None = None,
+                 port: int | None = None,
+                 serve_cmd: list[str] | None = None,
+                 startup_timeout_sec: float = 20) -> None:
+        pass
+
+    def handle(self, ctx: RunContext, request: FlmRequest,
+               resources: dict[str, BaseResource]) -> FlmResponse:
+        log.info(request)
+        return FlmResponse(
+            model=f"flm-response-to",
+            content=f"flm-content:({request.messages[-1].content})",
+            finish_reason="reason",
+            usage=dict(),
+        )
 
 
 @pytest.fixture
@@ -90,10 +104,7 @@ def runtime(db) -> Generator[IndexRuntime, None, None]:
     rt = IndexRuntime(
         ctx=ctx,
         db=db,
-        resource_types=[
-            MockTextSummaryResource() if t.resource_key == "text_summary" else t()
-            for t in DEFAULT_RESOURCE_TYPES
-        ],
+        resource_types=[t() for t in DEFAULT_RESOURCE_TYPES] + [MockFlmServerResource()],
         indexer_types=[t(should_load_cache=False) for t in DEFAULT_INDEXER_TYPES],
         converter_types=[t() for t in DEFAULT_CONVERTER_TYPES],
     )

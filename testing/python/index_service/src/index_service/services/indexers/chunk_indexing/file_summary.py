@@ -15,10 +15,13 @@ from index_service.services.resources.text_summary import (
     TextSummaryResource,
     TextSummaryResult,
 )
+import logging
+
+log = logging.getLogger(__name__)
 
 
-class FileSummaryIndexerResult(IndexDocument, extra="forbid"):
-    summary: TextSummaryResult
+class FileSummaryIndexerResult(TextSummaryResult, extra="forbid"):
+    pass
 
 
 class FileSummaryIndexer(BaseIndexer):
@@ -53,14 +56,16 @@ class FileSummaryIndexer(BaseIndexer):
         flm_gemma = cast(TextSummaryResource, resources["text_summary"])
         summary = flm_gemma.handle(
             ctx,
-            SummarizeRequest(text=text),
+            SummarizeRequest(text=text, file_hash=request.get_hash_str()),
             resources=resources,
         )
+
+        log.debug(summary.model_dump_json(serialize_as_any=True, indent=2))
 
         return IndexerOutput(
             indexer_id=self.asset_name,
             result=FileSummaryIndexerResult(
-                summary=summary,
-                hash=request.get_hash_str(),
+                documents=summary.documents,
+                edges=summary.edges,
             ),
         )

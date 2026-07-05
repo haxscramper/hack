@@ -3,7 +3,9 @@ test:
         --log-level=DEBUG \
         --capture=tee-sys \
         --disable-warnings \
-        "tests/test_search.py::test_full_text_search" > test_results.tmp.log 2>&1
+        > test_results.tmp.log 2>&1
+
+# "tests/test_search.py::test_full_text_search"
 
 index:
     uv run src/index_service/cli/cli.py index \

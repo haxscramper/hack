@@ -1,9 +1,10 @@
 from pathlib import Path
 
 from index_service.services.core.db import IndexDatabase
-from index_service.services.indexers.chunk_indexing.full_text import FullTextIndexerResult
+from index_service.services.indexers.chunk_indexing.full_text import FullTextChunk, FullTextIndexerResult
 from index_service.services.core.types import FileRef
 from index_service.services.core.job_runtime import IndexRuntime
+from index_service.services.pydantic_utils import first_by_field_value
 
 
 def test_large_batch_indexing(db: IndexDatabase, tmp_path: Path,
@@ -20,6 +21,8 @@ def test_large_batch_indexing(db: IndexDatabase, tmp_path: Path,
             [
                 "file_size",
                 "file_stats",
+                "full_text",
+                "document_block",
             ],
         )
 
@@ -30,4 +33,7 @@ def test_large_batch_indexing(db: IndexDatabase, tmp_path: Path,
 
     assert isinstance(record.result, FullTextIndexerResult)
 
-    assert "alpha beta" in record.result.text
+    text_doc = first_by_field_value(record.result.documents, "type", "chunk")
+    assert text_doc is not None
+    assert isinstance(text_doc, FullTextChunk)
+    assert "alpha beta" in text_doc.text

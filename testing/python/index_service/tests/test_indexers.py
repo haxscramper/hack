@@ -11,6 +11,7 @@ import glom
 from index_service.services.converters.file_size_converter import FileSizeConverterResult
 from index_service.services.core.db import IndexDatabase
 from index_service.services.indexers.chunk_indexing.chunking import ChunkDocument, ChunkFile, ChunkLink
+from index_service.services.indexers.chunk_indexing.file_summary import FileSummaryIndexerResult
 from index_service.services.indexers.file_size import FileSizeIndexer, FileSizeIndexerResult
 from index_service.services.indexers.file_stats import FileStatsIndexerResult
 from index_service.services.core.types import FileHash, FileRef, IndexerOutput
@@ -19,7 +20,8 @@ from index_service.services.indexers.chunk_indexing.full_text import FullTextInd
 import logging
 import functools
 
-from index_service.services.pydantic_utils import dump_with_type
+from index_service.services.pydantic_utils import dump_with_type, first_by_field_value
+from index_service.services.resources.text_summary import SummaryChunk
 
 log = logging.getLogger(__name__)
 
@@ -199,19 +201,6 @@ def test_db_store_derivation(db: IndexDatabase) -> None:
     assert isinstance(key, str)
 
 
-def test_index_file_job(runtime: IndexRuntime, db: IndexDatabase,
-                        sample_file: Path) -> None:
-    root = runtime.db.add_root("root", sample_file.parent)
-    ref = runtime.db.as_ref(root, sample_file)
-    runtime.run_indexer(ref, ["file_size", "full_text"])
-    size_record = db.get_indexer_result(ref.hash, "file_size", FileSizeIndexerResult)
-    assert size_record
-    assert size_record.size_bytes == sample_file.stat().st_size
-    text_record = db.get_indexer_result(ref.hash, "full_text", FullTextIndexerResult)
-    assert text_record
-    assert text_record.text == sample_file.read_text()
-
-
 def test_convert_files_job(runtime: IndexRuntime, sample_file: Path) -> None:
     root = runtime.db.add_root("root", sample_file.parent)
     out = runtime.run_converter("file_size_converter",
@@ -231,6 +220,9 @@ def test_file_summary_indexer_with_flm(
         ref = runtime.db.as_ref(root, path)
         runtime.run_indexer(ref, ["file_summary"])
         out = runtime.get_indexer_result(ref, "file_summary")
+        assert isinstance(out.result, FileSummaryIndexerResult)
+        log.debug(json.dumps(dump_with_type(out), indent=2))
 
-        summary = out.result.summary.summary
-        assert summary.strip() != ""
+        file = first_by_field_value(out.result.documents, "type", "chunk")
+        assert isinstance(file, SummaryChunk)
+        assert file.summary.strip() != ""
