@@ -33,16 +33,16 @@ def test_vector_search(db: IndexDatabase, runtime: IndexRuntime, tmp_path: Path)
     b.write_text("network protocol packet")
 
     root = db.add_root("root", tmp_path)
-    m1 = db.as_ref(root, a)
-    m2 = db.as_ref(root, b)
+    file_1 = db.as_ref(root, a)
+    file_2 = db.as_ref(root, b)
 
     emb_name = "file_embedding"
 
-    runtime.run_indexer(m1, [emb_name])
-    out1 = runtime.get_indexer_result(m1, emb_name)
+    runtime.run_indexer(file_1, [emb_name])
+    out1 = runtime.get_indexer_result(file_1, emb_name)
 
-    runtime.run_indexer(m2, [emb_name])
-    out2 = runtime.get_indexer_result(m2, emb_name)
+    runtime.run_indexer(file_2, [emb_name])
+    out2 = runtime.get_indexer_result(file_2, emb_name)
 
     db.wait_indexing()
 
@@ -53,15 +53,17 @@ def test_vector_search(db: IndexDatabase, runtime: IndexRuntime, tmp_path: Path)
     assert isinstance(chunk1, EmbeddingChunk)
     assert 0 < len(chunk1.vector)
 
-    db.enable_index(runtime.get_indexer(emb_name))
+    db.enable_index(runtime.get_indexer(emb_name))  # type: ignore
     db.wait_indexing()
 
     hits = db.vector_search(
         emb_name,
         chunk1.vector,
         limit=1,
-        indexer=runtime.get_indexer(emb_name),
+        indexer=runtime.get_indexer(emb_name),  #type: ignore
     )
 
-    log.info(json.dumps(dump_with_type(hits), indent=2))
-    assert hits[0]["hash"] == m1.hash.hash
+    assert len(hits) == 1
+    hit0 = hits[0][0]
+    assert isinstance(hit0, EmbeddingChunk)
+    assert hit0.file_hash == file_1.hash.hash

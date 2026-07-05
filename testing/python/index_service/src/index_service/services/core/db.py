@@ -578,7 +578,7 @@ class IndexDatabase:
         vector: List[float],
         indexer: BaseIndexProtocol,
         limit: int = 20,
-    ) -> list:
+    ) -> list[tuple[IndexDocument, float]]:
         vector_base = next(
             (base for base in indexer.get_document_type_bases()
              if base.vector_index is not None),
@@ -619,10 +619,23 @@ class IndexDatabase:
 
         cursor = self._db.aql.execute(
             query,
-            bind_vars={
+            bind_vars={  # type: ignore
                 "query_vector": vector,
                 "limit": limit,
             },
         )
 
-        return list(cursor)  # type: ignore
+        result = list()
+
+        for entry in cursor:  # type: ignore
+            if issubclass(indexer.result_model, MultiDocumentModel):
+                doc_type = indexer.result_model.document_type
+
+            else:
+                doc_type = indexer.result_model
+
+            result.append((TypeAdapter(doc_type).validate_python(
+                model_from_json_data(entry["doc"]["result"],
+                                     doc_type)), float(entry["score"])))
+
+        return result
