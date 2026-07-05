@@ -320,15 +320,18 @@ class IndexRuntime:
         ):
             self.execute_plan(plan)
 
+    def get_indexer(self, name: str) -> BaseIndexer:
+        return self._indexer_instances[name]
+
     def get_indexer_result(self, hash: FileHash | FileRef, name: str) -> IndexerOutput:
         assert name in self._indexer_instances
-        assert self._indexer_instances[name].result_model
+        assert self.get_indexer(name).result_model
         return IndexerOutput(
             indexer_id=name,
             result=self.db.get_indexer_result(  # type: ignore
                 hash if isinstance(hash, FileHash) else hash.hash,
                 name,
-                self._indexer_instances[name].result_model,
+                self.get_indexer(name).result_model,
             ),
         )
 

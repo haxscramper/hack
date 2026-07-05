@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import base64
 import json
+import glom
 import math
 import types as py_types
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Annotated, Any, Callable, TypeVar, Union, get_args, get_origin
+from typing import Annotated, Any, Callable, Optional, TypeVar, Union, get_args, get_origin
 
 import PIL.TiffImagePlugin
 from pydantic import BaseModel, TypeAdapter
@@ -210,3 +211,11 @@ def dump_with_type(obj):
     if isinstance(obj, dict):
         return {key: dump_with_type(value) for key, value in obj.items()}
     return obj
+
+
+def first_by_field_value(obj: list[T], field: str, value: Any) -> Optional[T]:
+    return glom.glom(
+        obj,
+        glom.Iter().first(
+            lambda it: getattr(it, field) == value,  #type: ignore
+            default=None))

@@ -1,9 +1,15 @@
+import json
 from pathlib import Path
 
 from index_service.services.core.db import IndexDatabase
 from index_service.services.core.types import FileRef
 from index_service.services.core.job_runtime import IndexRuntime
+from index_service.services.indexers.chunk_indexing.file_embedding import EmbeddingChunk, FileEmbeddingIndexerResult
 from index_service.services.indexers.chunk_indexing.full_text import FullTextIndexer
+from index_service.services.pydantic_utils import dump_with_type, first_by_field_value
+import logging
+
+log = logging.getLogger(__name__)
 
 
 def test_full_text_search(db: IndexDatabase, runtime: IndexRuntime,
@@ -30,14 +36,32 @@ def test_vector_search(db: IndexDatabase, runtime: IndexRuntime, tmp_path: Path)
     m1 = db.as_ref(root, a)
     m2 = db.as_ref(root, b)
 
-    runtime.run_indexer(m1, ["file_embedding"])
-    out1 = runtime.get_indexer_result(m1, "file_embedding")
+    emb_name = "file_embedding"
 
-    runtime.run_indexer(m2, ["file_embedding"])
-    out2 = runtime.get_indexer_result(m2, "file_embedding")
+    runtime.run_indexer(m1, [emb_name])
+    out1 = runtime.get_indexer_result(m1, emb_name)
 
-    db.store_indexer_output(m1, out1)
-    db.store_indexer_output(m2, out2)
+    runtime.run_indexer(m2, [emb_name])
+    out2 = runtime.get_indexer_result(m2, emb_name)
 
-    hits = db.vector_search("file_embedding", out1.result.vector, limit=1)
+    db.wait_indexing()
+
+    assert isinstance(out1.result, FileEmbeddingIndexerResult)
+    assert isinstance(out2.result, FileEmbeddingIndexerResult)
+
+    chunk1 = first_by_field_value(out1.result.documents, "type", "chunk")
+    assert isinstance(chunk1, EmbeddingChunk)
+    assert 0 < len(chunk1.vector)
+
+    db.enable_index(runtime.get_indexer(emb_name))
+    db.wait_indexing()
+
+    hits = db.vector_search(
+        emb_name,
+        chunk1.vector,
+        limit=1,
+        indexer=runtime.get_indexer(emb_name),
+    )
+
+    log.info(json.dumps(dump_with_type(hits), indent=2))
     assert hits[0]["hash"] == m1.hash.hash

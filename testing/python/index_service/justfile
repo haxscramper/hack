@@ -3,7 +3,7 @@ test:
         --log-level=DEBUG \
         --capture=tee-sys \
         --disable-warnings \
-         > test_results.tmp.log 2>&1
+        "tests/test_search.py::test_vector_search" > test_results.tmp.log 2>&1
 
 index:
     uv run src/index_service/cli/cli.py index \
@@ -37,4 +37,6 @@ view:
         --db-name test_index
 
 run_arango:
-    docker run -d -e ARANGO_ROOT_PASSWORD="test" -p 8529:8529 arangodb/enterprise:3.12.9.1 --server.session-timeout 360000
+    docker run -d -e ARANGO_ROOT_PASSWORD="test" -p 8529:8529 arangodb/enterprise:3.12.9.1 \
+        --server.session-timeout 360000 \
+        --vector-index

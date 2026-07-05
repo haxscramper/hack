@@ -11,7 +11,7 @@ from functools import wraps
 from pathlib import Path
 
 from beartype import beartype
-from beartype.typing import Callable, Optional, ParamSpec, TypeVar
+from beartype.typing import Any, Callable, Optional, ParamSpec, TypeVar
 from pydantic import BaseModel
 
 from index_service.services.core.db import IndexDatabase
@@ -19,8 +19,11 @@ from index_service.services.core.types import (
     ConverterOutput,
     ConverterRequest,
     FileRef,
+    IndexDocument,
+    IndexMultiDocument,
     IndexerOutput,
     IndexerRequest,
+    MultiDocumentModel,
 )
 from index_service.services.pydantic_utils import (
     model_from_json_data,
@@ -182,6 +185,13 @@ class BaseIndexer(ABC):
     max_parallel: int = 1
     should_load_cache: bool = True
     edge_collection_name: Optional[str] = None
+
+    def get_document_type_bases(self) -> list[Any]:
+        if issubclass(self.result_model, MultiDocumentModel):
+            return [self.result_model.document_type]
+
+        else:
+            return [self.result_model]
 
     def __init__(self, **kwargs) -> None:
         for key, value in dict(**kwargs).items():

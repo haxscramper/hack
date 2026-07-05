@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from beartype import beartype
-from beartype.typing import Annotated, Any, ClassVar
+from beartype.typing import Annotated, Any, ClassVar, Optional
 from pydantic import BaseModel, ConfigDict, Field, PlainSerializer, PlainValidator
 
 AnyModel = Annotated[
@@ -19,8 +19,17 @@ class IndexEdge(BaseModel, extra="forbid"):
     to_: str
 
 
+class VectorIndexConfig(BaseModel, extra="forbid"):
+    index_path: str
+    vector_dimensions: int
+    vector_metric: str = "cosine"
+    n_lists: int = 1
+    sparse: bool = True
+
+
 class IndexDocument(BaseModel, extra="forbid"):
     hash: str
+    vector_index: ClassVar[Optional[VectorIndexConfig]] = None
 
 
 class IndexMultiDocument(IndexDocument, extra="forbid"):

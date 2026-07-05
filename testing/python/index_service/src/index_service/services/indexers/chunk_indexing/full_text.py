@@ -36,6 +36,9 @@ class FullTextIndexer(BaseIndexer):
     result_model = FullTextIndexerResult
     required_assets = ("document_block",)
 
+    def get_document_type_bases(self) -> list[Any]:
+        return [ChunkFile, ChunkDocument]
+
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self._config = ChunkConfig(

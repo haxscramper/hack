@@ -55,6 +55,9 @@ class DocumentBlockIndexer(BaseIndexer):
     result_model = DocumentBlockIndexerResult
     max_parallel = 8
 
+    def get_document_type_bases(self) -> list[Any]:
+        return [doc_types.DocumentBlock]
+
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self._magic = magic.Magic(mime=True)

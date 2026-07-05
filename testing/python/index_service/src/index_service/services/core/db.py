@@ -9,20 +9,25 @@ from arango import ArangoClient, DocumentInsertError
 from arango.aql import AQL
 from arango.database import StandardDatabase
 from beartype import beartype
-from beartype.typing import Any, Dict, List, Optional, TypeVar, cast, Sequence, Protocol
+from beartype.typing import Any, ClassVar, Dict, List, Optional, TypeVar, cast, Sequence, Protocol
 from openai import BaseModel
 from pydantic import TypeAdapter
+from arango.exceptions import IndexCreateError
+import time
 
 from index_service.services.core.types import (
     AnyModel,
     FileHash,
     FileRef,
+    IndexDocument,
     IndexEdge,
     IndexMultiDocument,
     IndexerOutput,
     MultiDocumentModel,
     RootRef,
+    VectorIndexConfig,
 )
+
 from index_service.services.pydantic_arango_schema import ArangoSchema, arango_schema_for_model
 from index_service.services.pydantic_utils import (
     model_from_json_data,
@@ -40,6 +45,9 @@ class BaseIndexProtocol(Protocol):
     asset_name: str
     result_model: type[BaseModel]
     edge_collection_name: str
+
+    def get_document_type_bases(self) -> list[Any]:
+        ...
 
 
 @beartype
@@ -79,6 +87,39 @@ class IndexDatabase:
     def db_name(self) -> str:
         return self._db_name
 
+    def wait_indexing(self, timeout: float = 30.0, interval: float = 0.1) -> None:
+        import time
+
+        deadline = time.monotonic() + timeout
+        collections = self._db.collections()
+
+        while time.monotonic() < deadline:
+            all_ready = True
+
+            for collection_info in collections:
+                name = collection_info["name"]
+                if name.startswith("_"):
+                    continue
+
+                collection = self._db.collection(name)
+                for index in collection.indexes():
+                    if index.get("type") == "vector":
+                        if index.get("inBackground", False) or index.get(
+                                "isBuilding", False):
+                            all_ready = False
+                            break
+
+                if not all_ready:
+                    break
+
+            if all_ready:
+                return
+
+            time.sleep(interval)
+
+        raise TimeoutError(
+            f"Timed out waiting for vector indexes in database {self._db_name}")
+
     def _load_roots_from_db(self):
         for row in self._db.aql.execute("FOR doc IN roots return doc"):  # type: ignore
             self.roots[row["_key"]] = Path(row["path"])
@@ -108,6 +149,31 @@ class IndexDatabase:
 
     def get_edge_name(self, indexer: str) -> str:
         return f"{indexer}_edge"
+
+    def enable_index(self, indexer: BaseIndexProtocol):
+        for base in indexer.get_document_type_bases():
+            assert isinstance(base, type), f"{base} for indexer {indexer.asset_name}"
+            assert issubclass(base, IndexDocument)
+            if base.vector_index is not None:
+                collection = self._db.collection(indexer.asset_name)
+                vector_index = base.vector_index
+
+                index_def = {
+                    "name":
+                        f"vector_{base.__name__}_{vector_index.index_path.replace('.', '_')}",
+                    "type":
+                        "vector",
+                    "fields": [vector_index.index_path],
+                    "params": {
+                        "dimension": vector_index.vector_dimensions,
+                        "metric": vector_index.vector_metric,
+                        "nLists": vector_index.n_lists,
+                    },
+                    "sparse":
+                        vector_index.sparse,
+                }
+
+                collection.add_index(index_def)
 
     def ensure_collections(self, indexers: Sequence[BaseIndexProtocol]) -> None:
 
@@ -510,27 +576,49 @@ class IndexDatabase:
         self,
         collection: str,
         vector: List[float],
+        indexer: BaseIndexProtocol,
         limit: int = 20,
-    ) -> List[Dict[str, Any]]:
-        cursor = self._db.aql.execute(f"""
-            FOR doc IN {collection}
-              FILTER doc.indexer_id == "file_embedding"
-              RETURN {{hash: doc._key, vector: doc.result.vector}}
-            """)
+    ) -> list:
+        vector_base = next(
+            (base for base in indexer.get_document_type_bases()
+             if base.vector_index is not None),
+            None,
+        )
+        assert vector_base is not None, (
+            f"No vector index configured for indexer {indexer.asset_name}, "
+            f"none of the document bases {indexer.get_document_type_bases()} "
+            f"have vector index type set")
 
-        rows = list(cursor)  # type: ignore
+        vector_index = vector_base.vector_index
+        assert vector_index is not None
 
-        def cosine(a: List[float], b: List[float]) -> float:
-            dot = sum(x * y for x, y in zip(a, b))
-            na = math.sqrt(sum(x * x for x in a))
-            nb = math.sqrt(sum(y * y for y in b))
-            if na == 0.0 or nb == 0.0:
-                return 0.0
-            return dot / (na * nb)
+        log.debug(
+            f"Using index path {vector_index.index_path} in collection {collection}")
 
-        scored = [{
-            "hash": row["hash"],
-            "score": cosine(vector, row["vector"])
-        } for row in rows]
-        scored.sort(key=lambda item: item["score"], reverse=True)
-        return scored[:limit]
+        metric_fn = {
+            "cosine": "APPROX_NEAR_COSINE",
+            "l2": "APPROX_NEAR_L2",
+            "ip": "APPROX_NEAR_INNER_PRODUCT",
+        }[vector_index.vector_metric]
+
+        query = f"""
+        FOR doc IN {collection}
+        FILTER doc.indexer_id == @indexer_id
+        SORT {metric_fn}(doc.{vector_index.index_path}, @query_vector) DESC
+        LIMIT @limit
+        RETURN {{
+            hash: doc.hash,
+            score: {metric_fn}(doc.{vector_index.index_path}, @query_vector)
+        }}
+        """
+
+        cursor = self._db.aql.execute(
+            query,
+            bind_vars={
+                "indexer_id": indexer.asset_name,
+                "query_vector": vector,
+                "limit": limit,
+            },
+        )
+
+        return list(cursor)  # type: ignore

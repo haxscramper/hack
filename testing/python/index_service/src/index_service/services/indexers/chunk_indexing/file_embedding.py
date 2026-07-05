@@ -3,10 +3,10 @@ from typing import Any, ClassVar, Union
 
 import glom
 from pydantic import Field
-from beartype.typing import Annotated
+from beartype.typing import Annotated, Optional
 
 from index_service.services.core.job_types import BaseIndexer, RunContext
-from index_service.services.core.types import IndexerOutput, IndexerRequest, MultiDocumentModel
+from index_service.services.core.types import IndexerOutput, IndexerRequest, MultiDocumentModel, VectorIndexConfig
 from index_service.services.indexers.chunk_indexing.chunking import (
     ChunkConfig,
     ChunkUnit,
@@ -25,6 +25,12 @@ class EmbeddingChunk(ChunkDocument, extra="forbid"):
     vector: list[float] = Field(default_factory=list)
     dim: int = 0
 
+    vector_index: ClassVar[Optional[VectorIndexConfig]] = VectorIndexConfig(
+        vector_dimensions=768,
+        vector_metric="cosine",
+        index_path="result.vector",
+    )
+
 
 class FileEmbeddingIndexerResult(MultiDocumentModel, extra="forbid"):
     document_type: ClassVar[Any] = Annotated[
@@ -35,9 +41,9 @@ class FileEmbeddingIndexerResult(MultiDocumentModel, extra="forbid"):
 
 
 def _placeholder_vector(text: str) -> list[float]:
-    buckets = [0.0] * 8
+    buckets = [0.0] * 768
     for ch in text.lower():
-        buckets[ord(ch) % 8] += 1.0
+        buckets[ord(ch) % 768] += 1.0
     norm = math.sqrt(sum(x * x for x in buckets))
     return buckets if norm == 0.0 else [x / norm for x in buckets]
 
@@ -46,6 +52,9 @@ class FileEmbeddingIndexer(BaseIndexer):
     asset_name = "file_embedding"
     result_model = FileEmbeddingIndexerResult
     required_assets = ("document_block",)
+
+    def get_document_type_bases(self) -> list[Any]:
+        return [ChunkFile, EmbeddingChunk]
 
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
