@@ -29,6 +29,7 @@ def test_full_text_search(db: IndexDatabase, runtime: IndexRuntime,
         fts_name,
         "beta",
         indexer=runtime.get_indexer(fts_name),  # type: ignore
+        wait_for_sync=True,
     )
 
     assert len(hits) == 1

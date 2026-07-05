@@ -588,6 +588,7 @@ class IndexDatabase:
         query: str,
         indexer: BaseIndexProtocol,
         limit: int = 20,
+        wait_for_sync: bool = False,
     ) -> list[tuple[IndexDocument, float]]:
         full_text_base = next(
             (base for base in indexer.get_document_type_bases()
@@ -610,12 +611,15 @@ class IndexDatabase:
         log.debug(f"Using view {view_name} field {full_text_index.index_path} "
                   f"for collection {collection}")
 
+        sync = "OPTIONS { waitForSync: true }" if wait_for_sync else ""
+
         aql = f"""
         FOR d IN {view_name}
             SEARCH ANALYZER(
                 PHRASE(d.{full_text_index.index_path}, @query, @analyzer),
                 @analyzer
             )
+            {sync}
             LET score = {score_fn}(d)
             SORT score DESC
             LIMIT @limit
@@ -626,6 +630,9 @@ class IndexDatabase:
         """
 
         log.debug(aql)
+        log.debug(f"@query = {query}")
+        log.debug(f"@analyzer = {full_text_index.analyzer}")
+        log.debug(f"@limit = {limit}")
 
         cursor = self._db.aql.execute(
             aql,
