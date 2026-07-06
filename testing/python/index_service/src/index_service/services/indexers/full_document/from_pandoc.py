@@ -284,13 +284,17 @@ def _convert_block(pb: dict, file_hash: str) -> Sequence[DocumentBlock]:
             ]
 
         case "Header":
-            level, _attr, inlines = pb["c"]
-            clamped = cast(Literal[1, 2, 3], min(max(level, 1), 3))
+            level, attr, inlines = pb["c"]
+            props = HeadingProps(level=level)
+            props.extra["subtree_auto_id"] = attr[0]
+            for entry in attr[2]:
+                props.extra[entry[0]] = entry[1]
+
             return [
                 build(
                     Heading,
                     file_hash=file_hash,
-                    props=HeadingProps(level=clamped),
+                    props=props,
                     content=_convert_inlines(inlines, TextStyles()),
                 )
             ]

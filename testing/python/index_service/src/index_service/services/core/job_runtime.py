@@ -328,10 +328,9 @@ class IndexRuntime:
         assert self.get_indexer(name).result_model
         return IndexerOutput(
             indexer_id=name,
-            result=self.db.get_indexer_result(  # type: ignore
+            result=self.db.get_indexer_result(
                 hash if isinstance(hash, FileHash) else hash.hash,
-                name,
-                self.get_indexer(name).result_model,
+                self.get_indexer(name),
             ),
         )
 

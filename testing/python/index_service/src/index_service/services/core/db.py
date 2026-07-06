@@ -159,6 +159,9 @@ class IndexDatabase:
     def get_edge_name(self, indexer: str) -> str:
         return f"{indexer}_edge"
 
+    def get_graph_name(self, indexer: str) -> str:
+        return f"{indexer}_graph"
+
     def enable_index(self, indexer: BaseIndexProtocol):
         for base in indexer.get_document_type_bases():
             assert isinstance(base, type), f"{base} for indexer {indexer.asset_name}"
@@ -235,13 +238,17 @@ class IndexDatabase:
                 raise RuntimeError(f"schema mismatch for collection {name!r}: "
                                    f"expected {expected_schema!r}, got {actual_schema!r}")
 
-        graph_name = "indexer_graph"
-
         for name in ["roots", "files", "derivations"]:
             if not self._db.has_collection(name):
                 self._db.create_collection(name)
 
-        edge_definitions: list[dict[str, Any]] = []
+        files = self._db.collection("files")
+        if not any(idx.get("name") == "idx_paths_suffix" for idx in files.indexes()):
+            files.add_index({
+                "type": "persistent",
+                "fields": ["paths[*].suffix"],
+                "name": "idx_paths_suffix",
+            })
 
         for indexer in indexers:
             document_schema, edge_schema = self._arango_collection_schema_for_indexer(
@@ -253,55 +260,43 @@ class IndexDatabase:
                 edge=False,
             )
 
-            if edge_schema is not None:
-                edge_name = self.get_edge_name(indexer.asset_name)
+            if edge_schema is None:
+                continue
 
-                _ensure_collection_with_schema(
-                    edge_name,
-                    edge_schema,
-                    edge=True,
-                )
+            edge_name = self.get_edge_name(indexer.asset_name)
 
-                edge_definitions.append({
-                    "edge_collection": edge_name,
-                    "from_vertex_collections": [indexer.asset_name],
-                    "to_vertex_collections": [indexer.asset_name],
-                })
+            _ensure_collection_with_schema(
+                edge_name,
+                edge_schema,
+                edge=True,
+            )
 
-        files = self._db.collection("files")
-        if not any(idx.get("name") == "idx_paths_suffix" for idx in files.indexes()):
-            files.add_index({
-                "type": "persistent",
-                "fields": ["paths[*].suffix"],
-                "name": "idx_paths_suffix",
-            })
+            graph_name = self.get_graph_name(indexer.asset_name)
+            edge_definition = {
+                "edge_collection": edge_name,
+                "from_vertex_collections": [indexer.asset_name],
+                "to_vertex_collections": [indexer.asset_name],
+            }
 
-        if edge_definitions:
             if not self._db.has_graph(graph_name):
                 self._db.create_graph(
                     graph_name,
-                    edge_definitions=edge_definitions,
+                    edge_definitions=[edge_definition],
                 )
-            else:
-                graph = self._db.graph(graph_name)
-                existing = {
-                    definition["edge_collection"]: definition
-                    for definition in graph.properties()["edge_definitions"]
-                }
+                continue
 
-                for definition in edge_definitions:
-                    edge_collection = definition["edge_collection"]
-                    current = existing.get(edge_collection)
-                    if current is None:
-                        graph.create_edge_definition(
-                            edge_collection=definition["edge_collection"],
-                            from_vertex_collections=definition["from_vertex_collections"],
-                            to_vertex_collections=definition["to_vertex_collections"],
-                        )
-                    elif current != definition:
-                        raise RuntimeError(
-                            f"graph edge definition mismatch for {edge_collection!r}: "
-                            f"expected {definition!r}, got {current!r}")
+            graph = self._db.graph(graph_name)
+            definitions = graph.properties()["edge_definitions"]
+
+            if len(definitions) != 1:
+                raise RuntimeError(
+                    f"graph {graph_name!r} must contain exactly one edge definition, "
+                    f"got {definitions!r}")
+
+            current = definitions[0]
+            if current != edge_definition:
+                raise RuntimeError(f"graph edge definition mismatch for {graph_name!r}: "
+                                   f"expected {edge_definition!r}, got {current!r}")
 
     def truncate_all(self, names: list[str]) -> None:
         for name in ["roots", "files", "derivations"] + names:
@@ -519,12 +514,38 @@ class IndexDatabase:
                                              indexer_id=out.indexer_id,
                                              result=out.result)
 
-    def get_indexer_result(self, hash: FileHash, indexer_id: str,
-                           model_type: type[T]) -> T:
+    def validate_indexer_result_document(self, result: dict[str, Any],
+                                         indexer: BaseIndexProtocol) -> Any:
+        if issubclass(indexer.result_model, MultiDocumentModel):
+            doc_type = indexer.result_model.document_type
+        else:
+            doc_type = indexer.result_model
+
+        adapter = TypeAdapter(doc_type)
+
+        return adapter.validate_python(model_from_json_data(result, doc_type))
+
+    def get_indexer_one_document(self, document_id: str,
+                                 indexer: BaseIndexProtocol) -> Any:
+        for doc in self._db.aql.execute(  # type: ignore
+                f"""
+            FOR doc IN {indexer.asset_name}
+            FILTER doc._key == @hash
+            RETURN doc.result
+            """,
+                bind_vars={"hash": document_id},
+        ):
+            return self.validate_indexer_result_document(doc, indexer)
+
+        raise KeyError(
+            f"Could not find document with ID {document_id} in the indexer collection {indexer.asset_name}"
+        )
+
+    def get_indexer_result(self, hash: FileHash, indexer: BaseIndexProtocol) -> Any:
+        model_type = indexer.result_model
+        indexer_id = indexer.asset_name
         if issubclass(model_type, MultiDocumentModel):
             assert issubclass(model_type.edge_type, IndexEdge), str(model_type.edge_type)
-
-            document_adapter = TypeAdapter(model_type.document_type)
             edge_adapter = TypeAdapter(model_type.edge_type)
 
             documents: list[IndexMultiDocument] = []
@@ -535,13 +556,11 @@ class IndexDatabase:
                     f"""
                 FOR doc IN {indexer_id}
                 FILTER doc.result.file_hash == @hash
-                RETURN doc
+                RETURN doc.result
                 """,
                     bind_vars={"hash": hash.hash},  # type: ignore
             ):
-                documents.append(
-                    document_adapter.validate_python(
-                        model_from_json_data(doc["result"], model_type.document_type)))
+                documents.append(self.validate_indexer_result_document(doc, indexer))
 
             for edge in self._db.aql.execute(  # type: ignore
                     f"""
@@ -590,6 +609,20 @@ class IndexDatabase:
     def aql(self) -> AQL:
         return self.db.aql
 
+    def get_inbound(self, doc_id: str, indexer: BaseIndexProtocol) -> list[str]:
+        result = list()
+        for doc in self.aql.execute(  # type: ignore
+                f""" 
+        FOR v, e in 1..1 INBOUND @doc_id @@edge_collection
+            RETURN v
+        """, bind_vars={
+            "doc_id": f"{indexer.asset_name}/{doc_id}",
+            "@edge_collection": self.get_edge_name(indexer.asset_name),
+        }):
+            result.append(doc["_key"])
+
+        return result
+
     class FullTextSearchAccessParams(BaseModel, extra="forbid"):
         safe_path: str
         view_name: str
@@ -637,17 +670,9 @@ class IndexDatabase:
             bind_vars=bind_vars or {},  # type: ignore
         )
 
-        if issubclass(indexer.result_model, MultiDocumentModel):
-            doc_type = indexer.result_model.document_type
-        else:
-            doc_type = indexer.result_model
-
-        adapter = TypeAdapter(doc_type)
-
         for entry in cursor:  # type: ignore
             values = [glom.glom(entry, path) for path in glom_paths]
-            data = model_from_json_data(values[0], doc_type)
-            values[0] = adapter.validate_python(data)
+            values[0] = self.validate_indexer_result_document(values[0], indexer)
             yield tuple(values)
 
     def full_text_search_phrase(

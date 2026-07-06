@@ -1,7 +1,7 @@
 import hashlib
 import json
 import logging
-from beartype.typing import Literal, Annotated, Sequence, Union
+from beartype.typing import Any, Literal, Annotated, Sequence, Union
 from pydantic import BaseModel, Field, field_serializer, field_validator
 import enum
 
@@ -74,7 +74,8 @@ class DefaultProps(CaptionProps, extra="forbid"):
 
 
 class HeadingProps(DefaultProps):
-    level: Literal[1, 2, 3] = 1
+    level: int = 1
+    extra: dict[str, Any] = Field(default_factory=dict)
 
 
 class CodeBlockProps(CaptionProps, extra="forbid"):

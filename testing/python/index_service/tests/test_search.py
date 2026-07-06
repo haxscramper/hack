@@ -8,6 +8,7 @@ from index_service.services.core.types import FileRef
 from index_service.services.core.job_runtime import IndexRuntime
 from index_service.services.indexers.chunk_indexing.file_embedding import EmbeddingChunk, FileEmbeddingIndexerResult
 from index_service.services.indexers.chunk_indexing.full_text import FullTextChunk, FullTextIndexer
+from index_service.services.indexers.full_document.full_document_types import Heading
 from index_service.services.pydantic_utils import dump_with_type, first_by_field_value
 import logging
 
@@ -118,11 +119,18 @@ def test_corpus_full_text_search(db: IndexDatabase, runtime: IndexRuntime) -> No
     ):
         docs.append(document)
 
-    assert len(docs) == 1
     doc0 = docs[0][0]
     log.debug(json.dumps(dump_with_type(doc0), indent=2))
     assert isinstance(doc0, FullTextChunk), type(doc0)
 
+    doc_idx = runtime.get_indexer("document_block")
+
+    parent_of = db.get_inbound(doc0.spans[0].source_hash, doc_idx)
+    assert len(parent_of) == 1
+
+    parent_chunk = db.get_indexer_one_document(parent_of[0], doc_idx)
+    assert isinstance(parent_chunk, Heading), type(parent_chunk)
+
     log.debug(len(docs))
 
-    # assert False
+    assert False

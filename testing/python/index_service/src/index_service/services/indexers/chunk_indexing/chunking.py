@@ -51,12 +51,12 @@ class ChunkConfig(BaseModel, extra="forbid"):
 class SourceSpan(BaseModel, extra="forbid"):
     """Maps a contiguous range of chunk text back to its origin.
 
-    `source_hash` is the hash of the originating document block, or `None` when
+    `source_hash` is the hash of the originating document block or file when
     the chunk was produced from flat text. `source_start`/`source_end` address
     the original source, `chunk_start`/`chunk_end` address this chunk's text.
     """
 
-    source_hash: str | None = None
+    source_hash: str
     source_start: int
     source_end: int
     chunk_start: int
@@ -197,18 +197,21 @@ class Chunker:
                                source_end=s,
                                chunk_start=0,
                                chunk_end=lo,
+                               source_hash=file_hash,
                                kind="start_overlap"))
             spans.append(
                 SourceSpan(source_start=s,
                            source_end=e,
                            chunk_start=lo,
                            chunk_end=lo + (e - s),
+                           source_hash=file_hash,
                            kind="core"))
             if ro:
                 spans.append(
                     SourceSpan(source_start=e,
                                source_end=end,
                                chunk_start=lo + (e - s),
+                               source_hash=file_hash,
                                chunk_end=len(ctext),
                                kind="end_overlap"))
             results.append(self._raw(i, ctext, spans, file_hash))
