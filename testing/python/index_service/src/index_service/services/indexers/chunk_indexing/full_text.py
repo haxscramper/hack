@@ -67,19 +67,13 @@ class FullTextIndexer(BaseIndexer):
             DocumentBlockIndexerResult), (f"Input document type is {type(full_document)}")
 
         file_hash = request.get_hash_str()
-        chunker = Chunker(self._config)
 
         if full_document:
+            chunker = Chunker(self._config)
             chunks = chunker.chunk_blocks(full_document.documents, full_document.edges,
                                           file_hash)
         else:
-            path = ctx.get_path(request.file_ref)
-            try:
-                text = path.read_text()
-            except Exception as e:
-                log.error(f"{e} {path}", exc_info=e)
-                text = ""
-            chunks = chunker.chunk_text(text, file_hash)
+            chunks = []
 
         documents, edges = chunks_to_multidoc(chunks, file_hash, ChunkDocument)
         return IndexerOutput(

@@ -12,8 +12,10 @@ from beartype import beartype
 from beartype.typing import Any, ClassVar, Dict, List, Optional, TypeVar, cast, Sequence, Protocol
 from openai import BaseModel
 from pydantic import TypeAdapter
+import pydantic
 from arango.exceptions import IndexCreateError
 import time
+import glom
 
 from index_service.services.core.types import (
     AnyModel,
@@ -44,8 +46,8 @@ log = logging.getLogger(__name__)
 @beartype
 class BaseIndexProtocol(Protocol):
     asset_name: str
-    result_model: type[BaseModel]
-    edge_collection_name: str
+    result_model: type[pydantic.BaseModel]
+    edge_collection_name: Optional[str]
 
     def get_document_type_bases(self) -> list[Any]:
         ...
@@ -588,15 +590,13 @@ class IndexDatabase:
     def aql(self) -> AQL:
         return self.db.aql
 
-    def full_text_search(
-        self,
-        collection: str,
-        query: str,
-        indexer: BaseIndexProtocol,
-        limit: int = 20,
-        wait_for_sync: bool = False,
-    ) -> list[tuple[IndexDocument, float]]:
+    class FullTextSearchAccessParams(BaseModel, extra="forbid"):
+        safe_path: str
+        view_name: str
+        index: FullTextIndexConfig
 
+    def get_full_text_search_path(
+            self, indexer: BaseIndexProtocol) -> FullTextSearchAccessParams:
         full_text_base = next(
             (base for base in indexer.get_document_type_bases()
              if base.full_text_index is not None),
@@ -612,22 +612,61 @@ class IndexDatabase:
         assert full_text_index is not None
 
         view_name = self._view_name(indexer.asset_name, full_text_base, full_text_index)
-
-        score_fn = "BM25" if full_text_index.bm25 else "TFIDF"
-
         log.debug(f"Using view {view_name} field {full_text_index.index_path} "
-                  f"for collection {collection}")
-
-        sync = "OPTIONS { waitForSync: true }" if wait_for_sync else ""
+                  f"for collection {indexer.asset_name}")
 
         # 2) Safely format path keys with backticks (handles dashes/reserved words gracefully)
         # E.g. "result.text" -> "`result`.`text`"
         safe_path = ".".join(f"`{p}`" for p in full_text_index.index_path.split("."))
 
+        return IndexDatabase.FullTextSearchAccessParams(
+            safe_path=safe_path,
+            view_name=view_name,
+            index=full_text_index,
+        )
+
+    def execute_query_with_conversion(
+        self,
+        query: str,
+        indexer: BaseIndexProtocol,
+        glom_paths: tuple[str, ...],
+        bind_vars: dict[str, object] | None = None,
+    ):
+        cursor = self._db.aql.execute(
+            query,
+            bind_vars=bind_vars or {},  # type: ignore
+        )
+
+        if issubclass(indexer.result_model, MultiDocumentModel):
+            doc_type = indexer.result_model.document_type
+        else:
+            doc_type = indexer.result_model
+
+        adapter = TypeAdapter(doc_type)
+
+        for entry in cursor:  # type: ignore
+            values = [glom.glom(entry, path) for path in glom_paths]
+            data = model_from_json_data(values[0], doc_type)
+            values[0] = adapter.validate_python(data)
+            yield tuple(values)
+
+    def full_text_search_phrase(
+        self,
+        query: str,
+        indexer: BaseIndexProtocol,
+        limit: int = 20,
+        bm25: bool = True,
+        wait_for_sync: bool = False,
+    ) -> list[tuple[IndexDocument, float]]:
+
+        params = self.get_full_text_search_path(indexer)
+        sync = "OPTIONS { waitForSync: true }" if wait_for_sync else ""
+        score_fn = "BM25" if bm25 else "TFIDF"
+
         aql = f"""
-        FOR d IN `{view_name}`
+        FOR d IN `{params.view_name}`
             SEARCH ANALYZER(
-                PHRASE(d.{safe_path}, @query, @analyzer),
+                PHRASE(d.{params.safe_path}, @query, @analyzer),
                 @analyzer
             )
             {sync}
@@ -642,29 +681,21 @@ class IndexDatabase:
 
         log.debug(aql)
         log.debug(f"@query = {query}")
-        log.debug(f"@analyzer = {full_text_index.analyzer}")
+        log.debug(f"@analyzer = {params.index.analyzer}")
         log.debug(f"@limit = {limit}")
 
-        cursor = self._db.aql.execute(
-            aql,
-            bind_vars={  # type: ignore
+        result = list()
+        for document, score in self.execute_query_with_conversion(
+                aql,
+                indexer,
+            ("doc.result", "score"),
+            {
                 "query": query,
-                "analyzer": full_text_index.analyzer,
+                "analyzer": params.index.analyzer,
                 "limit": limit,
             },
-        )
-
-        result = list()
-
-        for entry in cursor:  # type: ignore
-            if issubclass(indexer.result_model, MultiDocumentModel):
-                doc_type = indexer.result_model.document_type
-            else:
-                doc_type = indexer.result_model
-
-            result.append((TypeAdapter(doc_type).validate_python(
-                model_from_json_data(entry["doc"]["result"],
-                                     doc_type)), float(entry["score"])))
+        ):
+            result.append((document, float(score)))
 
         return result
 
@@ -722,16 +753,15 @@ class IndexDatabase:
         )
 
         result = list()
-
-        for entry in cursor:  # type: ignore
-            if issubclass(indexer.result_model, MultiDocumentModel):
-                doc_type = indexer.result_model.document_type
-
-            else:
-                doc_type = indexer.result_model
-
-            result.append((TypeAdapter(doc_type).validate_python(
-                model_from_json_data(entry["doc"]["result"],
-                                     doc_type)), float(entry["score"])))
+        for document, score in self.execute_query_with_conversion(
+                query,
+                indexer,
+            ("doc.result", "score"),
+            {
+                "query_vector": vector,
+                "limit": limit,
+            },
+        ):
+            result.append((document, float(score)))
 
         return result

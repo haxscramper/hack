@@ -250,6 +250,9 @@ def index(
             resource_types=resource_instances,
         )
 
+    for index in indexer_instances:
+        db.enable_index(index)
+
     try:
         run_indexing_per_root_plan(
             db=db,

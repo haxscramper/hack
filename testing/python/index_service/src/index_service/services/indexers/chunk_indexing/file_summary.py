@@ -60,8 +60,6 @@ class FileSummaryIndexer(BaseIndexer):
             resources=resources,
         )
 
-        log.debug(summary.model_dump_json(serialize_as_any=True, indent=2))
-
         return IndexerOutput(
             indexer_id=self.asset_name,
             result=FileSummaryIndexerResult(

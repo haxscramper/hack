@@ -2,6 +2,8 @@ import json
 from pathlib import Path
 
 from index_service.services.core.db import IndexDatabase
+from index_service.services.core.indexing_flow import run_indexing_per_root_plan
+from index_service.services.core.job_types import RunContext
 from index_service.services.core.types import FileRef
 from index_service.services.core.job_runtime import IndexRuntime
 from index_service.services.indexers.chunk_indexing.file_embedding import EmbeddingChunk, FileEmbeddingIndexerResult
@@ -10,6 +12,7 @@ from index_service.services.pydantic_utils import dump_with_type, first_by_field
 import logging
 
 log = logging.getLogger(__name__)
+corpus = Path(__file__).parent.joinpath("corpus")
 
 
 def test_full_text_search(db: IndexDatabase, runtime: IndexRuntime,
@@ -25,7 +28,7 @@ def test_full_text_search(db: IndexDatabase, runtime: IndexRuntime,
 
     db.enable_index(runtime.get_indexer(fts_name))  # type: ignore
 
-    hits = db.full_text_search(
+    hits = db.full_text_search_phrase(
         fts_name,
         "beta",
         indexer=runtime.get_indexer(fts_name),  # type: ignore
@@ -80,3 +83,46 @@ def test_vector_search(db: IndexDatabase, runtime: IndexRuntime, tmp_path: Path)
 
     assert isinstance(hit0, EmbeddingChunk)
     assert hit0.file_hash == file_1.hash.hash
+
+
+def test_corpus_full_text_search(db: IndexDatabase, runtime: IndexRuntime) -> None:
+    ctx = RunContext(db)
+    idx = runtime.get_indexer("full_text")
+    db.enable_index(idx)
+    run_indexing_per_root_plan(
+        db=db,
+        runner=runtime,
+        ctx=ctx,
+        paths=(corpus,),
+        indexers=tuple(v.asset_name for k, v in runtime._indexer_instances.items()),
+        limit_total=10,
+        limit_per_path=10,
+    )
+
+    params = db.get_full_text_search_path(idx)
+    docs = list()
+
+    aql = f"""
+    FOR doc in {params.view_name}
+        SEARCH PHRASE(doc.{params.safe_path}, ["history", 2, "asbestos"], "text_en")
+        OPTIONS {{ waitForSync: true }}
+        RETURN {{ doc: doc }}
+    """
+
+    log.debug(aql)
+
+    for document in db.execute_query_with_conversion(
+            aql,
+            idx,
+        ("doc.result",),
+    ):
+        docs.append(document)
+
+    assert len(docs) == 1
+    doc0 = docs[0][0]
+    log.debug(json.dumps(dump_with_type(doc0), indent=2))
+    assert isinstance(doc0, FullTextChunk), type(doc0)
+
+    log.debug(len(docs))
+
+    # assert False

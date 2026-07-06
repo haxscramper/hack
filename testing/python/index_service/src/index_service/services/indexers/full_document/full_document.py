@@ -9,6 +9,7 @@ from index_service.services.utils import ExceptionContextNote
 import magic
 from beartype.typing import ClassVar, Sequence, cast, Annotated, Union, Any
 from pydantic import BaseModel, Field
+import plumbum
 
 from index_service.services.core.job_types import BaseIndexer, RunContext
 from index_service.services.core.types import (
@@ -61,14 +62,31 @@ class DocumentBlockIndexer(BaseIndexer):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self._magic = magic.Magic(mime=True)
+        self.supported_readers: set[str] = set(plumbum.local["pandoc"].run(
+            ["--list-input-formats"])[1].splitlines())
+
+        self.extension_to_reader: dict[str, str] = {
+            ".md": "markdown",
+            ".markdown": "markdown",
+            ".mkd": "markdown",
+            ".mdown": "markdown",
+            ".rst": "rst",
+            ".tex": "latex",
+            ".html": "html",
+            ".htm": "html",
+            ".docx": "docx",
+            ".odt": "odt",
+            ".epub": "epub",
+            ".org": "org",
+            ".txt": "markdown",
+        }
 
     def can_run(self, path: Path) -> bool:
-        mime = self._magic.from_file(str(path.resolve()))
-        if mime.startswith("text/") and not mime.startswith("text/x-script"):
-            return True
-
-        else:
+        if not path.is_file():
             return False
+        reader = self.extension_to_reader.get(path.suffix.lower())
+        result = reader in self.supported_readers if reader else False
+        return result
 
     def run(
         self,

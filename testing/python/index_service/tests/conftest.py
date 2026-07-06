@@ -82,7 +82,6 @@ class MockFlmServerResource(FlmServerResource):
 
     def handle(self, ctx: RunContext, request: FlmRequest,
                resources: dict[str, BaseResource]) -> FlmResponse:
-        log.info(request)
         return FlmResponse(
             model=f"flm-response-to",
             content=f"flm-content:({request.messages[-1].content})",
