@@ -11,7 +11,7 @@ from functools import wraps
 from pathlib import Path
 
 from beartype import beartype
-from beartype.typing import Any, Callable, Optional, ParamSpec, TypeVar
+from beartype.typing import Any, Callable, ClassVar, Optional, ParamSpec, TypeVar
 from pydantic import BaseModel
 
 from index_service.services.core.db import IndexDatabase
@@ -94,11 +94,16 @@ class RunContext:
             yield
 
 
+class BaseResourceConfig(BaseModel, extra="forbid"):
+    pass
+
+
 @beartype
 class BaseResource(ABC):
     resource_key: str
     required_resources: tuple[str, ...] = ()
     exclusive: bool = False
+    config_model: ClassVar[type[BaseModel]] = BaseResourceConfig
 
     @abstractmethod
     def handle(
@@ -176,6 +181,10 @@ def cache_indexer_run(func: Callable[P, R]) -> Callable[P, IndexerOutput]:
     return wrapper
 
 
+class BaseIndexerConfig(BaseModel, extra="forbid"):
+    pass
+
+
 @beartype
 class BaseIndexer(ABC):
     asset_name: str
@@ -185,6 +194,8 @@ class BaseIndexer(ABC):
     max_parallel: int = 1
     should_load_cache: bool = True
     edge_collection_name: Optional[str] = None
+    config_model: ClassVar[type[BaseModel]] = BaseIndexerConfig
+    "Pydantic data class with object that holds all the configuration parameters"
 
     def get_document_type_bases(self) -> list[Any]:
         if issubclass(self.result_model, MultiDocumentModel):
