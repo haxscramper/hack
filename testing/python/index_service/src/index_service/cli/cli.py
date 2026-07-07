@@ -35,7 +35,7 @@ from index_service.services.indexers.wd_indexer import WdTagIndexer
 from index_service.services.log_config import JsonlFormatter, keep_last_files
 from index_service.services.resources.flm_server import FlmServerResource
 from index_service.services.resources.pdf.pdf_extractor import PdfExtractor
-from index_service.services.resources.wd_tagger import WdTagger
+from index_service.services.resources.wd_tagger import ImageProbabilityTagger
 from index_service.services.utils import (
     get_custom_traceback_handler,
     get_xdg_cache_dir,
@@ -92,7 +92,7 @@ _INDEXER_TYPES = [t for t in DEFAULT_INDEXER_TYPES] + [
 
 _RESOURCE_TYPES = [t for t in DEFAULT_RESOURCE_TYPES] + [
     FlmServerResource,
-    WdTagger,
+    ImageProbabilityTagger,
     PdfExtractor,
 ]
 
@@ -224,8 +224,8 @@ def index(
                 assert dep in resources, (
                     f"Indexer '{t.resource_key}' requires resource '{dep}' to be enabled")
 
-            if t == WdTagger:
-                resource_instances.append(WdTagger.from_huggingface())
+            if t == ImageProbabilityTagger:
+                resource_instances.append(ImageProbabilityTagger.from_huggingface())
             else:
                 resource_instances.append(t())
 

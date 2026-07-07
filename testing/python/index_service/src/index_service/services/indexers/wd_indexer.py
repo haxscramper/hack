@@ -3,20 +3,20 @@ from pathlib import Path
 
 from beartype.typing import cast
 from index_service.services.core.job_types import BaseIndexer, RunContext, cache_indexer_run
-from index_service.services.resources.wd_tagger import WdTag, WdTagger
+from index_service.services.resources.wd_tagger import ProbabilityTag, ImageProbabilityTagger
 from index_service.services.core.types import IndexerOutput, IndexerRequest
 from PIL import Image
 from pydantic import BaseModel
 
 
 class WdTagIndexerResult(BaseModel, extra="forbid"):
-    tags: list[WdTag]
+    tags: list[ProbabilityTag]
 
 
 class WdTagIndexer(BaseIndexer):
     asset_name = "wd_tags"
     result_model = WdTagIndexerResult
-    required_resources = ("wd_tagger", )
+    required_resources = ("wd_tagger",)
 
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
@@ -32,7 +32,8 @@ class WdTagIndexer(BaseIndexer):
         resources: dict[str, object],
         assets: dict[str, object],
     ) -> IndexerOutput:
-        tagger: WdTagger = cast(WdTagger, resources["wd_tagger"])
+        tagger: ImageProbabilityTagger = cast(ImageProbabilityTagger,
+                                              resources["wd_tagger"])
         return IndexerOutput(
             indexer_id=self.asset_name,
             result=WdTagIndexerResult(

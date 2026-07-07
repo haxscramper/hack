@@ -36,7 +36,20 @@ dependencies = [
     "rich>=15.0.0",
     "tiktoken>=0.13.0",
     "zmq>=0.0.0",
+    "torch",
+    "torchvision",
+    "torchaudio",
 ]
+
+[tool.uv.sources]
+torch = { index = "pytorch-rocm" }
+torchvision = { index = "pytorch-rocm" }
+torchaudio = { index = "pytorch-rocm" }
+
+[[tool.uv.index]]
+name = "pytorch-rocm"
+url = "https://download.pytorch.org/whl/rocm7.2"
+explicit = true
 
 [project.scripts]
 index-service = "index_service:main"
