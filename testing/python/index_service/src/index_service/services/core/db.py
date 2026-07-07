@@ -290,6 +290,7 @@ class IndexDatabase:
                 node_id,
                 label=self._format_html_label(doc, json_labels),
                 shape=shape,
+                color="red",
             )
             added_nodes.add(node_id)
 
@@ -342,6 +343,7 @@ class IndexDatabase:
                         edge_node_id,
                         label=self._format_html_label(edge, json_labels),
                         shape="box",
+                        color="blue",
                     )
                     added_nodes.add(edge_node_id)
 

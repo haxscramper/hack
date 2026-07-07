@@ -140,4 +140,4 @@ def test_corpus_full_text_search(db: IndexDatabase, runtime: IndexRuntime) -> No
 
     log.debug(len(docs))
 
-    assert False
+    # assert False

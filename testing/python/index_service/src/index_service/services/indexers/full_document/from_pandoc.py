@@ -258,7 +258,7 @@ def _convert_table(pb: dict, file_hash: str) -> Table:
     # tfoot: [attr, rows]
     if isinstance(tfoot, list) and len(tfoot) == 2:
         for row in tfoot[1]:
-            rows.append(_row_to_table_row(row, is_header=False))
+            rows.append(_row_to_table_row(row, is_header=False, file_hash=file_hash))
 
     return cast(
         Table,
@@ -296,6 +296,7 @@ def _convert_block(pb: dict, file_hash: str) -> Sequence[DocumentBlock]:
                     file_hash=file_hash,
                     props=props,
                     content=_convert_inlines(inlines, TextStyles()),
+                    nested=[],
                 )
             ]
 
@@ -415,14 +416,47 @@ def _convert_block(pb: dict, file_hash: str) -> Sequence[DocumentBlock]:
             return [build(Paragraph, content=_convert_inlines(pb.get("c", [])))]
 
 
+def _nest_by_heading_level(blocks: Sequence[DocumentBlock]) -> list[DocumentBlock]:
+    root: list[DocumentBlock] = []
+    heading_stack: list[Heading] = []
+
+    for block in blocks:
+        if isinstance(block, Heading):
+            level = block.props.level
+
+            while heading_stack and heading_stack[-1].props.level >= level:
+                heading_stack.pop()
+
+            if heading_stack:
+                heading_stack[-1].nested.append(block)
+            else:
+                root.append(block)
+
+            heading_stack.append(block)
+            continue
+
+        if heading_stack:
+            heading_stack[-1].nested.append(block)
+        else:
+            root.append(block)
+
+    return root
+
+
 def pandoc_to_document(path: Path, file_hash: str) -> Document:
     pandoc = plumbum.local["pandoc"]
     ast = json.loads(pandoc("-t", "json", str(path)))
     Path("/tmp/pandoc-result.json").write_text(json.dumps(ast, indent=2))
-    nested: list = []
+
+    flat_blocks: list[DocumentBlock] = []
     for pb in ast["blocks"]:
-        nested += _convert_block(
-            pb,
-            file_hash=file_hash,
-        )
-    return build(Document, nested=nested, file_hash=file_hash)
+        flat_blocks += _convert_block(pb, file_hash=file_hash)
+
+    nested = _nest_by_heading_level(flat_blocks)
+    result = build(Document, nested=nested, file_hash=file_hash)
+    # Path(f"/tmp/ingest-structure-{path.name}.json").write_text(
+    #     result.model_dump_json(
+    #         indent=2,
+    #         serialize_as_any=True,
+    #     ))
+    return result
