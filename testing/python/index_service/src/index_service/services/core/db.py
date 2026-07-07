@@ -9,13 +9,14 @@ from arango import ArangoClient, DocumentInsertError
 from arango.aql import AQL
 from arango.database import StandardDatabase
 from beartype import beartype
-from beartype.typing import Any, ClassVar, Dict, List, Optional, TypeVar, cast, Sequence, Protocol
+from beartype.typing import Any, Dict, List, Optional, TypeVar, cast, Sequence, Protocol
 from openai import BaseModel
 from pydantic import TypeAdapter
 import pydantic
-from arango.exceptions import IndexCreateError
-import time
 import glom
+import html
+import json
+import graphviz
 
 from index_service.services.core.types import (
     AnyModel,
@@ -36,7 +37,7 @@ from index_service.services.pydantic_utils import (
     model_from_json_data,
     model_to_json_data,
 )
-from index_service.services.utils import ExceptionContextNote, ExceptionDump
+from index_service.services.utils import ExceptionContextNote
 
 T = TypeVar("T")
 
@@ -215,6 +216,117 @@ class IndexDatabase:
                     self._db.view(view_name).update_properties(view_props)
                 else:
                     self._db.create_arangosearch_view(view_name, properties=view_props)
+
+    def _format_html_label(self, data: dict, json_labels: bool) -> str:
+        if json_labels:
+            text = json.dumps(data, indent=2, default=str)
+            escaped = html.escape(text)
+            escaped = escaped.replace(" ", "&nbsp;").replace("\n", '<br align="left"/>')
+            return f'<<font face="monospace">{escaped}<br align="left"/></font>>'
+
+        def format_value(value) -> str:
+            text = json.dumps(value, indent=2, default=str)
+            escaped = html.escape(text)
+            escaped = escaped.replace(" ", "&nbsp;").replace("\n", '<br align="left"/>')
+            return f'<font face="monospace">{escaped}</font>'
+
+        rows = []
+        for key, value in data.items():
+            k = html.escape(str(key))
+            v = format_value(value)
+            rows.append(f'<tr><td align="left" valign="top"><b>{k}</b></td>'
+                        f'<td align="left" balign="left">{v}</td></tr>')
+        table = "".join(rows)
+        return (f'<<table border="0" cellborder="1" cellspacing="0">{table}</table>>')
+
+    def render_indexer_graphviz(
+        self,
+        indexer: BaseIndexProtocol,
+        start_vertex_ids: set[str],
+        *,
+        max_nodes: int = int(1E10),
+        max_depth: int = int(1E10),
+        max_outgoing_edges: int = int(1E10),
+        json_labels: bool = False,
+    ) -> graphviz.Digraph:
+        graph = graphviz.Digraph(name=self.get_graph_name(indexer.asset_name))
+        edge_collection = self.get_edge_name(indexer.asset_name)
+
+        node_shape = "box" if json_labels else "plaintext"
+
+        visited: set[str] = set()
+        added_nodes: set[str] = set()
+
+        def add_document_node(doc: dict, *, shape: str) -> None:
+            node_id = doc["_id"]
+            if node_id in added_nodes:
+                return
+            graph.node(
+                node_id,
+                label=self._format_html_label(doc, json_labels),
+                shape=shape,
+            )
+            added_nodes.add(node_id)
+
+        # DFS stack of (vertex _id, depth)
+        vertex_collection = indexer.asset_name
+
+        def to_full_id(vid: str) -> str:
+            return vid if "/" in vid else f"{vertex_collection}/{vid}"
+
+        stack: list[tuple[str, int]] = [(to_full_id(vid), 0) for vid in start_vertex_ids]
+
+        query = """
+        FOR v, e IN 1..1 OUTBOUND @start_id @@edge_collection
+            LIMIT @max_outgoing_edges
+            RETURN {vertex: v, edge: e}
+        """
+
+        while stack and len(added_nodes) < max_nodes:
+            current_id, depth = stack.pop()
+            if current_id in visited:
+                continue
+
+            visited.add(current_id)
+
+            current_doc = self._db.document(current_id)
+            add_document_node(current_doc, shape=node_shape)
+
+            if depth >= max_depth:
+                continue
+
+            cursor = self._db.aql.execute(
+                query,
+                bind_vars={ # type: ignore
+                    "start_id": current_id,
+                    "@edge_collection": edge_collection,
+                    "max_outgoing_edges": max_outgoing_edges,
+                },
+            )
+
+            for result in cursor:
+                vertex = result["vertex"]
+                edge = result["edge"]
+
+                add_document_node(vertex, shape=node_shape)
+
+                # Intermediate rectangle node carrying the edge label.
+                edge_node_id = edge["_id"]
+                if edge_node_id not in added_nodes:
+                    graph.node(
+                        edge_node_id,
+                        label=self._format_html_label(edge, json_labels),
+                        shape="box",
+                    )
+                    added_nodes.add(edge_node_id)
+
+                graph.edge(current_id, edge_node_id)
+                graph.edge(edge_node_id, vertex["_id"])
+
+                if vertex["_id"] not in visited:
+                    stack.append((vertex["_id"], depth + 1))
+
+        return graph
 
     def ensure_collections(self, indexers: Sequence[BaseIndexProtocol]) -> None:
 

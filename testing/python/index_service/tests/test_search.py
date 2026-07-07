@@ -128,6 +128,13 @@ def test_corpus_full_text_search(db: IndexDatabase, runtime: IndexRuntime) -> No
     parent_of = db.get_inbound(doc0.spans[0].source_hash, doc_idx)
     assert len(parent_of) == 1
 
+    graph = db.render_indexer_graphviz(doc_idx,
+                                       max_outgoing_edges=5,
+                                       start_vertex_ids=set(parent_of))
+    graph.attr("graph", rankdir="LR")
+    graph.render("/tmp/full_asbestos", format="png")
+    graph.render("/tmp/full_asbestos", format="svg")
+
     parent_chunk = db.get_indexer_one_document(parent_of[0], doc_idx)
     assert isinstance(parent_chunk, Heading), type(parent_chunk)
 
