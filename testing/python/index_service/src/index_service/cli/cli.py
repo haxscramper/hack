@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 
 import click
-from beartype.typing import Any
+from beartype.typing import Any, Optional
 from PySide6.QtWidgets import QApplication
 
 from index_service.gui.collection_views.comfy_input_builder import (
@@ -29,6 +29,7 @@ from index_service.services.indexers.exif_metadata import ExifMetadataIndexer
 from index_service.services.indexers.ffprobe_indexer import FFProbeIndexer
 from index_service.services.indexers.full_document.full_document import DocumentBlockIndexer
 from index_service.services.indexers.image_generation import GenerationParamsIndexer
+from index_service.services.indexers.media_transcribe import MediaTranscriptionIndexer
 from index_service.services.indexers.pdf_indexer import PdfIndexer
 from index_service.services.indexers.safetensor_indexer import SafetensorIndexer
 from index_service.services.indexers.wd_indexer import WdTagIndexer
@@ -36,6 +37,7 @@ from index_service.services.log_config import JsonlFormatter, keep_last_files
 from index_service.services.resources.flm_server import FlmServerResource
 from index_service.services.resources.pdf.pdf_extractor import PdfExtractor
 from index_service.services.resources.wd_tagger import WdTagger
+from index_service.services.resources.whisper_transcribe import WhisperTranscribeResource
 from index_service.services.utils import (
     get_custom_traceback_handler,
     get_xdg_cache_dir,
@@ -88,12 +90,14 @@ _INDEXER_TYPES = [t for t in DEFAULT_INDEXER_TYPES] + [
     ExifMetadataIndexer,
     ComfyInputIndexer,
     DocumentBlockIndexer,
+    MediaTranscriptionIndexer,
 ]
 
 _RESOURCE_TYPES = [t for t in DEFAULT_RESOURCE_TYPES] + [
     FlmServerResource,
     WdTagger,
     PdfExtractor,
+    WhisperTranscribeResource,
 ]
 
 
@@ -136,6 +140,14 @@ _RESOURCE_TYPES = [t for t in DEFAULT_RESOURCE_TYPES] + [
     default="text",
     show_default=True,
 )
+@click.option(
+    "--media-transcribe-whisper-server",
+    type=click.Path(exists=True, executable=True),
+    envvar="HAXDEX_MEDIA_TRANSCRIBE_WHISPER_SERVER",
+    required=False,
+    show_default=True,
+    default=None,
+)
 def index(
     host: str,
     db_name: str,
@@ -151,6 +163,7 @@ def index(
     perf_trace_file: str | None = None,
     logfile: str | None = None,
     logfile_format: str = "text",
+    media_transcribe_whisper_server: Optional[str] = None,
 ) -> None:
     stfu_logs()
     handler = get_custom_traceback_handler(show_args=False)

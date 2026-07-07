@@ -39,19 +39,17 @@ class FlmServerResource(BaseResource):
 
     def __init__(
         self,
-        base_url: str | None = None,
+        base_url: str = "http://127.0.0.1:52625/v1",
         api_key: str = "flm",
-        host: str | None = None,
-        port: int | None = None,
+        host: str = "127.0.0.1",
+        port: int = 52625,
         serve_cmd: list[str] | None = None,
         startup_timeout_sec: float = 20.0,
     ) -> None:
-        env_base_url = os.environ.get("FLM_BASE_URL",
-                                      "http://127.0.0.1:52625/v1")
-        self._base_url = base_url or env_base_url
+        self._base_url = base_url
         self._api_key = api_key
-        self._host = host or os.environ.get("FLM_HOST", "127.0.0.1")
-        self._port = port or int(os.environ.get("FLM_PORT", "52625"))
+        self._host = host
+        self._port = port
         self._startup_timeout_sec = startup_timeout_sec
 
         self._serve_cmd = serve_cmd or [
@@ -109,8 +107,7 @@ class FlmServerResource(BaseResource):
             time.sleep(0.2)
 
         self._stop_server_locked()
-        raise RuntimeError(
-            "Failed to start `flm serve` and reach healthy state.")
+        raise RuntimeError("Failed to start `flm serve` and reach healthy state.")
 
     def _stop_server_locked(self) -> None:
         if self._proc is not None:
@@ -143,8 +140,7 @@ class FlmServerResource(BaseResource):
             self._restart_server_locked()
 
     def _create_completion(self, request: FlmRequest):
-        log.info(
-            f"message sizes: {[len(msg.content) for msg in request.messages]}")
+        log.info(f"message sizes: {[len(msg.content) for msg in request.messages]}")
 
         params: dict[str, Any] = {
             "model": request.model,
@@ -187,8 +183,7 @@ class FlmServerResource(BaseResource):
             completion = self._create_completion(request)
 
         content = completion.choices[0].message.content or ""
-        usage = completion.usage.model_dump(
-        ) if completion.usage is not None else None
+        usage = completion.usage.model_dump() if completion.usage is not None else None
 
         return FlmResponse(
             model=completion.model,
