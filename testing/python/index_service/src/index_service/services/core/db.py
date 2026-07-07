@@ -4,6 +4,7 @@ import logging
 import math
 from dataclasses import dataclass
 from pathlib import Path
+import textwrap
 
 from arango import ArangoClient, DocumentInsertError
 from arango.aql import AQL
@@ -217,18 +218,42 @@ class IndexDatabase:
                 else:
                     self._db.create_arangosearch_view(view_name, properties=view_props)
 
-    def _format_html_label(self, data: dict, json_labels: bool) -> str:
+    def _format_html_label(
+        self,
+        data: dict,
+        json_labels: bool,
+        wrap_width: int = 120,
+    ) -> str:
+
+        def wrap_text(text: str) -> str:
+            wrapped_lines = []
+            for line in text.split("\n"):
+                if len(line) <= wrap_width:
+                    wrapped_lines.append(line)
+                    continue
+                indent = len(line) - len(line.lstrip(" "))
+                pad = " " * indent
+                wrapped_lines.extend(
+                    textwrap.wrap(
+                        line,
+                        width=wrap_width,
+                        subsequent_indent=pad,
+                        break_long_words=True,
+                        break_on_hyphens=False,
+                    ) or [line])
+            return "\n".join(wrapped_lines)
+
+        def escape_html(text: str) -> str:
+            escaped = html.escape(wrap_text(text))
+            return escaped.replace(" ", "&nbsp;").replace("\n", '<br align="left"/>')
+
         if json_labels:
             text = json.dumps(data, indent=2, default=str)
-            escaped = html.escape(text)
-            escaped = escaped.replace(" ", "&nbsp;").replace("\n", '<br align="left"/>')
-            return f'<<font face="monospace">{escaped}<br align="left"/></font>>'
+            return f'<<font face="monospace">{escape_html(text)}<br align="left"/></font>>'
 
         def format_value(value) -> str:
             text = json.dumps(value, indent=2, default=str)
-            escaped = html.escape(text)
-            escaped = escaped.replace(" ", "&nbsp;").replace("\n", '<br align="left"/>')
-            return f'<font face="monospace">{escaped}</font>'
+            return f'<font face="monospace">{escape_html(text)}</font>'
 
         rows = []
         for key, value in data.items():
