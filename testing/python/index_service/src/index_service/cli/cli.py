@@ -22,6 +22,7 @@ from index_service.services.core.db import IndexDatabase
 from index_service.services.core.indexing_flow import run_indexing_per_root_plan
 from index_service.services.core.job_runtime import IndexRuntime
 from index_service.services.core.job_types import RunContext
+import commentjson
 from index_service.services.default_job_types import (
     DEFAULT_INDEXER_TYPES,
     DEFAULT_RESOURCE_TYPES,
@@ -151,12 +152,12 @@ class IndexConfig(BaseModel):
     enable_cache: set[str] | None = None
 
     # Raw input maps from JSON.
-    indexers: dict[str, Any] = Field(default_factory=dict)
-    resources: dict[str, Any] = Field(default_factory=dict)
+    raw_indexers: dict[str, Any] = Field(default_factory=dict)
+    raw_resources: dict[str, Any] = Field(default_factory=dict)
 
     # Validated typed models (populated during validation).
-    indexer_configs: dict[str, BaseModel] = Field(default_factory=dict, exclude=True)
-    resource_configs: dict[str, BaseModel] = Field(default_factory=dict, exclude=True)
+    indexers: dict[str, BaseModel] = Field(default_factory=dict, exclude=True)
+    resources: dict[str, BaseModel] = Field(default_factory=dict, exclude=True)
 
     media_transcribe_whisper_server: Path | None = None
 
@@ -212,21 +213,21 @@ class IndexConfig(BaseModel):
 
     @model_validator(mode="after")
     def _validate_plugin_configs(self) -> "IndexConfig":
-        self.indexer_configs = _validate_plugin_config_map(
-            raw=self.indexers,
+        self.indexers = _validate_plugin_config_map(
+            raw=self.raw_indexers,
             registry=_INDEXER_BY_NAME,
             kind="indexer",
         )
-        self.resource_configs = _validate_plugin_config_map(
-            raw=self.resources,
+        self.resources = _validate_plugin_config_map(
+            raw=self.raw_resources,
             registry=_RESOURCE_BY_NAME,
             kind="resource",
         )
 
         if self.enable_cache is None:
-            self.enable_cache = set(self.indexers.keys())
+            self.enable_cache = set(self.raw_indexers.keys())
 
-        unknown_cache = set(self.enable_cache) - set(self.indexers.keys())
+        unknown_cache = set(self.enable_cache) - set(self.raw_indexers.keys())
         if unknown_cache:
             raise ValueError(
                 f"enable_cache contains unknown/disabled indexers: {sorted(unknown_cache)}"
@@ -248,12 +249,12 @@ class AppConfig(BaseModel):
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
 
     # exactly one of these must be set
-    config: IndexConfig | None = None
+    index: IndexConfig | None = None
     view: ViewConfig | None = None
 
     @model_validator(mode="after")
     def _validate_mode_payload(self) -> "AppConfig":
-        has_index = self.config is not None
+        has_index = self.index is not None
         has_view = self.view is not None
 
         if has_index == has_view:
@@ -303,8 +304,8 @@ def _setup_runtime_logging(log_cfg: LoggingConfig) -> tuple[Path, Path, Path]:
 
 
 def _run_index(app_config: AppConfig) -> None:
-    assert app_config.config is not None
-    index_cfg = app_config.config
+    assert app_config.index is not None
+    index_cfg = app_config.index
 
     stfu_logs()
     handler = get_custom_traceback_handler(show_args=False)
@@ -337,8 +338,8 @@ def _run_index(app_config: AppConfig) -> None:
     ctx = RunContext(db)
     ctx.start_trace()
 
-    enabled_resources = set(index_cfg.resources.keys())
-    enabled_indexers = set(index_cfg.indexers.keys())
+    enabled_resources = set(index_cfg.raw_resources.keys())
+    enabled_indexers = set(index_cfg.raw_indexers.keys())
 
     resource_instances = []
     for t in _RESOURCE_TYPES:
@@ -351,7 +352,7 @@ def _run_index(app_config: AppConfig) -> None:
                 raise ValueError(
                     f"Resource '{key}' requires resource '{dep}' to be enabled")
 
-        resource_cfg = index_cfg.resource_configs[key].model_dump()
+        resource_cfg = index_cfg.resources[key].model_dump()
 
         if t == WdTagger:
             instance = WdTagger.from_huggingface(**resource_cfg)
@@ -376,7 +377,7 @@ def _run_index(app_config: AppConfig) -> None:
                 raise ValueError(
                     f"Indexer '{key}' requires indexer '{dep}' to be enabled")
 
-        indexer_cfg = index_cfg.indexer_configs[key].model_dump()
+        indexer_cfg = index_cfg.indexers[key].model_dump()
         instance = t(
             should_load_cache=key in index_cfg.enable_cache,
             **indexer_cfg,
@@ -400,7 +401,7 @@ def _run_index(app_config: AppConfig) -> None:
             runner=runner,
             ctx=ctx,
             paths=index_cfg.paths,
-            indexers=tuple(index_cfg.indexers.keys()),
+            indexers=tuple(index_cfg.raw_indexers.keys()),
             limit_total=index_cfg.limit_total,
             limit_per_path=index_cfg.limit_per_path,
         )
@@ -445,7 +446,7 @@ def _run_view(config: AppConfig) -> None:
 
 def _load_config(path: Path) -> AppConfig:
     cfg_path = path.expanduser().resolve().absolute()
-    payload = json.loads(cfg_path.read_text())
+    payload = commentjson.loads(cfg_path.read_text())
     return AppConfig.model_validate(payload)
 
 
@@ -456,7 +457,7 @@ def main() -> None:
 
     app_config = _load_config(args.config)
 
-    if app_config.config is not None:
+    if app_config.index is not None:
         _run_index(app_config)
     else:
         _run_view(app_config)

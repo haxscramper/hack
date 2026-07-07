@@ -8,14 +8,8 @@ test:
 # "tests/test_search.py::test_full_text_search"
 
 index:
-    uv run src/index_service/cli/cli.py index \
-        --reset True \
-        --db-name test_index \
-        --indexer document_block \
-        --indexer full_text \
-        --logfile /tmp/index-log.log \
-        --perf-trace-file /tmp/indexer-trace-perf.json \
-        "~/defaultdirs/temporary_interchange/content_root_for_indexing/"
+    uv run src/index_service/cli/cli.py "~/defaultdirs/temporary_interchange/content_root_indexing.jsonc" 
+        
 
 # --indexer file_summary \
 # --resource text_summary \
