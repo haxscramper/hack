@@ -18,24 +18,25 @@ from index_service.services.utils import get_xdg_cache_dir
 
 from index_service.services.utils import get_xdg_cache_dir
 
-jax.config.update("jax_compilation_cache_dir",
-                  str(get_xdg_cache_dir(["resource", "wd_tagger", "jax_cache"])))
+jax.config.update(
+    "jax_compilation_cache_dir",
+    str(get_xdg_cache_dir(["resource", "wd_tagger", "jax_cache"])))
 jax.config.update("jax_persistent_cache_min_entry_size_bytes", -1)
 jax.config.update("jax_persistent_cache_min_compile_time_secs", 0)
 
 
-class ProbabilityTag(BaseModel, extra="forbid"):
+class WdTag(BaseModel, extra="forbid"):
     category: str
     name: str
     probability: float
 
 
-class ProbabilityTaggerRequest(BaseModel, extra="forbid"):
+class WdTaggerRequest(BaseModel, extra="forbid"):
     path: str
 
 
-class ProbabilityTaggerResult(BaseModel, extra="forbid"):
-    tags: list[ProbabilityTag]
+class WdTaggerResult(BaseModel, extra="forbid"):
+    tags: list[WdTag]
 
 
 CATEGORY_MAP = {
@@ -77,8 +78,8 @@ class PredModel:
 
 def pil_ensure_rgb(image: Image.Image) -> Image.Image:
     if image.mode not in ["RGB", "RGBA"]:
-        image = image.convert("RGBA") if "transparency" in image.info else image.convert(
-            "RGB")
+        image = image.convert(
+            "RGBA") if "transparency" in image.info else image.convert("RGB")
 
     if image.mode == "RGBA":
         canvas = Image.new("RGBA", image.size, (255, 255, 255))
@@ -102,7 +103,7 @@ def pil_resize(image: Image.Image, target_size: int) -> Image.Image:
     return image
 
 
-class ImageProbabilityTagger(BaseResource):
+class WdTagger(BaseResource):
     resource_key = "wd_tagger"
 
     @staticmethod
@@ -110,7 +111,7 @@ class ImageProbabilityTagger(BaseResource):
         model: str = "swinv2_v3",
         threshold: float = 0.01,
         cache_dir: Path | None = get_xdg_cache_dir(["resource", "wd_tagger"]),
-    ) -> "ImageProbabilityTagger":
+    ) -> "WdTagger":
         repo_id = MODEL_REPO_MAP[model]
 
         weights_path = Path(
@@ -137,7 +138,7 @@ class ImageProbabilityTagger(BaseResource):
                 cache_dir=cache_dir,
             ))
 
-        return ImageProbabilityTagger(
+        return WdTagger(
             model_name=model,
             model_path=weights_path,
             config_path=config_path,
@@ -188,19 +189,19 @@ class ImageProbabilityTagger(BaseResource):
         inputs = inputs[..., ::-1]
         return inputs
 
-    def tag_image(self, ctx: RunContext, image_path: Path) -> list[ProbabilityTag]:
+    def tag_image(self, ctx: RunContext, image_path: Path) -> list[WdTag]:
         input_data = self.preprocess_image(image_path)
         with ctx.trace_scope("predict image tags", path=image_path):
             probs = self.model.predict(input_data)
 
-        result: list[ProbabilityTag] = []
+        result: list[WdTag] = []
         for i, prob in enumerate(probs):
             if prob >= self.threshold:
                 row = self.tags_df.iloc[i]
                 category = CATEGORY_MAP.get(int(row["category"]),
                                             f"cat_{int(row['category'])}")
                 result.append(
-                    ProbabilityTag(
+                    WdTag(
                         category=category,
                         name=str(row["name"]),
                         probability=float(prob),
@@ -210,5 +211,5 @@ class ImageProbabilityTagger(BaseResource):
         return result
 
     def handle(self, ctx: RunContext,
-               request: ProbabilityTaggerRequest) -> ProbabilityTaggerResult:
-        return ProbabilityTaggerResult(tags=self.tag_image(ctx, Path(request.path)))
+               request: WdTaggerRequest) -> WdTaggerResult:
+        return WdTaggerResult(tags=self.tag_image(ctx, Path(request.path)))
