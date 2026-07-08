@@ -16,7 +16,8 @@ from index_service.services.core.types import (
     IndexEdge,
     IndexMultiDocument,
 )
-from index_service.services.indexers.full_document.full_document_types import InlineContent
+from index_service.services.indexers.full_document.full_document_types import DocumentBlock, InlineContent
+import index_service.services.indexers.full_document.full_document_types as doc_types
 
 log = logging.getLogger(__name__)
 
@@ -206,7 +207,8 @@ class Chunker:
             results.append(self._raw(i, ctext, spans, file_hash))
         return results
 
-    def chunk_blocks(self, documents, edges, file_hash: str) -> list[RawChunk]:
+    def chunk_blocks(self, documents: list[DocumentBlock], edges,
+                     file_hash: str) -> list[RawChunk]:
         units = self._render_units(documents, edges)
         if not units:
             return []
@@ -366,37 +368,40 @@ class Chunker:
     def _inline(self, content: InlineContent) -> str:
         return content.text
 
-    def _render_own(self, block, depth: int) -> str | None:
-        btype = getattr(block, "type", None)
-        if btype in ("document", "file", "div", "tableRow", "tableCell"):
-            return None
+    def _render_own(self, block: DocumentBlock, depth: int) -> str | None:
+        match block:
+            case doc_types.Document() | doc_types.File() | doc_types.Div(
+            ) | doc_types.TableRow() | doc_types.TableCell():
+                return None
 
-        log.info(f"{type(block)}")
-        content = getattr(block, "content", None)
-
-        match btype:
-            case "heading":
+            case doc_types.Heading():
                 level = getattr(getattr(block, "props", None), "level", 1)
-                return "#" * level + " " + self._inline(content)
-            case "paragraph":
-                return self._inline(content)
-            case "quote":
-                return "> " + self._inline(content)
-            case "codeBlock":
-                lang = getattr(getattr(block, "props", None), "language", "")
-                return f"```{lang}\n{self._inline(content)}\n```"
-            case "math":
-                return f"$$\n{self._inline(content)}\n$$"
-            case "rawBlock":
-                return getattr(block, "content", "") or ""
-            case "bulletListItem":
-                return "  " * depth + "- " + self._inline(content)
-            case "numberedListItem":
-                return "  " * depth + "1. " + self._inline(content)
+                return "#" * level + " " + self._inline(block.content)
 
-        if content is not None:
-            return self._inline(content)
-        return None
+            case doc_types.Paragraph():
+                return self._inline(block.content)
+
+            case doc_types.Quote():
+                return "> " + self._inline(block.content)
+
+            case doc_types.Code():
+                lang = getattr(getattr(block, "props", None), "language", "")
+                return f"```{lang}\n{block.content}\n```"
+
+            case doc_types.Math():
+                return f"$$\n{self._inline(block.content)}\n$$"
+
+            case doc_types.RawBlock():
+                return block.content
+
+            case doc_types.BulletListItem():
+                return "  " * depth + "- " + self._inline(block.content)
+
+            case doc_types.NumberedListItem():
+                return "  " * depth + "1. " + self._inline(block.content)
+
+            case _:
+                raise ValueError(f"Unhandled btype '{type(block)}'")
 
     def _render_table(self, table, children, by_hash) -> str:
         rows: list[list[str]] = []
