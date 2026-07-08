@@ -689,7 +689,6 @@ class IndexDatabase:
 
             documents: list[IndexMultiDocument] = []
             edges: list[IndexEdge] = []
-            log.debug(f"extracting full document index for hash {hash.hash}")
 
             for doc in self._db.aql.execute(  # type: ignore
                     f"""

@@ -30,8 +30,7 @@ def test_full_text_search(db: IndexDatabase, runtime: IndexRuntime,
     db.enable_index(runtime.get_indexer(fts_name))  # type: ignore
 
     hits = db.full_text_search_phrase(
-        fts_name,
-        "beta",
+        query="beta",
         indexer=runtime.get_indexer(fts_name),  # type: ignore
         wait_for_sync=True,
     )

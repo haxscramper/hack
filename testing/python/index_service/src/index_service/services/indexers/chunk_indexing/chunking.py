@@ -5,8 +5,9 @@ import logging
 import math
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Any, Callable, ClassVar, Literal, Optional, Union
+from beartype.typing import Any, Callable, ClassVar, Literal, Optional, Union
 
+from beartype import beartype
 import semchunk
 import tiktoken
 from pydantic import BaseModel, Field
@@ -15,13 +16,11 @@ from index_service.services.core.types import (
     IndexEdge,
     IndexMultiDocument,
 )
+from index_service.services.indexers.full_document.full_document_types import InlineContent
 
 log = logging.getLogger(__name__)
 
 
-# --------------------------------------------------------------------------- #
-# Configuration
-# --------------------------------------------------------------------------- #
 class ChunkUnit(str, enum.Enum):
     CHARS = "chars"
     TOKENS = "tokens"
@@ -45,9 +44,6 @@ class ChunkConfig(BaseModel, extra="forbid"):
     encoding_name: str = "o200k_base"
 
 
-# --------------------------------------------------------------------------- #
-# Chunk schema (pydantic objects used inside indexer result models)
-# --------------------------------------------------------------------------- #
 class SourceSpan(BaseModel, extra="forbid"):
     """Maps a contiguous range of chunk text back to its origin.
 
@@ -87,9 +83,6 @@ class ChunkLink(IndexEdge, extra="forbid"):
     relation: Literal["chunk"] = "chunk"
 
 
-# --------------------------------------------------------------------------- #
-# Internal working structures
-# --------------------------------------------------------------------------- #
 @dataclass
 class RawChunk:
     index: int
@@ -123,9 +116,7 @@ def chunk_hash(file_hash: str, index: int, text: str, spans: list[SourceSpan]) -
     return hasher.hexdigest()
 
 
-# --------------------------------------------------------------------------- #
-# Chunker
-# --------------------------------------------------------------------------- #
+@beartype
 class Chunker:
 
     def __init__(self, config: ChunkConfig) -> None:
@@ -137,7 +128,6 @@ class Chunker:
             self._counter = len
         self._chunker = semchunk.chunkerify(self._counter, config.max_size)
 
-    # -- helpers ----------------------------------------------------------- #
     def _size(self, text: str) -> int:
         return self._counter(text)
 
@@ -179,7 +169,6 @@ class Chunker:
             return 0
         return len(self._enc.decode(toks[:take]))
 
-    # -- flat text --------------------------------------------------------- #
     def chunk_text(self, text: str, file_hash: str) -> list[RawChunk]:
         if not text:
             return []
@@ -217,7 +206,6 @@ class Chunker:
             results.append(self._raw(i, ctext, spans, file_hash))
         return results
 
-    # -- document blocks --------------------------------------------------- #
     def chunk_blocks(self, documents, edges, file_hash: str) -> list[RawChunk]:
         units = self._render_units(documents, edges)
         if not units:
@@ -257,7 +245,6 @@ class Chunker:
             results.append(self._raw(i, parts_text, spans, file_hash))
         return results
 
-    # -- partitioning ------------------------------------------------------ #
     def _partition_units(self, units: list[_Unit]) -> list[list[int]]:
         total = sum(u.size for u in units)
         maxs = self.cfg.max_size
@@ -321,7 +308,6 @@ class Chunker:
             size += u.size
         return picked if size >= omin else []
 
-    # -- rendering --------------------------------------------------------- #
     def _render_units(self, documents, edges) -> list[_Unit]:
         by_hash = {d.hash: d for d in documents}
         children: dict[str, list[tuple[int, str]]] = defaultdict(list)
@@ -377,54 +363,37 @@ class Chunker:
                       no_merge=True,
                       src_start=s))
 
-    def _inline(self, content) -> str:
-        if not content:
-            return ""
-        parts: list[str] = []
-        for node in content:
-            if getattr(node, "type", None) == "link":
-                parts.append(
-                    f"[{self._inline(getattr(node, 'content', []))}]({node.href})")
-                continue
-            text = getattr(node, "text", "")
-            styles = getattr(node, "styles", None)
-            markup = set()
-            if styles is not None:
-                markup = {getattr(m, "value", m) for m in styles.markup}
-            if "code" in markup:
-                text = f"`{text}`"
-            if "bold" in markup:
-                text = f"**{text}**"
-            if "italic" in markup:
-                text = f"*{text}*"
-            if "strike" in markup:
-                text = f"~~{text}~~"
-            parts.append(text)
-        return "".join(parts)
+    def _inline(self, content: InlineContent) -> str:
+        return content.text
 
     def _render_own(self, block, depth: int) -> str | None:
         btype = getattr(block, "type", None)
         if btype in ("document", "file", "div", "tableRow", "tableCell"):
             return None
+
+        log.info(f"{type(block)}")
         content = getattr(block, "content", None)
-        if btype == "heading":
-            level = getattr(getattr(block, "props", None), "level", 1)
-            return "#" * level + " " + self._inline(content)
-        if btype == "paragraph":
-            return self._inline(content)
-        if btype == "quote":
-            return "> " + self._inline(content)
-        if btype == "codeBlock":
-            lang = getattr(getattr(block, "props", None), "language", "")
-            return f"```{lang}\n{self._inline(content)}\n```"
-        if btype == "math":
-            return f"$$\n{self._inline(content)}\n$$"
-        if btype == "rawBlock":
-            return getattr(block, "content", "") or ""
-        if btype == "bulletListItem":
-            return "  " * depth + "- " + self._inline(content)
-        if btype == "numberedListItem":
-            return "  " * depth + "1. " + self._inline(content)
+
+        match btype:
+            case "heading":
+                level = getattr(getattr(block, "props", None), "level", 1)
+                return "#" * level + " " + self._inline(content)
+            case "paragraph":
+                return self._inline(content)
+            case "quote":
+                return "> " + self._inline(content)
+            case "codeBlock":
+                lang = getattr(getattr(block, "props", None), "language", "")
+                return f"```{lang}\n{self._inline(content)}\n```"
+            case "math":
+                return f"$$\n{self._inline(content)}\n$$"
+            case "rawBlock":
+                return getattr(block, "content", "") or ""
+            case "bulletListItem":
+                return "  " * depth + "- " + self._inline(content)
+            case "numberedListItem":
+                return "  " * depth + "1. " + self._inline(content)
+
         if content is not None:
             return self._inline(content)
         return None
@@ -449,9 +418,6 @@ class Chunker:
         return "\n".join(lines)
 
 
-# --------------------------------------------------------------------------- #
-# MultiDocumentModel assembly helper
-# --------------------------------------------------------------------------- #
 def chunks_to_multidoc(
     chunks: list[RawChunk],
     file_hash: str,

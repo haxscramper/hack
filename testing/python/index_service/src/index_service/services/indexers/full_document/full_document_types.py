@@ -1,9 +1,11 @@
 import hashlib
 import json
 import logging
+from beartype import beartype
 from beartype.typing import Any, Literal, Annotated, Sequence, Union
-from pydantic import BaseModel, Field, field_serializer, field_validator
+from pydantic import BaseModel, Field, TypeAdapter, field_serializer, field_validator
 import enum
+from pydantic_core import core_schema
 
 from index_service.services.core.types import IndexDocument, IndexEdge, IndexMultiDocument
 
@@ -60,7 +62,63 @@ class Link(BaseModel, extra="forbid"):
     content: list[StyledText] = Field(default_factory=list)
 
 
-InlineContent = Annotated[Union[StyledText, Link], Field(discriminator="type")]
+InlineNode = Annotated[Union[StyledText, Link], Field(discriminator="type")]
+InlineStructure = Annotated[Union[Link], Field(discriminator="type")]
+_inline_structure_adapter = TypeAdapter(InlineStructure)
+
+
+class SliceValue(BaseModel):
+    start: int
+    stop: int
+    step: int
+
+    @staticmethod
+    def FromSlice(v: slice) -> "SliceValue":
+        return SliceValue(
+            start=v.start,
+            stop=v.stop,
+            step=v.step,
+        )
+
+
+class InlineContent(BaseModel, extra="forbid"):
+    text: str = ""
+    annotations: list[tuple[SliceValue, InlineStructure]] = Field(default_factory=list)
+
+    @field_serializer("annotations")
+    def serialize_annotations(
+        self,
+        value: list[tuple[slice, InlineStructure]],
+    ) -> list[dict[str, Any]]:
+        out: list[dict[str, Any]] = []
+        for span, payload in value:
+            out.append({
+                "start": span.start,
+                "stop": span.stop,
+                "step": span.step,
+                "payload": payload.model_dump(),
+            })
+        return out
+
+    @field_validator("annotations", mode="before")
+    @classmethod
+    def deserialize_annotations(cls, value):
+        if not isinstance(value, list):
+            return value
+
+        out: list[tuple[SliceValue, InlineStructure]] = []
+        for item in value:
+            if isinstance(item, dict) and "payload" in item:
+                span = slice(item.get("start"), item.get("stop"), item.get("step"))
+                payload = _inline_structure_adapter.validate_python(item["payload"])
+                out.append((SliceValue.FromSlice(span), payload))
+            elif (isinstance(item, (list, tuple)) and len(item) == 2 and
+                  isinstance(item[0], slice)):
+                payload = _inline_structure_adapter.validate_python(item[1])
+                out.append((SliceValue.FromSlice(item[0]), payload))
+            else:
+                raise ValueError(f"Invalid annotation format: {item}")
+        return out
 
 
 class CaptionProps(BaseModel, extra="forbid"):
@@ -103,24 +161,24 @@ class Document(DocumentBlock):
 class Paragraph(DocumentBlock):
     type: Literal["paragraph"] = "paragraph"
     props: DefaultProps = Field(default_factory=DefaultProps)
-    content: list[InlineContent] = Field(default_factory=list)
+    content: InlineContent = Field(default_factory=InlineContent)
 
 
 class Math(DocumentBlock):
     type: Literal["math"] = "math"
-    content: list[InlineContent] = Field(default_factory=list)
+    content: InlineContent = Field(default_factory=InlineContent)
 
 
 class Heading(DocumentBlock):
     type: Literal["heading"] = "heading"
     props: HeadingProps = Field(default_factory=HeadingProps)
-    content: list[InlineContent] = Field(default_factory=list)
+    content: InlineContent = Field(default_factory=InlineContent)
 
 
 class Code(DocumentBlock):
     type: Literal["codeBlock"] = "codeBlock"
     props: CodeBlockProps = Field(default_factory=CodeBlockProps)
-    content: list[StyledText] = Field(default_factory=list)
+    content: str = ""
 
 
 class RawBlock(DocumentBlock, extra="forbid"):
@@ -132,27 +190,24 @@ class RawBlock(DocumentBlock, extra="forbid"):
 class BulletListItem(DocumentBlock):
     type: Literal["bulletListItem"] = "bulletListItem"
     props: DefaultProps = Field(default_factory=DefaultProps)
-    content: list[InlineContent] = Field(default_factory=list)
+    content: InlineContent = Field(default_factory=InlineContent)
 
 
 class NumberedListItem(DocumentBlock):
     type: Literal["numberedListItem"] = "numberedListItem"
     props: DefaultProps = Field(default_factory=DefaultProps)
-    content: list[InlineContent] = Field(default_factory=list)
+    content: InlineContent = Field(default_factory=InlineContent)
 
 
 class Quote(DocumentBlock):
     type: Literal["quote"] = "quote"
     props: DefaultProps = Field(default_factory=DefaultProps)
-    content: list[InlineContent] = Field(default_factory=list)
+    content: InlineContent = Field(default_factory=InlineContent)
 
 
 class Div(DocumentBlock):
     type: Literal["div"] = "div"
     props: DivProps = Field(default_factory=DivProps)
-
-
-# add near existing schema definitions
 
 
 class TableCellProps(DefaultProps, extra="forbid"):
@@ -164,7 +219,7 @@ class TableCellProps(DefaultProps, extra="forbid"):
 class TableCell(DocumentBlock, extra="forbid"):
     type: Literal["tableCell"] = "tableCell"
     props: TableCellProps = Field(default_factory=TableCellProps)
-    content: list[InlineContent] = Field(default_factory=list)
+    content: InlineContent = Field(default_factory=InlineContent)
 
 
 class TableRow(DocumentBlock, extra="forbid"):
@@ -201,8 +256,6 @@ def build(
         nested: Sequence[DocumentBlock] = (),
         **kwargs,
 ) -> DocumentBlock:
-    """Construct a block with its hash computed inline from its own payload
-    plus the hashes of already-built nested children."""
     nested = list(nested)
     block = cls.model_construct(hash="", file_hash=file_hash, nested=nested, **kwargs)
     payload = block.model_dump(exclude={"id", "nested", "hash"})
@@ -214,8 +267,8 @@ def build(
     return block
 
 
-def merge_text(nodes: list[InlineContent]) -> list[InlineContent]:
-    merged: list[InlineContent] = []
+def merge_text(nodes: list[InlineNode]) -> list[InlineNode]:
+    merged: list[InlineNode] = []
     for node in nodes:
         if (isinstance(node, StyledText) and merged and
                 isinstance(merged[-1], StyledText) and merged[-1].styles == node.styles):
@@ -226,6 +279,48 @@ def merge_text(nodes: list[InlineContent]) -> list[InlineContent]:
         else:
             merged.append(node)
     return merged
+
+
+def styled_text_to_markdown(node: StyledText) -> str:
+    text = node.text
+    markup = node.styles.markup
+
+    if Markup.CODE in markup:
+        text = f"`{text}`"
+    if Markup.MATH in markup:
+        text = f"${text}$"
+    if Markup.BOLD in markup:
+        text = f"**{text}**"
+    if Markup.ITALIC in markup:
+        text = f"*{text}*"
+    if Markup.STRIKE in markup:
+        text = f"~~{text}~~"
+    if Markup.UNDERLINE in markup:
+        text = f"<u>{text}</u>"
+
+    return text
+
+
+def inline_nodes_to_content(nodes: Sequence[InlineNode]) -> InlineContent:
+    text_parts: list[str] = []
+    annotations: list[tuple[SliceValue, InlineStructure]] = []
+
+    for node in merge_text(list(nodes)):
+        if isinstance(node, StyledText):
+            text_parts.append(styled_text_to_markdown(node))
+            continue
+
+        if isinstance(node, Link):
+            start = len("".join(text_parts))
+            link_text = "".join(styled_text_to_markdown(seg) for seg in node.content)
+            text_parts.append(link_text)
+            end = start + len(link_text)
+            annotations.append((SliceValue.FromSlice(slice(start, end)), node))
+
+    return InlineContent(
+        text="".join(text_parts),
+        annotations=annotations,
+    )
 
 
 def _flatten(

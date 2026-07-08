@@ -16,9 +16,9 @@ from index_service.services.indexers.full_document.full_document_types import (
     Heading,
     HeadingProps,
     InlineContent,
+    InlineNode,
     Link,
     Markup,
-    Math,
     NumberedListItem,
     Paragraph,
     Quote,
@@ -32,6 +32,7 @@ from index_service.services.indexers.full_document.full_document_types import (
     TextAlignment,
     TextStyles,
     build,
+    inline_nodes_to_content,
     merge_text,
 )
 
@@ -39,11 +40,11 @@ log = logging.getLogger(__name__)
 
 
 def _convert_inlines(
-        inlines: list,
-        styles: TextStyles = TextStyles(),
-) -> list[InlineContent]:
-    styles = styles or {}
-    out: list[InlineContent] = []
+    inlines: list,
+    styles: TextStyles | None = None,
+) -> list[InlineNode]:
+    styles = styles or TextStyles()
+    out: list[InlineNode] = []
     for il in inlines:
         match il:
             case {"t": "Str"}:
@@ -75,15 +76,21 @@ def _convert_inlines(
 
             case {"t": "Link"}:
                 _, link_inlines, target = il["c"]
+                label_nodes = _convert_inlines(link_inlines)
+                label = [n for n in label_nodes if isinstance(n, StyledText)]
                 out.append(Link(
                     href=target[0],
-                    content=_convert_inlines(link_inlines)))  # type: ignore[arg-type]
+                    content=label,
+                ))
 
             case {"t": "Image"}:
                 _, link_inlines, target = il["c"]
+                label_nodes = _convert_inlines(link_inlines)
+                label = [n for n in label_nodes if isinstance(n, StyledText)]
                 out.append(Link(
                     href=target[0],
-                    content=_convert_inlines(link_inlines)))  # type: ignore[arg-type]
+                    content=label,
+                ))
 
             case {"t": "Superscript" | "Subscript" | "SmallCaps" | "Span" | "Quoted"}:
                 payload = il["c"]
@@ -106,7 +113,7 @@ def _convert_inlines(
     return merge_text(out)
 
 
-def _inline_text(inlines: list[InlineContent]) -> str:
+def _inline_text(inlines: list[InlineNode]) -> str:
     parts: list[str] = []
     for item in inlines:
         if isinstance(item, StyledText):
@@ -134,6 +141,7 @@ def _attach_caption(block: DocumentBlock, caption: str) -> None:
         return
     if "caption" not in props.__class__.model_fields:
         return
+    props.caption = caption
 
 
 def _convert_list_items(items: list, item_type: str,
@@ -150,12 +158,9 @@ def _convert_list_items(items: list, item_type: str,
         if not blocks:
             continue
         head = blocks[0]
-        content = getattr(head, "content", [])
+        content = getattr(head, "content", InlineContent())
         result.append(build(cls, content=content, nested=blocks[1:], file_hash=file_hash))
     return result
-
-
-# add helpers near other conversion helpers
 
 
 def _pandoc_alignment_to_text_alignment(alignment: object) -> TextAlignment:
@@ -168,23 +173,28 @@ def _pandoc_alignment_to_text_alignment(alignment: object) -> TextAlignment:
     }.get(tag, "left")
 
 
-def _blocks_to_inline_content(blocks: list[dict]) -> list[InlineContent]:
-    out: list[InlineContent] = []
+def _blocks_to_inline_content(blocks: list[dict]) -> InlineContent:
+    nodes: list[InlineNode] = []
     for block in blocks:
         match block.get("t"):
             case "Plain" | "Para":
                 chunk = _convert_inlines(block["c"])
             case "CodeBlock":
-                chunk = [StyledText(text=block["c"][1], styles=TextStyles(code=True))]
+                chunk = [
+                    StyledText(
+                        text=block["c"][1],
+                        styles=TextStyles(markup={Markup.CODE}),
+                    )
+                ]
             case _:
                 chunk = []
 
         if chunk:
-            if out:
-                out.append(StyledText(text="\n"))
-            out.extend(chunk)
+            if nodes:
+                nodes.append(StyledText(text="\n"))
+            nodes.extend(chunk)
 
-    return merge_text(out)
+    return inline_nodes_to_content(merge_text(nodes))
 
 
 def _extract_table_caption(caption_obj: object) -> str | None:
@@ -227,12 +237,14 @@ def _row_to_table_row(row_obj: list, *, is_header: bool, file_hash: str) -> Tabl
                 content=_blocks_to_inline_content(blocks),
             ))
 
-    return build(
+    return cast(
         TableRow,
-        nested=list(),
-        cells=cells,
-        file_hash=file_hash,
-    )  # type: ignore
+        build(
+            TableRow,
+            nested=cells,
+            file_hash=file_hash,
+        ),
+    )
 
 
 def _convert_table(pb: dict, file_hash: str) -> Table:
@@ -241,12 +253,10 @@ def _convert_table(pb: dict, file_hash: str) -> Table:
 
     rows: list[TableRow] = []
 
-    # thead: [attr, rows]
     if isinstance(thead, list) and len(thead) == 2:
         for row in thead[1]:
             rows.append(_row_to_table_row(row, is_header=True, file_hash=file_hash))
 
-    # tbodies: [[attr, row_head_cols, head_rows, body_rows], ...]
     for tbody in tbodies:
         if not isinstance(tbody, list) or len(tbody) != 4:
             continue
@@ -255,7 +265,6 @@ def _convert_table(pb: dict, file_hash: str) -> Table:
         for row in tbody[3]:
             rows.append(_row_to_table_row(row, is_header=False, file_hash=file_hash))
 
-    # tfoot: [attr, rows]
     if isinstance(tfoot, list) and len(tfoot) == 2:
         for row in tfoot[1]:
             rows.append(_row_to_table_row(row, is_header=False, file_hash=file_hash))
@@ -279,7 +288,8 @@ def _convert_block(pb: dict, file_hash: str) -> Sequence[DocumentBlock]:
                 build(
                     Paragraph,
                     file_hash=file_hash,
-                    content=_convert_inlines(pb["c"], TextStyles()),
+                    content=inline_nodes_to_content(
+                        _convert_inlines(pb["c"], TextStyles())),
                 )
             ]
 
@@ -295,7 +305,8 @@ def _convert_block(pb: dict, file_hash: str) -> Sequence[DocumentBlock]:
                     Heading,
                     file_hash=file_hash,
                     props=props,
-                    content=_convert_inlines(inlines, TextStyles()),
+                    content=inline_nodes_to_content(
+                        _convert_inlines(inlines, TextStyles())),
                     nested=[],
                 )
             ]
@@ -309,7 +320,7 @@ def _convert_block(pb: dict, file_hash: str) -> Sequence[DocumentBlock]:
                     Code,
                     file_hash=file_hash,
                     props=CodeBlockProps(language=lang),
-                    content=[StyledText(text=code)],
+                    content=code,
                 )
             ]
 
@@ -327,7 +338,7 @@ def _convert_block(pb: dict, file_hash: str) -> Sequence[DocumentBlock]:
                 term = _convert_inlines(term_inlines)
 
                 for def_blocks in definitions:
-                    definition_inlines: list[InlineContent] = []
+                    definition_inlines: list[InlineNode] = []
                     for db in def_blocks:
                         match db:
                             case {"t": "Plain" | "Para"}:
@@ -336,12 +347,13 @@ def _convert_block(pb: dict, file_hash: str) -> Sequence[DocumentBlock]:
                                 blocks += _convert_block(db, file_hash=file_hash)
 
                     if definition_inlines:
+                        merged = merge_text(term + [StyledText(text=" :: ")] +
+                                            definition_inlines)
                         blocks.append(
                             build(
                                 Paragraph,
                                 file_hash=file_hash,
-                                content=merge_text(term + [StyledText(text=" :: ")] +
-                                                   definition_inlines),
+                                content=inline_nodes_to_content(merged),
                             ))
 
             return blocks
@@ -413,7 +425,6 @@ def _convert_block(pb: dict, file_hash: str) -> Sequence[DocumentBlock]:
 
         case _:
             raise ValueError(f"Implicitly handled document block of type '{t}': {pb}")
-            return [build(Paragraph, content=_convert_inlines(pb.get("c", [])))]
 
 
 def _nest_by_heading_level(blocks: Sequence[DocumentBlock]) -> list[DocumentBlock]:

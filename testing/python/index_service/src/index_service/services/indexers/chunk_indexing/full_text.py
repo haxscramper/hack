@@ -68,12 +68,18 @@ class FullTextIndexer(BaseIndexer):
 
         file_hash = request.get_hash_str()
 
+        log.info(
+            f"document block result is {full_document.model_dump_json(indent=2, serialize_as_any=True)}"
+        )
+
         if full_document:
             chunker = Chunker(self._config)
             chunks = chunker.chunk_blocks(full_document.documents, full_document.edges,
                                           file_hash)
         else:
             chunks = []
+
+        log.debug(f"created {len(chunks)} chunks")
 
         documents, edges = chunks_to_multidoc(chunks, file_hash, ChunkDocument)
         return IndexerOutput(

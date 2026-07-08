@@ -157,7 +157,8 @@ def test_db_indexer_result_uniqueness(db: IndexDatabase, tmp_path: Path) -> None
     pb.write_text("---")
     ref_a = db.as_ref(root, pa)
     ref_b = db.as_ref(root, pb)
-    db.ensure_collections([FileSizeIndexer()])
+    idx = FileSizeIndexer()
+    db.ensure_collections([idx])
     db.truncate_all(["file_size"])
     db.store_indexer_output(
         ref_a,
@@ -175,11 +176,7 @@ def test_db_indexer_result_uniqueness(db: IndexDatabase, tmp_path: Path) -> None
                           hash=ref_b.hash.hash,
                       )))
 
-    record = db.get_indexer_result(
-        ref_a.hash,
-        "file_size",
-        FileSizeIndexerResult,
-    )
+    record = db.get_indexer_result(ref_a.hash, idx)
 
     assert record
     assert record.size_bytes == 20
