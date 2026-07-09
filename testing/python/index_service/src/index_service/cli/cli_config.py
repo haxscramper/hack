@@ -31,7 +31,6 @@ _INDEXER_TYPES = [t for t in DEFAULT_INDEXER_TYPES] + [
     GenerationParamsIndexer,
     ExifMetadataIndexer,
     ComfyInputIndexer,
-    DocumentBlockIndexer,
     MediaTranscriptionIndexer,
 ]
 
@@ -54,7 +53,8 @@ def _validate_plugin_config_map(
     validated: dict[str, BaseModel] = {}
     for name, cfg in raw.items():
         if name not in registry:
-            raise ValueError(f"Unknown {kind} '{name}'")
+            raise ValueError(
+                f"Unknown {kind} '{name}', expected names: {sorted(registry.keys())}")
 
         cls = registry[name]
         config_model = getattr(cls, "config_model", None)

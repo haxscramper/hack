@@ -153,9 +153,11 @@ def _run_index(app_config: AppConfig) -> None:
                 raise ValueError(
                     f"Indexer '{key}' requires indexer '{dep}' to be enabled")
 
+        should_load_cache = not cfg.enable_cache or key in cfg.enable_cache
+        log.info(f"Should load cache for {t.asset_name}: {should_load_cache}")
         indexer_cfg = cfg.indexers[key].model_dump()
         instance = t(
-            should_load_cache=key in cfg.enable_cache,
+            should_load_cache=should_load_cache,
             **indexer_cfg,
         )
         indexer_instances.append(instance)

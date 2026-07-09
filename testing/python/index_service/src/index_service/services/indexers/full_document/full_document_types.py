@@ -8,6 +8,7 @@ import enum
 from pydantic_core import core_schema
 
 from index_service.services.core.types import IndexDocument, IndexEdge, IndexMultiDocument
+from index_service.services.utils import dump_with_type, dumps_with_type
 
 log = logging.getLogger(__name__)
 
@@ -86,41 +87,6 @@ class SliceValue(BaseModel):
 class InlineContent(BaseModel, extra="forbid"):
     text: str = ""
     annotations: list[tuple[SliceValue, InlineStructure]] = Field(default_factory=list)
-
-    @field_serializer("annotations")
-    def serialize_annotations(
-        self,
-        value: list[tuple[slice, InlineStructure]],
-    ) -> list[dict[str, Any]]:
-        out: list[dict[str, Any]] = []
-        for span, payload in value:
-            out.append({
-                "start": span.start,
-                "stop": span.stop,
-                "step": span.step,
-                "payload": payload.model_dump(),
-            })
-        return out
-
-    @field_validator("annotations", mode="before")
-    @classmethod
-    def deserialize_annotations(cls, value):
-        if not isinstance(value, list):
-            return value
-
-        out: list[tuple[SliceValue, InlineStructure]] = []
-        for item in value:
-            if isinstance(item, dict) and "payload" in item:
-                span = slice(item.get("start"), item.get("stop"), item.get("step"))
-                payload = _inline_structure_adapter.validate_python(item["payload"])
-                out.append((SliceValue.FromSlice(span), payload))
-            elif (isinstance(item, (list, tuple)) and len(item) == 2 and
-                  isinstance(item[0], slice)):
-                payload = _inline_structure_adapter.validate_python(item[1])
-                out.append((SliceValue.FromSlice(item[0]), payload))
-            else:
-                raise ValueError(f"Invalid annotation format: {item}")
-        return out
 
 
 class CaptionProps(BaseModel, extra="forbid"):

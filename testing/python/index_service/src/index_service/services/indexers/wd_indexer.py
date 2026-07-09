@@ -4,19 +4,19 @@ from pathlib import Path
 from beartype.typing import cast
 from index_service.services.core.job_types import BaseIndexer, RunContext, cache_indexer_run
 from index_service.services.resources.wd_tagger import WdTag, WdTagger
-from index_service.services.core.types import IndexerOutput, IndexerRequest
+from index_service.services.core.types import IndexDocument, IndexerOutput, IndexerRequest
 from PIL import Image
 from pydantic import BaseModel
 
 
-class WdTagIndexerResult(BaseModel, extra="forbid"):
+class WdTagIndexerResult(IndexDocument, extra="forbid"):
     tags: list[WdTag]
 
 
 class WdTagIndexer(BaseIndexer):
     asset_name = "wd_tags"
     result_model = WdTagIndexerResult
-    required_resources = ("wd_tagger", )
+    required_resources = ("wd_tagger",)
 
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
@@ -36,5 +36,7 @@ class WdTagIndexer(BaseIndexer):
         return IndexerOutput(
             indexer_id=self.asset_name,
             result=WdTagIndexerResult(
-                tags=tagger.tag_image(ctx, ctx.get_path(request.file_ref))),
+                hash=request.get_hash_str(),
+                tags=tagger.tag_image(ctx, ctx.get_path(request.file_ref)),
+            ),
         )

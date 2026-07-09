@@ -11,7 +11,7 @@ from beartype.typing import ClassVar, Sequence, cast, Annotated, Union, Any
 from pydantic import BaseModel, Field
 import plumbum
 
-from index_service.services.core.job_types import BaseIndexer, RunContext
+from index_service.services.core.job_types import BaseIndexer, RunContext, cache_indexer_run
 from index_service.services.core.types import (
     IndexDocument,
     IndexerOutput,
@@ -88,6 +88,7 @@ class DocumentBlockIndexer(BaseIndexer):
         result = reader in self.supported_readers if reader else False
         return result
 
+    @cache_indexer_run
     def run(
         self,
         ctx: RunContext,

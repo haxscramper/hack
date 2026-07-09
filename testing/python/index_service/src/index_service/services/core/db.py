@@ -167,7 +167,9 @@ class IndexDatabase:
     def enable_index(self, indexer: BaseIndexProtocol):
         for base in indexer.get_document_type_bases():
             assert isinstance(base, type), f"{base} for indexer {indexer.asset_name}"
-            assert issubclass(base, IndexDocument)
+            assert issubclass(
+                base, IndexDocument
+            ), f"Cannot enable index, the type {base} is not derived from IndexDocument"
             if base.vector_index is not None:
                 collection = self._db.collection(indexer.asset_name)
                 vector_index = base.vector_index

@@ -357,6 +357,7 @@ class IndexRuntime:
                     ),
                     self.ctx.trace_scope("index", file=str(self.db.get_path(ref))),
             ):
+                log.debug(f"run {indexer.asset_name}")
                 out = indexer.run(
                     ctx=self.ctx,
                     request=request,

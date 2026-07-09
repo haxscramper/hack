@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 import enum
+import json
 import logging
 from beartype.typing import Any, Callable, Literal, Optional, Set
 import os
@@ -298,6 +299,28 @@ def dump_with_type(
                 return f"unhandled {type(obj)}"
 
     return aux(obj)
+
+
+def dumps_with_type(
+    obj: Any,
+    include_single_underscore_attrs: bool = False,
+    include_double_underscore_attrs: bool = False,
+    skip_cyclic_data: bool = True,
+    override_callback: Optional[Callable] = None,
+    with_stable_formatting: bool = True,
+) -> Any:
+    return json.dumps(
+        dump_with_type(
+            obj=obj,
+            include_single_underscore_attrs=include_single_underscore_attrs,
+            include_double_underscore_attrs=include_double_underscore_attrs,
+            skip_cyclic_data=skip_cyclic_data,
+            override_callback=override_callback,
+            with_stable_formatting=with_stable_formatting,
+        ),
+        indent=2,
+        sort_keys=True,
+    )
 
 
 class ExceptionDump:

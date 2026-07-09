@@ -141,6 +141,13 @@ def cache_indexer_run(func: Callable[P, R]) -> Callable[P, IndexerOutput]:
                     assets=assets,
                 )).encode("utf-8")).hexdigest()
 
+        schema_hash = hashlib.sha256(
+            json.dumps(
+                self.result_model.model_json_schema(),
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")).hexdigest()
+
         cache_path = get_xdg_cache_dir(
             ["indexer", self.asset_name, hash_prefix,
              hash_suffix]).joinpath(f"{param_hash}.json")
@@ -153,18 +160,26 @@ def cache_indexer_run(func: Callable[P, R]) -> Callable[P, IndexerOutput]:
                         file=cache_path,
                     ),
             ):
-                parsed = model_from_json_data(
-                    json.loads(cache_path.read_text()),
-                    IndexerOutput,
-                )
-                log.info(f"{parsed.result}")
-                assert parsed.indexer_id == self.asset_name
-                result_value = self.result_model.model_validate(parsed.result)
+                cache_doc = json.loads(cache_path.read_text())
+                cached_schema_hash = (cache_doc.pop("__schema_hash__", None)
+                                      if isinstance(cache_doc, dict) else None)
 
-            return IndexerOutput(
-                indexer_id=self.asset_name,
-                result=result_value,
-            )
+                if cached_schema_hash == schema_hash:
+                    parsed = model_from_json_data(
+                        cache_doc,
+                        IndexerOutput,
+                    )
+                    assert parsed.indexer_id == self.asset_name
+                    result_value = self.result_model.model_validate(parsed.result)
+
+                    return IndexerOutput(
+                        indexer_id=self.asset_name,
+                        result=result_value,
+                    )
+
+                log.info(
+                    "Cache schema mismatch for {} (cached={}, current={}), ignoring cache."
+                    .format(cache_path, cached_schema_hash, schema_hash))
 
         result = func(
             self,  # type: ignore
@@ -174,8 +189,12 @@ def cache_indexer_run(func: Callable[P, R]) -> Callable[P, IndexerOutput]:
             assets=assets,  # type: ignore
         )
 
+        cache_doc = model_to_json_data(result)
+        assert isinstance(cache_doc, dict)
+        cache_doc["__schema_hash__"] = schema_hash
+
         cache_path.parent.mkdir(parents=True, exist_ok=True)
-        cache_path.write_text(json.dumps(model_to_json_data(result), indent=2))
+        cache_path.write_text(json.dumps(cache_doc, indent=2))
         return result
 
     return wrapper
