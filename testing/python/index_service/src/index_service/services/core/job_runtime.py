@@ -9,6 +9,8 @@ from beartype import beartype
 from beartype.typing import Sequence, overload
 from graphviz import Digraph
 
+from time import monotonic
+
 from index_service.services.core.db import IndexDatabase
 from index_service.services.core.job_types import (
     BaseConverter,
@@ -278,15 +280,34 @@ class IndexRuntime:
 
     def execute_plan(self, plan: ExecutionPlan) -> None:
         total_batches = len(plan.batches)
+        plan_started_at = monotonic()
+
         for batch_idx, batch in enumerate(plan.batches, start=1):
+            completed_batches = batch_idx - 1
+            elapsed = monotonic() - plan_started_at
+
+            if completed_batches > 0 and elapsed > 0:
+                batches_per_min = (completed_batches / elapsed) * 60.0
+                eta_plan_sec = ((total_batches - completed_batches) /
+                                (batches_per_min / 60.0)
+                                if batches_per_min > 0 else float("inf"))
+                batches_per_min_str = f"{batches_per_min:.2f}"
+                eta_plan_str = f"{eta_plan_sec:.1f}s"
+            else:
+                batches_per_min_str = "n/a"
+                eta_plan_str = "unknown"
+
             log.debug(
-                "batch {}/{}: indexer={} window={} files={} sub_batches={}".format(
+                "batch {}/{}: indexer={} window={} files={} sub_batches={} batches_per_min={} eta_plan={}"
+                .format(
                     batch_idx,
                     total_batches,
                     batch.indexer_name,
                     batch.window_id,
                     len(batch.file_refs),
                     len(batch.sub_batches),
+                    batches_per_min_str,
+                    eta_plan_str,
                 ),)
 
             with self.ctx.trace_scope(
@@ -357,7 +378,6 @@ class IndexRuntime:
                     ),
                     self.ctx.trace_scope("index", file=str(self.db.get_path(ref))),
             ):
-                log.debug(f"run {indexer.asset_name}")
                 out = indexer.run(
                     ctx=self.ctx,
                     request=request,
@@ -367,11 +387,34 @@ class IndexRuntime:
             return ref, out
 
         total_sub_batches = len(batch.sub_batches)
+        batch_started_at = monotonic()
+
         for sub_idx, chunk in enumerate(batch.sub_batches, start=1):
+            completed_sub_batches = sub_idx - 1
+            elapsed = monotonic() - batch_started_at
+
+            if completed_sub_batches > 0 and elapsed > 0:
+                sub_batches_per_sec = completed_sub_batches / elapsed
+                eta_batch_sec = ((total_sub_batches - completed_sub_batches) /
+                                 sub_batches_per_sec
+                                 if sub_batches_per_sec > 0 else float("inf"))
+                sub_batches_per_sec_str = f"{sub_batches_per_sec:.2f}"
+                eta_batch_str = f"{eta_batch_sec:.1f}s"
+            else:
+                sub_batches_per_sec_str = "n/a"
+                eta_batch_str = "unknown"
+
             log.debug(
-                "sub-batch {}/{}: indexer={} size={}".format(sub_idx, total_sub_batches,
-                                                             batch.indexer_name,
-                                                             len(chunk)),)
+                "sub-batch {}/{}: indexer={} size={} sub_batches_per_sec={} eta_batch={}".
+                format(
+                    sub_idx,
+                    total_sub_batches,
+                    batch.indexer_name,
+                    len(chunk),
+                    sub_batches_per_sec_str,
+                    eta_batch_str,
+                ),)
+
             with self.ctx.trace_scope(
                     "execute sub-batch",
                     indexer=batch.indexer_name,
