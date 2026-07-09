@@ -2,7 +2,7 @@ import hashlib
 import json
 import logging
 from beartype import beartype
-from beartype.typing import Any, Literal, Annotated, Sequence, Union
+from beartype.typing import Any, Literal, Annotated, Sequence, TypeVar, Union
 from pydantic import BaseModel, Field, TypeAdapter, field_serializer, field_validator
 import enum
 from pydantic_core import core_schema
@@ -10,6 +10,8 @@ from pydantic_core import core_schema
 from index_service.services.core.types import IndexDocument, IndexEdge, IndexMultiDocument
 
 log = logging.getLogger(__name__)
+
+T = TypeVar("T")
 
 
 class DocumentLink(IndexEdge, extra="forbid"):
@@ -250,14 +252,20 @@ for _cls in (
 
 
 def build(
-        cls: type[DocumentBlock],
+        cls: type[T],
         *,
         file_hash: str,
         nested: Sequence[DocumentBlock] = (),
         **kwargs,
-) -> DocumentBlock:
+) -> T:
     nested = list(nested)
-    block = cls.model_construct(hash="", file_hash=file_hash, nested=nested, **kwargs)
+    block = cls.model_validate(  # type: ignore
+        dict(
+            hash="",
+            file_hash=file_hash,
+            nested=nested,
+            **kwargs,
+        ))
     payload = block.model_dump(exclude={"id", "nested", "hash"})
     hasher = hashlib.sha256()
     hasher.update(json.dumps(payload, sort_keys=True).encode())

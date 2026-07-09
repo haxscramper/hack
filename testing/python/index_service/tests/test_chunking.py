@@ -18,15 +18,17 @@ def _build_docs(blocks, file_hash):
     return documents, edges
 
 
-def _para(text, file_hash):
-    return fd.build(fd.Paragraph, file_hash=file_hash, content=[fd.StyledText(text=text)])
+def _para(text: str, file_hash: str) -> fd.Paragraph:
+    return fd.build(fd.Paragraph,
+                    file_hash=file_hash,
+                    content=fd.inline_nodes_to_content([fd.StyledText(text=text)]))
 
 
-def _heading(text, file_hash, level=1):
+def _heading(text: str, file_hash: str, level: int = 1) -> fd.Heading:
     return fd.build(fd.Heading,
                     file_hash=file_hash,
                     props=fd.HeadingProps(level=level),
-                    content=[fd.StyledText(text=text)])
+                    content=fd.inline_nodes_to_content([fd.StyledText(text=text)]))
 
 
 # --------------------------------------------------------------------------- #
