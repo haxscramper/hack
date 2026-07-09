@@ -4,23 +4,23 @@ import json
 from pathlib import Path
 from typing import Any, Callable
 
+from beartype.typing import ClassVar
 import flax
 import jax
 import numpy as np
 import pandas as pd
 from huggingface_hub import hf_hub_download
 from PIL import Image
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from index_service.services.resources.wdv3_jax import Models
 from index_service.services.core.job_types import BaseResource, RunContext
-from index_service.services.utils import get_xdg_cache_dir
-
+from index_service.services.resources.wdv3_jax import Models
 from index_service.services.utils import get_xdg_cache_dir
 
 jax.config.update(
     "jax_compilation_cache_dir",
-    str(get_xdg_cache_dir(["resource", "wd_tagger", "jax_cache"])))
+    str(get_xdg_cache_dir(["resource", "wd_tagger", "jax_cache"])),
+)
 jax.config.update("jax_persistent_cache_min_entry_size_bytes", -1)
 jax.config.update("jax_persistent_cache_min_compile_time_secs", 0)
 
@@ -78,8 +78,8 @@ class PredModel:
 
 def pil_ensure_rgb(image: Image.Image) -> Image.Image:
     if image.mode not in ["RGB", "RGBA"]:
-        image = image.convert(
-            "RGBA") if "transparency" in image.info else image.convert("RGB")
+        image = (image.convert("RGBA")
+                 if "transparency" in image.info else image.convert("RGB"))
 
     if image.mode == "RGBA":
         canvas = Image.new("RGBA", image.size, (255, 255, 255))
@@ -103,23 +103,28 @@ def pil_resize(image: Image.Image, target_size: int) -> Image.Image:
     return image
 
 
+class WdTaggerConfig(BaseModel):
+    model: str = "swinv2_v3"
+    threshold: float = 0.01
+    cache_dir: Path | None = Field(
+        default_factory=lambda: get_xdg_cache_dir(["resource", "wd_tagger"]))
+
+
 class WdTagger(BaseResource):
     resource_key = "wd_tagger"
+    config_model: ClassVar[type] = WdTaggerConfig
 
-    @staticmethod
-    def from_huggingface(
-        model: str = "swinv2_v3",
-        threshold: float = 0.01,
-        cache_dir: Path | None = get_xdg_cache_dir(["resource", "wd_tagger"]),
-    ) -> "WdTagger":
-        repo_id = MODEL_REPO_MAP[model]
+    def __init__(self, **kwargs):
+        self.config = WdTaggerConfig.model_validate(dict(**kwargs))
+
+        repo_id = MODEL_REPO_MAP[self.config.model]
 
         weights_path = Path(
             hf_hub_download(
                 repo_id=repo_id,
                 filename="model.msgpack",
                 repo_type="model",
-                cache_dir=cache_dir,
+                cache_dir=self.config.cache_dir,
             ))
 
         config_path = Path(
@@ -127,7 +132,7 @@ class WdTagger(BaseResource):
                 repo_id=repo_id,
                 filename="sw_jax_cv_config.json",
                 repo_type="model",
-                cache_dir=cache_dir,
+                cache_dir=self.config.cache_dir,
             ))
 
         tags_csv_path = Path(
@@ -135,33 +140,17 @@ class WdTagger(BaseResource):
                 repo_id=repo_id,
                 filename="selected_tags.csv",
                 repo_type="model",
-                cache_dir=cache_dir,
+                cache_dir=self.config.cache_dir,
             ))
 
-        return WdTagger(
-            model_name=model,
-            model_path=weights_path,
-            config_path=config_path,
-            tags_csv_path=tags_csv_path,
-            threshold=threshold,
-        )
-
-    def __init__(
-        self,
-        model_name: str,
-        model_path: Path,
-        config_path: Path,
-        tags_csv_path: Path,
-        threshold: float = 0.01,
-    ):
-        self.model_name = model_name
-        self.model_path = model_path
+        self.model_name = self.config.model
+        self.model_path = weights_path
         self.config_path = config_path
         self.tags_csv_path = tags_csv_path
-        self.threshold = threshold
+        self.threshold = self.config.threshold
         self.tags_df = pd.read_csv(str(tags_csv_path))
 
-        with open(model_path, "rb") as f:
+        with open(weights_path, "rb") as f:
             data = f.read()
 
         restored = flax.serialization.msgpack_restore(data)["model"]
@@ -198,8 +187,10 @@ class WdTagger(BaseResource):
         for i, prob in enumerate(probs):
             if prob >= self.threshold:
                 row = self.tags_df.iloc[i]
-                category = CATEGORY_MAP.get(int(row["category"]),
-                                            f"cat_{int(row['category'])}")
+                category = CATEGORY_MAP.get(
+                    int(row["category"]),
+                    f"cat_{int(row['category'])}",
+                )
                 result.append(
                     WdTag(
                         category=category,
@@ -210,6 +201,5 @@ class WdTagger(BaseResource):
         result.sort(key=lambda x: x.probability, reverse=True)
         return result
 
-    def handle(self, ctx: RunContext,
-               request: WdTaggerRequest) -> WdTaggerResult:
+    def handle(self, ctx: RunContext, request: WdTaggerRequest) -> WdTaggerResult:
         return WdTaggerResult(tags=self.tag_image(ctx, Path(request.path)))

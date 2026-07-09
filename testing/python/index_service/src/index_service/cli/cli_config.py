@@ -113,11 +113,6 @@ class IndexConfig(BaseModel):
     perf_trace_file: Path | None = None
     enable_cache: set[str] | None = None
 
-    # Raw input maps from JSON.
-    raw_indexers: dict[str, Any] = Field(default_factory=dict)
-    raw_resources: dict[str, Any] = Field(default_factory=dict)
-
-    # Validated typed models (populated during validation).
     indexers: dict[str, BaseModel] = Field(default_factory=dict, exclude=True)
     resources: dict[str, BaseModel] = Field(default_factory=dict, exclude=True)
 
@@ -173,23 +168,40 @@ class IndexConfig(BaseModel):
                 f"media_transcribe_whisper_server is not executable: {value}")
         return value
 
-    @model_validator(mode="after")
-    def _validate_plugin_configs(self) -> "IndexConfig":
-        self.indexers = _validate_plugin_config_map(
-            raw=self.raw_indexers,
+    @field_validator("indexers", mode="before")
+    @classmethod
+    def _validate_indexers_field(cls, value: Any) -> dict[str, BaseModel]:
+        if value is None:
+            value = {}
+        if not isinstance(value, dict):
+            raise TypeError(
+                f"Indexers config must be an object, got {type(value).__name__}")
+        return _validate_plugin_config_map(
+            raw=value,
             registry=_INDEXER_BY_NAME,
             kind="indexer",
         )
-        self.resources = _validate_plugin_config_map(
-            raw=self.raw_resources,
+
+    @field_validator("resources", mode="before")
+    @classmethod
+    def _validate_resources_field(cls, value: Any) -> dict[str, BaseModel]:
+        if value is None:
+            value = {}
+        if not isinstance(value, dict):
+            raise TypeError(
+                f"Resources config must be an object, got {type(value).__name__}")
+        return _validate_plugin_config_map(
+            raw=value,
             registry=_RESOURCE_BY_NAME,
             kind="resource",
         )
 
+    @model_validator(mode="after")
+    def _validate_plugin_configs(self) -> "IndexConfig":
         if self.enable_cache is None:
-            self.enable_cache = set(self.raw_indexers.keys())
+            self.enable_cache = set(self.indexers.keys())
 
-        unknown_cache = set(self.enable_cache) - set(self.raw_indexers.keys())
+        unknown_cache = set(self.enable_cache) - set(self.indexers.keys())
         if unknown_cache:
             raise ValueError(
                 f"enable_cache contains unknown/disabled indexers: {sorted(unknown_cache)}"

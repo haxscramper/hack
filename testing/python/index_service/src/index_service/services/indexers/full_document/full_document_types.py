@@ -72,7 +72,7 @@ _inline_structure_adapter = TypeAdapter(InlineStructure)
 class SliceValue(BaseModel):
     start: int
     stop: int
-    step: int
+    step: int | None = None
 
     @staticmethod
     def FromSlice(v: slice) -> "SliceValue":

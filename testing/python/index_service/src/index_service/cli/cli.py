@@ -1,4 +1,5 @@
 import argparse
+import json
 import logging
 import sys
 import traceback
@@ -27,6 +28,7 @@ from index_service.services.log_config import JsonlFormatter, keep_last_files
 
 from index_service.services.resources.wd_tagger import WdTagger
 from index_service.services.utils import (
+    dump_with_type,
     get_custom_traceback_handler,
     get_xdg_cache_dir,
     stfu_logs,
@@ -96,7 +98,7 @@ def _run_index(app_config: AppConfig) -> None:
     handler = get_custom_traceback_handler(show_args=False)
     _, _, perf_dir = _setup_runtime_logging(app_config.logging)
 
-    log.debug(cfg.model_dump_json(indent=2, serialize_as_any=True))
+    log.debug(json.dumps(dump_with_type(cfg), indent=2))
 
     if cfg.reset:
         IndexDatabase.reset_database(
@@ -133,13 +135,7 @@ def _run_index(app_config: AppConfig) -> None:
                     f"Resource '{key}' requires resource '{dep}' to be enabled")
 
         resource_cfg = cfg.resources[key].model_dump()
-
-        if t == WdTagger:
-            instance = WdTagger.from_huggingface(**resource_cfg)
-        else:
-            instance = t(**resource_cfg)
-
-        resource_instances.append(instance)
+        resource_instances.append(t(**resource_cfg))
 
     indexer_instances: list[BaseIndexer] = []
     for t in _INDEXER_TYPES:
@@ -164,8 +160,7 @@ def _run_index(app_config: AppConfig) -> None:
         )
         indexer_instances.append(instance)
 
-    assert set(cfg.raw_indexers.keys()) == set(cfg.indexers.keys())
-    assert set(t.asset_name for t in indexer_instances) == set(cfg.raw_indexers.keys())
+    assert set(t.asset_name for t in indexer_instances) == set(cfg.indexers.keys())
 
     with ctx.trace_scope("create runner"):
         runner = IndexRuntime(
@@ -186,7 +181,7 @@ def _run_index(app_config: AppConfig) -> None:
             runner=runner,
             ctx=ctx,
             paths=cfg.paths,
-            indexers=tuple(cfg.raw_indexers.keys()),
+            indexers=tuple(cfg.indexers.keys()),
             limit_total=cfg.limit_total,
             limit_per_path=cfg.limit_per_path,
         )

@@ -8,6 +8,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from beartype.typing import ClassVar
 import httpx
 from pydantic import BaseModel, Field
 
@@ -46,8 +47,8 @@ class WhisperServerConfig(BaseModel, extra="forbid"):
     host: str = Field(default="127.0.0.1")
     port: int = Field(default=8178)
     server_bin: str
-    model_path: str = Field(default="ggml-medium.en.bin")
-    model_name: str = Field(default="whisper-1")
+    whisper_model_directory: str = Field(...)
+    model_name: str = Field(default="ggml-medium.en.bin")
     startup_timeout_sec: float = Field(default=20.0)
     request_timeout_sec: float = Field(default=240.0)
     serve_cmd: list[str] | None = None
@@ -55,11 +56,21 @@ class WhisperServerConfig(BaseModel, extra="forbid"):
 
 class WhisperTranscribeResource(BaseResource):
     resource_key = "whisper_transcribe"
+    config_model: ClassVar[type] = WhisperServerConfig
 
-    def __init__(self, config: WhisperServerConfig) -> None:
+    def __init__(self, config: WhisperServerConfig | None = None, **kwargs) -> None:
+        config = config if isinstance(
+            config, WhisperServerConfig) else WhisperServerConfig.model_validate(
+                dict(**kwargs))
+
         super().__init__()
         self._config = config
-        self._model_path = Path(self._config.model_path)
+        self._model_dir = Path(
+            self._config.whisper_model_directory).expanduser().resolve()
+        self._model_file_name, self._download_model_name = self._resolve_model_names(
+            self._config.model_name)
+        self._model_path = self._model_dir / self._model_file_name
+        self._ggml_download_script = self._model_dir / "download-ggml-model.sh"
         self._base_url = self._config.base_url.rstrip("/")
         self._health_url = f"{self._base_url}/health"
         self._transcriptions_url = f"{self._base_url}/v1/audio/transcriptions"
@@ -84,6 +95,50 @@ class WhisperTranscribeResource(BaseResource):
         atexit.register(self.close)
         self._ensure_server_running()
 
+    @staticmethod
+    def _resolve_model_names(model_name: str) -> tuple[str, str]:
+        normalized = model_name.strip()
+        if normalized.startswith("ggml-"):
+            normalized = normalized[len("ggml-"):]
+        if normalized.endswith(".bin"):
+            normalized = normalized[:-len(".bin")]
+
+        if not normalized:
+            raise ValueError("model_name must not be empty")
+
+        model_file_name = f"ggml-{normalized}.bin"
+        return model_file_name, normalized
+
+    def _ensure_model_downloaded(self) -> None:
+        self._model_dir.mkdir(parents=True, exist_ok=True)
+
+        if self._model_path.exists():
+            return
+
+        if not self._ggml_download_script.exists():
+            raise FileNotFoundError(
+                f"missing GGML download script: {self._ggml_download_script}")
+
+        log.info(f"Input transcription model is missing {self._model_path}")
+        result = subprocess.run(
+            ["sh", str(self._ggml_download_script), self._download_model_name],
+            cwd=str(self._model_dir),
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(
+                "failed to download whisper model "
+                f"'{self._download_model_name}' via {self._ggml_download_script}\n"
+                f"stdout:\n{result.stdout}\n"
+                f"stderr:\n{result.stderr}")
+
+        if not self._model_path.exists():
+            raise FileNotFoundError(
+                f"model download finished but file was not found: {self._model_path}")
+
+        log.info("Model download OK")
+
     def _is_server_healthy(self) -> bool:
         if self._proc is not None and self._proc.poll() is not None:
             return False
@@ -102,9 +157,7 @@ class WhisperTranscribeResource(BaseResource):
             return False
 
     def _start_server_locked(self) -> None:
-        if not self._model_path.exists():
-            raise FileNotFoundError(f"whisper model not found: {self._model_path}")
-
+        self._ensure_model_downloaded()
         self._stdout_log_file = open(self._stdout_log_path, "ab")
         self._stderr_log_file = open(self._stderr_log_path, "ab")
 
