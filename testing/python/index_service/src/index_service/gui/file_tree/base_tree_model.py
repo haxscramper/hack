@@ -8,9 +8,12 @@ from index_service.services.core.db import IndexDatabase
 from index_service.services.core.job_types import BaseIndexer
 from index_service.services.core.types import FileHash
 
+import logging
+
+log = logging.getLogger(__name__)
+
 AQL_FILE_PATHS = """
 FOR root IN roots
-  FILTER root.path IN @root_paths
   FOR file IN files
     FOR entry IN file.paths
       FILTER entry.root.name == root._key
@@ -44,11 +47,7 @@ def build_file_tree(
     root_directories: Sequence[Path],
     indexers: Sequence[BaseIndexer],
 ) -> list[FileTreeNode]:
-    root_paths = [str(root) for root in root_directories]
-    cursor = db.aql.execute(
-        AQL_FILE_PATHS,
-        bind_vars={"root_paths": root_paths},
-    )
+    cursor = db.aql.execute(AQL_FILE_PATHS)
 
     nodes: dict[tuple[Path, Path], FileTreeNode] = {}
     roots: list[FileTreeNode] = []
@@ -61,20 +60,29 @@ def build_file_tree(
         nodes[(root_path, Path())] = root_node
         roots.append(root_node)
 
-    for item in cursor:  # type: ignore
+    for item in cursor:
+        log.debug(item)
         result = FilePathResult.model_validate(item)
-        root_node = nodes[(result.root, Path())]
-        parent_node = root_node
-        relative_parts = result.relative.parts
+        matching_roots = [
+            root_path for root_path in root_directories
+            if result.path.is_relative_to(root_path)
+        ]
 
-        for index, part in enumerate(relative_parts[:-1]):
-            directory_relative = Path(*relative_parts[:index + 1])
-            directory_key = (result.root, directory_relative)
+        if not matching_roots:
+            continue
+
+        tree_root_path = max(matching_roots, key=lambda path: len(path.parts))
+        relative_path = result.path.relative_to(tree_root_path)
+        parent_node = nodes[(tree_root_path, Path())]
+
+        for index, part in enumerate(relative_path.parts[:-1]):
+            directory_relative = Path(*relative_path.parts[:index + 1])
+            directory_key = (tree_root_path, directory_relative)
             directory_node = nodes.get(directory_key)
 
             if directory_node is None:
                 directory_node = FileTreeNode(
-                    path=result.root / directory_relative,
+                    path=tree_root_path / directory_relative,
                     is_directory=True,
                 )
                 nodes[directory_key] = directory_node
@@ -87,14 +95,17 @@ def build_file_tree(
 
         for indexer in indexers:
             if db.has_indexer_result(file_hash, indexer):
-                assets[indexer.__name__] = db.get_indexer_result(file_hash, indexer)
+                assets[indexer.__class__.__name__] = db.get_indexer_result(
+                    file_hash,
+                    indexer,
+                )
 
-        file_node = FileTreeNode(
-            path=result.path,
-            is_directory=False,
-            hash=file_hash,
-            assets=assets,
-        )
-        parent_node.children.append(file_node)
+        parent_node.children.append(
+            FileTreeNode(
+                path=result.path,
+                is_directory=False,
+                hash=file_hash,
+                assets=assets,
+            ))
 
     return roots

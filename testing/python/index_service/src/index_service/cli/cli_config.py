@@ -111,8 +111,6 @@ class IndexConfig(BaseModel):
     reset: bool = False
     limit_total: int | None = None
     limit_per_path: int | None = None
-    perf_trace_file: Path | None = None
-
     media_transcribe_whisper_server: Path | None = None
 
     @field_validator("paths", mode="before")
@@ -126,13 +124,6 @@ class IndexConfig(BaseModel):
     @classmethod
     def _normalize_paths(cls, value: tuple[Path, ...]) -> tuple[Path, ...]:
         return tuple(p.expanduser().resolve().absolute() for p in value)
-
-    @field_validator("perf_trace_file")
-    @classmethod
-    def _normalize_perf_trace_file(cls, value: Path | None) -> Path | None:
-        if value is None:
-            return None
-        return value.expanduser().resolve().absolute()
 
     @field_validator("media_transcribe_whisper_server")
     @classmethod
@@ -175,11 +166,19 @@ class AppConfig(BaseModel):
     enable_cache: set[str] | None = None
     indexers: dict[str, BaseModel] = Field(default_factory=dict, exclude=True)
     resources: dict[str, BaseModel] = Field(default_factory=dict, exclude=True)
+    perf_trace_file: Path | None = None
 
     # exactly one of these must be set
     index: IndexConfig | None = None
     flat_query_view: FlatQueryViewConfig | None = None
     file_tree_view: FileTreeViewConfig | None = None
+
+    @field_validator("perf_trace_file")
+    @classmethod
+    def _normalize_perf_trace_file(cls, value: Path | None) -> Path | None:
+        if value is None:
+            return None
+        return value.expanduser().resolve().absolute()
 
     @model_validator(mode="before")
     @classmethod

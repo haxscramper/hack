@@ -19,6 +19,7 @@ from index_service.gui.collection_views.exif_preview_builder import (
     ExifPreviewrWidgetBuilder,)
 from index_service.gui.collection_views.wd_tagger_builder import WdTaggerWidgetBuilder
 from index_service.gui.file_tree.base_tree_model import build_file_tree
+from index_service.gui.file_tree.qt_tree_window import FileTreeQueryWindow
 from index_service.gui.flat_query_preview.window import FlatQueryViewWindow
 from index_service.services.core.db import IndexDatabase
 from index_service.services.core.indexing_flow import run_indexing_per_root_plan
@@ -108,6 +109,23 @@ class IndexService():
             )
             self.indexer_instances.append(instance)
 
+        if self.cfg.index and self.cfg.index.reset:
+            IndexDatabase.reset_database(
+                host=self.cfg.db.host,
+                db_name=self.cfg.db.db_name,
+                username=self.cfg.db.username,
+                password=self.cfg.db.password,
+            )
+
+        self.db = IndexDatabase(
+            host=self.cfg.db.host,
+            db_name=self.cfg.db.db_name,
+            username=self.cfg.db.username,
+            password=self.cfg.db.password,
+        )
+
+        self.ctx = RunContext(self.db)
+
     def _setup_runtime_logging(self, log_cfg: LoggingConfig) -> tuple[Path, Path, Path]:
         run_text_dir = get_xdg_cache_dir(["logs", "run", "text"])
         run_json_dir = get_xdg_cache_dir(["logs", "run", "json"])
@@ -154,83 +172,43 @@ class IndexService():
         index_cfg = self.cfg.index
 
         handler = get_custom_traceback_handler(show_args=False)
-        _, _, perf_dir = self._setup_runtime_logging(self.cfg.logging)
 
         log.debug(json.dumps(dump_with_type(index_cfg), indent=2))
-
-        if index_cfg.reset:
-            IndexDatabase.reset_database(
-                host=self.cfg.db.host,
-                db_name=self.cfg.db.db_name,
-                username=self.cfg.db.username,
-                password=self.cfg.db.password,
-            )
 
         def impl(exc_type: Any, exc_value: Any, exc_traceback: Any):
             print(handler(exc_type, exc_value, exc_traceback))
 
         sys.excepthook = impl
-
-        db = IndexDatabase(
-            host=self.cfg.db.host,
-            db_name=self.cfg.db.db_name,
-            username=self.cfg.db.username,
-            password=self.cfg.db.password,
-        )
-
-        ctx = RunContext(db)
-        ctx.start_trace()
+        self.ctx.start_trace()
 
         assert set(t.asset_name for t in self.indexer_instances) == set(
             self.cfg.indexers.keys())
 
-        with ctx.trace_scope("create runner"):
+        with self.ctx.trace_scope("create runner"):
             runner = IndexRuntime(
-                ctx=ctx,
-                db=db,
+                ctx=self.ctx,
+                db=self.db,
                 indexer_types=self.indexer_instances,
                 resource_types=self.resource_instances,
             )
 
         for idx in self.indexer_instances:
-            db.enable_index(idx)
+            self.db.enable_index(idx)
 
         log.info(f"Enabled indexers {[t.asset_name for t in self.indexer_instances]}")
 
-        try:
-            run_indexing_per_root_plan(
-                db=db,
-                runner=runner,
-                ctx=ctx,
-                paths=index_cfg.paths,
-                indexers=tuple(self.cfg.indexers.keys()),
-                limit_total=index_cfg.limit_total,
-                limit_per_path=index_cfg.limit_per_path,
-            )
-        except Exception as ex:
-            log.critical(f"{ex}", exc_info=ex)
-            raise
-        finally:
-            assert ctx.writer
-
-            perf_file = perf_dir / f"{datetime.now().isoformat()}.json"
-            ctx.writer.save(str(perf_file))
-            keep_last_files(perf_dir, "*.json", 20)
-
-            if index_cfg.perf_trace_file is not None:
-                log.info(f"Trace file {index_cfg.perf_trace_file}")
-                ctx.writer.save(str(index_cfg.perf_trace_file))
+        run_indexing_per_root_plan(
+            db=self.db,
+            runner=runner,
+            ctx=self.ctx,
+            paths=index_cfg.paths,
+            indexers=tuple(self.cfg.indexers.keys()),
+            limit_total=index_cfg.limit_total,
+            limit_per_path=index_cfg.limit_per_path,
+        )
 
     def _run_flat_query_view(self) -> None:
         qt_app = QApplication(sys.argv)
-
-        db = IndexDatabase(
-            host=self.cfg.db.host,
-            db_name=self.cfg.db.db_name,
-            username=self.cfg.db.username,
-            password=self.cfg.db.password,
-        )
-
         builders = list()
         for inst in self.indexer_instances:
             match inst:
@@ -244,7 +222,7 @@ class IndexService():
                     builders.append(ExifPreviewrWidgetBuilder(inst))
 
         win = FlatQueryViewWindow(
-            db,
+            self.db,
             collection_names=[t for t in self.cfg.indexers.keys()],
             builders=builders,
         )
@@ -254,23 +232,15 @@ class IndexService():
     def _run_tree_view(self) -> None:
         qt_app = QApplication(sys.argv)
 
-        db = IndexDatabase(
-            host=self.cfg.db.host,
-            db_name=self.cfg.db.db_name,
-            username=self.cfg.db.username,
-            password=self.cfg.db.password,
-        )
-
         assert self.cfg.file_tree_view
-        build_file_tree(
-            db=db,
-            root_directories=[
-                Path(p).expanduser().absolute() for p in self.cfg.file_tree_view.root_dirs
-            ],
-            indexers=self.indexer_instances,
+        win = FileTreeQueryWindow(
+            file_tree_view=self.cfg.file_tree_view,
+            db=self.db,
+            indexer_instances=self.indexer_instances,
         )
 
-        # sys.exit(qt_app.exec())
+        win.show()
+        sys.exit(qt_app.exec())
 
     @staticmethod
     def _load_config(path: Path) -> AppConfig:
@@ -288,18 +258,35 @@ def main() -> None:
     stfu_logs()
     service = IndexService(Path(args.config))
 
-    match args.command:
-        case "index":
-            service._run_index()
+    _, _, perf_dir = service._setup_runtime_logging(service.cfg.logging)
+    try:
+        match args.command:
+            case "index":
+                service._run_index()
 
-        case "flat_query_view":
-            service._run_flat_query_view()
+            case "flat_query_view":
+                service._run_flat_query_view()
 
-        case "file_tree_view":
-            service._run_tree_view()
+            case "file_tree_view":
+                service._run_tree_view()
 
-        case _:
-            raise ValueError(f"Unexpected command {args.command}")
+            case _:
+                raise ValueError(f"Unexpected command {args.command}")
+
+    except Exception as ex:
+        log.critical(f"{ex}", exc_info=ex)
+        raise
+
+    finally:
+        assert service.ctx.writer
+
+        perf_file = perf_dir / f"{datetime.now().isoformat()}.json"
+        service.ctx.writer.save(str(perf_file))
+        keep_last_files(perf_dir, "*.json", 20)
+
+        if service.cfg.perf_trace_file is not None:
+            log.info(f"Trace file {service.cfg.perf_trace_file}")
+            service.ctx.writer.save(str(service.cfg.perf_trace_file))
 
 
 if __name__ == "__main__":

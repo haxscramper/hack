@@ -45,7 +45,7 @@ class ColumnSpec(ABC):
 
 
 @beartype
-class AbstractColumnItemModel(QAbstractTableModel, ABC):
+class AbstractColumnItemModel(QAbstractTableModel):
 
     def __init__(
         self,
