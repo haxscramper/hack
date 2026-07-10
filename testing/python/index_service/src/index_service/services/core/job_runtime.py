@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import deque
 import logging
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
@@ -387,17 +388,16 @@ class IndexRuntime:
             return ref, out
 
         total_sub_batches = len(batch.sub_batches)
-        batch_started_at = monotonic()
+        recent_sub_batch_times: deque[float] = deque(maxlen=30)
 
         for sub_idx, chunk in enumerate(batch.sub_batches, start=1):
-            completed_sub_batches = sub_idx - 1
-            elapsed = monotonic() - batch_started_at
+            remaining_sub_batches = total_sub_batches - sub_idx + 1
 
-            if completed_sub_batches > 0 and elapsed > 0:
-                sub_batches_per_sec = completed_sub_batches / elapsed
-                eta_batch_sec = ((total_sub_batches - completed_sub_batches) /
-                                 sub_batches_per_sec
-                                 if sub_batches_per_sec > 0 else float("inf"))
+            if recent_sub_batch_times:
+                average_sub_batch_sec = (sum(recent_sub_batch_times) /
+                                         len(recent_sub_batch_times))
+                sub_batches_per_sec = 1 / average_sub_batch_sec
+                eta_batch_sec = remaining_sub_batches * average_sub_batch_sec
                 sub_batches_per_sec_str = f"{sub_batches_per_sec:.2f}"
                 eta_batch_str = f"{eta_batch_sec:.1f}s"
             else:
@@ -415,6 +415,8 @@ class IndexRuntime:
                     eta_batch_str,
                 ),)
 
+            sub_batch_started_at = monotonic()
+
             with self.ctx.trace_scope(
                     "execute sub-batch",
                     indexer=batch.indexer_name,
@@ -431,6 +433,8 @@ class IndexRuntime:
                 for ref, out in completed:
                     with ExceptionContextNote(f"indexer asset: {indexer.asset_name}"):
                         self.db.store_indexer_output(ref, out)
+
+            recent_sub_batch_times.append(monotonic() - sub_batch_started_at)
 
         log.debug("finished indexer batch")
 

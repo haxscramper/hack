@@ -13,23 +13,19 @@ import logging
 log = logging.getLogger(__name__)
 
 AQL_FILE_PATHS = """
-FOR root IN roots
-  FOR file IN files
-    FOR entry IN file.paths
-      FILTER entry.root.name == root._key
-      RETURN {
-        root: root.path,
-        path: CONCAT_SEPARATOR("/", root.path, entry.relative),
-        relative: entry.relative,
-        hash: entry.hash.hash
-      }
+FOR file IN files
+  FOR entry IN file.paths
+    LIMIT 500
+    LET root = DOCUMENT("roots", entry.root.name)
+    RETURN {
+      path: CONCAT_SEPARATOR("/", root.path, entry.relative),
+      hash: entry.hash.hash
+    }
 """
 
 
 class FilePathResult(BaseModel):
-    root: Path
     path: Path
-    relative: Path
     hash: str
 
 
@@ -38,7 +34,7 @@ class FileTreeNode(BaseModel):
     is_directory: bool
     hash: FileHash | None = None
     assets: dict[str, BaseModel] = Field(default_factory=dict)
-    children: list["FileTreeNode"] = Field(default_factory=list)
+    nested: list["FileTreeNode"] = Field(default_factory=list)
 
 
 @beartype
@@ -52,55 +48,61 @@ def build_file_tree(
     nodes: dict[tuple[Path, Path], FileTreeNode] = {}
     roots: list[FileTreeNode] = []
 
-    for root_path in root_directories:
-        root_node = FileTreeNode(
-            path=root_path,
-            is_directory=True,
-        )
-        nodes[(root_path, Path())] = root_node
-        roots.append(root_node)
-
     for item in cursor:
-        log.debug(item)
         result = FilePathResult.model_validate(item)
+
         matching_roots = [
-            root_path for root_path in root_directories
-            if result.path.is_relative_to(root_path)
+            root for root in root_directories if result.path.is_relative_to(root)
         ]
 
         if not matching_roots:
+            log.debug(f"Skipping indexed file outside requested roots: {result.path}",)
             continue
 
-        tree_root_path = max(matching_roots, key=lambda path: len(path.parts))
-        relative_path = result.path.relative_to(tree_root_path)
-        parent_node = nodes[(tree_root_path, Path())]
+        log.info(f"OK {result.path}")
 
-        for index, part in enumerate(relative_path.parts[:-1]):
-            directory_relative = Path(*relative_path.parts[:index + 1])
-            directory_key = (tree_root_path, directory_relative)
-            directory_node = nodes.get(directory_key)
+        root_path = max(matching_roots, key=lambda root: len(root.parts))
+        root_key = (root_path, root_path)
 
-            if directory_node is None:
-                directory_node = FileTreeNode(
-                    path=tree_root_path / directory_relative,
+        root_node = nodes.get(root_key)
+        if root_node is None:
+            root_node = FileTreeNode(
+                path=root_path,
+                is_directory=True,
+            )
+            nodes[root_key] = root_node
+            roots.append(root_node)
+
+        relative_path = result.path.relative_to(root_path)
+        parent = root_node
+        current_path = root_path
+
+        for part in relative_path.parts[:-1]:
+            current_path /= part
+            directory_key = (root_path, current_path)
+
+            directory = nodes.get(directory_key)
+            if directory is None:
+                directory = FileTreeNode(
+                    path=current_path,
                     is_directory=True,
                 )
-                nodes[directory_key] = directory_node
-                parent_node.children.append(directory_node)
+                nodes[directory_key] = directory
+                parent.nested.append(directory)
 
-            parent_node = directory_node
+            parent = directory
 
         file_hash = FileHash(hash=result.hash)
         assets: dict[str, BaseModel] = {}
 
         for indexer in indexers:
             if db.has_indexer_result(file_hash, indexer):
-                assets[indexer.__class__.__name__] = db.get_indexer_result(
+                assets[indexer.asset_name] = db.get_indexer_result(
                     file_hash,
                     indexer,
                 )
 
-        parent_node.children.append(
+        parent.nested.append(
             FileTreeNode(
                 path=result.path,
                 is_directory=False,

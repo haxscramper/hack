@@ -494,9 +494,16 @@ class IndexDatabase:
 
         return result
 
-    def has_indexer_result(self, ref: FileHash, indexer: BaseIndexProtocol) -> bool:
+    def get_file_hash(self, ref: FileHash | FileRef) -> str:
+        if isinstance(ref, FileHash):
+            return ref.hash
+        else:
+            return ref.hash.hash
+
+    def has_indexer_result(self, ref: FileHash | FileRef,
+                           indexer: BaseIndexProtocol | str) -> bool:
         col = self._db.collection(self.get_collection_name(indexer))
-        return cast(bool, col.has(ref.hash))
+        return cast(bool, col.has(self.get_file_hash(ref)))
 
     def _arango_collection_schema_for_indexer(
             self, indexer: BaseIndexProtocol

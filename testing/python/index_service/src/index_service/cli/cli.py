@@ -65,8 +65,8 @@ class IndexService():
 
         assert False, f"No indexer named {s}"
 
-    def __init__(self, cfg: Path) -> None:
-        self.cfg = self._load_config(cfg)
+    def __init__(self, cfg: AppConfig) -> None:
+        self.cfg = cfg
         self.indexer_instances = list()
         self.resource_instances = list()
 
@@ -108,14 +108,6 @@ class IndexService():
                 **indexer_cfg,
             )
             self.indexer_instances.append(instance)
-
-        if self.cfg.index and self.cfg.index.reset:
-            IndexDatabase.reset_database(
-                host=self.cfg.db.host,
-                db_name=self.cfg.db.db_name,
-                username=self.cfg.db.username,
-                password=self.cfg.db.password,
-            )
 
         self.db = IndexDatabase(
             host=self.cfg.db.host,
@@ -242,12 +234,6 @@ class IndexService():
         win.show()
         sys.exit(qt_app.exec())
 
-    @staticmethod
-    def _load_config(path: Path) -> AppConfig:
-        cfg_path = path.expanduser().resolve().absolute()
-        payload = commentjson.loads(cfg_path.read_text())
-        return AppConfig.model_validate(payload)
-
 
 def main() -> None:
     parser = argparse.ArgumentParser()
@@ -256,7 +242,20 @@ def main() -> None:
     args = parser.parse_args()
 
     stfu_logs()
-    service = IndexService(Path(args.config))
+
+    cfg_path = Path(args.config).expanduser().resolve().absolute()
+    payload = commentjson.loads(cfg_path.read_text())
+    cfg = AppConfig.model_validate(payload)
+
+    if args.command == "index" and cfg.index and cfg.index.reset:
+        IndexDatabase.reset_database(
+            host=cfg.db.host,
+            db_name=cfg.db.db_name,
+            username=cfg.db.username,
+            password=cfg.db.password,
+        )
+
+    service = IndexService(cfg)
 
     _, _, perf_dir = service._setup_runtime_logging(service.cfg.logging)
     try:

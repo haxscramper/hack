@@ -131,7 +131,7 @@ class FileTreeModel(AbstractColumnItemModel):
         for row, node in enumerate(nodes):
             self.parents[id(node)] = parent
             self.rows[id(node)] = row
-            self.registerNodes(node.children, node)
+            self.registerNodes(node.nested, node)
 
     def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:
         match parent.isValid():
@@ -139,7 +139,7 @@ class FileTreeModel(AbstractColumnItemModel):
                 return len(self.nodes)
             case True if parent.column() == 0:
                 node = cast(FileTreeNode, parent.internalPointer())
-                return len(node.children)
+                return len(node.nested)
             case _:
                 return 0
 
@@ -154,7 +154,7 @@ class FileTreeModel(AbstractColumnItemModel):
                 nodes = self.nodes
             case True:
                 node = cast(FileTreeNode, parent.internalPointer())
-                nodes = node.children
+                nodes = node.nested
 
         if not (0 <= row < len(nodes) and 0 <= column < len(self.columns)):
             return QModelIndex()
