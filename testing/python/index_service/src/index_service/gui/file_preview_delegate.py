@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from index_service.gui.query_model import QueryResultModel
+from index_service.gui.flat_query_preview.query_model import QueryResultModel
 
 
 @beartype
@@ -53,8 +53,7 @@ class _ThumbLoader(QRunnable):
         reader.setAutoTransform(True)
         size = reader.size()
         if size.isValid() and not size.isEmpty():
-            scaled = size.scaled(self._target,
-                                 Qt.AspectRatioMode.KeepAspectRatio)
+            scaled = size.scaled(self._target, Qt.AspectRatioMode.KeepAspectRatio)
             reader.setScaledSize(scaled)
         img = reader.read()
         if not img.isNull():
@@ -95,8 +94,7 @@ class ThumbnailCache(QObject):
             self._failed.add(path)
             return None
         self._inflight.add(path)
-        self._pool.start(
-            _ThumbLoader(path, self._target, self._signals, self._images))
+        self._pool.start(_ThumbLoader(path, self._target, self._signals, self._images))
         return None
 
 
@@ -129,8 +127,7 @@ class FilePreviewDelegate(QStyledItemDelegate):
             y = content.y() + (content.height() - pix.height()) // 2
             painter.drawPixmap(x, y, pix)
         else:
-            label = (Path(path).name
-                     if path else index.data(QueryResultModel.HashRole))
+            label = (Path(path).name if path else index.data(QueryResultModel.HashRole))
             painter.drawText(
                 content,
                 Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap,

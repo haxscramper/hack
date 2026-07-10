@@ -69,7 +69,7 @@ class QueryResultModel(QAbstractListModel):
             except Exception:
                 pass
             self._cursor = None
-        self._cursor = self._db._db.aql.execute(
+        self._cursor = self._db.aql.execute(
             aql,
             batch_size=self.batch_size,
             count=True,

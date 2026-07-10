@@ -18,7 +18,8 @@ from index_service.gui.collection_views.comfy_input_builder import (
 from index_service.gui.collection_views.exif_preview_builder import (
     ExifPreviewrWidgetBuilder,)
 from index_service.gui.collection_views.wd_tagger_builder import WdTaggerWidgetBuilder
-from index_service.gui.window import MainWindow
+from index_service.gui.file_tree.base_tree_model import build_file_tree
+from index_service.gui.flat_query_preview.window import FlatQueryViewWindow
 from index_service.services.core.db import IndexDatabase
 from index_service.services.core.indexing_flow import run_indexing_per_root_plan
 from index_service.services.core.job_runtime import IndexRuntime
@@ -220,7 +221,7 @@ class IndexService():
                 log.info(f"Trace file {index_cfg.perf_trace_file}")
                 ctx.writer.save(str(index_cfg.perf_trace_file))
 
-    def _run_view(self) -> None:
+    def _run_flat_query_view(self) -> None:
         qt_app = QApplication(sys.argv)
 
         db = IndexDatabase(
@@ -242,13 +243,34 @@ class IndexService():
                 case ExifMetadataIndexer():
                     builders.append(ExifPreviewrWidgetBuilder(inst))
 
-        win = MainWindow(
+        win = FlatQueryViewWindow(
             db,
             collection_names=[t for t in self.cfg.indexers.keys()],
             builders=builders,
         )
         win.show()
         sys.exit(qt_app.exec())
+
+    def _run_tree_view(self) -> None:
+        qt_app = QApplication(sys.argv)
+
+        db = IndexDatabase(
+            host=self.cfg.db.host,
+            db_name=self.cfg.db.db_name,
+            username=self.cfg.db.username,
+            password=self.cfg.db.password,
+        )
+
+        assert self.cfg.file_tree_view
+        build_file_tree(
+            db=db,
+            root_directories=[
+                Path(p).expanduser().absolute() for p in self.cfg.file_tree_view.root_dirs
+            ],
+            indexers=self.indexer_instances,
+        )
+
+        # sys.exit(qt_app.exec())
 
     @staticmethod
     def _load_config(path: Path) -> AppConfig:
@@ -270,8 +292,11 @@ def main() -> None:
         case "index":
             service._run_index()
 
-        case "view":
-            service._run_view()
+        case "flat_query_view":
+            service._run_flat_query_view()
+
+        case "file_tree_view":
+            service._run_tree_view()
 
         case _:
             raise ValueError(f"Unexpected command {args.command}")

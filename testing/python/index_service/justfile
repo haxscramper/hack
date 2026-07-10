@@ -29,8 +29,11 @@ index:
 # --indexer ffprobe \
 # --indexer pdf_pages \
 
-view:
-    uv run src/index_service/cli/cli.py view "~/defaultdirs/temporary_interchange/content_root_indexing.jsonc" 
+flat_query_view:
+    uv run src/index_service/cli/cli.py flat_query_view "~/defaultdirs/temporary_interchange/content_root_indexing.jsonc" 
+
+file_tree:
+    uv run src/index_service/cli/cli.py file_tree_view "~/defaultdirs/temporary_interchange/content_root_indexing.jsonc" 
 
 run_arango:
     docker run -d -e ARANGO_ROOT_PASSWORD="test" -p 8529:8529 arangodb/enterprise:3.12.9.1 \

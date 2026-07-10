@@ -30,7 +30,7 @@ from PySide6.QtWidgets import (
 from index_service.gui.collection_views.builder import WidgetBuilder
 from index_service.gui.collection_views.json_preview_builder import JsonWidgetBuilder
 from index_service.gui.file_preview_delegate import FilePreviewDelegate, ThumbnailCache
-from index_service.gui.query_model import QueryResultModel
+from index_service.gui.flat_query_preview.query_model import QueryResultModel
 from index_service.services.core.db import IndexDatabase
 from index_service.services.core.types import FileHash
 
@@ -70,16 +70,14 @@ class HorizontalTextTabBar(QTabBar):
     def paintEvent(self, event) -> None:  # type: ignore[override]
         painter = QPainter(self)
         pal = self.palette()
-        group = (pal.ColorGroup.Current
-                 if self.isEnabled() else pal.ColorGroup.Disabled)
+        group = (pal.ColorGroup.Current if self.isEnabled() else pal.ColorGroup.Disabled)
 
         for i in range(self.count()):
             rect = self.tabRect(i)
             selected = self.currentIndex() == i
 
             if selected:
-                painter.fillRect(rect, pal.color(group,
-                                                 pal.ColorRole.Highlight))
+                painter.fillRect(rect, pal.color(group, pal.ColorRole.Highlight))
                 text_color = pal.color(group, pal.ColorRole.HighlightedText)
             else:
                 painter.fillRect(rect, pal.color(group, pal.ColorRole.Window))
@@ -97,7 +95,7 @@ class HorizontalTextTabBar(QTabBar):
 
 
 @beartype
-class MainWindow(QMainWindow):
+class FlatQueryViewWindow(QMainWindow):
 
     def __init__(
         self,
@@ -113,7 +111,8 @@ class MainWindow(QMainWindow):
         self._current_hash: Optional[FileHash] = None
 
         self._widget_builders: dict[str, WidgetBuilder] = {
-            "paths": PathsWidgetBuilder()  # type: ignore
+            "paths":
+                PathsWidgetBuilder()  # type: ignore
         }
 
         for name in self._collection_names:

@@ -1,6 +1,7 @@
 import os
 import json
 from pathlib import Path
+from arango import Optional
 from beartype import beartype
 from beartype.typing import Any, Literal
 
@@ -153,10 +154,16 @@ class IndexConfig(BaseModel):
         return value
 
 
-class ViewConfig(BaseModel):
+class FlatQueryViewConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
     # placeholder for future view-specific options
     pass
+
+
+class FileTreeViewConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    root_dirs: list[str]
+    reference_dir: Optional[str] = None
 
 
 class AppConfig(BaseModel):
@@ -171,7 +178,8 @@ class AppConfig(BaseModel):
 
     # exactly one of these must be set
     index: IndexConfig | None = None
-    view: ViewConfig | None = None
+    flat_query_view: FlatQueryViewConfig | None = None
+    file_tree_view: FileTreeViewConfig | None = None
 
     @model_validator(mode="before")
     @classmethod
