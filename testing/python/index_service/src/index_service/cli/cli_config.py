@@ -111,24 +111,8 @@ class IndexConfig(BaseModel):
     limit_total: int | None = None
     limit_per_path: int | None = None
     perf_trace_file: Path | None = None
-    enable_cache: set[str] | None = None
-
-    indexers: dict[str, BaseModel] = Field(default_factory=dict, exclude=True)
-    resources: dict[str, BaseModel] = Field(default_factory=dict, exclude=True)
 
     media_transcribe_whisper_server: Path | None = None
-
-    @model_validator(mode="before")
-    @classmethod
-    def _defaults_for_plugin_maps(cls, data: Any) -> Any:
-        if not isinstance(data, dict):
-            return data
-
-        if "indexers" not in data:
-            data["indexers"] = {name: {} for name in _INDEXER_BY_NAME}
-        if "resources" not in data:
-            data["resources"] = {name: {} for name in _RESOURCE_BY_NAME}
-        return data
 
     @field_validator("paths", mode="before")
     @classmethod
@@ -168,6 +152,39 @@ class IndexConfig(BaseModel):
                 f"media_transcribe_whisper_server is not executable: {value}")
         return value
 
+
+class ViewConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    # placeholder for future view-specific options
+    pass
+
+
+class AppConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    db: DatabaseConfig
+    logging: LoggingConfig = Field(default_factory=LoggingConfig)
+
+    enable_cache: set[str] | None = None
+    indexers: dict[str, BaseModel] = Field(default_factory=dict, exclude=True)
+    resources: dict[str, BaseModel] = Field(default_factory=dict, exclude=True)
+
+    # exactly one of these must be set
+    index: IndexConfig | None = None
+    view: ViewConfig | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _defaults_for_plugin_maps(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+
+        if "indexers" not in data:
+            data["indexers"] = {name: {} for name in _INDEXER_BY_NAME}
+        if "resources" not in data:
+            data["resources"] = {name: {} for name in _RESOURCE_BY_NAME}
+        return data
+
     @field_validator("indexers", mode="before")
     @classmethod
     def _validate_indexers_field(cls, value: Any) -> dict[str, BaseModel]:
@@ -197,7 +214,7 @@ class IndexConfig(BaseModel):
         )
 
     @model_validator(mode="after")
-    def _validate_plugin_configs(self) -> "IndexConfig":
+    def _validate_mode_payload(self) -> "AppConfig":
         if self.enable_cache is None:
             self.enable_cache = set(self.indexers.keys())
 
@@ -207,30 +224,4 @@ class IndexConfig(BaseModel):
                 f"enable_cache contains unknown/disabled indexers: {sorted(unknown_cache)}"
             )
 
-        return self
-
-
-class ViewConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    # placeholder for future view-specific options
-    pass
-
-
-class AppConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    db: DatabaseConfig
-    logging: LoggingConfig = Field(default_factory=LoggingConfig)
-
-    # exactly one of these must be set
-    index: IndexConfig | None = None
-    view: ViewConfig | None = None
-
-    @model_validator(mode="after")
-    def _validate_mode_payload(self) -> "AppConfig":
-        has_index = self.index is not None
-        has_view = self.view is not None
-
-        if has_index == has_view:
-            raise ValueError("Exactly one of 'config' (index mode) or 'view' must be set")
         return self

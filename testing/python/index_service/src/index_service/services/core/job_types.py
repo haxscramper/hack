@@ -160,26 +160,30 @@ def cache_indexer_run(func: Callable[P, R]) -> Callable[P, IndexerOutput]:
                         file=cache_path,
                     ),
             ):
-                cache_doc = json.loads(cache_path.read_text())
-                cached_schema_hash = (cache_doc.pop("__schema_hash__", None)
-                                      if isinstance(cache_doc, dict) else None)
+                try:
+                    cache_doc = json.loads(cache_path.read_text())
+                    cached_schema_hash = (cache_doc.pop("__schema_hash__", None)
+                                          if isinstance(cache_doc, dict) else None)
 
-                if cached_schema_hash == schema_hash:
-                    parsed = model_from_json_data(
-                        cache_doc,
-                        IndexerOutput,
-                    )
-                    assert parsed.indexer_id == self.asset_name
-                    result_value = self.result_model.model_validate(parsed.result)
+                    if cached_schema_hash == schema_hash:
+                        parsed = model_from_json_data(
+                            cache_doc,
+                            IndexerOutput,
+                        )
+                        assert parsed.indexer_id == self.asset_name
+                        result_value = self.result_model.model_validate(parsed.result)
 
-                    return IndexerOutput(
-                        indexer_id=self.asset_name,
-                        result=result_value,
-                    )
+                        return IndexerOutput(
+                            indexer_id=self.asset_name,
+                            result=result_value,
+                        )
 
-                log.info(
-                    "Cache schema mismatch for {} (cached={}, current={}), ignoring cache."
-                    .format(cache_path, cached_schema_hash, schema_hash))
+                    log.info(
+                        "Cache schema mismatch for {} (cached={}, current={}), ignoring cache."
+                        .format(cache_path, cached_schema_hash, schema_hash))
+
+                except json.JSONDecodeError as err:
+                    log.error(f"Could not load JSON {err}")
 
         result = func(
             self,  # type: ignore

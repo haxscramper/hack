@@ -1,3 +1,7 @@
+import json
+
+from arango import DocumentGetError
+
 from index_service.gui.collection_views.builder import WidgetBuilder
 from index_service.gui.collection_views.json_preview_widget import JsonPreviewWidget
 from index_service.services.core.db import IndexDatabase
@@ -11,7 +15,12 @@ class JsonWidgetBuilder(WidgetBuilder):
         self._collection_name = collection_name
 
     def build(self, db: IndexDatabase, hash: FileHash) -> QWidget:
-        doc = db._db.collection(self._collection_name).get(hash.hash)
+        try:
+            doc = db._db.collection(self._collection_name).get(hash.hash)
+
+        except DocumentGetError as err:
+            doc = str(json.dumps(dict(err=str(err))))
+
         widget = JsonPreviewWidget()
         widget.set_doc(doc)
         return widget

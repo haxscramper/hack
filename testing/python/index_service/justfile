@@ -9,7 +9,7 @@ test:
 # "tests/test_search.py::test_full_text_search"
 
 index:
-    uv run src/index_service/cli/cli.py "~/defaultdirs/temporary_interchange/content_root_indexing.jsonc" 
+    uv run src/index_service/cli/cli.py index "~/defaultdirs/temporary_interchange/content_root_indexing.jsonc" 
         
 
 # --indexer file_summary \
@@ -30,8 +30,7 @@ index:
 # --indexer pdf_pages \
 
 view:
-    uv run src/index_service/cli/cli.py view \
-        --db-name test_index
+    uv run src/index_service/cli/cli.py view "~/defaultdirs/temporary_interchange/content_root_indexing.jsonc" 
 
 run_arango:
     docker run -d -e ARANGO_ROOT_PASSWORD="test" -p 8529:8529 arangodb/enterprise:3.12.9.1 \
