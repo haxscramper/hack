@@ -152,7 +152,6 @@ class IndexService():
         assert self.cfg.index is not None
         index_cfg = self.cfg.index
 
-        stfu_logs()
         handler = get_custom_traceback_handler(show_args=False)
         _, _, perf_dir = self._setup_runtime_logging(self.cfg.logging)
 
@@ -222,7 +221,6 @@ class IndexService():
                 ctx.writer.save(str(index_cfg.perf_trace_file))
 
     def _run_view(self) -> None:
-        stfu_logs()
         qt_app = QApplication(sys.argv)
 
         db = IndexDatabase(
@@ -265,6 +263,7 @@ def main() -> None:
     parser.add_argument("config", type=Path, help="Path to JSON config file")
     args = parser.parse_args()
 
+    stfu_logs()
     service = IndexService(Path(args.config))
 
     match args.command:

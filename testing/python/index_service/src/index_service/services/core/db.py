@@ -158,11 +158,14 @@ class IndexDatabase:
         return (f"fts_{asset_name}_{base.__name__}_"
                 f"{full_text_index.index_path.replace('.', '_')}")
 
-    def get_edge_name(self, indexer: str) -> str:
-        return f"{indexer}_edge"
+    def get_collection_name(self, indexer: BaseIndexProtocol | str) -> str:
+        return indexer if isinstance(indexer, str) else indexer.asset_name
 
-    def get_graph_name(self, indexer: str) -> str:
-        return f"{indexer}_graph"
+    def get_edge_name(self, indexer: BaseIndexProtocol | str) -> str:
+        return f"{self.get_collection_name(indexer)}_edge"
+
+    def get_graph_name(self, indexer: BaseIndexProtocol | str) -> str:
+        return f"{self.get_collection_name(indexer)}_graph"
 
     def enable_index(self, indexer: BaseIndexProtocol):
         for base in indexer.get_document_type_bases():
@@ -491,9 +494,9 @@ class IndexDatabase:
 
         return result
 
-    def has_indexer_result(self, ref: FileRef, indexer_id: str) -> bool:
-        col = self._db.collection(indexer_id)
-        return col.has(ref.hash.hash)
+    def has_indexer_result(self, ref: FileHash, indexer: BaseIndexProtocol) -> bool:
+        col = self._db.collection(self.get_collection_name(indexer))
+        return cast(bool, col.has(ref.hash))
 
     def _arango_collection_schema_for_indexer(
             self, indexer: BaseIndexProtocol

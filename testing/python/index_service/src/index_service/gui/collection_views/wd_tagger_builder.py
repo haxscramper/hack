@@ -13,15 +13,10 @@ from index_service.services.core.types import FileHash
 class WdTaggerWidgetBuilder(WidgetBuilder):
 
     def build(self, db: IndexDatabase, hash: FileHash) -> QWidget:
-        result = cast(Optional[WdTagIndexerResult],
-                      db.get_indexer_result(hash, self.indexer))
 
-        if result is None:
-            widget = JsonPreviewWidget()
-            widget.set_doc(None)
-            return widget
+        if db.has_indexer_result(hash, self.indexer):
+            result = cast(WdTagIndexerResult, db.get_indexer_result(hash, self.indexer))
 
-        else:
             table = QTableWidget(len(result.tags), 3)
             table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
             table.setHorizontalHeaderLabels(["category", "name", "probability"])
@@ -31,3 +26,8 @@ class WdTaggerWidgetBuilder(WidgetBuilder):
                 table.setItem(row, 2, QTableWidgetItem(f"{tag.probability:.4f}"))
             table.horizontalHeader().setStretchLastSection(True)
             return table
+
+        else:
+            widget = JsonPreviewWidget()
+            widget.set_doc(None)
+            return widget
