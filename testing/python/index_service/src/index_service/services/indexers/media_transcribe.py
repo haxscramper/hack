@@ -9,7 +9,8 @@ from typing import cast
 import magic
 from pydantic import BaseModel, Field
 
-from index_service.services.core.job_types import BaseIndexer, RunContext, cache_indexer_run
+from index_service.services.core.job_types import BaseIndexer, RunContext
+from index_service.services.core.job_cache import cache_indexer_run
 from index_service.services.core.types import IndexerOutput, IndexerRequest
 from index_service.services.resources.whisper_transcribe import (
     WhisperTranscribeRequest,

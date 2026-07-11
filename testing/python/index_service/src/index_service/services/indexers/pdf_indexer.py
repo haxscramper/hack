@@ -1,7 +1,8 @@
 from pathlib import Path
 
 from beartype.typing import cast
-from index_service.services.core.job_types import BaseIndexer, RunContext, cache_indexer_run
+from index_service.services.core.job_types import BaseIndexer, RunContext
+from index_service.services.core.job_cache import cache_indexer_run
 from index_service.services.resources.pdf.pdf_extractor import (
     PdfExtractor,
     PdfExtractorRequest,
@@ -19,7 +20,7 @@ class PdfIndexerResult(BaseModel, extra="forbid"):
 class PdfIndexer(BaseIndexer):
     asset_name = "pdf_pages"
     result_model = PdfIndexerResult
-    required_resources = ("pdf_extractor", )
+    required_resources = ("pdf_extractor",)
 
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
@@ -35,8 +36,7 @@ class PdfIndexer(BaseIndexer):
         resources: dict[str, object],
         assets: dict[str, object],
     ) -> IndexerOutput:
-        extractor: PdfExtractor = cast(PdfExtractor,
-                                       resources["pdf_extractor"])
+        extractor: PdfExtractor = cast(PdfExtractor, resources["pdf_extractor"])
         result: PdfExtractorResult = extractor.handle(
             ctx, PdfExtractorRequest(path=str(request.file_ref.path)))
         return IndexerOutput(

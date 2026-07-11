@@ -2,7 +2,8 @@ from datetime import datetime
 from pathlib import Path
 
 from beartype.typing import cast
-from index_service.services.core.job_types import BaseIndexer, RunContext, cache_indexer_run
+from index_service.services.core.job_types import BaseIndexer, RunContext
+from index_service.services.core.job_cache import cache_indexer_run
 from index_service.services.resources.wd_tagger import WdTag, WdTagger
 from index_service.services.core.types import IndexDocument, IndexerOutput, IndexerRequest
 from PIL import Image

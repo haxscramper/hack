@@ -1,6 +1,7 @@
 from pathlib import Path
 
-from index_service.services.core.job_types import BaseIndexer, RunContext, cache_indexer_run
+from index_service.services.core.job_types import BaseIndexer, RunContext
+from index_service.services.core.job_cache import cache_indexer_run
 from index_service.services.core.types import IndexDocument, IndexerOutput, IndexerRequest
 from pydantic import BaseModel
 

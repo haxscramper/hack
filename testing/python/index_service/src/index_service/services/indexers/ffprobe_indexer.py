@@ -4,7 +4,8 @@ from pathlib import Path
 
 from beartype import beartype
 from beartype.typing import Any, cast
-from index_service.services.core.job_types import BaseIndexer, RunContext, cache_indexer_run
+from index_service.services.core.job_types import BaseIndexer, RunContext
+from index_service.services.core.job_cache import cache_indexer_run
 from index_service.services.core.types import IndexerOutput, IndexerRequest
 from plumbum import local
 from pydantic import BaseModel
@@ -71,10 +72,8 @@ def run_ffprobe(path: Path) -> FFProbeInfoModel | None:
             return float(num) / denominator
         return float(text)
 
-    width = parse_int(
-        video_stream.get("width")) if video_stream is not None else None
-    height = parse_int(
-        video_stream.get("height")) if video_stream is not None else None
+    width = parse_int(video_stream.get("width")) if video_stream is not None else None
+    height = parse_int(video_stream.get("height")) if video_stream is not None else None
     resolution = (f"{width}x{height}"
                   if width is not None and height is not None else None)
     fps = (parse_fps(video_stream.get("avg_frame_rate"))
@@ -86,8 +85,7 @@ def run_ffprobe(path: Path) -> FFProbeInfoModel | None:
         width=width,
         height=height,
         resolution=resolution,
-        codec_name=video_stream.get("codec_name")
-        if video_stream is not None else None,
+        codec_name=video_stream.get("codec_name") if video_stream is not None else None,
         format_name=format_raw.get("format_name"),
         fps=fps,
     )

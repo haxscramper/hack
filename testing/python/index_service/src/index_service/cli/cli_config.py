@@ -162,6 +162,10 @@ class FileTreeViewConfig(BaseModel):
 
 class AppConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
+    index_cache: Path = Field(
+        description="DB location for the indexer result cache",
+        default_factory=lambda: get_xdg_cache_dir([]).joinpath("index_cache.sqlite"),
+    )
 
     db: DatabaseConfig
     hash_cache: Path = Field(

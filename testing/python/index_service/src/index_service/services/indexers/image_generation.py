@@ -14,7 +14,8 @@ from index_service.services.indexers.exif_metadata import (
     ExifMetadataIndexer,
     ExifMetadataIndexerResult,
 )
-from index_service.services.core.job_types import BaseIndexer, RunContext, cache_indexer_run
+from index_service.services.core.job_types import BaseIndexer, RunContext
+from index_service.services.core.job_cache import cache_indexer_run
 from index_service.services.pydantic_utils import to_json_safe
 from index_service.services.core.types import IndexerOutput, IndexerRequest
 from pydantic import BaseModel
@@ -97,8 +98,7 @@ def _normalize_sampler_name(name: str) -> tuple[str, str | None]:
         return key, "normal"
 
 
-def _extract_generation_params(
-        nodes: list[ComfyInput]) -> GenerationParamsIndexerResult:
+def _extract_generation_params(nodes: list[ComfyInput]) -> GenerationParamsIndexerResult:
     by_id: dict[str, ComfyInput] = {n.node_id: n for n in nodes}
 
     # Build dependency graph. A link's origin_id is the dependee, so the
@@ -112,8 +112,7 @@ def _extract_generation_params(
             dependents[dep].append(node.node_id)
 
     # Kahn topological traversal starting from nodes with no dependencies.
-    queue: deque[str] = deque(node_id for node_id, deg in in_degree.items()
-                              if deg == 0)
+    queue: deque[str] = deque(node_id for node_id, deg in in_degree.items() if deg == 0)
     order: list[str] = []
     while queue:
         node_id = queue.popleft()
@@ -183,8 +182,8 @@ def _extract_generation_params(
 
             case ("Power Lora Loader (rgthree)", _):
                 for input in node.inputs:
-                    if isinstance(input, dict) and "lora" in input and (
-                            "on" not in input or input["on"]):
+                    if isinstance(input, dict) and "lora" in input and ("on" not in input
+                                                                        or input["on"]):
                         loras.append(
                             LoraParams(
                                 model=cast(str, input["lora"]),
@@ -261,8 +260,7 @@ class GenerationParamsIndexer(BaseIndexer):
                     cfg=exif.file.cfgScale,
                     scheduler=scheduler or "normal",
                     loras=[
-                        LoraParams(model=l.name, weight=l.weight)
-                        for l in exif.file.loras
+                        LoraParams(model=l.name, weight=l.weight) for l in exif.file.loras
                     ],
                 )
 
@@ -273,8 +271,7 @@ class GenerationParamsIndexer(BaseIndexer):
             result = run()
 
         except Exception as e:
-            Path("/tmp/debug.json").write_text(
-                json.dumps(to_json_safe(comfy), indent=2))
+            Path("/tmp/debug.json").write_text(json.dumps(to_json_safe(comfy), indent=2))
 
             raise e from None
 

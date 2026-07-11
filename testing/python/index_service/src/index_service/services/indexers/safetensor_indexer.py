@@ -5,7 +5,8 @@ from collections import Counter
 from pathlib import Path
 
 from beartype.typing import Any
-from index_service.services.core.job_types import BaseIndexer, RunContext, cache_indexer_run
+from index_service.services.core.job_types import BaseIndexer, RunContext
+from index_service.services.core.job_cache import cache_indexer_run
 from index_service.services.pydantic_utils import try_parse_json
 from index_service.services.core.types import IndexerOutput, IndexerRequest
 from pydantic import BaseModel
@@ -34,7 +35,7 @@ class SafetensorIndexerResult(BaseModel, extra="forbid"):
 
 def _read_header(path: Path) -> tuple[int, dict[str, object]]:
     with path.open("rb") as f:
-        (header_size, ) = struct.unpack("<Q", f.read(8))
+        (header_size,) = struct.unpack("<Q", f.read(8))
         header = try_parse_json(f.read(header_size).decode("utf-8"))
     return header_size, header
 

@@ -8,7 +8,7 @@ from typing import Annotated, Union
 import fitz
 from pydantic import BaseModel, Field
 
-from index_service.services.core.job_types import BaseResource, RunContext, cache_indexer_run
+from index_service.services.core.job_types import BaseResource, RunContext
 from index_service.services.resources.pdf.docling_extractor import DoclingExtractor, DoclingPage
 from index_service.services.resources.pdf.mypdf_extractor import MyPDFExtractor, MyPDFPage
 from index_service.services.utils import get_xdg_cache_dir
@@ -48,8 +48,7 @@ class PdfExtractor(BaseResource):
         return PdfExtractor()
 
     @staticmethod
-    def _parse_page_range(pages: str | None,
-                          max_pages: int) -> tuple[int, int]:
+    def _parse_page_range(pages: str | None, max_pages: int) -> tuple[int, int]:
         if not pages:
             return 1, max_pages
         parts = pages.split("-")
@@ -62,13 +61,10 @@ class PdfExtractor(BaseResource):
 
     @staticmethod
     def _raster_dir(pdf_path: Path) -> Path:
-        digest = hashlib.sha256(str(
-            pdf_path.absolute()).encode()).hexdigest()[:16]
-        return get_xdg_cache_dir(
-            ["pdf_extractor", f"{pdf_path.stem}_{digest}"])
+        digest = hashlib.sha256(str(pdf_path.absolute()).encode()).hexdigest()[:16]
+        return get_xdg_cache_dir(["pdf_extractor", f"{pdf_path.stem}_{digest}"])
 
-    def handle(self, ctx: RunContext,
-               request: PdfExtractorRequest) -> PdfExtractorResult:
+    def handle(self, ctx: RunContext, request: PdfExtractorRequest) -> PdfExtractorResult:
 
         pdf_path = Path(request.path)
         if not pdf_path.exists():
@@ -76,16 +72,14 @@ class PdfExtractor(BaseResource):
 
         raster_dir = self._raster_dir(pdf_path)
 
-        with fitz.open(str(pdf_path)) as pdf, ctx.trace_scope(
-                "extract PDF", path=str(pdf_path)):
+        with fitz.open(str(pdf_path)) as pdf, ctx.trace_scope("extract PDF",
+                                                              path=str(pdf_path)):
             max_pages = len(pdf)
-            first_page, last_page = self._parse_page_range(
-                request.pages, max_pages)
+            first_page, last_page = self._parse_page_range(request.pages, max_pages)
 
             log.info(
                 f"Processing PDF: {pdf_path.name} | "
-                f"Range: {first_page}-{last_page} ({last_page - first_page + 1} pages)"
-            )
+                f"Range: {first_page}-{last_page} ({last_page - first_page + 1} pages)")
 
             pages: list[MyPDFPage | DoclingPage] = []
 
@@ -93,8 +87,7 @@ class PdfExtractor(BaseResource):
                 if not request.ocr_only and MyPDFExtractor.page_has_selectable_text(
                         pdf, page_num):
                     with ctx.trace_scope("mypdf page", page_num=page_num):
-                        page = self.mypdf_extractor.extract_page(
-                            pdf_path, page_num)
+                        page = self.mypdf_extractor.extract_page(pdf_path, page_num)
                 else:
                     with ctx.trace_scope("docling page", page_num=page_num):
                         page = self.docling_extractor.extract_page(

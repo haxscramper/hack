@@ -11,6 +11,7 @@ from typing import Any, ClassVar, Literal
 from beartype import beartype
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from PySide6.QtWidgets import QApplication
+from sqlalchemy import event, create_engine, URL
 
 from index_service.cli.cli_config import _INDEXER_TYPES, _RESOURCE_TYPES, AppConfig, LoggingConfig
 from index_service.gui.collection_views.comfy_input_builder import (
@@ -85,6 +86,7 @@ class IndexService():
             resource_cfg = self.cfg.resources[key].model_dump()
             self.resource_instances.append(t(**resource_cfg))
 
+        self.indexer_connection = self.get_cache_connection(self.cfg.index_cache)
         self.indexer_instances: list[BaseIndexer] = []
         for t in _INDEXER_TYPES:
             key = t.asset_name
@@ -105,6 +107,7 @@ class IndexService():
             log.info(f"Should load cache for {t.asset_name}: {should_load_cache}")
             indexer_cfg = self.cfg.indexers[key].model_dump()
             instance = t(
+                database=self.indexer_connection,
                 should_load_cache=should_load_cache,
                 **indexer_cfg,
             )
@@ -119,6 +122,22 @@ class IndexService():
         )
 
         self.ctx = RunContext(self.db)
+
+    def get_cache_connection(self, database_path: Path):
+        engine = create_engine(
+            URL.create("sqlite", database=str(database_path)),
+            connect_args={"check_same_thread": False},
+        )
+
+        @event.listens_for(engine, "connect")
+        def configure_sqlite(dbapi_connection, _connection_record) -> None:
+            cursor = dbapi_connection.cursor()
+            cursor.execute("PRAGMA busy_timeout = 30000")
+            cursor.execute("PRAGMA journal_mode = WAL")
+            cursor.execute("PRAGMA synchronous = NORMAL")
+            cursor.close()
+
+        return engine
 
     def setup_runtime_logging(self, log_cfg: LoggingConfig) -> tuple[Path, Path, Path]:
         run_text_dir = get_xdg_cache_dir(["logs", "run", "text"])

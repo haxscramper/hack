@@ -4,11 +4,8 @@ import magic
 from beartype.typing import cast
 from pydantic import BaseModel
 
-from index_service.services.core.job_types import (
-    BaseIndexer,
-    RunContext,
-    cache_indexer_run,
-)
+from index_service.services.core.job_types import (BaseIndexer, RunContext)
+from index_service.services.core.job_cache import cache_indexer_run
 from index_service.services.core.types import IndexDocument, IndexerOutput, IndexerRequest
 from index_service.services.resources.text_summary import (
     SummarizeRequest,
