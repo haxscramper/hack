@@ -83,8 +83,12 @@ class IndexDatabase:
         self._db = client.db(db_name, username=username, password=password)
         self._db_name = db_name
         self.roots: Dict[str, Path] = dict()
+        self.file_refs: set[FileRef] = set()
         self.ensure_collections([])
+
         self._load_roots_from_db()
+        self._load_file_refs_from_db()
+
         self.hash_cache = hash_cache
 
     @property
@@ -131,6 +135,17 @@ class IndexDatabase:
     def _load_roots_from_db(self):
         for row in self._db.aql.execute("FOR doc IN roots return doc"):  # type: ignore
             self.roots[row["_key"]] = Path(row["path"])
+
+    def _load_file_refs_from_db(self) -> None:
+        for document in self._db.aql.execute(  # type: ignore
+                "FOR doc IN files RETURN doc"):
+            for path in document["paths"]:
+                self.file_refs.add(
+                    FileRef.model_validate({
+                        "hash": path["hash"],
+                        "relative": path["relative"],
+                        "root": path["root"],
+                    }))
 
     def add_root(self, name: str, root: Path) -> RootRef:
         assert name not in self.roots or self.roots[name] == root, (
@@ -473,20 +488,23 @@ class IndexDatabase:
             f"Unknown root for file ref: '{root}', register root with `add_root()` first")
 
         relative = str(path.relative_to(self.get_root(root)))
-
         files = self._db.collection("files")
-        _path = self.get_root(root).joinpath(relative)
-        hash = self._hash(_path)
+
+        full_path = self.get_root(root).joinpath(relative)
+        file_hash = self._hash(full_path)
 
         result = FileRef(
-            hash=hash,
+            hash=file_hash,
             relative=relative,
             root=root,
         )
 
+        if result in self.file_refs:
+            return result
+
         result_js = result.model_dump()
-        result_js["suffix"] = _path.suffix
-        result_js["name"] = _path.name
+        result_js["suffix"] = full_path.suffix
+        result_js["name"] = full_path.name
 
         cursor = self._db.aql.execute(
             """
@@ -495,12 +513,12 @@ class IndexDatabase:
                 LIMIT 1
                 RETURN document
             """,
-            bind_vars={"key": hash.hash},
+            bind_vars={"key": file_hash.hash},
         )
         doc = next(cursor, None)
 
         if doc is None:
-            files.insert({"_key": hash.hash, "paths": [result_js]})
+            files.insert({"_key": file_hash.hash, "paths": [result_js]})
         else:
             known = doc["paths"]
             already_known = any(entry["relative"] == result_js["relative"] and
@@ -508,7 +526,7 @@ class IndexDatabase:
 
             if not already_known:
                 known.append(result_js)
-                files.update({"_key": hash.hash, "paths": known})
+                files.update({"_key": file_hash.hash, "paths": known})
 
         return result
 
