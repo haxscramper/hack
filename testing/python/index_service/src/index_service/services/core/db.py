@@ -19,6 +19,7 @@ import html
 import json
 import graphviz
 
+from index_service.services.core.hash_cache import HashCache
 from index_service.services.core.types import (
     AnyModel,
     FileHash,
@@ -72,6 +73,7 @@ class IndexDatabase:
         db_name: str,
         username: str,
         password: str,
+        hash_cache: HashCache,
     ) -> None:
         super().__init__()
         client = ArangoClient(hosts=host)
@@ -83,6 +85,7 @@ class IndexDatabase:
         self.roots: Dict[str, Path] = dict()
         self.ensure_collections([])
         self._load_roots_from_db()
+        self.hash_cache = hash_cache
 
     @property
     def db(self) -> StandardDatabase:
@@ -447,10 +450,7 @@ class IndexDatabase:
             self._db.collection(name).truncate()
 
     def _hash(self, path: Path) -> FileHash:
-        with path.open("rb") as f:
-            digest = hashlib.file_digest(f, "sha256")
-
-        return FileHash(hash=digest.hexdigest())
+        return self.hash_cache.hash(path)
 
     def get_all_refs(self, hash: FileHash) -> List[FileRef]:
         fdoc = self._db.collection("files").get(hash.hash)

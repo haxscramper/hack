@@ -90,7 +90,7 @@ class FileRef(BaseModel, extra="forbid"):
 class IndexerOutput(BaseModel, extra="forbid"):
     model_config = ConfigDict(frozen=True)
     indexer_id: str
-    result: AnyModel
+    result: AnyModel | IndexerOutputError | IndexerNotApplicable
 
 
 @beartype
@@ -98,7 +98,7 @@ class ConverterOutput(BaseModel, extra="forbid"):
     model_config = ConfigDict(frozen=True)
     converter_id: str
     output_files: list[Path]
-    return_value: AnyModel | IndexerOutputError | IndexerNotApplicable
+    return_value: AnyModel
 
 
 @beartype

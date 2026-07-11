@@ -22,6 +22,7 @@ from index_service.gui.file_tree.base_tree_model import build_file_tree
 from index_service.gui.file_tree.qt_tree_window import FileTreeQueryWindow
 from index_service.gui.flat_query_preview.window import FlatQueryViewWindow
 from index_service.services.core.db import IndexDatabase
+from index_service.services.core.hash_cache import HashCache
 from index_service.services.core.indexing_flow import run_indexing_per_root_plan
 from index_service.services.core.job_runtime import IndexRuntime
 from index_service.services.core.job_types import BaseIndexer, RunContext
@@ -114,6 +115,7 @@ class IndexService():
             db_name=self.cfg.db.db_name,
             username=self.cfg.db.username,
             password=self.cfg.db.password,
+            hash_cache=HashCache(Path(self.cfg.hash_cache).expanduser().absolute()),
         )
 
         self.ctx = RunContext(self.db)
@@ -279,6 +281,7 @@ def main() -> None:
         raise
 
     finally:
+        service.db.hash_cache.close()
         perf_file = perf_dir / f"{datetime.now().isoformat()}.json"
         service.ctx.writer.save(str(perf_file))
         keep_last_files(perf_dir, "*.json", 20)

@@ -56,7 +56,8 @@ def run_indexing_per_root_plan(
         root = db.add_root(path.name, path)
 
         with ctx.trace_scope("index path", path=str(path)):
-            files = collect_files_for_path(path, limit_per_path)
+            with ctx.trace_scope("collect files for path", path=str(path)):
+                files = collect_files_for_path(path, limit_per_path)
 
             if limit_total is not None:
                 remaining = max(0, limit_total - indexed_total)
@@ -65,7 +66,9 @@ def run_indexing_per_root_plan(
             if not files:
                 continue
 
-            refs = build_refs_for_root(db, root, files)
+            with ctx.trace_scope("build refs for root", path=str(path)):
+                refs = build_refs_for_root(db, root, files)
+
             indexed_total += len(refs)
 
             with ctx.trace_scope(
@@ -78,7 +81,7 @@ def run_indexing_per_root_plan(
 
             log.info(
                 "execution plan for root={} path={}\n{}".format(
-                    root.name, str(path), plan.to_text()), )
+                    root.name, str(path), plan.to_text()),)
 
             with ctx.trace_scope(
                     "root plan execution",

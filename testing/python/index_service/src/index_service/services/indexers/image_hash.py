@@ -4,6 +4,9 @@ from index_service.services.core.job_types import BaseIndexer, RunContext, cache
 from index_service.services.core.types import IndexDocument, IndexerOutput, IndexerRequest
 import imagehash
 from PIL import Image
+import logging
+
+log = logging.getLogger(__name__)
 
 
 class ImageHashIndexerResult(IndexDocument, extra="forbid"):
@@ -32,14 +35,34 @@ class ImageHashIndexer(BaseIndexer):
         resources: dict[str, object],
         assets: dict[str, object],
     ) -> IndexerOutput:
-        image = Image.open(ctx.get_path(request.file_ref))
-        return IndexerOutput(
-            indexer_id=self.asset_name,
-            result=ImageHashIndexerResult(
-                average=str(imagehash.average_hash(image)),
-                perceptual=str(imagehash.phash(image)),
-                difference=str(imagehash.dhash(image)),
-                wavelet=str(imagehash.whash(image)),
-                hash=request.get_hash_str(),
-            ),
-        )
+        path = ctx.get_path(request.file_ref)
+        assert path.exists(), path
+        log.debug(f"Image hash for '{path}'")
+        try:
+            image = Image.open(path)
+            image.load()
+
+            return IndexerOutput(
+                indexer_id=self.asset_name,
+                result=ImageHashIndexerResult(
+                    average=str(imagehash.average_hash(image)),
+                    perceptual=str(imagehash.phash(image)),
+                    difference=str(imagehash.dhash(image)),
+                    wavelet=str(imagehash.whash(image)),
+                    hash=request.get_hash_str(),
+                ),
+            )
+
+        except OSError:
+            return IndexerOutput(
+                indexer_id=self.asset_name,
+                result=ImageHashIndexerResult(
+                    average="",
+                    perceptual="",
+                    difference="",
+                    wavelet="",
+                    hash=request.get_hash_str(),
+                ),
+            )
+
+            pass

@@ -379,7 +379,6 @@ class IndexRuntime:
                     ),
                     self.ctx.trace_scope("index", file=str(self.db.get_path(ref))),
             ):
-                log.debug(f"{self.ctx.get_path(ref)}")
                 out = indexer.run(
                     ctx=self.ctx,
                     request=request,
@@ -431,9 +430,11 @@ class IndexRuntime:
                 else:
                     completed = [work(ref) for ref in chunk]
 
-                for ref, out in completed:
-                    with ExceptionContextNote(f"indexer asset: {indexer.asset_name}"):
-                        self.db.store_indexer_output(ref, out)
+                with self.ctx.trace_scope("store all indexer results",
+                                          indexer=indexer.asset_name):
+                    for ref, out in completed:
+                        with ExceptionContextNote(f"indexer asset: {indexer.asset_name}"):
+                            self.db.store_indexer_output(ref, out)
 
             recent_sub_batch_times.append(monotonic() - sub_batch_started_at)
 

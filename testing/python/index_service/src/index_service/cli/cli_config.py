@@ -23,6 +23,7 @@ from index_service.services.resources.flm_server import FlmServerResource
 from index_service.services.resources.pdf.pdf_extractor import PdfExtractor
 from index_service.services.resources.wd_tagger import WdTagger
 from index_service.services.resources.whisper_transcribe import WhisperTranscribeResource
+from index_service.services.utils import get_xdg_cache_dir
 
 _INDEXER_TYPES = [t for t in DEFAULT_INDEXER_TYPES] + [
     WdTagIndexer,
@@ -163,6 +164,11 @@ class AppConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     db: DatabaseConfig
+    hash_cache: Path = Field(
+        description="DB location for the file hash cache",
+        default_factory=lambda: get_xdg_cache_dir([]).joinpath("file_hash_cache.sqlite"),
+    )
+
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
 
     enable_cache: set[str] | None = None
