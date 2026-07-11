@@ -84,10 +84,12 @@ class IndexDatabase:
         self._db_name = db_name
         self.roots: Dict[str, Path] = dict()
         self.file_refs: set[FileRef] = set()
+        self._indexer_hashes: Dict[str, set[str]] = {}
         self.ensure_collections([])
 
         self._load_roots_from_db()
         self._load_file_refs_from_db()
+        self._load_indexer_hashes_from_db()
 
         self.hash_cache = hash_cache
 
@@ -146,6 +148,19 @@ class IndexDatabase:
                         "relative": path["relative"],
                         "root": path["root"],
                     }))
+
+    def _load_indexer_hashes_from_db(self) -> None:
+        for collection in self._db.collections():
+            name = collection["name"]
+
+            if name.startswith("_") or name == "files":
+                continue
+
+            self._indexer_hashes[name] = set(
+                self._db.aql.execute(
+                    "FOR document IN @@collection RETURN document._key",
+                    bind_vars={"@collection": name},
+                ))
 
     def add_root(self, name: str, root: Path) -> RootRef:
         assert name not in self.roots or self.roots[name] == root, (
@@ -536,10 +551,24 @@ class IndexDatabase:
         else:
             return ref.hash.hash
 
-    def has_indexer_result(self, ref: FileHash | FileRef,
-                           indexer: BaseIndexProtocol | str) -> bool:
-        col = self._db.collection(self.get_collection_name(indexer))
-        return cast(bool, col.has(self.get_file_hash(ref)))
+    def has_indexer_result(
+        self,
+        ref: FileHash | FileRef,
+        indexer: BaseIndexProtocol | str,
+    ) -> bool:
+        collection_name = self.get_collection_name(indexer)
+        file_hash = self.get_file_hash(ref)
+
+        if file_hash in self._indexer_hashes.get(collection_name, set()):
+            return True
+
+        col = self._db.collection(collection_name)
+        exists = cast(bool, col.has(file_hash))
+
+        if exists:
+            self._indexer_hashes.setdefault(collection_name, set()).add(file_hash)
+
+        return exists
 
     def _arango_collection_schema_for_indexer(
             self, indexer: BaseIndexProtocol
