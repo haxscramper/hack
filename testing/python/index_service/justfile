@@ -10,7 +10,11 @@ test:
 
 index:
     uv run src/index_service/cli/cli.py index "~/defaultdirs/temporary_interchange/content_root_indexing.jsonc" 
-        
+
+profile_index:
+    uv run py-spy record --format chrometrace -o /tmp/haxdex-perf-index.json -- \
+      python src/index_service/cli/cli.py index "~/defaultdirs/temporary_interchange/content_root_indexing.jsonc"
+
 
 # --indexer file_summary \
 # --resource text_summary \

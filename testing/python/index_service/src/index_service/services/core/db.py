@@ -371,6 +371,11 @@ class IndexDatabase:
             *,
             edge: bool = False,
         ) -> None:
+            expected_schema = {
+                "type": "json",
+                **expected_schema,
+            }
+
             if not self._db.has_collection(name):
                 self._db.create_collection(
                     name,
@@ -483,14 +488,27 @@ class IndexDatabase:
         result_js["suffix"] = _path.suffix
         result_js["name"] = _path.name
 
-        if files.has(hash.hash):
-            doc = files.get(hash.hash)
-            known = doc["paths"]  # type: ignore
-            known.extend([result_js])
-            files.update({"_key": hash.hash, "paths": known})
+        cursor = self._db.aql.execute(
+            """
+            FOR document IN files
+                FILTER document._key == @key
+                LIMIT 1
+                RETURN document
+            """,
+            bind_vars={"key": hash.hash},
+        )
+        doc = next(cursor, None)
 
-        else:
+        if doc is None:
             files.insert({"_key": hash.hash, "paths": [result_js]})
+        else:
+            known = doc["paths"]
+            already_known = any(entry["relative"] == result_js["relative"] and
+                                entry["root"] == result_js["root"] for entry in known)
+
+            if not already_known:
+                known.append(result_js)
+                files.update({"_key": hash.hash, "paths": known})
 
         return result
 

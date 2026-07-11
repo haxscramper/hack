@@ -29,6 +29,7 @@ dependencies = [
     "pillow>=12.2.0",
     "platformdirs>=4.10.0",
     "plumbum>=2.0.1",
+    "py-spy>=0.4.2",
     "pybktree>=1.1",
     "pykka>=4.4.2",
     "pymupdf4llm>=1.27.2.3",
