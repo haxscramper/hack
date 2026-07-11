@@ -139,7 +139,6 @@ def get_indexer_cache_table(asset_name: str) -> Table:
         indexer_cache_table_name(asset_name),
         metadata,
         Column("file_hash", String, primary_key=True),
-        Column("param_hash", String, primary_key=True),
         Column("schema_hash", String, nullable=False),
         Column("result", JSON, nullable=False),
         Column("function_started_at", DateTime(timezone=True), nullable=False),
