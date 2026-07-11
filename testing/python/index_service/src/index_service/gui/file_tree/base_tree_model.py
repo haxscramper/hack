@@ -5,7 +5,7 @@ from beartype.typing import Sequence
 from pydantic import BaseModel, Field
 
 from index_service.services.core.db import IndexDatabase
-from index_service.services.core.job_types import BaseIndexer
+from index_service.services.core.job_types import BaseIndexer, RunContext
 from index_service.services.core.types import FileHash
 
 import logging
@@ -39,6 +39,7 @@ class FileTreeNode(BaseModel):
 
 @beartype
 def build_file_tree(
+    ctx: RunContext,
     db: IndexDatabase,
     root_directories: Sequence[Path],
     indexers: Sequence[BaseIndexer],
@@ -49,65 +50,70 @@ def build_file_tree(
     roots: list[FileTreeNode] = []
 
     for item in cursor:
-        result = FilePathResult.model_validate(item)
+        with ctx.trace_scope("add file to tree"):
+            result = FilePathResult.model_validate(item)
 
-        matching_roots = [
-            root for root in root_directories if result.path.is_relative_to(root)
-        ]
+            matching_roots = [
+                root for root in root_directories if result.path.is_relative_to(root)
+            ]
 
-        if not matching_roots:
-            log.debug(f"Skipping indexed file outside requested roots: {result.path}",)
-            continue
+            if not matching_roots:
+                log.debug(
+                    f"Skipping indexed file outside requested roots: {result.path}",)
+                continue
 
-        log.info(f"OK {result.path}")
+            log.info(f"OK {result.path}")
 
-        root_path = max(matching_roots, key=lambda root: len(root.parts))
-        root_key = (root_path, root_path)
+            root_path = max(matching_roots, key=lambda root: len(root.parts))
+            root_key = (root_path, root_path)
 
-        root_node = nodes.get(root_key)
-        if root_node is None:
-            root_node = FileTreeNode(
-                path=root_path,
-                is_directory=True,
-            )
-            nodes[root_key] = root_node
-            roots.append(root_node)
-
-        relative_path = result.path.relative_to(root_path)
-        parent = root_node
-        current_path = root_path
-
-        for part in relative_path.parts[:-1]:
-            current_path /= part
-            directory_key = (root_path, current_path)
-
-            directory = nodes.get(directory_key)
-            if directory is None:
-                directory = FileTreeNode(
-                    path=current_path,
+            root_node = nodes.get(root_key)
+            if root_node is None:
+                root_node = FileTreeNode(
+                    path=root_path,
                     is_directory=True,
                 )
-                nodes[directory_key] = directory
-                parent.nested.append(directory)
+                nodes[root_key] = root_node
+                roots.append(root_node)
 
-            parent = directory
+            relative_path = result.path.relative_to(root_path)
+            parent = root_node
+            current_path = root_path
 
-        file_hash = FileHash(hash=result.hash)
-        assets: dict[str, BaseModel] = {}
+            for part in relative_path.parts[:-1]:
+                current_path /= part
+                directory_key = (root_path, current_path)
 
-        for indexer in indexers:
-            if db.has_indexer_result(file_hash, indexer):
-                assets[indexer.asset_name] = db.get_indexer_result(
-                    file_hash,
-                    indexer,
-                )
+                directory = nodes.get(directory_key)
+                if directory is None:
+                    directory = FileTreeNode(
+                        path=current_path,
+                        is_directory=True,
+                    )
+                    nodes[directory_key] = directory
+                    parent.nested.append(directory)
 
-        parent.nested.append(
-            FileTreeNode(
-                path=result.path,
-                is_directory=False,
-                hash=file_hash,
-                assets=assets,
-            ))
+                parent = directory
+
+            file_hash = FileHash(hash=result.hash)
+            assets: dict[str, BaseModel] = {}
+
+            with ctx.trace_scope("add indexers"):
+                for indexer in indexers:
+                    if db.has_indexer_result(file_hash, indexer):
+                        with ctx.trace_scope("single indexer",
+                                             asset_name=indexer.asset_name):
+                            assets[indexer.asset_name] = db.get_indexer_result(
+                                file_hash,
+                                indexer,
+                            )
+
+            parent.nested.append(
+                FileTreeNode(
+                    path=result.path,
+                    is_directory=False,
+                    hash=file_hash,
+                    assets=assets,
+                ))
 
     return roots

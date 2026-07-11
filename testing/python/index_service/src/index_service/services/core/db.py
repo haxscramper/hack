@@ -96,7 +96,7 @@ class IndexDatabase:
         import time
 
         deadline = time.monotonic() + timeout
-        collections = self._db.collections()
+        collections = cast(list[dict], self._db.collections())
 
         while time.monotonic() < deadline:
             all_ready = True

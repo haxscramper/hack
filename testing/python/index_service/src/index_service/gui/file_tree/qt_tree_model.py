@@ -149,12 +149,11 @@ class FileTreeModel(AbstractColumnItemModel):
             column: int,
             parent: QModelIndex = QModelIndex(),
     ) -> QModelIndex:
-        match parent.isValid():
-            case False:
-                nodes = self.nodes
-            case True:
-                node = cast(FileTreeNode, parent.internalPointer())
-                nodes = node.nested
+        if parent.isValid() and parent.column() != 0:
+            return QModelIndex()
+
+        nodes = (cast(FileTreeNode, parent.internalPointer()).nested
+                 if parent.isValid() else self.nodes)
 
         if not (0 <= row < len(nodes) and 0 <= column < len(self.columns)):
             return QModelIndex()

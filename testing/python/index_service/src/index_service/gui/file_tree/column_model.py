@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 from beartype import beartype
 from beartype.typing import Any, Sequence
 
-from PySide6.QtCore import QAbstractTableModel, QModelIndex, QObject, Qt
+from PySide6.QtCore import QAbstractTableModel, QModelIndex, QObject, Qt, QAbstractItemModel
 from PySide6.QtWidgets import QAbstractItemDelegate, QAbstractItemView
 
 
@@ -45,7 +45,7 @@ class ColumnSpec(ABC):
 
 
 @beartype
-class AbstractColumnItemModel(QAbstractTableModel):
+class AbstractColumnItemModel(QAbstractItemModel):
 
     def __init__(
         self,
@@ -60,10 +60,6 @@ class AbstractColumnItemModel(QAbstractTableModel):
 
         if view is not None:
             self.configureView(view)
-
-    @abstractmethod
-    def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:
-        raise NotImplementedError()
 
     def columnCount(self, parent: QModelIndex = QModelIndex()) -> int:
         return len(self.columns)

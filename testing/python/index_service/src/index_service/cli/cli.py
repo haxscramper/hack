@@ -118,7 +118,7 @@ class IndexService():
 
         self.ctx = RunContext(self.db)
 
-    def _setup_runtime_logging(self, log_cfg: LoggingConfig) -> tuple[Path, Path, Path]:
+    def setup_runtime_logging(self, log_cfg: LoggingConfig) -> tuple[Path, Path, Path]:
         run_text_dir = get_xdg_cache_dir(["logs", "run", "text"])
         run_json_dir = get_xdg_cache_dir(["logs", "run", "json"])
         perf_dir = get_xdg_cache_dir(["logs", "perf"])
@@ -158,7 +158,7 @@ class IndexService():
 
         return run_text_dir, run_json_dir, perf_dir
 
-    def _run_index(self) -> None:
+    def run_index(self) -> None:
 
         assert self.cfg.index is not None
         index_cfg = self.cfg.index
@@ -199,7 +199,7 @@ class IndexService():
             limit_per_path=index_cfg.limit_per_path,
         )
 
-    def _run_flat_query_view(self) -> None:
+    def run_flat_query_view(self) -> None:
         qt_app = QApplication(sys.argv)
         builders = list()
         for inst in self.indexer_instances:
@@ -221,11 +221,12 @@ class IndexService():
         win.show()
         sys.exit(qt_app.exec())
 
-    def _run_tree_view(self) -> None:
+    def run_tree_view(self) -> None:
         qt_app = QApplication(sys.argv)
 
         assert self.cfg.file_tree_view
         win = FileTreeQueryWindow(
+            ctx=self.ctx,
             file_tree_view=self.cfg.file_tree_view,
             db=self.db,
             indexer_instances=self.indexer_instances,
@@ -257,17 +258,18 @@ def main() -> None:
 
     service = IndexService(cfg)
 
-    _, _, perf_dir = service._setup_runtime_logging(service.cfg.logging)
+    _, _, perf_dir = service.setup_runtime_logging(service.cfg.logging)
+    service.ctx.start_trace()
     try:
         match args.command:
             case "index":
-                service._run_index()
+                service.run_index()
 
             case "flat_query_view":
-                service._run_flat_query_view()
+                service.run_flat_query_view()
 
             case "file_tree_view":
-                service._run_tree_view()
+                service.run_tree_view()
 
             case _:
                 raise ValueError(f"Unexpected command {args.command}")
@@ -277,8 +279,6 @@ def main() -> None:
         raise
 
     finally:
-        assert service.ctx.writer
-
         perf_file = perf_dir / f"{datetime.now().isoformat()}.json"
         service.ctx.writer.save(str(perf_file))
         keep_last_files(perf_dir, "*.json", 20)
