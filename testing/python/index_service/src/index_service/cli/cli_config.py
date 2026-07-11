@@ -13,8 +13,8 @@ from pydantic import BaseModel, field_validator, Field, ConfigDict, model_valida
 from index_service.services.indexers.comfy_input_indexer import ComfyInputIndexer
 from index_service.services.indexers.exif_metadata import ExifMetadataIndexer
 from index_service.services.indexers.ffprobe_indexer import FFProbeIndexer
-from index_service.services.indexers.full_document.full_document import DocumentBlockIndexer
 from index_service.services.indexers.image_generation import GenerationParamsIndexer
+from index_service.services.indexers.image_hash import ImageHashIndexer
 from index_service.services.indexers.media_transcribe import MediaTranscriptionIndexer
 from index_service.services.indexers.pdf_indexer import PdfIndexer
 from index_service.services.indexers.safetensor_indexer import SafetensorIndexer
@@ -33,6 +33,7 @@ _INDEXER_TYPES = [t for t in DEFAULT_INDEXER_TYPES] + [
     ExifMetadataIndexer,
     ComfyInputIndexer,
     MediaTranscriptionIndexer,
+    ImageHashIndexer,
 ]
 
 _RESOURCE_TYPES = [t for t in DEFAULT_RESOURCE_TYPES] + [
@@ -46,6 +47,7 @@ _INDEXER_BY_NAME = {cls.asset_name: cls for cls in _INDEXER_TYPES}
 _RESOURCE_BY_NAME = {cls.resource_key: cls for cls in _RESOURCE_TYPES}
 
 
+@beartype
 def _validate_plugin_config_map(
     raw: dict[str, Any],
     registry: dict[str, type],

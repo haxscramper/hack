@@ -379,6 +379,7 @@ class IndexRuntime:
                     ),
                     self.ctx.trace_scope("index", file=str(self.db.get_path(ref))),
             ):
+                log.debug(f"{self.ctx.get_path(ref)}")
                 out = indexer.run(
                     ctx=self.ctx,
                     request=request,

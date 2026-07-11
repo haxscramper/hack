@@ -15,7 +15,6 @@ log = logging.getLogger(__name__)
 AQL_FILE_PATHS = """
 FOR file IN files
   FOR entry IN file.paths
-    LIMIT 500
     LET root = DOCUMENT("roots", entry.root.name)
     RETURN {
       path: CONCAT_SEPARATOR("/", root.path, entry.relative),
@@ -58,8 +57,6 @@ def build_file_tree(
             ]
 
             if not matching_roots:
-                log.debug(
-                    f"Skipping indexed file outside requested roots: {result.path}",)
                 continue
 
             log.info(f"OK {result.path}")

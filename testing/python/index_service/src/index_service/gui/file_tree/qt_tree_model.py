@@ -8,114 +8,16 @@ from index_service.gui.file_tree.column_model import AbstractColumnItemModel, Co
 
 
 @beartype
-class FileTreeColumnSpec(ColumnSpec):
-
-    def __init__(self, title: str) -> None:
-        self.title = title
-
-    def setData(
-        self,
-        index: QModelIndex,
-        value: Any,
-        role: int = Qt.ItemDataRole.EditRole,
-    ) -> bool:
-        return False
-
-    def flags(self, index: QModelIndex) -> Qt.ItemFlag:
-        return Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
-
-    def headerData(
-        self,
-        section: int,
-        orientation: Qt.Orientation,
-        role: int = Qt.ItemDataRole.DisplayRole,
-    ) -> Any:
-        match orientation, role:
-            case Qt.Orientation.Horizontal, Qt.ItemDataRole.DisplayRole:
-                return self.title
-            case _:
-                return None
-
-    def node(self, index: QModelIndex) -> FileTreeNode:
-        return cast(FileTreeNode, index.internalPointer())
-
-
-@beartype
-class FileNameColumnSpec(FileTreeColumnSpec):
-
-    def __init__(self) -> None:
-        super().__init__("Name")
-
-    def data(
-        self,
-        index: QModelIndex,
-        role: int = Qt.ItemDataRole.DisplayRole,
-    ) -> Any:
-        match role:
-            case Qt.ItemDataRole.DisplayRole | Qt.ItemDataRole.EditRole:
-                return self.node(index).path.name
-            case _:
-                return None
-
-
-@beartype
-class FileHashColumnSpec(FileTreeColumnSpec):
-
-    def __init__(self) -> None:
-        super().__init__("Hash")
-
-    def data(
-        self,
-        index: QModelIndex,
-        role: int = Qt.ItemDataRole.DisplayRole,
-    ) -> Any:
-        node = self.node(index)
-
-        match role, node.hash:
-            case Qt.ItemDataRole.DisplayRole | Qt.ItemDataRole.EditRole, None:
-                return ""
-            case Qt.ItemDataRole.DisplayRole | Qt.ItemDataRole.EditRole, hash:
-                return str(hash)
-            case _:
-                return None
-
-
-@beartype
-class WdTagsColumnSpec(FileTreeColumnSpec):
-
-    def __init__(self) -> None:
-        super().__init__("WD Tags")
-
-    def data(
-        self,
-        index: QModelIndex,
-        role: int = Qt.ItemDataRole.DisplayRole,
-    ) -> Any:
-        present = "wd_tags" in self.node(index).assets
-
-        match role:
-            case Qt.ItemDataRole.DisplayRole:
-                return "Yes" if present else ""
-            case Qt.ItemDataRole.CheckStateRole:
-                return Qt.CheckState.Checked if present else Qt.CheckState.Unchecked
-            case _:
-                return None
-
-
-@beartype
 class FileTreeModel(AbstractColumnItemModel):
 
     def __init__(
         self,
+        columns: Sequence[ColumnSpec],
         nodes: Sequence[FileTreeNode],
         parent: QObject | None = None,
     ) -> None:
         super().__init__(
-            columns=[
-                FileNameColumnSpec(),
-                FileHashColumnSpec(),
-                WdTagsColumnSpec(),
-            ],
+            columns=columns,
             parent=parent,
         )
         self.nodes: tuple[FileTreeNode, ...] = tuple(nodes)

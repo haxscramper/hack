@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from index_service.services.core.job_types import BaseIndexer, RunContext
+from index_service.services.core.job_types import BaseIndexer, RunContext, cache_indexer_run
 from index_service.services.core.types import IndexDocument, IndexerOutput, IndexerRequest
 from pydantic import BaseModel
 
@@ -16,6 +16,7 @@ class FileSizeIndexer(BaseIndexer):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
 
+    @cache_indexer_run
     def run(
         self,
         ctx: RunContext,
