@@ -60,12 +60,60 @@ def cache_indexer_run(
                 separators=(",", ":"),
             ).encode("utf-8")).hexdigest()
 
+        def store_cache_record(
+            result: IndexerOutput,
+            *,
+            function_started_at: datetime,
+            function_duration_seconds: float,
+        ) -> None:
+            result_json = model_to_json_data(result)
+            assert isinstance(result_json, dict)
+
+            upsert = sqlite_insert(self.cache_table).values(
+                file_hash=file_hash,
+                param_hash=param_hash,
+                schema_hash=schema_hash,
+                result=result_json,
+                function_started_at=function_started_at,
+                function_duration_seconds=function_duration_seconds,
+            )
+
+            upsert = upsert.on_conflict_do_update(
+                index_elements=[
+                    self.cache_table.c.file_hash,
+                    self.cache_table.c.param_hash,
+                ],
+                set_={
+                    "schema_hash":
+                        upsert.excluded.schema_hash,
+                    "result":
+                        upsert.excluded.result,
+                    "function_started_at":
+                        upsert.excluded.function_started_at,
+                    "function_duration_seconds":
+                        (upsert.excluded.function_duration_seconds),
+                },
+            )
+
+            with (
+                    ctx.trace_scope(
+                        "store cache database record",
+                        indexer=self.asset_name,
+                        file_hash=file_hash,
+                    ),
+                    self.database.begin() as database,
+            ):
+                database.execute(upsert)
+
         if self.should_load_cache:
-            with ctx.trace_scope(
-                    "load cache database record",
-                    indexer=self.asset_name,
-                    file_hash=file_hash,
-            ), self.database.connect() as database:
+            with (
+                    ctx.trace_scope(
+                        "load cache database record",
+                        indexer=self.asset_name,
+                        file_hash=file_hash,
+                    ),
+                    self.database.connect() as database,
+            ):
                 cache_row = database.execute(
                     select(
                         self.cache_table.c.schema_hash,
@@ -102,9 +150,12 @@ def cache_indexer_run(
                                  schema_hash,
                              ))
 
-            legacy_cache_path = get_xdg_cache_dir(
-                ["indexer", self.asset_name, hash_prefix,
-                 hash_suffix]).joinpath(f"{param_hash}.json")
+            legacy_cache_path = get_xdg_cache_dir([
+                "indexer",
+                self.asset_name,
+                hash_prefix,
+                hash_suffix,
+            ]).joinpath(f"{param_hash}.json")
 
             if legacy_cache_path.exists():
                 with (
@@ -129,10 +180,18 @@ def cache_indexer_run(
 
                             result_value = self.result_model.model_validate(parsed.result)
 
-                            return IndexerOutput(
+                            result = IndexerOutput(
                                 indexer_id=self.asset_name,
                                 result=result_value,
                             )
+
+                            store_cache_record(
+                                result,
+                                function_started_at=datetime.now(timezone.utc),
+                                function_duration_seconds=0.0,
+                            )
+
+                            return result
 
                         log.info("Legacy cache schema mismatch for {} "
                                  "(cached={}, current={}), recomputing.".format(
@@ -157,37 +216,12 @@ def cache_indexer_run(
         )
 
         function_duration_seconds = perf_counter() - execution_started
-        result_json = model_to_json_data(result)
-        assert isinstance(result_json, dict)
 
-        upsert = sqlite_insert(self.cache_table).values(
-            file_hash=file_hash,
-            param_hash=param_hash,
-            schema_hash=schema_hash,
-            result=result_json,
+        store_cache_record(
+            result,
             function_started_at=function_started_at,
             function_duration_seconds=function_duration_seconds,
         )
-
-        upsert = upsert.on_conflict_do_update(
-            index_elements=[
-                self.cache_table.c.file_hash,
-                self.cache_table.c.param_hash,
-            ],
-            set_={
-                "schema_hash": upsert.excluded.schema_hash,
-                "result": upsert.excluded.result,
-                "function_started_at": upsert.excluded.function_started_at,
-                "function_duration_seconds": (upsert.excluded.function_duration_seconds),
-            },
-        )
-
-        with ctx.trace_scope(
-                "store cache database record",
-                indexer=self.asset_name,
-                file_hash=file_hash,
-        ), self.database.begin() as database:
-            database.execute(upsert)
 
         return result
 
