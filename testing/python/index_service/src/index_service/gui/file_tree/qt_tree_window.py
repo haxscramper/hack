@@ -11,7 +11,6 @@ from PyQt6.QtWidgets import (
     QAbstractItemView,
     QMainWindow,
     QMessageBox,
-    QPlainTextEdit,
     QPushButton,
     QSplitter,
     QTreeView,
@@ -28,6 +27,7 @@ from index_service.gui.file_tree.file_duplicate_column import FileDuplicateColum
 from index_service.gui.file_tree.file_name_column import FileNameColumnSpec
 from index_service.gui.file_tree.file_tree_column import FileTreeColumnSpec
 from index_service.gui.file_tree.image_hash_column import ImageHashColumnSpec
+from index_service.gui.file_tree.python_code_editor import PythonQueryEditor
 from index_service.gui.file_tree.qt_tree_model import FileTreeModel
 from index_service.services.core.db import IndexDatabase
 from index_service.services.core.job_types import BaseIndexer, RunContext
@@ -101,8 +101,7 @@ class FileTreeRegion(QWidget):
         self.tree_view.setModel(self.model)
         self.model.configureView(self.tree_view)
 
-        self.query_edit = QsciScintilla(self)
-        self._configure_query_editor()
+        self.query_edit = PythonQueryEditor(self)
 
         self.saved_query_combo = QComboBox(self)
         self.saved_query_combo.activated.connect(self._on_saved_query_selected)
@@ -140,35 +139,6 @@ class FileTreeRegion(QWidget):
         layout.addWidget(self.splitter)
 
         self.refresh_named_queries()
-
-    def _configure_query_editor(self) -> None:
-        font = QFont("monospace")
-        font.setFixedPitch(True)
-
-        self.python_lexer = QsciLexerPython(self.query_edit)
-        self.python_lexer.setDefaultFont(font)
-
-        self.query_edit.setFont(font)
-        self.query_edit.setLexer(self.python_lexer)
-        self.query_edit.setUtf8(True)
-
-        self.query_edit.setAutoIndent(True)
-        self.query_edit.setIndentationsUseTabs(False)
-        self.query_edit.setIndentationWidth(4)
-        self.query_edit.setTabWidth(4)
-        self.query_edit.setIndentationGuides(True)
-
-        self.query_edit.setBraceMatching(QsciScintilla.BraceMatch.SloppyBraceMatch)
-        self.query_edit.setCaretLineVisible(True)
-
-        self.query_edit.setMarginType(
-            0,
-            QsciScintilla.MarginType.NumberMargin,
-        )
-        self.query_edit.setMarginLineNumbers(0, True)
-        self.query_edit.setMarginWidth(0, "00000")
-
-        self.query_edit.setWrapMode(QsciScintilla.WrapMode.WrapNone)
 
     @staticmethod
     def _read_named_queries() -> dict[str, str]:
