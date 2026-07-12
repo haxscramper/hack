@@ -1,5 +1,7 @@
+import json
 from pathlib import Path
 
+from PyQt6.Qsci import QsciScintilla, QsciLexerPython
 from PyQt6.QtCore import QCoreApplication, QSettings, Qt, pyqtSignal
 from PyQt6.QtGui import QCloseEvent, QFont, QKeySequence, QShortcut
 from beartype import beartype
@@ -15,6 +17,9 @@ from PyQt6.QtWidgets import (
     QTreeView,
     QVBoxLayout,
     QWidget,
+    QComboBox,
+    QHBoxLayout,
+    QInputDialog,
 )
 
 from index_service.cli.cli_config import FileTreeViewConfig
@@ -72,10 +77,10 @@ def build_filter(query_text: str) -> FilterFn:
 
 @beartype
 class FileTreeRegion(QWidget):
-    """A single vertical region: file tree on top, glom query field below."""
+    """A single vertical region: file tree on top, Python query editor below."""
 
-    # Emitted with `self` when the user submits the query in this region.
     query_submitted = pyqtSignal(object)
+    named_queries_changed = pyqtSignal()
 
     def __init__(
         self,
@@ -96,21 +101,31 @@ class FileTreeRegion(QWidget):
         self.tree_view.setModel(self.model)
         self.model.configureView(self.tree_view)
 
-        self.query_edit = QPlainTextEdit(self)
-        self.query_edit.setFont(QFont("monospace"))
-        self.query_edit.setPlaceholderText(
-            "glom query (python), e.g. [n for n in nodes if not n.is_directory]")
+        self.query_edit = QsciScintilla(self)
+        self._configure_query_editor()
 
-        self.run_button = QPushButton("Filter \u2192", self)
+        self.saved_query_combo = QComboBox(self)
+        self.saved_query_combo.activated.connect(self._on_saved_query_selected)
+
+        self.save_query_button = QPushButton("Save query…", self)
+        self.save_query_button.clicked.connect(self._save_named_query)
+
+        query_toolbar = QWidget(self)
+        query_toolbar_layout = QHBoxLayout(query_toolbar)
+        query_toolbar_layout.setContentsMargins(0, 0, 0, 0)
+        query_toolbar_layout.addWidget(self.saved_query_combo, 1)
+        query_toolbar_layout.addWidget(self.save_query_button)
+
+        self.run_button = QPushButton("Filter →", self)
         self.run_button.clicked.connect(self._on_run)
 
-        # Ctrl+Enter submits from inside the text field.
         submit = QShortcut(QKeySequence("Ctrl+Return"), self.query_edit)
         submit.activated.connect(self._on_run)
 
         bottom = QWidget(self)
         bottom_layout = QVBoxLayout(bottom)
         bottom_layout.setContentsMargins(0, 0, 0, 0)
+        bottom_layout.addWidget(query_toolbar)
         bottom_layout.addWidget(self.query_edit)
         bottom_layout.addWidget(self.run_button)
 
@@ -124,12 +139,111 @@ class FileTreeRegion(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.splitter)
 
+        self.refresh_named_queries()
+
+    def _configure_query_editor(self) -> None:
+        font = QFont("monospace")
+        font.setFixedPitch(True)
+
+        self.python_lexer = QsciLexerPython(self.query_edit)
+        self.python_lexer.setDefaultFont(font)
+
+        self.query_edit.setFont(font)
+        self.query_edit.setLexer(self.python_lexer)
+        self.query_edit.setUtf8(True)
+
+        self.query_edit.setAutoIndent(True)
+        self.query_edit.setIndentationsUseTabs(False)
+        self.query_edit.setIndentationWidth(4)
+        self.query_edit.setTabWidth(4)
+        self.query_edit.setIndentationGuides(True)
+
+        self.query_edit.setBraceMatching(QsciScintilla.BraceMatch.SloppyBraceMatch)
+        self.query_edit.setCaretLineVisible(True)
+
+        self.query_edit.setMarginType(
+            0,
+            QsciScintilla.MarginType.NumberMargin,
+        )
+        self.query_edit.setMarginLineNumbers(0, True)
+        self.query_edit.setMarginWidth(0, "00000")
+
+        self.query_edit.setWrapMode(QsciScintilla.WrapMode.WrapNone)
+
+    @staticmethod
+    def _read_named_queries() -> dict[str, str]:
+        serialized = QSettings().value("queries/named", "{}")
+        queries = json.loads(str(serialized))
+
+        if not isinstance(queries, dict):
+            raise ValueError("queries/named must contain a JSON object")
+
+        return {str(name): str(query) for name, query in queries.items()}
+
+    @staticmethod
+    def _write_named_queries(queries: dict[str, str]) -> None:
+        QSettings().setValue(
+            "queries/named",
+            json.dumps(queries, sort_keys=True),
+        )
+
+    def refresh_named_queries(self) -> None:
+        selected_name = self.saved_query_combo.currentData()
+        queries = self._read_named_queries()
+
+        self.saved_query_combo.blockSignals(True)
+        self.saved_query_combo.clear()
+        self.saved_query_combo.addItem("Saved queries…", None)
+
+        for name in sorted(queries, key=str.casefold):
+            self.saved_query_combo.addItem(name, name)
+
+        if selected_name is not None:
+            index = self.saved_query_combo.findData(selected_name)
+            if index >= 0:
+                self.saved_query_combo.setCurrentIndex(index)
+
+        self.saved_query_combo.blockSignals(False)
+
+    def _on_saved_query_selected(self, index: int) -> None:
+        name = self.saved_query_combo.itemData(index)
+        if name is None:
+            return
+
+        query = self._read_named_queries()[name]
+        self.query_edit.setText(query)
+        self.query_edit.setFocus()
+
+    def _save_named_query(self, checked: bool = False) -> None:
+        name, accepted = QInputDialog.getText(
+            self,
+            "Save query",
+            "Query name:",
+        )
+        if not accepted:
+            return
+
+        name = name.strip()
+        if not name:
+            return
+
+        queries = self._read_named_queries()
+        queries[name] = self.query_edit.text()
+        self._write_named_queries(queries)
+
+        self.named_queries_changed.emit()
+
+        index = self.saved_query_combo.findData(name)
+        if index >= 0:
+            self.saved_query_combo.setCurrentIndex(index)
+
     def query_text(self) -> str:
-        return self.query_edit.toPlainText().strip()
+        return self.query_edit.text().strip()
 
     def selected_nodes(self) -> list[FileTreeNode]:
         selection = self.tree_view.selectionModel()
         nodes: list[FileTreeNode] = []
+
         for index in selection.selectedRows():
             node = index.internalPointer()
             if node is not None:
@@ -143,9 +257,10 @@ class FileTreeRegion(QWidget):
             return None
 
         filter_fn = build_filter(text)
-        # No focused rows -> filter everything, otherwise scope to the selection.
+
         selected = self.selected_nodes()
         scope = selected if selected else self._nodes
+
         log.info("Running filter")
         result = filter_tree(scope, filter_fn)
         log.debug("filter OK")
@@ -214,15 +329,34 @@ class FileTreeQueryWindow(QMainWindow):
 
         self.restore_ui_state()
 
+    def _refresh_named_queries(self) -> None:
+        for region in self.regions:
+            region.refresh_named_queries()
+
+    def _save_first_region_query(self) -> None:
+        if self.regions:
+            QSettings().setValue(
+                "queries/firstRegionCurrent",
+                self.regions[0].query_edit.text(),
+            )
+
     def _add_region(self, nodes: list[FileTreeNode]) -> FileTreeRegion:
+        is_first_region = not self.regions
+
         region = FileTreeRegion(
             nodes=nodes,
             columns=self.columns,
             parent=self.region_splitter,
         )
         region.query_submitted.connect(self._on_query_submitted)
+        region.named_queries_changed.connect(self._refresh_named_queries)
+
         self.region_splitter.addWidget(region)
         self.regions.append(region)
+
+        if is_first_region:
+            region.query_edit.textChanged.connect(self._save_first_region_query)
+
         return region
 
     def _on_query_submitted(self, source_region: FileTreeRegion) -> None:
@@ -268,6 +402,11 @@ class FileTreeQueryWindow(QMainWindow):
             settings.setValue(
                 "tree/headerState",
                 self.regions[0].tree_view.header().saveState(),
+            )
+
+            settings.setValue(
+                "queries/firstRegionCurrent",
+                self.regions[0].query_edit.text(),
             )
 
     def closeEvent(self, event: QCloseEvent) -> None:

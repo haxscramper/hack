@@ -34,6 +34,7 @@ dependencies = [
     "pykka>=4.4.2",
     "pymupdf4llm>=1.27.2.3",
     "pyqt6>=6.11.0",
+    "pyqt6-qscintilla>=2.14.1",
     "pyqt6-sip>=13.11.1",
     "pytest>=9.1.1",
     "python-arango==8.1.6",
