@@ -33,9 +33,9 @@ class FileTreeColumnSpec(ColumnSpec, ABC):
     column_type: ClassVar[type[AnyModel]]
     column_name: ClassVar[str]
 
-    @staticmethod
     @abstractmethod
     def initColumnData(
+        self,
         path: Path,
         hash: Optional[FileHash],
         is_directory: bool,

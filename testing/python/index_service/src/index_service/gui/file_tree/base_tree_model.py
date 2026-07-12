@@ -30,11 +30,12 @@ def build_file_tree(
     db: IndexDatabase,
     root_directories: Sequence[Path],
     indexers: Sequence[BaseIndexer],
-    columns: Sequence[type[FileTreeColumnSpec]],
+    columns: Sequence[FileTreeColumnSpec],
 ) -> list[FileTreeNode]:
     with ctx.trace_scope("fetch file paths"):
         file_paths = [
-            FilePathResult.model_validate(item) for item in db.aql.execute(AQL_FILE_PATHS)
+            FilePathResult.model_validate(item)
+            for item in db.aql.execute(AQL_FILE_PATHS)  # type: ignore
         ]
 
     rooted_paths: list[tuple[Path, FilePathResult]] = []
@@ -103,7 +104,6 @@ def build_file_tree(
                 ),
             ))
 
-    nodes: dict[tuple[Path, Path], FileTreeNode] = {}
     roots: list[FileTreeNode] = []
 
     with ctx.trace_scope("arrange file tree"):

@@ -27,8 +27,8 @@ class ImageHashColumnSpec(FileTreeColumnSpec):
     column_name = "image_hash"
     column_type = ImageHashData
 
-    @staticmethod
     def initColumnData(
+        self,
         path: Path,
         hash: Optional[FileHash],
         is_directory: bool,
@@ -49,11 +49,19 @@ class ImageHashColumnSpec(FileTreeColumnSpec):
         else:
             return None
 
-    def __init__(self, reference_tree: FileTreeNode) -> None:
+    def __init__(self, reference_tree: Optional[FileTreeNode]) -> None:
         super().__init__("Similar image")
 
         self._paths_by_hash: dict[int, list[Path]] = {}
         self._match_cache: dict[int, list[tuple[int, Path]]] = {}
+
+        if not reference_tree:
+            self._index = pybktree.BKTree(
+                self._hamming_distance,
+                self._paths_by_hash,
+            )
+
+            return
 
         pending = [reference_tree]
 

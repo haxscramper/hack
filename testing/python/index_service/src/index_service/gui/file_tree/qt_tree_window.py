@@ -45,20 +45,15 @@ class FileTreeQueryWindow(QMainWindow):
 
         columns: list[FileTreeColumnSpec] = [
             FileNameColumnSpec(),
-            # FileHashColumnSpec(),
-            # WdTagsColumnSpec(),
         ]
 
-        column_types: list[type[FileTreeColumnSpec]] = [FileNameColumnSpec]
-
         if file_tree_view.reference_dir:
-            column_types.append(ImageHashColumnSpec)
             reference_tree = build_file_tree(
                 ctx=ctx,
                 db=db,
                 root_directories=[Path(file_tree_view.reference_dir)],
                 indexers=indexer_instances,
-                columns=column_types,
+                columns=columns + [ImageHashColumnSpec(None)],
             )
 
             columns.append(ImageHashColumnSpec(reference_tree=reference_tree[0]))
@@ -70,7 +65,7 @@ class FileTreeQueryWindow(QMainWindow):
                 Path(path).expanduser().absolute() for path in file_tree_view.root_dirs
             ],
             indexers=indexer_instances,
-            columns=column_types,
+            columns=columns,
         )
 
         self.resize(1200, 800)
