@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Callable
 
-from PySide6.QtCore import (
+from PyQt6.QtCore import (
     QAbstractItemModel,
     QAbstractProxyModel,
     QModelIndex,

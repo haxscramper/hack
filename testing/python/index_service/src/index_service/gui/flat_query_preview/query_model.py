@@ -3,7 +3,7 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from beartype import beartype
-from PySide6.QtCore import (
+from PyQt6.QtCore import (
     QAbstractListModel,
     QModelIndex,
     QObject,

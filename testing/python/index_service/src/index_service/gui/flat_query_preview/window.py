@@ -4,13 +4,13 @@ import logging
 from typing import List, Optional, Sequence
 
 from beartype import beartype
-from PySide6.QtCore import (
+from PyQt6.QtCore import (
     QModelIndex,
     QSize,
     Qt,
 )
-from PySide6.QtGui import QPainter, QPen
-from PySide6.QtWidgets import (
+from PyQt6.QtGui import QPainter, QPen
+from PyQt6.QtWidgets import (
     QAbstractItemView,
     QHBoxLayout,
     QLabel,

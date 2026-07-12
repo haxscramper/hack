@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from PySide6.QtCore import QModelIndex, Qt
+from PyQt6.QtCore import QModelIndex, Qt
 from beartype import beartype
 from beartype.typing import Any, Optional, cast
 from pydantic import BaseModel

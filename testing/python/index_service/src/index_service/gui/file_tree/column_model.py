@@ -4,8 +4,8 @@ from pathlib import Path
 from beartype import beartype
 from beartype.typing import Any, Sequence, ClassVar, Optional
 
-from PySide6.QtCore import QAbstractTableModel, QModelIndex, QObject, Qt, QAbstractItemModel
-from PySide6.QtWidgets import QAbstractItemDelegate, QAbstractItemView
+from PyQt6.QtCore import QAbstractTableModel, QModelIndex, QObject, Qt, QAbstractItemModel
+from PyQt6.QtWidgets import QAbstractItemDelegate, QAbstractItemView
 from pydantic import BaseModel
 
 from index_service.services.core.types import AnyModel, FileHash

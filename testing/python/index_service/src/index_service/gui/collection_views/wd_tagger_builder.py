@@ -1,4 +1,4 @@
-from PySide6.QtWidgets import QAbstractItemView, QTableWidget, QTableWidgetItem, QWidget
+from PyQt6.QtWidgets import QAbstractItemView, QTableWidget, QTableWidgetItem, QWidget
 from beartype.typing import Optional, cast
 
 from index_service.gui.collection_views.builder import WidgetBuilder

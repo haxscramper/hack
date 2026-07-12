@@ -1,6 +1,6 @@
 import json
 
-from PySide6.QtWidgets import QAbstractItemView, QTableWidget, QTableWidgetItem, QWidget
+from PyQt6.QtWidgets import QAbstractItemView, QTableWidget, QTableWidgetItem, QWidget
 
 from index_service.gui.collection_views.builder import WidgetBuilder
 from index_service.gui.collection_views.json_preview_widget import JsonPreviewWidget
@@ -24,7 +24,6 @@ class ComfyInputWidgetBuilder(WidgetBuilder):
         table.setHorizontalHeaderLabels(["node", "inputs"])
         for row, inp in enumerate(result.inputs):
             table.setItem(row, 0, QTableWidgetItem(inp.node))
-            table.setItem(
-                row, 1, QTableWidgetItem(json.dumps(inp.inputs, default=str)))
+            table.setItem(row, 1, QTableWidgetItem(json.dumps(inp.inputs, default=str)))
         table.horizontalHeader().setStretchLastSection(True)
         return table

@@ -5,8 +5,8 @@ from typing import Optional
 from beartype.typing import Any, cast
 
 import pybktree
-from PySide6.QtCore import QModelIndex
-from PySide6.QtGui import QBrush, QColor, Qt
+from PyQt6.QtCore import QModelIndex, Qt
+from PyQt6.QtGui import QBrush, QColor
 from beartype import beartype
 from pydantic import BaseModel
 

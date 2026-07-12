@@ -1,11 +1,11 @@
 from pathlib import Path
 
-from PySide6.QtCore import QCoreApplication, QSettings, Qt, Signal
-from PySide6.QtGui import QCloseEvent, QFont, QKeySequence, QShortcut
+from PyQt6.QtCore import QCoreApplication, QSettings, Qt, pyqtSignal
+from PyQt6.QtGui import QCloseEvent, QFont, QKeySequence, QShortcut
 from beartype import beartype
 from beartype.typing import Callable, Sequence
 
-from PySide6.QtWidgets import (
+from PyQt6.QtWidgets import (
     QAbstractItemView,
     QMainWindow,
     QMessageBox,
@@ -75,7 +75,7 @@ class FileTreeRegion(QWidget):
     """A single vertical region: file tree on top, glom query field below."""
 
     # Emitted with `self` when the user submits the query in this region.
-    query_submitted = Signal(object)
+    query_submitted = pyqtSignal(object)
 
     def __init__(
         self,
@@ -151,7 +151,7 @@ class FileTreeRegion(QWidget):
         log.debug("filter OK")
         return result
 
-    def _on_run(self) -> None:
+    def _on_run(self, checked: bool = False) -> None:
         self.query_submitted.emit(self)
 
 

@@ -3,10 +3,10 @@ import subprocess
 
 from beartype.typing import Optional
 
-from PySide6.QtCore import (
-    QTimer, )
+from PyQt6.QtCore import (
+    QTimer,)
 
-from PySide6.QtWidgets import (
+from PyQt6.QtWidgets import (
     QPlainTextEdit,
     QVBoxLayout,
     QWidget,
@@ -15,9 +15,7 @@ from PySide6.QtWidgets import (
 
 class JsonPreviewWidget(QWidget):
 
-    def __init__(self,
-                 parent: Optional[QWidget] = None,
-                 REFLOW_DEBOUNCE_MS=200) -> None:
+    def __init__(self, parent: Optional[QWidget] = None, REFLOW_DEBOUNCE_MS=200) -> None:
         super().__init__(parent)
         self._view = QPlainTextEdit()
         self._view.setReadOnly(True)

@@ -1,7 +1,7 @@
 from beartype import beartype
 from beartype.typing import Any, Sequence, cast
 
-from PySide6.QtCore import QModelIndex, QObject, Qt
+from PyQt6.QtCore import QModelIndex, QObject, Qt
 
 from index_service.gui.file_tree.base_tree_model import FileTreeNode
 from index_service.gui.file_tree.column_model import AbstractColumnItemModel, ColumnSpec

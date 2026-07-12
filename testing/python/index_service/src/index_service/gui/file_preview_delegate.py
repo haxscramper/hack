@@ -4,21 +4,21 @@ from beartype import beartype
 from beartype.typing import Optional, Dict
 
 from beartype import beartype
-from PySide6.QtCore import (
+from PyQt6.QtCore import (
     QModelIndex,
     QObject,
     QSize,
     Qt,
     QRunnable,
     QThreadPool,
-    Signal,
+    pyqtSignal,
 )
-from PySide6.QtGui import (
+from PyQt6.QtGui import (
     QImage,
     QImageReader,
     QPixmap,
 )
-from PySide6.QtWidgets import (
+from PyQt6.QtWidgets import (
     QStyle,
     QStyledItemDelegate,
     QWidget,
@@ -29,7 +29,7 @@ from index_service.gui.flat_query_preview.query_model import QueryResultModel
 
 @beartype
 class _ThumbSignals(QObject):
-    ready = Signal(str)
+    ready = pyqtSignal(str)
 
 
 @beartype
@@ -63,7 +63,7 @@ class _ThumbLoader(QRunnable):
 
 @beartype
 class ThumbnailCache(QObject):
-    updated = Signal()
+    updated = pyqtSignal()
 
     def __init__(self, tile: int, parent: Optional[QObject] = None) -> None:
         super().__init__(parent)

@@ -10,7 +10,7 @@ from typing import Any, ClassVar, Literal
 
 from beartype import beartype
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-from PySide6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication
 from sqlalchemy import event, create_engine, URL
 
 from index_service.cli.cli_config import _INDEXER_TYPES, _RESOURCE_TYPES, AppConfig, LoggingConfig

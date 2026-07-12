@@ -3,7 +3,7 @@ from typing import Protocol
 from index_service.services.core.db import IndexDatabase
 from index_service.services.core.job_types import BaseIndexer
 from index_service.services.core.types import FileHash
-from PySide6.QtWidgets import QWidget
+from PyQt6.QtWidgets import QWidget
 from abc import ABC, abstractmethod
 
 
