@@ -22,6 +22,9 @@ from PyQt6.QtWidgets import (
 )
 
 from index_service.cli.cli_config import FileTreeViewConfig
+from index_service.gui.collection_views.builder import WidgetBuilder
+from index_service.gui.collection_views.preview_pane import FilePreviewPane
+from index_service.gui.common.qt_model_roles import CustomModelRole
 from index_service.gui.file_tree.base_tree_model import build_file_tree, FileTreeNode
 from index_service.gui.file_tree.file_duplicate_column import FileDuplicateColumnSpec
 from index_service.gui.file_tree.file_name_column import FileNameColumnSpec
@@ -32,6 +35,8 @@ from index_service.gui.file_tree.qt_tree_model import FileTreeModel
 from index_service.services.core.db import IndexDatabase
 from index_service.services.core.job_types import BaseIndexer, RunContext
 import logging
+
+from index_service.services.core.types import FileHash
 
 log = logging.getLogger(__name__)
 
@@ -81,6 +86,7 @@ class FileTreeRegion(QWidget):
 
     query_submitted = pyqtSignal(object)
     named_queries_changed = pyqtSignal()
+    file_hash_activated = pyqtSignal(object)
 
     def __init__(
         self,
@@ -100,6 +106,7 @@ class FileTreeRegion(QWidget):
             QAbstractItemView.SelectionBehavior.SelectRows)
         self.tree_view.setModel(self.model)
         self.model.configureView(self.tree_view)
+        self.tree_view.doubleClicked.connect(self._on_tree_item_double_clicked)
 
         self.query_edit = PythonQueryEditor(self)
 
@@ -156,6 +163,13 @@ class FileTreeRegion(QWidget):
             "queries/named",
             json.dumps(queries, sort_keys=True),
         )
+
+    def _on_tree_item_double_clicked(self, index) -> None:
+        hash_value = index.data(CustomModelRole.HashRole.value)
+        if hash_value is None:
+            log.info(f"hash value is None")
+        else:
+            self.file_hash_activated.emit(FileHash(hash=hash_value))
 
     def refresh_named_queries(self) -> None:
         selected_name = self.saved_query_combo.currentData()
@@ -249,6 +263,7 @@ class FileTreeQueryWindow(QMainWindow):
         file_tree_view: FileTreeViewConfig,
         db: IndexDatabase,
         indexer_instances: Sequence[BaseIndexer],
+        builders: Sequence[WidgetBuilder],
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -292,8 +307,24 @@ class FileTreeQueryWindow(QMainWindow):
         self.columns = columns
         self.regions: list[FileTreeRegion] = []
 
-        self.region_splitter = QSplitter(Qt.Orientation.Horizontal, self)
-        self.setCentralWidget(self.region_splitter)
+        self.main_splitter = QSplitter(Qt.Orientation.Horizontal, self)
+        self.setCentralWidget(self.main_splitter)
+
+        self.region_splitter = QSplitter(
+            Qt.Orientation.Horizontal,
+            self.main_splitter,
+        )
+        self.preview_pane = FilePreviewPane(
+            db=db,
+            collection_names=[t.asset_name for t in indexer_instances],
+            builders=builders,
+            parent=self.main_splitter,
+        )
+
+        self.main_splitter.addWidget(self.region_splitter)
+        self.main_splitter.addWidget(self.preview_pane)
+        self.main_splitter.setStretchFactor(0, 4)
+        self.main_splitter.setStretchFactor(1, 1)
 
         self._add_region(nodes)
 
@@ -320,6 +351,7 @@ class FileTreeQueryWindow(QMainWindow):
         )
         region.query_submitted.connect(self._on_query_submitted)
         region.named_queries_changed.connect(self._refresh_named_queries)
+        region.file_hash_activated.connect(self.preview_pane.show_hash)
 
         self.region_splitter.addWidget(region)
         self.regions.append(region)

@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import QApplication
 from sqlalchemy import event, create_engine, URL
 
 from index_service.cli.cli_config import _INDEXER_TYPES, _RESOURCE_TYPES, AppConfig, LoggingConfig
+from index_service.gui.collection_views.builder import WidgetBuilder
 from index_service.gui.collection_views.comfy_input_builder import (
     ComfyInputWidgetBuilder,)
 from index_service.gui.collection_views.exif_preview_builder import (
@@ -221,8 +222,7 @@ class IndexService():
             limit_per_path=index_cfg.limit_per_path,
         )
 
-    def run_flat_query_view(self) -> None:
-        qt_app = QApplication(sys.argv)
+    def get_builders(self) -> list[WidgetBuilder]:
         builders = list()
         for inst in self.indexer_instances:
             match inst:
@@ -235,10 +235,15 @@ class IndexService():
                 case ExifMetadataIndexer():
                     builders.append(ExifPreviewrWidgetBuilder(inst))
 
+        return builders
+
+    def run_flat_query_view(self) -> None:
+        qt_app = QApplication(sys.argv)
+
         win = FlatQueryViewWindow(
             self.db,
             collection_names=[t for t in self.cfg.indexers.keys()],
-            builders=builders,
+            builders=self.get_builders(),
         )
         win.show()
         sys.exit(qt_app.exec())
@@ -252,6 +257,7 @@ class IndexService():
             file_tree_view=self.cfg.file_tree_view,
             db=self.db,
             indexer_instances=self.indexer_instances,
+            builders=self.get_builders(),
         )
 
         win.show()
