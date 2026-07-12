@@ -67,7 +67,7 @@ class IndexService():
 
         assert False, f"No indexer named {s}"
 
-    def __init__(self, cfg: AppConfig) -> None:
+    def __init__(self, cfg: AppConfig, only_short_curcuit_checks: bool) -> None:
         self.cfg = cfg
         self.indexer_instances = list()
         self.resource_instances = list()
@@ -119,6 +119,7 @@ class IndexService():
             username=self.cfg.db.username,
             password=self.cfg.db.password,
             hash_cache=HashCache(Path(self.cfg.hash_cache).expanduser().absolute()),
+            only_short_curcuit_checks=only_short_curcuit_checks,
         )
 
         self.ctx = RunContext(self.db)
@@ -277,7 +278,10 @@ def main() -> None:
             password=cfg.db.password,
         )
 
-    service = IndexService(cfg)
+    service = IndexService(
+        cfg,
+        only_short_curcuit_checks=args.command != "index",
+    )
 
     _, _, perf_dir = service.setup_runtime_logging(service.cfg.logging)
     service.ctx.start_trace()

@@ -23,13 +23,12 @@ class FileDuplicateData(BaseModel, extra="forbid"):
 class FileDuplicateColumnSpec(FileTreeColumnSpec):
     column_name = "file_duplicate"
     column_type = FileDuplicateData
-    maximum_tooltip_matches = 5
 
     def __init__(self, reference_tree: Optional[FileTreeNode]) -> None:
         super().__init__("Duplicate")
 
         self._paths_by_hash: dict[str, list[Path]] = {}
-        self._match_cache: dict[str, list[Path]] = {}
+        self._match_cache: dict[tuple[Path, str], list[Path]] = {}
 
         if reference_tree is None:
             return
@@ -88,7 +87,7 @@ class FileDuplicateColumnSpec(FileTreeColumnSpec):
         if hash is None:
             return None
 
-        matches = self._matches(hash.hash)
+        matches = self._matches(path, hash.hash)
 
         return FileDuplicateData(
             hash=hash.hash,
@@ -97,18 +96,26 @@ class FileDuplicateColumnSpec(FileTreeColumnSpec):
             total_count=1,
         )
 
-    def _matches(self, file_hash: str) -> list[Path]:
-        cached = self._match_cache.get(file_hash)
+    def _matches(
+        self,
+        path: Path,
+        file_hash: str,
+    ) -> list[Path]:
+        cache_key = (path, file_hash)
+        cached = self._match_cache.get(cache_key)
 
         if cached is not None:
             return cached
 
-        matches = self._paths_by_hash.get(
-            file_hash,
-            [],
-        )[:self.maximum_tooltip_matches]
+        matches = sorted(
+            {
+                candidate for candidate in self._paths_by_hash.get(file_hash, [])
+                if candidate != path
+            },
+            key=str,
+        )
 
-        self._match_cache[file_hash] = matches
+        self._match_cache[cache_key] = matches
         return matches
 
     def data(
@@ -138,9 +145,12 @@ class FileDuplicateColumnSpec(FileTreeColumnSpec):
                 Qt.ItemDataRole.DisplayRole,
                 Qt.ItemDataRole.EditRole,
         ):
-            return "Yes" if duplicate_data.matches else "No"
+            if not duplicate_data.matches:
+                return None
 
-        if role == Qt.ItemDataRole.ToolTipRole and duplicate_data.matches:
+            return str(duplicate_data.matches[0])
+
+        if (role == Qt.ItemDataRole.ToolTipRole and duplicate_data.matches):
             return "\n".join(str(path) for path in duplicate_data.matches)
 
         return None

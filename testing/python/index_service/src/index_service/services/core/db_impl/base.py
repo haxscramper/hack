@@ -22,6 +22,7 @@ class DatabaseBase:
         username: str,
         password: str,
         hash_cache: HashCache,
+        only_short_curcuit_checks: bool = False,
     ) -> None:
         client = ArangoClient(hosts=host)
         sys_db = client.db("_system", username=username, password=password)
@@ -35,6 +36,7 @@ class DatabaseBase:
         self.file_refs: set[FileRef] = set()
         self._indexer_hashes: Dict[str, set[str]] = {}
         self.hash_cache = hash_cache
+        self.only_short_curcuit_checks = only_short_curcuit_checks
 
         self.ensure_collections([])
         self._load_roots_from_db()

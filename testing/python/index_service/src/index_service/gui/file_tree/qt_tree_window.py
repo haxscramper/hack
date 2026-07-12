@@ -6,19 +6,14 @@ from beartype import beartype
 from beartype.typing import Sequence
 
 from PySide6.QtWidgets import QMainWindow, QTreeView, QWidget
-from networkx.algorithms.flow import build_flow_dict
 
 from index_service.cli.cli_config import FileTreeViewConfig
-from index_service.gui.common.qt_utils import print_model_tree
 from index_service.gui.file_tree.base_tree_model import build_file_tree
-from index_service.gui.file_tree.column_model import ColumnSpec
 from index_service.gui.file_tree.file_duplicate_column import FileDuplicateColumnSpec
-from index_service.gui.file_tree.file_hash_column import FileHashColumnSpec
 from index_service.gui.file_tree.file_name_column import FileNameColumnSpec
 from index_service.gui.file_tree.file_tree_column import FileTreeColumnSpec
 from index_service.gui.file_tree.image_hash_column import ImageHashColumnSpec
 from index_service.gui.file_tree.qt_tree_model import FileTreeModel
-from index_service.gui.file_tree.wd_tags_column import WdTagsColumnSpec
 from index_service.services.core.db import IndexDatabase
 from index_service.services.core.job_types import BaseIndexer, RunContext
 import logging
@@ -55,12 +50,12 @@ class FileTreeQueryWindow(QMainWindow):
                 root_directories=[Path(file_tree_view.reference_dir)],
                 indexers=indexer_instances,
                 columns=columns + [
-                    ImageHashColumnSpec(None),
+                    # ImageHashColumnSpec(None),
                     FileDuplicateColumnSpec(None),
                 ],
             )
 
-            columns.append(ImageHashColumnSpec(reference_tree=reference_tree[0]))
+            # columns.append(ImageHashColumnSpec(reference_tree=reference_tree[0]))
             columns.append(FileDuplicateColumnSpec(reference_tree=reference_tree[0]))
 
         nodes = build_file_tree(

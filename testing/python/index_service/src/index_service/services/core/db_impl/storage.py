@@ -61,6 +61,9 @@ class StorageMixin:
         if file_hash in self._indexer_hashes.get(collection_name, set()):
             return True
 
+        if self.only_short_curcuit_checks:
+            return False
+
         exists = cast(bool, self._db.collection(collection_name).has(file_hash))
         if exists:
             self._indexer_hashes.setdefault(collection_name, set()).add(file_hash)
