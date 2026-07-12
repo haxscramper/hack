@@ -12,6 +12,7 @@ from index_service.cli.cli_config import FileTreeViewConfig
 from index_service.gui.common.qt_utils import print_model_tree
 from index_service.gui.file_tree.base_tree_model import build_file_tree
 from index_service.gui.file_tree.column_model import ColumnSpec
+from index_service.gui.file_tree.file_duplicate_column import FileDuplicateColumnSpec
 from index_service.gui.file_tree.file_hash_column import FileHashColumnSpec
 from index_service.gui.file_tree.file_name_column import FileNameColumnSpec
 from index_service.gui.file_tree.file_tree_column import FileTreeColumnSpec
@@ -53,10 +54,14 @@ class FileTreeQueryWindow(QMainWindow):
                 db=db,
                 root_directories=[Path(file_tree_view.reference_dir)],
                 indexers=indexer_instances,
-                columns=columns + [ImageHashColumnSpec(None)],
+                columns=columns + [
+                    ImageHashColumnSpec(None),
+                    FileDuplicateColumnSpec(None),
+                ],
             )
 
             columns.append(ImageHashColumnSpec(reference_tree=reference_tree[0]))
+            columns.append(FileDuplicateColumnSpec(reference_tree=reference_tree[0]))
 
         nodes = build_file_tree(
             ctx=ctx,
