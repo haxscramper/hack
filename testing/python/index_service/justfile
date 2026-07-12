@@ -39,6 +39,11 @@ flat_query_view:
 file_tree:
     uv run src/index_service/cli/cli.py file_tree_view "~/defaultdirs/temporary_interchange/content_root_indexing.jsonc" 
 
+profile_file_tree:
+    uv run py-spy record --format chrometrace -o /tmp/haxdex-perf-tree-view.json -- \
+      python src/index_service/cli/cli.py file_tree_view "~/defaultdirs/temporary_interchange/content_root_indexing.jsonc"
+
+
 run_arango:
     docker run -d -e ARANGO_ROOT_PASSWORD="test" -p 8529:8529 arangodb/enterprise:3.12.9.1 \
         --server.session-timeout 360000 \

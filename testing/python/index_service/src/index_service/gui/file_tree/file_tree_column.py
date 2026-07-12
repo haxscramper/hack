@@ -34,6 +34,3 @@ class FileTreeColumnSpec(ColumnSpec):
                 return self.title
             case _:
                 return None
-
-    def node(self, index: QModelIndex) -> FileTreeNode:
-        return cast(FileTreeNode, index.internalPointer())

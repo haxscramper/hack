@@ -1,9 +1,10 @@
 from pathlib import Path
 
 from beartype import beartype
-from beartype.typing import Sequence
+from beartype.typing import Sequence, Optional
 from pydantic import BaseModel, Field
 
+from index_service.gui.file_tree.column_model import ColumnSpec
 from index_service.services.core.db import IndexDatabase
 from index_service.services.core.job_types import BaseIndexer, RunContext
 from index_service.services.core.types import FileHash
@@ -32,7 +33,7 @@ class FileTreeNode(BaseModel):
     path: Path
     is_directory: bool
     hash: FileHash | None = None
-    assets: dict[str, BaseModel] = Field(default_factory=dict)
+    columns: dict[str, Optional[BaseModel]] = Field(default_factory=dict)
     nested: list["FileTreeNode"] = Field(default_factory=list)
 
 
@@ -42,6 +43,7 @@ def build_file_tree(
     db: IndexDatabase,
     root_directories: Sequence[Path],
     indexers: Sequence[BaseIndexer],
+    columns: Sequence[type[ColumnSpec]],
 ) -> list[FileTreeNode]:
     cursor = db.aql.execute(AQL_FILE_PATHS)
 
@@ -110,7 +112,10 @@ def build_file_tree(
                     path=result.path,
                     is_directory=False,
                     hash=file_hash,
-                    assets=assets,
+                    columns={
+                        c.column_name: c.initColumnData(result.path, file_hash, assets)
+                        for c in columns
+                    },
                 ))
 
     return roots

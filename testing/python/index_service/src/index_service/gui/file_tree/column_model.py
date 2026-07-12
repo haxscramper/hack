@@ -1,14 +1,32 @@
 from abc import ABC, abstractmethod
+from pathlib import Path
 
 from beartype import beartype
-from beartype.typing import Any, Sequence
+from beartype.typing import Any, Sequence, ClassVar, Optional
 
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, QObject, Qt, QAbstractItemModel
 from PySide6.QtWidgets import QAbstractItemDelegate, QAbstractItemView
+from pydantic import BaseModel
+
+from index_service.services.core.types import AnyModel, FileHash
 
 
 @beartype
 class ColumnSpec(ABC):
+    column_type: ClassVar[type[AnyModel]]
+    column_name: ClassVar[str]
+
+    def getColumnData(self, index: QModelIndex) -> Optional[BaseModel]:
+        result = index.internalPointer()
+        assert result is None or isinstance(result, self.column_type), f"{type(result)}"
+        return result
+
+    @staticmethod
+    @abstractmethod
+    def initColumnData(path: Path, hash: FileHash,
+                       assets: dict[str, BaseModel]) -> Optional[BaseModel]:
+        "Extract subset of data from assets to the column"
+        raise NotImplementedError()
 
     @abstractmethod
     def data(

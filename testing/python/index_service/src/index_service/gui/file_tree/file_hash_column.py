@@ -1,12 +1,28 @@
+from pathlib import Path
+
 from PySide6.QtCore import QModelIndex, Qt
 from beartype import beartype
 from beartype.typing import Any
+from pydantic import BaseModel
 
 from index_service.gui.file_tree.file_tree_column import FileTreeColumnSpec
+from index_service.services.core.types import FileHash
+from beartype.typing import cast, Optional
+
+
+class FileHashData(BaseModel, extra="forbid"):
+    hash: str
 
 
 @beartype
 class FileHashColumnSpec(FileTreeColumnSpec):
+    column_name = "file_hash"
+    column_type = FileHashData
+
+    @staticmethod
+    def initColumnData(path: Path, hash: FileHash,
+                       assets: dict[str, BaseModel]) -> Optional[BaseModel]:
+        return FileHashData(hash=hash.hash)
 
     def __init__(self) -> None:
         super().__init__("Hash")
@@ -16,13 +32,11 @@ class FileHashColumnSpec(FileTreeColumnSpec):
         index: QModelIndex,
         role: int = Qt.ItemDataRole.DisplayRole,
     ) -> Any:
-        node = self.node(index)
+        node = cast(FileHashData, self.getColumnData(index))
 
-        match role, node.hash:
-            case Qt.ItemDataRole.DisplayRole | Qt.ItemDataRole.EditRole, None:
-                return ""
-            case Qt.ItemDataRole.DisplayRole | Qt.ItemDataRole.EditRole, hash:
-                assert hash
-                return str(hash.hash)
+        match role:
+            case Qt.ItemDataRole.DisplayRole | Qt.ItemDataRole.EditRole:
+                return node.hash
+
             case _:
                 return None
