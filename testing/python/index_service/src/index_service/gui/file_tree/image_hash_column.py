@@ -17,7 +17,11 @@ from index_service.services.indexers.image_hash import ImageHashIndexerResult, I
 
 
 class ImageHashData(BaseModel, extra="forbid"):
-    hash: str
+    hash: Optional[str] = None
+    matches: Optional[list[tuple[int, Path]]] = None
+    duplicate_count: int = 0
+    total_count: int = 0
+    foreground: Optional[tuple[int, int, int]] = None
 
 
 @beartype
@@ -26,28 +30,6 @@ class ImageHashColumnSpec(FileTreeColumnSpec):
     maximum_tooltip_matches = 5
     column_name = "image_hash"
     column_type = ImageHashData
-
-    def initColumnData(
-        self,
-        path: Path,
-        hash: Optional[FileHash],
-        is_directory: bool,
-        assets: dict[str, BaseModel],
-        nested: list[FileTreeNode],
-    ) -> Optional[BaseModel]:
-        if is_directory:
-            return None
-
-        if ImageHashIndexer.asset_name in assets:
-            result = cast(ImageHashIndexerResult, assets.get(ImageHashIndexer.asset_name))
-            if result.perceptual:
-                return ImageHashData(hash=result.perceptual)
-
-            else:
-                return None
-
-        else:
-            return None
 
     def __init__(self, reference_tree: Optional[FileTreeNode]) -> None:
         super().__init__("Similar image")
@@ -60,7 +42,6 @@ class ImageHashColumnSpec(FileTreeColumnSpec):
                 self._hamming_distance,
                 self._paths_by_hash,
             )
-
             return
 
         pending = [reference_tree]
@@ -69,11 +50,14 @@ class ImageHashColumnSpec(FileTreeColumnSpec):
             node = pending.pop()
             pending.extend(node.nested)
 
-            image_hash = node.columns.get(ImageHashColumnSpec.column_name, None)
+            image_hash = node.columns.get(ImageHashColumnSpec.column_name)
             if image_hash is None:
                 continue
 
             assert isinstance(image_hash, ImageHashData), type(image_hash)
+
+            if image_hash.hash is None:
+                continue
 
             perceptual_hash = self._parse_hash(image_hash.hash)
             self._paths_by_hash.setdefault(perceptual_hash, []).append(node.path)
@@ -86,6 +70,53 @@ class ImageHashColumnSpec(FileTreeColumnSpec):
             self._paths_by_hash,
         )
 
+    def initColumnData(
+        self,
+        path: Path,
+        hash: Optional[FileHash],
+        is_directory: bool,
+        assets: dict[str, BaseModel],
+        nested: list[FileTreeNode],
+    ) -> Optional[BaseModel]:
+        if is_directory:
+            nested_data = (cast(Optional[ImageHashData],
+                                node.columns.get(self.column_name)) for node in nested)
+
+            duplicate_count = 0
+            total_count = 0
+
+            for image_hash in nested_data:
+                if image_hash is None:
+                    continue
+
+                duplicate_count += image_hash.duplicate_count
+                total_count += image_hash.total_count
+
+            return ImageHashData(
+                duplicate_count=duplicate_count,
+                total_count=total_count,
+            )
+
+        result = cast(
+            Optional[ImageHashIndexerResult],
+            assets.get(ImageHashIndexer.asset_name),
+        )
+
+        if result is None or not result.perceptual:
+            return None
+
+        matches = self._matches(result.perceptual)
+        closest_distance = matches[0][0] if matches else None
+
+        return ImageHashData(
+            hash=result.perceptual,
+            matches=matches,
+            duplicate_count=1 if matches else 0,
+            total_count=1,
+            foreground=(self._foreground(closest_distance)
+                        if closest_distance is not None else None),
+        )
+
     @staticmethod
     def _parse_hash(value: str) -> int:
         return int(value.replace("-", ""), 16)
@@ -94,11 +125,8 @@ class ImageHashColumnSpec(FileTreeColumnSpec):
     def _hamming_distance(left: int, right: int) -> int:
         return (left ^ right).bit_count()
 
-    def _matches(self, node: Optional[ImageHashData]) -> list[tuple[int, Path]]:
-        if not node:
-            return []
-
-        perceptual_hash = self._parse_hash(node.hash)
+    def _matches(self, image_hash: str) -> list[tuple[int, Path]]:
+        perceptual_hash = self._parse_hash(image_hash)
         cached = self._match_cache.get(perceptual_hash)
 
         if cached is not None:
@@ -121,24 +149,40 @@ class ImageHashColumnSpec(FileTreeColumnSpec):
         return matches
 
     @staticmethod
-    def _foreground(distance: int) -> QBrush:
+    def _foreground(distance: int) -> tuple[int, int, int]:
         if distance == 0:
-            return QBrush(QColor(220, 70, 70))
+            return (220, 70, 70)
 
         else:
-            return QBrush(QColor(220, 160, 50))
+            return (220, 160, 50)
 
     def data(
         self,
         index: QModelIndex,
         role: int = Qt.ItemDataRole.DisplayRole,
     ) -> Any:
-        matches = self._matches(cast(Optional[ImageHashData], self.getColumnData(index)))
+        image_hash = cast(
+            Optional[ImageHashData],
+            self.getColumnData(index),
+        )
 
+        if image_hash is None:
+            return None
+
+        if image_hash.hash is None:
+            if role in (
+                    Qt.ItemDataRole.DisplayRole,
+                    Qt.ItemDataRole.EditRole,
+            ):
+                return f"{image_hash.duplicate_count}/{image_hash.total_count}"
+
+            return None
+
+        matches = image_hash.matches
         if not matches:
             return None
 
-        closest_distance, closest_path = matches[0]
+        _, closest_path = matches[0]
 
         match role:
             case Qt.ItemDataRole.DisplayRole | Qt.ItemDataRole.EditRole:
@@ -148,7 +192,11 @@ class ImageHashColumnSpec(FileTreeColumnSpec):
                 return "\n".join(str(path) for _, path in matches)
 
             case Qt.ItemDataRole.ForegroundRole:
-                return self._foreground(closest_distance)
+                if image_hash.foreground:
+                    return QBrush(QColor(*list(image_hash.foreground)))
+
+                else:
+                    return None
 
             case _:
                 return None
