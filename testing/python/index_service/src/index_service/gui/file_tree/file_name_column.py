@@ -33,6 +33,7 @@ class FileNameColumnSpec(FileTreeColumnSpec):
         role: int = Qt.ItemDataRole.DisplayRole,
     ) -> Any:
         data = cast(FileNameData, self.getColumnData(index))
+        assert data is not None, "File name column spec cannot be null"
         match role:
             case Qt.ItemDataRole.DisplayRole | Qt.ItemDataRole.EditRole:
                 return data.name

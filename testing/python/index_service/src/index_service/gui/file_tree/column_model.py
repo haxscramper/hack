@@ -13,20 +13,6 @@ from index_service.services.core.types import AnyModel, FileHash
 
 @beartype
 class ColumnSpec(ABC):
-    column_type: ClassVar[type[AnyModel]]
-    column_name: ClassVar[str]
-
-    def getColumnData(self, index: QModelIndex) -> Optional[BaseModel]:
-        result = index.internalPointer()
-        assert result is None or isinstance(result, self.column_type), f"{type(result)}"
-        return result
-
-    @staticmethod
-    @abstractmethod
-    def initColumnData(path: Path, hash: FileHash,
-                       assets: dict[str, BaseModel]) -> Optional[BaseModel]:
-        "Extract subset of data from assets to the column"
-        raise NotImplementedError()
 
     @abstractmethod
     def data(

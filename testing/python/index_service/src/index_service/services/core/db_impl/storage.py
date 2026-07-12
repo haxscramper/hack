@@ -1,5 +1,9 @@
 import json
-from typing import Any, cast
+from concurrent.futures import ThreadPoolExecutor
+
+from arango.database import StandardDatabase
+from beartype.typing import Any, cast
+from beartype import beartype
 
 from arango import DocumentInsertError
 from pydantic import TypeAdapter
@@ -22,7 +26,12 @@ from index_service.services.pydantic_utils import (
 from index_service.services.utils import ExceptionContextNote
 
 
+@beartype
 class StorageMixin:
+    _db: StandardDatabase
+
+    def get_edge_name(self, indexer) -> str:
+        ...
 
     def _diagnose_document(self, document: dict[str, Any]) -> str:
         try:
@@ -177,7 +186,7 @@ class StorageMixin:
             RETURN doc.result
         """
 
-        for document in self._db.aql.execute(
+        for document in self._db.aql.execute(  # type: ignore
                 query,
                 bind_vars={"hash": document_id},
         ):
@@ -191,42 +200,119 @@ class StorageMixin:
         hash: FileHash,
         indexer: BaseIndexProtocol,
     ) -> Any:
+        return self.get_indexer_result_batch(
+            [hash],
+            indexer,
+            max_workers=1,
+        )[0]
+
+    def get_indexer_result_batch(
+        self,
+        hashes: list[FileHash],
+        indexer: BaseIndexProtocol,
+        *,
+        max_workers: int = 1,
+    ) -> list[Any]:
+        if not hashes:
+            return []
+
+        unique_hashes = list(dict.fromkeys(hash.hash for hash in hashes))
+        max_workers = min(max_workers, len(unique_hashes))
+
+        if max_workers == 1:
+            results = self._get_indexer_result_batch_chunk(
+                unique_hashes,
+                indexer,
+            )
+        else:
+            chunk_size = (len(unique_hashes) + max_workers - 1) // max_workers
+            chunks = [
+                unique_hashes[index:index + chunk_size]
+                for index in range(0, len(unique_hashes), chunk_size)
+            ]
+
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                chunk_results = executor.map(
+                    lambda chunk: self._get_indexer_result_batch_chunk(
+                        chunk,
+                        indexer,
+                    ),
+                    chunks,
+                )
+
+            results = {
+                file_hash: result for chunk in chunk_results
+                for file_hash, result in chunk.items()
+            }
+
+        return [results[hash.hash] for hash in hashes]
+
+    def _get_indexer_result_batch_chunk(
+        self,
+        hashes: list[str],
+        indexer: BaseIndexProtocol,
+    ) -> dict[str, Any]:
         model_type = indexer.result_model
         indexer_id = indexer.asset_name
 
         if not issubclass(model_type, MultiDocumentModel):
-            document = cast(dict, self._db.collection(indexer_id).get(hash.hash))
-            return model_type.model_validate(
-                model_from_json_data(document["result"], model_type))
+            results: dict[str, Any] = {}
+
+            for document in self._db.aql.execute(  # type: ignore
+                    f"""
+                FOR doc IN {indexer_id}
+                    FILTER doc._key IN @hashes
+                    RETURN {{
+                        file_hash: doc._key,
+                        result: doc.result,
+                    }}
+                """,
+                    bind_vars={"hashes": hashes},
+            ):
+                results[document["file_hash"]] = model_type.model_validate(
+                    model_from_json_data(document["result"], model_type),)
+
+            return results
 
         assert issubclass(model_type.edge_type, IndexEdge), str(model_type.edge_type)
-        edge_adapter = TypeAdapter(model_type.edge_type)
-        documents: list[IndexMultiDocument] = []
-        edges: list[IndexEdge] = []
 
-        for document in self._db.aql.execute(
+        edge_adapter = TypeAdapter(model_type.edge_type)
+        documents_by_hash: dict[str, list[IndexMultiDocument]] = {
+            hash: [] for hash in hashes
+        }
+        edges_by_hash: dict[str, list[IndexEdge]] = {hash: [] for hash in hashes}
+
+        for document in self._db.aql.execute(  # type: ignore
                 f"""
             FOR doc IN {indexer_id}
-                FILTER doc.result.file_hash == @hash
+                FILTER doc.result.file_hash IN @hashes
                 RETURN doc.result
             """,
-                bind_vars={"hash": hash.hash},
+                bind_vars={"hashes": hashes},
         ):
-            documents.append(self.validate_indexer_result_document(document, indexer))
+            validated = self.validate_indexer_result_document(document, indexer)
+            documents_by_hash[document["file_hash"]].append(validated)
 
-        for edge in self._db.aql.execute(
+        for edge in self._db.aql.execute(  # type: ignore
                 f"""
             FOR edge IN {self.get_edge_name(indexer_id)}
-                FILTER edge.result.file_hash == @hash
+                FILTER edge.result.file_hash IN @hashes
                 RETURN edge.result
             """,
-                bind_vars={"hash": hash.hash},
+                bind_vars={"hashes": hashes},
         ):
-            edges.append(
+            file_hash = edge["file_hash"]
+            edges_by_hash[file_hash].append(
                 edge_adapter.validate_python(
-                    model_from_json_data(edge, model_type.edge_type)))
+                    model_from_json_data(edge, model_type.edge_type),),)
 
-        return model_type(documents=documents, edges=edges)
+        return {
+            hash:
+                model_type(
+                    documents=documents_by_hash[hash],
+                    edges=edges_by_hash[hash],
+                ) for hash in hashes
+        }
 
     def store_derivation(
         self,

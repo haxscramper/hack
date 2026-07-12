@@ -1,5 +1,6 @@
 import logging
-from typing import Any
+from beartype.typing import Any
+from beartype import beartype
 
 import glom
 
@@ -16,6 +17,7 @@ from index_service.services.core.types import (
 log = logging.getLogger(__name__)
 
 
+@beartype
 class SearchMixin:
 
     def get_full_text_search_path(

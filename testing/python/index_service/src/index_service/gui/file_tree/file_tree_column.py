@@ -1,16 +1,42 @@
+from pathlib import Path
+
 from PySide6.QtCore import QModelIndex, Qt
 from beartype import beartype
 
 from index_service.gui.file_tree.base_tree_model import FileTreeNode
 from index_service.gui.file_tree.column_model import ColumnSpec
-from beartype.typing import Any, cast
+from beartype.typing import Any, cast, Optional, ClassVar
+from pydantic import BaseModel
+from abc import ABC, abstractmethod
+
+from index_service.services.core.types import AnyModel, FileHash
 
 
 @beartype
-class FileTreeColumnSpec(ColumnSpec):
+class FileTreeColumnSpec(ColumnSpec, ABC):
 
     def __init__(self, title: str) -> None:
         self.title = title
+
+    column_type: ClassVar[type[AnyModel]]
+    column_name: ClassVar[str]
+
+    @staticmethod
+    @abstractmethod
+    def initColumnData(
+        path: Path,
+        hash: Optional[FileHash],
+        is_directory: bool,
+        assets: dict[str, BaseModel],
+        nested: list[FileTreeNode],
+    ) -> Optional[BaseModel]:
+        "Extract subset of data from assets to the column"
+        raise NotImplementedError()
+
+    def getColumnData(self, index: QModelIndex) -> Optional[BaseModel]:
+        result = cast(FileTreeNode, index.internalPointer()).columns.get(self.column_name)
+        assert result is None or isinstance(result, self.column_type), f"{type(result)}"
+        return result
 
     def setData(
         self,

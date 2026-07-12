@@ -1,4 +1,7 @@
-from typing import Any, Optional
+from beartype import beartype
+from beartype.typing import Any, Optional, Dict
+
+from arango.database import StandardDatabase
 
 from index_service.services.core.db_impl.contracts import BaseIndexProtocol
 from index_service.services.core.types import (
@@ -12,17 +15,23 @@ from index_service.services.pydantic_arango_schema import (
 )
 
 
+@beartype
 class SchemaMixin:
+    _db: StandardDatabase
+    _indexer_hashes: Dict[str, set[str]]
+
+    def get_edge_name(self, indexer) -> str:
+        ...
 
     def _load_indexer_hashes_from_db(self) -> None:
-        for collection in self._db.collections():
+        for collection in self._db.collections():  # type: ignore
             name = collection["name"]
 
             if name.startswith("_") or name == "files":
                 continue
 
             self._indexer_hashes[name] = set(
-                self._db.aql.execute(
+                self._db.aql.execute(  # type: ignore
                     "FOR document IN @@collection RETURN document._key",
                     bind_vars={"@collection": name},
                 ))
@@ -81,36 +90,37 @@ class SchemaMixin:
             None,
         )
 
+    def _ensure_collection_with_schema(
+        self,
+        name: str,
+        expected_schema: dict[str, Any],
+        *,
+        edge: bool = False,
+    ) -> None:
+        expected_schema = {
+            "type": "json",
+            **expected_schema,
+        }
+
+        if not self._db.has_collection(name):
+            self._db.create_collection(
+                name,
+                edge=edge,
+                schema=expected_schema,
+            )
+            return
+
+        collection = self._db.collection(name)
+        actual_schema = collection.properties().get("schema")
+
+        if actual_schema != expected_schema:
+            raise RuntimeError(f"schema mismatch for collection {name!r}: "
+                               f"expected {expected_schema!r}, got {actual_schema!r}")
+
     def ensure_collections(
         self,
         indexers: list[BaseIndexProtocol],
     ) -> None:
-
-        def ensure_collection_with_schema(
-            name: str,
-            expected_schema: dict[str, Any],
-            *,
-            edge: bool = False,
-        ) -> None:
-            expected_schema = {
-                "type": "json",
-                **expected_schema,
-            }
-
-            if not self._db.has_collection(name):
-                self._db.create_collection(
-                    name,
-                    edge=edge,
-                    schema=expected_schema,
-                )
-                return
-
-            collection = self._db.collection(name)
-            actual_schema = collection.properties().get("schema")
-
-            if actual_schema != expected_schema:
-                raise RuntimeError(f"schema mismatch for collection {name!r}: "
-                                   f"expected {expected_schema!r}, got {actual_schema!r}")
 
         for name in ["roots", "files", "derivations"]:
             if not self._db.has_collection(name):
@@ -127,7 +137,7 @@ class SchemaMixin:
         for indexer in indexers:
             document_schema, edge_schema = self._arango_collection_schema_for_indexer(
                 indexer)
-            ensure_collection_with_schema(
+            self._ensure_collection_with_schema(
                 indexer.asset_name,
                 document_schema,
             )
@@ -136,7 +146,7 @@ class SchemaMixin:
                 continue
 
             edge_name = self.get_edge_name(indexer)
-            ensure_collection_with_schema(
+            self._ensure_collection_with_schema(
                 edge_name,
                 edge_schema,
                 edge=True,

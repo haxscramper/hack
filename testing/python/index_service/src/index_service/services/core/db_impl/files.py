@@ -1,8 +1,10 @@
 from pathlib import Path
+from beartype import beartype
 
 from index_service.services.core.types import FileHash, FileRef, RootRef
 
 
+@beartype
 class FileReferenceMixin:
 
     def _load_roots_from_db(self) -> None:

@@ -5,6 +5,7 @@ from beartype.typing import Sequence, Optional
 from pydantic import BaseModel, Field
 
 from index_service.gui.file_tree.column_model import ColumnSpec
+from index_service.gui.file_tree.file_tree_column import FileTreeColumnSpec
 from index_service.services.core.db import IndexDatabase
 from index_service.services.core.job_types import BaseIndexer, RunContext
 from index_service.services.core.types import FileHash
@@ -43,30 +44,87 @@ def build_file_tree(
     db: IndexDatabase,
     root_directories: Sequence[Path],
     indexers: Sequence[BaseIndexer],
-    columns: Sequence[type[ColumnSpec]],
+    columns: Sequence[type[FileTreeColumnSpec]],
 ) -> list[FileTreeNode]:
-    cursor = db.aql.execute(AQL_FILE_PATHS)
+    with ctx.trace_scope("fetch file paths"):
+        file_paths = [
+            FilePathResult.model_validate(item) for item in db.aql.execute(AQL_FILE_PATHS)
+        ]
+
+    rooted_paths: list[tuple[Path, FilePathResult]] = []
+
+    for result in file_paths:
+        matching_roots = [
+            root for root in root_directories if result.path.is_relative_to(root)
+        ]
+
+        if matching_roots:
+            rooted_paths.append((
+                max(matching_roots, key=lambda root: len(root.parts)),
+                result,
+            ))
+
+    hashes = list(dict.fromkeys(FileHash(hash=result.hash) for _, result in rooted_paths))
+    assets_by_hash: dict[str, dict[str, BaseModel]] = {
+        file_hash.hash: {} for file_hash in hashes
+    }
+
+    with ctx.trace_scope("fetch indexer results"):
+        for indexer in indexers:
+            available_hashes = [
+                file_hash for file_hash in hashes
+                if db.has_indexer_result(file_hash, indexer)
+            ]
+
+            if not available_hashes:
+                continue
+
+            with ctx.trace_scope(
+                    "batch indexer",
+                    asset_name=indexer.asset_name,
+                    file_count=len(available_hashes),
+            ):
+                results = db.get_indexer_result_batch(
+                    available_hashes,
+                    indexer,
+                )
+
+            for file_hash, result in zip(available_hashes, results, strict=True):
+                assets_by_hash[file_hash.hash][indexer.asset_name] = result
+
+    flat_nodes: list[tuple[Path, FileTreeNode]] = []
+
+    with ctx.trace_scope("build flat file nodes"):
+        for root_path, result in rooted_paths:
+            file_hash = FileHash(hash=result.hash)
+
+            flat_nodes.append((
+                root_path,
+                FileTreeNode(
+                    path=result.path,
+                    is_directory=False,
+                    hash=file_hash,
+                    columns={
+                        column.column_name:
+                            column.initColumnData(
+                                path=result.path,
+                                hash=file_hash,
+                                assets=assets_by_hash[file_hash.hash],
+                                is_directory=False,
+                                nested=[],
+                            ) for column in columns
+                    },
+                ),
+            ))
 
     nodes: dict[tuple[Path, Path], FileTreeNode] = {}
     roots: list[FileTreeNode] = []
 
-    for item in cursor:
-        with ctx.trace_scope("add file to tree"):
-            result = FilePathResult.model_validate(item)
-
-            matching_roots = [
-                root for root in root_directories if result.path.is_relative_to(root)
-            ]
-
-            if not matching_roots:
-                continue
-
-            log.info(f"OK {result.path}")
-
-            root_path = max(matching_roots, key=lambda root: len(root.parts))
+    with ctx.trace_scope("arrange file tree"):
+        for root_path, file_node in flat_nodes:
             root_key = (root_path, root_path)
-
             root_node = nodes.get(root_key)
+
             if root_node is None:
                 root_node = FileTreeNode(
                     path=root_path,
@@ -75,7 +133,7 @@ def build_file_tree(
                 nodes[root_key] = root_node
                 roots.append(root_node)
 
-            relative_path = result.path.relative_to(root_path)
+            relative_path = file_node.path.relative_to(root_path)
             parent = root_node
             current_path = root_path
 
@@ -94,28 +152,10 @@ def build_file_tree(
 
                 parent = directory
 
-            file_hash = FileHash(hash=result.hash)
-            assets: dict[str, BaseModel] = {}
+            parent.nested.append(file_node)
 
-            with ctx.trace_scope("add indexers"):
-                for indexer in indexers:
-                    if db.has_indexer_result(file_hash, indexer):
-                        with ctx.trace_scope("single indexer",
-                                             asset_name=indexer.asset_name):
-                            assets[indexer.asset_name] = db.get_indexer_result(
-                                file_hash,
-                                indexer,
-                            )
-
-            parent.nested.append(
-                FileTreeNode(
-                    path=result.path,
-                    is_directory=False,
-                    hash=file_hash,
-                    columns={
-                        c.column_name: c.initColumnData(result.path, file_hash, assets)
-                        for c in columns
-                    },
-                ))
+    for i, root in enumerate(roots):
+        Path(f"/tmp/result_{i}.json").write_text(
+            root.model_dump_json(indent=2, serialize_as_any=True))
 
     return roots
