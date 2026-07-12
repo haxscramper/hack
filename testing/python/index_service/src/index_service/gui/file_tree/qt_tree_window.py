@@ -14,6 +14,7 @@ from index_service.gui.file_tree.base_tree_model import build_file_tree
 from index_service.gui.file_tree.column_model import ColumnSpec
 from index_service.gui.file_tree.file_hash_column import FileHashColumnSpec
 from index_service.gui.file_tree.file_name_column import FileNameColumnSpec
+from index_service.gui.file_tree.file_tree_column import FileTreeColumnSpec
 from index_service.gui.file_tree.image_hash_column import ImageHashColumnSpec
 from index_service.gui.file_tree.qt_tree_model import FileTreeModel
 from index_service.gui.file_tree.wd_tags_column import WdTagsColumnSpec
@@ -42,13 +43,13 @@ class FileTreeQueryWindow(QMainWindow):
         QCoreApplication.setOrganizationName("haxscramper")
         QCoreApplication.setApplicationName("haxdex-tree-view")
 
-        columns: list[ColumnSpec] = [
+        columns: list[FileTreeColumnSpec] = [
             FileNameColumnSpec(),
             # FileHashColumnSpec(),
             # WdTagsColumnSpec(),
         ]
 
-        column_types: list[type[ColumnSpec]] = [FileNameColumnSpec]
+        column_types: list[type[FileTreeColumnSpec]] = [FileNameColumnSpec]
 
         if file_tree_view.reference_dir:
             column_types.append(ImageHashColumnSpec)

@@ -3,13 +3,25 @@ from pathlib import Path
 from PySide6.QtCore import QModelIndex, Qt
 from beartype import beartype
 
-from index_service.gui.file_tree.base_tree_model import FileTreeNode
 from index_service.gui.file_tree.column_model import ColumnSpec
 from beartype.typing import Any, cast, Optional, ClassVar
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from abc import ABC, abstractmethod
 
 from index_service.services.core.types import AnyModel, FileHash
+
+
+class FilePathResult(BaseModel):
+    path: Path
+    hash: str
+
+
+class FileTreeNode(BaseModel):
+    path: Path
+    is_directory: bool
+    hash: FileHash | None = None
+    columns: dict[str, Optional[BaseModel]] = Field(default_factory=dict)
+    nested: list["FileTreeNode"] = Field(default_factory=list)
 
 
 @beartype

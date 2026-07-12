@@ -3,10 +3,10 @@ from pathlib import Path
 from PySide6.QtCore import QModelIndex, Qt
 from beartype import beartype
 
-from beartype.typing import Any, cast
+from beartype.typing import Any, cast, Optional
 from pydantic import BaseModel
 
-from index_service.gui.file_tree.file_tree_column import FileTreeColumnSpec
+from index_service.gui.file_tree.file_tree_column import FileTreeColumnSpec, FileTreeNode
 from index_service.services.core.types import FileHash
 
 
@@ -20,8 +20,13 @@ class FileNameColumnSpec(FileTreeColumnSpec):
     column_name = "file_name"
 
     @staticmethod
-    def initColumnData(path: Path, hash: FileHash, assets: dict[str,
-                                                                BaseModel]) -> BaseModel:
+    def initColumnData(
+        path: Path,
+        hash: Optional[FileHash],
+        is_directory: bool,
+        assets: dict[str, BaseModel],
+        nested: list[FileTreeNode],
+    ) -> BaseModel:
         return FileNameData(name=path.name)
 
     def __init__(self) -> None:

@@ -28,8 +28,16 @@ class ImageHashColumnSpec(FileTreeColumnSpec):
     column_type = ImageHashData
 
     @staticmethod
-    def initColumnData(path: Path, hash: FileHash,
-                       assets: dict[str, BaseModel]) -> Optional[BaseModel]:
+    def initColumnData(
+        path: Path,
+        hash: Optional[FileHash],
+        is_directory: bool,
+        assets: dict[str, BaseModel],
+        nested: list[FileTreeNode],
+    ) -> Optional[BaseModel]:
+        if is_directory:
+            return None
+
         if ImageHashIndexer.asset_name in assets:
             result = cast(ImageHashIndexerResult, assets.get(ImageHashIndexer.asset_name))
             if result.perceptual:
@@ -78,13 +86,11 @@ class ImageHashColumnSpec(FileTreeColumnSpec):
     def _hamming_distance(left: int, right: int) -> int:
         return (left ^ right).bit_count()
 
-    def _matches(self, node: FileTreeNode) -> list[tuple[int, Path]]:
-        image_hash = node.assets.get("image_hash")
-
-        if not isinstance(image_hash, ImageHashIndexerResult):
+    def _matches(self, node: Optional[ImageHashData]) -> list[tuple[int, Path]]:
+        if not node:
             return []
 
-        perceptual_hash = self._parse_hash(image_hash.perceptual)
+        perceptual_hash = self._parse_hash(node.hash)
         cached = self._match_cache.get(perceptual_hash)
 
         if cached is not None:
@@ -119,7 +125,7 @@ class ImageHashColumnSpec(FileTreeColumnSpec):
         index: QModelIndex,
         role: int = Qt.ItemDataRole.DisplayRole,
     ) -> Any:
-        matches = self._matches(self.node(index))
+        matches = self._matches(cast(Optional[ImageHashData], self.getColumnData(index)))
 
         if not matches:
             return None

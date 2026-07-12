@@ -4,8 +4,7 @@ from beartype import beartype
 from beartype.typing import Sequence, Optional
 from pydantic import BaseModel, Field
 
-from index_service.gui.file_tree.column_model import ColumnSpec
-from index_service.gui.file_tree.file_tree_column import FileTreeColumnSpec
+from index_service.gui.file_tree.file_tree_column import FileTreeColumnSpec, FileTreeNode, FilePathResult
 from index_service.services.core.db import IndexDatabase
 from index_service.services.core.job_types import BaseIndexer, RunContext
 from index_service.services.core.types import FileHash
@@ -23,19 +22,6 @@ FOR file IN files
       hash: entry.hash.hash
     }
 """
-
-
-class FilePathResult(BaseModel):
-    path: Path
-    hash: str
-
-
-class FileTreeNode(BaseModel):
-    path: Path
-    is_directory: bool
-    hash: FileHash | None = None
-    columns: dict[str, Optional[BaseModel]] = Field(default_factory=dict)
-    nested: list["FileTreeNode"] = Field(default_factory=list)
 
 
 @beartype
@@ -121,38 +107,57 @@ def build_file_tree(
     roots: list[FileTreeNode] = []
 
     with ctx.trace_scope("arrange file tree"):
-        for root_path, file_node in flat_nodes:
-            root_key = (root_path, root_path)
-            root_node = nodes.get(root_key)
+        files_by_parent: dict[tuple[Path, Path], list[FileTreeNode]] = {}
+        directory_paths: dict[Path, set[Path]] = {}
 
-            if root_node is None:
-                root_node = FileTreeNode(
-                    path=root_path,
-                    is_directory=True,
-                )
-                nodes[root_key] = root_node
-                roots.append(root_node)
+        for root_path, file_node in flat_nodes:
+            directory_paths.setdefault(root_path, set()).add(root_path)
 
             relative_path = file_node.path.relative_to(root_path)
-            parent = root_node
-            current_path = root_path
+            parent_path = root_path
 
             for part in relative_path.parts[:-1]:
-                current_path /= part
-                directory_key = (root_path, current_path)
+                next_path = parent_path / part
+                directory_paths[root_path].add(next_path)
+                parent_path = next_path
 
-                directory = nodes.get(directory_key)
-                if directory is None:
-                    directory = FileTreeNode(
-                        path=current_path,
-                        is_directory=True,
-                    )
-                    nodes[directory_key] = directory
-                    parent.nested.append(directory)
+            files_by_parent.setdefault((root_path, parent_path), []).append(file_node)
 
-                parent = directory
+        def build_directory(
+            root_path: Path,
+            directory_path: Path,
+        ) -> FileTreeNode:
+            nested: list[FileTreeNode] = []
 
-            parent.nested.append(file_node)
+            child_directories = sorted(
+                path for path in directory_paths[root_path]
+                if path.parent == directory_path and path != directory_path)
+
+            for child_path in child_directories:
+                nested.append(build_directory(root_path, child_path))
+
+            nested.extend(files_by_parent.get((root_path, directory_path), []),)
+
+            return FileTreeNode(
+                path=directory_path,
+                is_directory=True,
+                hash=None,
+                columns={
+                    column.column_name:
+                        column.initColumnData(
+                            path=directory_path,
+                            hash=None,
+                            is_directory=True,
+                            assets={},
+                            nested=nested,
+                        ) for column in columns
+                },
+                nested=nested,
+            )
+
+        roots = [
+            build_directory(root_path, root_path) for root_path in sorted(directory_paths)
+        ]
 
     for i, root in enumerate(roots):
         Path(f"/tmp/result_{i}.json").write_text(

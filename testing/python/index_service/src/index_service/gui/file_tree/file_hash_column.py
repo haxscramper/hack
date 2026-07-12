@@ -5,7 +5,7 @@ from beartype import beartype
 from beartype.typing import Any
 from pydantic import BaseModel
 
-from index_service.gui.file_tree.file_tree_column import FileTreeColumnSpec
+from index_service.gui.file_tree.file_tree_column import FileTreeColumnSpec, FileTreeNode
 from index_service.services.core.types import FileHash
 from beartype.typing import cast, Optional
 
@@ -20,9 +20,18 @@ class FileHashColumnSpec(FileTreeColumnSpec):
     column_type = FileHashData
 
     @staticmethod
-    def initColumnData(path: Path, hash: FileHash,
-                       assets: dict[str, BaseModel]) -> Optional[BaseModel]:
-        return FileHashData(hash=hash.hash)
+    def initColumnData(
+        path: Path,
+        hash: Optional[FileHash],
+        is_directory: bool,
+        assets: dict[str, BaseModel],
+        nested: list[FileTreeNode],
+    ) -> Optional[BaseModel]:
+        if hash:
+            return FileHashData(hash=hash.hash)
+
+        else:
+            return None
 
     def __init__(self) -> None:
         super().__init__("Hash")
@@ -34,8 +43,8 @@ class FileHashColumnSpec(FileTreeColumnSpec):
     ) -> Any:
         node = cast(FileHashData, self.getColumnData(index))
 
-        match role:
-            case Qt.ItemDataRole.DisplayRole | Qt.ItemDataRole.EditRole:
+        match role, node:
+            case Qt.ItemDataRole.DisplayRole | Qt.ItemDataRole.EditRole, FileHashData():
                 return node.hash
 
             case _:
