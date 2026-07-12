@@ -5,6 +5,9 @@ from PyQt6.QtWidgets import QWidget
 from beartype import beartype
 from dataclasses import dataclass
 import traceback
+import logging
+
+log = logging.getLogger(__name__)
 
 QUERY_FILENAME = "<glom-query>"
 QUERY_ERROR_INDICATOR = 8
@@ -212,6 +215,7 @@ class PythonQueryEditor(QsciScintilla):
             last_line = max(0, self.lines() - 1)
             self.annotate(last_line, str(error), 0)
             self.ensureLineVisible(last_line)
+            log.error("got error without location")
             return
 
         location = error.location

@@ -71,6 +71,8 @@ def build_filter(query_text: str) -> FilterFn:
         QUERY_FILENAME,
     )
 
+    log.info(f"building query from {query_text}")
+
     namespace: dict = {}
     exec("import glom", namespace)
     namespace["FileTreeNode"] = FileTreeNode
@@ -245,9 +247,6 @@ class FileTreeRegion(QWidget):
 
     def compute_filtered(self) -> list[FileTreeNode] | None:
         text = self.query_text()
-        if not text.strip():
-            return None
-
         try:
             filter_fn = build_filter(text)
 
@@ -271,6 +270,7 @@ class FileTreeRegion(QWidget):
             raise
 
     def _on_run(self, checked: bool = False) -> None:
+        log.info("run clicked")
         self.query_submitted.emit(self)
 
 
