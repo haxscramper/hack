@@ -1,8 +1,10 @@
+import glom
 from beartype import beartype
 from beartype.typing import Any, Sequence, cast
 
 from PyQt6.QtCore import QModelIndex, QObject, Qt
 
+from index_service.gui.common.qt_model_roles import CustomModelRole
 from index_service.gui.file_tree.base_tree_model import FileTreeNode
 from index_service.gui.file_tree.column_model import AbstractColumnItemModel, ColumnSpec
 
@@ -45,6 +47,9 @@ class FileTreeModel(AbstractColumnItemModel):
             case _:
                 return 0
 
+    def node(self, index: QModelIndex) -> FileTreeNode:
+        return cast(FileTreeNode, index.internalPointer())
+
     def index(
             self,
             row: int,
@@ -61,6 +66,21 @@ class FileTreeModel(AbstractColumnItemModel):
             return QModelIndex()
 
         return self.createIndex(row, column, nodes[row])
+
+    def data(
+        self,
+        index: QModelIndex,
+        role: int = Qt.ItemDataRole.DisplayRole,
+    ) -> Any:
+        match role:
+            case CustomModelRole.HashRole:
+                return glom.glom(self.node(index), "hash.hash", default=None)
+
+            case CustomModelRole.PathRole:
+                return self.node(index).path
+
+            case _:
+                return super().data(index, role)
 
     def parent(self, index: QModelIndex) -> QModelIndex:
         if not index.isValid():

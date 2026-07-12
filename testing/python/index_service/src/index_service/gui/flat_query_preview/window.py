@@ -125,5 +125,5 @@ class FlatQueryViewWindow(QMainWindow):
         hash = FileHash(hash=hash_str)
         self._current_hash = hash
 
-        log.info("Selected hash=%s", hash.hash)
+        log.info(f"Selected hash {hash.hash}")
         self._preview.show_hash(hash)

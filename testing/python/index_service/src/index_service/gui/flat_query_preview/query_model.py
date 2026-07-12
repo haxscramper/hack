@@ -10,6 +10,7 @@ from PyQt6.QtCore import (
     Qt,
 )
 
+from index_service.gui.common.qt_model_roles import CustomModelRole
 from index_service.services.core.db import IndexDatabase
 from index_service.services.core.types import FileHash
 
@@ -18,9 +19,6 @@ log = logging.getLogger(__name__)
 
 @beartype
 class QueryResultModel(QAbstractListModel):
-    HashRole = Qt.ItemDataRole.UserRole + 1
-    PathRole = Qt.ItemDataRole.UserRole + 2
-    ExtraRole = Qt.ItemDataRole.UserRole + 3
 
     def __init__(self,
                  db: IndexDatabase,
@@ -92,10 +90,10 @@ class QueryResultModel(QAbstractListModel):
         hash = doc.get("hash")
         if role == Qt.ItemDataRole.DisplayRole:
             return str(hash)
-        if role == self.HashRole:
+        if role == CustomModelRole.HashRole:
             return hash
 
-        if role == self.PathRole:
+        if role == CustomModelRole.PathRole:
             if hash not in self._paths:
                 paths = [
                     self._db.get_path(p)
@@ -106,6 +104,6 @@ class QueryResultModel(QAbstractListModel):
 
             return self._paths[hash]
 
-        if role == self.ExtraRole:
+        if role == CustomModelRole.ExtraRole:
             return {k: v for k, v in doc.items() if k != "hash"}
         return None
