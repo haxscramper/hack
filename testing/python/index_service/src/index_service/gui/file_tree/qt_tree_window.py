@@ -1,4 +1,5 @@
 import json
+import linecache
 from pathlib import Path
 
 from PyQt6.Qsci import QsciScintilla, QsciLexerPython
@@ -30,7 +31,7 @@ from index_service.gui.file_tree.file_duplicate_column import FileDuplicateColum
 from index_service.gui.file_tree.file_name_column import FileNameColumnSpec
 from index_service.gui.file_tree.file_tree_column import FileTreeColumnSpec
 from index_service.gui.file_tree.image_hash_column import ImageHashColumnSpec
-from index_service.gui.file_tree.python_code_editor import PythonQueryEditor
+from index_service.gui.file_tree.python_code_editor import PythonQueryEditor, QUERY_FILENAME, QueryError, as_query_error
 from index_service.gui.file_tree.qt_tree_model import FileTreeModel
 from index_service.services.core.db import IndexDatabase
 from index_service.services.core.job_types import BaseIndexer, RunContext
@@ -63,16 +64,23 @@ def filter_tree(nodes: list[FileTreeNode], filter_fn: FilterFn) -> list[FileTree
 
 @beartype
 def build_filter(query_text: str) -> FilterFn:
+    linecache.cache[QUERY_FILENAME] = (
+        len(query_text),
+        None,
+        query_text.splitlines(keepends=True),
+        QUERY_FILENAME,
+    )
+
     namespace: dict = {}
     exec("import glom", namespace)
     namespace["FileTreeNode"] = FileTreeNode
 
-    code = compile(query_text, "<glom-query>", "exec")
+    code = compile(query_text, QUERY_FILENAME, "exec")
     exec(code, namespace)
 
     filter_obj = namespace.get("filter")
     if filter_obj is None or not callable(filter_obj):
-        raise ValueError("query must define a callable named 'filter'")
+        raise QueryError("query must define a callable named 'filter'")
 
     def filter_fn(nodes: list[FileTreeNode]) -> list[FileTreeNode]:
         return list(filter_obj(nodes))
@@ -222,7 +230,7 @@ class FileTreeRegion(QWidget):
             self.saved_query_combo.setCurrentIndex(index)
 
     def query_text(self) -> str:
-        return self.query_edit.text().strip()
+        return self.query_edit.text()
 
     def selected_nodes(self) -> list[FileTreeNode]:
         selection = self.tree_view.selectionModel()
@@ -237,18 +245,30 @@ class FileTreeRegion(QWidget):
 
     def compute_filtered(self) -> list[FileTreeNode] | None:
         text = self.query_text()
-        if not text:
+        if not text.strip():
             return None
 
-        filter_fn = build_filter(text)
+        try:
+            filter_fn = build_filter(text)
 
-        selected = self.selected_nodes()
-        scope = selected if selected else self._nodes
+            selected = self.selected_nodes()
+            scope = selected if selected else self._nodes
 
-        log.info("Running filter")
-        result = filter_tree(scope, filter_fn)
-        log.debug("filter OK")
-        return result
+            log.info("Running filter")
+            result = filter_tree(scope, filter_fn)
+            log.debug("filter OK")
+            return result
+
+        except QueryError:
+            raise
+
+        except Exception as exc:
+            query_error = as_query_error(exc)
+            if query_error is not None:
+                raise query_error from exc
+
+            # This was an application/data-model error, not an error in query code.
+            raise
 
     def _on_run(self, checked: bool = False) -> None:
         self.query_submitted.emit(self)
@@ -364,6 +384,11 @@ class FileTreeQueryWindow(QMainWindow):
     def _on_query_submitted(self, source_region: FileTreeRegion) -> None:
         try:
             filtered = source_region.compute_filtered()
+
+        except QueryError as error:
+            source_region.query_edit.show_query_error(error)
+            return
+
         except Exception as error:
             log.exception("glom query failed")
             QMessageBox.warning(self, "Query error", str(error))

@@ -1,8 +1,60 @@
 from PyQt6.Qsci import QsciLexerPython, QsciScintilla
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFontDatabase, QKeyEvent
+from PyQt6.QtGui import QFontDatabase, QKeyEvent, QColor
 from PyQt6.QtWidgets import QWidget
 from beartype import beartype
+from dataclasses import dataclass
+import traceback
+
+QUERY_FILENAME = "<glom-query>"
+QUERY_ERROR_INDICATOR = 8
+
+
+@dataclass(frozen=True)
+class QueryLocation:
+    line: int  # QScintilla: zero-based
+    start_column: int  # QScintilla: zero-based
+    end_column: int  # exclusive
+
+
+class QueryError(Exception):
+
+    def __init__(self, message: str, location: QueryLocation | None = None) -> None:
+        super().__init__(message)
+        self.location = location
+
+
+def query_exception_location(exc: Exception) -> QueryLocation | None:
+    if isinstance(exc, SyntaxError) and exc.filename == QUERY_FILENAME:
+        # SyntaxError lines are one-based, and offsets are one-based.
+        line = max(0, (exc.lineno or 1) - 1)
+        start = max(0, (exc.offset or 1) - 1)
+        end = max(start + 1, (exc.end_offset or (start + 2)) - 1)
+        return QueryLocation(line, start, end)
+
+    # The last matching entry is the innermost source location in query code.
+    frames = traceback.extract_tb(exc.__traceback__)
+    for frame in reversed(frames):
+        if frame.filename == QUERY_FILENAME:
+            # FrameSummary columns are already zero-based.
+            start = frame.colno or 0
+            end = frame.end_colno or (start + 1)
+            return QueryLocation(frame.lineno - 1, start, max(start + 1, end))
+
+    return None
+
+
+def as_query_error(exc: Exception) -> QueryError | None:
+    location = query_exception_location(exc)
+    if location is None:
+        return None
+
+    if isinstance(exc, SyntaxError):
+        message = exc.msg
+    else:
+        message = f"{type(exc).__name__}: {exc}"
+
+    return QueryError(message, location)
 
 
 @beartype
@@ -52,6 +104,18 @@ class PythonQueryEditor(QsciScintilla):
         self.setMarginWidth(0, "00000")
 
         self.setWrapMode(QsciScintilla.WrapMode.WrapNone)
+
+        self.indicatorDefine(
+            QsciScintilla.IndicatorStyle.SquiggleIndicator,
+            QUERY_ERROR_INDICATOR,
+        )
+
+        self.setIndicatorForegroundColor(
+            QColor("#d73a49"),
+            QUERY_ERROR_INDICATOR,
+        )
+
+        self.setAnnotationDisplay(QsciScintilla.AnnotationDisplay.AnnotationBoxed,)
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
         modifiers = event.modifiers()
@@ -127,3 +191,38 @@ class PythonQueryEditor(QsciScintilla):
         self.setSelection(line, 0, line, len(content))
         self.replaceSelectedText(updated)
         self.setCursorPosition(line, max(0, updated_column))
+
+    def clear_query_error(self) -> None:
+        self.clearAnnotations()
+
+        last_line = self.lines() - 1
+        last_column = len(self.text(last_line))
+        self.clearIndicatorRange(
+            0,
+            0,
+            last_line,
+            last_column,
+            QUERY_ERROR_INDICATOR,
+        )
+
+    def show_query_error(self, error: QueryError) -> None:
+        self.clear_query_error()
+
+        if error.location is None:
+            last_line = max(0, self.lines() - 1)
+            self.annotate(last_line, str(error), 0)
+            self.ensureLineVisible(last_line)
+            return
+
+        location = error.location
+
+        self.fillIndicatorRange(
+            location.line,
+            location.start_column,
+            location.line,
+            location.end_column,
+            QUERY_ERROR_INDICATOR,
+        )
+        self.annotate(location.line, str(error), 0)
+        self.setCursorPosition(location.line, location.start_column)
+        self.ensureLineVisible(location.line)
