@@ -19,6 +19,7 @@ from index_service.cli.cli_config import FileTreeViewConfig
 from index_service.gui.abstract_models.column_model import AbstractColumnItemModel
 from index_service.gui.collection_views.builder import WidgetBuilder
 from index_service.gui.collection_views.preview_pane import FilePreviewPane
+from index_service.gui.file_tree.action_list_view import ActionListView
 from index_service.gui.file_tree.base_tree_model import build_file_tree, FileTreeNode
 from index_service.gui.file_tree.file_duplicate_column import FileDuplicateColumnSpec
 from index_service.gui.file_tree.file_name_column import FileNameColumnSpec
@@ -26,6 +27,7 @@ from index_service.gui.file_tree.file_tree_column import FileTreeColumnSpec
 from index_service.gui.file_tree.python_code_editor import QUERY_FILENAME, QueryError
 from index_service.gui.file_tree.qt_tree_model import FileTreeModel
 from index_service.gui.file_tree.qt_tree_region import FileTreeRegion
+from index_service.gui.file_tree.query_filter import BaseAction
 from index_service.services.core.db import IndexDatabase
 from index_service.services.core.job_types import BaseIndexer, RunContext
 import logging
@@ -95,6 +97,7 @@ class FileTreeQueryWindow(QMainWindow):
 
         self.columns = columns
         self.regions: list[FileTreeRegion] = []
+        self.region_widgets: list[QWidget] = []
 
         self.main_splitter = QSplitter(Qt.Orientation.Horizontal, self)
         self.setCentralWidget(self.main_splitter)
@@ -130,6 +133,12 @@ class FileTreeQueryWindow(QMainWindow):
                 self.regions[0].query_edit.text(),
             )
 
+    def _add_action_region(self, actions: list[BaseAction]) -> ActionListView:
+        view = ActionListView(actions, parent=self.region_splitter)
+        self.region_splitter.addWidget(view)
+        self.region_widgets.append(view)
+        return view
+
     def _add_region(self, model: AbstractColumnItemModel) -> FileTreeRegion:
         is_first_region = not self.regions
 
@@ -145,6 +154,7 @@ class FileTreeQueryWindow(QMainWindow):
 
         self.region_splitter.addWidget(region)
         self.regions.append(region)
+        self.region_widgets.append(region)
 
         if is_first_region:
             region.query_edit.textChanged.connect(self._save_first_region_query)
@@ -153,7 +163,7 @@ class FileTreeQueryWindow(QMainWindow):
 
     def _on_query_submitted(self, source_region: FileTreeRegion) -> None:
         try:
-            filtered_model = source_region.compute_filtered()
+            result = source_region.compute_filtered()
 
         except QueryError as error:
             source_region.query_edit.show_query_error(error)
@@ -164,13 +174,19 @@ class FileTreeQueryWindow(QMainWindow):
             QMessageBox.warning(self, "Query error", str(error))
             return
 
-        source_index = self.regions.index(source_region)
-        while len(self.regions) > source_index + 1:
-            stale = self.regions.pop()
+        source_index = self.region_widgets.index(source_region)
+        while len(self.region_widgets) > source_index + 1:
+            stale = self.region_widgets.pop()
+            if isinstance(stale, FileTreeRegion):
+                self.regions.remove(stale)
             stale.setParent(None)
             stale.deleteLater()
 
-        self._add_region(filtered_model)
+        if result.filtered_model is not None:
+            self._add_region(result.filtered_model)
+
+        if result.actions:
+            self._add_action_region(result.actions)
 
     def restore_ui_state(self) -> None:
         settings = QSettings()

@@ -13,7 +13,7 @@ from index_service.gui.common.qt_model_roles import CustomModelRole
 import logging
 
 from index_service.gui.file_tree.qt_tree_model import FileTreeModel
-from index_service.gui.file_tree.query_filter import QueryFilterEvaluator
+from index_service.gui.file_tree.query_filter import QueryFilterEvaluator, QueryExecutionResult
 from index_service.services.core.types import FileHash
 
 log = logging.getLogger(__name__)
@@ -173,13 +173,13 @@ class FileTreeRegion(QWidget):
 
         return nodes
 
-    def compute_filtered(self) -> AbstractColumnItemModel:
+    def compute_filtered(self) -> QueryExecutionResult:
         text = self.query_text()
         selected = self.selected_nodes()
         scope = selected if selected else None
-        eval = QueryFilterEvaluator()
+        evaluator = QueryFilterEvaluator()
 
-        return eval.filter_model(
+        return evaluator.filter_model(
             self.model,
             text,
             scope_nodes=scope,
