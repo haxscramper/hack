@@ -101,9 +101,13 @@ class HashCache:
         mtime_ns: int,
         digest: str,
     ) -> None:
+        keys_to_delete = list()
         for key in self._lookup_cache:
             if key[0] == path:
-                del self._lookup_cache[key]
+                keys_to_delete.append(key)
+
+        for key in keys_to_delete:
+            del self._lookup_cache[key]
 
         self._lookup_cache[(path, size, mtime_ns)] = digest
         self._pending[path] = (size, mtime_ns, digest)

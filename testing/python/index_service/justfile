@@ -4,7 +4,16 @@ test:
         --capture=tee-sys \
         --disable-warnings \
         > test_results.tmp.log 2>&1
-        
+
+[env("DISPLAY", ":2")]
+test_gui:
+    uv run python -m pytest -vv -ra tests/gui \
+        --log-level=DEBUG \
+        --capture=tee-sys \
+        --disable-warnings \
+        > test_results.tmp.log 2>&1
+
+
 # "tests/test_search.py::test_full_text_search" 
 # "tests/test_search.py::test_full_text_search"
 

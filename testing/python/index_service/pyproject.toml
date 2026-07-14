@@ -37,6 +37,7 @@ dependencies = [
     "pyqt6-qscintilla>=2.14.1",
     "pyqt6-sip>=13.11.1",
     "pytest>=9.1.1",
+    "pytest-qt>=4.5.0",
     "python-arango==8.1.6",
     "python-magic>=0.4.27",
     "rich>=15.0.0",
