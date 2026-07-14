@@ -20,6 +20,7 @@ from PySide6.QtCore import (
     QSize,
     QSortFilterProxyModel,
     QThreadPool,
+    QTimer,
     Qt,
     Signal,
     QObject,
@@ -42,6 +43,15 @@ from PySide6.QtWidgets import (
     QTabWidget,
     QFileSystemModel,
 )
+
+import logging
+
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(levelname)s %(filename)s:%(lineno)d: %(message)s",
+)
+
+log = logging.getLogger(__name__)
 
 IMAGE_EXTENSIONS = {
     ".bmp",
@@ -401,7 +411,7 @@ class MixedTreeTileView(QAbstractItemView):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.zoom_factor = 1.0
-        self._root_index = QModelIndex()
+        self._root_index = QPersistentModelIndex()
         self._expanded: set[QPersistentModelIndex] = set()
         self._hovered: QPersistentModelIndex | None = None
 
@@ -413,6 +423,10 @@ class MixedTreeTileView(QAbstractItemView):
 
         self._dir_delegate: TileDelegate | None = None
         self._file_delegate: TileDelegate | None = None
+
+        self._layout_timer = QTimer(self)
+        self._layout_timer.setSingleShot(True)
+        self._layout_timer.timeout.connect(self._apply_pending_layout)
 
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -459,7 +473,7 @@ class MixedTreeTileView(QAbstractItemView):
         model.rowsRemoved.connect(self._on_structure_changed)
         model.modelReset.connect(self._on_structure_changed)
         model.layoutChanged.connect(self._on_structure_changed)
-        model.dataChanged.connect(lambda *a: self.viewport().update())
+        model.dataChanged.connect(self._on_data_changed)
         self.selectionModel().selectionChanged.connect(
             lambda *a: self.viewport().update())
         self.selectionModel().currentChanged.connect(
@@ -467,18 +481,30 @@ class MixedTreeTileView(QAbstractItemView):
         self._update_scrollbars()
 
     def setRootIndex(self, index: QModelIndex) -> None:
-        self._root_index = QModelIndex(index)
+        self._root_index = QPersistentModelIndex(index)
         if index.isValid() and self.model() and self.model().canFetchMore(
                 index):
             self.model().fetchMore(index)
         self._update_scrollbars()
 
     def rootIndex(self) -> QModelIndex:
-        return self._root_index
+        return QModelIndex(self._root_index)
 
-    def _on_structure_changed(self, *args) -> None:
+    def _on_data_changed(self, *args) -> None:
+        self._layout_dirty = True
+
+        if not self._layout_timer.isActive():
+            self._layout_timer.start(0)
+
+    def _apply_pending_layout(self) -> None:
         self._update_scrollbars()
         self.viewport().update()
+
+    def _on_structure_changed(self, *args) -> None:
+        self._layout_dirty = True
+
+        if not self._layout_timer.isActive():
+            self._layout_timer.start(0)
 
     # -- expansion ---------------------------------------------------------- #
     def _is_expanded(self, index: QModelIndex) -> bool:
@@ -866,8 +892,13 @@ def build_synthetic_root() -> SynNode:
 # --------------------------------------------------------------------------- #
 # Application wiring                                                           #
 # --------------------------------------------------------------------------- #
-def wrap_proxy(model: QAbstractItemModel) -> QSortFilterProxyModel:
-    proxy = QSortFilterProxyModel()
+def wrap_proxy(
+    model: QAbstractItemModel,
+    view: MixedTreeTileView,
+) -> QSortFilterProxyModel:
+    proxy = QSortFilterProxyModel(view)
+    model.setParent(proxy)
+
     proxy.setSourceModel(model)
     proxy.setSortRole(Qt.ItemDataRole.DisplayRole)
     proxy.setDynamicSortFilter(True)
@@ -876,10 +907,15 @@ def wrap_proxy(model: QAbstractItemModel) -> QSortFilterProxyModel:
 
 
 def make_filesystem_view() -> MixedTreeTileView:
-    fs = QFileSystemModel()
-    root_src = fs.setRootPath("/tmp")
-    proxy = wrap_proxy(fs)
     view = MixedTreeTileView()
+
+    fs = QFileSystemModel()
+    view._fs_ref = fs
+
+    root_src = fs.setRootPath("/tmp")
+    proxy = wrap_proxy(fs, view)
+    view._proxy_ref = proxy
+
     view.set_delegates(FSDirDelegate(), FSFileDelegate())
     view.setModel(proxy)
     view.setRootIndex(proxy.mapFromSource(root_src))
@@ -887,9 +923,14 @@ def make_filesystem_view() -> MixedTreeTileView:
 
 
 def make_synthetic_view() -> MixedTreeTileView:
-    model = SynModel(build_synthetic_root())
-    proxy = wrap_proxy(model)
     view = MixedTreeTileView()
+
+    model = SynModel(build_synthetic_root())
+    view._model_ref = model
+
+    proxy = wrap_proxy(model, view)
+    view._proxy_ref = proxy
+
     view.set_delegates(SynDirDelegate(), SynFileDelegate())
     view.setModel(proxy)
     view.setRootIndex(QModelIndex())
@@ -906,7 +947,8 @@ def main() -> None:
     win.setCentralWidget(tabs)
     win.resize(1000, 720)
     win.show()
-    app.exec()
+    result = app.exec()
+    log.info(f"{result}")
 
 
 if __name__ == "__main__":
