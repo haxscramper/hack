@@ -9,32 +9,23 @@ from beartype import beartype
 from beartype.typing import Callable, Sequence
 
 from PyQt6.QtWidgets import (
-    QAbstractItemView,
     QMainWindow,
     QMessageBox,
-    QPushButton,
     QSplitter,
-    QTreeView,
-    QVBoxLayout,
     QWidget,
-    QComboBox,
-    QHBoxLayout,
-    QInputDialog,
 )
 
 from index_service.cli.cli_config import FileTreeViewConfig
 from index_service.gui.abstract_models.column_model import AbstractColumnItemModel
 from index_service.gui.collection_views.builder import WidgetBuilder
 from index_service.gui.collection_views.preview_pane import FilePreviewPane
-from index_service.gui.common.qt_model_roles import CustomModelRole
 from index_service.gui.file_tree.base_tree_model import build_file_tree, FileTreeNode
 from index_service.gui.file_tree.file_duplicate_column import FileDuplicateColumnSpec
 from index_service.gui.file_tree.file_name_column import FileNameColumnSpec
 from index_service.gui.file_tree.file_tree_column import FileTreeColumnSpec
-from index_service.gui.file_tree.image_hash_column import ImageHashColumnSpec
-from index_service.gui.file_tree.python_code_editor import PythonQueryEditor, QUERY_FILENAME, QueryError, as_query_error
+from index_service.gui.file_tree.python_code_editor import QUERY_FILENAME, QueryError
 from index_service.gui.file_tree.qt_tree_model import FileTreeModel
-from index_service.gui.file_tree.query_filter import QueryFilterEvaluator
+from index_service.gui.file_tree.qt_tree_region import FileTreeRegion
 from index_service.services.core.db import IndexDatabase
 from index_service.services.core.job_types import BaseIndexer, RunContext
 import logging
@@ -44,225 +35,6 @@ from pathlib import Path
 from index_service.services.core.types import FileHash
 
 log = logging.getLogger(__name__)
-
-FilterFn = Callable[[list[FileTreeNode]], list[FileTreeNode]]
-
-
-@beartype
-def filter_tree(nodes: list[FileTreeNode], filter_fn: FilterFn) -> list[FileTreeNode]:
-    """
-    Apply `filter_fn` to every level of the tree, leaves first.
-
-    For each node the children are filtered before the node's sibling list is
-    passed to `filter_fn`. A node is deleted by not being returned from
-    `filter_fn`; an empty return simply yields an empty `nested` on the parent.
-    """
-    rebuilt: list[FileTreeNode] = []
-    for node in nodes:
-        copied = node.model_copy()
-        copied.nested = filter_tree(node.nested, filter_fn)
-        rebuilt.append(copied)
-
-    return list(filter_fn(rebuilt))
-
-
-@beartype
-def build_filter(query_text: str) -> FilterFn:
-    linecache.cache[QUERY_FILENAME] = (
-        len(query_text),
-        None,
-        query_text.splitlines(keepends=True),
-        QUERY_FILENAME,
-    )
-
-    log.info(f"building query from {query_text}")
-
-    namespace: dict = {}
-    exec("import glom", namespace)
-    namespace["FileTreeNode"] = FileTreeNode
-
-    code = compile(query_text, QUERY_FILENAME, "exec")
-    exec(code, namespace)
-
-    filter_obj = namespace.get("filter")
-    if filter_obj is None or not callable(filter_obj):
-        raise QueryError("query must define a callable named 'filter'")
-
-    def filter_fn(nodes: list[FileTreeNode]) -> list[FileTreeNode]:
-        return list(filter_obj(nodes))
-
-    return filter_fn
-
-
-@beartype
-class FileTreeRegion(QWidget):
-    """A single vertical region: file tree on top, Python query editor below."""
-
-    query_submitted = pyqtSignal(object)
-    named_queries_changed = pyqtSignal()
-    file_hash_activated = pyqtSignal(object)
-
-    def __init__(
-        self,
-        model: AbstractColumnItemModel,
-        columns: list[FileTreeColumnSpec],
-        parent: QWidget | None = None,
-    ) -> None:
-        super().__init__(parent)
-
-        self.columns = columns
-
-        self.model = model
-        self.tree_view = QTreeView(self)
-        self.tree_view.setIndentation(20)
-        self.tree_view.setSelectionBehavior(
-            QAbstractItemView.SelectionBehavior.SelectRows)
-        self.tree_view.setModel(self.model)
-        self.model.configureView(self.tree_view)
-        self.tree_view.doubleClicked.connect(self._on_tree_item_double_clicked)
-
-        self.query_edit = PythonQueryEditor(self)
-
-        self.saved_query_combo = QComboBox(self)
-        self.saved_query_combo.activated.connect(self._on_saved_query_selected)
-
-        self.save_query_button = QPushButton("Save query…", self)
-        self.save_query_button.clicked.connect(self._save_named_query)
-
-        query_toolbar = QWidget(self)
-        query_toolbar_layout = QHBoxLayout(query_toolbar)
-        query_toolbar_layout.setContentsMargins(0, 0, 0, 0)
-        query_toolbar_layout.addWidget(self.saved_query_combo, 1)
-        query_toolbar_layout.addWidget(self.save_query_button)
-
-        self.run_button = QPushButton("Filter →", self)
-        self.run_button.clicked.connect(self._on_run)
-
-        submit = QShortcut(QKeySequence("Ctrl+Return"), self.query_edit)
-        submit.activated.connect(self._on_run)
-
-        bottom = QWidget(self)
-        bottom_layout = QVBoxLayout(bottom)
-        bottom_layout.setContentsMargins(0, 0, 0, 0)
-        bottom_layout.addWidget(query_toolbar)
-        bottom_layout.addWidget(self.query_edit)
-        bottom_layout.addWidget(self.run_button)
-
-        self.splitter = QSplitter(Qt.Orientation.Vertical, self)
-        self.splitter.addWidget(self.tree_view)
-        self.splitter.addWidget(bottom)
-        self.splitter.setStretchFactor(0, 4)
-        self.splitter.setStretchFactor(1, 1)
-
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(self.splitter)
-
-        self.refresh_named_queries()
-
-    @staticmethod
-    def _read_named_queries() -> dict[str, str]:
-        serialized = QSettings().value("queries/named", "{}")
-        queries = json.loads(str(serialized))
-
-        if not isinstance(queries, dict):
-            raise ValueError("queries/named must contain a JSON object")
-
-        return {str(name): str(query) for name, query in queries.items()}
-
-    @staticmethod
-    def _write_named_queries(queries: dict[str, str]) -> None:
-        QSettings().setValue(
-            "queries/named",
-            json.dumps(queries, sort_keys=True),
-        )
-
-    def _on_tree_item_double_clicked(self, index) -> None:
-        hash_value = index.data(CustomModelRole.HashRole.value)
-        if hash_value is None:
-            log.info(f"hash value is None")
-        else:
-            self.file_hash_activated.emit(FileHash(hash=hash_value))
-
-    def refresh_named_queries(self) -> None:
-        selected_name = self.saved_query_combo.currentData()
-        queries = self._read_named_queries()
-
-        self.saved_query_combo.blockSignals(True)
-        self.saved_query_combo.clear()
-        self.saved_query_combo.addItem("Saved queries…", None)
-
-        for name in sorted(queries, key=str.casefold):
-            self.saved_query_combo.addItem(name, name)
-
-        if selected_name is not None:
-            index = self.saved_query_combo.findData(selected_name)
-            if index >= 0:
-                self.saved_query_combo.setCurrentIndex(index)
-
-        self.saved_query_combo.blockSignals(False)
-
-    def _on_saved_query_selected(self, index: int) -> None:
-        name = self.saved_query_combo.itemData(index)
-        if name is None:
-            return
-
-        query = self._read_named_queries()[name]
-        self.query_edit.setText(query)
-        self.query_edit.setFocus()
-
-    def _save_named_query(self, checked: bool = False) -> None:
-        name, accepted = QInputDialog.getText(
-            self,
-            "Save query",
-            "Query name:",
-        )
-        if not accepted:
-            return
-
-        name = name.strip()
-        if not name:
-            return
-
-        queries = self._read_named_queries()
-        queries[name] = self.query_edit.text()
-        self._write_named_queries(queries)
-
-        self.named_queries_changed.emit()
-
-        index = self.saved_query_combo.findData(name)
-        if index >= 0:
-            self.saved_query_combo.setCurrentIndex(index)
-
-    def query_text(self) -> str:
-        return self.query_edit.text()
-
-    def selected_nodes(self) -> list[FileTreeNode]:
-        selection = self.tree_view.selectionModel()
-        nodes: list[FileTreeNode] = []
-
-        for index in selection.selectedRows():
-            node = index.internalPointer()
-            if node is not None:
-                nodes.append(node)
-
-        return nodes
-
-    def compute_filtered(self) -> FileTreeModel:
-        text = self.query_text()
-        selected = self.selected_nodes()
-        scope = selected if selected else None
-        eval = QueryFilterEvaluator()
-
-        return eval.filter_model(
-            self.model,
-            text,
-            scope_nodes=scope,
-        )
-
-    def _on_run(self, checked: bool = False) -> None:
-        log.info("run clicked")
-        self.query_submitted.emit(self)
 
 
 @beartype
@@ -289,7 +61,7 @@ class FileTreeQueryWindow(QMainWindow):
         ]
 
         if file_tree_view.reference_dir:
-            reference_tree = build_file_tree(
+            reference_tree: list[FileTreeNode] = build_file_tree(
                 ctx=ctx,
                 db=db,
                 root_directories=[Path(file_tree_view.reference_dir)],
@@ -311,6 +83,12 @@ class FileTreeQueryWindow(QMainWindow):
             ],
             indexers=indexer_instances,
             columns=columns,
+        )
+
+        model = FileTreeModel(
+            columns=columns,
+            nodes=nodes,
+            parent=self,
         )
 
         self.resize(1200, 800)
@@ -337,7 +115,7 @@ class FileTreeQueryWindow(QMainWindow):
         self.main_splitter.setStretchFactor(0, 4)
         self.main_splitter.setStretchFactor(1, 1)
 
-        self._add_region(nodes)
+        self._add_region(model)
 
         self.restore_ui_state()
 
@@ -352,18 +130,15 @@ class FileTreeQueryWindow(QMainWindow):
                 self.regions[0].query_edit.text(),
             )
 
-    def _add_region(self, nodes: list[FileTreeNode]) -> FileTreeRegion:
+    def _add_region(self, model: AbstractColumnItemModel) -> FileTreeRegion:
         is_first_region = not self.regions
 
         region = FileTreeRegion(
-            model=FileTreeModel(
-                columns=self.columns,
-                nodes=nodes,
-                parent=self,
-            ),
+            model=model,
             columns=self.columns,
             parent=self.region_splitter,
         )
+
         region.query_submitted.connect(self._on_query_submitted)
         region.named_queries_changed.connect(self._refresh_named_queries)
         region.file_hash_activated.connect(self.preview_pane.show_hash)
@@ -395,7 +170,7 @@ class FileTreeQueryWindow(QMainWindow):
             stale.setParent(None)
             stale.deleteLater()
 
-        self._add_region(filtered_model.nodes)
+        self._add_region(filtered_model)
 
     def restore_ui_state(self) -> None:
         settings = QSettings()
