@@ -71,6 +71,22 @@ class QueryProgram:
 @beartype
 class QueryFilterEvaluator:
 
+    def _actions_tree(
+        self,
+        nodes: list[FileTreeNode],
+        actions_fn: ActionsFn,
+        provider: ActionProvider,
+    ) -> list[FileTreeNode]:
+        rebuilt: list[FileTreeNode] = []
+
+        for node in nodes:
+            copied = node.model_copy()
+            copied.nested = self._actions_tree(node.nested, actions_fn, provider)
+            rebuilt.append(copied)
+
+        actions_fn(provider, rebuilt)
+        return rebuilt
+
     def _filter_tree(self, nodes: list[FileTreeNode],
                      filter_fn: FilterFn) -> list[FileTreeNode]:
         rebuilt: list[FileTreeNode] = []
@@ -185,7 +201,8 @@ class QueryFilterEvaluator:
                 if program.actions_fn is None or program.action_provider is None:
                     raise QueryError("missing actions callable")
                 action_scope = filtered_nodes if filtered_nodes is not None else scope
-                program.actions_fn(program.action_provider, action_scope)
+                self._actions_tree(action_scope, program.actions_fn,
+                                   program.action_provider)
 
             actions: list[BaseAction] = []
             if program.action_provider is not None:
