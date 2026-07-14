@@ -284,12 +284,12 @@ def test_directory_emits_expanded_and_collapsed(
 
     click_index(window, qtbot, album)
 
-    assert expanded_spy.count() == 1
+    assert len(expanded_spy) == 1
     assert not view.visualRect(first_file).isNull()
 
     click_index(window, qtbot, album)
 
-    assert collapsed_spy.count() == 1
+    assert len(collapsed_spy) == 1
     assert view.visualRect(first_file).isNull()
 
 
@@ -309,8 +309,8 @@ def test_file_click_updates_current_index_and_selection(
 
     click_index(window, qtbot, first_file)
 
-    assert current_spy.count() == 1
-    assert selection_spy.count() == 1
+    assert len(current_spy) == 1
+    assert len(selection_spy) == 1
     assert view.currentIndex() == first_file
     assert view.selectionModel().isSelected(first_file)
 
@@ -327,7 +327,7 @@ def test_setting_tree_resets_model_and_view(gui_app_instance: MainWindow,) -> No
     replacement_index = find_index(window, "Replacement directory")
     old_index = find_index(window, "Album")
 
-    assert reset_spy.count() == 1
+    assert len(reset_spy) == 1
     assert replacement_index.isValid()
     assert not window.directory_view.visualRect(replacement_index).isNull()
     assert not old_index.isValid()

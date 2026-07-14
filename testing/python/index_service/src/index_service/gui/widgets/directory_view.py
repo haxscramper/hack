@@ -14,6 +14,7 @@ from PyQt6.QtCore import (
     QSize,
     QTimer,
     Qt,
+    pyqtSignal,
 )
 
 from PyQt6.QtGui import (
@@ -31,6 +32,8 @@ from PyQt6.QtWidgets import (
 )
 
 import logging
+
+from beartype import beartype
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -164,6 +167,7 @@ class Hit:
     depth: int
 
 
+@beartype
 class MixedTreeTileView(QAbstractItemView):
     CONTENT_MARGIN = 8
     INDENT = 18
@@ -174,10 +178,13 @@ class MixedTreeTileView(QAbstractItemView):
     BASE_ITEM_H = 96
     BASE_DIR_H = 30
 
+    expanded = pyqtSignal(QModelIndex)
+    collapsed = pyqtSignal(QModelIndex)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.zoom_factor = 1.0
-        self._root_index = QPersistentModelIndex()
+        self._root_index = QModelIndex()
         self._expanded: set[QPersistentModelIndex] = set()
         self._hovered: QPersistentModelIndex | None = None
 
@@ -247,7 +254,7 @@ class MixedTreeTileView(QAbstractItemView):
         self._on_structure_changed()
 
     def setRootIndex(self, index: QModelIndex) -> None:
-        self._root_index = QPersistentModelIndex(index)
+        self._root_index = index
         if index.isValid() and self.model() and self.model().canFetchMore(index):
             self.model().fetchMore(index)
         self._update_scrollbars()
@@ -301,12 +308,13 @@ class MixedTreeTileView(QAbstractItemView):
         self._dir_hits.clear()
         self._item_hits.clear()
         self._order.clear()
-        y = self._layout_children(self._root_index, 0, self.CONTENT_MARGIN)
+        y = self._layout_nested(self._root_index, 0, self.CONTENT_MARGIN)
         self._content_height = y + self.CONTENT_MARGIN
         self._layout_dirty = False
 
-    def _layout_children(self, parent: QModelIndex, depth: int, y: int) -> int:
+    def _layout_nested(self, parent: QModelIndex, depth: int, y: int) -> int:
         model = self.model()
+        assert model
         n = model.rowCount(parent)
         x = self.CONTENT_MARGIN + depth * self.INDENT
 
@@ -324,7 +332,7 @@ class MixedTreeTileView(QAbstractItemView):
             self._order.append(d)
             y += self.dir_height + 4
             if self._is_expanded(d):
-                y = self._layout_children(d, depth + 1, y)
+                y = self._layout_nested(d, depth + 1, y)
 
         if files:
             cols = self.flow_columns(depth)
