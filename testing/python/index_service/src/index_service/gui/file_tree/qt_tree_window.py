@@ -3,7 +3,7 @@ import linecache
 from pathlib import Path
 
 from PyQt6.Qsci import QsciScintilla, QsciLexerPython
-from PyQt6.QtCore import QCoreApplication, QSettings, Qt, pyqtSignal
+from PyQt6.QtCore import QAbstractItemModel, QCoreApplication, QSettings, Qt, pyqtSignal
 from PyQt6.QtGui import QCloseEvent, QFont, QKeySequence, QShortcut
 from beartype import beartype
 from beartype.typing import Callable, Sequence
@@ -23,6 +23,7 @@ from PyQt6.QtWidgets import (
 )
 
 from index_service.cli.cli_config import FileTreeViewConfig
+from index_service.gui.abstract_models.column_model import AbstractColumnItemModel
 from index_service.gui.collection_views.builder import WidgetBuilder
 from index_service.gui.collection_views.preview_pane import FilePreviewPane
 from index_service.gui.common.qt_model_roles import CustomModelRole
@@ -33,9 +34,12 @@ from index_service.gui.file_tree.file_tree_column import FileTreeColumnSpec
 from index_service.gui.file_tree.image_hash_column import ImageHashColumnSpec
 from index_service.gui.file_tree.python_code_editor import PythonQueryEditor, QUERY_FILENAME, QueryError, as_query_error
 from index_service.gui.file_tree.qt_tree_model import FileTreeModel
+from index_service.gui.file_tree.query_filter import QueryFilterEvaluator
 from index_service.services.core.db import IndexDatabase
 from index_service.services.core.job_types import BaseIndexer, RunContext
 import logging
+import json
+from pathlib import Path
 
 from index_service.services.core.types import FileHash
 
@@ -100,16 +104,15 @@ class FileTreeRegion(QWidget):
 
     def __init__(
         self,
-        nodes: list[FileTreeNode],
+        model: AbstractColumnItemModel,
         columns: list[FileTreeColumnSpec],
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
 
-        self._nodes = nodes
         self.columns = columns
 
-        self.model = FileTreeModel(nodes=nodes, parent=self, columns=columns)
+        self.model = model
         self.tree_view = QTreeView(self)
         self.tree_view.setIndentation(20)
         self.tree_view.setSelectionBehavior(
@@ -245,29 +248,17 @@ class FileTreeRegion(QWidget):
 
         return nodes
 
-    def compute_filtered(self) -> list[FileTreeNode] | None:
+    def compute_filtered(self) -> FileTreeModel:
         text = self.query_text()
-        try:
-            filter_fn = build_filter(text)
+        selected = self.selected_nodes()
+        scope = selected if selected else None
+        eval = QueryFilterEvaluator()
 
-            selected = self.selected_nodes()
-            scope = selected if selected else self._nodes
-
-            log.info("Running filter")
-            result = filter_tree(scope, filter_fn)
-            log.debug("filter OK")
-            return result
-
-        except QueryError:
-            raise
-
-        except Exception as exc:
-            query_error = as_query_error(exc)
-            if query_error is not None:
-                raise query_error from exc
-
-            # This was an application/data-model error, not an error in query code.
-            raise
+        return eval.filter_model(
+            self.model,
+            text,
+            scope_nodes=scope,
+        )
 
     def _on_run(self, checked: bool = False) -> None:
         log.info("run clicked")
@@ -365,7 +356,11 @@ class FileTreeQueryWindow(QMainWindow):
         is_first_region = not self.regions
 
         region = FileTreeRegion(
-            nodes=nodes,
+            model=FileTreeModel(
+                columns=self.columns,
+                nodes=nodes,
+                parent=self,
+            ),
             columns=self.columns,
             parent=self.region_splitter,
         )
@@ -383,7 +378,7 @@ class FileTreeQueryWindow(QMainWindow):
 
     def _on_query_submitted(self, source_region: FileTreeRegion) -> None:
         try:
-            filtered = source_region.compute_filtered()
+            filtered_model = source_region.compute_filtered()
 
         except QueryError as error:
             source_region.query_edit.show_query_error(error)
@@ -394,17 +389,13 @@ class FileTreeQueryWindow(QMainWindow):
             QMessageBox.warning(self, "Query error", str(error))
             return
 
-        if filtered is None:
-            return
-
-        # Drop every region to the right of the source (create-or-update).
         source_index = self.regions.index(source_region)
         while len(self.regions) > source_index + 1:
             stale = self.regions.pop()
             stale.setParent(None)
             stale.deleteLater()
 
-        self._add_region(filtered)
+        self._add_region(filtered_model.nodes)
 
     def restore_ui_state(self) -> None:
         settings = QSettings()
