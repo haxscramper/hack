@@ -3,7 +3,7 @@ from pathlib import Path
 from PyQt6.QtCore import QModelIndex, Qt
 from beartype import beartype
 
-from index_service.gui.file_tree.column_model import ColumnSpec
+from index_service.gui.abstract_models.column_model import ColumnSpec
 from beartype.typing import Any, cast, Optional, ClassVar
 from pydantic import BaseModel, Field
 from abc import ABC, abstractmethod
