@@ -43,6 +43,7 @@ dependencies = [
     "rich>=15.0.0",
     "sqlalchemy>=2.0.51",
     "tiktoken>=0.13.0",
+    "yapf>=0.43.0",
     "zmq>=0.0.0",
 ]
 

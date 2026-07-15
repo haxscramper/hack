@@ -62,6 +62,8 @@ class FileTreeQueryWindow(QMainWindow):
             FileNameColumnSpec(),
         ]
 
+        cache_db = Path("/tmp/haxdex_index_file_tree_cache.sqlite")
+
         if file_tree_view.reference_dir:
             reference_tree: list[FileTreeNode] = build_file_tree(
                 ctx=ctx,
@@ -72,6 +74,7 @@ class FileTreeQueryWindow(QMainWindow):
                     # ImageHashColumnSpec(None),
                     FileDuplicateColumnSpec(None),
                 ],
+                cache_path=cache_db,
             )
 
             # columns.append(ImageHashColumnSpec(reference_tree=reference_tree[0]))
@@ -85,6 +88,7 @@ class FileTreeQueryWindow(QMainWindow):
             ],
             indexers=indexer_instances,
             columns=columns,
+            cache_path=cache_db,
         )
 
         model = FileTreeModel(

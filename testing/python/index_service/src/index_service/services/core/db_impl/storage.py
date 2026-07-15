@@ -216,6 +216,10 @@ class StorageMixin:
         *,
         max_workers: int = 1,
     ) -> list[Any]:
+        """
+        Return the list of the indexer result models for the given list of hashes
+        in the same order as the file hashes were used.
+        """
         if not hashes:
             return []
 
