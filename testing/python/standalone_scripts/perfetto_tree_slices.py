@@ -1,5 +1,7 @@
 #!/usr/bin/env python
 import argparse
+import os
+import shutil
 import sys
 from collections import defaultdict
 
@@ -19,9 +21,6 @@ ORDER BY root_id, ts, depth
 
 
 def load_rows_from_trace(trace_path, bin_path, root_name):
-    import os
-    import shutil
-
     if not os.path.isfile(bin_path):
         found = shutil.which(bin_path)
         if found is None:
@@ -57,7 +56,7 @@ def fmt_dur(ns):
     return f"{ns} ns"
 
 
-def print_tree(rows):
+def print_tree(rows, max_depth=None, max_count=None):
     by_root = defaultdict(list)
     for r in rows:
         by_root[r["root_id"]].append(r)
@@ -72,20 +71,45 @@ def print_tree(rows):
 
         root = by_id[root_id]
 
-        print(f"\n=== {root['name']}  {fmt_dur(root['dur'])} ===")
+        # Determine which node ids are allowed to be printed.
+        allowed = None
+        if max_count is not None:
+            descendants = [r for r in subtree if r["id"] != root_id]
+            top = sorted(descendants, key=lambda x: x["dur"],
+                         reverse=True)[:max_count]
+            allowed = {root_id}
+            # Include ancestors of each selected node to keep the tree connected.
+            for node in top:
+                cur = node
+                while cur is not None and cur["id"] not in allowed:
+                    allowed.add(cur["id"])
+                    cur = by_id.get(cur["parent_id"])
 
-        def walk(node, indent):
+        # First pass: collect (tree_text, pct_parent, dur) respecting limits.
+        lines = []
+
+        def collect(node, indent):
+            if max_depth is not None and indent > max_depth:
+                return
+            if allowed is not None and node["id"] not in allowed:
+                return
             parent = by_id.get(node["parent_id"])
-            pct_parent = (100.0 * node["dur"] / parent["dur"]) if (
-                parent and parent["dur"]) else float("nan")
-            prefix = "  " * indent
-            print(
-                f"{prefix}{node['name']}  {pct_parent:5.1f}%  [{fmt_dur(node['dur'])}]"
-            )
+            pct_parent = (100.0 * node["dur"] / parent["dur"] if
+                          (parent and parent["dur"]) else float("nan"))
+            tree_text = "  " * indent + node["name"]
+            lines.append((tree_text, pct_parent, node["dur"]))
             for c in sorted(children[node["id"]], key=lambda x: x["ts"]):
-                walk(c, indent + 1)
+                collect(c, indent + 1)
 
-        walk(root, 0)
+        collect(root, 0)
+
+        # Second pass: align on the tree-formatted element.
+        width = max(len(t) for t, _, _ in lines)
+        print(f"\n=== {root['name']}  {fmt_dur(root['dur'])} ===")
+        for tree_text, pct_parent, dur in lines:
+            print(
+                f"{tree_text.ljust(width)}  {pct_parent:5.1f}%  [{fmt_dur(dur)}]"
+            )
 
 
 def main():
@@ -95,6 +119,16 @@ def main():
     ap.add_argument("--bin",
                     default="trace_processor",
                     help="path to trace_processor binary")
+    ap.add_argument("--max-depth",
+                    type=int,
+                    default=None,
+                    help="max relative nesting depth to print")
+    ap.add_argument(
+        "--max-count",
+        type=int,
+        default=None,
+        help="max number of nested elements to show (top by duration)",
+    )
     args = ap.parse_args()
 
     rows = load_rows_from_trace(args.input, args.bin, args.name)
@@ -103,7 +137,7 @@ def main():
         print("No matching slices found.", file=sys.stderr)
         sys.exit(1)
 
-    print_tree(rows)
+    print_tree(rows, max_depth=args.max_depth, max_count=args.max_count)
 
 
 if __name__ == "__main__":
