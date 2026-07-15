@@ -21,6 +21,7 @@ dependencies = [
     "msgpack>=1.1.2",
     "openai>=2.43.0",
     "pathspec>=1.1.1",
+    "perfetto>=0.57.2",
     "plotly>=6.8.0",
     "plumbum>=1.10.0",
     "pydantic>=2.13.4",
