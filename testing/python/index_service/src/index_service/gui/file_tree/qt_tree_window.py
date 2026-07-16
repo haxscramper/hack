@@ -27,7 +27,7 @@ from index_service.gui.file_tree.file_tree_column import FileTreeColumnSpec
 from index_service.gui.file_tree.python_code_editor import QUERY_FILENAME, QueryError
 from index_service.gui.file_tree.qt_tree_model import FileTreeModel
 from index_service.gui.file_tree.qt_tree_region import FileTreeRegion
-from index_service.gui.file_tree.query_filter import BaseAction
+from index_service.gui.file_tree.query_filter import BaseAction, ActionListModel
 from index_service.services.core.db import IndexDatabase
 from index_service.services.core.job_types import BaseIndexer, RunContext
 import logging
@@ -128,7 +128,7 @@ class FileTreeQueryWindow(QMainWindow):
         for region in self.regions:
             region.refresh_named_queries()
 
-    def _add_action_region(self, actions: list[BaseAction]) -> ActionListView:
+    def _add_action_region(self, actions: ActionListModel) -> ActionListView:
         view = ActionListView(actions, parent=self.region_splitter)
         self.region_splitter.addWidget(view)
         self.region_widgets.append(view)
@@ -173,11 +173,12 @@ class FileTreeQueryWindow(QMainWindow):
             stale.setParent(None)
             stale.deleteLater()
 
-        if result.filtered_model is not None:
-            self._add_region(result.filtered_model)
-
-        if result.actions:
-            self._add_action_region(result.actions)
+        if isinstance(result, AbstractColumnItemModel):
+            self._add_region(result)
+        elif isinstance(result, ActionListModel):
+            self._add_action_region(result)
+        else:
+            raise TypeError(f"Unsupported query result model: {type(result)!r}")
 
     def restore_ui_state(self) -> None:
         settings = QSettings()

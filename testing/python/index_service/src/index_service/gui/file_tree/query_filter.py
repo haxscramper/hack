@@ -54,9 +54,11 @@ class ActionProvider:
 
 
 @dataclass(slots=True)
-class QueryExecutionResult:
-    filtered_model: AbstractColumnItemModel | None
+class ActionListModel:
     actions: list[BaseAction]
+
+
+QueryResultModel = AbstractColumnItemModel | ActionListModel
 
 
 @dataclass(slots=True)
@@ -110,13 +112,17 @@ class QueryFilterEvaluator:
                 elif node.name == "actions":
                     has_actions = True
 
+        if has_filter and has_actions:
+            raise QueryError(
+                "query must define exactly one function: 'filter' or 'actions'")
+        if not has_filter and not has_actions:
+            raise QueryError(
+                "query must define exactly one function: 'filter' or 'actions'")
+
         return has_filter, has_actions
 
     def _build_program(self, query_text: str) -> QueryProgram:
         has_filter, has_actions = self._parse_query_shape(query_text)
-
-        if not has_filter and not has_actions:
-            raise QueryError("query must define function 'filter' and/or 'actions'")
 
         linecache.cache[QUERY_FILENAME] = (
             len(query_text),
@@ -175,7 +181,7 @@ class QueryFilterEvaluator:
         *,
         scope_nodes: list[FileTreeNode] | None = None,
         parent: QObject | None = None,
-    ) -> QueryExecutionResult:
+    ) -> QueryResultModel:
         try:
             program = self._build_program(query_text)
             scope = scope_nodes if scope_nodes else model.index(
@@ -184,34 +190,22 @@ class QueryFilterEvaluator:
                 QModelIndex(),
             ).internalPointer().nested
 
-            filtered_nodes: list[FileTreeNode] | None = None
-            filtered_model: AbstractColumnItemModel | None = None
-
             if program.has_filter:
                 if program.filter_fn is None:
                     raise QueryError("missing filter callable")
+
                 filtered_nodes = self._filter_tree(scope, program.filter_fn)
-                filtered_model = FileTreeModel(
+                return FileTreeModel(
                     nodes=filtered_nodes,
                     columns=model.columns,
                     parent=parent,
                 )
 
-            if program.has_actions:
-                if program.actions_fn is None or program.action_provider is None:
-                    raise QueryError("missing actions callable")
-                action_scope = filtered_nodes if filtered_nodes is not None else scope
-                self._actions_tree(action_scope, program.actions_fn,
-                                   program.action_provider)
+            if program.actions_fn is None or program.action_provider is None:
+                raise QueryError("missing actions callable")
 
-            actions: list[BaseAction] = []
-            if program.action_provider is not None:
-                actions = program.action_provider.actions
-
-            return QueryExecutionResult(
-                filtered_model=filtered_model,
-                actions=actions,
-            )
+            self._actions_tree(scope, program.actions_fn, program.action_provider)
+            return ActionListModel(actions=program.action_provider.actions)
 
         except QueryError:
             raise

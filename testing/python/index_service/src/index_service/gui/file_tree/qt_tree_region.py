@@ -23,7 +23,7 @@ from index_service.gui.abstract_models.column_model import AbstractColumnItemMod
 from index_service.gui.common.qt_model_roles import CustomModelRole
 from index_service.gui.file_tree.file_tree_column import FileTreeColumnSpec, FileTreeNode
 from index_service.gui.file_tree.python_code_editor import PythonQueryEditor
-from index_service.gui.file_tree.query_filter import QueryExecutionResult, QueryFilterEvaluator
+from index_service.gui.file_tree.query_filter import QueryFilterEvaluator, QueryResultModel
 from index_service.services.core.types import FileHash
 
 log = logging.getLogger(__name__)
@@ -273,7 +273,7 @@ class FileTreeRegion(QWidget):
 
         return nodes
 
-    def compute_filtered(self) -> QueryExecutionResult:
+    def compute_filtered(self) -> QueryResultModel:
         text = self.query_text()
         selected = self.selected_nodes()
         scope = selected if selected else None
