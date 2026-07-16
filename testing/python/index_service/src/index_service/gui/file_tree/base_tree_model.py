@@ -6,6 +6,7 @@ import logging
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, Optional
+from dataclasses import dataclass
 
 from beartype import beartype
 from pydantic import BaseModel
@@ -49,6 +50,12 @@ FOR file IN files
 CACHE_SCHEMA_TABLE = "file_tree_column_schemas"
 CACHE_FILE_TABLE = "file_tree_file_columns"
 CACHE_PATH_TABLE = "file_tree_paths"
+
+
+@dataclass(slots=True, frozen=True)
+class _FilePathRow:
+    path: str
+    hash: str
 
 
 def _column_schema_hash(column: FileTreeColumnSpec) -> str:
@@ -218,20 +225,20 @@ def _initialize_cache(
 def _fetch_file_paths(
     ctx: RunContext,
     db: IndexDatabase,
-) -> list[FilePathResult]:
+) -> list[_FilePathRow]:
     with ctx.trace_scope("fetch file paths"):
-        return [
-            FilePathResult.model_validate(item)
-            for item in db.aql.execute(AQL_FILE_PATHS)  # type: ignore
-        ]
+        rows: list[_FilePathRow] = []
+        for item in db.aql.execute(AQL_FILE_PATHS):  # type: ignore
+            rows.append(_FilePathRow(path=item["path"], hash=item["hash"]))
+        return rows
 
 
 def _store_path_hashes(
     engine: Engine,
     path_table: Table,
-    file_paths: Sequence[FilePathResult],
+    file_paths: Sequence[_FilePathRow],
 ) -> None:
-    path_hashes = {str(result.path): result.hash for result in file_paths}
+    path_hashes = {result.path: result.hash for result in file_paths}
 
     path_insert = sqlite_insert(path_table)
     path_upsert = path_insert.on_conflict_do_update(
@@ -267,33 +274,31 @@ def _store_path_hashes(
 def _get_uncached_hashes(
     engine: Engine,
     file_table: Table,
-    file_paths: Sequence[FilePathResult],
-) -> list[FileHash]:
-    ordered_hashes = list(
-        dict.fromkeys(FileHash(hash=result.hash) for result in file_paths),)
+    file_paths: Sequence[_FilePathRow],
+) -> list[str]:
+    ordered_hashes = list(dict.fromkeys(result.hash for result in file_paths))
 
     with engine.connect() as connection:
-        cached_hashes = set(connection.scalars(select(file_table.c.hash),),)
+        cached_hashes = set(connection.scalars(select(file_table.c.hash)))
 
-    return [
-        file_hash for file_hash in ordered_hashes if file_hash.hash not in cached_hashes
-    ]
+    return [file_hash for file_hash in ordered_hashes if file_hash not in cached_hashes]
 
 
 def _fetch_indexer_assets(
     ctx: RunContext,
     db: IndexDatabase,
-    hashes: Sequence[FileHash],
+    hashes: Sequence[str],
     indexers: Sequence[BaseIndexer],
 ) -> dict[str, dict[str, BaseModel]]:
     assets_by_hash: dict[str, dict[str, BaseModel]] = {
-        file_hash.hash: {} for file_hash in hashes
+        file_hash: {} for file_hash in hashes
     }
+    hash_objs = [FileHash(hash=file_hash) for file_hash in hashes]
 
     with ctx.trace_scope("fetch indexer results"):
         for indexer in indexers:
             available_hashes = [
-                file_hash for file_hash in hashes
+                file_hash for file_hash in hash_objs
                 if db.has_indexer_result(file_hash, indexer)
             ]
 
@@ -305,16 +310,9 @@ def _fetch_indexer_assets(
                     asset_name=indexer.asset_name,
                     file_count=len(available_hashes),
             ):
-                results = db.get_indexer_result_batch(
-                    list(available_hashes),
-                    indexer,
-                )
+                results = db.get_indexer_result_batch(list(available_hashes), indexer)
 
-            for file_hash, result in zip(
-                    available_hashes,
-                    results,
-                    strict=True,
-            ):
+            for file_hash, result in zip(available_hashes, results, strict=True):
                 assets_by_hash[file_hash.hash][indexer.asset_name] = result
 
     return assets_by_hash
@@ -324,8 +322,8 @@ def _store_missing_file_columns(
     ctx: RunContext,
     engine: Engine,
     file_table: Table,
-    file_paths: Sequence[FilePathResult],
-    missing_hashes: Sequence[FileHash],
+    file_paths: Sequence[_FilePathRow],
+    missing_hashes: Sequence[str],
     db: IndexDatabase,
     indexers: Sequence[BaseIndexer],
     columns: Sequence[FileTreeColumnSpec],
@@ -334,25 +332,17 @@ def _store_missing_file_columns(
         return
 
     representative_paths = {result.hash: result.path for result in file_paths}
-
-    assets_by_hash = _fetch_indexer_assets(
-        ctx,
-        db,
-        missing_hashes,
-        indexers,
-    )
+    assets_by_hash = _fetch_indexer_assets(ctx, db, missing_hashes, indexers)
 
     rows: list[dict[str, str]] = []
 
-    with ctx.trace_scope(
-            "populate file tree cache",
-            file_count=len(missing_hashes),
-    ):
-        for file_hash in missing_hashes:
-            path = representative_paths[file_hash.hash]
-            assets = assets_by_hash[file_hash.hash]
+    with ctx.trace_scope("populate file tree cache", file_count=len(missing_hashes)):
+        for hash_value in missing_hashes:
+            path = Path(representative_paths[hash_value])
+            file_hash = FileHash(hash=hash_value)
+            assets = assets_by_hash[hash_value]
 
-            row: dict[str, str] = {"hash": file_hash.hash}
+            row: dict[str, str] = {"hash": hash_value}
 
             for column in columns:
                 data = column.initColumnData(
@@ -384,7 +374,7 @@ def _populate_cache(
     engine: Engine,
     file_table: Table,
     path_table: Table,
-    file_paths: Sequence[FilePathResult],
+    file_paths: Sequence[_FilePathRow],
     indexers: Sequence[BaseIndexer],
     columns: Sequence[FileTreeColumnSpec],
 ) -> None:
@@ -420,40 +410,39 @@ def _load_flat_file_nodes(
         path_table.c.hash,
         *[file_table.c[column.column_name] for column in columns],
     ).select_from(path_table.join(
-        file_table,
-        path_table.c.hash == file_table.c.hash,
-    ),).order_by(path_table.c.path))
+        file_table, path_table.c.hash == file_table.c.hash)).order_by(path_table.c.path))
+
+    roots = sorted(
+        ((str(root), root) for root in root_directories),
+        key=lambda item: len(item[0]),
+        reverse=True,
+    )
 
     flat_nodes: list[tuple[Path, FileTreeNode]] = []
 
     with engine.connect() as connection:
         for row in connection.execute(query):
             row_data = row._mapping
-            path = Path(row_data["path"])
+            path_str = row_data["path"]
 
-            matching_roots = [
-                root for root in root_directories if path.is_relative_to(root)
-            ]
+            root_path: Path | None = None
+            for root_str, root in roots:
+                if path_str == root_str or path_str.startswith(root_str + "/"):
+                    root_path = root
+                    break
 
-            if not matching_roots:
+            if root_path is None:
                 continue
 
-            root_path = max(
-                matching_roots,
-                key=lambda root: len(root.parts),
-            )
-
+            path = Path(path_str)
             file_hash = FileHash(hash=row_data["hash"])
             node_columns: dict[str, Optional[BaseModel]] = {}
 
             for column in columns:
                 json_data = json.loads(row_data[column.column_name])
-
                 node_columns[column.column_name] = (None if json_data is None else
                                                     model_from_json_data(
-                                                        json_data,
-                                                        column.column_type,
-                                                    ))
+                                                        json_data, column.column_type))
 
             flat_nodes.append((
                 root_path,
@@ -463,7 +452,7 @@ def _load_flat_file_nodes(
                     hash=file_hash,
                     columns=node_columns,
                 ),
-            ),)
+            ))
 
     return flat_nodes
 
