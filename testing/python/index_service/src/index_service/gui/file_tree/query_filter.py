@@ -3,7 +3,7 @@ import linecache
 import logging
 from dataclasses import dataclass
 
-from PyQt6.QtCore import QModelIndex, QObject
+from PyQt6.QtCore import QModelIndex, QObject, QAbstractListModel, Qt
 from beartype import beartype
 from beartype.typing import Callable
 from pydantic import BaseModel, ConfigDict
@@ -53,9 +53,47 @@ class ActionProvider:
         self.actions.append(MoveAction(file=file, dest=dest))
 
 
-@dataclass(slots=True)
-class ActionListModel:
-    actions: list[BaseAction]
+@beartype
+class ActionListModel(QAbstractListModel):
+    ActionRole = Qt.ItemDataRole.UserRole + 1
+
+    def __init__(self, actions: list[BaseAction], parent: QObject | None = None) -> None:
+        super().__init__(parent)
+        self._actions = actions
+
+    def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:
+        if parent.isValid():
+            return 0
+        return len(self._actions)
+
+    def data(self, index: QModelIndex,
+             role: int = int(Qt.ItemDataRole.DisplayRole)) -> object:
+        if not index.isValid():
+            return None
+
+        action = self._actions[index.row()]
+
+        match role:
+            case Qt.ItemDataRole.DisplayRole:
+                match action:
+                    case TrashAction():
+                        return f"trash {action.file.path}"
+
+                    case _:
+                        return str(action)
+
+            case self.ActionRole:
+                return action
+
+        return None
+
+    def roleNames(self) -> dict[int, bytes]:
+        names = super().roleNames()
+        names[self.ActionRole] = b"action"  # type: ignore
+        return names  # type: ignore
+
+    def actions(self) -> list[BaseAction]:
+        return self._actions
 
 
 QueryResultModel = AbstractColumnItemModel | ActionListModel
@@ -63,8 +101,6 @@ QueryResultModel = AbstractColumnItemModel | ActionListModel
 
 @dataclass(slots=True)
 class QueryProgram:
-    has_filter: bool
-    has_actions: bool
     filter_fn: FilterFn | None
     actions_fn: ActionsFn | None
     action_provider: ActionProvider | None
@@ -150,7 +186,7 @@ class QueryFilterEvaluator:
                 raise QueryError("query defines 'filter' but it is not callable")
 
             def built_filter(nodes: list[FileTreeNode]) -> list[FileTreeNode]:
-                return list(filter_obj(nodes))
+                return list(filter_obj(nodes))  # type: ignore
 
             filter_fn = built_filter
 
@@ -162,13 +198,11 @@ class QueryFilterEvaluator:
 
             def built_actions(provider: ActionProvider,
                               nodes: list[FileTreeNode]) -> object:
-                return actions_obj(provider, nodes)
+                return actions_obj(provider, nodes)  # type: ignore
 
             actions_fn = built_actions
 
         return QueryProgram(
-            has_filter=has_filter,
-            has_actions=has_actions,
             filter_fn=filter_fn,
             actions_fn=actions_fn,
             action_provider=action_provider,
@@ -190,10 +224,7 @@ class QueryFilterEvaluator:
                 QModelIndex(),
             ).internalPointer().nested
 
-            if program.has_filter:
-                if program.filter_fn is None:
-                    raise QueryError("missing filter callable")
-
+            if program.filter_fn:
                 filtered_nodes = self._filter_tree(scope, program.filter_fn)
                 return FileTreeModel(
                     nodes=filtered_nodes,
@@ -201,11 +232,13 @@ class QueryFilterEvaluator:
                     parent=parent,
                 )
 
-            if program.actions_fn is None or program.action_provider is None:
-                raise QueryError("missing actions callable")
+            elif program.actions_fn:
+                assert program.action_provider
+                self._actions_tree(scope, program.actions_fn, program.action_provider)
+                return ActionListModel(actions=program.action_provider.actions)
 
-            self._actions_tree(scope, program.actions_fn, program.action_provider)
-            return ActionListModel(actions=program.action_provider.actions)
+            else:
+                raise QueryError("No `filter` or `actions` model, cannot filter")
 
         except QueryError:
             raise

@@ -1,7 +1,6 @@
 from PyQt6.QtWidgets import QListView, QVBoxLayout, QWidget
 
 from index_service.gui.file_tree.action_list_model import ActionListModel
-from index_service.gui.file_tree.query_filter import BaseAction
 
 
 class ActionListView(QWidget):
@@ -10,6 +9,9 @@ class ActionListView(QWidget):
         super().__init__(parent)
 
         self.list_view = QListView(self)
+        self.list_view.setUniformItemSizes(True)
+        self.list_view.setLayoutMode(QListView.LayoutMode.Batched)
+        self.list_view.setBatchSize(512)
         self.list_view.setModel(actions)
 
         layout = QVBoxLayout(self)

@@ -129,6 +129,7 @@ class FileTreeQueryWindow(QMainWindow):
             region.refresh_named_queries()
 
     def _add_action_region(self, actions: ActionListModel) -> ActionListView:
+        log.info("add action list view")
         view = ActionListView(actions, parent=self.region_splitter)
         self.region_splitter.addWidget(view)
         self.region_widgets.append(view)
@@ -155,13 +156,14 @@ class FileTreeQueryWindow(QMainWindow):
     def _on_query_submitted(self, source_region: FileTreeRegion) -> None:
         try:
             result = source_region.compute_filtered()
+            log.info("compute filtered OK")
 
         except QueryError as error:
             source_region.query_edit.show_query_error(error)
             return
 
         except Exception as error:
-            log.exception("glom query failed")
+            log.exception("query failed")
             QMessageBox.warning(self, "Query error", str(error))
             return
 
