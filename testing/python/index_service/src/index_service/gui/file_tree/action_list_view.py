@@ -1,5 +1,5 @@
-from PyQt6.QtCore import pyqtSignal, QModelIndex
-from PyQt6.QtWidgets import QListView, QVBoxLayout, QWidget
+from PyQt6.QtCore import pyqtSignal, QModelIndex, QIdentityProxyModel, Qt
+from PyQt6.QtWidgets import QListView, QVBoxLayout, QWidget, QTableView
 
 from index_service.gui.common.qt_model_roles import CustomModelRole
 import logging
@@ -16,11 +16,13 @@ class ActionListView(QWidget):
     def __init__(self, actions: ActionListModel, parent: QWidget | None = None) -> None:
         super().__init__(parent)
 
-        self.list_view = QListView(self)
-        self.list_view.setUniformItemSizes(True)
-        self.list_view.setLayoutMode(QListView.LayoutMode.Batched)
-        self.list_view.setBatchSize(512)
+        self.list_view = QTableView(self)
         self.list_view.setModel(actions)
+        self.list_view.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)
+        self.list_view.setSelectionMode(QTableView.SelectionMode.SingleSelection)
+        self.list_view.verticalHeader().setVisible(True)  # auto row numbers
+        self.list_view.horizontalHeader().setStretchLastSection(True)
+        self.list_view.verticalHeader().setDefaultSectionSize(18)
         self.list_view.doubleClicked.connect(self._on_tree_item_double_clicked)
 
         layout = QVBoxLayout(self)
