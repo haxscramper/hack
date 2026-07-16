@@ -1,22 +1,84 @@
 import json
-
-from beartype import beartype
-from PyQt6.QtWidgets import QAbstractItemView, QComboBox, QHBoxLayout, QInputDialog, QPushButton, QSplitter, QTreeView, QVBoxLayout, QWidget
-from PyQt6.QtCore import QSettings, Qt, pyqtSignal
-from pytestqt.qtbot import QKeySequence
-from PyQt6.QtGui import QKeySequence, QShortcut
-
-from index_service.gui.abstract_models.column_model import AbstractColumnItemModel
-from index_service.gui.file_tree.file_tree_column import FileTreeColumnSpec, FileTreeNode
-from index_service.gui.file_tree.python_code_editor import PythonQueryEditor
-from index_service.gui.common.qt_model_roles import CustomModelRole
 import logging
 
-from index_service.gui.file_tree.qt_tree_model import FileTreeModel
-from index_service.gui.file_tree.query_filter import QueryFilterEvaluator, QueryExecutionResult
+from beartype import beartype
+from PyQt6.QtCore import QPoint, Qt, pyqtSignal, QSettings
+from PyQt6.QtGui import QKeySequence, QShortcut
+from PyQt6.QtWidgets import (
+    QAbstractItemView,
+    QDialog,
+    QHBoxLayout,
+    QLineEdit,
+    QListWidget,
+    QListWidgetItem,
+    QPushButton,
+    QSplitter,
+    QToolButton,
+    QTreeView,
+    QVBoxLayout,
+    QWidget,
+)
+
+from index_service.gui.abstract_models.column_model import AbstractColumnItemModel
+from index_service.gui.common.qt_model_roles import CustomModelRole
+from index_service.gui.file_tree.file_tree_column import FileTreeColumnSpec, FileTreeNode
+from index_service.gui.file_tree.python_code_editor import PythonQueryEditor
+from index_service.gui.file_tree.query_filter import QueryExecutionResult, QueryFilterEvaluator
 from index_service.services.core.types import FileHash
 
 log = logging.getLogger(__name__)
+
+
+@beartype
+class QueryPickerPopup(QDialog):
+    query_selected = pyqtSignal(str, str)
+
+    def __init__(self, queries: dict[str, str], parent: QWidget | None = None) -> None:
+        super().__init__(parent, Qt.WindowType.Popup)
+        self.setWindowTitle("Select query")
+        self.queries = queries
+
+        self.search = QLineEdit(self)
+        self.search.setPlaceholderText("Search queries...")
+
+        self.list_widget = QListWidget(self)
+        self.list_widget.itemClicked.connect(self._on_item_clicked)
+        self.list_widget.itemActivated.connect(self._on_item_clicked)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(6)
+        layout.addWidget(self.search)
+        layout.addWidget(self.list_widget)
+
+        self.search.textChanged.connect(self._rebuild_list)
+        self.search.returnPressed.connect(self._activate_current)
+
+        self._rebuild_list()
+        self.resize(320, 360)
+        self.search.setFocus()
+
+    def _rebuild_list(self) -> None:
+        filter_text = self.search.text().strip().lower()
+        self.list_widget.clear()
+
+        for name in sorted(self.queries, key=str.casefold):
+            if filter_text and filter_text not in name.lower():
+                continue
+            self.list_widget.addItem(QListWidgetItem(name))
+
+        if self.list_widget.count() > 0:
+            self.list_widget.setCurrentRow(0)
+
+    def _activate_current(self) -> None:
+        item = self.list_widget.currentItem()
+        if item is not None:
+            self._on_item_clicked(item)
+
+    def _on_item_clicked(self, item: QListWidgetItem) -> None:
+        name = item.text()
+        self.query_selected.emit(name, self.queries[name])
+        self.close()
 
 
 @beartype
@@ -31,13 +93,16 @@ class FileTreeRegion(QWidget):
         self,
         model: AbstractColumnItemModel,
         columns: list[FileTreeColumnSpec],
+        region_id: str,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
 
         self.columns = columns
-
         self.model = model
+        self.region_id = region_id
+        self.query_picker: QueryPickerPopup | None = None
+
         self.tree_view = QTreeView(self)
         self.tree_view.setIndentation(20)
         self.tree_view.setSelectionBehavior(
@@ -48,16 +113,27 @@ class FileTreeRegion(QWidget):
 
         self.query_edit = PythonQueryEditor(self)
 
-        self.saved_query_combo = QComboBox(self)
-        self.saved_query_combo.activated.connect(self._on_saved_query_selected)
+        self.select_query_button = QToolButton(self)
+        self.select_query_button.setText("☰")
+        self.select_query_button.setToolTip("Select saved query")
+        self.select_query_button.clicked.connect(self._show_query_picker)
 
-        self.save_query_button = QPushButton("Save query…", self)
+        self.query_name_edit = QLineEdit(self)
+        self.query_name_edit.setPlaceholderText("Query name")
+
+        self.new_query_button = QPushButton("New", self)
+        self.new_query_button.clicked.connect(self._new_query)
+
+        self.save_query_button = QPushButton("Save", self)
         self.save_query_button.clicked.connect(self._save_named_query)
 
         query_toolbar = QWidget(self)
         query_toolbar_layout = QHBoxLayout(query_toolbar)
         query_toolbar_layout.setContentsMargins(0, 0, 0, 0)
-        query_toolbar_layout.addWidget(self.saved_query_combo, 1)
+        query_toolbar_layout.setSpacing(8)
+        query_toolbar_layout.addWidget(self.select_query_button)
+        query_toolbar_layout.addWidget(self.query_name_edit, 1)
+        query_toolbar_layout.addWidget(self.new_query_button)
         query_toolbar_layout.addWidget(self.save_query_button)
 
         self.run_button = QPushButton("Filter →", self)
@@ -83,7 +159,11 @@ class FileTreeRegion(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.splitter)
 
-        self.refresh_named_queries()
+        self.query_name_edit.textChanged.connect(self._persist_current_query_state)
+        if hasattr(self.query_edit, "textChanged"):
+            self.query_edit.textChanged.connect(self._persist_current_query_state)
+
+        self._load_current_query_state()
 
     @staticmethod
     def _read_named_queries() -> dict[str, str]:
@@ -97,67 +177,87 @@ class FileTreeRegion(QWidget):
 
     @staticmethod
     def _write_named_queries(queries: dict[str, str]) -> None:
+        QSettings().setValue("queries/named", json.dumps(queries, sort_keys=True))
+
+    def _current_query_settings_key(self) -> str:
+        return f"queries/current/{self.region_id}"
+
+    def _read_current_query_state(self) -> dict[str, str]:
+        serialized = QSettings().value(self._current_query_settings_key(), "{}")
+        state = json.loads(str(serialized))
+
+        if not isinstance(state, dict):
+            raise ValueError(
+                f"{self._current_query_settings_key()} must contain a JSON object")
+
+        return {
+            "name": str(state.get("name", "")),
+            "text": str(state.get("text", "")),
+        }
+
+    def _write_current_query_state(self, name: str, text: str) -> None:
         QSettings().setValue(
-            "queries/named",
-            json.dumps(queries, sort_keys=True),
+            self._current_query_settings_key(),
+            json.dumps({
+                "name": name,
+                "text": text
+            }, sort_keys=True),
         )
+
+    def _persist_current_query_state(self, *args) -> None:
+        self._write_current_query_state(
+            self.query_name_edit.text(),
+            self.query_edit.text(),
+        )
+
+    def _load_current_query_state(self) -> None:
+        state = self._read_current_query_state()
+        self.query_name_edit.setText(state["name"])
+        self.query_edit.setText(state["text"])
 
     def _on_tree_item_double_clicked(self, index) -> None:
         hash_value = index.data(CustomModelRole.HashRole.value)
         if hash_value is None:
-            log.info(f"hash value is None")
+            log.info("hash value is None")
         else:
             self.file_hash_activated.emit(FileHash(hash=hash_value))
 
     def refresh_named_queries(self) -> None:
-        selected_name = self.saved_query_combo.currentData()
+        # Kept for API compatibility with existing callers.
+        pass
+
+    def _show_query_picker(self, checked: bool = False) -> None:
         queries = self._read_named_queries()
+        self.query_picker = QueryPickerPopup(queries, self)
+        self.query_picker.query_selected.connect(self._load_named_query)
 
-        self.saved_query_combo.blockSignals(True)
-        self.saved_query_combo.clear()
-        self.saved_query_combo.addItem("Saved queries…", None)
+        button_pos = self.select_query_button.mapToGlobal(
+            QPoint(0, self.select_query_button.height()))
+        self.query_picker.move(button_pos)
+        self.query_picker.show()
 
-        for name in sorted(queries, key=str.casefold):
-            self.saved_query_combo.addItem(name, name)
-
-        if selected_name is not None:
-            index = self.saved_query_combo.findData(selected_name)
-            if index >= 0:
-                self.saved_query_combo.setCurrentIndex(index)
-
-        self.saved_query_combo.blockSignals(False)
-
-    def _on_saved_query_selected(self, index: int) -> None:
-        name = self.saved_query_combo.itemData(index)
-        if name is None:
-            return
-
-        query = self._read_named_queries()[name]
+    def _load_named_query(self, name: str, query: str) -> None:
+        self.query_name_edit.setText(name)
         self.query_edit.setText(query)
         self.query_edit.setFocus()
+        self._persist_current_query_state()
+
+    def _new_query(self, checked: bool = False) -> None:
+        self.query_name_edit.clear()
+        self.query_edit.setText("")
+        self.query_edit.setFocus()
+        self._persist_current_query_state()
 
     def _save_named_query(self, checked: bool = False) -> None:
-        name, accepted = QInputDialog.getText(
-            self,
-            "Save query",
-            "Query name:",
-        )
-        if not accepted:
-            return
-
-        name = name.strip()
+        name = self.query_name_edit.text().strip()
         if not name:
             return
 
         queries = self._read_named_queries()
         queries[name] = self.query_edit.text()
         self._write_named_queries(queries)
-
         self.named_queries_changed.emit()
-
-        index = self.saved_query_combo.findData(name)
-        if index >= 0:
-            self.saved_query_combo.setCurrentIndex(index)
+        self._persist_current_query_state()
 
     def query_text(self) -> str:
         return self.query_edit.text()

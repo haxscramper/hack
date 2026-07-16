@@ -62,8 +62,6 @@ class FileTreeQueryWindow(QMainWindow):
             FileNameColumnSpec(),
         ]
 
-        cache_db = Path("/tmp/haxdex_index_file_tree_cache.sqlite")
-
         if file_tree_view.reference_dir:
             reference_tree: list[FileTreeNode] = build_file_tree(
                 ctx=ctx,
@@ -74,7 +72,7 @@ class FileTreeQueryWindow(QMainWindow):
                     # ImageHashColumnSpec(None),
                     FileDuplicateColumnSpec(None),
                 ],
-                cache_path=cache_db,
+                cache_path=Path("/tmp/reference_tree_cache.sqlite"),
             )
 
             # columns.append(ImageHashColumnSpec(reference_tree=reference_tree[0]))
@@ -88,7 +86,7 @@ class FileTreeQueryWindow(QMainWindow):
             ],
             indexers=indexer_instances,
             columns=columns,
-            cache_path=cache_db,
+            cache_path=Path("/tmp/input_tree_cache.sqlite"),
         )
 
         model = FileTreeModel(
@@ -130,13 +128,6 @@ class FileTreeQueryWindow(QMainWindow):
         for region in self.regions:
             region.refresh_named_queries()
 
-    def _save_first_region_query(self) -> None:
-        if self.regions:
-            QSettings().setValue(
-                "queries/firstRegionCurrent",
-                self.regions[0].query_edit.text(),
-            )
-
     def _add_action_region(self, actions: list[BaseAction]) -> ActionListView:
         view = ActionListView(actions, parent=self.region_splitter)
         self.region_splitter.addWidget(view)
@@ -144,12 +135,11 @@ class FileTreeQueryWindow(QMainWindow):
         return view
 
     def _add_region(self, model: AbstractColumnItemModel) -> FileTreeRegion:
-        is_first_region = not self.regions
-
         region = FileTreeRegion(
             model=model,
             columns=self.columns,
             parent=self.region_splitter,
+            region_id=f"region_{len(self.regions)}",
         )
 
         region.query_submitted.connect(self._on_query_submitted)
@@ -159,9 +149,6 @@ class FileTreeQueryWindow(QMainWindow):
         self.region_splitter.addWidget(region)
         self.regions.append(region)
         self.region_widgets.append(region)
-
-        if is_first_region:
-            region.query_edit.textChanged.connect(self._save_first_region_query)
 
         return region
 
@@ -215,11 +202,6 @@ class FileTreeQueryWindow(QMainWindow):
             settings.setValue(
                 "tree/headerState",
                 self.regions[0].tree_view.header().saveState(),
-            )
-
-            settings.setValue(
-                "queries/firstRegionCurrent",
-                self.regions[0].query_edit.text(),
             )
 
     def closeEvent(self, event: QCloseEvent) -> None:
