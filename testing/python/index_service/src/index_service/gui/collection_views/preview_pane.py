@@ -133,6 +133,7 @@ class FilePreviewPane(QWidget):
         layout.addWidget(self._tabs)
 
     def show_hash(self, hash: FileHash) -> None:
+        log.debug(f"Showing file hash {hash}")
         previous_index = self._tabs.currentIndex()
         self._tabs.clear()
 

@@ -1,12 +1,7 @@
-import json
-import linecache
-from pathlib import Path
-
-from PyQt6.Qsci import QsciScintilla, QsciLexerPython
-from PyQt6.QtCore import QAbstractItemModel, QCoreApplication, QSettings, Qt, pyqtSignal
-from PyQt6.QtGui import QCloseEvent, QFont, QKeySequence, QShortcut
+from PyQt6.QtCore import QCoreApplication, QSettings, Qt, QModelIndex
+from PyQt6.QtGui import QCloseEvent
 from beartype import beartype
-from beartype.typing import Callable, Sequence
+from beartype.typing import Sequence
 
 from PyQt6.QtWidgets import (
     QMainWindow,
@@ -19,19 +14,19 @@ from index_service.cli.cli_config import FileTreeViewConfig
 from index_service.gui.abstract_models.column_model import AbstractColumnItemModel
 from index_service.gui.collection_views.builder import WidgetBuilder
 from index_service.gui.collection_views.preview_pane import FilePreviewPane
+from index_service.gui.common.qt_model_roles import CustomModelRole
 from index_service.gui.file_tree.action_list_view import ActionListView
 from index_service.gui.file_tree.base_tree_model import build_file_tree, FileTreeNode
 from index_service.gui.file_tree.file_duplicate_column import FileDuplicateColumnSpec
 from index_service.gui.file_tree.file_name_column import FileNameColumnSpec
 from index_service.gui.file_tree.file_tree_column import FileTreeColumnSpec
-from index_service.gui.file_tree.python_code_editor import QUERY_FILENAME, QueryError
+from index_service.gui.file_tree.python_code_editor import QueryError
 from index_service.gui.file_tree.qt_tree_model import FileTreeModel
 from index_service.gui.file_tree.qt_tree_region import FileTreeRegion
-from index_service.gui.file_tree.query_filter import BaseAction, ActionListModel
+from index_service.gui.file_tree.query_filter import ActionListModel
 from index_service.services.core.db import IndexDatabase
 from index_service.services.core.job_types import BaseIndexer, RunContext
 import logging
-import json
 from pathlib import Path
 
 from index_service.services.core.types import FileHash
@@ -108,6 +103,7 @@ class FileTreeQueryWindow(QMainWindow):
             Qt.Orientation.Horizontal,
             self.main_splitter,
         )
+
         self.preview_pane = FilePreviewPane(
             db=db,
             collection_names=[t.asset_name for t in indexer_instances],
@@ -117,12 +113,16 @@ class FileTreeQueryWindow(QMainWindow):
 
         self.main_splitter.addWidget(self.region_splitter)
         self.main_splitter.addWidget(self.preview_pane)
-        self.main_splitter.setStretchFactor(0, 4)
+        self.main_splitter.setStretchFactor(0, 2)
         self.main_splitter.setStretchFactor(1, 1)
 
         self._add_region(model)
 
         self.restore_ui_state()
+        first_index = model.first_index_with_hash()
+        if first_index.isValid():
+            self.preview_pane.show_hash(
+                FileHash(hash=first_index.data(CustomModelRole.HashRole.value)))
 
     def _refresh_named_queries(self) -> None:
         for region in self.regions:
@@ -131,6 +131,7 @@ class FileTreeQueryWindow(QMainWindow):
     def _add_action_region(self, actions: ActionListModel) -> ActionListView:
         log.info("add action list view")
         view = ActionListView(actions, parent=self.region_splitter)
+        view.file_hash_activated.connect(self.preview_pane.show_hash)
         self.region_splitter.addWidget(view)
         self.region_widgets.append(view)
         return view
@@ -197,10 +198,27 @@ class FileTreeQueryWindow(QMainWindow):
         if header_state is not None and self.regions:
             self.regions[0].tree_view.header().restoreState(header_state)
 
+        # Splitters must be restored explicitly
+        main_splitter_state = settings.value("splitter/main")
+        if main_splitter_state is not None and not self.main_splitter.restoreState(
+                main_splitter_state):
+            self.main_splitter.setSizes([800, 400])  # fallback 2:1
+        elif main_splitter_state is None:
+            self.main_splitter.setSizes([800, 400])  # default 2:1 on first run
+
+        region_splitter_state = settings.value("splitter/region")
+        if region_splitter_state is not None:
+            self.region_splitter.restoreState(region_splitter_state)
+
     def save_ui_state(self) -> None:
         settings = QSettings()
         settings.setValue("window/geometry", self.saveGeometry())
         settings.setValue("window/state", self.saveState())
+
+        # Save splitters explicitly
+        settings.setValue("splitter/main", self.main_splitter.saveState())
+        settings.setValue("splitter/region", self.region_splitter.saveState())
+
         if self.regions:
             settings.setValue(
                 "tree/headerState",

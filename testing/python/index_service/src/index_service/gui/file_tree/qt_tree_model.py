@@ -19,6 +19,32 @@ class FileTreeModel(AbstractTreeColumnModel[FileTreeNode]):
     def getNestedNodes(self, node: FileTreeNode) -> list[FileTreeNode]:
         return node.nested
 
+    def first_index_with_hash(self) -> QModelIndex:
+
+        def dfs(parent_index):
+            row_count = self.rowCount(parent_index)
+            for row in range(row_count):
+                index = self.index(row, 0, parent_index)
+                if index.data(CustomModelRole.HashRole.value) is not None:
+                    return index
+
+                found = dfs(index)
+                if found.isValid():
+                    return found
+
+            return QModelIndex()
+
+        root = self.index(0, 0)
+        if root.isValid():
+            if root.data(CustomModelRole.HashRole.value) is not None:
+                return root
+
+            found = dfs(root)
+            if found.isValid():
+                return found
+
+        return QModelIndex()
+
     def data(
         self,
         index: QModelIndex,

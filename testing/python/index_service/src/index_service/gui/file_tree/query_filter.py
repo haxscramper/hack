@@ -9,6 +9,7 @@ from beartype.typing import Callable
 from pydantic import BaseModel, ConfigDict
 
 from index_service.gui.abstract_models.column_model import AbstractColumnItemModel
+from index_service.gui.common.qt_model_roles import CustomModelRole
 from index_service.gui.file_tree.base_tree_model import FileTreeNode
 from index_service.gui.file_tree.python_code_editor import (
     QUERY_FILENAME,
@@ -55,7 +56,6 @@ class ActionProvider:
 
 @beartype
 class ActionListModel(QAbstractListModel):
-    ActionRole = Qt.ItemDataRole.UserRole + 1
 
     def __init__(self, actions: list[BaseAction], parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -82,8 +82,18 @@ class ActionListModel(QAbstractListModel):
                     case _:
                         return str(action)
 
-            case self.ActionRole:
-                return action
+            case CustomModelRole.HashRole.value:
+                match action:
+                    case TrashAction():
+                        if action.file.hash:
+                            result = action.file.hash.hash
+                            return result
+
+                        else:
+                            return None
+
+                    case _:
+                        raise RuntimeError("Unknown action")
 
         return None
 
