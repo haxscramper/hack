@@ -29,6 +29,7 @@ from index_service.gui.collection_views.file_content_view.image_content_view_bui
 from index_service.gui.collection_views.file_content_view.pdf_content_view_builder import PdfFileContentViewBuilder
 from index_service.gui.collection_views.file_content_view.text_content_view_builder import TextFileContentViewBuilder
 from index_service.gui.collection_views.file_content_view.video_content_view_builder import VideoFileContentViewBuilder
+from index_service.gui.common.qt_utils import get_settings
 from index_service.services.core.db import IndexDatabase
 from index_service.services.core.types import FileHash
 from index_service.services.utils import _format_timestamp_relative
@@ -140,6 +141,14 @@ class PathsWidgetBuilder:
 
     def __init__(self) -> None:
         self.absolute_paths: list[str] = []
+        self._settings = get_settings()
+        self._header_state_key = "paths_widget/table_header_state"
+
+        self._root: QWidget | None = None
+        self._preview_host: QWidget | None = None
+        self._preview_layout: QVBoxLayout | None = None
+        self._table: QTableView | None = None
+        self._model: PathsTableModel | None = None
 
     def _load_absolute_paths(self, db: IndexDatabase, file_hash: FileHash) -> list[str]:
         cursor = db._db.aql.execute(
@@ -148,8 +157,22 @@ class PathsWidgetBuilder:
         )
         return [str(path) for path in cursor]
 
-    def build(self, db: IndexDatabase, hash: FileHash) -> QWidget:
-        self.absolute_paths = self._load_absolute_paths(db, hash)
+    def _save_header_state(self) -> None:
+        if self._table is None:
+            return
+        self._settings.setValue(self._header_state_key,
+                                self._table.horizontalHeader().saveState())
+
+    def _restore_header_state(self) -> None:
+        if self._table is None:
+            return
+        state = self._settings.value(self._header_state_key, None)
+        if state is not None:
+            self._table.horizontalHeader().restoreState(state)
+
+    def _ensure_ui(self) -> None:
+        if self._root is not None:
+            return
 
         root = QWidget()
         root.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
@@ -161,16 +184,6 @@ class PathsWidgetBuilder:
                                    QSizePolicy.Policy.Expanding)
         preview_layout = QVBoxLayout(preview_host)
         preview_layout.setContentsMargins(0, 0, 0, 0)
-
-        if self.absolute_paths:
-            preview = DispatchingFileContentPreviewBuilder().build(self.absolute_paths[0])
-            preview_layout.addWidget(preview)
-        else:
-            empty = QLabel("No paths found")
-            empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            empty.setSizePolicy(QSizePolicy.Policy.Expanding,
-                                QSizePolicy.Policy.Expanding)
-            preview_layout.addWidget(empty)
 
         table = QTableView(root)
         table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
@@ -184,10 +197,46 @@ class PathsWidgetBuilder:
         table.horizontalHeader().setSectionResizeMode(
             2, QHeaderView.ResizeMode.ResizeToContents)
 
-        model = PathsTableModel(self.absolute_paths, table)
-        table.setModel(model)
-        root._paths_model = model
+        table.horizontalHeader().sectionResized.connect(self._save_header_state)
 
         layout.addWidget(preview_host, 3)
         layout.addWidget(table, 2)
-        return root
+
+        self._root = root
+        self._preview_host = preview_host
+        self._preview_layout = preview_layout
+        self._table = table
+        self._restore_header_state()
+
+    def _set_preview(self) -> None:
+        assert self._preview_layout is not None
+        while self._preview_layout.count():
+            item = self._preview_layout.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.deleteLater()
+
+        if self.absolute_paths:
+            preview = DispatchingFileContentPreviewBuilder().build(self.absolute_paths[0])
+            self._preview_layout.addWidget(preview)
+        else:
+            empty = QLabel("No paths found")
+            empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            empty.setSizePolicy(QSizePolicy.Policy.Expanding,
+                                QSizePolicy.Policy.Expanding)
+            self._preview_layout.addWidget(empty)
+
+    def build(self, db: IndexDatabase, hash: FileHash) -> QWidget:
+        self._ensure_ui()
+        assert self._root is not None
+        assert self._table is not None
+
+        self.absolute_paths = self._load_absolute_paths(db, hash)
+        self._set_preview()
+
+        self._model = PathsTableModel(self.absolute_paths, self._table)
+        self._table.setModel(self._model)
+        self._restore_header_state()
+
+        self._root._paths_model = self._model
+        return self._root

@@ -21,7 +21,8 @@ from index_service.gui.file_tree.qt_tree_model import FileTreeModel
 log = logging.getLogger(__name__)
 
 FilterFn = Callable[[list[FileTreeNode]], list[FileTreeNode]]
-ActionsFn = Callable[["ActionProvider", list[FileTreeNode]], object]
+TraverseFn = Callable[["ActionProvider", list[FileTreeNode]], object]
+ActionsFn = TraverseFn
 
 
 class BaseAction(BaseModel):
@@ -113,6 +114,8 @@ QueryResultModel = AbstractColumnItemModel | ActionListModel
 class QueryProgram:
     filter_fn: FilterFn | None
     actions_fn: ActionsFn | None
+    pre_traverse_fn: TraverseFn | None
+    post_traverse_fn: TraverseFn | None
     action_provider: ActionProvider | None
 
 
@@ -146,29 +149,26 @@ class QueryFilterEvaluator:
 
         return list(filter_fn(rebuilt))
 
-    def _parse_query_shape(self, query_text: str) -> tuple[bool, bool]:
+    def _parse_query_shape(self, query_text: str) -> str:
         tree = ast.parse(query_text, QUERY_FILENAME, "exec")
-        has_filter = False
-        has_actions = False
+        main_defs: list[str] = []
 
         for node in tree.body:
             if isinstance(node, ast.FunctionDef):
                 if node.name == "filter":
-                    has_filter = True
-                elif node.name == "actions":
-                    has_actions = True
+                    main_defs.append("filter")
+                elif node.name in ("actions", "action"):
+                    main_defs.append("actions")
 
-        if has_filter and has_actions:
+        if len(main_defs) != 1:
             raise QueryError(
-                "query must define exactly one function: 'filter' or 'actions'")
-        if not has_filter and not has_actions:
-            raise QueryError(
-                "query must define exactly one function: 'filter' or 'actions'")
+                "query must define exactly one main function: 'filter' or 'actions'/'action'"
+            )
 
-        return has_filter, has_actions
+        return main_defs[0]
 
     def _build_program(self, query_text: str) -> QueryProgram:
-        has_filter, has_actions = self._parse_query_shape(query_text)
+        main_kind = self._parse_query_shape(query_text)
 
         linecache.cache[QUERY_FILENAME] = (
             len(query_text),
@@ -182,15 +182,27 @@ class QueryFilterEvaluator:
         namespace["FileTreeNode"] = FileTreeNode
 
         action_provider: ActionProvider | None = None
-        if has_actions:
+        if main_kind == "actions":
             action_provider = ActionProvider()
             namespace["act"] = action_provider
 
         code = compile(query_text, QUERY_FILENAME, "exec")
         exec(code, namespace)
 
+        def build_traverse_fn(name: str) -> TraverseFn | None:
+            obj = namespace.get(name)
+            if obj is None:
+                return None
+            if not callable(obj):
+                raise QueryError(f"query defines '{name}' but it is not callable")
+
+            def built(provider: ActionProvider, nodes: list[FileTreeNode]) -> object:
+                return obj(provider, nodes)  # type: ignore
+
+            return built
+
         filter_fn: FilterFn | None = None
-        if has_filter:
+        if main_kind == "filter":
             filter_obj = namespace.get("filter")
             if filter_obj is None or not callable(filter_obj):
                 raise QueryError("query defines 'filter' but it is not callable")
@@ -201,10 +213,13 @@ class QueryFilterEvaluator:
             filter_fn = built_filter
 
         actions_fn: ActionsFn | None = None
-        if has_actions:
+        if main_kind == "actions":
             actions_obj = namespace.get("actions")
+            if actions_obj is None:
+                actions_obj = namespace.get("action")
             if actions_obj is None or not callable(actions_obj):
-                raise QueryError("query defines 'actions' but it is not callable")
+                raise QueryError(
+                    "query defines 'actions'/'action' but it is not callable")
 
             def built_actions(provider: ActionProvider,
                               nodes: list[FileTreeNode]) -> object:
@@ -212,9 +227,14 @@ class QueryFilterEvaluator:
 
             actions_fn = built_actions
 
+        pre_traverse_fn = build_traverse_fn("pre_traverse")
+        post_traverse_fn = build_traverse_fn("post_traverse")
+
         return QueryProgram(
             filter_fn=filter_fn,
             actions_fn=actions_fn,
+            pre_traverse_fn=pre_traverse_fn,
+            post_traverse_fn=post_traverse_fn,
             action_provider=action_provider,
         )
 
@@ -235,7 +255,17 @@ class QueryFilterEvaluator:
             ).internalPointer().nested
 
             if program.filter_fn:
+                pre_provider = ActionProvider()
+                post_provider = ActionProvider()
+
+                if program.pre_traverse_fn:
+                    self._actions_tree(scope, program.pre_traverse_fn, pre_provider)
+
                 filtered_nodes = self._filter_tree(scope, program.filter_fn)
+
+                if program.post_traverse_fn:
+                    self._actions_tree(scope, program.post_traverse_fn, post_provider)
+
                 return FileTreeModel(
                     nodes=filtered_nodes,
                     columns=model.columns,
@@ -244,8 +274,17 @@ class QueryFilterEvaluator:
 
             elif program.actions_fn:
                 assert program.action_provider
-                self._actions_tree(scope, program.actions_fn, program.action_provider)
-                return ActionListModel(actions=program.action_provider.actions)
+                provider = program.action_provider
+
+                if program.pre_traverse_fn:
+                    self._actions_tree(scope, program.pre_traverse_fn, provider)
+
+                self._actions_tree(scope, program.actions_fn, provider)
+
+                if program.post_traverse_fn:
+                    self._actions_tree(scope, program.post_traverse_fn, provider)
+
+                return ActionListModel(actions=provider.actions)
 
             else:
                 raise QueryError("No `filter` or `actions` model, cannot filter")

@@ -8,6 +8,7 @@ from PyQt6.QtCore import (
     QAbstractProxyModel,
     QModelIndex,
     Qt,
+    QSettings,
 )
 
 
@@ -221,3 +222,7 @@ def print_model_tree(
     )
 
     return _format_records(records)
+
+
+def get_settings() -> QSettings:
+    return QSettings()

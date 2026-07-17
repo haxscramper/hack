@@ -15,6 +15,7 @@ from index_service.gui.abstract_models.column_model import AbstractColumnItemMod
 from index_service.gui.collection_views.builder import WidgetBuilder
 from index_service.gui.collection_views.preview_pane import FilePreviewPane
 from index_service.gui.common.qt_model_roles import CustomModelRole
+from index_service.gui.common.qt_utils import get_settings
 from index_service.gui.file_tree.action_list_view import ActionListView
 from index_service.gui.file_tree.base_tree_model import build_file_tree, FileTreeNode
 from index_service.gui.file_tree.file_duplicate_column import FileDuplicateColumnSpec
@@ -184,7 +185,7 @@ class FileTreeQueryWindow(QMainWindow):
             raise TypeError(f"Unsupported query result model: {type(result)!r}")
 
     def restore_ui_state(self) -> None:
-        settings = QSettings()
+        settings = get_settings()
 
         geometry = settings.value("window/geometry")
         if geometry is not None:
@@ -211,7 +212,7 @@ class FileTreeQueryWindow(QMainWindow):
             self.region_splitter.restoreState(region_splitter_state)
 
     def save_ui_state(self) -> None:
-        settings = QSettings()
+        settings = get_settings()
         settings.setValue("window/geometry", self.saveGeometry())
         settings.setValue("window/state", self.saveState())
 

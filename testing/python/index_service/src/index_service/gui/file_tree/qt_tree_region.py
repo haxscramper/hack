@@ -21,6 +21,7 @@ from PyQt6.QtWidgets import (
 
 from index_service.gui.abstract_models.column_model import AbstractColumnItemModel
 from index_service.gui.common.qt_model_roles import CustomModelRole
+from index_service.gui.common.qt_utils import get_settings
 from index_service.gui.file_tree.file_tree_column import FileTreeColumnSpec, FileTreeNode
 from index_service.gui.file_tree.python_code_editor import PythonQueryEditor
 from index_service.gui.file_tree.query_filter import QueryFilterEvaluator, QueryResultModel
@@ -167,7 +168,7 @@ class FileTreeRegion(QWidget):
 
     @staticmethod
     def _read_named_queries() -> dict[str, str]:
-        serialized = QSettings().value("queries/named", "{}")
+        serialized = get_settings().value("queries/named", "{}")
         queries = json.loads(str(serialized))
 
         if not isinstance(queries, dict):
@@ -177,13 +178,13 @@ class FileTreeRegion(QWidget):
 
     @staticmethod
     def _write_named_queries(queries: dict[str, str]) -> None:
-        QSettings().setValue("queries/named", json.dumps(queries, sort_keys=True))
+        get_settings().setValue("queries/named", json.dumps(queries, sort_keys=True))
 
     def _current_query_settings_key(self) -> str:
         return f"queries/current/{self.region_id}"
 
     def _read_current_query_state(self) -> dict[str, str]:
-        serialized = QSettings().value(self._current_query_settings_key(), "{}")
+        serialized = get_settings().value(self._current_query_settings_key(), "{}")
         state = json.loads(str(serialized))
 
         if not isinstance(state, dict):
@@ -196,7 +197,7 @@ class FileTreeRegion(QWidget):
         }
 
     def _write_current_query_state(self, name: str, text: str) -> None:
-        QSettings().setValue(
+        get_settings().setValue(
             self._current_query_settings_key(),
             json.dumps({
                 "name": name,
