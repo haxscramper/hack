@@ -21,6 +21,7 @@ from PyQt6.QtWidgets import (
     QTableView,
     QVBoxLayout,
     QWidget,
+    QSizePolicy,
 )
 
 from index_service.gui.collection_views.file_content_view.file_content_builder import FileContentViewBuilder
@@ -121,10 +122,16 @@ class DispatchingFileContentPreviewBuilder:
         mime = self._magic.from_file(absolute_path)
         for builder in self._builders:
             if builder.can_build(mime):
-                return builder.build(absolute_path)
+                widget = builder.build(absolute_path)
+                widget.setSizePolicy(QSizePolicy.Policy.Expanding,
+                                     QSizePolicy.Policy.Expanding)
+                widget.setMinimumSize(0, 0)
+                return widget
 
         fallback = QLabel(f"Unsupported file type: {mime}\n{absolute_path}")
         fallback.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        fallback.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        fallback.setMinimumSize(0, 0)
         return fallback
 
 
@@ -145,17 +152,28 @@ class PathsWidgetBuilder:
         self.absolute_paths = self._load_absolute_paths(db, hash)
 
         root = QWidget()
+        root.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         layout = QVBoxLayout(root)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        preview_host = QWidget(root)
+        preview_host.setSizePolicy(QSizePolicy.Policy.Expanding,
+                                   QSizePolicy.Policy.Expanding)
+        preview_layout = QVBoxLayout(preview_host)
+        preview_layout.setContentsMargins(0, 0, 0, 0)
 
         if self.absolute_paths:
             preview = DispatchingFileContentPreviewBuilder().build(self.absolute_paths[0])
-            layout.addWidget(preview)
+            preview_layout.addWidget(preview)
         else:
             empty = QLabel("No paths found")
             empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            layout.addWidget(empty)
+            empty.setSizePolicy(QSizePolicy.Policy.Expanding,
+                                QSizePolicy.Policy.Expanding)
+            preview_layout.addWidget(empty)
 
         table = QTableView(root)
+        table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
@@ -168,7 +186,8 @@ class PathsWidgetBuilder:
 
         model = PathsTableModel(self.absolute_paths, table)
         table.setModel(model)
-        root._paths_model = model  # keep ref on Python side
+        root._paths_model = model
 
-        layout.addWidget(table)
+        layout.addWidget(preview_host, 3)
+        layout.addWidget(table, 2)
         return root
