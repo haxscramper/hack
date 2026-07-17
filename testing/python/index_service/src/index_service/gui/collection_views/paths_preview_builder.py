@@ -23,8 +23,14 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from index_service.gui.collection_views.file_content_view.file_content_builder import FileContentViewBuilder
+from index_service.gui.collection_views.file_content_view.image_content_view_builder import ImageFileContentViewBuilder
+from index_service.gui.collection_views.file_content_view.pdf_content_view_builder import PdfFileContentViewBuilder
+from index_service.gui.collection_views.file_content_view.text_content_view_builder import TextFileContentViewBuilder
+from index_service.gui.collection_views.file_content_view.video_content_view_builder import VideoFileContentViewBuilder
 from index_service.services.core.db import IndexDatabase
 from index_service.services.core.types import FileHash
+from index_service.services.utils import _format_timestamp_relative
 
 ABSOLUTE_PATHS_QUERY = """
 LET file = DOCUMENT("files", @file_key)
@@ -32,30 +38,6 @@ FOR entry IN file.paths
   LET root = DOCUMENT("roots", entry.root.name)
   RETURN CONCAT_SEPARATOR("/", root.path, entry.relative)
 """.strip()
-
-
-def _human_age(dt: datetime, now: datetime) -> str:
-    delta = now - dt
-    seconds = int(delta.total_seconds())
-    if seconds < 60:
-        return f"{seconds} seconds ago"
-
-    minutes = seconds // 60
-    if minutes < 60:
-        return f"{minutes} minutes ago"
-
-    hours = minutes // 60
-    if hours < 24:
-        return f"{hours} hours ago"
-
-    days = hours // 24
-    return f"{days} days ago"
-
-
-def _format_timestamp(ts: float) -> str:
-    dt = datetime.fromtimestamp(ts, tz=timezone.utc).astimezone()
-    now = datetime.now(tz=dt.tzinfo)
-    return f"{dt.isoformat(timespec='seconds')} ({_human_age(dt, now)})"
 
 
 @dataclass(frozen=True)
@@ -79,8 +61,8 @@ class PathsTableModel(QAbstractTableModel):
         modified_ts = stat.st_mtime
         return PathRow(
             path=path,
-            created=_format_timestamp(created_ts),
-            modified=_format_timestamp(modified_ts),
+            created=_format_timestamp_relative(created_ts),
+            modified=_format_timestamp_relative(modified_ts),
         )
 
     def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:
@@ -121,100 +103,6 @@ class PathsTableModel(QAbstractTableModel):
         if orientation == Qt.Orientation.Horizontal:
             return self._headers[section]
         return str(section + 1)
-
-
-@beartype
-class FileContentViewBuilder(ABC):
-
-    @abstractmethod
-    def can_build(self, mime: str) -> bool:
-        raise NotImplementedError
-
-    @abstractmethod
-    def build(self, absolute_path: str) -> QWidget:
-        raise NotImplementedError
-
-
-@beartype
-class ImageFileContentViewBuilder(FileContentViewBuilder):
-
-    def can_build(self, mime: str) -> bool:
-        return mime.startswith("image/")
-
-    def build(self, absolute_path: str) -> QWidget:
-        label = QLabel()
-        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        pixmap = QPixmap(absolute_path)
-        label.setPixmap(pixmap)
-        return label
-
-
-@beartype
-class TextFileContentViewBuilder(FileContentViewBuilder):
-    _extra_mimes = {
-        "application/json",
-        "application/xml",
-        "application/x-yaml",
-    }
-
-    def can_build(self, mime: str) -> bool:
-        return mime.startswith("text/") or mime in self._extra_mimes
-
-    def build(self, absolute_path: str) -> QWidget:
-        editor = QPlainTextEdit()
-        editor.setReadOnly(True)
-        editor.setPlainText(Path(absolute_path).read_text(errors="replace"))
-        return editor
-
-
-@beartype
-class VideoFileContentViewBuilder(FileContentViewBuilder):
-
-    def can_build(self, mime: str) -> bool:
-        return mime.startswith("video/")
-
-    def build(self, absolute_path: str) -> QWidget:
-        container = QWidget()
-        layout = QVBoxLayout(container)
-        layout.setContentsMargins(0, 0, 0, 0)
-
-        video = QVideoWidget(container)
-        layout.addWidget(video)
-
-        player = QMediaPlayer(container)
-        audio = QAudioOutput(container)
-        audio.setVolume(0.0)
-
-        player.setAudioOutput(audio)
-        player.setVideoOutput(video)
-        player.setSource(QUrl.fromLocalFile(absolute_path))
-        player.play()
-
-        container._player = player  # keep refs alive
-        container._audio = audio
-        return container
-
-
-@beartype
-class PdfFileContentViewBuilder(FileContentViewBuilder):
-
-    def can_build(self, mime: str) -> bool:
-        return mime == "application/pdf"
-
-    def build(self, absolute_path: str) -> QWidget:
-        container = QWidget()
-        layout = QVBoxLayout(container)
-        layout.setContentsMargins(0, 0, 0, 0)
-
-        document = QPdfDocument(container)
-        document.load(absolute_path)
-
-        view = QPdfView(container)
-        view.setDocument(document)
-        layout.addWidget(view)
-
-        container._pdf_document = document  # keep ref alive
-        return container
 
 
 @beartype

@@ -2,6 +2,8 @@ from dataclasses import dataclass
 import enum
 import json
 import logging
+from datetime import datetime, timezone
+
 from beartype.typing import Any, Callable, Literal, Optional, Set
 import os
 import traceback
@@ -361,3 +363,27 @@ class ExceptionContextNote:
                 self.note if isinstance(self.note, str) else self.note())
 
         return False
+
+
+def _human_age(dt: datetime, now: datetime) -> str:
+    delta = now - dt
+    seconds = int(delta.total_seconds())
+    if seconds < 60:
+        return f"{seconds} seconds ago"
+
+    minutes = seconds // 60
+    if minutes < 60:
+        return f"{minutes} minutes ago"
+
+    hours = minutes // 60
+    if hours < 24:
+        return f"{hours} hours ago"
+
+    days = hours // 24
+    return f"{days} days ago"
+
+
+def _format_timestamp_relative(ts: float) -> str:
+    dt = datetime.fromtimestamp(ts, tz=timezone.utc).astimezone()
+    now = datetime.now(tz=dt.tzinfo)
+    return f"{dt.isoformat(timespec='seconds')} ({_human_age(dt, now)})"
