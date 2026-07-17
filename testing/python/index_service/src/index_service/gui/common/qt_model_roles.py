@@ -7,3 +7,4 @@ class CustomModelRole(enum.Enum):
     HashRole = Qt.ItemDataRole.UserRole + 1
     PathRole = Qt.ItemDataRole.UserRole + 2
     ExtraRole = Qt.ItemDataRole.UserRole + 3
+    ActionRole = Qt.ItemDataRole.UserRole + 4

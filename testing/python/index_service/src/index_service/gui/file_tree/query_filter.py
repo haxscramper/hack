@@ -96,6 +96,9 @@ class ActionListModel(QAbstractListModel):
                     case _:
                         raise RuntimeError("Unknown action")
 
+            case CustomModelRole.ActionRole.value:
+                return action
+
         return None
 
     def roleNames(self) -> dict[int, bytes]:
