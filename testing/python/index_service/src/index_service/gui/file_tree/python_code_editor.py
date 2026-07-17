@@ -166,6 +166,24 @@ class PythonQueryEditor(QsciScintilla):
                 event.accept()
                 return
 
+            case (Qt.Key.Key_Up, Qt.KeyboardModifier.AltModifier):
+                self.SendScintilla(QsciScintilla.SCI_MOVESELECTEDLINESUP)
+                event.accept()
+                return
+
+            case (Qt.Key.Key_Down, Qt.KeyboardModifier.AltModifier):
+                self.SendScintilla(QsciScintilla.SCI_MOVESELECTEDLINESDOWN)
+                event.accept()
+                return
+
+            case (
+                Qt.Key.Key_Z,
+                Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier,
+            ):
+                self.SendScintilla(QsciScintilla.SCI_UNDO)
+                event.accept()
+                return
+
         opening = event.text()
         if (self.hasSelectedText() and opening in self._DELIMITER_PAIRS and
                 not modifiers &
@@ -178,6 +196,20 @@ class PythonQueryEditor(QsciScintilla):
             return
 
         super().keyPressEvent(event)
+
+    def _is_position_in_comment(self, position: int) -> bool:
+        if position < 0:
+            return False
+
+        style = self.SendScintilla(QsciScintilla.SCI_GETSTYLEAT, position)
+        description = self.python_lexer.description(style) or ""
+        return "comment" in description.casefold()
+
+    def _cursor_in_comment(self) -> bool:
+        position = self.SendScintilla(QsciScintilla.SCI_GETCURRENTPOS)
+        if position > 0:
+            position -= 1
+        return self._is_position_in_comment(position)
 
     def _on_char_added(self, ch: int) -> None:
         char = chr(ch)
@@ -208,6 +240,10 @@ class PythonQueryEditor(QsciScintilla):
         return len(left) - idx
 
     def _show_jedi_completions(self) -> None:
+        if self._cursor_in_comment():
+            self.SendScintilla(QsciScintilla.SCI_AUTOCCANCEL)
+            return
+
         line, column = self.getCursorPosition()
         source = self.text()
         interpreter = jedi.Interpreter(source, namespaces=self._collect_jedi_namespaces())
