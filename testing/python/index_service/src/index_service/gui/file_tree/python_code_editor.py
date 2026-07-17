@@ -135,6 +135,12 @@ class PythonQueryEditor(QsciScintilla):
         self.setAnnotationDisplay(QsciScintilla.AnnotationDisplay.AnnotationBoxed)
         self.SCN_CHARADDED.connect(self._on_char_added)
 
+        self.SendScintilla(QsciScintilla.SCI_AUTOCSETMAXHEIGHT, 12)
+
+        current_width = self.SendScintilla(QsciScintilla.SCI_AUTOCGETMAXWIDTH)
+        base_width = current_width if current_width > 0 else 40
+        self.SendScintilla(QsciScintilla.SCI_AUTOCSETMAXWIDTH, int(base_width * 1.5))
+
     def keyPressEvent(self, event: QKeyEvent) -> None:
         modifiers = event.modifiers()
         key = event.key()
@@ -207,7 +213,11 @@ class PythonQueryEditor(QsciScintilla):
         interpreter = jedi.Interpreter(source, namespaces=self._collect_jedi_namespaces())
         completions = interpreter.complete(line + 1, column)
 
-        names = sorted({completion.name for completion in completions})
+        names = sorted(
+            {completion.name for completion in completions},
+            key=lambda name: (name.startswith("_"), name.casefold()),
+        )
+
         if not names:
             self.SendScintilla(QsciScintilla.SCI_AUTOCCANCEL)
             return
