@@ -6,6 +6,8 @@ from beartype import beartype
 from dataclasses import dataclass
 import traceback
 import logging
+import jedi
+from typing import Callable, Mapping
 
 log = logging.getLogger(__name__)
 
@@ -74,7 +76,19 @@ class PythonQueryEditor(QsciScintilla):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self._jedi_runtime_namespaces: list[dict[str, object]] = []
+        self._jedi_runtime_namespace_provider: Callable[[], Mapping[str,
+                                                                    object]] | None = None
         self._configure_editor()
+
+    def set_jedi_runtime_namespaces(self, namespaces: list[Mapping[str, object]]) -> None:
+        self._jedi_runtime_namespaces = [dict(namespace) for namespace in namespaces]
+
+    def set_jedi_runtime_namespace_provider(
+        self,
+        provider: Callable[[], Mapping[str, object]] | None,
+    ) -> None:
+        self._jedi_runtime_namespace_provider = provider
 
     def _configure_editor(self) -> None:
         font = QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont,)
@@ -118,27 +132,33 @@ class PythonQueryEditor(QsciScintilla):
             QUERY_ERROR_INDICATOR,
         )
 
-        self.setAnnotationDisplay(QsciScintilla.AnnotationDisplay.AnnotationBoxed,)
+        self.setAnnotationDisplay(QsciScintilla.AnnotationDisplay.AnnotationBoxed)
+        self.SCN_CHARADDED.connect(self._on_char_added)
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
         modifiers = event.modifiers()
         key = event.key()
 
-        if (key == Qt.Key.Key_Backspace and
-                modifiers == Qt.KeyboardModifier.NoModifier and
-                not self.hasSelectedText() and self._delete_blank_line_indentation()):
-            event.accept()
-            return
+        match (key, modifiers):
+            case (Qt.Key.Key_Space, Qt.KeyboardModifier.ControlModifier):
+                self._show_jedi_completions()
+                event.accept()
+                return
 
-        if (key == Qt.Key.Key_Delete and modifiers == Qt.KeyboardModifier.ShiftModifier):
-            self.SendScintilla(QsciScintilla.SCI_LINEDELETE)
-            event.accept()
-            return
+            case (Qt.Key.Key_Backspace, Qt.KeyboardModifier.NoModifier):
+                if not self.hasSelectedText() and self._delete_blank_line_indentation():
+                    event.accept()
+                    return
 
-        if (key == Qt.Key.Key_Slash and modifiers == Qt.KeyboardModifier.ControlModifier):
-            self._toggle_current_line_comment()
-            event.accept()
-            return
+            case (Qt.Key.Key_Delete, Qt.KeyboardModifier.ShiftModifier):
+                self.SendScintilla(QsciScintilla.SCI_LINEDELETE)
+                event.accept()
+                return
+
+            case (Qt.Key.Key_Slash, Qt.KeyboardModifier.ControlModifier):
+                self._toggle_current_line_comment()
+                event.accept()
+                return
 
         opening = event.text()
         if (self.hasSelectedText() and opening in self._DELIMITER_PAIRS and
@@ -152,6 +172,52 @@ class PythonQueryEditor(QsciScintilla):
             return
 
         super().keyPressEvent(event)
+
+    def _on_char_added(self, ch: int) -> None:
+        char = chr(ch)
+
+        if char == "." or char == "_" or char.isalnum():
+            self._show_jedi_completions()
+            return
+
+        if self.SendScintilla(QsciScintilla.SCI_AUTOCACTIVE):
+            self.SendScintilla(QsciScintilla.SCI_AUTOCCANCEL)
+
+    def _collect_jedi_namespaces(self) -> list[dict[str, object]]:
+        namespaces: list[dict[str, object]] = [{}]
+
+        if self._jedi_runtime_namespace_provider is not None:
+            namespaces.append(dict(self._jedi_runtime_namespace_provider()))
+
+        namespaces.extend(self._jedi_runtime_namespaces)
+        return namespaces
+
+    def _completion_prefix_length(self, line: int, column: int) -> int:
+        left = self.text(line)[:column]
+        idx = len(left)
+
+        while idx > 0 and (left[idx - 1].isalnum() or left[idx - 1] == "_"):
+            idx -= 1
+
+        return len(left) - idx
+
+    def _show_jedi_completions(self) -> None:
+        line, column = self.getCursorPosition()
+        source = self.text()
+        interpreter = jedi.Interpreter(source, namespaces=self._collect_jedi_namespaces())
+        completions = interpreter.complete(line + 1, column)
+
+        names = sorted({completion.name for completion in completions})
+        if not names:
+            self.SendScintilla(QsciScintilla.SCI_AUTOCCANCEL)
+            return
+
+        prefix_length = self._completion_prefix_length(line, column)
+        self.SendScintilla(
+            QsciScintilla.SCI_AUTOCSHOW,
+            prefix_length,
+            " ".join(names).encode("utf-8"),
+        )
 
     def _delete_blank_line_indentation(self) -> bool:
         line, column = self.getCursorPosition()

@@ -19,6 +19,7 @@ dependencies = [
     "huggingface-hub>=1.21.0",
     "imagehash>=4.3.2",
     "jax[rocm7-local]>=0.10.2",
+    "jedi>=0.20.0",
     "langchain-text-splitters>=1.1.2",
     "msgpack>=1.2.1",
     "numpy>=2.5.0",

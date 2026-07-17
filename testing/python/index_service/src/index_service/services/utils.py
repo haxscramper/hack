@@ -186,6 +186,7 @@ def stfu_logs():
             "faker.factory",
             "jax._src",
             "plumbum",
+            "parso",
     ]:
         logger = logging.getLogger(logger_name)
         logger.setLevel(logging.CRITICAL + 1)
