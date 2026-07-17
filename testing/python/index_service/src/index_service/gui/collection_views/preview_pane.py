@@ -18,30 +18,11 @@ from PyQt6.QtWidgets import (
 
 from index_service.gui.collection_views.builder import WidgetBuilder
 from index_service.gui.collection_views.json_preview_builder import JsonWidgetBuilder
+from index_service.gui.collection_views.paths_preview_builder import PathsWidgetBuilder
 from index_service.services.core.db import IndexDatabase
 from index_service.services.core.types import FileHash
 
 log = logging.getLogger(__name__)
-
-
-@beartype
-def build_paths_widget(db: IndexDatabase, hash: FileHash) -> QWidget:
-    fdoc = db._db.collection("files").get(hash.hash)
-    paths = fdoc.get("paths", []) if fdoc else []
-
-    view = QListWidget()
-    view.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-
-    for path in paths:
-        QListWidgetItem(str(path), view)
-
-    return view
-
-
-class PathsWidgetBuilder:
-
-    def build(self, db: IndexDatabase, hash: FileHash) -> QWidget:
-        return build_paths_widget(db, hash)
 
 
 class HorizontalTextTabBar(QTabBar):
