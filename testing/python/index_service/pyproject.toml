@@ -29,6 +29,7 @@ dependencies = [
     "pandas>=3.0.3",
     "pillow>=12.2.0",
     "platformdirs>=4.10.0",
+    "plotly>=6.9.0",
     "plumbum>=2.0.1",
     "py-spy>=0.4.2",
     "pybktree>=1.1",

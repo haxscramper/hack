@@ -52,6 +52,9 @@ profile_file_tree:
     uv run py-spy record --format chrometrace -o /tmp/haxdex-perf-tree-view.json -- \
       python src/index_service/cli/cli.py file_tree_view "~/defaultdirs/temporary_interchange/content_root_indexing.jsonc"
 
+visual_trash:
+    uv run src/index_service/cli/cli.py visual "~/defaultdirs/temporary_interchange/content_root_indexing.jsonc"
+
 gammaray_file_tree:
     uv run gammaray $(uv run which python) src/index_service/cli/cli.py file_tree_view "~/defaultdirs/temporary_interchange/content_root_indexing.jsonc"
 

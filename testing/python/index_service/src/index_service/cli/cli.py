@@ -6,10 +6,9 @@ import traceback
 import warnings
 from datetime import datetime
 from pathlib import Path
-from typing import Any, ClassVar, Literal
+from typing import Any
 
 from beartype import beartype
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from PyQt6.QtWidgets import QApplication
 from sqlalchemy import event, create_engine, URL
 
@@ -20,7 +19,6 @@ from index_service.gui.collection_views.comfy_input_builder import (
 from index_service.gui.collection_views.exif_preview_builder import (
     ExifPreviewrWidgetBuilder,)
 from index_service.gui.collection_views.wd_tagger_builder import WdTaggerWidgetBuilder
-from index_service.gui.file_tree.base_tree_model import build_file_tree
 from index_service.gui.file_tree.qt_tree_window import FileTreeQueryWindow
 from index_service.gui.flat_query_preview.window import FlatQueryViewWindow
 from index_service.services.core.db import IndexDatabase
@@ -35,13 +33,13 @@ from index_service.services.indexers.exif_metadata import ExifMetadataIndexer
 from index_service.services.indexers.wd_indexer import WdTagIndexer
 from index_service.services.log_config import JsonlFormatter, keep_last_files
 
-from index_service.services.resources.wd_tagger import WdTagger
 from index_service.services.utils import (
     dump_with_type,
     get_custom_traceback_handler,
     get_xdg_cache_dir,
     stfu_logs,
 )
+from index_service.visual.trash_action_visual import visualize_trash_actions
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -302,6 +300,11 @@ def main() -> None:
 
             case "file_tree_view":
                 service.run_tree_view()
+
+            case "visual":
+                assert service.cfg.visual
+                assert service.cfg.visual.trash
+                visualize_trash_actions(service.cfg.visual.trash)
 
             case _:
                 raise ValueError(f"Unexpected command {args.command}")

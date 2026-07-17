@@ -24,6 +24,7 @@ from index_service.services.resources.pdf.pdf_extractor import PdfExtractor
 from index_service.services.resources.wd_tagger import WdTagger
 from index_service.services.resources.whisper_transcribe import WhisperTranscribeResource
 from index_service.services.utils import get_xdg_cache_dir
+from index_service.visual.trash_action_visual import TrashActionVisualConfig
 
 _INDEXER_TYPES = [t for t in DEFAULT_INDEXER_TYPES] + [
     WdTagIndexer,
@@ -160,6 +161,10 @@ class FileTreeViewConfig(BaseModel):
     reference_dir: Optional[str] = None
 
 
+class VisualConfig(BaseModel, extra="forbid"):
+    trash: Optional[TrashActionVisualConfig] = None
+
+
 class AppConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
     index_cache: Path = Field(
@@ -182,6 +187,7 @@ class AppConfig(BaseModel):
 
     # exactly one of these must be set
     index: IndexConfig | None = None
+    visual: VisualConfig | None = None
     flat_query_view: FlatQueryViewConfig | None = None
     file_tree_view: FileTreeViewConfig | None = None
 
