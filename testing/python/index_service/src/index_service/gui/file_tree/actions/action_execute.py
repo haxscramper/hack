@@ -116,20 +116,60 @@ class ActionExecutor:
     @beartype
     def register_actions(self, actions: Sequence[BaseAction]) -> None:
         self.verify_actions_consistency(actions)
+
+        # Deduplicate incoming actions by hash and ensure type consistency in-batch.
+        incoming_by_hash: dict[str, tuple[BaseAction, str, str]] = {}
+        for action in actions:
+            kind = action.kind
+            action_type = _model_type_to_name(type(action))
+            execution_hash = self.handlers[kind].get_hash(action)
+
+            existing_in_batch = incoming_by_hash.get(execution_hash)
+            if existing_in_batch is not None:
+                _, existing_type, _ = existing_in_batch
+                if existing_type != action_type:
+                    raise ValueError(
+                        f"Conflicting action types for hash '{execution_hash}': "
+                        f"'{existing_type}' vs '{action_type}'")
+                continue
+
+            incoming_by_hash[execution_hash] = (action, action_type, kind)
+
+        if not incoming_by_hash:
+            return
+
         with Session(self.engine) as session:
-            for action in actions:
-                kind = action.kind
-                row = OperationRow(
-                    kind=kind,
-                    action_type=_model_type_to_name(type(action)),
-                    action_data=model_to_json_data(action),
-                    status="pending",
-                    execution_hash=self.handlers[kind].get_hash(action),
-                    started_at=None,
-                    finished_at=None,
-                    reverted_at=None,
-                )
-                session.add(row)
+            existing_rows = session.execute(
+                select(OperationRow.execution_hash, OperationRow.action_type).where(
+                    OperationRow.execution_hash.in_(list(
+                        incoming_by_hash.keys())))).all()
+            existing_by_hash = {
+                row.execution_hash: row.action_type for row in existing_rows
+            }
+
+            for execution_hash, existing_type in existing_by_hash.items():
+                _, incoming_type, _ = incoming_by_hash[execution_hash]
+                if existing_type != incoming_type:
+                    raise ValueError(
+                        f"Hash '{execution_hash}' already exists with type '{existing_type}', "
+                        f"cannot register action of type '{incoming_type}'")
+
+            for execution_hash, (action, action_type, kind) in incoming_by_hash.items():
+                if execution_hash in existing_by_hash:
+                    continue
+
+                session.add(
+                    OperationRow(
+                        kind=kind,
+                        action_type=action_type,
+                        action_data=model_to_json_data(action),
+                        status="pending",
+                        execution_hash=execution_hash,
+                        started_at=None,
+                        finished_at=None,
+                        reverted_at=None,
+                    ))
+
             session.commit()
 
     @beartype

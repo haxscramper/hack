@@ -131,3 +131,33 @@ def test_revert_done(action_executor: ActionExecutor, tmp_path: Path) -> None:
 
         trash_file = action_executor.config.trash_root / f"{rows[1].id}_{source_trash.name}"
         assert trash_file.exists() is False
+
+
+def test_register_actions_skips_duplicate_same_type(
+    action_executor: ActionExecutor,
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "dup_a.txt"
+    move_dest = tmp_path / "dup_moved" / "dup_a.txt"
+
+    source.write_text("move", encoding="utf-8")
+    move_dest.parent.mkdir(parents=True, exist_ok=True)
+
+    action = MoveAction(
+        file=FileTreeNode(path=source, is_directory=False),
+        dest=str(move_dest),
+    )
+
+    action_executor.register_actions(actions=[action])
+    action_executor.register_actions(actions=[action])
+
+    with Session(action_executor.engine) as session:
+        rows = list(session.scalars(select(OperationRow).order_by(OperationRow.id.asc())))
+        assert len(rows) == 1
+        assert rows[0].status == "pending"
+        assert rows[0].execution_hash
+
+    executed = action_executor.execute_pending()
+    assert executed == 1
+    assert move_dest.exists()
+    assert source.exists() is False
