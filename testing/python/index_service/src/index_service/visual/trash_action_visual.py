@@ -187,6 +187,37 @@ def build_echarts_html(root_dir: Path, tree_data: dict[str, Any]) -> str:
     const chart = echarts.init(document.getElementById('chart'));
     const treeData = {tree_data_json};
 
+    function treeDepth(node) {{
+      const children = node.children || [];
+      if (children.length === 0) {{
+        return 1;
+      }}
+
+      return 1 + Math.max(...children.map(treeDepth));
+    }}
+
+    const treemapLevels = Array.from(
+      {{ length: treeDepth(treeData) }},
+      (_, depth) => ({{
+        itemStyle: {{
+          borderColor: '#0b1020',
+          borderWidth: depth === 0 ? 0 : 1,
+          gapWidth: 1
+        }},
+        upperLabel: {{
+          show: depth > 0,
+          height: 18,
+          padding: [2, 4],
+          color: '#e5e7eb',
+          backgroundColor: '#1f2937',
+          overflow: 'truncate',
+          ellipsis: '…'
+        }}
+      }})
+    );
+
+
+
     const option = {{
       title: {{
         text: 'Root deletion view: {root_dir}',
@@ -209,17 +240,30 @@ def build_echarts_html(root_dir: Path, tree_data: dict[str, Any]) -> str:
           data: [treeData],
           roam: true,
           nodeClick: 'zoomToNode',
+        
           animation: false,
-          animationDuration: 0,
-          animationDurationUpdate: 0,
-          animationEasing: 'linear',
-          animationEasingUpdate: 'linear',
-          breadcrumb: {{ show: true }},
+        
+          sort: 'desc',
+          squareRatio: 1,
+        
+          // Do not expand a directory unless its rectangle has enough room
+          // for both its title and its contents. Zooming increases its area
+          // and causes its children to appear.
+          childrenVisibleMin: 900,
+        
+          // Suppress genuinely sub-pixel rectangles.
+          visibleMin: 2,
+        
+          breadcrumb: {{
+            show: true
+          }},
           label: {{
             show: true,
             position: 'insideTopLeft',
             align: 'left',
             verticalAlign: 'top',
+            overflow: 'truncate',
+            ellipsis: '…',
             formatter: '{{b}}'
           }},
           upperLabel: {{
@@ -228,21 +272,7 @@ def build_echarts_html(root_dir: Path, tree_data: dict[str, Any]) -> str:
             align: 'left',
             verticalAlign: 'top'
           }},
-          levels: [
-            {{
-              itemStyle: {{ borderColor: '#1f2937', borderWidth: 2, gapWidth: 4 }}
-            }},
-            {{
-              itemStyle: {{ borderColor: '#1f2937', borderWidth: 1, gapWidth: 2 }},
-              upperLabel: {{ show: true, position: 'insideTopLeft' }},
-              label: {{ show: true, position: 'insideTopLeft' }}
-            }},
-            {{
-              itemStyle: {{ borderColor: '#1f2937', borderWidth: 1, gapWidth: 1 }},
-              upperLabel: {{ show: true, position: 'insideTopLeft' }},
-              label: {{ show: true, position: 'insideTopLeft' }}
-            }}
-          ]
+          levels: treemapLevels
         }}
       ]
     }};
