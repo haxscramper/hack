@@ -150,16 +150,19 @@ class IndexConfig(BaseModel):
         return value
 
 
-class FlatQueryViewConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+class FlatQueryViewConfig(BaseModel, extra="forbid"):
     # placeholder for future view-specific options
     pass
 
 
-class FileTreeViewConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    root_dirs: list[str]
-    reference_dir: Optional[str] = None
+class DirConfig(BaseModel, extra="forbid"):
+    path: Path
+    ignore: list[str] = Field(default_factory=list)
+
+
+class FileTreeViewConfig(BaseModel, extra="forbid"):
+    root_dirs: list[DirConfig]
+    reference_dir: Optional[DirConfig] = None
     reference_tree_cache_path: Path = Path("/tmp/reference_tree_cache.sqlite")
     visual_tree_cache_path: Path = Path("/tmp/input_tree_cache.sqlite")
     drop_cache_files: bool = False
@@ -173,8 +176,7 @@ class VisualConfig(BaseModel, extra="forbid"):
     trash: Optional[TrashActionVisualConfig] = None
 
 
-class AppConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+class AppConfig(BaseModel, extra="forbid"):
     fuck_off__schema: str | None = Field(alias="$schema", default=None)
 
     index_cache: Path = Field(

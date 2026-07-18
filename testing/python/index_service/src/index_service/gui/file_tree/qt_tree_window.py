@@ -72,24 +72,20 @@ class FileTreeQueryWindow(QMainWindow):
             reference_tree: list[FileTreeNode] = build_file_tree(
                 ctx=ctx,
                 db=db,
-                root_directories=[Path(file_tree_view.reference_dir)],
+                root_directories=[file_tree_view.reference_dir],
                 indexers=indexer_instances,
                 columns=columns + [
-                    # ImageHashColumnSpec(None),
                     FileDuplicateColumnSpec(None),
                 ],
                 cache_path=cfg.file_tree_view.reference_tree_cache_path,
             )
 
-            # columns.append(ImageHashColumnSpec(reference_tree=reference_tree[0]))
             columns.append(FileDuplicateColumnSpec(reference_tree=reference_tree[0]))
 
         nodes = build_file_tree(
             ctx=ctx,
             db=db,
-            root_directories=[
-                Path(path).expanduser().absolute() for path in file_tree_view.root_dirs
-            ],
+            root_directories=file_tree_view.root_dirs,
             indexers=indexer_instances,
             columns=columns,
             cache_path=cfg.file_tree_view.visual_tree_cache_path,
