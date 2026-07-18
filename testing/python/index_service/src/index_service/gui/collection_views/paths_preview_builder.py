@@ -32,7 +32,7 @@ from index_service.gui.collection_views.file_content_view.video_content_view_bui
 from index_service.gui.common.qt_utils import get_settings
 from index_service.services.core.db import IndexDatabase
 from index_service.services.core.types import FileHash
-from index_service.services.utils import _format_timestamp_relative
+from index_service.services.utils import format_timestamp_relative
 
 ABSOLUTE_PATHS_QUERY = """
 LET file = DOCUMENT("files", @file_key)
@@ -69,8 +69,8 @@ class PathsTableModel(QAbstractTableModel):
 
         return PathRow(
             path=path,
-            created=_format_timestamp_relative(created_ts),
-            modified=_format_timestamp_relative(modified_ts),
+            created=format_timestamp_relative(created_ts),
+            modified=format_timestamp_relative(modified_ts),
         )
 
     def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:

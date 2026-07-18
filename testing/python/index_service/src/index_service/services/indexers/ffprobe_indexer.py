@@ -2,6 +2,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 
+import magic
 from beartype import beartype
 from beartype.typing import Any, cast
 from index_service.services.core.job_types import BaseIndexer, RunContext
@@ -9,6 +10,9 @@ from index_service.services.core.job_cache import cache_indexer_run
 from index_service.services.core.types import IndexerOutput, IndexerRequest, IndexDocument
 from plumbum import local
 from pydantic import BaseModel
+import logging
+
+log = logging.getLogger(__name__)
 
 
 @beartype
@@ -25,6 +29,7 @@ class FFProbeInfoModel(BaseModel):
 
 @beartype
 def run_ffprobe(path: Path) -> FFProbeInfoModel | None:
+    log.debug(f"running probe on {path}")
     ffprobe = local["ffprobe"]
     result = ffprobe.run([
         "-v",
@@ -100,10 +105,12 @@ class FFProbeIndexer(BaseIndexer):
     result_model = FFProbeIndexerResult
 
     def __init__(self, **kwargs) -> None:
+        self._magic = magic.Magic(mime=True)
         super().__init__(**kwargs)
 
     def can_run(self, path: Path) -> bool:
-        return path.suffix.lower() in {".webm", ".mp4"}
+        mime = self._magic.from_file(path.absolute())
+        return mime.startswith("video/")
 
     @cache_indexer_run
     def run(
@@ -116,5 +123,7 @@ class FFProbeIndexer(BaseIndexer):
         return IndexerOutput(
             indexer_id=self.asset_name,
             result=FFProbeIndexerResult(
-                probe=run_ffprobe(ctx.get_path(request.file_ref))),
+                probe=run_ffprobe(ctx.get_path(request.file_ref)),
+                hash=request.get_hash_str(),
+            ),
         )

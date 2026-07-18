@@ -21,6 +21,7 @@ from index_service.gui.file_tree.base_tree_model import build_file_tree, FileTre
 from index_service.gui.file_tree.columns.file_duplicate_column import FileDuplicateColumnSpec
 from index_service.gui.file_tree.columns.file_name_column import FileNameColumnSpec
 from index_service.gui.file_tree.columns.file_tree_column import FileTreeColumnSpec
+from index_service.gui.file_tree.columns.video_info_columns import VideoBitrateColumnSpec
 from index_service.gui.file_tree.python_code_editor import QueryError
 from index_service.gui.file_tree.qt_tree_model import FileTreeModel
 from index_service.gui.file_tree.qt_tree_region import FileTreeRegion
@@ -59,6 +60,7 @@ class FileTreeQueryWindow(QMainWindow):
 
         columns: list[FileTreeColumnSpec] = [
             FileNameColumnSpec(),
+            VideoBitrateColumnSpec("bitrate"),
         ]
 
         if cfg.file_tree_view.drop_cache_files:

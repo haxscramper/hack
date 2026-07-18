@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from graphlib import TopologicalSorter
 
 from beartype import beartype
-from beartype.typing import Sequence, overload
+from beartype.typing import Sequence, Optional
 from graphviz import Digraph
 
 from time import monotonic
@@ -356,7 +356,7 @@ class IndexRuntime:
         indexer = self._indexer_instances[batch.indexer_name]
         resources = self._resources_for_indexer(indexer)
 
-        def work(ref: FileRef) -> tuple[FileRef, IndexerOutput]:
+        def work(ref: FileRef) -> Optional[tuple[FileRef, IndexerOutput]]:
             assets: dict[str, IndexerOutput | None] = {}
             for name in indexer.required_assets:
                 if self.db.has_indexer_result(ref, name):
@@ -372,12 +372,22 @@ class IndexRuntime:
                     ),
                     self.ctx.trace_scope("index", file=str(self.db.get_path(ref))),
             ):
-                out = indexer.run(
-                    ctx=self.ctx,
-                    request=request,
-                    resources=resources,  # type: ignore
-                    assets=assets,  # type: ignore
-                )
+                try:
+                    out = indexer.run(
+                        ctx=self.ctx,
+                        request=request,
+                        resources=resources,  # type: ignore
+                        assets=assets,  # type: ignore
+                    )
+
+                except Exception:
+                    log.error(
+                        f"could not execute indexer {indexer.asset_name} for {self.ctx.get_path(request.file_ref)}"
+                    )
+                    log.error(f"indexer request {request}")
+                    log.critical(f"failure", exc_info=True, stack_info=True)
+                    return None
+
             return ref, out
 
         total_sub_batches = len(batch.sub_batches)
@@ -419,9 +429,11 @@ class IndexRuntime:
             ):
                 if len(chunk) > 1 and indexer.max_parallel > 1:
                     with ThreadPoolExecutor(max_workers=indexer.max_parallel) as ex:
-                        completed = list(ex.map(work, chunk))
+                        completed_1 = list(ex.map(work, chunk))
                 else:
-                    completed = [work(ref) for ref in chunk]
+                    completed_1 = [work(ref) for ref in chunk]
+
+                completed = [c for c in completed_1 if c is not None]
 
                 with self.ctx.trace_scope("store all indexer results",
                                           indexer=indexer.asset_name):

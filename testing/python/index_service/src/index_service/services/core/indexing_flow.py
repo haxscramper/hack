@@ -55,15 +55,23 @@ def collect_files_for_path(
     for dir_cfg in dir_configs:
         source = dir_cfg.path
 
+        assert source.exists(), str(source)
+
         if source.is_file():
             candidates = [source]
+
         else:
             candidates = (p for p in source.rglob("*") if p.is_file())
+
+        if not candidates:
+            log.warning(f"no candidates from {source}")
 
         for file in candidates:
             if file in seen:
                 continue
+
             if not _is_file_selected_by_filters(file, filters):
+                log.debug(f"ignoring {file}")
                 continue
 
             seen.add(file)
@@ -96,7 +104,10 @@ def run_indexing_per_root_plan(
 
     for path_cfg in paths:
         if cfg.limit_total is not None and cfg.limit_total <= indexed_total:
+            log.info(f"limit total {cfg.limit_total} <= indexed total {indexed_total}")
             return
+
+        assert path_cfg.root_path.exists()
 
         root = db.add_root(path_cfg.name, path_cfg.root_path)
 
@@ -119,6 +130,7 @@ def run_indexing_per_root_plan(
                 files = files[:remaining]
 
             if not files:
+                log.info(f"no files")
                 continue
 
             plan_run_size = cfg.max_plan_run_size or len(files)

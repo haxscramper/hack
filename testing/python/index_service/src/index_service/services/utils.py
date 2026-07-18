@@ -4,6 +4,7 @@ import json
 import logging
 from datetime import datetime, timezone
 
+from beartype import beartype
 from beartype.typing import Any, Callable, Literal, Optional, Set
 import os
 import traceback
@@ -20,6 +21,7 @@ def get_xdg_cache_dir(target: list[str]) -> Path:
     return result
 
 
+@beartype
 @dataclass
 class FrameInfo:
     filename: str
@@ -365,7 +367,8 @@ class ExceptionContextNote:
         return False
 
 
-def _human_age(dt: datetime, now: datetime) -> str:
+@beartype
+def format_time_delta(dt: datetime, now: datetime) -> str:
     delta = now - dt
     seconds = int(delta.total_seconds())
     if seconds < 60:
@@ -383,11 +386,38 @@ def _human_age(dt: datetime, now: datetime) -> str:
     return f"{days} days ago"
 
 
-def _format_timestamp_relative(ts: float | None) -> str:
+@beartype
+def format_duration(seconds: float | None) -> str:
+    if seconds is None:
+        return ""
+    total = int(seconds)
+    hours = total // 3600
+    minutes = (total % 3600) // 60
+    sec = total % 60
+    return f"{hours:02d}:{minutes:02d}:{sec:02d}"
+
+
+@beartype
+def format_timestamp_relative(ts: float | None) -> str:
     if ts is None:
         return "none"
 
     else:
         dt = datetime.fromtimestamp(ts, tz=timezone.utc).astimezone()
         now = datetime.now(tz=dt.tzinfo)
-        return f"{dt.isoformat(timespec='seconds')} ({_human_age(dt, now)})"
+        return f"{dt.isoformat(timespec='seconds')} ({format_time_delta(dt, now)})"
+
+
+@beartype
+def format_size(size: int) -> str:
+    if size == 0:
+        return "0 B"
+    units = ["B", "KiB", "MiB", "GiB", "TiB"]
+    value = float(size)
+    index = 0
+    while 1024.0 <= value and index < len(units) - 1:
+        value /= 1024.0
+        index += 1
+    if index == 0:
+        return f"{int(value)} {units[index]}"
+    return f"{value:.2f} {units[index]}"

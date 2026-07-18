@@ -19,8 +19,8 @@ class FileNameColumnSpec(FileTreeColumnSpec):
     column_type = FileNameData
     column_name = "file_name"
 
-    @staticmethod
     def initColumnData(
+        self,
         path: Path,
         hash: Optional[FileHash],
         is_directory: bool,
