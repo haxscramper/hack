@@ -128,34 +128,47 @@ def deletion_color(total_files: int, deleted_files: int) -> str:
     return "#22c55e"  # green
 
 
-def to_echarts_node(node: DirStats, full_root: Path) -> dict[str, Any]:
-    ratio = 0.0
-    if node.total_files > 0:
-        ratio = (node.deleted_files / node.total_files) * 100.0
-
-    full_path = str(full_root if node.path == "" else full_root / Path(node.path))
-    children = [
-        to_echarts_node(child, full_root)
-        for child in sorted(node.children.values(), key=lambda x: x.name)
-    ]
-
-    result: dict[str, Any] = {
-        "name": node.name,
-        "value": max(node.total_files, 1),
-        "children": children,
-        "itemStyle": {
-            "color": deletion_color(node.total_files, node.deleted_files)
-        },
-        "deletedFiles": node.deleted_files,
-        "totalFiles": node.total_files,
-        "ratio": round(ratio, 2),
-        "fullPath": full_path,
+def to_plotly_data(root: DirStats, full_root: Path) -> dict[str, list[Any]]:
+    data: dict[str, list[Any]] = {
+        "ids": [],
+        "labels": [],
+        "parents": [],
+        "values": [],
+        "colors": [],
+        "customdata": [],
     }
-    return result
+
+    def append_directory(node: DirStats, parent_id: str | None) -> None:
+        node_id = f"dir:{node.path}"
+        full_path = full_root if node.path == "" else full_root / node.path
+        ratio = ((node.deleted_files / node.total_files) *
+                 100.0 if node.total_files > 0 else 0.0)
+
+        data["ids"].append(node_id)
+        data["labels"].append(node.name)
+        data["parents"].append(parent_id or "")
+        data["values"].append(node.total_files)
+        data["colors"].append(deletion_color(node.total_files, node.deleted_files))
+        data["customdata"].append([
+            str(full_path),
+            node.deleted_files,
+            node.total_files,
+            round(ratio, 2),
+        ])
+
+        for child in sorted(node.children.values(), key=lambda item: item.name):
+            append_directory(child, node_id)
+
+    append_directory(root, None)
+    return data
 
 
-def build_echarts_html(root_dir: Path, tree_data: dict[str, Any]) -> str:
+def build_plotly_html(root_dir: Path, tree_data: dict[str, list[Any]]) -> str:
     tree_data_json = json.dumps(tree_data, ensure_ascii=False)
+    title_json = json.dumps(
+        f"Root deletion view: {root_dir}",
+        ensure_ascii=False,
+    )
 
     return f"""<!doctype html>
 <html lang="en">
@@ -163,18 +176,16 @@ def build_echarts_html(root_dir: Path, tree_data: dict[str, Any]) -> str:
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Trash actions root deletion</title>
-  <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+  <script src="https://cdn.plot.ly/plotly-3.1.0.min.js"></script>
   <style>
     html, body {{
       margin: 0;
-      padding: 0;
       width: 100%;
       height: 100%;
       background: #0b1020;
-      color: #e5e7eb;
-      font-family: sans-serif;
       overflow: hidden;
     }}
+
     #chart {{
       width: 100%;
       height: 100%;
@@ -184,101 +195,70 @@ def build_echarts_html(root_dir: Path, tree_data: dict[str, Any]) -> str:
 <body>
   <div id="chart"></div>
   <script>
-    const chart = echarts.init(document.getElementById('chart'));
     const treeData = {tree_data_json};
 
-    function treeDepth(node) {{
-      const children = node.children || [];
-      if (children.length === 0) {{
-        return 1;
+    const trace = {{
+      type: 'treemap',
+      ids: treeData.ids,
+      labels: treeData.labels,
+      parents: treeData.parents,
+      values: treeData.values,
+      branchvalues: 'total',
+      sort: false,
+      marker: {{
+        colors: treeData.colors,
+        line: {{
+          color: '#0b1020',
+          width: 1
+        }}
+      }},
+      customdata: treeData.customdata,
+      textinfo: 'label',
+      textfont: {{
+        color: '#e5e7eb'
+      }},
+      hovertemplate:
+        'path: %{{customdata[0]}}<br>' +
+        'deleted: %{{customdata[1]}} / %{{customdata[2]}}<br>' +
+        'ratio: %{{customdata[3]}}%<extra></extra>',
+      pathbar: {{
+        visible: true,
+        textfont: {{
+          color: '#e5e7eb'
+        }}
+      }},
+      tiling: {{
+        packing: 'squarify'
       }}
-
-      return 1 + Math.max(...children.map(treeDepth));
-    }}
-
-    const treemapLevels = Array.from(
-      {{ length: treeDepth(treeData) }},
-      (_, depth) => ({{
-        itemStyle: {{
-          borderColor: '#0b1020',
-          borderWidth: depth === 0 ? 0 : 1,
-          gapWidth: 1
-        }},
-        upperLabel: {{
-          show: depth > 0,
-          height: 18,
-          padding: [2, 4],
-          color: '#e5e7eb',
-          backgroundColor: '#1f2937',
-          overflow: 'truncate',
-          ellipsis: '…'
-        }}
-      }})
-    );
-
-
-
-    const option = {{
-      title: {{
-        text: 'Root deletion view: {root_dir}',
-        left: 'center'
-      }},
-      tooltip: {{
-        trigger: 'item',
-        transitionDuration: 0,
-        confine: true,
-        formatter: function (info) {{
-          const d = info.data || {{}};
-          return 'path: ' + (d.fullPath || '') + '<br/>' +
-                 'deleted: ' + (d.deletedFiles ?? 0) + ' / ' + (d.totalFiles ?? 0) + '<br/>' +
-                 'ratio: ' + (d.ratio ?? 0) + '%';
-        }}
-      }},
-      series: [
-        {{
-          type: 'treemap',
-          data: [treeData],
-          roam: true,
-          nodeClick: 'zoomToNode',
-        
-          animation: false,
-        
-          sort: 'desc',
-          squareRatio: 1,
-        
-          // Do not expand a directory unless its rectangle has enough room
-          // for both its title and its contents. Zooming increases its area
-          // and causes its children to appear.
-          childrenVisibleMin: 900,
-        
-          // Suppress genuinely sub-pixel rectangles.
-          visibleMin: 2,
-        
-          breadcrumb: {{
-            show: true
-          }},
-          label: {{
-            show: true,
-            position: 'insideTopLeft',
-            align: 'left',
-            verticalAlign: 'top',
-            overflow: 'truncate',
-            ellipsis: '…',
-            formatter: '{{b}}'
-          }},
-          upperLabel: {{
-            show: true,
-            position: 'insideTopLeft',
-            align: 'left',
-            verticalAlign: 'top'
-          }},
-          levels: treemapLevels
-        }}
-      ]
     }};
 
-    chart.setOption(option);
-    window.addEventListener('resize', () => chart.resize());
+    const layout = {{
+      title: {{
+        text: {title_json},
+        font: {{
+          color: '#e5e7eb'
+        }}
+      }},
+      paper_bgcolor: '#0b1020',
+      plot_bgcolor: '#0b1020',
+      margin: {{
+        top: 50,
+        right: 0,
+        bottom: 0,
+        left: 0
+      }},
+      autosize: true
+    }};
+
+    Plotly.newPlot(
+      'chart',
+      [trace],
+      layout,
+      {{
+        responsive: true,
+        displaylogo: false
+      }}
+    );
   </script>
 </body>
 </html>
@@ -300,8 +280,8 @@ def visualize_trash_actions(conf: TrashActionVisualConfig) -> None:
     deleted_files &= all_files
 
     stats = build_directory_stats(root_dir, all_files, deleted_files)
-    root_node = to_echarts_node(stats[""], root_dir)
+    tree_data = to_plotly_data(stats[""], root_dir)
 
-    html = build_echarts_html(root_dir, root_node)
+    html = build_plotly_html(root_dir, tree_data)
     conf.out_path.parent.mkdir(parents=True, exist_ok=True)
     conf.out_path.write_text(html, encoding="utf-8")
