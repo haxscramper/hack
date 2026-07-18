@@ -6,8 +6,12 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from index_service.gui.file_tree.actions.action_execute import ActionExecutor, ActionExecutionConfig, OperationRow
-from index_service.gui.file_tree.actions.action_list_model import MoveAction, TrashAction, Action
+from index_service.gui.file_tree.actions.action_execute import (
+    ActionExecutionConfig,
+    ActionExecutor,
+    OperationRow,
+)
+from index_service.gui.file_tree.actions.action_list_model import Action, MoveAction, TrashAction
 from index_service.gui.file_tree.columns.file_tree_column import FileTreeNode
 
 
@@ -57,8 +61,13 @@ def test_execute_move_and_trash(action_executor: ActionExecutor, tmp_path: Path)
         assert rows[0].finished_at is not None
         assert rows[1].started_at is not None
         assert rows[1].finished_at is not None
-        assert rows[1].dest_path is not None
-        assert Path(rows[1].dest_path).exists()
+        assert rows[0].action_type
+        assert rows[1].action_type
+        assert rows[0].action_data is not None
+        assert rows[1].action_data is not None
+
+        trash_file = action_executor.config.trash_root / f"{rows[1].id}_{source_trash.name}"
+        assert trash_file.exists()
 
 
 def test_resume_execution(action_executor: ActionExecutor, tmp_path: Path) -> None:
@@ -126,5 +135,8 @@ def test_revert_done(action_executor: ActionExecutor, tmp_path: Path) -> None:
                     OperationRow.position.asc(), OperationRow.id.asc())))
         assert rows[0].reverted_at is not None
         assert rows[1].reverted_at is not None
-        assert rows[1].dest_path is not None
-        assert Path(rows[1].dest_path).exists() is False
+        assert rows[0].action_data is not None
+        assert rows[1].action_data is not None
+
+        trash_file = action_executor.config.trash_root / f"{rows[1].id}_{source_trash.name}"
+        assert trash_file.exists() is False
