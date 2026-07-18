@@ -52,7 +52,6 @@ class FileTreeModel(AbstractTreeColumnModel[FileTreeNode]):
     ) -> Any:
         match role:
             case CustomModelRole.HashRole.value:
-                log.debug(self.node(index).hash)
                 return glom.glom(self.node(index), "hash.hash", default=None)
 
             case CustomModelRole.PathRole.value:

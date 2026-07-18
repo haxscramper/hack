@@ -43,7 +43,9 @@ FOR file IN files
     LET root = DOCUMENT("roots", entry.root.name)
     RETURN {
       path: CONCAT_SEPARATOR("/", root.path, entry.relative),
-      hash: entry.hash.hash
+      hash: entry.hash.hash,
+      root: entry.root.name,
+      relative: entry.relative, 
     }
 """
 
@@ -56,6 +58,8 @@ CACHE_PATH_TABLE = "file_tree_paths"
 class _FilePathRow:
     path: str
     hash: str
+    root: str
+    relative: str
 
 
 def _column_schema_hash(column: FileTreeColumnSpec) -> str:
@@ -116,6 +120,8 @@ def _build_cache_tables(
         metadata,
         Column("path", Text, primary_key=True),
         Column("hash", Text, nullable=False),
+        Column("root", Text, nullable=False),
+        Column("relative", Text, nullable=False),
     )
 
     return metadata, schema_table, file_table, path_table
@@ -158,23 +164,22 @@ def _initialize_cache(
         )
 
     if not cache_needs_rebuild:
-        file_table_columns = {
-            column_info["name"] for column_info in inspector.get_columns(CACHE_FILE_TABLE)
+        path_table_columns = {
+            column_info["name"] for column_info in inspector.get_columns(CACHE_PATH_TABLE)
         }
+        expected_path_table_columns = {"path", "hash", "root", "relative"}
 
-        expected_file_table_columns = {"hash", *expected_column_names}
+        cache_needs_rebuild = (len(path_table_columns) != len(expected_path_table_columns)
+                               or path_table_columns != expected_path_table_columns)
 
-        cache_needs_rebuild = (len(file_table_columns) != len(expected_file_table_columns)
-                               or file_table_columns != expected_file_table_columns)
-
-        if len(file_table_columns) != len(expected_file_table_columns):
+        if len(path_table_columns) != len(expected_path_table_columns):
             log.info(
-                f"Expected file table columns len({expected_file_table_columns}) != file table columns len({file_table_columns})"
+                f"Expected path table columns len({expected_path_table_columns}) != path table columns len({path_table_columns})"
             )
 
-        if file_table_columns != expected_file_table_columns:
+        if path_table_columns != expected_path_table_columns:
             log.info(
-                f"Expected file table columns {expected_file_table_columns} != file table columns {file_table_columns}"
+                f"Expected path table columns {expected_path_table_columns} != path table columns {path_table_columns}"
             )
 
     if cache_needs_rebuild:
@@ -229,7 +234,13 @@ def _fetch_file_paths(
     with ctx.trace_scope("fetch file paths"):
         rows: list[_FilePathRow] = []
         for item in db.aql.execute(AQL_FILE_PATHS):  # type: ignore
-            rows.append(_FilePathRow(path=item["path"], hash=item["hash"]))
+            rows.append(
+                _FilePathRow(
+                    path=item["path"],
+                    hash=item["hash"],
+                    root=item["root"],
+                    relative=item["relative"],
+                ))
         return rows
 
 
@@ -238,29 +249,35 @@ def _store_path_hashes(
     path_table: Table,
     file_paths: Sequence[_FilePathRow],
 ) -> None:
-    path_hashes = {result.path: result.hash for result in file_paths}
+    path_rows = {result.path: result for result in file_paths}
 
     path_insert = sqlite_insert(path_table)
     path_upsert = path_insert.on_conflict_do_update(
         index_elements=[path_table.c.path],
-        set_={"hash": path_insert.excluded.hash},
+        set_={
+            "hash": path_insert.excluded.hash,
+            "root": path_insert.excluded.root,
+            "relative": path_insert.excluded.relative,
+        },
     )
 
-    delete_path = delete(path_table).where(path_table.c.path == bindparam("stale_path"),)
+    delete_path = delete(path_table).where(path_table.c.path == bindparam("stale_path"))
 
     with engine.begin() as connection:
-        cached_paths = set(connection.scalars(select(path_table.c.path),),)
+        cached_paths = set(connection.scalars(select(path_table.c.path)))
 
-        if path_hashes:
+        if path_rows:
             connection.execute(
                 path_upsert,
                 [{
-                    "path": path,
-                    "hash": file_hash,
-                } for path, file_hash in path_hashes.items()],
+                    "path": row.path,
+                    "hash": row.hash,
+                    "root": row.root,
+                    "relative": row.relative,
+                } for row in path_rows.values()],
             )
 
-        stale_paths = cached_paths - path_hashes.keys()
+        stale_paths = cached_paths - path_rows.keys()
 
         if stale_paths:
             connection.execute(
@@ -408,6 +425,8 @@ def _load_flat_file_nodes(
     query = (select(
         path_table.c.path,
         path_table.c.hash,
+        path_table.c.root,
+        path_table.c.relative,
         *[file_table.c[column.column_name] for column in columns],
     ).select_from(path_table.join(
         file_table, path_table.c.hash == file_table.c.hash)).order_by(path_table.c.path))
@@ -451,6 +470,8 @@ def _load_flat_file_nodes(
                     is_directory=False,
                     hash=file_hash,
                     columns=node_columns,
+                    root_relative=row_data["relative"],
+                    root=row_data["root"],
                 ),
             ))
 
@@ -463,8 +484,12 @@ def _build_directory_tree(
 ) -> list[FileTreeNode]:
     files_by_parent: dict[tuple[Path, Path], list[FileTreeNode]] = {}
     directory_paths: dict[Path, set[Path]] = {}
+    root_names: dict[Path, str] = {}
 
     for root_path, file_node in flat_nodes:
+        if file_node.root is not None:
+            root_names.setdefault(root_path, file_node.root)
+
         directory_paths.setdefault(root_path, set()).add(root_path)
 
         relative_path = file_node.path.relative_to(root_path)
@@ -475,10 +500,11 @@ def _build_directory_tree(
             directory_paths[root_path].add(next_path)
             parent_path = next_path
 
-        files_by_parent.setdefault(
-            (root_path, parent_path),
-            [],
-        ).append(file_node)
+        files_by_parent.setdefault((root_path, parent_path), []).append(file_node)
+
+    def _root_relative(directory_path: Path, root_path: Path) -> str:
+        rel = directory_path.relative_to(root_path)
+        return "" if rel == Path(".") else rel.as_posix()
 
     def build_directory(
         root_path: Path,
@@ -503,6 +529,8 @@ def _build_directory_tree(
             path=directory_path,
             is_directory=True,
             hash=None,
+            root=root_names.get(root_path),
+            root_relative=_root_relative(directory_path, root_path),
             columns={
                 column.column_name:
                     column.initColumnData(

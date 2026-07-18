@@ -199,6 +199,13 @@ class AppConfig(BaseModel):
     flat_query_view: FlatQueryViewConfig | None = None
     file_tree_view: FileTreeViewConfig | None = None
 
+    @field_validator("action_file")
+    @classmethod
+    def _normalize_action_file_file(cls, value: Path | None) -> Path | None:
+        if value is None:
+            return None
+        return value.expanduser().resolve().absolute()
+
     @field_validator("perf_trace_file")
     @classmethod
     def _normalize_perf_trace_file(cls, value: Path | None) -> Path | None:

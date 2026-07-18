@@ -271,7 +271,6 @@ def main() -> None:
     args = parser.parse_args()
 
     stfu_logs()
-    sys.excepthook = get_custom_traceback_handler(show_args=False)
 
     cfg_path = Path(args.config).expanduser().resolve().absolute()
     payload = commentjson.loads(cfg_path.read_text())

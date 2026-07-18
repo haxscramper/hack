@@ -19,6 +19,8 @@ class FilePathResult(BaseModel):
 class FileTreeNode(BaseModel):
     path: Path
     is_directory: bool
+    root: str
+    root_relative: str
     hash: FileHash | None = None
     columns: dict[str, Optional[BaseModel]] = Field(default_factory=dict)
     nested: list["FileTreeNode"] = Field(default_factory=list)
