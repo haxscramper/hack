@@ -12,17 +12,15 @@ from index_service.services.pydantic_utils import model_from_json_data
 
 
 class BaseAction(BaseModel, extra="forbid"):
-    pass
+    file: FileTreeNode
 
 
 class TrashAction(BaseAction):
     kind: Literal["trash"] = "trash"
-    file: FileTreeNode
 
 
 class MoveAction(BaseAction):
     kind: Literal["move"] = "move"
-    file: FileTreeNode
     dest: str
 
 

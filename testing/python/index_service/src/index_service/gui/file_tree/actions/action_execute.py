@@ -46,7 +46,7 @@ def _model_type_from_name(type_name: str) -> type[BaseAction]:
 class ActionExecutionConfig(BaseModel):
     trash_root: Path
     sqlite_path: Path
-    dry_run: bool = False
+    dry_run: bool = True
 
 
 @beartype
@@ -55,26 +55,14 @@ def _now() -> datetime:
 
 
 @beartype
-def _action_kind(action: BaseAction) -> str:
-    return str(getattr(action, "kind"))
-
-
-@beartype
-def _action_src_path(action: BaseAction) -> Path:
-    file_node = getattr(action, "file")
-    return Path(getattr(file_node, "path"))
-
-
-@beartype
 def _action_dest_path(action: BaseAction) -> Optional[Path]:
-    kind = _action_kind(action)
-    match kind:
+    match action.kind:
         case "move":
             return Path(getattr(action, "dest"))
         case "trash":
             return None
         case _:
-            raise ValueError(f"Unsupported action kind: {kind}")
+            raise ValueError(f"Unsupported action kind: {action.kind}")
 
 
 class ActionExecutor:
@@ -103,11 +91,11 @@ class ActionExecutor:
         trash_paths: set[Path] = set()
 
         for action in actions:
-            kind = _action_kind(action)
-            if kind not in self.handlers:
+            kind = action.kind
+            if action.kind not in self.handlers:
                 raise ValueError(f"Unsupported action kind: {kind}")
             self.handlers[kind].verify_consistency_single(action)
-            src = _action_src_path(action)
+            src = action.file.path
 
             match kind:
                 case "move":
@@ -126,16 +114,12 @@ class ActionExecutor:
                     f"Conflicting move and trash action for source path: {src}")
 
     @beartype
-    def register_actions(self,
-                         actions: Sequence[BaseAction],
-                         batch_id: str = "default") -> None:
+    def register_actions(self, actions: Sequence[BaseAction]) -> None:
         self.verify_actions_consistency(actions)
         with Session(self.engine) as session:
-            for position, action in enumerate(actions):
-                kind = _action_kind(action)
+            for action in actions:
+                kind = action.kind
                 row = OperationRow(
-                    batch_id=batch_id,
-                    position=position,
                     kind=kind,
                     action_type=_model_type_to_name(type(action)),
                     action_data=model_to_json_data(action),
@@ -154,17 +138,14 @@ class ActionExecutor:
         return model_from_json_data(row.action_data, model_type)
 
     @beartype
-    def execute_pending(self,
-                        batch_id: str = "default",
-                        max_operations: Optional[int] = None) -> int:
+    def execute_pending(self, max_operations: Optional[int] = None) -> int:
         self.config.trash_root.mkdir(parents=True, exist_ok=True)
         executed = 0
         with Session(self.engine) as session:
             rows = list(
                 session.scalars(
-                    select(OperationRow).where(OperationRow.batch_id == batch_id).where(
-                        OperationRow.status == "pending").order_by(
-                            OperationRow.position.asc(), OperationRow.id.asc())))
+                    select(OperationRow).where(OperationRow.status == "pending").order_by(
+                        OperationRow.id.asc())))
             for row in rows:
                 if max_operations is not None and max_operations <= executed:
                     break
@@ -179,19 +160,14 @@ class ActionExecutor:
         return executed
 
     @beartype
-    def resume_execution(self, batch_id: str = "default") -> int:
-        return self.execute_pending(batch_id=batch_id)
-
-    @beartype
-    def revert_done(self, batch_id: str = "default") -> int:
+    def revert_done(self) -> int:
         reverted = 0
         with Session(self.engine) as session:
             rows = list(
                 session.scalars(
-                    select(OperationRow).where(OperationRow.batch_id == batch_id).where(
-                        OperationRow.status == "done").where(
-                            OperationRow.reverted_at.is_(None)).order_by(
-                                OperationRow.position.desc(), OperationRow.id.desc())))
+                    select(OperationRow).where(OperationRow.status == "done").where(
+                        OperationRow.reverted_at.is_(None)).order_by(
+                            OperationRow.id.desc())))
             for row in rows:
                 action = self._load_action(row)
                 self.handlers[row.kind].undo_action(row, action)

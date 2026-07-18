@@ -42,18 +42,15 @@ def test_execute_move_and_trash(action_executor: ActionExecutor, tmp_path: Path)
         TrashAction(file=FileTreeNode(path=source_trash, is_directory=False)),
     ]
 
-    action_executor.register_actions(actions=actions, batch_id="batch")
-    executed = action_executor.execute_pending(batch_id="batch")
+    action_executor.register_actions(actions=actions)
+    executed = action_executor.execute_pending()
     assert executed == 2
     assert move_dest.exists()
     assert source_move.exists() is False
     assert source_trash.exists() is False
 
     with Session(action_executor.engine) as session:
-        rows = list(
-            session.scalars(
-                select(OperationRow).where(OperationRow.batch_id == "batch").order_by(
-                    OperationRow.position.asc(), OperationRow.id.asc())))
+        rows = list(session.scalars(select(OperationRow).order_by(OperationRow.id.asc())))
         assert len(rows) == 2
         assert rows[0].status == "done"
         assert rows[1].status == "done"
@@ -85,19 +82,16 @@ def test_resume_execution(action_executor: ActionExecutor, tmp_path: Path) -> No
         TrashAction(file=FileTreeNode(path=source_trash, is_directory=False)),
     ]
 
-    action_executor.register_actions(actions=actions, batch_id="batch")
-    first_executed = action_executor.execute_pending(batch_id="batch", max_operations=1)
+    action_executor.register_actions(actions=actions)
+    first_executed = action_executor.execute_pending(max_operations=1)
     assert first_executed == 1
 
     with Session(action_executor.engine) as session:
-        rows = list(
-            session.scalars(
-                select(OperationRow).where(OperationRow.batch_id == "batch").order_by(
-                    OperationRow.position.asc(), OperationRow.id.asc())))
+        rows = list(session.scalars(select(OperationRow).order_by(OperationRow.id.asc())))
         assert rows[0].status == "done"
         assert rows[1].status == "pending"
 
-    resumed = action_executor.resume_execution(batch_id="batch")
+    resumed = action_executor.execute_pending()
     assert resumed == 1
     assert move_dest.exists()
     assert source_move.exists() is False
@@ -119,20 +113,17 @@ def test_revert_done(action_executor: ActionExecutor, tmp_path: Path) -> None:
         TrashAction(file=FileTreeNode(path=source_trash, is_directory=False)),
     ]
 
-    action_executor.register_actions(actions=actions, batch_id="batch")
-    action_executor.execute_pending(batch_id="batch")
+    action_executor.register_actions(actions=actions)
+    action_executor.execute_pending()
 
-    reverted = action_executor.revert_done(batch_id="batch")
+    reverted = action_executor.revert_done()
     assert reverted == 2
     assert source_move.exists()
     assert source_trash.exists()
     assert move_dest.exists() is False
 
     with Session(action_executor.engine) as session:
-        rows = list(
-            session.scalars(
-                select(OperationRow).where(OperationRow.batch_id == "batch").order_by(
-                    OperationRow.position.asc(), OperationRow.id.asc())))
+        rows = list(session.scalars(select(OperationRow).order_by(OperationRow.id.asc())))
         assert rows[0].reverted_at is not None
         assert rows[1].reverted_at is not None
         assert rows[0].action_data is not None

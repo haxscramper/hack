@@ -269,9 +269,9 @@ class TrashActionVisualConfig(BaseModel, extra="forbid"):
     out_path: Path
 
 
-def visualize_trash_actions(conf: TrashActionVisualConfig) -> None:
+def visualize_trash_actions(conf: TrashActionVisualConfig, action_file: Path) -> None:
     root_dir = conf.root_dir.resolve(strict=True)
-    actions = [t for t in load_actions(conf.json_path) if isinstance(t, TrashAction)]
+    actions = [t for t in load_actions(action_file) if isinstance(t, TrashAction)]
 
     all_files = collect_all_files(root_dir)
     deleted_files = collect_deleted_files(actions, root_dir)

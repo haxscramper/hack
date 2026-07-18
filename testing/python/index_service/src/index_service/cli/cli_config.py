@@ -5,6 +5,7 @@ from arango import Optional
 from beartype import beartype
 from beartype.typing import Any, Literal
 
+from index_service.gui.file_tree.actions.action_execute import ActionExecutionConfig
 from index_service.services.default_job_types import (
     DEFAULT_INDEXER_TYPES,
     DEFAULT_RESOURCE_TYPES,
@@ -161,6 +162,10 @@ class FileTreeViewConfig(BaseModel):
     reference_dir: Optional[str] = None
 
 
+class ActionConfig(BaseModel, extra="forbid"):
+    execution: ActionExecutionConfig
+
+
 class VisualConfig(BaseModel, extra="forbid"):
     trash: Optional[TrashActionVisualConfig] = None
 
@@ -179,6 +184,9 @@ class AppConfig(BaseModel):
     )
 
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
+    action_file: Path = Field(description="JSONL file to write all collected actions")
+
+    act: ActionConfig | None = None
 
     enable_cache: set[str] | None = None
     indexers: dict[str, BaseModel] = Field(default_factory=dict, exclude=True)

@@ -19,6 +19,8 @@ from index_service.gui.collection_views.comfy_input_builder import (
 from index_service.gui.collection_views.exif_preview_builder import (
     ExifPreviewrWidgetBuilder,)
 from index_service.gui.collection_views.wd_tagger_builder import WdTaggerWidgetBuilder
+from index_service.gui.file_tree.actions.action_execute import ActionExecutor
+from index_service.gui.file_tree.actions.action_list_model import load_actions
 from index_service.gui.file_tree.qt_tree_window import FileTreeQueryWindow
 from index_service.gui.flat_query_preview.window import FlatQueryViewWindow
 from index_service.services.core.db import IndexDatabase
@@ -304,7 +306,19 @@ def main() -> None:
             case "visual":
                 assert service.cfg.visual
                 assert service.cfg.visual.trash
-                visualize_trash_actions(service.cfg.visual.trash)
+                visualize_trash_actions(service.cfg.visual.trash, cfg.action_file)
+
+            case "do_act":
+                assert cfg.act
+                actions = load_actions(cfg.action_file)
+                executor = ActionExecutor(cfg.act.execution)
+                executor.register_actions(actions)
+                executor.execute_pending()
+
+            case "undo_act":
+                assert cfg.act
+                executor = ActionExecutor(cfg.act.execution)
+                executor.revert_done()
 
             case _:
                 raise ValueError(f"Unexpected command {args.command}")
