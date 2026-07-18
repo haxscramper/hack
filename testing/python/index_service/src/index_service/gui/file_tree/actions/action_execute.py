@@ -1,38 +1,26 @@
 from __future__ import annotations
 
-import hashlib
 import importlib
 import logging
-import shutil
-from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from pathlib import Path
 
 from beartype import beartype
 from beartype.typing import Any, Optional, Sequence, TypeVar
 from pydantic import BaseModel
-from sqlalchemy import JSON, DateTime, Integer, String, create_engine, select
-from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
+from sqlalchemy import create_engine, select
+from sqlalchemy.orm import Session
 
+from index_service.gui.file_tree.actions.action_db import OperationRow
+from index_service.gui.file_tree.actions.action_handler import ActionHandler
 from index_service.gui.file_tree.actions.action_list_model import BaseAction
+from index_service.gui.file_tree.actions.action_move_file import MoveActionHandler
+from index_service.gui.file_tree.actions.action_trash_file import TrashActionHandler
+from index_service.services.pydantic_utils import model_to_json_data, model_from_json_data
 
-logging.basicConfig(
-    level=logging.DEBUG,
-    format="%(levelname)s %(name)s %(filename)s:%(lineno)d: %(message)s",
-)
-logger = logging.getLogger(__name__)
+log = logging.getLogger(__name__)
 
 T = TypeVar("T", bound=BaseModel)
-
-
-@beartype
-def model_to_json_data(model: BaseModel) -> Any:
-    return model.model_dump(mode="json")
-
-
-@beartype
-def model_from_json_data(data: Any, model_type: type[T]) -> T:
-    return model_type.model_validate(data)
 
 
 @beartype
@@ -59,48 +47,6 @@ class ActionExecutionConfig(BaseModel):
     trash_root: Path
     sqlite_path: Path
     dry_run: bool = False
-
-
-class Base(DeclarativeBase):
-    pass
-
-
-class OperationRow(Base):
-    __tablename__ = "operations"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    batch_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
-    position: Mapped[int] = mapped_column(Integer, nullable=False)
-    kind: Mapped[str] = mapped_column(String, nullable=False)
-    action_type: Mapped[str] = mapped_column(String, nullable=False)
-    action_data: Mapped[Any] = mapped_column(JSON, nullable=False)
-    status: Mapped[str] = mapped_column(String, nullable=False)
-    execution_hash: Mapped[str] = mapped_column(String, nullable=False)
-    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True),
-                                                           nullable=True)
-    finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True),
-                                                            nullable=True)
-    reverted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True),
-                                                            nullable=True)
-
-
-class ActionHandler(ABC):
-
-    @abstractmethod
-    def do_action(self, row: OperationRow, action: BaseAction) -> None:
-        raise NotImplementedError
-
-    @abstractmethod
-    def undo_action(self, row: OperationRow, action: BaseAction) -> None:
-        raise NotImplementedError
-
-    @abstractmethod
-    def get_hash(self, action: BaseAction) -> str:
-        raise NotImplementedError
-
-    @abstractmethod
-    def verify_consistency_single(self, action: BaseAction) -> None:
-        raise NotImplementedError
 
 
 @beartype
@@ -131,87 +77,6 @@ def _action_dest_path(action: BaseAction) -> Optional[Path]:
             raise ValueError(f"Unsupported action kind: {kind}")
 
 
-class MoveActionHandler(ActionHandler):
-
-    @beartype
-    def __init__(self, dry_run: bool) -> None:
-        self.dry_run = dry_run
-
-    @beartype
-    def do_action(self, row: OperationRow, action: BaseAction) -> None:
-        _ = row
-        dest = _action_dest_path(action)
-        assert dest is not None
-        if self.dry_run:
-            return
-        shutil.move(str(_action_src_path(action)), str(dest))
-
-    @beartype
-    def undo_action(self, row: OperationRow, action: BaseAction) -> None:
-        _ = row
-        dest = _action_dest_path(action)
-        assert dest is not None
-        if self.dry_run:
-            return
-        src = _action_src_path(action)
-        src.parent.mkdir(parents=True, exist_ok=True)
-        shutil.move(str(dest), str(src))
-
-    @beartype
-    def get_hash(self, action: BaseAction) -> str:
-        src = _action_src_path(action)
-        dest = _action_dest_path(action)
-        assert dest is not None
-        payload = f"move|{src}|{dest}"
-        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
-
-    @beartype
-    def verify_consistency_single(self, action: BaseAction) -> None:
-        src = _action_src_path(action)
-        dest = _action_dest_path(action)
-        assert dest is not None
-        if src == dest:
-            raise ValueError(f"Move source and destination must differ: {src}")
-
-
-class TrashActionHandler(ActionHandler):
-
-    @beartype
-    def __init__(self, trash_root: Path, dry_run: bool) -> None:
-        self.trash_root = trash_root
-        self.dry_run = dry_run
-
-    @beartype
-    def do_action(self, row: OperationRow, action: BaseAction) -> None:
-        src = _action_src_path(action)
-        dest = self.trash_root / f"{row.id}_{src.name}"
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        if self.dry_run:
-            return
-        shutil.move(str(src), str(dest))
-
-    @beartype
-    def undo_action(self, row: OperationRow, action: BaseAction) -> None:
-        src = _action_src_path(action)
-        dest = self.trash_root / f"{row.id}_{src.name}"
-        if self.dry_run:
-            return
-        src.parent.mkdir(parents=True, exist_ok=True)
-        shutil.move(str(dest), str(src))
-
-    @beartype
-    def get_hash(self, action: BaseAction) -> str:
-        src = _action_src_path(action)
-        payload = f"trash|{src}|{self.trash_root}"
-        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
-
-    @beartype
-    def verify_consistency_single(self, action: BaseAction) -> None:
-        src = _action_src_path(action)
-        if src == self.trash_root:
-            raise ValueError(f"Trash source cannot be trash root: {src}")
-
-
 class ActionExecutor:
 
     @beartype
@@ -229,6 +94,7 @@ class ActionExecutor:
 
     @beartype
     def init_db(self) -> None:
+        from index_service.gui.file_tree.actions.action_db import Base
         Base.metadata.create_all(self.engine)
 
     @beartype

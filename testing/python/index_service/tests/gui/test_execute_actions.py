@@ -6,10 +6,10 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from index_service.gui.file_tree.actions.action_db import OperationRow
 from index_service.gui.file_tree.actions.action_execute import (
     ActionExecutionConfig,
     ActionExecutor,
-    OperationRow,
 )
 from index_service.gui.file_tree.actions.action_list_model import Action, MoveAction, TrashAction
 from index_service.gui.file_tree.columns.file_tree_column import FileTreeNode
