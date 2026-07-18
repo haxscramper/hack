@@ -22,6 +22,7 @@ from index_service.gui.file_tree.columns.file_duplicate_column import FileDuplic
 from index_service.gui.file_tree.columns.file_name_column import FileNameColumnSpec
 from index_service.gui.file_tree.columns.file_tree_column import FileTreeColumnSpec
 from index_service.gui.file_tree.columns.size_column import EntrySizeColumnSpec
+from index_service.gui.file_tree.columns.size_share_column import SizeShareColumnSpec
 from index_service.gui.file_tree.columns.video_info_columns import VideoBitrateColumnSpec
 from index_service.gui.file_tree.python_code_editor import QueryError
 from index_service.gui.file_tree.qt_tree_model import FileTreeModel
@@ -63,6 +64,10 @@ class FileTreeQueryWindow(QMainWindow):
             FileNameColumnSpec(),
             EntrySizeColumnSpec("size"),
             VideoBitrateColumnSpec("bitrate"),
+            SizeShareColumnSpec(
+                "share",
+                [d.path for d in file_tree_view.root_dirs],
+            ),
         ]
 
         if cfg.file_tree_view.drop_cache_files:
