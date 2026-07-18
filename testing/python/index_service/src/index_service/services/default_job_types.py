@@ -1,11 +1,7 @@
-from index_service.services.converters.file_size_converter import FileSizeConverter
 from index_service.services.core.job_types import (
-    BaseConverter,
     BaseIndexer,
     BaseResource,
 )
-from index_service.services.indexers.comfy_input_indexer import ComfyInputIndexer
-from index_service.services.indexers.exif_metadata import ExifMetadataIndexer
 from index_service.services.indexers.chunk_indexing.file_embedding import FileEmbeddingIndexer
 from index_service.services.indexers.file_size import FileSizeIndexer
 from index_service.services.indexers.file_stats import FileStatsIndexer
@@ -27,8 +23,4 @@ DEFAULT_INDEXER_TYPES: list[type[BaseIndexer]] = [
     FileSummaryIndexer,
     FileEmbeddingIndexer,
     DocumentBlockIndexer,
-]
-
-DEFAULT_CONVERTER_TYPES: list[type[BaseConverter]] = [
-    FileSizeConverter,
 ]

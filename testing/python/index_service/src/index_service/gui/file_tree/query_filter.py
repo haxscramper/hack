@@ -1,12 +1,14 @@
 import ast
+import json
 import linecache
 import logging
 from dataclasses import dataclass
+from pathlib import Path
 
 from PyQt6.QtCore import QModelIndex, QObject, QAbstractListModel, Qt
 from beartype import beartype
-from beartype.typing import Callable, Literal
-from pydantic import BaseModel, ConfigDict
+from beartype.typing import Callable, Literal, Annotated, Union
+from pydantic import BaseModel, ConfigDict, Field
 
 from index_service.gui.abstract_models.column_model import AbstractColumnItemModel
 from index_service.gui.common.qt_model_roles import CustomModelRole
@@ -17,6 +19,7 @@ from index_service.gui.file_tree.python_code_editor import (
     as_query_error,
 )
 from index_service.gui.file_tree.qt_tree_model import FileTreeModel
+from index_service.services.pydantic_utils import model_from_json_data
 
 log = logging.getLogger(__name__)
 
@@ -34,7 +37,7 @@ class BaseAction(BaseModel):
 
 
 class TrashAction(BaseAction):
-    kind: Literal["trash"] = "tash"
+    kind: Literal["trash"] = "trash"
     file: FileTreeNode
 
 
@@ -42,6 +45,24 @@ class MoveAction(BaseAction):
     kind: Literal["move"] = "move"
     file: FileTreeNode
     dest: str
+
+
+Action = Annotated[
+    Union[MoveAction, TrashAction],
+    Field(discriminator="kind"),
+]
+
+
+def load_actions(jsonl_path: Path) -> list[Action]:
+    actions: list[Action] = []
+    with jsonl_path.open("r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            data = json.loads(line)
+            actions.append(model_from_json_data(data, Action))
+    return actions
 
 
 @beartype

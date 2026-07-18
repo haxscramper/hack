@@ -14,14 +14,11 @@ from time import monotonic
 
 from index_service.services.core.db import IndexDatabase
 from index_service.services.core.job_types import (
-    BaseConverter,
     BaseIndexer,
     BaseResource,
     RunContext,
 )
 from index_service.services.core.types import (
-    ConverterOutput,
-    ConverterRequest,
     FileHash,
     FileRef,
     IndexerOutput,
@@ -109,7 +106,6 @@ class IndexRuntime:
             ctx: RunContext,
             db: IndexDatabase,
             indexer_types: Sequence[BaseIndexer] = list(),
-            converter_types: Sequence[BaseConverter] = list(),
             resource_types: Sequence[BaseResource] = list(),
     ) -> None:
         self.db = db
@@ -119,9 +115,6 @@ class IndexRuntime:
         }
         self._indexer_instances: dict[str, BaseIndexer] = {
             inst.asset_name: inst for inst in indexer_types
-        }
-        self._converter_instances: dict[str, BaseConverter] = {
-            inst.converter_id: inst for inst in converter_types
         }
 
         self.db.ensure_collections(list(self._indexer_instances.values()))  # type: ignore
@@ -439,63 +432,3 @@ class IndexRuntime:
             recent_sub_batch_times.append(monotonic() - sub_batch_started_at)
 
         log.debug("finished indexer batch")
-
-    @overload
-    def run_converter(
-        self,
-        converter_name: str,
-        inputs: list[FileRef],
-        param: str = "",
-        assets: dict[str, IndexerOutput] | None = None,
-    ) -> ConverterOutput:
-        ...
-
-    @overload
-    def run_converter(
-        self,
-        converter_name: str,
-        inputs: list[list[FileRef]],
-        param: str = "",
-        assets: dict[str, IndexerOutput] | None = None,
-    ) -> list[ConverterOutput]:
-        ...
-
-    def run_converter(
-        self,
-        converter_name: str,
-        inputs: list[FileRef] | list[list[FileRef]],
-        param: str = "",
-        assets: dict[str, IndexerOutput] | None = None,
-    ) -> ConverterOutput | list[ConverterOutput]:
-        converter = self._converter_instances[converter_name]
-        assets = assets or {}
-
-        if inputs and isinstance(inputs[0], list):
-            batches: list[list[FileRef]] = inputs  # type: ignore[assignment]
-            single = False
-        else:
-            batches = [inputs]  # type: ignore[list-item]
-            single = True
-
-        outputs = [self._run_converter_one(converter, b, param, assets) for b in batches]
-        return outputs[0] if single else outputs
-
-    def _run_converter_one(
-        self,
-        converter: BaseConverter,
-        input_files: list[FileRef],
-        param: str,
-        assets: dict[str, IndexerOutput],
-    ) -> ConverterOutput:
-        resources = {
-            name: self._resource_instances[name] for name in converter.required_resources
-        }
-        request = ConverterRequest(input_files=input_files, param=param)
-        out = converter.run(self.ctx, request, resources=resources, assets=assets)
-        self.db.store_derivation(
-            request.input_files,
-            out.output_files,
-            {"param": param},
-            out.return_value,
-        )
-        return out

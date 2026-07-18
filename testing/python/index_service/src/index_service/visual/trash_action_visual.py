@@ -8,7 +8,7 @@ from typing import Any
 
 from coloraide import Color
 
-from index_service.gui.file_tree.query_filter import TrashAction
+from index_service.gui.file_tree.query_filter import TrashAction, load_actions
 from index_service.services.pydantic_utils import model_from_json_data
 from pydantic import BaseModel
 
@@ -28,18 +28,6 @@ def iter_files(node: Any):
             yield from iter_files(child)
     else:
         yield node
-
-
-def load_actions(jsonl_path: Path) -> list[Any]:
-    actions: list[Any] = []
-    with jsonl_path.open("r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            data = json.loads(line)
-            actions.append(model_from_json_data(data, TrashAction))
-    return actions
 
 
 def normalize_under_root(root_dir: Path, raw_path: str) -> Path | None:
@@ -284,7 +272,7 @@ class TrashActionVisualConfig(BaseModel, extra="forbid"):
 
 def visualize_trash_actions(conf: TrashActionVisualConfig) -> None:
     root_dir = conf.root_dir.resolve(strict=True)
-    actions = load_actions(conf.json_path)
+    actions = [t for t in load_actions(conf.json_path) if isinstance(t, TrashAction)]
 
     all_files = collect_all_files(root_dir)
     deleted_files = collect_deleted_files(actions, root_dir)

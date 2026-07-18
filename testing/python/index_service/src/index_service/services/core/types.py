@@ -94,23 +94,9 @@ class IndexerOutput(BaseModel, extra="forbid"):
 
 
 @beartype
-class ConverterOutput(BaseModel, extra="forbid"):
-    model_config = ConfigDict(frozen=True)
-    converter_id: str
-    output_files: list[Path]
-    return_value: AnyModel
-
-
-@beartype
 class IndexerRequest(BaseModel, extra="forbid"):
     file_ref: FileRef
     dependency_results: dict[str, IndexerOutput | None] = Field(default_factory=dict)
 
     def get_hash_str(self) -> str:
         return self.file_ref.hash.hash
-
-
-@beartype
-class ConverterRequest(BaseModel, extra="forbid"):
-    input_files: list[FileRef]
-    param: str = ""

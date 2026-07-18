@@ -21,14 +21,11 @@ from sqlalchemy import (
     MetaData,
     String,
     Table,
-    Connection,
     Engine,
 )
 
 from index_service.services.core.db import IndexDatabase
 from index_service.services.core.types import (
-    ConverterOutput,
-    ConverterRequest,
     FileRef,
     IndexerOutput,
     IndexerRequest,
@@ -192,22 +189,4 @@ class BaseIndexer(ABC):
         resources: dict[str, object],
         assets: dict[str, object],
     ) -> IndexerOutput:
-        raise NotImplementedError
-
-
-@beartype
-class BaseConverter(ABC):
-    converter_id: str
-    result_model: type[BaseModel]
-    required_assets: tuple[str, ...] = ()
-    required_resources: tuple[str, ...] = ()
-
-    @abstractmethod
-    def run(
-        self,
-        ctx: RunContext,
-        request: ConverterRequest,
-        resources: dict[str, object],
-        assets: dict[str, object],
-    ) -> ConverterOutput:
         raise NotImplementedError

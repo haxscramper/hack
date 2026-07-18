@@ -138,17 +138,6 @@ def test_full_text_indexer_with_reverser(runtime: IndexRuntime,
     assert link.to_ == chunk_document.hash
 
 
-def test_file_size_converter(db: IndexDatabase, runtime: IndexRuntime,
-                             sample_file: Path) -> None:
-    root = runtime.db.add_root("root", sample_file.parent)
-    out = runtime.run_converter("file_size_converter",
-                                inputs=[db.as_ref(root, sample_file)])
-
-    assert out.converter_id == "file_size_converter"
-    assert cast(FileSizeConverterResult,
-                out.return_value).total_size == sample_file.stat().st_size
-
-
 def test_db_indexer_result_uniqueness(db: IndexDatabase, tmp_path: Path) -> None:
     root = db.add_root("root", tmp_path)
     pa = tmp_path.joinpath("a.txt")
