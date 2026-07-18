@@ -6,6 +6,7 @@ from pathlib import Path
 from beartype.typing import Any, ClassVar, cast
 from pydantic import BaseModel, Field, model_validator, model_serializer
 
+from index_service.services.core.job_cache import cache_indexer_run
 from index_service.services.core.job_types import BaseIndexer, RunContext
 from index_service.services.indexers.exif_metadata import ExifMetadataIndexerResult
 from index_service.services.core.types import IndexerOutput, IndexerRequest
@@ -61,8 +62,7 @@ class Output(BaseModel, extra="allow"):
 
 
 class NodeProperties(BaseModel, extra="allow"):
-    node_name_for_s_r: str | None = Field(default=None,
-                                          alias="Node name for S&R")
+    node_name_for_s_r: str | None = Field(default=None, alias="Node name for S&R")
 
 
 class Node(BaseModel, extra="allow"):
@@ -183,8 +183,7 @@ class ComfyInput(BaseModel, extra="forbid"):
     title: str | None = None
     inputs: dict[str, Any] | list[Any]
     links: list[ComfyInputLink] = Field(
-        description=
-        "Incoming links to the node -- origin slot/id is a dependee node")
+        description="Incoming links to the node -- origin slot/id is a dependee node")
 
 
 class ComfyInputIndexerResult(BaseModel, extra="forbid"):
@@ -195,7 +194,7 @@ class ComfyInputIndexerResult(BaseModel, extra="forbid"):
 class ComfyInputIndexer(BaseIndexer):
     asset_name = "comfy_input"
     result_model = ComfyInputIndexerResult
-    required_assets = ("exif_metadata", )
+    required_assets = ("exif_metadata",)
 
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
@@ -203,6 +202,7 @@ class ComfyInputIndexer(BaseIndexer):
     def can_run(self, path: Path) -> bool:
         return path.suffix in [".png", ".jpg", ".webp", ".jpeg"]
 
+    @cache_indexer_run
     def run(
         self,
         ctx: RunContext,
@@ -214,20 +214,18 @@ class ComfyInputIndexer(BaseIndexer):
         pre_data = cast(IndexerOutput, assets["exif_metadata"]).result
         assert isinstance(pre_data, ExifMetadataIndexerResult), type(pre_data)
 
-        if ("exif_metadata" not in pre_data.file.original_metadata_full
-                or "workflow"
-                not in pre_data.file.original_metadata_full["exif_metadata"]):
+        if ("exif_metadata" not in pre_data.file.original_metadata_full or
+                "workflow" not in pre_data.file.original_metadata_full["exif_metadata"]):
             return IndexerOutput(
                 indexer_id=self.asset_name,
-                result=ComfyInputIndexerResult(
-                    inputs=[], note="no workflow data detected"),
+                result=ComfyInputIndexerResult(inputs=[],
+                                               note="no workflow data detected"),
             )
 
         else:
-            workflow_js = pre_data.file.original_metadata_full[
-                "exif_metadata"]["workflow"]
-            Path("/tmp/result.json").write_text(
-                json.dumps(workflow_js, indent=2))
+            workflow_js = pre_data.file.original_metadata_full["exif_metadata"][
+                "workflow"]
+            Path("/tmp/result.json").write_text(json.dumps(workflow_js, indent=2))
 
             workflow = ComfyWorkflow1_0(**workflow_js)
             result = ComfyInputIndexerResult(inputs=[])
@@ -245,8 +243,7 @@ class ComfyInputIndexer(BaseIndexer):
                                     target_slot=int(l.target_slot),
                                     origin_slot=int(l.origin_slot),
                                     origin_id=str(l.origin_id),
-                                ) for l in workflow.links
-                                if l.target_id == node.id
+                                ) for l in workflow.links if l.target_id == node.id
                             ] if workflow.links else list(),
                         ))
 

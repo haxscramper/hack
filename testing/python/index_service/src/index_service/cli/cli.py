@@ -34,6 +34,7 @@ from index_service.services.indexers.comfy_input_indexer import ComfyInputIndexe
 from index_service.services.indexers.exif_metadata import ExifMetadataIndexer
 from index_service.services.indexers.wd_indexer import WdTagIndexer
 from index_service.services.log_config import JsonlFormatter, keep_last_files
+from index_service.services.pydantic_utils import model_to_json_data
 
 from index_service.services.utils import (
     dump_with_type,
@@ -188,8 +189,6 @@ class IndexService():
 
         handler = get_custom_traceback_handler(show_args=False)
 
-        log.debug(json.dumps(dump_with_type(index_cfg), indent=2))
-
         def impl(exc_type: Any, exc_value: Any, exc_traceback: Any):
             print(handler(exc_type, exc_value, exc_traceback))
 
@@ -218,8 +217,7 @@ class IndexService():
             ctx=self.ctx,
             paths=index_cfg.paths,
             indexers=tuple(self.cfg.indexers.keys()),
-            limit_total=index_cfg.limit_total,
-            limit_per_path=index_cfg.limit_per_path,
+            cfg=index_cfg,
         )
 
     def get_builders(self) -> list[WidgetBuilder]:
@@ -276,6 +274,7 @@ def main() -> None:
     cfg_path = Path(args.config).expanduser().resolve().absolute()
     payload = commentjson.loads(cfg_path.read_text())
     cfg = AppConfig.model_validate(payload)
+    log.debug(json.dumps(model_to_json_data(cfg), indent=2))
 
     if args.command == "schema":
         cfg_path.with_stem(cfg_path.stem + "_schema").with_suffix(".json").write_text(

@@ -14,6 +14,10 @@ from index_service.services.pydantic_arango_schema import (
     arango_schema_for_model,
 )
 
+import logging
+
+log = logging.getLogger(__name__)
+
 
 @beartype
 class SchemaMixin:
@@ -114,8 +118,20 @@ class SchemaMixin:
         actual_schema = collection.properties().get("schema")
 
         if actual_schema != expected_schema:
-            raise RuntimeError(f"schema mismatch for collection {name!r}: "
-                               f"expected {expected_schema!r}, got {actual_schema!r}")
+            if collection.count() == 0:
+                self._db.delete_collection(name)
+                self._db.create_collection(
+                    name,
+                    edge=edge,
+                    schema=expected_schema,
+                )
+                log.warning(
+                    f"DB schema changed for {name} collection has no items, dropping")
+                return
+
+            else:
+                raise RuntimeError(f"schema mismatch for collection {name!r}: "
+                                   f"expected {expected_schema!r}, got {actual_schema!r}")
 
     def ensure_collections(
         self,

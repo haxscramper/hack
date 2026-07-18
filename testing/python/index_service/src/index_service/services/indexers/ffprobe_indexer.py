@@ -6,7 +6,7 @@ from beartype import beartype
 from beartype.typing import Any, cast
 from index_service.services.core.job_types import BaseIndexer, RunContext
 from index_service.services.core.job_cache import cache_indexer_run
-from index_service.services.core.types import IndexerOutput, IndexerRequest
+from index_service.services.core.types import IndexerOutput, IndexerRequest, IndexDocument
 from plumbum import local
 from pydantic import BaseModel
 
@@ -91,7 +91,7 @@ def run_ffprobe(path: Path) -> FFProbeInfoModel | None:
     )
 
 
-class FFProbeIndexerResult(BaseModel, extra="forbid"):
+class FFProbeIndexerResult(IndexDocument, extra="forbid"):
     probe: FFProbeInfoModel | None
 
 

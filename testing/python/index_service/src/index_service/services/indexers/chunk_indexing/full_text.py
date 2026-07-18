@@ -4,6 +4,7 @@ import glom
 from pydantic import Field
 from beartype.typing import Annotated, Optional
 
+from index_service.services.core.job_cache import cache_indexer_run
 from index_service.services.core.job_types import BaseIndexer, RunContext
 from index_service.services.core.types import FullTextIndexConfig, IndexerOutput, IndexerRequest, MultiDocumentModel, VectorIndexConfig
 from index_service.services.indexers.chunk_indexing.chunking import (
@@ -54,6 +55,7 @@ class FullTextIndexer(BaseIndexer):
             start_overlap_max=200,
         )
 
+    @cache_indexer_run
     def run(
         self,
         ctx: RunContext,

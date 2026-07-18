@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 from arango import Optional
 from beartype import beartype
-from beartype.typing import Any, Literal
+from beartype.typing import Any, Literal, Mapping
 
 from index_service.gui.file_tree.actions.action_execute import ActionExecutionConfig
 from index_service.services.default_job_types import (
@@ -124,6 +124,7 @@ class IndexConfig(BaseModel):
     reset: bool = False
     limit_total: int | None = None
     limit_per_path: int | None = None
+    max_plan_run_size: int = 256
     media_transcribe_whisper_server: Path | None = None
 
     @field_validator("paths", mode="before")
@@ -187,6 +188,8 @@ class AppConfig(BaseModel, extra="forbid"):
         description="DB location for the file hash cache",
         default_factory=lambda: get_xdg_cache_dir([]).joinpath("file_hash_cache.sqlite"),
     )
+
+    common_ignore_prefix: list[str] = Field(default_factory=list)
 
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     action_file: Path = Field(description="JSONL file to write all collected actions")
@@ -259,7 +262,7 @@ class AppConfig(BaseModel, extra="forbid"):
         )
 
     @model_validator(mode="after")
-    def _validate_mode_payload(self) -> "AppConfig":
+    def validate_full_config(self) -> "AppConfig":
         if self.enable_cache is None:
             self.enable_cache = set(self.indexers.keys())
 
@@ -270,3 +273,23 @@ class AppConfig(BaseModel, extra="forbid"):
             )
 
         return self
+
+    @classmethod
+    def _append_common_ignore_prefix(cls, value: object, prefix: list[str]) -> None:
+        if isinstance(value, DirConfig):
+            value.ignore = [*prefix, *value.ignore]
+            return
+
+        if isinstance(value, BaseModel):
+            for field_name in value.__class__.model_fields:
+                cls._append_common_ignore_prefix(getattr(value, field_name), prefix)
+            return
+
+        if isinstance(value, Mapping):
+            for item in value.values():
+                cls._append_common_ignore_prefix(item, prefix)
+            return
+
+        if isinstance(value, (list, tuple, set)):
+            for item in value:
+                cls._append_common_ignore_prefix(item, prefix)
