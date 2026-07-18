@@ -5,7 +5,7 @@ from beartype import beartype
 from beartype.typing import Any, Optional, cast
 from pydantic import BaseModel
 
-from index_service.gui.file_tree.file_tree_column import (
+from index_service.gui.file_tree.columns.file_tree_column import (
     FileTreeColumnSpec,
     FileTreeNode,
 )

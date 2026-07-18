@@ -22,7 +22,7 @@ from PyQt6.QtWidgets import (
 from index_service.gui.abstract_models.column_model import AbstractColumnItemModel
 from index_service.gui.common.qt_model_roles import CustomModelRole
 from index_service.gui.common.qt_utils import get_settings
-from index_service.gui.file_tree.file_tree_column import FileTreeColumnSpec, FileTreeNode
+from index_service.gui.file_tree.columns.file_tree_column import FileTreeColumnSpec, FileTreeNode
 from index_service.gui.file_tree.python_code_editor import PythonQueryEditor
 from index_service.gui.file_tree.query_filter import QueryFilterEvaluator, QueryResultModel
 from index_service.services.core.types import FileHash

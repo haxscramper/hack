@@ -16,11 +16,11 @@ from index_service.gui.collection_views.builder import WidgetBuilder
 from index_service.gui.collection_views.preview_pane import FilePreviewPane
 from index_service.gui.common.qt_model_roles import CustomModelRole
 from index_service.gui.common.qt_utils import get_settings
-from index_service.gui.file_tree.action_list_view import ActionListView
+from index_service.gui.file_tree.actions.action_list_view import ActionListView
 from index_service.gui.file_tree.base_tree_model import build_file_tree, FileTreeNode
-from index_service.gui.file_tree.file_duplicate_column import FileDuplicateColumnSpec
-from index_service.gui.file_tree.file_name_column import FileNameColumnSpec
-from index_service.gui.file_tree.file_tree_column import FileTreeColumnSpec
+from index_service.gui.file_tree.columns.file_duplicate_column import FileDuplicateColumnSpec
+from index_service.gui.file_tree.columns.file_name_column import FileNameColumnSpec
+from index_service.gui.file_tree.columns.file_tree_column import FileTreeColumnSpec
 from index_service.gui.file_tree.python_code_editor import QueryError
 from index_service.gui.file_tree.qt_tree_model import FileTreeModel
 from index_service.gui.file_tree.qt_tree_region import FileTreeRegion

@@ -2,7 +2,7 @@ from PyQt6.QtCore import QModelIndex, Qt
 from beartype import beartype
 from beartype.typing import Any
 
-from index_service.gui.file_tree.file_tree_column import FileTreeColumnSpec
+from index_service.gui.file_tree.columns.file_tree_column import FileTreeColumnSpec
 
 
 @beartype

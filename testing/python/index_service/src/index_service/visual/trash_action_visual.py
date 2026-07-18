@@ -7,10 +7,9 @@ from pathlib import Path
 from typing import Any
 
 from coloraide import Color
-
-from index_service.gui.file_tree.query_filter import TrashAction, load_actions
-from index_service.services.pydantic_utils import model_from_json_data
 from pydantic import BaseModel
+
+from index_service.gui.file_tree.actions.action_list_model import load_actions, TrashAction
 
 
 @dataclass

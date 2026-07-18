@@ -25,7 +25,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.engine import Engine
 from sqlalchemy.engine.url import URL
 
-from index_service.gui.file_tree.file_tree_column import (
+from index_service.gui.file_tree.columns.file_tree_column import (
     FilePathResult,
     FileTreeColumnSpec,
     FileTreeNode,

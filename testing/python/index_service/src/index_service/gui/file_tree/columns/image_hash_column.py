@@ -11,7 +11,7 @@ from beartype import beartype
 from pydantic import BaseModel
 
 from index_service.gui.file_tree.base_tree_model import FileTreeNode
-from index_service.gui.file_tree.file_tree_column import FileTreeColumnSpec
+from index_service.gui.file_tree.columns.file_tree_column import FileTreeColumnSpec
 from index_service.services.core.types import FileHash
 from index_service.services.indexers.image_hash import ImageHashIndexerResult, ImageHashIndexer
 
