@@ -35,6 +35,7 @@ from index_service.gui.file_tree.columns.file_tree_column import (
 from index_service.services.core.db import IndexDatabase
 from index_service.services.core.job_types import BaseIndexer, RunContext
 from index_service.services.core.types import FileHash
+from index_service.services.file_iteration import match_root, RootFilter, prepare_root_filters
 from index_service.services.pydantic_utils import model_to_json_data, model_from_json_data
 
 log = logging.getLogger(__name__)
@@ -62,13 +63,6 @@ class _FilePathRow:
     hash: str
     root: str
     relative: str
-
-
-@dataclass(slots=True, frozen=True)
-class _RootFilter:
-    root_path: Path
-    root_str: str
-    ignore_spec: GitIgnoreSpec | None
 
 
 def _column_schema_hash(column: FileTreeColumnSpec) -> str:
@@ -236,41 +230,10 @@ def _initialize_cache(
     return engine, schema_table, file_table, path_table
 
 
-def _prepare_root_filters(root_directories: Sequence[DirConfig]) -> list[_RootFilter]:
-    filters: list[_RootFilter] = []
-
-    for entry in root_directories:
-        root_path = entry.path.expanduser().resolve()
-        root_str = root_path.as_posix().rstrip("/")
-        ignore_spec = (GitIgnoreSpec.from_lines(entry.ignore) if entry.ignore else None)
-        filters.append(
-            _RootFilter(
-                root_path=root_path,
-                root_str=root_str,
-                ignore_spec=ignore_spec,
-            ))
-
-    filters.sort(key=lambda item: len(item.root_str), reverse=True)
-    return filters
-
-
-def _match_root(path_str: str,
-                root_filters: Sequence[_RootFilter]) -> tuple[_RootFilter, str] | None:
-    for root in root_filters:
-        if path_str == root.root_str:
-            return root, ""
-
-        prefix = root.root_str + "/"
-        if path_str.startswith(prefix):
-            return root, path_str[len(prefix):]
-
-    return None
-
-
 def _fetch_file_paths(
     ctx: RunContext,
     db: IndexDatabase,
-    root_filters: Sequence[_RootFilter],
+    root_filters: Sequence[RootFilter],
 ) -> list[_FilePathRow]:
     with ctx.trace_scope("fetch file paths"):
         rows: list[_FilePathRow] = []
@@ -282,7 +245,7 @@ def _fetch_file_paths(
                 continue
 
             path_str = path.as_posix()
-            matched = _match_root(path_str, root_filters)
+            matched = match_root(path_str, root_filters)
             if matched is None:
                 # The initial query pulls all the files from the DB, then the code
                 # filters the paths to check if they belong to any of the target
@@ -486,7 +449,7 @@ def _load_flat_file_nodes(
     engine: Engine,
     file_table: Table,
     path_table: Table,
-    root_filters: Sequence[_RootFilter],
+    root_filters: Sequence[RootFilter],
     columns: Sequence[FileTreeColumnSpec],
 ) -> list[tuple[Path, FileTreeNode]]:
     query = (select(
@@ -505,7 +468,7 @@ def _load_flat_file_nodes(
             row_data = row._mapping
             path_str = row_data["path"]
 
-            matched = _match_root(path_str, root_filters)
+            matched = match_root(path_str, root_filters)
             if matched is None:
                 continue
 
@@ -614,7 +577,7 @@ def _load_file_tree_from_cache(
     engine: Engine,
     file_table: Table,
     path_table: Table,
-    root_filters: Sequence[_RootFilter],
+    root_filters: Sequence[RootFilter],
     columns: Sequence[FileTreeColumnSpec],
 ) -> list[FileTreeNode]:
     with ctx.trace_scope("load file tree cache"):
@@ -639,7 +602,7 @@ def build_file_tree(
     columns: Sequence[FileTreeColumnSpec],
     cache_path: Path,
 ) -> list[FileTreeNode]:
-    root_filters = _prepare_root_filters(root_directories)
+    root_filters = prepare_root_filters(root_directories)
     if not root_filters:
         return []
 

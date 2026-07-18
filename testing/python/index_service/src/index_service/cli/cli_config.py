@@ -11,6 +11,8 @@ from index_service.services.default_job_types import (
     DEFAULT_RESOURCE_TYPES,
 )
 from pydantic import BaseModel, field_validator, Field, ConfigDict, model_validator
+
+from index_service.services.file_iteration import DirConfig
 from index_service.services.indexers.comfy_input_indexer import ComfyInputIndexer
 from index_service.services.indexers.exif_metadata import ExifMetadataIndexer
 from index_service.services.indexers.ffprobe_indexer import FFProbeIndexer
@@ -109,10 +111,16 @@ class LoggingConfig(BaseModel):
         return value.expanduser().resolve().absolute()
 
 
+class IndexPathConfig(BaseModel, extra="forbid"):
+    name: str
+    root_path: Path
+    paths: list[DirConfig]
+
+
 class IndexConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", arbitrary_types_allowed=True)
 
-    paths: tuple[Path, ...] = ()
+    paths: tuple[IndexPathConfig, ...] = ()
     reset: bool = False
     limit_total: int | None = None
     limit_per_path: int | None = None
@@ -124,11 +132,6 @@ class IndexConfig(BaseModel):
         if value is None:
             return ()
         return value
-
-    @field_validator("paths")
-    @classmethod
-    def _normalize_paths(cls, value: tuple[Path, ...]) -> tuple[Path, ...]:
-        return tuple(p.expanduser().resolve().absolute() for p in value)
 
     @field_validator("media_transcribe_whisper_server")
     @classmethod
@@ -153,11 +156,6 @@ class IndexConfig(BaseModel):
 class FlatQueryViewConfig(BaseModel, extra="forbid"):
     # placeholder for future view-specific options
     pass
-
-
-class DirConfig(BaseModel, extra="forbid"):
-    path: Path
-    ignore: list[str] = Field(default_factory=list)
 
 
 class FileTreeViewConfig(BaseModel, extra="forbid"):
