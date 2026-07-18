@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from coloraide import Color
+
 from index_service.gui.file_tree.query_filter import TrashAction
 from index_service.services.pydantic_utils import model_from_json_data
 from pydantic import BaseModel
@@ -118,14 +120,23 @@ def build_directory_stats(root_dir: Path, all_files: set[str],
     return stats
 
 
+_YELLOW_TO_RED = Color.interpolate(["#eab308", "#ef4444"], space="srgb")
+
+
 def deletion_color(total_files: int, deleted_files: int) -> str:
-    if total_files > 0 and deleted_files >= total_files:
-        return "#ef4444"  # red
-    if total_files > 0 and (deleted_files / total_files) >= 0.5:
-        return "#f97316"  # orange
-    if deleted_files > 0:
-        return "#eab308"  # yellow
-    return "#22c55e"  # green
+    if deleted_files == 0:
+        return "#22c55e"
+
+    if total_files <= 0:
+        return "#ef4444"
+
+    ratio = max(0.0, min(1.0, deleted_files / total_files))
+
+    steps = 32
+    step_index = round(ratio * (steps - 1))
+    q_ratio = step_index / (steps - 1)
+
+    return _YELLOW_TO_RED(q_ratio).convert("srgb").to_string(hex=True)
 
 
 def to_plotly_data(root: DirStats, full_root: Path) -> dict[str, list[Any]]:

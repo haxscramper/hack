@@ -1,3 +1,4 @@
+from io import TextIOWrapper
 from pathlib import Path
 import json
 import logging
@@ -5,7 +6,7 @@ from typing import Any
 
 from pydantic import BaseModel
 from PyQt6.QtCore import pyqtSignal, QModelIndex, Qt
-from PyQt6.QtWidgets import QHeaderView, QPushButton, QTableView, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QHeaderView, QPushButton, QTableView, QVBoxLayout, QWidget, QHBoxLayout
 
 from index_service.gui.common.qt_model_roles import CustomModelRole
 from index_service.gui.file_tree.query_filter import ActionListModel
@@ -46,10 +47,18 @@ class ActionListView(QWidget):
         self.save_actions_button = QPushButton("save actions", self)
         self.save_actions_button.clicked.connect(self._on_save_actions_clicked)
 
+        self.overwrite_actions_button = QPushButton("overwrite actions", self)
+        self.overwrite_actions_button.clicked.connect(self._overwrite_actions)
+
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.list_view)
-        layout.addWidget(self.save_actions_button)
+
+        buttons_layout = QHBoxLayout()
+        buttons_layout.addWidget(self.save_actions_button)
+        buttons_layout.addWidget(self.overwrite_actions_button)
+
+        layout.addLayout(buttons_layout)
 
     def _on_tree_item_double_clicked(self, index: QModelIndex) -> None:
         log.info("double click on the item tree action")
@@ -62,20 +71,29 @@ class ActionListView(QWidget):
             assert isinstance(hash_value, str), type(hash_value)
             self.file_hash_activated.emit(FileHash(hash=hash_value))
 
-    def _on_save_actions_clicked(self) -> None:
+    def _write_actions(self, out: TextIOWrapper):
         model = self.list_view.model()
         assert model is not None
 
-        with ACTIONS_FILE.open("a", encoding="utf-8") as out:
-            for row in range(model.rowCount()):
-                index = model.index(row, 0)
-                action = index.data(CustomModelRole.ActionRole.value)
-                if action is None:
-                    continue
+        for row in range(model.rowCount()):
+            index = model.index(row, 0)
+            action = index.data(CustomModelRole.ActionRole.value)
+            if action is None:
+                continue
 
-                assert isinstance(action, BaseModel), type(action)
-                json_data = model_to_json_data(action)
-                out.write(json.dumps(json_data, ensure_ascii=False))
-                out.write("\n")
+            assert isinstance(action, BaseModel), type(action)
+            json_data = model_to_json_data(action)
+            out.write(json.dumps(json_data, ensure_ascii=False))
+            out.write("\n")
+
+    def _overwrite_actions(self) -> None:
+        with ACTIONS_FILE.open("w", encoding="utf-8") as out:
+            self._write_actions(out)
+
+        log.info(f"Saved actions to {ACTIONS_FILE}")
+
+    def _on_save_actions_clicked(self) -> None:
+        with ACTIONS_FILE.open("a", encoding="utf-8") as out:
+            self._write_actions(out)
 
         log.info(f"Saved actions to {ACTIONS_FILE}")

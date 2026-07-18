@@ -7,7 +7,7 @@ from pathlib import Path
 
 import magic
 from beartype import beartype
-from PyQt6.QtCore import QAbstractTableModel, QModelIndex, Qt, QUrl
+from PyQt6.QtCore import QAbstractTableModel, QModelIndex, QSize, Qt, QUrl
 from PyQt6.QtGui import QPixmap
 from PyQt6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PyQt6.QtMultimediaWidgets import QVideoWidget
@@ -107,6 +107,15 @@ class PathsTableModel(QAbstractTableModel):
         return str(section + 1)
 
 
+class ShrinkableLabel(QLabel):
+
+    def minimumSizeHint(self) -> QSize:
+        return QSize(0, 0)
+
+    def sizeHint(self) -> QSize:
+        return QSize(0, 0)
+
+
 @beartype
 class DispatchingFileContentPreviewBuilder:
 
@@ -129,8 +138,9 @@ class DispatchingFileContentPreviewBuilder:
                 widget.setMinimumSize(0, 0)
                 return widget
 
-        fallback = QLabel(f"Unsupported file type: {mime}\n{absolute_path}")
+        fallback = ShrinkableLabel(f"Unsupported file type: {mime}\n{absolute_path}")
         fallback.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        fallback.setWordWrap(True)
         fallback.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         fallback.setMinimumSize(0, 0)
         return fallback

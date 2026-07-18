@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 from PyQt6.QtCore import QModelIndex, QObject, QAbstractListModel, Qt
 from beartype import beartype
-from beartype.typing import Callable
+from beartype.typing import Callable, Literal
 from pydantic import BaseModel, ConfigDict
 
 from index_service.gui.abstract_models.column_model import AbstractColumnItemModel
@@ -34,10 +34,12 @@ class BaseAction(BaseModel):
 
 
 class TrashAction(BaseAction):
+    kind: Literal["trash"] = "tash"
     file: FileTreeNode
 
 
 class MoveAction(BaseAction):
+    kind: Literal["move"] = "move"
     file: FileTreeNode
     dest: str
 
