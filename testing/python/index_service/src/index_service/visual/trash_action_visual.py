@@ -155,37 +155,8 @@ def to_echarts_node(node: DirStats, full_root: Path) -> dict[str, Any]:
 
 
 def build_echarts_html(root_dir: Path, tree_data: dict[str, Any]) -> str:
-    option = {
-        "title": {
-            "text": f"Root deletion view: {root_dir}",
-            "left": "center"
-        },
-        "tooltip": {
-            "formatter": (
-                "function(info) {"
-                "  var d = info.data || {};"
-                "  return 'path: ' + (d.fullPath || '') + '<br/>' +"
-                "         'deleted: ' + (d.deletedFiles ?? 0) + ' / ' + (d.totalFiles ?? 0) + '<br/>' +"
-                "         'ratio: ' + (d.ratio ?? 0) + '%';"
-                "}")
-        },
-        "series": [{
-            "type": "treemap",
-            "data": [tree_data],
-            "leafDepth": 3,
-            "roam": True,
-            "nodeClick": "zoomToNode",
-            "breadcrumb": {
-                "show": True
-            },
-            "label": {
-                "show": True,
-                "formatter": "{b}"
-            },
-        }],
-    }
+    tree_data_json = json.dumps(tree_data, ensure_ascii=False)
 
-    option_json = json.dumps(option, ensure_ascii=False)
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -213,7 +184,68 @@ def build_echarts_html(root_dir: Path, tree_data: dict[str, Any]) -> str:
   <div id="chart"></div>
   <script>
     const chart = echarts.init(document.getElementById('chart'));
-    const option = {option_json};
+    const treeData = {tree_data_json};
+
+    const option = {{
+      title: {{
+        text: 'Root deletion view: {root_dir}',
+        left: 'center'
+      }},
+      tooltip: {{
+        trigger: 'item',
+        transitionDuration: 0,
+        formatter: function (info) {{
+          const d = info.data || {{}};
+          return 'path: ' + (d.fullPath || '') + '<br/>' +
+                 'deleted: ' + (d.deletedFiles ?? 0) + ' / ' + (d.totalFiles ?? 0) + '<br/>' +
+                 'ratio: ' + (d.ratio ?? 0) + '%';
+        }}
+      }},
+      series: [
+        {{
+          type: 'treemap',
+          data: [treeData],
+          roam: true,
+          nodeClick: 'zoomToNode',
+          leafDepth: 2,
+          animation: false,
+          animationDuration: 0,
+          animationDurationUpdate: 0,
+          animationEasing: 'linear',
+          animationEasingUpdate: 'linear',
+          breadcrumb: {{ show: true }},
+          label: {{
+            show: true,
+            position: 'insideTopLeft',
+            align: 'left',
+            verticalAlign: 'top',
+            formatter: '{{b}}'
+          }},
+          upperLabel: {{
+            show: true,
+            position: 'insideTopLeft',
+            align: 'left',
+            verticalAlign: 'top'
+          }},
+          levels: [
+            {{
+              itemStyle: {{ borderColor: '#1f2937', borderWidth: 2, gapWidth: 4 }}
+            }},
+            {{
+              itemStyle: {{ borderColor: '#1f2937', borderWidth: 1, gapWidth: 2 }},
+              upperLabel: {{ show: true, position: 'insideTopLeft' }},
+              label: {{ show: true, position: 'insideTopLeft' }}
+            }},
+            {{
+              itemStyle: {{ borderColor: '#1f2937', borderWidth: 1, gapWidth: 1 }},
+              upperLabel: {{ show: true, position: 'insideTopLeft' }},
+              label: {{ show: true, position: 'insideTopLeft' }}
+            }}
+          ]
+        }}
+      ]
+    }};
+
     chart.setOption(option);
     window.addEventListener('resize', () => chart.resize());
   </script>
