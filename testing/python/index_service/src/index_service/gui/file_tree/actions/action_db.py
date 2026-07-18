@@ -21,5 +21,3 @@ class OperationRow(Base):
                                                            nullable=True)
     finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True),
                                                             nullable=True)
-    reverted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True),
-                                                            nullable=True)

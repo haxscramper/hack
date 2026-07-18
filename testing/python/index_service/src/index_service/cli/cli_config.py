@@ -172,6 +172,8 @@ class VisualConfig(BaseModel, extra="forbid"):
 
 class AppConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
+    fuck_off__schema: str | None = Field(alias="$schema", default=None)
+
     index_cache: Path = Field(
         description="DB location for the indexer result cache",
         default_factory=lambda: get_xdg_cache_dir([]).joinpath("index_cache.sqlite"),

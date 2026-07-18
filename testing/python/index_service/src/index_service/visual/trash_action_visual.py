@@ -264,7 +264,6 @@ def build_plotly_html(root_dir: Path, tree_data: dict[str, list[Any]]) -> str:
 
 
 class TrashActionVisualConfig(BaseModel, extra="forbid"):
-    json_path: Path
     root_dir: Path
     out_path: Path
 

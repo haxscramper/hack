@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from index_service.cli.cli_config import FileTreeViewConfig
+from index_service.cli.cli_config import FileTreeViewConfig, AppConfig
 from index_service.gui.abstract_models.column_model import AbstractColumnItemModel
 from index_service.gui.collection_views.builder import WidgetBuilder
 from index_service.gui.collection_views.preview_pane import FilePreviewPane
@@ -43,6 +43,7 @@ class FileTreeQueryWindow(QMainWindow):
         ctx: RunContext,
         file_tree_view: FileTreeViewConfig,
         db: IndexDatabase,
+        cfg: AppConfig,
         indexer_instances: Sequence[BaseIndexer],
         builders: Sequence[WidgetBuilder],
         parent: QWidget | None = None,
@@ -50,6 +51,8 @@ class FileTreeQueryWindow(QMainWindow):
         super().__init__(parent)
 
         assert file_tree_view
+
+        self.cfg = cfg
 
         QCoreApplication.setOrganizationName("haxscramper")
         QCoreApplication.setApplicationName("haxdex-tree-view")
@@ -131,7 +134,9 @@ class FileTreeQueryWindow(QMainWindow):
 
     def _add_action_region(self, actions: ActionListModel) -> ActionListView:
         log.info("add action list view")
-        view = ActionListView(actions, parent=self.region_splitter)
+        view = ActionListView(actions,
+                              parent=self.region_splitter,
+                              action_file=self.cfg.action_file)
         view.file_hash_activated.connect(self.preview_pane.show_hash)
         self.region_splitter.addWidget(view)
         self.region_widgets.append(view)

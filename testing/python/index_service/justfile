@@ -42,20 +42,31 @@ profile_index:
 # --indexer ffprobe \
 # --indexer pdf_pages \
 
-flat_query_view:
+schema:
+    uv run src/index_service/cli/cli.py schema "~/defaultdirs/temporary_interchange/content_root_indexing.jsonc"
+
+
+flat_query_view: schema
     uv run src/index_service/cli/cli.py flat_query_view "~/defaultdirs/temporary_interchange/content_root_indexing.jsonc" 
 
-file_tree:
+file_tree: schema
     uv run src/index_service/cli/cli.py file_tree_view "~/defaultdirs/temporary_interchange/content_root_indexing.jsonc" 
 
-profile_file_tree:
+profile_file_tree: schema
     uv run py-spy record --format chrometrace -o /tmp/haxdex-perf-tree-view.json -- \
       python src/index_service/cli/cli.py file_tree_view "~/defaultdirs/temporary_interchange/content_root_indexing.jsonc"
 
-visual_trash:
+visual_trash: schema
     uv run src/index_service/cli/cli.py visual "~/defaultdirs/temporary_interchange/content_root_indexing.jsonc"
 
-gammaray_file_tree:
+do_act: schema
+    uv run src/index_service/cli/cli.py do_act "~/defaultdirs/temporary_interchange/content_root_indexing.jsonc"
+
+undo_act: schema
+    uv run src/index_service/cli/cli.py undo_act "~/defaultdirs/temporary_interchange/content_root_indexing.jsonc"
+
+
+gammaray_file_tree: schema
     uv run gammaray $(uv run which python) src/index_service/cli/cli.py file_tree_view "~/defaultdirs/temporary_interchange/content_root_indexing.jsonc"
 
 

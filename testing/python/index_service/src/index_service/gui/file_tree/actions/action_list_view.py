@@ -15,15 +15,17 @@ from index_service.services.pydantic_utils import model_to_json_data
 
 log = logging.getLogger(__name__)
 
-ACTIONS_FILE = Path("/tmp/index-result-actions.jsonl")
-
 
 class ActionListView(QWidget):
     file_hash_activated = pyqtSignal(object)
 
-    def __init__(self, actions: ActionListModel, parent: QWidget | None = None) -> None:
+    def __init__(self,
+                 actions: ActionListModel,
+                 action_file: Path,
+                 parent: QWidget | None = None) -> None:
         super().__init__(parent)
 
+        self.action_file = action_file
         self.list_view = QTableView(self)
         self.list_view.setModel(actions)
         self.list_view.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)
@@ -87,13 +89,13 @@ class ActionListView(QWidget):
             out.write("\n")
 
     def _overwrite_actions(self) -> None:
-        with ACTIONS_FILE.open("w", encoding="utf-8") as out:
+        with self.action_file.open("w", encoding="utf-8") as out:
             self._write_actions(out)
 
-        log.info(f"Saved actions to {ACTIONS_FILE}")
+        log.info(f"Saved actions to {self.action_file}")
 
     def _on_save_actions_clicked(self) -> None:
-        with ACTIONS_FILE.open("a", encoding="utf-8") as out:
+        with self.action_file.open("a", encoding="utf-8") as out:
             self._write_actions(out)
 
-        log.info(f"Saved actions to {ACTIONS_FILE}")
+        log.info(f"Saved actions to {self.action_file}")

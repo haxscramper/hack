@@ -258,6 +258,7 @@ class IndexService():
             db=self.db,
             indexer_instances=self.indexer_instances,
             builders=self.get_builders(),
+            cfg=self.cfg,
         )
 
         win.show()
@@ -275,6 +276,11 @@ def main() -> None:
     cfg_path = Path(args.config).expanduser().resolve().absolute()
     payload = commentjson.loads(cfg_path.read_text())
     cfg = AppConfig.model_validate(payload)
+
+    if args.command == "schema":
+        cfg_path.with_stem(cfg_path.stem + "_schema").with_suffix(".json").write_text(
+            json.dumps(AppConfig.model_json_schema(), indent=2))
+        return
 
     if args.command == "index" and cfg.index and cfg.index.reset:
         IndexDatabase.reset_database(
@@ -311,6 +317,7 @@ def main() -> None:
                 assert cfg.act
                 actions = load_actions(cfg.action_file)
                 executor = ActionExecutor(cfg.act.execution)
+                executor.init_db()
                 executor.register_actions(actions)
                 executor.execute_pending()
 

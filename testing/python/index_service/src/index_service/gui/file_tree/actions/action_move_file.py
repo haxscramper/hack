@@ -7,6 +7,9 @@ from beartype import beartype
 from index_service.gui.file_tree.actions.action_db import OperationRow
 from index_service.gui.file_tree.actions.action_handler import ActionHandler
 from index_service.gui.file_tree.actions.action_list_model import MoveAction, BaseAction
+import logging
+
+log = logging.getLogger(__name__)
 
 
 class MoveActionHandler(ActionHandler):
@@ -21,19 +24,25 @@ class MoveActionHandler(ActionHandler):
         _ = row
         dest = action.dest
         assert dest is not None
+        src = action.file.path
+
+        log.info(f"do action for file move: executing move({src} -> {dest}")
+
         if self.dry_run:
             return
-        shutil.move(str(action.file.path), str(dest))
+
+        shutil.move(str(src), str(dest))
 
     @beartype
     def undo_action(self, row: OperationRow, action: BaseAction) -> None:
         assert isinstance(action, MoveAction)
         _ = row
-        if self.dry_run:
-            return
-
         dest = action.file.path
         src = Path(action.dest)
+
+        log.info(f"Undo action for file move: executing move({src} -> {dest})")
+        if self.dry_run:
+            return
 
         src.parent.mkdir(parents=True, exist_ok=True)
         shutil.move(str(src), str(dest))

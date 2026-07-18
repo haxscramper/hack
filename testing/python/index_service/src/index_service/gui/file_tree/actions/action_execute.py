@@ -7,7 +7,7 @@ from pathlib import Path
 
 from beartype import beartype
 from beartype.typing import Any, Optional, Sequence, TypeVar
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
@@ -26,6 +26,10 @@ T = TypeVar("T", bound=BaseModel)
 @beartype
 def _model_type_to_name(model_type: type[BaseAction]) -> str:
     return f"{model_type.__module__}:{model_type.__qualname__}"
+
+
+_PENDING_STR = "pending"
+_DONE_STR = "done"
 
 
 @beartype
@@ -48,21 +52,24 @@ class ActionExecutionConfig(BaseModel):
     sqlite_path: Path
     dry_run: bool = True
 
+    @field_validator("trash_root")
+    @classmethod
+    def _normalize_trash_root_file(cls, value: Path | None) -> Path | None:
+        if value is None:
+            return None
+        return value.expanduser().resolve().absolute()
+
+    @field_validator("sqlite_path")
+    @classmethod
+    def _normalize_sqlite_path_file(cls, value: Path | None) -> Path | None:
+        if value is None:
+            return None
+        return value.expanduser().resolve().absolute()
+
 
 @beartype
 def _now() -> datetime:
     return datetime.now(timezone.utc)
-
-
-@beartype
-def _action_dest_path(action: BaseAction) -> Optional[Path]:
-    match action.kind:
-        case "move":
-            return Path(getattr(action, "dest"))
-        case "trash":
-            return None
-        case _:
-            raise ValueError(f"Unsupported action kind: {action.kind}")
 
 
 class ActionExecutor:
@@ -163,7 +170,7 @@ class ActionExecutor:
                         kind=kind,
                         action_type=action_type,
                         action_data=model_to_json_data(action),
-                        status="pending",
+                        status=_PENDING_STR,
                         execution_hash=execution_hash,
                         started_at=None,
                         finished_at=None,
@@ -184,8 +191,9 @@ class ActionExecutor:
         with Session(self.engine) as session:
             rows = list(
                 session.scalars(
-                    select(OperationRow).where(OperationRow.status == "pending").order_by(
-                        OperationRow.id.asc())))
+                    select(OperationRow).where(
+                        OperationRow.status == _PENDING_STR).order_by(
+                            OperationRow.id.asc())))
             for row in rows:
                 if max_operations is not None and max_operations <= executed:
                     break
@@ -193,7 +201,7 @@ class ActionExecutor:
                 row.started_at = _now()
                 session.commit()
                 self.handlers[row.kind].do_action(row, action)
-                row.status = "done"
+                row.status = _DONE_STR
                 row.finished_at = _now()
                 session.commit()
                 executed += 1
@@ -205,13 +213,14 @@ class ActionExecutor:
         with Session(self.engine) as session:
             rows = list(
                 session.scalars(
-                    select(OperationRow).where(OperationRow.status == "done").where(
-                        OperationRow.reverted_at.is_(None)).order_by(
-                            OperationRow.id.desc())))
+                    select(OperationRow).where(OperationRow.status == _DONE_STR).order_by(
+                        OperationRow.id.desc())))
             for row in rows:
                 action = self._load_action(row)
                 self.handlers[row.kind].undo_action(row, action)
-                row.reverted_at = _now()
+                row.status = _PENDING_STR
+                row.started_at = None
+                row.finished_at = None
                 session.commit()
                 reverted += 1
         return reverted
