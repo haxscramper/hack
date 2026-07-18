@@ -173,6 +173,7 @@ def build_echarts_html(root_dir: Path, tree_data: dict[str, Any]) -> str:
       background: #0b1020;
       color: #e5e7eb;
       font-family: sans-serif;
+      overflow: hidden;
     }}
     #chart {{
       width: 100%;
@@ -194,6 +195,7 @@ def build_echarts_html(root_dir: Path, tree_data: dict[str, Any]) -> str:
       tooltip: {{
         trigger: 'item',
         transitionDuration: 0,
+        confine: true,
         formatter: function (info) {{
           const d = info.data || {{}};
           return 'path: ' + (d.fullPath || '') + '<br/>' +
@@ -207,7 +209,6 @@ def build_echarts_html(root_dir: Path, tree_data: dict[str, Any]) -> str:
           data: [treeData],
           roam: true,
           nodeClick: 'zoomToNode',
-          leafDepth: 2,
           animation: false,
           animationDuration: 0,
           animationDurationUpdate: 0,
