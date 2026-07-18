@@ -160,6 +160,9 @@ class FileTreeViewConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
     root_dirs: list[str]
     reference_dir: Optional[str] = None
+    reference_tree_cache_path: Path = Path("/tmp/reference_tree_cache.sqlite")
+    visual_tree_cache_path: Path = Path("/tmp/input_tree_cache.sqlite")
+    drop_cache_files: bool = False
 
 
 class ActionConfig(BaseModel, extra="forbid"):

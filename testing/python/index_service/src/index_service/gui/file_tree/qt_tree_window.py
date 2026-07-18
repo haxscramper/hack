@@ -61,6 +61,13 @@ class FileTreeQueryWindow(QMainWindow):
             FileNameColumnSpec(),
         ]
 
+        if cfg.file_tree_view.drop_cache_files:
+            if cfg.file_tree_view.reference_tree_cache_path.exists():
+                cfg.file_tree_view.reference_tree_cache_path.unlink()
+
+            if cfg.file_tree_view.visual_tree_cache_path.exists():
+                cfg.file_tree_view.visual_tree_cache_path.unlink()
+
         if file_tree_view.reference_dir:
             reference_tree: list[FileTreeNode] = build_file_tree(
                 ctx=ctx,
@@ -71,7 +78,7 @@ class FileTreeQueryWindow(QMainWindow):
                     # ImageHashColumnSpec(None),
                     FileDuplicateColumnSpec(None),
                 ],
-                cache_path=Path("/tmp/reference_tree_cache.sqlite"),
+                cache_path=cfg.file_tree_view.reference_tree_cache_path,
             )
 
             # columns.append(ImageHashColumnSpec(reference_tree=reference_tree[0]))
@@ -85,7 +92,7 @@ class FileTreeQueryWindow(QMainWindow):
             ],
             indexers=indexer_instances,
             columns=columns,
-            cache_path=Path("/tmp/input_tree_cache.sqlite"),
+            cache_path=cfg.file_tree_view.visual_tree_cache_path,
         )
 
         model = FileTreeModel(

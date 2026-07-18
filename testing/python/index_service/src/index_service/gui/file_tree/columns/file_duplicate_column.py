@@ -47,6 +47,8 @@ class FileDuplicateColumnSpec(FileTreeColumnSpec):
             if duplicate_data is None or duplicate_data.hash is None:
                 continue
 
+            assert node.path.exists()
+
             self._paths_by_hash.setdefault(
                 duplicate_data.hash,
                 [],
@@ -116,6 +118,9 @@ class FileDuplicateColumnSpec(FileTreeColumnSpec):
         )
 
         self._match_cache[cache_key] = matches
+        for p in matches:
+            assert p.exists(), str(p)
+
         return matches
 
     def data(
@@ -139,16 +144,17 @@ class FileDuplicateColumnSpec(FileTreeColumnSpec):
                 return (f"{duplicate_data.duplicate_count}"
                         f"/{duplicate_data.total_count}")
 
-            return None
+            else:
+                return None
 
         if role in (
                 Qt.ItemDataRole.DisplayRole,
                 Qt.ItemDataRole.EditRole,
         ):
-            if not duplicate_data.matches:
+            if duplicate_data.matches:
+                return str(duplicate_data.matches[0])
+            else:
                 return None
-
-            return str(duplicate_data.matches[0])
 
         if (role == Qt.ItemDataRole.ToolTipRole and duplicate_data.matches):
             return "\n".join(str(path) for path in duplicate_data.matches)

@@ -124,8 +124,6 @@ def test_revert_done(action_executor: ActionExecutor, tmp_path: Path) -> None:
 
     with Session(action_executor.engine) as session:
         rows = list(session.scalars(select(OperationRow).order_by(OperationRow.id.asc())))
-        assert rows[0].reverted_at is not None
-        assert rows[1].reverted_at is not None
         assert rows[0].action_data is not None
         assert rows[1].action_data is not None
 

@@ -174,7 +174,6 @@ class ActionExecutor:
                         execution_hash=execution_hash,
                         started_at=None,
                         finished_at=None,
-                        reverted_at=None,
                     ))
 
             session.commit()

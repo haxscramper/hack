@@ -57,10 +57,16 @@ class PathsTableModel(QAbstractTableModel):
         super().__init__(parent)
         self._rows: list[PathRow] = [self._row_from_path(p) for p in paths]
 
-    def _row_from_path(self, path: str) -> PathRow:
-        stat = Path(path).stat()
-        created_ts = getattr(stat, "st_birthtime", stat.st_ctime)
-        modified_ts = stat.st_mtime
+    def _row_from_path(self, path: str) -> PathRow | None:
+        if Path(path).exists():
+            stat = Path(path).stat()
+            created_ts = getattr(stat, "st_birthtime", stat.st_ctime)
+            modified_ts = stat.st_mtime
+
+        else:
+            created_ts = None
+            modified_ts = None
+
         return PathRow(
             path=path,
             created=_format_timestamp_relative(created_ts),
@@ -129,21 +135,32 @@ class DispatchingFileContentPreviewBuilder:
         ]
 
     def build(self, absolute_path: str) -> QWidget:
-        mime = self._magic.from_file(absolute_path)
-        for builder in self._builders:
-            if builder.can_build(mime):
-                widget = builder.build(absolute_path)
-                widget.setSizePolicy(QSizePolicy.Policy.Expanding,
-                                     QSizePolicy.Policy.Expanding)
-                widget.setMinimumSize(0, 0)
-                return widget
+        if Path(absolute_path).exists():
+            mime = self._magic.from_file(absolute_path)
+            for builder in self._builders:
+                if builder.can_build(mime):
+                    widget = builder.build(absolute_path)
+                    widget.setSizePolicy(QSizePolicy.Policy.Expanding,
+                                         QSizePolicy.Policy.Expanding)
+                    widget.setMinimumSize(0, 0)
+                    return widget
 
-        fallback = ShrinkableLabel(f"Unsupported file type: {mime}\n{absolute_path}")
-        fallback.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        fallback.setWordWrap(True)
-        fallback.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        fallback.setMinimumSize(0, 0)
-        return fallback
+            fallback = ShrinkableLabel(f"Unsupported file type: {mime}\n{absolute_path}")
+            fallback.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            fallback.setWordWrap(True)
+            fallback.setSizePolicy(QSizePolicy.Policy.Expanding,
+                                   QSizePolicy.Policy.Expanding)
+            fallback.setMinimumSize(0, 0)
+            return fallback
+
+        else:
+            fallback = ShrinkableLabel(f"Path does not exist {absolute_path}")
+            fallback.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            fallback.setWordWrap(True)
+            fallback.setSizePolicy(QSizePolicy.Policy.Expanding,
+                                   QSizePolicy.Policy.Expanding)
+            fallback.setMinimumSize(0, 0)
+            return fallback
 
 
 @beartype
@@ -167,7 +184,8 @@ class PathsWidgetBuilder:
         )
         return [str(path) for path in cursor]
 
-    def _save_header_state(self) -> None:
+    def _save_header_state(self, logical_index: int, old_size: int,
+                           new_size: int) -> None:
         if self._table is None:
             return
         self._settings.setValue(self._header_state_key,
@@ -196,6 +214,8 @@ class PathsWidgetBuilder:
         preview_layout.setContentsMargins(0, 0, 0, 0)
 
         table = QTableView(root)
+        table.setTextElideMode(Qt.TextElideMode.ElideNone)
+        table.setWordWrap(False)
         table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)

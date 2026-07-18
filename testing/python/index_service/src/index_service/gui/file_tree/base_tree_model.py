@@ -234,13 +234,15 @@ def _fetch_file_paths(
     with ctx.trace_scope("fetch file paths"):
         rows: list[_FilePathRow] = []
         for item in db.aql.execute(AQL_FILE_PATHS):  # type: ignore
-            rows.append(
-                _FilePathRow(
-                    path=item["path"],
-                    hash=item["hash"],
-                    root=item["root"],
-                    relative=item["relative"],
-                ))
+            if Path(item["path"]).exists():
+                rows.append(
+                    _FilePathRow(
+                        path=item["path"],
+                        hash=item["hash"],
+                        root=item["root"],
+                        relative=item["relative"],
+                    ))
+
         return rows
 
 
@@ -362,6 +364,7 @@ def _store_missing_file_columns(
             row: dict[str, str] = {"hash": hash_value}
 
             for column in columns:
+                assert path.exists(), str(path)
                 data = column.initColumnData(
                     path=path,
                     hash=file_hash,
@@ -524,6 +527,8 @@ def _build_directory_tree(
                 files_by_parent.get((root_path, directory_path), []),
                 key=lambda node: node.path,
             ),)
+
+        assert directory_path.exists()
 
         return FileTreeNode(
             path=directory_path,

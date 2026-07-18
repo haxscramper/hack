@@ -383,7 +383,11 @@ def _human_age(dt: datetime, now: datetime) -> str:
     return f"{days} days ago"
 
 
-def _format_timestamp_relative(ts: float) -> str:
-    dt = datetime.fromtimestamp(ts, tz=timezone.utc).astimezone()
-    now = datetime.now(tz=dt.tzinfo)
-    return f"{dt.isoformat(timespec='seconds')} ({_human_age(dt, now)})"
+def _format_timestamp_relative(ts: float | None) -> str:
+    if ts is None:
+        return "none"
+
+    else:
+        dt = datetime.fromtimestamp(ts, tz=timezone.utc).astimezone()
+        now = datetime.now(tz=dt.tzinfo)
+        return f"{dt.isoformat(timespec='seconds')} ({_human_age(dt, now)})"

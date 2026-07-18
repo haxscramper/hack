@@ -9,7 +9,9 @@ from PyQt6.QtCore import (
     QModelIndex,
     Qt,
     QSettings,
+    QSize,
 )
+from PyQt6.QtWidgets import QStyledItemDelegate, QStyleOptionViewItem
 
 
 @dataclass

@@ -63,13 +63,8 @@ class ActionListView(QWidget):
         layout.addLayout(buttons_layout)
 
     def _on_tree_item_double_clicked(self, index: QModelIndex) -> None:
-        log.info("double click on the item tree action")
         hash_value = index.data(CustomModelRole.HashRole.value)
-        log.info(f"hash data is {hash_value}")
-        if hash_value is None:
-            log.info("hash value is None")
-        else:
-            log.info("Emit file hash activated")
+        if hash_value is not None:
             assert isinstance(hash_value, str), type(hash_value)
             self.file_hash_activated.emit(FileHash(hash=hash_value))
 
