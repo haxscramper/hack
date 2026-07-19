@@ -64,7 +64,9 @@ class VideoConvertActionHandler(ActionHandler):
 
         vf_parts: list[str] = []
         if target_width != probe.width or target_height != probe.height:
-            vf_parts.append(f"scale_vaapi=w={target_width}:h={target_height}")
+            vf_parts.append(f"scale_vaapi=w={target_width}:h={target_height}:format=nv12")
+        else:
+            vf_parts.append("scale_vaapi=format=nv12")
 
         command = [
             "ffmpeg",
@@ -79,10 +81,9 @@ class VideoConvertActionHandler(ActionHandler):
             str(src),
             "-map",
             "0",
+            "-vf",
+            ",".join(vf_parts),
         ]
-
-        if vf_parts:
-            command += ["-vf", ",".join(vf_parts)]
 
         command += [
             "-r",
