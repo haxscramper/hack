@@ -23,6 +23,7 @@ class _ProbeResultType:
     width: int
     height: int
     fps: float
+    codec_name: str
 
 
 class VideoConvertActionHandler(ActionHandler):
@@ -35,6 +36,18 @@ class VideoConvertActionHandler(ActionHandler):
         self.output_directory = output_directory.absolute()
         self.dry_run = dry_run
         self.vaapi_device = vaapi_device
+
+    _VAAPI_DECODE_CODECS = frozenset({
+        "h264",
+        "hevc",
+        "vp8",
+        "vp9",
+        "av1",
+        "mpeg2video",
+        "mpeg4",
+        "vc1",
+        "mjpeg",
+    })
 
     @beartype
     def _dest_path(self, action: VideoConvertAction) -> Path:
@@ -62,19 +75,26 @@ class VideoConvertActionHandler(ActionHandler):
         target_bitrate = self._infer_target_bitrate(probe, target_width, target_height,
                                                     target_fps)
 
-        vf_parts: list[str] = []
-        if target_width != probe.width or target_height != probe.height:
-            vf_parts.append(f"scale_vaapi=w={target_width}:h={target_height}:format=nv12")
-        else:
-            vf_parts.append("scale_vaapi=format=nv12")
+        hw_decode = probe.codec_name in self._VAAPI_DECODE_CODECS
+        scale_needed = (target_width != probe.width or target_height != probe.height)
 
-        command = [
-            "ffmpeg",
-            "-y",
-            "-hwaccel",
-            "vaapi",
-            "-hwaccel_output_format",
-            "vaapi",
+        if hw_decode:
+            if scale_needed:
+                vf = f"scale_vaapi=w={target_width}:h={target_height}:format=nv12"
+            else:
+                vf = "scale_vaapi=format=nv12"
+        else:
+            # Software-decodable-only input (e.g. rawvideo): decode on CPU,
+            # then upload to the GPU before the VAAPI scale/encode stages.
+            vf_parts = ["format=nv12", "hwupload"]
+            if scale_needed:
+                vf_parts.append(f"scale_vaapi=w={target_width}:h={target_height}")
+            vf = ",".join(vf_parts)
+
+        command = ["ffmpeg", "-y"]
+        if hw_decode:
+            command += ["-hwaccel", "vaapi", "-hwaccel_output_format", "vaapi"]
+        command += [
             "-vaapi_device",
             str(self.vaapi_device),
             "-i",
@@ -82,7 +102,7 @@ class VideoConvertActionHandler(ActionHandler):
             "-map",
             "0",
             "-vf",
-            ",".join(vf_parts),
+            vf,
         ]
 
         command += [
@@ -154,7 +174,7 @@ class VideoConvertActionHandler(ActionHandler):
             "-select_streams",
             "v:0",
             "-show_entries",
-            "stream=bit_rate,width,height,avg_frame_rate",
+            "stream=bit_rate,width,height,avg_frame_rate,codec_name",
             "-show_entries",
             "format=bit_rate",
             "-of",
@@ -194,6 +214,7 @@ class VideoConvertActionHandler(ActionHandler):
             width=width,
             height=height,
             fps=fps,
+            codec_name=str(stream["codec_name"]),
         )
 
     @beartype
