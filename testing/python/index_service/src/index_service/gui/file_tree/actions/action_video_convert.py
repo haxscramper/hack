@@ -37,11 +37,16 @@ class VideoConvertActionHandler(ActionHandler):
         self.vaapi_device = vaapi_device
 
     @beartype
+    def _dest_path(self, action: VideoConvertAction) -> Path:
+        dest = (self.output_directory / action.file.root /
+                action.file.root_relative).absolute()
+        return dest.with_suffix(".mkv")
+
+    @beartype
     def do_action(self, row: OperationRow, action: BaseAction) -> None:
         assert isinstance(action, VideoConvertAction)
         src = Path(action.file.path).absolute()
-        dest = (self.output_directory / action.file.root /
-                action.file.root_relative).absolute()
+        dest = self._dest_path(action)
 
         if self.dry_run:
             log.info(
@@ -57,10 +62,16 @@ class VideoConvertActionHandler(ActionHandler):
         target_bitrate = self._infer_target_bitrate(probe, target_width, target_height,
                                                     target_fps)
 
+        vf_parts: list[str] = []
+        if target_width != probe.width or target_height != probe.height:
+            vf_parts.append(f"scale_vaapi=w={target_width}:h={target_height}")
+
         command = [
             "ffmpeg",
             "-y",
             "-hwaccel",
+            "vaapi",
+            "-hwaccel_output_format",
             "vaapi",
             "-vaapi_device",
             str(self.vaapi_device),
@@ -68,8 +79,12 @@ class VideoConvertActionHandler(ActionHandler):
             str(src),
             "-map",
             "0",
-            "-vf",
-            f"format=nv12,hwupload,scale_vaapi=w={target_width}:h={target_height}",
+        ]
+
+        if vf_parts:
+            command += ["-vf", ",".join(vf_parts)]
+
+        command += [
             "-r",
             f"{target_fps:.6f}",
             "-c:v",
@@ -93,8 +108,7 @@ class VideoConvertActionHandler(ActionHandler):
     @beartype
     def undo_action(self, row: OperationRow, action: BaseAction) -> None:
         assert isinstance(action, VideoConvertAction)
-        dest = (self.output_directory / action.file.root /
-                action.file.root_relative).absolute()
+        dest = self._dest_path(action)
 
         if self.dry_run:
             log.info(f"undo video_convert (dry-run): planned remove {dest}")
@@ -119,13 +133,14 @@ class VideoConvertActionHandler(ActionHandler):
     def verify_consistency_single(self, action: BaseAction) -> None:
         assert isinstance(action, VideoConvertAction)
         src = Path(action.file.path).absolute()
-        dest = (self.output_directory / action.file.root /
-                action.file.root_relative).absolute()
+        dest = self._dest_path(action)
 
         if src == self.output_directory:
             raise ValueError(f"Video convert source cannot be output directory: {src}")
+
         if src == dest:
             raise ValueError(f"Video convert destination resolves to source path: {src}")
+
         if self.vaapi_device.exists() is False:
             raise ValueError(f"VAAPI device does not exist: {self.vaapi_device}")
 
