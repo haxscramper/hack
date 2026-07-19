@@ -1,7 +1,8 @@
 from pathlib import Path
 
 from beartype.typing import cast
-from index_service.services.core.job_types import BaseIndexer, RunContext
+from sqlalchemy import Engine
+from index_service.services.core.job_types import BaseIndexer, BaseIndexerConfig, RunContext
 from index_service.services.core.job_cache import cache_indexer_run
 from index_service.services.resources.pdf.pdf_extractor import (
     PdfExtractor,
@@ -22,8 +23,8 @@ class PdfIndexer(BaseIndexer):
     result_model = PdfIndexerResult
     required_resources = ("pdf_extractor",)
 
-    def __init__(self, **kwargs) -> None:
-        super().__init__(**kwargs)
+    def __init__(self, config: BaseIndexerConfig, database: Engine) -> None:
+        super().__init__(config=config, database=database)
 
     def can_run(self, path: Path) -> bool:
         return path.suffix.lower() == ".pdf"

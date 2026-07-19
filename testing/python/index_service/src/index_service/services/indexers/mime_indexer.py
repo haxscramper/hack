@@ -1,11 +1,13 @@
 import ctypes
 from pathlib import Path
 
+from sqlalchemy import Engine
+
 import magic
 from magic import Magic, libmagic
 
 from index_service.services.core.job_cache import cache_indexer_run
-from index_service.services.core.job_types import BaseIndexer, RunContext
+from index_service.services.core.job_types import BaseIndexer, BaseIndexerConfig, RunContext
 from index_service.services.core.types import IndexDocument, IndexerOutput, IndexerRequest
 
 # from file/magic.h
@@ -30,8 +32,8 @@ class FileMimeIndexer(BaseIndexer):
     asset_name = "file_mime"
     result_model = FileMimeIndexerResult
 
-    def __init__(self, **kwargs) -> None:
-        super().__init__(**kwargs)
+    def __init__(self, config: BaseIndexerConfig, database: Engine) -> None:
+        super().__init__(config=config, database=database)
         self._magic_mime = Magic(mime=True)
         self._magic_encoding = Magic(mime_encoding=True)
         self._magic_description = Magic()

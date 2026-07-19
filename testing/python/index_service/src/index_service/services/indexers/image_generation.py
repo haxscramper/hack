@@ -5,6 +5,7 @@ from datetime import datetime
 from pathlib import Path
 
 from beartype.typing import Any, cast
+from sqlalchemy import Engine
 from index_service.services.indexers.comfy_input_indexer import (
     ComfyInput,
     ComfyInputIndexer,
@@ -14,7 +15,7 @@ from index_service.services.indexers.exif_metadata import (
     ExifMetadataIndexer,
     ExifMetadataIndexerResult,
 )
-from index_service.services.core.job_types import BaseIndexer, RunContext
+from index_service.services.core.job_types import BaseIndexer, BaseIndexerConfig, RunContext
 from index_service.services.core.job_cache import cache_indexer_run
 from index_service.services.pydantic_utils import to_json_safe
 from index_service.services.core.types import IndexerOutput, IndexerRequest
@@ -223,8 +224,8 @@ class GenerationParamsIndexer(BaseIndexer):
         ComfyInputIndexer.asset_name,
     )
 
-    def __init__(self, **kwargs) -> None:
-        super().__init__(**kwargs)
+    def __init__(self, config: BaseIndexerConfig, database: Engine) -> None:
+        super().__init__(config=config, database=database)
 
     def can_run(self, path: Path) -> bool:
         return path.suffix.lower() in [".png", ".webp", ".jpg", ".jpeg"]

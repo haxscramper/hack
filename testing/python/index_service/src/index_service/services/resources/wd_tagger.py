@@ -13,7 +13,7 @@ from huggingface_hub import hf_hub_download
 from PIL import Image
 from pydantic import BaseModel, Field
 
-from index_service.services.core.job_types import BaseResource, RunContext
+from index_service.services.core.job_types import BaseResource, BaseResourceConfig, RunContext
 from index_service.services.resources.wdv3_jax import Models
 from index_service.services.utils import get_xdg_cache_dir
 
@@ -103,7 +103,7 @@ def pil_resize(image: Image.Image, target_size: int) -> Image.Image:
     return image
 
 
-class WdTaggerConfig(BaseModel):
+class WdTaggerConfig(BaseResourceConfig):
     model: str = "swinv2_v3"
     threshold: float = 0.01
     cache_dir: Path | None = Field(
@@ -114,8 +114,10 @@ class WdTagger(BaseResource):
     resource_key = "wd_tagger"
     config_model: ClassVar[type] = WdTaggerConfig
 
-    def __init__(self, **kwargs):
-        self.config = WdTaggerConfig.model_validate(dict(**kwargs))
+    config: WdTaggerConfig
+
+    def __init__(self, config: WdTaggerConfig):
+        super().__init__(config=config)
 
         repo_id = MODEL_REPO_MAP[self.config.model]
 

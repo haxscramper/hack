@@ -5,13 +5,15 @@ import logging
 from pathlib import Path
 from typing import Annotated, Literal, Union
 
+from sqlalchemy import Engine
+
 from index_service.services.utils import ExceptionContextNote
 import magic
 from beartype.typing import ClassVar, Sequence, cast, Annotated, Union, Any
 from pydantic import BaseModel, Field
 import plumbum
 
-from index_service.services.core.job_types import BaseIndexer, RunContext
+from index_service.services.core.job_types import BaseIndexer, BaseIndexerConfig, RunContext
 from index_service.services.core.job_cache import cache_indexer_run
 from index_service.services.core.types import (
     IndexDocument,
@@ -60,8 +62,8 @@ class DocumentBlockIndexer(BaseIndexer):
     def get_document_type_bases(self) -> list[Any]:
         return [doc_types.DocumentBlock]
 
-    def __init__(self, **kwargs) -> None:
-        super().__init__(**kwargs)
+    def __init__(self, config: BaseIndexerConfig, database: Engine) -> None:
+        super().__init__(config=config, database=database)
         self._magic = magic.Magic(mime=True)
         self.supported_readers: set[str] = set(plumbum.local["pandoc"].run(
             ["--list-input-formats"])[1].splitlines())

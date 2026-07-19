@@ -106,6 +106,9 @@ class BaseResource(ABC):
     exclusive: bool = False
     config_model: ClassVar[type[BaseModel]] = BaseResourceConfig
 
+    def __init__(self, config: BaseResourceConfig):
+        self.config = config
+
     @abstractmethod
     def handle(
         self,
@@ -121,7 +124,7 @@ R = TypeVar("R", bound="IndexerOutput")
 
 
 class BaseIndexerConfig(BaseModel, extra="forbid"):
-    pass
+    use_cache: bool = True
 
 
 def indexer_cache_table_name(asset_name: str) -> str:
@@ -150,7 +153,6 @@ class BaseIndexer(ABC):
     required_assets: tuple[str, ...] = ()
     required_resources: tuple[str, ...] = ()
     max_parallel: int = 1
-    should_load_cache: bool = True
     edge_collection_name: Optional[str] = None
     config_model: ClassVar[type[BaseModel]] = BaseIndexerConfig
     "Pydantic data class with object that holds all the configuration parameters"
@@ -162,13 +164,15 @@ class BaseIndexer(ABC):
         else:
             return [self.result_model]
 
-    def __init__(self, database: Engine, **kwargs) -> None:
+    @property
+    def should_load_cache(self) -> bool:
+        return self.config.use_cache
+
+    def __init__(self, database: Engine, config: BaseIndexerConfig) -> None:
         self.database = database
+        self.config = config
         self.cache_table = get_indexer_cache_table(self.asset_name)
         self.cache_table.create(bind=self.database, checkfirst=True)
-
-        for key, value in dict(**kwargs).items():
-            setattr(self, key, value)
 
     def can_run(self, path: Path) -> bool:
         return True

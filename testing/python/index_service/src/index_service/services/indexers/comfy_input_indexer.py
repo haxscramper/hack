@@ -1,5 +1,7 @@
 import json
 import logging
+
+from sqlalchemy import Engine
 import glom
 from pathlib import Path
 
@@ -7,7 +9,7 @@ from beartype.typing import Any, ClassVar, cast
 from pydantic import BaseModel, Field, model_validator, model_serializer
 
 from index_service.services.core.job_cache import cache_indexer_run
-from index_service.services.core.job_types import BaseIndexer, RunContext
+from index_service.services.core.job_types import BaseIndexer, BaseIndexerConfig, RunContext
 from index_service.services.indexers.exif_metadata import ExifMetadataIndexerResult
 from index_service.services.core.types import IndexerOutput, IndexerRequest
 
@@ -196,8 +198,8 @@ class ComfyInputIndexer(BaseIndexer):
     result_model = ComfyInputIndexerResult
     required_assets = ("exif_metadata",)
 
-    def __init__(self, **kwargs) -> None:
-        super().__init__(**kwargs)
+    def __init__(self, config: BaseIndexerConfig, database: Engine) -> None:
+        super().__init__(config=config, database=database)
 
     def can_run(self, path: Path) -> bool:
         return path.suffix in [".png", ".jpg", ".webp", ".jpeg"]

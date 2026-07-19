@@ -7,12 +7,16 @@ import re
 from datetime import datetime
 from pathlib import Path
 from pprint import pformat
+from urllib import request
 
+from sqlalchemy import Engine
+
+import magic
 from beartype import beartype
 from beartype.typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 from index_service.services.core.job_cache import cache_indexer_run
-from index_service.services.core.job_types import BaseIndexer, RunContext
+from index_service.services.core.job_types import BaseIndexer, BaseIndexerConfig, RunContext
 from index_service.services.pydantic_utils import try_parse_json
 from index_service.services.core.types import IndexerOutput, IndexerRequest, IndexDocument
 from PIL import Image, ExifTags
@@ -38,70 +42,25 @@ def try_float(val: str) -> float | str:
         return val
 
 
-def _to_jsonable_metadata(value: Any) -> Any:
-    if value is None or isinstance(value, (str, int, float, bool)):
-        return value
-
-    if isinstance(value, Path):
-        return str(value)
-
-    if isinstance(value, datetime):
-        return value.isoformat()
-
-    if isinstance(value, (bytes, bytearray)):
-        raw = bytes(value)
-        return {
-            "__type__": "bytes",
-            "length": len(raw),
-            "sha256": hashlib.sha256(raw).hexdigest(),
-            "base64": base64.b64encode(raw).decode("ascii"),
-        }
-
-    if isinstance(value, dict):
-        return {str(k): _to_jsonable_metadata(v) for k, v in value.items()}
-
-    if isinstance(value, (list, tuple, set)):
-        return [_to_jsonable_metadata(v) for v in value]
-
-    # PIL rationals and similar numeric-like values
-    if hasattr(value, "numerator") and hasattr(value, "denominator"):
-        try:
-            return {
-                "__type__": type(value).__name__,
-                "numerator": int(value.numerator),
-                "denominator": int(value.denominator),
-                "float": float(value),
-            }
-        except Exception:
-            return repr(value)
-
-    try:
-        json.dumps(value)
-        return value
-    except Exception:
-        return repr(value)
-
-
 def _decode_gps_info(gps_info: Any) -> Any:
     if not isinstance(gps_info, dict):
-        return _to_jsonable_metadata(gps_info)
+        return gps_info
 
     decoded: Dict[str, Any] = {}
     for gps_key, gps_value in gps_info.items():
         gps_name = ExifTags.GPSTAGS.get(gps_key, f"GPS_{gps_key}")
-        decoded[gps_name] = _to_jsonable_metadata(gps_value)
+        decoded[gps_name] = gps_value
     return decoded
 
 
 def _collect_all_embedded_metadata(img: Image.Image) -> Dict[str, Any]:
-    info_raw = {k: _to_jsonable_metadata(v) for k, v in img.info.items()}
     info_parsed: Dict[str, Any] = {}
 
     for k, v in img.info.items():
         if isinstance(v, str):
-            info_parsed[k] = _to_jsonable_metadata(try_parse_json(v))
+            info_parsed[k] = try_parse_json(v)
         else:
-            info_parsed[k] = _to_jsonable_metadata(v)
+            info_parsed[k] = v
 
     exif_obj = img.getexif()
     exif_by_id: Dict[str, Any] = {}
@@ -110,7 +69,7 @@ def _collect_all_embedded_metadata(img: Image.Image) -> Dict[str, Any]:
 
     for tag_id, raw_value in exif_obj.items():
         tag_name = ExifTags.TAGS.get(tag_id, f"Tag_{tag_id}")
-        value_json = _to_jsonable_metadata(raw_value)
+        value_json = raw_value
 
         exif_by_id[str(tag_id)] = value_json
         exif_by_name[tag_name] = value_json
@@ -126,7 +85,7 @@ def _collect_all_embedded_metadata(img: Image.Image) -> Dict[str, Any]:
         }.items():
             try:
                 ifd_data = exif_obj.get_ifd(ifd_id)
-                exif_by_name[ifd_name] = _to_jsonable_metadata(ifd_data)
+                exif_by_name[ifd_name] = ifd_data
                 if ifd_name == "GPSInfoIFD" and not gps_info_by_name:
                     gps_info_by_name = _decode_gps_info(ifd_data)
             except Exception:
@@ -143,7 +102,7 @@ def _collect_all_embedded_metadata(img: Image.Image) -> Dict[str, Any]:
             "is_animated": bool(getattr(img, "is_animated", False)),
             "n_frames": int(getattr(img, "n_frames", 1)),
         },
-        "info_raw": info_raw,
+        "info_raw": img.info,
         "info_parsed": info_parsed,
         "exif": {
             "by_tag_id": exif_by_id,
@@ -465,11 +424,11 @@ def get_image_params(path: Path, reference_dir: Path, fast: bool = False) -> Ima
         res.ImagePath = path
         res.original_metadata_full = {
             "embedded": _collect_all_embedded_metadata(img),
-            "sidecar": _to_jsonable_metadata(sidecar_payload) if sidecar_payload else {},
+            "sidecar": sidecar_payload if sidecar_payload else {},
         }
 
         if json_metadata:
-            res.original_metadata_full["exif_metadata"] = _to_jsonable_metadata(metadata)
+            res.original_metadata_full["exif_metadata"] = metadata
         else:
             res.original_metadata_full["exif_metadata"] = res.original_metadata_full[
                 "embedded"]["info_parsed"]
@@ -567,7 +526,8 @@ def get_image_params(path: Path, reference_dir: Path, fast: bool = False) -> Ima
 
 
 class ExifMetadataIndexerResult(IndexDocument, extra="forbid"):
-    file: ImageParams
+    file: Optional[ImageParams] = None
+    error: Optional[str] = None
 
 
 class ExifMetadataIndexer(BaseIndexer):
@@ -575,11 +535,20 @@ class ExifMetadataIndexer(BaseIndexer):
     result_model = ExifMetadataIndexerResult
     max_parallel = 8
 
-    def __init__(self, **kwargs) -> None:
-        super().__init__(**kwargs)
+    def __init__(self, config: BaseIndexerConfig, database: Engine) -> None:
+        super().__init__(config=config, database=database)
+        self._magic = magic.Magic(mime=True)
 
     def can_run(self, path: Path) -> bool:
-        return path.suffix in [".png", ".jpg", ".webp", ".jpeg"]
+        return self._magic.from_file(path.absolute()) in {
+            "image/png",
+            "image/avif",
+            "image/heic",
+            "image/heif",
+            "image/webp",
+            "image/tiff",
+            "image/jpeg",
+        }
 
     @cache_indexer_run
     def run(
@@ -593,12 +562,19 @@ class ExifMetadataIndexer(BaseIndexer):
         path = ctx.get_path(request.file_ref)
         assert path.exists(), f"{path}"
 
-        params = get_image_params(Path(path), Path(path).parent)
+        try:
+            params = get_image_params(Path(path), Path(path).parent)
 
-        log.info(f"{path} OK")
+            log.info(f"{path} OK")
 
-        return IndexerOutput(indexer_id=self.asset_name,
-                             result=ExifMetadataIndexerResult(
-                                 file=params,
-                                 hash=request.get_hash_str(),
-                             ))
+            result = ExifMetadataIndexerResult(file=params, hash=request.get_hash_str())
+
+        except OSError as err:
+            if "image file is truncated" in str(err):
+                result = ExifMetadataIndexerResult(error=str(err),
+                                                   hash=request.get_hash_str())
+
+            else:
+                raise err from None
+
+        return IndexerOutput(indexer_id=self.asset_name, result=result)

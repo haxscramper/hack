@@ -1,7 +1,9 @@
 from datetime import datetime
 from pathlib import Path
 
-from index_service.services.core.job_types import BaseIndexer, RunContext
+from sqlalchemy import Engine
+
+from index_service.services.core.job_types import BaseIndexer, BaseIndexerConfig, RunContext
 from index_service.services.core.types import IndexDocument, IndexerOutput, IndexerRequest
 from pydantic import BaseModel
 
@@ -18,8 +20,8 @@ class FileStatsIndexer(BaseIndexer):
     asset_name = "file_stats"
     result_model = FileStatsIndexerResult
 
-    def __init__(self, **kwargs) -> None:
-        super().__init__(**kwargs)
+    def __init__(self, config: BaseIndexerConfig, database: Engine) -> None:
+        super().__init__(config=config, database=database)
 
     def run(
         self,

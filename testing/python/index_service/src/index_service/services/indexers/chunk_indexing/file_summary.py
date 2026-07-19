@@ -1,10 +1,13 @@
 from pathlib import Path
 
+from sqlalchemy import Engine
+
 import magic
 from beartype.typing import cast
 from pydantic import BaseModel
 
-from index_service.services.core.job_types import (BaseIndexer, RunContext)
+from index_service.services.core.job_types import (BaseIndexer, BaseIndexerConfig,
+                                                   RunContext)
 from index_service.services.core.job_cache import cache_indexer_run
 from index_service.services.core.types import IndexDocument, IndexerOutput, IndexerRequest
 from index_service.services.resources.text_summary import (
@@ -26,8 +29,8 @@ class FileSummaryIndexer(BaseIndexer):
     result_model = FileSummaryIndexerResult
     required_resources = ("text_summary",)
 
-    def __init__(self, **kwargs) -> None:
-        super().__init__(**kwargs)
+    def __init__(self, config: BaseIndexerConfig, database: Engine) -> None:
+        super().__init__(config=config, database=database)
         self._magic = magic.Magic(mime=True)
 
     def can_run(self, path: Path) -> bool:

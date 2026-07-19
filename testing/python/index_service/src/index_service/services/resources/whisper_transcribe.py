@@ -12,7 +12,7 @@ from beartype.typing import ClassVar
 import httpx
 from pydantic import BaseModel, Field
 
-from index_service.services.core.job_types import BaseResource, RunContext
+from index_service.services.core.job_types import BaseResource, BaseResourceConfig, RunContext
 
 log = logging.getLogger(__name__)
 
@@ -42,7 +42,7 @@ class WhisperTranscribeResult(BaseModel, extra="forbid"):
     error: str | None = None
 
 
-class WhisperServerConfig(BaseModel, extra="forbid"):
+class WhisperServerConfig(BaseResourceConfig, extra="forbid"):
     base_url: str = Field(default="http://127.0.0.1:8178")
     host: str = Field(default="127.0.0.1")
     port: int = Field(default=8178)
@@ -58,31 +58,27 @@ class WhisperTranscribeResource(BaseResource):
     resource_key = "whisper_transcribe"
     config_model: ClassVar[type] = WhisperServerConfig
 
-    def __init__(self, config: WhisperServerConfig | None = None, **kwargs) -> None:
-        config = config if isinstance(
-            config, WhisperServerConfig) else WhisperServerConfig.model_validate(
-                dict(**kwargs))
+    config: WhisperServerConfig
 
-        super().__init__()
-        self._config = config
-        self._model_dir = Path(
-            self._config.whisper_model_directory).expanduser().resolve()
+    def __init__(self, config: WhisperServerConfig) -> None:
+        super().__init__(config=config)
+        self._model_dir = Path(self.config.whisper_model_directory).expanduser().resolve()
         self._model_file_name, self._download_model_name = self._resolve_model_names(
-            self._config.model_name)
+            self.config.model_name)
         self._model_path = self._model_dir / self._model_file_name
         self._ggml_download_script = self._model_dir / "download-ggml-model.sh"
-        self._base_url = self._config.base_url.rstrip("/")
+        self._base_url = self.config.base_url.rstrip("/")
         self._health_url = f"{self._base_url}/health"
         self._transcriptions_url = f"{self._base_url}/v1/audio/transcriptions"
 
-        self._serve_cmd = self._config.serve_cmd or [
-            self._config.server_bin,
+        self._serve_cmd = self.config.serve_cmd or [
+            self.config.server_bin,
             "-m",
             str(self._model_path),
             "--host",
-            self._config.host,
+            self.config.host,
             "--port",
-            str(self._config.port),
+            str(self.config.port),
         ]
 
         self._proc: subprocess.Popen[bytes] | None = None
@@ -174,7 +170,7 @@ class WhisperTranscribeResource(BaseResource):
             self._stderr_log_file = None
             raise
 
-        deadline = time.monotonic() + self._config.startup_timeout_sec
+        deadline = time.monotonic() + self.config.startup_timeout_sec
         while time.monotonic() < deadline:
             if self._is_server_healthy():
                 return
@@ -239,13 +235,13 @@ class WhisperTranscribeResource(BaseResource):
         if not wav_path.exists():
             return WhisperTranscribeResult(
                 ok=False,
-                model=self._config.model_name,
+                model=self.config.model_name,
                 text="",
                 error=f"wav file does not exist: {wav_path}",
             )
 
         form_data: dict[str, str] = {
-            "model": self._config.model_name,
+            "model": self.config.model_name,
             "response_format": "verbose_json",
         }
 
@@ -263,7 +259,7 @@ class WhisperTranscribeResource(BaseResource):
                 self._transcriptions_url,
                 data=form_data,
                 files={"file": (wav_path.name, wav_file, "audio/wav")},
-                timeout=self._config.request_timeout_sec,
+                timeout=self.config.request_timeout_sec,
             )
 
         response.raise_for_status()
@@ -290,7 +286,7 @@ class WhisperTranscribeResource(BaseResource):
 
         return WhisperTranscribeResult(
             ok=True,
-            model=str(payload.get("model", self._config.model_name)),
+            model=str(payload.get("model", self.config.model_name)),
             text=text,
             language=payload.get("language"),
             duration_sec=duration_sec,

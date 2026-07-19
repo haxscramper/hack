@@ -2,10 +2,12 @@ import json
 from datetime import datetime
 from pathlib import Path
 
+from sqlalchemy import Engine
+
 import magic
 from beartype import beartype
 from beartype.typing import Any, cast
-from index_service.services.core.job_types import BaseIndexer, RunContext
+from index_service.services.core.job_types import BaseIndexer, BaseIndexerConfig, RunContext
 from index_service.services.core.job_cache import cache_indexer_run
 from index_service.services.core.types import IndexerOutput, IndexerRequest, IndexDocument
 from plumbum import local
@@ -104,9 +106,9 @@ class FFProbeIndexer(BaseIndexer):
     asset_name = "ffprobe"
     result_model = FFProbeIndexerResult
 
-    def __init__(self, **kwargs) -> None:
+    def __init__(self, config: BaseIndexerConfig, database: Engine) -> None:
         self._magic = magic.Magic(mime=True)
-        super().__init__(**kwargs)
+        super().__init__(config=config, database=database)
 
     def can_run(self, path: Path) -> bool:
         mime = self._magic.from_file(path.absolute())

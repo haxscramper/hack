@@ -6,6 +6,7 @@ from beartype import beartype
 from beartype.typing import Any, Literal, Mapping
 
 from index_service.gui.file_tree.actions.action_execute import ActionExecutionConfig
+from index_service.services.core.job_types import BaseIndexer, BaseIndexerConfig
 from index_service.services.default_job_types import (
     DEFAULT_INDEXER_TYPES,
     DEFAULT_RESOURCE_TYPES,
@@ -198,8 +199,7 @@ class AppConfig(BaseModel, extra="forbid"):
 
     act: ActionConfig | None = None
 
-    enable_cache: set[str] | None = None
-    indexers: dict[str, BaseModel] = Field(default_factory=dict, exclude=True)
+    indexers: dict[str, BaseIndexerConfig] = Field(default_factory=dict, exclude=True)
     resources: dict[str, BaseModel] = Field(default_factory=dict, exclude=True)
     perf_trace_file: Path | None = None
 
@@ -231,8 +231,10 @@ class AppConfig(BaseModel, extra="forbid"):
 
         if "indexers" not in data:
             data["indexers"] = {name: {} for name in _INDEXER_BY_NAME}
+
         if "resources" not in data:
             data["resources"] = {name: {} for name in _RESOURCE_BY_NAME}
+
         return data
 
     @field_validator("indexers", mode="before")
@@ -240,9 +242,11 @@ class AppConfig(BaseModel, extra="forbid"):
     def _validate_indexers_field(cls, value: Any) -> dict[str, BaseModel]:
         if value is None:
             value = {}
+
         if not isinstance(value, dict):
             raise TypeError(
                 f"Indexers config must be an object, got {type(value).__name__}")
+
         return _validate_plugin_config_map(
             raw=value,
             registry=_INDEXER_BY_NAME,
@@ -265,15 +269,6 @@ class AppConfig(BaseModel, extra="forbid"):
 
     @model_validator(mode="after")
     def validate_full_config(self) -> "AppConfig":
-        if self.enable_cache is None:
-            self.enable_cache = set(self.indexers.keys())
-
-        unknown_cache = set(self.enable_cache) - set(self.indexers.keys())
-        if unknown_cache:
-            raise ValueError(
-                f"enable_cache contains unknown/disabled indexers: {sorted(unknown_cache)}"
-            )
-
         return self
 
     @classmethod

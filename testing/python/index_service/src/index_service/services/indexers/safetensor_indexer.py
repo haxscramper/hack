@@ -5,7 +5,8 @@ from collections import Counter
 from pathlib import Path
 
 from beartype.typing import Any
-from index_service.services.core.job_types import BaseIndexer, RunContext
+from sqlalchemy import Engine
+from index_service.services.core.job_types import BaseIndexer, BaseIndexerConfig, RunContext
 from index_service.services.core.job_cache import cache_indexer_run
 from index_service.services.pydantic_utils import try_parse_json
 from index_service.services.core.types import IndexerOutput, IndexerRequest
@@ -89,8 +90,8 @@ class SafetensorIndexer(BaseIndexer):
     asset_name = "safetensor"
     result_model = SafetensorIndexerResult
 
-    def __init__(self, **kwargs) -> None:
-        super().__init__(**kwargs)
+    def __init__(self, config: BaseIndexerConfig, database: Engine) -> None:
+        super().__init__(config=config, database=database)
 
     def can_run(self, path: Path) -> bool:
         return path.suffix.lower() in [".safetensors"]

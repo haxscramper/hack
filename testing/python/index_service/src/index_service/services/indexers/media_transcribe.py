@@ -6,10 +6,12 @@ import tempfile
 from pathlib import Path
 from typing import cast
 
+from sqlalchemy import Engine
+
 import magic
 from pydantic import BaseModel, Field
 
-from index_service.services.core.job_types import BaseIndexer, RunContext
+from index_service.services.core.job_types import BaseIndexer, BaseIndexerConfig, RunContext
 from index_service.services.core.job_cache import cache_indexer_run
 from index_service.services.core.types import IndexerOutput, IndexerRequest
 from index_service.services.resources.whisper_transcribe import (
@@ -43,8 +45,8 @@ class MediaTranscriptionIndexer(BaseIndexer):
     result_model = MediaTranscriptionIndexerResult
     required_resources = ("whisper_transcribe",)
 
-    def __init__(self, **kwargs) -> None:
-        super().__init__(**kwargs)
+    def __init__(self, config: BaseIndexerConfig, database: Engine) -> None:
+        super().__init__(config=config, database=database)
         self._magic = magic.Magic(mime=True)
 
     def can_run(self, path: Path) -> bool:

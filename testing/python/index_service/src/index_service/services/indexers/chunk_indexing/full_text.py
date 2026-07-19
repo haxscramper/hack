@@ -1,11 +1,13 @@
 from typing import Any, ClassVar, Union
 
+from sqlalchemy import Engine
+
 import glom
 from pydantic import Field
 from beartype.typing import Annotated, Optional
 
 from index_service.services.core.job_cache import cache_indexer_run
-from index_service.services.core.job_types import BaseIndexer, RunContext
+from index_service.services.core.job_types import BaseIndexer, BaseIndexerConfig, RunContext
 from index_service.services.core.types import FullTextIndexConfig, IndexerOutput, IndexerRequest, MultiDocumentModel, VectorIndexConfig
 from index_service.services.indexers.chunk_indexing.chunking import (
     ChunkConfig,
@@ -45,8 +47,8 @@ class FullTextIndexer(BaseIndexer):
     def get_document_type_bases(self) -> list[Any]:
         return [ChunkFile, FullTextChunk]
 
-    def __init__(self, **kwargs) -> None:
-        super().__init__(**kwargs)
+    def __init__(self, config: BaseIndexerConfig, database: Engine) -> None:
+        super().__init__(config=config, database=database)
         self._config = ChunkConfig(
             unit=ChunkUnit.CHARS,
             max_size=2000,

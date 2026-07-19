@@ -370,23 +370,15 @@ class IndexRuntime:
                     ExceptionContextNote(
                         f"running indexer '{indexer.asset_name}' for '{self.db.get_path(ref)} {ref.hash}'"
                     ),
+                    ExceptionContextNote(f"request {request}"),
                     self.ctx.trace_scope("index", file=str(self.db.get_path(ref))),
             ):
-                try:
-                    out = indexer.run(
-                        ctx=self.ctx,
-                        request=request,
-                        resources=resources,  # type: ignore
-                        assets=assets,  # type: ignore
-                    )
-
-                except Exception as e:
-                    log.error(
-                        f"could not execute indexer {indexer.asset_name} for {self.ctx.get_path(request.file_ref)}"
-                    )
-                    log.error(f"indexer request {request}")
-                    log.critical(f"failure", exc_info=True, stack_info=True)
-                    raise e
+                out = indexer.run(
+                    ctx=self.ctx,
+                    request=request,
+                    resources=resources,  # type: ignore
+                    assets=assets,  # type: ignore
+                )
 
             return ref, out
 

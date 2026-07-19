@@ -2,11 +2,13 @@ import math
 from typing import Any, ClassVar, Union
 
 import glom
+from beartype import beartype
 from pydantic import Field
 from beartype.typing import Annotated, Optional
+from sqlalchemy import Engine
 
 from index_service.services.core.job_cache import cache_indexer_run
-from index_service.services.core.job_types import BaseIndexer, RunContext
+from index_service.services.core.job_types import BaseIndexer, RunContext, BaseIndexerConfig
 from index_service.services.core.types import IndexerOutput, IndexerRequest, MultiDocumentModel, VectorIndexConfig
 from index_service.services.indexers.chunk_indexing.chunking import (
     ChunkConfig,
@@ -49,21 +51,24 @@ def _placeholder_vector(text: str) -> list[float]:
     return buckets if norm == 0.0 else [x / norm for x in buckets]
 
 
+class FileEmbeddingIndexerConfig(BaseIndexerConfig, extra="forbid"):
+    unit: ChunkUnit = ChunkUnit.CHARS
+    max_size: int = 1500
+    min_size: int = 300
+
+
+@beartype
 class FileEmbeddingIndexer(BaseIndexer):
     asset_name = "file_embedding"
     result_model = FileEmbeddingIndexerResult
     required_assets = ("document_block",)
+    config_model = FileEmbeddingIndexerConfig
 
     def get_document_type_bases(self) -> list[Any]:
         return [ChunkFile, EmbeddingChunk]
 
-    def __init__(self, **kwargs) -> None:
-        super().__init__(**kwargs)
-        self._config = ChunkConfig(
-            unit=ChunkUnit.CHARS,
-            max_size=1500,
-            min_size=300,
-        )
+    def __init__(self, database: Engine, config: FileEmbeddingIndexerConfig) -> None:
+        super().__init__(config=config, database=database)
 
     @cache_indexer_run
     def run(

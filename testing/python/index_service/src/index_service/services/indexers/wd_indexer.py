@@ -2,7 +2,8 @@ from datetime import datetime
 from pathlib import Path
 
 from beartype.typing import cast
-from index_service.services.core.job_types import BaseIndexer, RunContext
+from sqlalchemy import Engine
+from index_service.services.core.job_types import BaseIndexer, BaseIndexerConfig, RunContext
 from index_service.services.core.job_cache import cache_indexer_run
 from index_service.services.resources.wd_tagger import WdTag, WdTagger
 from index_service.services.core.types import IndexDocument, IndexerOutput, IndexerRequest
@@ -19,8 +20,8 @@ class WdTagIndexer(BaseIndexer):
     result_model = WdTagIndexerResult
     required_resources = ("wd_tagger",)
 
-    def __init__(self, **kwargs) -> None:
-        super().__init__(**kwargs)
+    def __init__(self, config: BaseIndexerConfig, database: Engine) -> None:
+        super().__init__(config=config, database=database)
 
     def can_run(self, path: Path) -> bool:
         return path.suffix.lower() in [".png", ".webp", ".jpg", ".jpeg"]

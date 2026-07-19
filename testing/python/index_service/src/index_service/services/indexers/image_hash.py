@@ -1,6 +1,8 @@
 from pathlib import Path
 
-from index_service.services.core.job_types import BaseIndexer, RunContext
+from sqlalchemy import Engine
+
+from index_service.services.core.job_types import BaseIndexer, BaseIndexerConfig, RunContext
 from index_service.services.core.job_cache import cache_indexer_run
 from index_service.services.core.types import IndexDocument, IndexerOutput, IndexerRequest
 import imagehash
@@ -22,8 +24,8 @@ class ImageHashIndexer(BaseIndexer):
     result_model = ImageHashIndexerResult
     max_parallel = 16
 
-    def __init__(self, **kwargs) -> None:
-        super().__init__(**kwargs)
+    def __init__(self, config: BaseIndexerConfig, database: Engine) -> None:
+        super().__init__(config=config, database=database)
 
     def can_run(self, path: Path) -> bool:
         return path.suffix.lower() in [".png", ".webp", ".jpg", ".jpeg"]

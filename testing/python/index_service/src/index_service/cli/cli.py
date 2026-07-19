@@ -85,8 +85,8 @@ class IndexService():
                     raise ValueError(
                         f"Resource '{key}' requires resource '{dep}' to be enabled")
 
-            resource_cfg = self.cfg.resources[key].model_dump()
-            self.resource_instances.append(t(**resource_cfg))
+            resource_cfg = self.cfg.resources[key]
+            self.resource_instances.append(t(config=resource_cfg))
 
         self.indexer_connection = self.get_cache_connection(self.cfg.index_cache)
         self.indexer_instances: list[BaseIndexer] = []
@@ -105,14 +105,13 @@ class IndexService():
                     raise ValueError(
                         f"Indexer '{key}' requires indexer '{dep}' to be enabled")
 
-            should_load_cache = not self.cfg.enable_cache or key in self.cfg.enable_cache
-            log.info(f"Should load cache for {t.asset_name}: {should_load_cache}")
-            indexer_cfg = self.cfg.indexers[key].model_dump()
+            cfg = self.cfg.indexers[key]
+            log.info(f"Should load cache for {t.asset_name}: {cfg.use_cache}")
             instance = t(
                 database=self.indexer_connection,
-                should_load_cache=should_load_cache,
-                **indexer_cfg,
+                config=cfg,
             )
+
             self.indexer_instances.append(instance)
 
         self.db = IndexDatabase(
