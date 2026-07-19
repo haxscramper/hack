@@ -37,6 +37,8 @@ class VideoConvertActionHandler(ActionHandler):
         self.dry_run = dry_run
         self.vaapi_device = vaapi_device
 
+    _VAAPI_MIN_DIM = 128
+    _VAAPI_MAX_DIM = 4096
     _VAAPI_DECODE_CODECS = frozenset({
         "h264",
         "hevc",
@@ -76,52 +78,93 @@ class VideoConvertActionHandler(ActionHandler):
                                                     target_fps)
 
         hw_decode = probe.codec_name in self._VAAPI_DECODE_CODECS
+        vaapi_encodable = (self._VAAPI_MIN_DIM <= target_width <= self._VAAPI_MAX_DIM and
+                           self._VAAPI_MIN_DIM <= target_height <= self._VAAPI_MAX_DIM)
         scale_needed = (target_width != probe.width or target_height != probe.height)
 
-        if hw_decode:
-            if scale_needed:
-                vf = f"scale_vaapi=w={target_width}:h={target_height}:format=nv12"
+        if vaapi_encodable:
+            hw_decode = probe.codec_name in self._VAAPI_DECODE_CODECS
+
+            if hw_decode:
+                if scale_needed:
+                    vf = f"scale_vaapi=w={target_width}:h={target_height}:format=nv12"
+                else:
+                    vf = "scale_vaapi=format=nv12"
             else:
-                vf = "scale_vaapi=format=nv12"
+                # Software-decodable-only input (e.g. rawvideo): decode on CPU,
+                # then upload to the GPU before the VAAPI scale/encode stages.
+                vf_parts = ["format=nv12", "hwupload"]
+                if scale_needed:
+                    vf_parts.append(f"scale_vaapi=w={target_width}:h={target_height}")
+                vf = ",".join(vf_parts)
+
+            command = ["ffmpeg", "-y"]
+            if hw_decode:
+                command += ["-hwaccel", "vaapi", "-hwaccel_output_format", "vaapi"]
+            command += [
+                "-vaapi_device",
+                str(self.vaapi_device),
+                "-i",
+                str(src),
+                "-map",
+                "0",
+                "-vf",
+                vf,
+            ]
+
+            command += [
+                "-r",
+                f"{target_fps:.6f}",
+                "-c:v",
+                "h264_vaapi",
+                "-b:v",
+                str(target_bitrate),
+                "-maxrate",
+                str(target_bitrate),
+                "-bufsize",
+                str(target_bitrate * 2),
+                "-c:a",
+                "copy",
+                "-c:s",
+                "copy",
+                str(dest),
+            ]
         else:
-            # Software-decodable-only input (e.g. rawvideo): decode on CPU,
-            # then upload to the GPU before the VAAPI scale/encode stages.
-            vf_parts = ["format=nv12", "hwupload"]
+            # Target dimensions are outside the VAAPI encoder's supported range
+            # (e.g. very small videos below the 128px minimum). Fall back to a
+            # fully software encode path.
+            log.info(
+                f"do video_convert: target {target_width}x{target_height} outside VAAPI "
+                f"range [{self._VAAPI_MIN_DIM}-{self._VAAPI_MAX_DIM}], using software encode"
+            )
+            command = [
+                "ffmpeg",
+                "-y",
+                "-i",
+                str(src),
+                "-map",
+                "0",
+            ]
             if scale_needed:
-                vf_parts.append(f"scale_vaapi=w={target_width}:h={target_height}")
-            vf = ",".join(vf_parts)
+                command += ["-vf", f"scale=w={target_width}:h={target_height}"]
 
-        command = ["ffmpeg", "-y"]
-        if hw_decode:
-            command += ["-hwaccel", "vaapi", "-hwaccel_output_format", "vaapi"]
-        command += [
-            "-vaapi_device",
-            str(self.vaapi_device),
-            "-i",
-            str(src),
-            "-map",
-            "0",
-            "-vf",
-            vf,
-        ]
-
-        command += [
-            "-r",
-            f"{target_fps:.6f}",
-            "-c:v",
-            "h264_vaapi",
-            "-b:v",
-            str(target_bitrate),
-            "-maxrate",
-            str(target_bitrate),
-            "-bufsize",
-            str(target_bitrate * 2),
-            "-c:a",
-            "copy",
-            "-c:s",
-            "copy",
-            str(dest),
-        ]
+            command += [
+                "-r",
+                f"{target_fps:.6f}",
+                "-c:v",
+                "libx264",
+                "-b:v",
+                str(target_bitrate),
+                "-maxrate",
+                str(target_bitrate),
+                "-bufsize",
+                str(target_bitrate * 2),
+                "-c:a",
+                "copy",
+                "-c:s",
+                "copy",
+                str(dest),
+            ]
 
         log.info(f"do video_convert: executing {' '.join(command)}")
         subprocess.run(command, check=True)
