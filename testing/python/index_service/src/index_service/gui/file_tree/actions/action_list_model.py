@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 from index_service.gui.common.qt_model_roles import CustomModelRole
 from index_service.gui.file_tree.columns.file_tree_column import FileTreeNode
+from index_service.gui.file_tree.columns.video_convert_column import VideoConvertData
 from index_service.services.pydantic_utils import model_from_json_data
 
 
@@ -24,8 +25,13 @@ class MoveAction(BaseAction):
     dest: str
 
 
+class VideoConvertAction(BaseAction):
+    kind: Literal["video_convert"] = "video_convert"
+    target: VideoConvertData
+
+
 Action = Annotated[
-    Union[MoveAction, TrashAction],
+    Union[MoveAction, TrashAction, VideoConvertAction],
     Field(discriminator="kind"),
 ]
 
@@ -53,6 +59,9 @@ class ActionProvider:
 
     def move(self, file: FileTreeNode, dest: str) -> None:
         self.actions.append(MoveAction(file=file, dest=dest))
+
+    def convert_video(self, file: FileTreeNode, target: VideoConvertData):
+        self.actions.append(VideoConvertAction(file=file, target=target))
 
 
 @beartype
@@ -84,17 +93,7 @@ class ActionListModel(QAbstractListModel):
                         return str(action)
 
             case CustomModelRole.HashRole.value:
-                match action:
-                    case TrashAction():
-                        if action.file.hash:
-                            result = action.file.hash.hash
-                            return result
-
-                        else:
-                            return None
-
-                    case _:
-                        raise RuntimeError("Unknown action")
+                return action.file.hash.hash
 
             case CustomModelRole.ActionRole.value:
                 return action

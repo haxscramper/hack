@@ -16,6 +16,7 @@ from index_service.gui.file_tree.actions.action_handler import ActionHandler
 from index_service.gui.file_tree.actions.action_list_model import BaseAction
 from index_service.gui.file_tree.actions.action_move_file import MoveActionHandler
 from index_service.gui.file_tree.actions.action_trash_file import TrashActionHandler
+from index_service.gui.file_tree.actions.action_video_convert import VideoConvertActionHandler
 from index_service.services.pydantic_utils import model_to_json_data, model_from_json_data
 
 log = logging.getLogger(__name__)
@@ -50,7 +51,15 @@ def _model_type_from_name(type_name: str) -> type[BaseAction]:
 class ActionExecutionConfig(BaseModel):
     trash_root: Path
     sqlite_path: Path
+    output_directory: Path
     dry_run: bool = True
+
+    @field_validator("output_directory")
+    @classmethod
+    def _normalize_output_directory_file(cls, value: Path | None) -> Path | None:
+        if value is None:
+            return None
+        return value.expanduser().resolve().absolute()
 
     @field_validator("trash_root")
     @classmethod
@@ -79,12 +88,22 @@ class ActionExecutor:
         self.config = config
         self.engine = create_engine(f"sqlite+pysqlite:///{self.config.sqlite_path}",
                                     future=True)
+
+        self.config.output_directory.mkdir(parents=True, exist_ok=True)
+
         self.handlers: dict[str, ActionHandler] = {
             "move":
-                MoveActionHandler(dry_run=self.config.dry_run),
+                MoveActionHandler(dry_run=self.config.dry_run,),
             "trash":
-                TrashActionHandler(trash_root=self.config.trash_root,
-                                   dry_run=self.config.dry_run),
+                TrashActionHandler(
+                    trash_root=self.config.trash_root,
+                    dry_run=self.config.dry_run,
+                ),
+            "video_convert":
+                VideoConvertActionHandler(
+                    dry_run=self.config.dry_run,
+                    output_directory=self.config.output_directory,
+                )
         }
 
     @beartype
@@ -95,12 +114,14 @@ class ActionExecutor:
     @beartype
     def verify_actions_consistency(self, actions: Sequence[BaseAction]) -> None:
         move_counts: dict[Path, int] = {}
+        convert_counts: dict[Path, int] = {}
         trash_paths: set[Path] = set()
 
         for action in actions:
             kind = action.kind
-            if action.kind not in self.handlers:
+            if kind not in self.handlers:
                 raise ValueError(f"Unsupported action kind: {kind}")
+
             self.handlers[kind].verify_consistency_single(action)
             src = action.file.path
 
@@ -109,6 +130,8 @@ class ActionExecutor:
                     move_counts[src] = move_counts.get(src, 0) + 1
                 case "trash":
                     trash_paths.add(src)
+                case "video_convert":
+                    convert_counts[src] = convert_counts.get(src, 0) + 1
                 case _:
                     raise ValueError(f"Unsupported action kind: {kind}")
 
@@ -119,6 +142,17 @@ class ActionExecutor:
             if src in trash_paths:
                 raise ValueError(
                     f"Conflicting move and trash action for source path: {src}")
+            if src in convert_counts:
+                raise ValueError(
+                    f"Conflicting move and video_convert action for source path: {src}")
+
+        for src, count in convert_counts.items():
+            if 1 < count:
+                raise ValueError(
+                    f"Multiple video_convert actions from the same source path: {src}")
+            if src in trash_paths:
+                raise ValueError(
+                    f"Conflicting video_convert and trash action for source path: {src}")
 
     @beartype
     def register_actions(self, actions: Sequence[BaseAction]) -> None:
