@@ -40,7 +40,9 @@ class JsonPreviewWidget(QWidget):
         if self._doc is None:
             self._view.setPlainText("<no document>")
             return
-        width = max(40, self._view.viewport().width() - 2)
+        char_width = self._view.fontMetrics().horizontalAdvance("0")
+        px_width = self._view.viewport().width() - 2
+        width = max(40, px_width // max(1, char_width))
         proc = subprocess.run(
             ["fjson", "-w", str(width)],
             input=json.dumps(self._doc, default=str),
