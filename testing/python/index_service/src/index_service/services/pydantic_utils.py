@@ -140,7 +140,6 @@ def to_json_safe(value: Any) -> Any:
 def _restore_json_safe(data: Any) -> Any:
     if isinstance(data, dict):
         tag = data.get(_TYPE_TAG)
-        log.info(data)
         if tag is not None:
             payload = _restore_json_safe(data["data"])
             if tag == "bytes":

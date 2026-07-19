@@ -36,11 +36,7 @@ class ExifPreviewrWidgetBuilder(WidgetBuilder):
     def build(self, db: IndexDatabase, hash: FileHash) -> QWidget:
         result = cast(
             Optional[ExifMetadataIndexerResult],
-            db.get_indexer_result(
-                hash,
-                ExifMetadataIndexer.asset_name,
-                ExifMetadataIndexer.result_model,
-            ),
+            db.get_indexer_result(hash, self.indexer),
         )
 
         if result is None:

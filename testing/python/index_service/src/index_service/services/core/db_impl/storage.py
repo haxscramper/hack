@@ -202,7 +202,7 @@ class StorageMixin:
         self,
         hash: FileHash,
         indexer: BaseIndexProtocol,
-    ) -> Any:
+    ) -> Any | None:
         return self.get_indexer_result_batch(
             [hash],
             indexer,
@@ -215,7 +215,7 @@ class StorageMixin:
         indexer: BaseIndexProtocol,
         *,
         max_workers: int = 1,
-    ) -> list[Any]:
+    ) -> list[Any | None]:
         """
         Return the list of the indexer result models for the given list of hashes
         in the same order as the file hashes were used.
@@ -252,7 +252,7 @@ class StorageMixin:
                 for file_hash, result in chunk.items()
             }
 
-        return [results[hash.hash] for hash in hashes]
+        return [results.get(hash.hash, None) for hash in hashes]
 
     def _get_indexer_result_batch_chunk(
         self,

@@ -359,7 +359,8 @@ def _fetch_indexer_assets(
                 results = db.get_indexer_result_batch(list(available_hashes), indexer)
 
             for file_hash, result in zip(available_hashes, results, strict=True):
-                assets_by_hash[file_hash.hash][indexer.asset_name] = result
+                if result is not None:
+                    assets_by_hash[file_hash.hash][indexer.asset_name] = result
 
     return assets_by_hash
 

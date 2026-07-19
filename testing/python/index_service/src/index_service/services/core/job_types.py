@@ -10,9 +10,10 @@ import time as _time
 from abc import ABC, abstractmethod
 from pathlib import Path
 
+from accelerate.commands.config.default import description
 from beartype import beartype
 from beartype.typing import Any, ClassVar, Optional, ParamSpec, TypeVar
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import (
     JSON,
     Column,
@@ -125,7 +126,8 @@ R = TypeVar("R", bound="IndexerOutput")
 
 class BaseIndexerConfig(BaseModel, extra="forbid"):
     use_cache: bool = True
-    reset_db_collection: bool = False
+    reset_db_collection: bool = Field(
+        default=False, description="Reset the indexer collecitions in arango DB")
 
 
 def indexer_cache_table_name(asset_name: str) -> str:
