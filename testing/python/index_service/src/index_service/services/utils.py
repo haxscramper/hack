@@ -4,6 +4,7 @@ import json
 import logging
 from datetime import datetime, timezone
 
+from PyQt6.QtCore import QLoggingCategory
 from beartype import beartype
 from beartype.typing import Any, Callable, Literal, Optional, Set
 import os
@@ -196,6 +197,9 @@ def stfu_logs():
         logger.setLevel(logging.CRITICAL + 1)
         logger.propagate = False
         logger.handlers.clear()
+
+    QLoggingCategory.setFilterRules("qt.multimedia.ffmpeg.*=false\n"
+                                    "qt.multimedia.*=false")
 
 
 def dump_with_type(

@@ -1,7 +1,7 @@
 from PyQt6.QtCore import QCoreApplication, QSettings, Qt, QModelIndex
 from PyQt6.QtGui import QCloseEvent
 from beartype import beartype
-from beartype.typing import Sequence
+from beartype.typing import Sequence, cast
 
 from PyQt6.QtWidgets import (
     QMainWindow,
@@ -25,6 +25,7 @@ from index_service.gui.file_tree.columns.file_tree_column import FileTreeColumnS
 from index_service.gui.file_tree.columns.size_column import EntrySizeColumnSpec
 from index_service.gui.file_tree.columns.size_share_column import SizeShareColumnSpec
 from index_service.gui.file_tree.columns.video_bitrate_columns import VideoBitrateColumnSpec
+from index_service.gui.file_tree.columns.video_convert_column import VideoConvertColumnSpec
 
 from index_service.gui.file_tree.columns.video_framerate_column import VideoFramerateColumnSpec
 from index_service.gui.file_tree.columns.video_resolution_column import VideoResolutionColumnSpec
@@ -64,7 +65,7 @@ class FileTreeQueryWindow(QMainWindow):
         QCoreApplication.setOrganizationName("haxscramper")
         QCoreApplication.setApplicationName("haxdex-tree-view")
 
-        columns: list[FileTreeColumnSpec] = [
+        self.columns: list[FileTreeColumnSpec] = [
             FileNameColumnSpec(),
             FileMimeColumnSpec("mime"),
             EntrySizeColumnSpec("size"),
@@ -75,6 +76,7 @@ class FileTreeQueryWindow(QMainWindow):
             VideoBitrateColumnSpec("bitrate"),
             VideoResolutionColumnSpec("resolution"),
             VideoFramerateColumnSpec("framerate"),
+            VideoConvertColumnSpec("convert"),
         ]
 
         if cfg.file_tree_view.drop_cache_files:
@@ -90,32 +92,32 @@ class FileTreeQueryWindow(QMainWindow):
                 db=db,
                 root_directories=[file_tree_view.reference_dir],
                 indexers=indexer_instances,
-                columns=columns + [
+                columns=self.columns + [
                     FileDuplicateColumnSpec(None),
                 ],
                 cache_path=cfg.file_tree_view.reference_tree_cache_path,
             )
 
-            columns.append(FileDuplicateColumnSpec(reference_tree=reference_tree[0]))
+            self.columns.append(FileDuplicateColumnSpec(reference_tree=reference_tree[0]))
 
         nodes = build_file_tree(
             ctx=ctx,
             db=db,
             root_directories=file_tree_view.root_dirs,
             indexers=indexer_instances,
-            columns=columns,
+            columns=self.columns,
             cache_path=cfg.file_tree_view.visual_tree_cache_path,
         )
 
         model = FileTreeModel(
-            columns=columns,
+            columns=self.columns,
             nodes=nodes,
             parent=self,
         )
 
-        self.resize(1200, 800)
+        model.dataChanged.connect(self._user_data_changed)
 
-        self.columns = columns
+        self.columns = self.columns
         self.regions: list[FileTreeRegion] = []
         self.region_widgets: list[QWidget] = []
 
@@ -160,6 +162,14 @@ class FileTreeQueryWindow(QMainWindow):
         self.region_splitter.addWidget(view)
         self.region_widgets.append(view)
         return view
+
+    def _user_data_changed(self, topLeft: QModelIndex, bottomRight: QModelIndex,
+                           roles: list[int]):
+        column = self.columns[topLeft.column()]
+        node = cast(FileTreeNode, topLeft.internalPointer())
+        log.info(
+            f"user entered custom data for column {column.getColumnData(topLeft)} for {node.root} {node.root_relative}"
+        )
 
     def _add_region(self, model: AbstractColumnItemModel) -> FileTreeRegion:
         region = FileTreeRegion(

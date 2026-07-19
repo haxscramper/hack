@@ -162,13 +162,13 @@ def run_indexing_per_root_plan(
                 ):
                     plan = runner.create_plan(refs, list(indexers))
 
-                log.info("execution plan for root={} path={} batch={}/{}\n{}".format(
-                    root.name,
-                    str(path_cfg.root_path),
-                    batch_idx,
-                    total_batches,
-                    plan.to_text(),
-                ))
+                # log.info("execution plan for root={} path={} batch={}/{}\n{}".format(
+                #     root.name,
+                #     str(path_cfg.root_path),
+                #     batch_idx,
+                #     total_batches,
+                #     plan.to_text(),
+                # ))
 
                 with ctx.trace_scope(
                         "root plan execution",

@@ -52,6 +52,10 @@ class FileTreeColumnSpec(ColumnSpec, ABC):
         assert result is None or isinstance(result, self.column_type), f"{type(result)}"
         return result
 
+    def setColumnData(self, index: QModelIndex, value: BaseModel):
+        assert isinstance(value, self.column_type)
+        cast(FileTreeNode, index.internalPointer()).columns[self.column_name] = value
+
     def setData(
         self,
         index: QModelIndex,

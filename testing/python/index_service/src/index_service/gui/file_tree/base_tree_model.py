@@ -80,8 +80,10 @@ def _column_schema_hash(column: FileTreeColumnSpec) -> str:
 def _validate_columns(columns: Sequence[FileTreeColumnSpec]) -> None:
     names = [column.column_name for column in columns]
 
-    if len(set(names)) != len(names):
-        raise ValueError("File tree column names must be unique")
+    duplicates = [name for name in dict.fromkeys(names) if names.count(name) > 1]
+    if duplicates:
+        raise ValueError(
+            f"File tree column names must be unique; duplicate items: {duplicates}")
 
     if "hash" in names:
         raise ValueError(

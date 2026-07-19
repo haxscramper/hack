@@ -326,7 +326,7 @@ class IndexRuntime:
         ):
             plan = self.create_plan(files, names)
 
-        log.debug(f"\n{plan.to_text()}")
+        # log.debug(f"\n{plan.to_text()}")
 
         with self.ctx.trace_scope(
                 "plan execution",
@@ -343,7 +343,7 @@ class IndexRuntime:
         assert self.get_indexer(name).result_model
         return IndexerOutput(
             indexer_id=name,
-            result=self.db.get_indexer_result(
+            result=self.db.get_indexer_result(  # type: ignore
                 hash if isinstance(hash, FileHash) else hash.hash,
                 self.get_indexer(name),
             ),
