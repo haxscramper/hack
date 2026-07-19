@@ -125,6 +125,7 @@ R = TypeVar("R", bound="IndexerOutput")
 
 class BaseIndexerConfig(BaseModel, extra="forbid"):
     use_cache: bool = True
+    reset_db_collection: bool = False
 
 
 def indexer_cache_table_name(asset_name: str) -> str:
@@ -163,6 +164,10 @@ class BaseIndexer(ABC):
 
         else:
             return [self.result_model]
+
+    @property
+    def reset_db_collection(self) -> bool:
+        return self.config.reset_db_collection
 
     @property
     def should_load_cache(self) -> bool:

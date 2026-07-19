@@ -9,6 +9,7 @@ from pathlib import Path
 from pprint import pformat
 from urllib import request
 
+import PIL
 from sqlalchemy import Engine
 
 import magic
@@ -568,6 +569,10 @@ class ExifMetadataIndexer(BaseIndexer):
             log.info(f"{path} OK")
 
             result = ExifMetadataIndexerResult(file=params, hash=request.get_hash_str())
+
+        except PIL.UnidentifiedImageError as err:
+            result = ExifMetadataIndexerResult(error=str(err),
+                                               hash=request.get_hash_str())
 
         except OSError as err:
             if "image file is truncated" in str(err):

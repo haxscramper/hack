@@ -153,6 +153,13 @@ class SchemaMixin:
         for indexer in indexers:
             document_schema, edge_schema = self._arango_collection_schema_for_indexer(
                 indexer)
+
+            if indexer.reset_db_collection and self._db.has_collection(
+                    indexer.asset_name):
+                self._db.delete_collection(indexer.asset_name)
+                if edge_schema:
+                    self._db.delete_collection(self.get_edge_name(indexer))
+
             self._ensure_collection_with_schema(
                 indexer.asset_name,
                 document_schema,

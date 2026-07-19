@@ -12,6 +12,7 @@ class BaseIndexProtocol(Protocol):
     asset_name: str
     result_model: type[pydantic.BaseModel]
     edge_collection_name: Optional[str]
+    reset_db_collection: bool
 
     def get_document_type_bases(self) -> list[Any]:
         ...
