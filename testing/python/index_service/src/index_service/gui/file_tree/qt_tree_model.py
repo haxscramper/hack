@@ -1,14 +1,14 @@
 import glom
 from beartype import beartype
-from beartype.typing import Any, Sequence, cast
+from beartype.typing import Any
 
-from PyQt6.QtCore import QModelIndex, QObject, Qt
+from PyQt6.QtCore import QModelIndex, Qt
 
 from index_service.gui.abstract_models.tree_column_model import AbstractTreeColumnModel
 from index_service.gui.common.qt_model_roles import CustomModelRole
-from index_service.gui.file_tree.base_tree_model import FileTreeNode
-from index_service.gui.abstract_models.column_model import AbstractColumnItemModel, ColumnSpec
 import logging
+
+from index_service.gui.file_tree.columns.file_tree_column import FileTreeNode
 
 log = logging.getLogger(__name__)
 

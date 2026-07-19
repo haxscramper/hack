@@ -108,6 +108,7 @@ class FileTreeRegion(QWidget):
         self.tree_view.setIndentation(20)
         self.tree_view.setSelectionBehavior(
             QAbstractItemView.SelectionBehavior.SelectRows)
+        self.tree_view.setEditTriggers(QAbstractItemView.EditTrigger.CurrentChanged)
         self.tree_view.setModel(self.model)
         self.model.configureView(self.tree_view)
         self.tree_view.doubleClicked.connect(self._on_tree_item_double_clicked)

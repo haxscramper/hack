@@ -9,7 +9,7 @@ from beartype.typing import Callable, cast
 
 from index_service.gui.abstract_models.column_model import AbstractColumnItemModel
 from index_service.gui.file_tree.actions.action_list_model import ActionListModel, ActionProvider
-from index_service.gui.file_tree.base_tree_model import FileTreeNode
+from index_service.gui.file_tree.columns.file_tree_column import FileTreeNode
 from index_service.gui.file_tree.python_code_editor import (
     QUERY_FILENAME,
     QueryError,

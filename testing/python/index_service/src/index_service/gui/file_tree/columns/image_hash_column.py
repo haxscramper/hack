@@ -10,7 +10,7 @@ from PyQt6.QtGui import QBrush, QColor
 from beartype import beartype
 from pydantic import BaseModel
 
-from index_service.gui.file_tree.base_tree_model import FileTreeNode
+from testing.python.index_service.src.index_service.gui.file_tree.model.tree_model_build import FileTreeNode
 from index_service.gui.file_tree.columns.file_tree_column import FileTreeColumnSpec
 from index_service.services.core.types import FileHash
 from index_service.services.indexers.image_hash import ImageHashIndexerResult, ImageHashIndexer

@@ -1,4 +1,4 @@
-from PyQt6.QtCore import QCoreApplication, QSettings, Qt, QModelIndex
+from PyQt6.QtCore import QCoreApplication, Qt, QModelIndex
 from PyQt6.QtGui import QCloseEvent
 from beartype import beartype
 from beartype.typing import Sequence, cast
@@ -17,11 +17,10 @@ from index_service.gui.collection_views.preview_pane import FilePreviewPane
 from index_service.gui.common.qt_model_roles import CustomModelRole
 from index_service.gui.common.qt_utils import get_settings
 from index_service.gui.file_tree.actions.action_list_view import ActionListView
-from index_service.gui.file_tree.base_tree_model import build_file_tree, FileTreeNode
 from index_service.gui.file_tree.columns.file_duplicate_column import FileDuplicateColumnSpec
 from index_service.gui.file_tree.columns.file_mime_column import FileMimeColumnSpec
 from index_service.gui.file_tree.columns.file_name_column import FileNameColumnSpec
-from index_service.gui.file_tree.columns.file_tree_column import FileTreeColumnSpec
+from index_service.gui.file_tree.columns.file_tree_column import FileTreeColumnSpec, FileTreeNode
 from index_service.gui.file_tree.columns.size_column import EntrySizeColumnSpec
 from index_service.gui.file_tree.columns.size_share_column import SizeShareColumnSpec
 from index_service.gui.file_tree.columns.video_bitrate_columns import VideoBitrateColumnSpec
@@ -29,6 +28,8 @@ from index_service.gui.file_tree.columns.video_convert_column import VideoConver
 
 from index_service.gui.file_tree.columns.video_framerate_column import VideoFramerateColumnSpec
 from index_service.gui.file_tree.columns.video_resolution_column import VideoResolutionColumnSpec
+from index_service.gui.file_tree.model.tree_model_build import build_file_tree
+from index_service.gui.file_tree.model.tree_model_user_edits import store_user_column_edit
 from index_service.gui.file_tree.python_code_editor import QueryError
 from index_service.gui.file_tree.qt_tree_model import FileTreeModel
 from index_service.gui.file_tree.qt_tree_region import FileTreeRegion
@@ -36,7 +37,6 @@ from index_service.gui.file_tree.query_filter import ActionListModel
 from index_service.services.core.db import IndexDatabase
 from index_service.services.core.job_types import BaseIndexer, RunContext
 import logging
-from pathlib import Path
 
 from index_service.services.core.types import FileHash
 
@@ -96,6 +96,7 @@ class FileTreeQueryWindow(QMainWindow):
                     FileDuplicateColumnSpec(None),
                 ],
                 cache_path=cfg.file_tree_view.reference_tree_cache_path,
+                user_edit_path=cfg.file_tree_view.user_edit_path,
             )
 
             self.columns.append(FileDuplicateColumnSpec(reference_tree=reference_tree[0]))
@@ -107,6 +108,7 @@ class FileTreeQueryWindow(QMainWindow):
             indexers=indexer_instances,
             columns=self.columns,
             cache_path=cfg.file_tree_view.visual_tree_cache_path,
+            user_edit_path=cfg.file_tree_view.user_edit_path,
         )
 
         model = FileTreeModel(
@@ -169,6 +171,19 @@ class FileTreeQueryWindow(QMainWindow):
         node = cast(FileTreeNode, topLeft.internalPointer())
         log.info(
             f"user entered custom data for column {column.getColumnData(topLeft)} for {node.root} {node.root_relative}"
+        )
+
+        if node.root is None:
+            raise ValueError(
+                f"Cannot store user edit for path {node.path.as_posix()} because root name is missing"
+            )
+
+        store_user_column_edit(
+            user_edit_path=self.cfg.file_tree_view.user_edit_path,
+            root=node.root,
+            relative=node.root_relative,
+            column=column,
+            data=node.columns[column.column_name],
         )
 
     def _add_region(self, model: AbstractColumnItemModel) -> FileTreeRegion:

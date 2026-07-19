@@ -4,6 +4,8 @@ import json
 import logging
 from datetime import datetime, timezone
 
+from sqlalchemy import URL, Engine, create_engine
+
 from PyQt6.QtCore import QLoggingCategory
 from beartype import beartype
 from beartype.typing import Any, Callable, Literal, Optional, Set
@@ -425,3 +427,12 @@ def format_size(size: int) -> str:
     if index == 0:
         return f"{int(value)} {units[index]}"
     return f"{value:.2f} {units[index]}"
+
+
+def create_cache_engine(cache_path: Path) -> Engine:
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+
+    return create_engine(
+        URL.create("sqlite+pysqlite", database=str(cache_path)),
+        hide_parameters=True,
+    )
