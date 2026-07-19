@@ -18,18 +18,23 @@ from pydantic import BaseModel
 from index_service.gui.file_tree.columns.file_tree_column import FileTreeColumnSpec, FileTreeNode
 from index_service.services.core.types import FileHash
 from index_service.services.indexers.file_stats import FileStatsIndexer, FileStatsIndexerResult
+import logging
+
+log = logging.getLogger(__name__)
 
 
 class SizeShareData(BaseModel, extra="forbid"):
-    size_bytes: int
-    size_share: float
+    size_self: int
+    size_parent: float
 
 
 @beartype
 def _compute_directory_size_bytes(parent_directories: list[Path]) -> dict[Path, int]:
     directory_size_bytes: dict[Path, int] = {}
+    assert parent_directories
 
     def walk(directory: Path) -> int:
+        assert directory.exists()
         own_size = 0
         subdirs: list[Path] = []
         try:
@@ -37,17 +42,21 @@ def _compute_directory_size_bytes(parent_directories: list[Path]) -> dict[Path, 
                 for entry in entries:
                     # is_dir/is_file use cached d_type from readdir, no extra syscall
                     if entry.is_dir(follow_symlinks=False):
-                        subdirs.append(Path(entry.path))
+                        subdirs.append(Path(entry.path).absolute())
+
                     else:
                         # entry.stat caches its result; only one stat per file
                         own_size += entry.stat(follow_symlinks=False).st_size
+
         except (PermissionError, FileNotFoundError):
             pass
 
         total = own_size
         for subdir in subdirs:
             total += walk(subdir)
-        directory_size_bytes[directory] = total
+
+        directory_size_bytes[directory.absolute()] = total
+
         return total
 
     for root in parent_directories:
@@ -114,27 +123,37 @@ class SizeShareColumnSpec(FileTreeColumnSpec):
     ) -> Optional[BaseModel]:
         resolved_path = path.resolve()
 
-        match is_directory:
-            case True:
-                size_bytes = self.directory_size_bytes[resolved_path]
-            case False:
-                if FileStatsIndexer.asset_name not in assets:
+        def get_self_size() -> int | None:
+            if is_directory:
+                return self.directory_size_bytes.get(resolved_path, None)
+
+            else:
+                if FileStatsIndexer.asset_name in assets:
+                    result = cast(FileStatsIndexerResult,
+                                  assets[FileStatsIndexer.asset_name])
+                    return result.size_bytes
+
+                else:
                     return None
-                result = cast(FileStatsIndexerResult, assets[FileStatsIndexer.asset_name])
-                size_bytes = result.size_bytes
 
-        match self.share_mode:
-            case "global":
-                denominator = self.global_size_bytes
-            case "parent":
-                parent_path = resolved_path.parent
-                if parent_path not in self.directory_size_bytes:
-                    raise RuntimeError(
-                        f"Missing precomputed size for parent directory: {parent_path}")
-                denominator = self.directory_size_bytes[parent_path]
+        def get_parent() -> int:
+            if self.share_mode == "global":
+                return self.global_size_bytes
 
-        size_share = 0.0 if denominator == 0 else size_bytes / denominator
-        return SizeShareData(size_bytes=size_bytes, size_share=size_share)
+            else:
+                return self.directory_size_bytes[resolved_path.parent]
+
+        self_size = get_self_size()
+        if not self_size:
+            log.warning(f"no size for {path}")
+            return None
+
+        if resolved_path.parent not in self.directory_size_bytes:
+            log.warning(
+                f"Missing precomputed size for parent directory: {resolved_path.parent}")
+            return None
+
+        return SizeShareData(size_self=self_size, size_parent=get_parent())
 
     def data(
         self,
@@ -147,9 +166,9 @@ class SizeShareColumnSpec(FileTreeColumnSpec):
 
         match role:
             case Qt.ItemDataRole.DisplayRole:
-                return f"{entry.size_share * 100:.1f}%"
+                return f"{entry.size_parent * 100:.1f}%"
             case Qt.ItemDataRole.UserRole:
-                return entry.size_share
+                return float(entry.size_self) / float(entry.size_parent)
             case _:
                 return None
 

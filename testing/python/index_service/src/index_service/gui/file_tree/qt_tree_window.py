@@ -63,11 +63,11 @@ class FileTreeQueryWindow(QMainWindow):
         columns: list[FileTreeColumnSpec] = [
             FileNameColumnSpec(),
             EntrySizeColumnSpec("size"),
-            VideoBitrateColumnSpec("bitrate"),
             SizeShareColumnSpec(
                 "share",
                 [d.path for d in file_tree_view.root_dirs],
             ),
+            VideoBitrateColumnSpec("bitrate"),
         ]
 
         if cfg.file_tree_view.drop_cache_files:
