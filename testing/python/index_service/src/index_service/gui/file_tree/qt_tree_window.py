@@ -19,6 +19,7 @@ from index_service.gui.common.qt_utils import get_settings
 from index_service.gui.file_tree.actions.action_list_view import ActionListView
 from index_service.gui.file_tree.base_tree_model import build_file_tree, FileTreeNode
 from index_service.gui.file_tree.columns.file_duplicate_column import FileDuplicateColumnSpec
+from index_service.gui.file_tree.columns.file_mime_column import FileMimeColumnSpec
 from index_service.gui.file_tree.columns.file_name_column import FileNameColumnSpec
 from index_service.gui.file_tree.columns.file_tree_column import FileTreeColumnSpec
 from index_service.gui.file_tree.columns.size_column import EntrySizeColumnSpec
@@ -65,6 +66,7 @@ class FileTreeQueryWindow(QMainWindow):
 
         columns: list[FileTreeColumnSpec] = [
             FileNameColumnSpec(),
+            FileMimeColumnSpec("mime"),
             EntrySizeColumnSpec("size"),
             SizeShareColumnSpec(
                 "share",

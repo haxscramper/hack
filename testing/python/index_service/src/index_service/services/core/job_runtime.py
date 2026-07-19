@@ -380,13 +380,13 @@ class IndexRuntime:
                         assets=assets,  # type: ignore
                     )
 
-                except Exception:
+                except Exception as e:
                     log.error(
                         f"could not execute indexer {indexer.asset_name} for {self.ctx.get_path(request.file_ref)}"
                     )
                     log.error(f"indexer request {request}")
                     log.critical(f"failure", exc_info=True, stack_info=True)
-                    return None
+                    raise e
 
             return ref, out
 

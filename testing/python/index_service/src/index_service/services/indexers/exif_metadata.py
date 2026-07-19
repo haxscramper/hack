@@ -1,3 +1,5 @@
+import base64
+import hashlib
 import json
 import logging
 import math
@@ -12,8 +14,8 @@ from beartype.typing import Any, Dict, List, Optional, Set, Tuple, Union
 from index_service.services.core.job_cache import cache_indexer_run
 from index_service.services.core.job_types import BaseIndexer, RunContext
 from index_service.services.pydantic_utils import try_parse_json
-from index_service.services.core.types import IndexerOutput, IndexerRequest
-from PIL import Image
+from index_service.services.core.types import IndexerOutput, IndexerRequest, IndexDocument
+from PIL import Image, ExifTags
 from pydantic import BaseModel, ConfigDict, Field
 
 log = logging.getLogger(__name__)
@@ -34,6 +36,121 @@ def try_float(val: str) -> float | str:
 
     except ValueError:
         return val
+
+
+def _to_jsonable_metadata(value: Any) -> Any:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+
+    if isinstance(value, Path):
+        return str(value)
+
+    if isinstance(value, datetime):
+        return value.isoformat()
+
+    if isinstance(value, (bytes, bytearray)):
+        raw = bytes(value)
+        return {
+            "__type__": "bytes",
+            "length": len(raw),
+            "sha256": hashlib.sha256(raw).hexdigest(),
+            "base64": base64.b64encode(raw).decode("ascii"),
+        }
+
+    if isinstance(value, dict):
+        return {str(k): _to_jsonable_metadata(v) for k, v in value.items()}
+
+    if isinstance(value, (list, tuple, set)):
+        return [_to_jsonable_metadata(v) for v in value]
+
+    # PIL rationals and similar numeric-like values
+    if hasattr(value, "numerator") and hasattr(value, "denominator"):
+        try:
+            return {
+                "__type__": type(value).__name__,
+                "numerator": int(value.numerator),
+                "denominator": int(value.denominator),
+                "float": float(value),
+            }
+        except Exception:
+            return repr(value)
+
+    try:
+        json.dumps(value)
+        return value
+    except Exception:
+        return repr(value)
+
+
+def _decode_gps_info(gps_info: Any) -> Any:
+    if not isinstance(gps_info, dict):
+        return _to_jsonable_metadata(gps_info)
+
+    decoded: Dict[str, Any] = {}
+    for gps_key, gps_value in gps_info.items():
+        gps_name = ExifTags.GPSTAGS.get(gps_key, f"GPS_{gps_key}")
+        decoded[gps_name] = _to_jsonable_metadata(gps_value)
+    return decoded
+
+
+def _collect_all_embedded_metadata(img: Image.Image) -> Dict[str, Any]:
+    info_raw = {k: _to_jsonable_metadata(v) for k, v in img.info.items()}
+    info_parsed: Dict[str, Any] = {}
+
+    for k, v in img.info.items():
+        if isinstance(v, str):
+            info_parsed[k] = _to_jsonable_metadata(try_parse_json(v))
+        else:
+            info_parsed[k] = _to_jsonable_metadata(v)
+
+    exif_obj = img.getexif()
+    exif_by_id: Dict[str, Any] = {}
+    exif_by_name: Dict[str, Any] = {}
+    gps_info_by_name: Dict[str, Any] = {}
+
+    for tag_id, raw_value in exif_obj.items():
+        tag_name = ExifTags.TAGS.get(tag_id, f"Tag_{tag_id}")
+        value_json = _to_jsonable_metadata(raw_value)
+
+        exif_by_id[str(tag_id)] = value_json
+        exif_by_name[tag_name] = value_json
+
+        if tag_name == "GPSInfo":
+            gps_info_by_name = _decode_gps_info(raw_value)
+
+    if hasattr(exif_obj, "get_ifd"):
+        for ifd_name, ifd_id in {
+                "ExifIFD": 0x8769,
+                "GPSInfoIFD": 0x8825,
+                "InteropIFD": 0xA005,
+        }.items():
+            try:
+                ifd_data = exif_obj.get_ifd(ifd_id)
+                exif_by_name[ifd_name] = _to_jsonable_metadata(ifd_data)
+                if ifd_name == "GPSInfoIFD" and not gps_info_by_name:
+                    gps_info_by_name = _decode_gps_info(ifd_data)
+            except Exception:
+                pass
+
+    return {
+        "image": {
+            "format": img.format,
+            "format_description": img.format_description,
+            "mode": img.mode,
+            "width": img.width,
+            "height": img.height,
+            "size": [img.width, img.height],
+            "is_animated": bool(getattr(img, "is_animated", False)),
+            "n_frames": int(getattr(img, "n_frames", 1)),
+        },
+        "info_raw": info_raw,
+        "info_parsed": info_parsed,
+        "exif": {
+            "by_tag_id": exif_by_id,
+            "by_tag_name": exif_by_name,
+            "gps_by_name": gps_info_by_name,
+        },
+    }
 
 
 @beartype
@@ -332,18 +449,30 @@ def get_image_params(path: Path, reference_dir: Path, fast: bool = False) -> Ima
     if not json_path.exists() and fast:
         return res
 
-    img = Image.open(path)
-    if json_path.exists():
-        metadata = json.loads(json_path.read_text())["exif_metadata"]
-        json_metadata = True
-    else:
-        metadata = img.info
-        json_metadata = False
+    sidecar_payload: Dict[str, Any] = {}
+    metadata: Dict[str, Any] = {}
+    json_metadata = False
 
-    res.ImagePath = path
-    res.original_metadata_full["exif_metadata"] = {
-        k: try_parse_json(v) for k, v in img.info.items()
-    }
+    with Image.open(path) as img:
+        if json_path.exists():
+            sidecar_payload = json.loads(json_path.read_text())
+            metadata = sidecar_payload.get("exif_metadata", {})
+            json_metadata = True
+        else:
+            metadata = dict(img.info)
+            json_metadata = False
+
+        res.ImagePath = path
+        res.original_metadata_full = {
+            "embedded": _collect_all_embedded_metadata(img),
+            "sidecar": _to_jsonable_metadata(sidecar_payload) if sidecar_payload else {},
+        }
+
+        if json_metadata:
+            res.original_metadata_full["exif_metadata"] = _to_jsonable_metadata(metadata)
+        else:
+            res.original_metadata_full["exif_metadata"] = res.original_metadata_full[
+                "embedded"]["info_parsed"]
 
     if path.with_suffix(".txt").exists():
         text_gen_data = path.with_suffix(".txt").read_text()
@@ -365,7 +494,6 @@ def get_image_params(path: Path, reference_dir: Path, fast: bool = False) -> Ima
                     if lora:
                         if ":" in lora:
                             name, weight = lora.split(":")
-
                         else:
                             name = lora
                             weight = 1.0
@@ -379,11 +507,13 @@ def get_image_params(path: Path, reference_dir: Path, fast: bool = False) -> Ima
         if json_metadata:
             full_json = metadata["generation_data"]
         else:
-            generation = metadata["generation_data"].strip("\x00")
+            generation_raw = metadata["generation_data"]
+            if isinstance(generation_raw, (bytes, bytearray)):
+                generation_raw = generation_raw.decode("utf-8", errors="replace")
+            generation = str(generation_raw).strip("\x00")
             try:
                 full_json = json.loads(generation)
-
-            except Exception as e:
+            except Exception:
                 return res
 
         try:
@@ -406,16 +536,17 @@ def get_image_params(path: Path, reference_dir: Path, fast: bool = False) -> Ima
                 ))
 
         except Exception as e:
-            # log.warning(f"{path}", exc_info=e)
             e.add_note(pformat(full_json, width=180))
             return res
 
     elif "prompt" in metadata:
         if json_metadata:
             prompt = metadata["prompt"]
-
         else:
-            prompt = json.loads(metadata["prompt"])
+            prompt_raw = metadata["prompt"]
+            if isinstance(prompt_raw, (bytes, bytearray)):
+                prompt_raw = prompt_raw.decode("utf-8", errors="replace")
+            prompt = json.loads(prompt_raw)
 
         for _, node in prompt.items():
             if node["class_type"] == "BNK_CLIPTextEncodeAdvanced":
@@ -423,12 +554,8 @@ def get_image_params(path: Path, reference_dir: Path, fast: bool = False) -> Ima
                 if ("EasyNegative" in text or "bad anatomy" in text or
                         "negative" in text):
                     res.negative_prompt = text
-
                 else:
                     res.prompt = text
-
-    # else:
-    #     log.warning(f"No generation data for {path}")
 
     if res.prompt:
         parser = PromptParser()
@@ -439,13 +566,14 @@ def get_image_params(path: Path, reference_dir: Path, fast: bool = False) -> Ima
     return res
 
 
-class ExifMetadataIndexerResult(BaseModel, extra="forbid"):
+class ExifMetadataIndexerResult(IndexDocument, extra="forbid"):
     file: ImageParams
 
 
 class ExifMetadataIndexer(BaseIndexer):
     asset_name = "exif_metadata"
     result_model = ExifMetadataIndexerResult
+    max_parallel = 8
 
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
@@ -470,4 +598,7 @@ class ExifMetadataIndexer(BaseIndexer):
         log.info(f"{path} OK")
 
         return IndexerOutput(indexer_id=self.asset_name,
-                             result=ExifMetadataIndexerResult(file=params))
+                             result=ExifMetadataIndexerResult(
+                                 file=params,
+                                 hash=request.get_hash_str(),
+                             ))

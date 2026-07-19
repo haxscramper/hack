@@ -19,6 +19,7 @@ from index_service.services.indexers.ffprobe_indexer import FFProbeIndexer
 from index_service.services.indexers.image_generation import GenerationParamsIndexer
 from index_service.services.indexers.image_hash import ImageHashIndexer
 from index_service.services.indexers.media_transcribe import MediaTranscriptionIndexer
+from index_service.services.indexers.mime_indexer import FileMimeIndexer
 from index_service.services.indexers.pdf_indexer import PdfIndexer
 from index_service.services.indexers.safetensor_indexer import SafetensorIndexer
 from index_service.services.indexers.wd_indexer import WdTagIndexer
@@ -39,6 +40,7 @@ _INDEXER_TYPES = [t for t in DEFAULT_INDEXER_TYPES] + [
     ComfyInputIndexer,
     MediaTranscriptionIndexer,
     ImageHashIndexer,
+    FileMimeIndexer,
 ]
 
 _RESOURCE_TYPES = [t for t in DEFAULT_RESOURCE_TYPES] + [
