@@ -187,13 +187,37 @@ class VideoConvertActionHandler(ActionHandler):
             case VideoConvertTarget.NO_CHANGE:
                 return probe.width, probe.height, probe.fps
             case VideoConvertTarget.SD_30:
-                return 854, 480, 30.0
+                box_width, box_height, target_fps = 854, 480, 30.0
             case VideoConvertTarget.HD_30:
-                return 1280, 720, 30.0
+                box_width, box_height, target_fps = 1280, 720, 30.0
             case VideoConvertTarget.FULL_HD_30:
-                return 1920, 1080, 30.0
+                box_width, box_height, target_fps = 1920, 1080, 30.0
             case _:
                 raise ValueError(f"Unsupported video convert target: {target}")
+
+        # Fit the source into the target bounding box while preserving aspect
+        # ratio, and never upscale beyond the source resolution.
+        scale = min(box_width / probe.width, box_height / probe.height, 1.0)
+        target_width = self._round_even(probe.width * scale)
+        target_height = self._round_even(probe.height * scale)
+        target_fps = min(target_fps, probe.fps)
+        return target_width, target_height, target_fps
+
+    @beartype
+    def _round_even(self, value: float) -> int:
+        rounded = int(round(value))
+        if rounded % 2 != 0:
+            rounded += 1
+        return max(rounded, 2)
+
+    @beartype
+    def _infer_max_bitrate(self, target_width: int, target_height: int,
+                           target_fps: float) -> int:
+        # Bits-per-pixel-per-frame heuristic tuned to commonly expected H.264
+        # bitrates (roughly 2.5 Mbps @480p30, 5 Mbps @720p30, 8 Mbps @1080p30).
+        bits_per_pixel = 0.13
+        target_pixels = target_width * target_height
+        return int(target_pixels * target_fps * bits_per_pixel)
 
     @beartype
     def _infer_target_bitrate(
@@ -207,4 +231,5 @@ class VideoConvertActionHandler(ActionHandler):
         target_pixels = target_width * target_height
         ratio = (target_pixels * target_fps) / (input_pixels * probe.fps)
         bitrate = int(probe.bitrate * ratio)
-        return max(bitrate, 200000)
+        max_bitrate = self._infer_max_bitrate(target_width, target_height, target_fps)
+        return max(min(bitrate, max_bitrate), 200000)
