@@ -23,7 +23,10 @@ from index_service.gui.file_tree.columns.file_name_column import FileNameColumnS
 from index_service.gui.file_tree.columns.file_tree_column import FileTreeColumnSpec
 from index_service.gui.file_tree.columns.size_column import EntrySizeColumnSpec
 from index_service.gui.file_tree.columns.size_share_column import SizeShareColumnSpec
-from index_service.gui.file_tree.columns.video_info_columns import VideoBitrateColumnSpec
+from index_service.gui.file_tree.columns.video_bitrate_columns import VideoBitrateColumnSpec
+
+from index_service.gui.file_tree.columns.video_framerate_column import VideoFramerateColumnSpec
+from index_service.gui.file_tree.columns.video_resolution_column import VideoResolutionColumnSpec
 from index_service.gui.file_tree.python_code_editor import QueryError
 from index_service.gui.file_tree.qt_tree_model import FileTreeModel
 from index_service.gui.file_tree.qt_tree_region import FileTreeRegion
@@ -68,6 +71,8 @@ class FileTreeQueryWindow(QMainWindow):
                 [d.path for d in file_tree_view.root_dirs],
             ),
             VideoBitrateColumnSpec("bitrate"),
+            VideoResolutionColumnSpec("resolution"),
+            VideoFramerateColumnSpec("framerate"),
         ]
 
         if cfg.file_tree_view.drop_cache_files:
