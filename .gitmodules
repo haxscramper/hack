@@ -14,3 +14,6 @@
 [submodule "testing/cpp/compile_stats/cppdecl"]
 	path = testing/cpp/compile_stats/cppdecl
 	url = https://github.com/MeshInspector/cppdecl.git
+[submodule "testing/python/index_service/src/index_service/services/resources/wdv3_jax"]
+	path = testing/python/index_service/src/index_service/services/resources/wdv3_jax
+	url = https://github.com/SmilingWolf/wdv3-jax.git
