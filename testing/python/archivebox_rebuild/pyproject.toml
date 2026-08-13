@@ -11,4 +11,5 @@ dependencies = [
     "lxml>=6.1.1",
     "readability-lxml>=0.8.4.1",
     "setuptools>=84.0.0",
+    "trafilatura>=2.2.0",
 ]
