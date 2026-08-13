@@ -16,7 +16,7 @@ from beartype.typing import Any, Iterable, Optional
 from loguru import logger
 from PIL import Image, ImageDraw, ImageFont
 from pydantic import BaseModel, Field, ValidationError
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModel, AutoTokenizer
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff"}
 DONE_MARKER = ".done"
@@ -137,7 +137,7 @@ def mirrored_output_base(source_file: Path, mirror_from: Path,
 @beartype
 def load_model_and_tokenizer(model_id: str) -> tuple[Any, Any]:
     tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
-    model = AutoModelForCausalLM.from_pretrained(
+    model = AutoModel.from_pretrained(
         model_id,
         trust_remote_code=True,
         torch_dtype=torch.bfloat16,
