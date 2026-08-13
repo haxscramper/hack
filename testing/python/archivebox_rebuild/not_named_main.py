@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import importlib
+import multiprocessing as mp
 import os
 import subprocess
 from dataclasses import dataclass
@@ -145,10 +146,8 @@ def pick_html_path(archive_dir: Path) -> Optional[Path]:
 
 
 @beartype
-def snapshot_record(
-    snapshot: Any,
-    input_dir: Path,
-) -> Optional[ArchiveSnapshot]:
+def snapshot_record(snapshot: Any,
+                    input_dir: Path) -> Optional[ArchiveSnapshot]:
     timestamp = text_from_value(getattr(snapshot, "timestamp", None))
     if timestamp is None:
         raise RuntimeError(
@@ -179,11 +178,17 @@ def snapshot_record(
 
 
 @beartype
-def write_snapshot(
-    snapshot: ArchiveSnapshot,
-    output_dir: Path,
-) -> Path:
-    output_path = output_dir / f"{snapshot.timestamp}.html"
+def output_path_for(snapshot: ArchiveSnapshot, output_dir: Path) -> Path:
+    return output_dir / f"{snapshot.timestamp}.html"
+
+
+@beartype
+def write_snapshot(snapshot: ArchiveSnapshot,
+                   output_dir: Path) -> tuple[Path, bool]:
+    output_path = output_path_for(snapshot, output_dir)
+
+    if output_path.is_file():
+        return output_path, False
 
     command = [
         "singlefile",
@@ -206,7 +211,15 @@ def write_snapshot(
     ]
 
     subprocess.run(command, check=True)
-    return output_path
+    return output_path, True
+
+
+@beartype
+def write_snapshot_task(
+        task: tuple[ArchiveSnapshot, Path]) -> tuple[str, Path, bool]:
+    snapshot, output_dir = task
+    output_path, converted = write_snapshot(snapshot, output_dir)
+    return snapshot.timestamp, output_path, converted
 
 
 @beartype
@@ -214,16 +227,37 @@ def export_snapshots(input_dir: Path, output_dir: Path) -> None:
     snapshot_model = load_snapshot_model(input_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    records: list[ArchiveSnapshot] = []
     queryset = snapshot_model.objects.all().order_by("timestamp")
     for snapshot in queryset.iterator():
         record = snapshot_record(snapshot, input_dir)
         if record is None:
             continue
+        records.append(record)
 
-        logger.info(
-            f"Processing snapshot {record.timestamp} from {record.html_path}")
-        output_path = write_snapshot(record, output_dir)
-        logger.info(f"Wrote simplified HTML to {output_path}")
+    if not records:
+        logger.info("No snapshots to process")
+        return
+
+    workers = max(1, os.cpu_count() or 1)
+    logger.info(f"Processing {len(records)} snapshots with {workers} workers")
+
+    ctx = mp.get_context("spawn")
+    tasks = ((record, output_dir) for record in records)
+
+    with ctx.Pool(processes=workers) as pool:
+        for timestamp, output_path, converted in pool.imap_unordered(
+                write_snapshot_task,
+                tasks,
+                chunksize=1,
+        ):
+            if converted:
+                logger.info(
+                    f"Wrote simplified HTML for {timestamp} to {output_path}")
+            else:
+                logger.info(
+                    f"Skipping snapshot {timestamp} because output already exists at "
+                    f"{output_path}")
 
 
 @beartype
