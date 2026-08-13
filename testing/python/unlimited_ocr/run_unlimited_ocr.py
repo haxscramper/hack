@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import io
 import json
-import math
+from loguru import logger
 import re
 import shutil
 from dataclasses import dataclass
@@ -13,13 +15,14 @@ import fitz
 import torch
 from beartype import beartype
 from beartype.typing import Any, Iterable, Optional
-from loguru import logger
 from PIL import Image, ImageDraw, ImageFont
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field
+from sqlalchemy import ForeignKey, LargeBinary, String, Text, UniqueConstraint, create_engine, delete, event, select
+from sqlalchemy.engine import Engine
+from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 from transformers import AutoModel, AutoTokenizer
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff"}
-DONE_MARKER = ".done"
 DEFAULT_MODEL_ID = "baidu/Unlimited-OCR"
 
 
@@ -60,11 +63,84 @@ class OcrDocumentResult(BaseModel):
     chunks: list[OcrChunkResult]
 
 
-@beartype
 @dataclass(frozen=True)
-class ParsedChunk:
-    raw_text: str
-    pages: list[OcrPage]
+class ExtractedImageElement:
+    element_index: int
+    element: OcrElement
+    image_blob: bytes
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+class InputFileRecord(Base):
+    __tablename__ = "input_files"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    absolute_path: Mapped[str] = mapped_column(String,
+                                               unique=True,
+                                               nullable=False)
+    file_sha256: Mapped[str] = mapped_column(
+        String(64),
+        ForeignKey("documents.file_sha256"),
+        nullable=False,
+    )
+
+
+class DocumentRecord(Base):
+    __tablename__ = "documents"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    file_sha256: Mapped[str] = mapped_column(String(64),
+                                             unique=True,
+                                             nullable=False)
+
+
+class PageRecord(Base):
+    __tablename__ = "pages"
+    __table_args__ = (UniqueConstraint("document_id",
+                                       "page_number",
+                                       name="uq_pages_document_page"), )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    document_id: Mapped[int] = mapped_column(ForeignKey("documents.id"),
+                                             nullable=False)
+    page_number: Mapped[int] = mapped_column(nullable=False)
+
+
+class ElementRecord(Base):
+    __tablename__ = "elements"
+    __table_args__ = (UniqueConstraint("page_id",
+                                       "element_index",
+                                       name="uq_elements_page_index"), )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    page_id: Mapped[int] = mapped_column(ForeignKey("pages.id"),
+                                         nullable=False)
+    element_index: Mapped[int] = mapped_column(nullable=False)
+    bbox_x1: Mapped[int] = mapped_column(nullable=False)
+    bbox_y1: Mapped[int] = mapped_column(nullable=False)
+    bbox_x2: Mapped[int] = mapped_column(nullable=False)
+    bbox_y2: Mapped[int] = mapped_column(nullable=False)
+    element_type: Mapped[str] = mapped_column(String, nullable=False)
+    label: Mapped[str] = mapped_column(String, nullable=False)
+    text: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    image_blob: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+
+
+class ChunkRecord(Base):
+    __tablename__ = "chunks"
+    __table_args__ = (UniqueConstraint("document_id",
+                                       "chunk_index",
+                                       name="uq_chunks_document_index"), )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    document_id: Mapped[int] = mapped_column(ForeignKey("documents.id"),
+                                             nullable=False)
+    chunk_index: Mapped[int] = mapped_column(nullable=False)
+    raw_output: Mapped[str] = mapped_column(Text, nullable=False)
+    structured_json: Mapped[str] = mapped_column(Text, nullable=False)
 
 
 @beartype
@@ -72,6 +148,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("input_path", type=Path)
     parser.add_argument("output_dir", type=Path)
+    parser.add_argument("--db-path", type=Path, required=True)
     parser.add_argument(
         "--mirror-from",
         type=Path,
@@ -130,7 +207,6 @@ def mirrored_output_base(source_file: Path, mirror_from: Path,
         raise ValueError(
             f"Cannot mirror {source_file} from base {mirror_from}; pass a correct --mirror-from"
         ) from error
-
     return (output_root / relative).with_suffix("")
 
 
@@ -143,6 +219,171 @@ def load_model_and_tokenizer(model_id: str) -> tuple[Any, Any]:
         torch_dtype=torch.bfloat16,
     ).cuda().eval()
     return model, tokenizer
+
+
+@beartype
+def create_engine_and_tables(db_path: Path) -> sessionmaker[Session]:
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    engine = create_engine(f"sqlite:///{db_path}", future=True)
+
+    @event.listens_for(engine, "connect")
+    def on_connect(dbapi_connection: Any, connection_record: Any) -> None:
+        del connection_record
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys = ON")
+        cursor.close()
+
+    Base.metadata.create_all(engine)
+    return sessionmaker(bind=engine,
+                        autoflush=False,
+                        autocommit=False,
+                        future=True)
+
+
+@beartype
+def sha256_of_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        while True:
+            chunk = handle.read(1024 * 1024)
+            if not chunk:
+                break
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+@beartype
+def ensure_document_and_input_file(session: Session,
+                                   source_file: Path) -> tuple[int, str]:
+    absolute_path = str(source_file.resolve())
+    file_sha256 = sha256_of_file(source_file)
+
+    document = session.scalar(
+        select(DocumentRecord).where(
+            DocumentRecord.file_sha256 == file_sha256))
+    if document is None:
+        document = DocumentRecord(file_sha256=file_sha256)
+        session.add(document)
+        session.flush()
+
+    input_record = session.scalar(
+        select(InputFileRecord).where(
+            InputFileRecord.absolute_path == absolute_path))
+    if input_record is None:
+        session.add(
+            InputFileRecord(absolute_path=absolute_path,
+                            file_sha256=file_sha256))
+    else:
+        input_record.file_sha256 = file_sha256
+
+    session.commit()
+    if document.id is None:
+        raise RuntimeError(
+            f"Document row id is missing for hash {file_sha256}")
+    return document.id, file_sha256
+
+
+@beartype
+def clear_document_data(session: Session, document_id: int) -> None:
+    page_ids = list(
+        session.scalars(
+            select(
+                PageRecord.id).where(PageRecord.document_id == document_id)))
+    if page_ids:
+        session.execute(
+            delete(ElementRecord).where(ElementRecord.page_id.in_(page_ids)))
+    session.execute(
+        delete(PageRecord).where(PageRecord.document_id == document_id))
+    session.execute(
+        delete(ChunkRecord).where(ChunkRecord.document_id == document_id))
+    session.commit()
+
+
+@beartype
+def chunk_exists(session: Session, document_id: int, chunk_index: int) -> bool:
+    row = session.scalar(
+        select(ChunkRecord.id).where(
+            ChunkRecord.document_id == document_id,
+            ChunkRecord.chunk_index == chunk_index,
+        ))
+    return row is not None
+
+
+@beartype
+def get_chunk_record(session: Session, document_id: int,
+                     chunk_index: int) -> ChunkRecord:
+    row = session.scalar(
+        select(ChunkRecord).where(
+            ChunkRecord.document_id == document_id,
+            ChunkRecord.chunk_index == chunk_index,
+        ))
+    if row is None:
+        raise RuntimeError(
+            f"Chunk row is missing for document_id={document_id}, chunk_index={chunk_index}"
+        )
+    return row
+
+
+@beartype
+def get_or_create_page(session: Session, document_id: int,
+                       page_number: int) -> PageRecord:
+    page = session.scalar(
+        select(PageRecord).where(PageRecord.document_id == document_id,
+                                 PageRecord.page_number == page_number))
+    if page is not None:
+        return page
+    page = PageRecord(document_id=document_id, page_number=page_number)
+    session.add(page)
+    session.flush()
+    return page
+
+
+@beartype
+def save_chunk_to_database(
+    session: Session,
+    document_id: int,
+    chunk_index: int,
+    raw_output: str,
+    pages: list[OcrPage],
+    image_elements_by_page: dict[int, list[ExtractedImageElement]],
+) -> None:
+    structured_json = json.dumps([page.model_dump() for page in pages],
+                                 ensure_ascii=False)
+    chunk = ChunkRecord(
+        document_id=document_id,
+        chunk_index=chunk_index,
+        raw_output=raw_output,
+        structured_json=structured_json,
+    )
+    session.add(chunk)
+    session.flush()
+
+    for page in pages:
+        page_row = get_or_create_page(session,
+                                      document_id=document_id,
+                                      page_number=page.page_number)
+        extracted_for_page = image_elements_by_page.get(page.page_number, [])
+        image_blob_by_element_index = {
+            item.element_index: item.image_blob
+            for item in extracted_for_page
+        }
+
+        for element_index, element in enumerate(page.elements):
+            row = ElementRecord(
+                page_id=page_row.id,
+                element_index=element_index,
+                bbox_x1=element.bbox.x1,
+                bbox_y1=element.bbox.y1,
+                bbox_x2=element.bbox.x2,
+                bbox_y2=element.bbox.y2,
+                element_type=element.label,
+                label=element.label,
+                text=element.text,
+                image_blob=image_blob_by_element_index.get(element_index, b""),
+            )
+            session.add(row)
+
+    session.commit()
 
 
 @beartype
@@ -161,10 +402,8 @@ def render_pdf_pages(input_pdf: Path, dst_dir: Path, dpi: int) -> list[Path]:
         page_paths.append(page_path)
 
     doc.close()
-
     if not page_paths:
         raise RuntimeError(f"PDF contains no pages: {input_pdf}")
-
     return page_paths
 
 
@@ -172,24 +411,27 @@ def render_pdf_pages(input_pdf: Path, dst_dir: Path, dpi: int) -> list[Path]:
 def split_chunks(items: list[Path],
                  chunk_size: int) -> Iterable[tuple[int, list[Path]]]:
     if chunk_size <= 0:
-        raise ValueError(f"chunk_size must be > 0, got {chunk_size}")
+        raise ValueError(f"chunk_size must be positive, got {chunk_size}")
     for i in range(0, len(items), chunk_size):
         yield i // chunk_size, items[i:i + chunk_size]
 
 
 @beartype
 def unpack_infer_multi_result(result: Any) -> str:
-    if isinstance(result, tuple):
-        if not result:
-            raise RuntimeError("infer_multi returned an empty tuple")
-        if not isinstance(result[0], str):
+    match result:
+        case tuple() as value:
+            if not value:
+                raise RuntimeError("infer_multi returned an empty tuple")
+            first = value[0]
+            if not isinstance(first, str):
+                raise RuntimeError(
+                    f"infer_multi[0] must be str, got {type(first)}")
+            return first
+        case str() as value:
+            return value
+        case _:
             raise RuntimeError(
-                f"infer_multi[0] is not a string: {type(result[0])}")
-        return result[0]
-    if isinstance(result, str):
-        return result
-    raise RuntimeError(
-        f"infer_multi returned unsupported type: {type(result)}")
+                f"infer_multi returned unsupported type: {type(result)}")
 
 
 @beartype
@@ -203,21 +445,17 @@ def parse_bbox(text: str) -> OcrBBox:
 
     x1, y1, x2, y2 = map(int, match.groups())
     if x2 < x1 or y2 < y1:
-        raise ValueError(f"Invalid bbox coordinates (x2/y2 < x1/y1): {text}")
+        raise ValueError(
+            f"Invalid bbox coordinates with negative width or height: {text}")
     return OcrBBox(x1=x1, y1=y1, x2=x2, y2=y2)
 
 
 @beartype
 def parse_page_content(page_text: str, page_number: int) -> OcrPage:
-    # Primary format:
-    # <|det|>label [x1, y1, x2, y2]<|/det|>content
     det_pattern = re.compile(
         r"<\|det\|>\s*(?P<label>[^\[]+?)\s*(?P<bbox>\[\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*\d+\s*\])\s*<\|/det\|>\s*(?P<text>.*?)(?=(?:<\|det\|>|<PAGE>|$))",
         re.DOTALL,
     )
-
-    # Secondary format seen in model internals:
-    # <|ref|>label<|/ref|><|det|>[x1, y1, x2, y2]<|/det|>content
     ref_det_pattern = re.compile(
         r"<\|ref\|>\s*(?P<label>.*?)\s*<\|/ref\|>\s*<\|det\|>\s*(?P<bbox>\[\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*\d+\s*\])\s*<\|/det\|>\s*(?P<text>.*?)(?=(?:<\|ref\|>|<\|det\|>|<PAGE>|$))",
         re.DOTALL,
@@ -225,22 +463,22 @@ def parse_page_content(page_text: str, page_number: int) -> OcrPage:
 
     elements: list[OcrElement] = []
 
-    for m in det_pattern.finditer(page_text):
-        bbox = parse_bbox(m.group("bbox"))
+    for match in det_pattern.finditer(page_text):
+        bbox = parse_bbox(match.group("bbox"))
         elements.append(
             OcrElement(
-                label=m.group("label").strip(),
+                label=match.group("label").strip(),
                 bbox=bbox,
-                text=m.group("text").strip(),
+                text=match.group("text").strip(),
             ))
 
-    for m in ref_det_pattern.finditer(page_text):
-        bbox = parse_bbox(m.group("bbox"))
+    for match in ref_det_pattern.finditer(page_text):
+        bbox = parse_bbox(match.group("bbox"))
         elements.append(
             OcrElement(
-                label=m.group("label").strip(),
+                label=match.group("label").strip(),
                 bbox=bbox,
-                text=m.group("text").strip(),
+                text=match.group("text").strip(),
             ))
 
     return OcrPage(page_number=page_number, elements=elements)
@@ -267,7 +505,6 @@ def parse_ocr_output(raw_text: str, page_offset: int) -> list[OcrPage]:
         raise RuntimeError(
             "Model output is non-empty, but no structured OCR tokens were parsed"
         )
-
     return pages
 
 
@@ -293,7 +530,7 @@ def scale_bbox(bbox: OcrBBox, width: int,
 
 @beartype
 def color_for_label(label: str) -> tuple[int, int, int]:
-    seed = sum(ord(c) for c in label)
+    seed = sum(ord(char) for char in label)
     r = 50 + (seed * 37) % 180
     g = 50 + (seed * 67) % 180
     b = 50 + (seed * 97) % 180
@@ -306,7 +543,7 @@ def annotate_and_extract(
     page: OcrPage,
     annotated_pages_dir: Path,
     extracted_images_dir: Path,
-) -> None:
+) -> list[ExtractedImageElement]:
     annotated_pages_dir.mkdir(parents=True, exist_ok=True)
     extracted_images_dir.mkdir(parents=True, exist_ok=True)
 
@@ -315,8 +552,10 @@ def annotate_and_extract(
     font = ImageFont.load_default()
     width, height = image.size
 
+    extracted: list[ExtractedImageElement] = []
     image_crop_index = 0
-    for element in page.elements:
+
+    for element_index, element in enumerate(page.elements):
         x1, y1, x2, y2 = scale_bbox(element.bbox, width, height)
         color = color_for_label(element.label)
 
@@ -326,14 +565,26 @@ def annotate_and_extract(
         draw.rectangle(text_bbox, fill=(255, 255, 255))
         draw.text((x1, y1), label_text, fill=color, font=font)
 
-        if element.label == "image":
+        is_image = element.label.strip().casefold() == "image"
+        if is_image:
             crop = image.crop((x1, y1, x2, y2))
             crop_name = f"page_{page.page_number:04d}_image_{image_crop_index:04d}.png"
-            crop.save(extracted_images_dir / crop_name)
+            crop_path = extracted_images_dir / crop_name
+            crop.save(crop_path)
             image_crop_index += 1
+
+            buffer = io.BytesIO()
+            crop.save(buffer, format="PNG")
+            extracted.append(
+                ExtractedImageElement(
+                    element_index=element_index,
+                    element=element,
+                    image_blob=buffer.getvalue(),
+                ))
 
     annotated_path = annotated_pages_dir / f"page_{page.page_number:04d}.png"
     image.save(annotated_path)
+    return extracted
 
 
 @beartype
@@ -349,7 +600,7 @@ def run_chunk_infer_multi(
     result = model.infer_multi(
         tokenizer,
         prompt=prompt,
-        image_files=[str(p) for p in image_files],
+        image_files=[str(path) for path in image_files],
         output_path=str(output_path),
         image_size=image_size,
         save_results=False,
@@ -382,14 +633,38 @@ def run_chunk_infer_single(
     )
     if not isinstance(result, str):
         raise RuntimeError(
-            f"infer did not return a string in eval_mode=True: {type(result)}")
+            f"infer did not return str with eval_mode=True, got {type(result)}"
+        )
     return result
 
 
 @beartype
+def parse_pages_from_chunk_json(chunk_json: str, document_id: int,
+                                chunk_index: int) -> list[OcrPage]:
+    try:
+        payload = json.loads(chunk_json)
+    except json.JSONDecodeError as error:
+        raise RuntimeError(
+            f"Invalid JSON in chunks table for document_id={document_id}, chunk_index={chunk_index}: {error}"
+        ) from error
+
+    if not isinstance(payload, list):
+        raise RuntimeError(
+            f"Chunk JSON must be a list for document_id={document_id}, chunk_index={chunk_index}, got {type(payload)}"
+        )
+
+    pages: list[OcrPage] = []
+    for item in payload:
+        pages.append(OcrPage.model_validate(item))
+    return pages
+
+
+@beartype
 def process_pdf(
+    session: Session,
     model: Any,
     tokenizer: Any,
+    document_id: int,
     source_file: Path,
     output_base: Path,
     chunk_size: int,
@@ -406,23 +681,52 @@ def process_pdf(
 
     for chunk_index, chunk_pages in split_chunks(rendered_pages, chunk_size):
         chunk_dir = output_base / "chunks" / f"chunk_{chunk_index:04d}"
-        chunk_dir.mkdir(parents=True, exist_ok=True)
-
         pages_dir = chunk_dir / "pages"
         annotated_pages_dir = chunk_dir / "annotated_pages"
         extracted_images_dir = chunk_dir / "images"
         model_tmp_dir = chunk_dir / "_model"
 
+        page_start = chunk_index * chunk_size + 1
+        page_end = page_start + len(chunk_pages) - 1
+
+        if chunk_exists(session,
+                        document_id=document_id,
+                        chunk_index=chunk_index):
+            row = get_chunk_record(session,
+                                   document_id=document_id,
+                                   chunk_index=chunk_index)
+            pages = parse_pages_from_chunk_json(row.structured_json,
+                                                document_id=document_id,
+                                                chunk_index=chunk_index)
+            chunks.append(
+                OcrChunkResult(
+                    chunk_index=chunk_index,
+                    page_start=page_start,
+                    page_end=page_end,
+                    raw_text_file=str(chunk_dir / "raw_text.txt"),
+                    structured_json_file=str(chunk_dir /
+                                             "structured_data.json"),
+                    pages_dir=str(pages_dir),
+                    annotated_pages_dir=str(annotated_pages_dir),
+                    extracted_images_dir=str(extracted_images_dir),
+                    pages=pages,
+                ))
+            logger.info(
+                f"Skipping already indexed chunk document_id={document_id} chunk_index={chunk_index}"
+            )
+            continue
+
+        chunk_dir.mkdir(parents=True, exist_ok=True)
         pages_dir.mkdir(parents=True, exist_ok=True)
         annotated_pages_dir.mkdir(parents=True, exist_ok=True)
         extracted_images_dir.mkdir(parents=True, exist_ok=True)
         model_tmp_dir.mkdir(parents=True, exist_ok=True)
 
         local_page_paths: list[Path] = []
-        for src in chunk_pages:
-            dst = pages_dir / src.name
-            shutil.copy2(src, dst)
-            local_page_paths.append(dst)
+        for source_page in chunk_pages:
+            destination = pages_dir / source_page.name
+            shutil.copy2(source_page, destination)
+            local_page_paths.append(destination)
 
         raw_text = run_chunk_infer_multi(
             model=model,
@@ -444,43 +748,52 @@ def process_pdf(
             page_offset + idx + 1: path
             for idx, path in enumerate(local_page_paths)
         }
+        images_by_page: dict[int, list[ExtractedImageElement]] = {}
 
         for page in pages:
             source_page = local_pages_by_number.get(page.page_number)
             if source_page is None:
+                known_pages = sorted(local_pages_by_number.keys())
                 raise RuntimeError(
-                    f"Parsed page number {page.page_number} does not exist in chunk {chunk_index}"
+                    f"Parsed page number {page.page_number} is not in chunk {chunk_index}, known pages: {known_pages}"
                 )
-            annotate_and_extract(
+            extracted = annotate_and_extract(
                 source_page=source_page,
                 page=page,
                 annotated_pages_dir=annotated_pages_dir,
                 extracted_images_dir=extracted_images_dir,
             )
+            images_by_page[page.page_number] = extracted
 
         structured_json_path = chunk_dir / "structured_data.json"
         structured_json_path.write_text(
-            json.dumps([p.model_dump() for p in pages],
+            json.dumps([page.model_dump() for page in pages],
                        indent=2,
                        ensure_ascii=False),
             encoding="utf-8",
         )
 
-        page_start = chunk_index * chunk_size + 1
-        page_end = page_start + len(chunk_pages) - 1
-
-        chunk_result = OcrChunkResult(
+        save_chunk_to_database(
+            session=session,
+            document_id=document_id,
             chunk_index=chunk_index,
-            page_start=page_start,
-            page_end=page_end,
-            raw_text_file=str(raw_text_path),
-            structured_json_file=str(structured_json_path),
-            pages_dir=str(pages_dir),
-            annotated_pages_dir=str(annotated_pages_dir),
-            extracted_images_dir=str(extracted_images_dir),
+            raw_output=raw_text,
             pages=pages,
+            image_elements_by_page=images_by_page,
         )
-        chunks.append(chunk_result)
+
+        chunks.append(
+            OcrChunkResult(
+                chunk_index=chunk_index,
+                page_start=page_start,
+                page_end=page_end,
+                raw_text_file=str(raw_text_path),
+                structured_json_file=str(structured_json_path),
+                pages_dir=str(pages_dir),
+                annotated_pages_dir=str(annotated_pages_dir),
+                extracted_images_dir=str(extracted_images_dir),
+                pages=pages,
+            ))
 
     return OcrDocumentResult(
         source_file=str(source_file),
@@ -492,8 +805,10 @@ def process_pdf(
 
 @beartype
 def process_image(
+    session: Session,
     model: Any,
     tokenizer: Any,
+    document_id: int,
     source_file: Path,
     output_base: Path,
     prompt: str,
@@ -502,12 +817,41 @@ def process_image(
 ) -> OcrDocumentResult:
     output_base.mkdir(parents=True, exist_ok=True)
 
+    chunk_index = 0
     chunk_dir = output_base / "chunks" / "chunk_0000"
     pages_dir = chunk_dir / "pages"
     annotated_pages_dir = chunk_dir / "annotated_pages"
     extracted_images_dir = chunk_dir / "images"
     model_tmp_dir = chunk_dir / "_model"
 
+    if chunk_exists(session, document_id=document_id, chunk_index=chunk_index):
+        row = get_chunk_record(session,
+                               document_id=document_id,
+                               chunk_index=chunk_index)
+        pages = parse_pages_from_chunk_json(row.structured_json,
+                                            document_id=document_id,
+                                            chunk_index=chunk_index)
+        return OcrDocumentResult(
+            source_file=str(source_file),
+            relative_source="",
+            output_dir=str(output_base),
+            chunks=[
+                OcrChunkResult(
+                    chunk_index=0,
+                    page_start=1,
+                    page_end=1,
+                    raw_text_file=str(chunk_dir / "raw_text.txt"),
+                    structured_json_file=str(chunk_dir /
+                                             "structured_data.json"),
+                    pages_dir=str(pages_dir),
+                    annotated_pages_dir=str(annotated_pages_dir),
+                    extracted_images_dir=str(extracted_images_dir),
+                    pages=pages,
+                )
+            ],
+        )
+
+    chunk_dir.mkdir(parents=True, exist_ok=True)
     pages_dir.mkdir(parents=True, exist_ok=True)
     annotated_pages_dir.mkdir(parents=True, exist_ok=True)
     extracted_images_dir.mkdir(parents=True, exist_ok=True)
@@ -533,12 +877,13 @@ def process_image(
     if not pages:
         pages = [OcrPage(page_number=1, elements=[])]
 
+    images_by_page: dict[int, list[ExtractedImageElement]] = {}
     for page in pages:
         if page.page_number != 1:
             raise RuntimeError(
                 f"Single image produced unexpected page number: {page.page_number}"
             )
-        annotate_and_extract(
+        images_by_page[page.page_number] = annotate_and_extract(
             source_page=page_copy,
             page=page,
             annotated_pages_dir=annotated_pages_dir,
@@ -547,10 +892,19 @@ def process_image(
 
     structured_json_path = chunk_dir / "structured_data.json"
     structured_json_path.write_text(
-        json.dumps([p.model_dump() for p in pages],
+        json.dumps([page.model_dump() for page in pages],
                    indent=2,
                    ensure_ascii=False),
         encoding="utf-8",
+    )
+
+    save_chunk_to_database(
+        session=session,
+        document_id=document_id,
+        chunk_index=0,
+        raw_output=raw_text,
+        pages=pages,
+        image_elements_by_page=images_by_page,
     )
 
     chunk_result = OcrChunkResult(
@@ -575,6 +929,7 @@ def process_image(
 
 @beartype
 def process_file(
+    session: Session,
     model: Any,
     tokenizer: Any,
     source_file: Path,
@@ -587,91 +942,104 @@ def process_file(
     image_size: int,
     max_length: int,
     overwrite: bool,
+    cleared_documents: set[int],
 ) -> None:
     output_base = mirrored_output_base(source_file, mirror_from, output_root)
     output_base.mkdir(parents=True, exist_ok=True)
 
-    marker = output_base / DONE_MARKER
-    if marker.exists() and not overwrite:
-        logger.info(f"Skipping already processed file: {source_file}")
-        return
+    document_id, file_sha256 = ensure_document_and_input_file(
+        session, source_file)
+
+    should_clear = overwrite and document_id not in cleared_documents
+    if should_clear:
+        clear_document_data(session, document_id=document_id)
+        cleared_documents.add(document_id)
+        logger.info(
+            f"Cleared indexed data for document_id={document_id} hash={file_sha256}"
+        )
 
     ext = source_file.suffix.lower()
-    if ext == ".pdf":
-        doc_result = process_pdf(
-            model=model,
-            tokenizer=tokenizer,
-            source_file=source_file,
-            output_base=output_base,
-            chunk_size=chunk_size,
-            dpi=dpi,
-            prompt=prompt_pdf,
-            image_size=image_size,
-            max_length=max_length,
-        )
-    elif ext in IMAGE_EXTENSIONS:
-        doc_result = process_image(
-            model=model,
-            tokenizer=tokenizer,
-            source_file=source_file,
-            output_base=output_base,
-            prompt=prompt_image,
-            image_size=image_size,
-            max_length=max_length,
-        )
-    else:
-        raise ValueError(
-            f"Unsupported extension for file {source_file}: {ext}")
+    match ext:
+        case ".pdf":
+            doc_result = process_pdf(
+                session=session,
+                model=model,
+                tokenizer=tokenizer,
+                document_id=document_id,
+                source_file=source_file,
+                output_base=output_base,
+                chunk_size=chunk_size,
+                dpi=dpi,
+                prompt=prompt_pdf,
+                image_size=image_size,
+                max_length=max_length,
+            )
+        case _ if ext in IMAGE_EXTENSIONS:
+            doc_result = process_image(
+                session=session,
+                model=model,
+                tokenizer=tokenizer,
+                document_id=document_id,
+                source_file=source_file,
+                output_base=output_base,
+                prompt=prompt_image,
+                image_size=image_size,
+                max_length=max_length,
+            )
+        case _:
+            raise ValueError(
+                f"Unsupported extension for file {source_file}: {ext}")
 
     relative_source = source_file.resolve().relative_to(mirror_from).as_posix()
-    doc_result.relative_source = relative_source  # type: ignore[attr-defined]
+    doc_result.relative_source = relative_source
 
     doc_json_path = output_base / "document_result.json"
-    doc_json_path.write_text(
-        doc_result.model_dump_json(indent=2),
-        encoding="utf-8",
-    )
-
-    marker.write_text("done\n", encoding="utf-8")
+    doc_json_path.write_text(doc_result.model_dump_json(indent=2),
+                             encoding="utf-8")
     logger.info(f"Finished: {source_file} -> {output_base}")
 
 
 @beartype
 def main() -> None:
     args = parse_args()
-
     input_path = args.input_path.resolve()
     output_dir = args.output_dir.resolve()
+    db_path = args.db_path.resolve()
     mirror_from = resolve_mirror_from(input_path, args.mirror_from)
     files = collect_inputs(input_path)
 
     output_dir.mkdir(parents=True, exist_ok=True)
+    session_factory = create_engine_and_tables(db_path)
     model, tokenizer = load_model_and_tokenizer(args.model_id)
 
     failures: list[tuple[Path, Exception]] = []
+    cleared_documents: set[int] = set()
 
-    for file_path in files:
-        try:
-            process_file(
-                model=model,
-                tokenizer=tokenizer,
-                source_file=file_path,
-                output_root=output_dir,
-                mirror_from=mirror_from,
-                chunk_size=args.chunk_size,
-                dpi=args.dpi,
-                prompt_image=args.prompt_image,
-                prompt_pdf=args.prompt_pdf,
-                image_size=args.image_size,
-                max_length=args.max_length,
-                overwrite=args.overwrite,
-            )
-        except (ValidationError, Exception) as error:
-            failures.append((file_path, error))
-            logger.exception(f"Failed processing {file_path}: {error}")
+    with session_factory() as session:
+        for file_path in files:
+            try:
+                process_file(
+                    session=session,
+                    model=model,
+                    tokenizer=tokenizer,
+                    source_file=file_path,
+                    output_root=output_dir,
+                    mirror_from=mirror_from,
+                    chunk_size=args.chunk_size,
+                    dpi=args.dpi,
+                    prompt_image=args.prompt_image,
+                    prompt_pdf=args.prompt_pdf,
+                    image_size=args.image_size,
+                    max_length=args.max_length,
+                    overwrite=args.overwrite,
+                    cleared_documents=cleared_documents,
+                )
+            except Exception as error:
+                failures.append((file_path, error))
+                logger.exception(f"Failed processing {file_path}: {error}")
 
     if failures:
-        lines = "\n".join(f"- {path}: {err}" for path, err in failures)
+        lines = "\n".join(f"- {path}: {error}" for path, error in failures)
         raise RuntimeError(f"OCR processing finished with failures:\n{lines}")
 
 
