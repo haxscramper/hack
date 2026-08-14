@@ -743,20 +743,41 @@ def process_pdf(
 
         page_offset = chunk_index * chunk_size
         pages = parse_ocr_output(raw_text, page_offset=page_offset)
+        logger.info(f"parsing OCR output, got {len(pages)} pages")
 
         local_pages_by_number = {
             page_offset + idx + 1: path
             for idx, path in enumerate(local_page_paths)
         }
-        images_by_page: dict[int, list[ExtractedImageElement]] = {}
 
+        known_pages = set(local_pages_by_number.keys())
+        discarded_pages = [
+            page.page_number for page in pages
+            if page.page_number not in known_pages
+        ]
+        if discarded_pages:
+            logger.error(
+                "Discarding out-of-range parsed pages for chunk {}: {} (expected range {}..{})",
+                chunk_index,
+                sorted(discarded_pages),
+                page_start,
+                page_end,
+            )
+            pages = [page for page in pages if page.page_number in known_pages]
+
+        images_by_page: dict[int, list[ExtractedImageElement]] = {}
         for page in pages:
             source_page = local_pages_by_number.get(page.page_number)
             if source_page is None:
-                known_pages = sorted(local_pages_by_number.keys())
-                raise RuntimeError(
-                    f"Parsed page number {page.page_number} is not in chunk {chunk_index}, known pages: {known_pages}"
+                logger.error(
+                    "Skipping page {} in chunk {} because source page is missing (expected range {}..{})",
+                    page.page_number,
+                    chunk_index,
+                    page_start,
+                    page_end,
                 )
+                continue
+
             extracted = annotate_and_extract(
                 source_page=source_page,
                 page=page,
