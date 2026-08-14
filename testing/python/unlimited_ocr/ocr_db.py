@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass
 from pathlib import Path
 
 from beartype import beartype
@@ -14,12 +13,6 @@ from sqlalchemy.orm import (DeclarativeBase, Mapped, Session, mapped_column,
                             sessionmaker)
 
 from ocr_unlimited_models import OcrPage
-
-
-@dataclass(frozen=True)
-class ExtractedImageElement:
-    element_index: int
-    image_blob: bytes
 
 
 class Base(DeclarativeBase):
@@ -213,32 +206,16 @@ def get_or_create_page(session: Session, document_id: int,
 
 
 @beartype
-def parse_pages_from_chunk_json(chunk_json: str, document_id: int,
-                                chunk_index: int) -> list[OcrPage]:
-    try:
-        payload = json.loads(chunk_json)
-    except json.JSONDecodeError as error:
-        raise RuntimeError(
-            f"Invalid JSON in chunks table for document_id={document_id}, chunk_index={chunk_index}: {error}"
-        ) from error
-
-    if not isinstance(payload, list):
-        raise RuntimeError(
-            f"Chunk JSON must be a list for document_id={document_id}, chunk_index={chunk_index}, got {type(payload)}"
-        )
-
-    return [OcrPage.model_validate(item) for item in payload]
-
-
-@beartype
 def save_chunk_to_database(
     session: Session,
     document_id: int,
     chunk_index: int,
     raw_output: str,
     pages: list[OcrPage],
-    image_elements_by_page: dict[int, list[ExtractedImageElement]],
+    image_blobs: dict[tuple[int, int], bytes],
 ) -> None:
+    """Persist one OCR chunk. `image_blobs` maps (page_number, element_index)
+    to the cropped image bytes for image elements."""
     structured_json = json.dumps([page.model_dump() for page in pages],
                                  ensure_ascii=False)
     chunk = ChunkRecord(
@@ -254,11 +231,6 @@ def save_chunk_to_database(
         page_row = get_or_create_page(session,
                                       document_id=document_id,
                                       page_number=page.page_number)
-        extracted_for_page = image_elements_by_page.get(page.page_number, [])
-        image_blob_by_element_index = {
-            item.element_index: item.image_blob
-            for item in extracted_for_page
-        }
 
         for element_index, element in enumerate(page.elements):
             row = ElementRecord(
@@ -271,7 +243,8 @@ def save_chunk_to_database(
                 element_type=element.label,
                 label=element.label,
                 text=element.text,
-                image_blob=image_blob_by_element_index.get(element_index, b""),
+                image_blob=image_blobs.get((page.page_number, element_index),
+                                           b""),
                 enabled=True,
             )
             session.add(row)

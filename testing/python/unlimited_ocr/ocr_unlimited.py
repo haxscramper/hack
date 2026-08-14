@@ -15,10 +15,16 @@ from loguru import logger
 from PIL import Image, ImageDraw, ImageFont
 from transformers import AutoModel, AutoTokenizer
 
-from ocr_db import ExtractedImageElement
-from ocr_unlimited_models import OcrBBox, OcrElement, OcrPage
+from ocr_models import OcrBBox, OcrElement, OcrPage
 
 DEFAULT_MODEL_ID = "baidu/Unlimited-OCR"
+
+
+@dataclass(frozen=True)
+class ExtractedImageElement:
+    page_number: int
+    element_index: int
+    image_blob: bytes
 
 
 @dataclass(frozen=True)
@@ -27,7 +33,7 @@ class UnlimitedChunkOcrResult:
     chunk_index: int
     raw_text: str
     pages: list[OcrPage]
-    image_elements_by_page: dict[int, list[ExtractedImageElement]]
+    extracted_images: list[ExtractedImageElement]
 
 
 @beartype
@@ -200,8 +206,11 @@ def annotate_and_extract(
             buffer = io.BytesIO()
             crop.save(buffer, format="PNG")
             extracted.append(
-                ExtractedImageElement(element_index=element_index,
-                                      image_blob=buffer.getvalue()))
+                ExtractedImageElement(
+                    page_number=page.page_number,
+                    element_index=element_index,
+                    image_blob=buffer.getvalue(),
+                ))
 
     image.save(annotated_pages_dir / f"page_{page.page_number:04d}.png")
     return extracted
@@ -331,19 +340,20 @@ class UnlimitedOcrProcessor:
                 chunk_index, sorted(discarded))
             pages = [p for p in pages if p.page_number in known_pages]
 
-        images_by_page: dict[int, list[ExtractedImageElement]] = {}
+        extracted_images: list[ExtractedImageElement] = []
         for page in pages:
             source_page = local_pages_by_number[page.page_number]
-            images_by_page[page.page_number] = annotate_and_extract(
-                source_page=source_page,
-                page=page,
-                annotated_pages_dir=annotated_pages_dir,
-                extracted_images_dir=extracted_images_dir,
-            )
+            extracted_images.extend(
+                annotate_and_extract(
+                    source_page=source_page,
+                    page=page,
+                    annotated_pages_dir=annotated_pages_dir,
+                    extracted_images_dir=extracted_images_dir,
+                ))
 
         return UnlimitedChunkOcrResult(
             chunk_index=chunk_index,
             raw_text=raw_text,
             pages=pages,
-            image_elements_by_page=images_by_page,
+            extracted_images=extracted_images,
         )

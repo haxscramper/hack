@@ -14,8 +14,8 @@ from ocr_db import (chunk_exists, clear_document_data,
                     create_engine_and_tables, ensure_document_and_input_file,
                     get_chunk_record, parse_pages_from_chunk_json,
                     save_chunk_to_database)
-from ocr_unlimited_models import OcrChunkResult, OcrDocumentResult
-from ocr_unlimited import UnlimitedOcrProcessor
+from ocr_models import OcrChunkResult
+from ocr_unlimited import (UnlimitedChunkOcrResult, UnlimitedOcrProcessor)
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff"}
 
@@ -97,25 +97,23 @@ def split_chunks(items: list[Path],
 
 
 @beartype
-def load_chunk_from_db(session: Session, document_id: int, chunk_index: int,
-                       page_start: int, page_end: int,
-                       chunk_dir: Path) -> OcrChunkResult:
-    row = get_chunk_record(session,
-                           document_id=document_id,
-                           chunk_index=chunk_index)
-    pages = parse_pages_from_chunk_json(row.structured_json,
-                                        document_id=document_id,
-                                        chunk_index=chunk_index)
-    return OcrChunkResult(
-        chunk_index=chunk_index,
-        page_start=page_start,
-        page_end=page_end,
-        raw_text_file=str(chunk_dir / "raw_text.txt"),
-        structured_json_file=str(chunk_dir / "structured_data.json"),
-        pages_dir=str(chunk_dir / "pages"),
-        annotated_pages_dir=str(chunk_dir / "annotated_pages"),
-        extracted_images_dir=str(chunk_dir / "images"),
-        pages=pages,
+def save_unlimited_ocr_to_database(
+    session: Session,
+    document_id: int,
+    result: UnlimitedChunkOcrResult,
+) -> None:
+    """Map Unlimited-OCR specific chunk data into the sqlite database."""
+    image_blobs = {
+        (item.page_number, item.element_index): item.image_blob
+        for item in result.extracted_images
+    }
+    save_chunk_to_database(
+        session=session,
+        document_id=document_id,
+        chunk_index=result.chunk_index,
+        raw_output=result.raw_text,
+        pages=result.pages,
+        image_blobs=image_blobs,
     )
 
 
@@ -146,11 +144,8 @@ def process_file(
     rendered_pages = processor.render_pages(source_file,
                                             output_base / "_rendered_pages")
 
-    chunks: list[OcrChunkResult] = []
     for chunk_index, chunk_pages in split_chunks(rendered_pages, chunk_size):
         chunk_dir = output_base / "chunks" / f"chunk_{chunk_index:04d}"
-        page_start = chunk_index * chunk_size + 1
-        page_end = page_start + len(chunk_pages) - 1
 
         if chunk_exists(session,
                         document_id=document_id,
@@ -158,9 +153,6 @@ def process_file(
             logger.info(
                 f"Skipping already indexed chunk document_id={document_id} chunk_index={chunk_index}"
             )
-            chunks.append(
-                load_chunk_from_db(session, document_id, chunk_index,
-                                   page_start, page_end, chunk_dir))
             continue
 
         chunk_dir.mkdir(parents=True, exist_ok=True)
@@ -180,37 +172,12 @@ def process_file(
             encoding="utf-8",
         )
 
-        save_chunk_to_database(
+        save_unlimited_ocr_to_database(
             session=session,
             document_id=document_id,
-            chunk_index=chunk_index,
-            raw_output=result.raw_text,
-            pages=result.pages,
-            image_elements_by_page=result.image_elements_by_page,
+            result=result,
         )
 
-        chunks.append(
-            OcrChunkResult(
-                chunk_index=chunk_index,
-                page_start=page_start,
-                page_end=page_end,
-                raw_text_file=str(chunk_dir / "raw_text.txt"),
-                structured_json_file=str(structured_json_path),
-                pages_dir=str(chunk_dir / "pages"),
-                annotated_pages_dir=str(chunk_dir / "annotated_pages"),
-                extracted_images_dir=str(chunk_dir / "images"),
-                pages=result.pages,
-            ))
-
-    doc_result = OcrDocumentResult(
-        source_file=str(source_file),
-        relative_source=source_file.resolve().relative_to(
-            mirror_from).as_posix(),
-        output_dir=str(output_base),
-        chunks=chunks,
-    )
-    (output_base / "document_result.json").write_text(
-        doc_result.model_dump_json(indent=2), encoding="utf-8")
     logger.info(f"Finished: {source_file} -> {output_base}")
 
 
