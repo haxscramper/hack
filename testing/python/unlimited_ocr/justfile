@@ -1,0 +1,8 @@
+run_ocr input_path conversion_dir_path db_path:
+  uv run \
+    --no-project python ocr_driver.py \
+    {{input_path}} \
+    {{conversion_dir_path}} \
+    --db-path {{db_path}} \
+    --chunk-size 1 \
+    --engine docling

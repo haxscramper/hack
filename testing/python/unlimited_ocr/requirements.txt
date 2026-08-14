@@ -5,6 +5,7 @@ addict
 matplotlib
 einops
 loguru
+docling_core
 beartype
 PyMuPDF
 transformers<5.0.0

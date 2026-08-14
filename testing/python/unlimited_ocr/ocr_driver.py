@@ -19,6 +19,7 @@ from ocr_db import (
     save_chunk_to_database,
 )
 
+from ocr_docling import DEFAULT_DOCLING_MODEL_ID, DoclingChunkOcrResult, DoclingOcrProcessor
 from ocr_unlimited import (UnlimitedChunkOcrResult, UnlimitedOcrProcessor)
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff"}
@@ -44,6 +45,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--prompt-image", default="<image>document parsing.")
     parser.add_argument("--prompt-pdf", default="<image>Multi page parsing.")
     parser.add_argument("--overwrite", action="store_true")
+    parser.add_argument("--engine",
+                        choices=["unlimited", "docling"],
+                        default="unlimited")
+    parser.add_argument("--ollama-url", default="http://localhost:11434")
+
     return parser.parse_args()
 
 
@@ -122,9 +128,29 @@ def save_unlimited_ocr_to_database(
 
 
 @beartype
+def save_docling_ocr_to_database(
+    session: Session,
+    document_id: int,
+    result: DoclingChunkOcrResult,
+) -> None:
+    image_blobs = {
+        (item.page_number, item.element_index): item.image_blob
+        for item in result.extracted_images
+    }
+    save_chunk_to_database(
+        session=session,
+        document_id=document_id,
+        chunk_index=result.chunk_index,
+        raw_output=result.raw_text,
+        pages=result.pages,
+        image_blobs=image_blobs,
+    )
+
+
+@beartype
 def process_file(
     session: Session,
-    processor: UnlimitedOcrProcessor,
+    processor: UnlimitedOcrProcessor | DoclingOcrProcessor,
     source_file: Path,
     output_root: Path,
     mirror_from: Path,
@@ -176,11 +202,11 @@ def process_file(
             encoding="utf-8",
         )
 
-        save_unlimited_ocr_to_database(
-            session=session,
-            document_id=document_id,
-            result=result,
-        )
+        match result:
+            case UnlimitedChunkOcrResult():
+                save_unlimited_ocr_to_database(session, document_id, result)
+            case DoclingChunkOcrResult():
+                save_docling_ocr_to_database(session, document_id, result)
 
     logger.info(f"Finished: {source_file} -> {output_base}")
 
@@ -196,14 +222,24 @@ def main() -> None:
 
     output_dir.mkdir(parents=True, exist_ok=True)
     session_factory = create_engine_and_tables(db_path)
-    processor = UnlimitedOcrProcessor(
-        model_id=args.model_id,
-        image_size=args.image_size,
-        max_length=args.max_length,
-        dpi=args.dpi,
-        prompt_image=args.prompt_image,
-        prompt_pdf=args.prompt_pdf,
-    )
+
+    match args.engine:
+        case "unlimited":
+            processor = UnlimitedOcrProcessor(
+                model_id=args.model_id,
+                image_size=args.image_size,
+                max_length=args.max_length,
+                dpi=args.dpi,
+                prompt_image=args.prompt_image,
+                prompt_pdf=args.prompt_pdf,
+            )
+        case "docling":
+            processor = DoclingOcrProcessor(
+                model_id=args.model_id if args.model_id
+                != "baidu/Unlimited-OCR" else DEFAULT_DOCLING_MODEL_ID,
+                ollama_url=args.ollama_url,
+                dpi=args.dpi,
+            )
 
     failures: list[tuple[Path, Exception]] = []
     cleared_documents: set[int] = set()
