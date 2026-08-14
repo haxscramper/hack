@@ -15,7 +15,7 @@ from loguru import logger
 from PIL import Image, ImageDraw, ImageFont
 from transformers import AutoModel, AutoTokenizer
 
-from ocr_models import OcrBBox, OcrElement, OcrPage
+from ocr_unlimited_models import OcrBBox, OcrElement, OcrPage
 
 DEFAULT_MODEL_ID = "baidu/Unlimited-OCR"
 

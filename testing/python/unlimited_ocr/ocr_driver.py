@@ -10,11 +10,15 @@ from beartype.typing import Iterable, Optional
 from loguru import logger
 from sqlalchemy.orm import Session
 
-from ocr_db import (chunk_exists, clear_document_data,
-                    create_engine_and_tables, ensure_document_and_input_file,
-                    get_chunk_record, parse_pages_from_chunk_json,
-                    save_chunk_to_database)
-from ocr_models import OcrChunkResult
+from ocr_db import (
+    chunk_exists,
+    clear_document_data,
+    create_engine_and_tables,
+    ensure_document_and_input_file,
+    get_chunk_record,
+    save_chunk_to_database,
+)
+
 from ocr_unlimited import (UnlimitedChunkOcrResult, UnlimitedOcrProcessor)
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff"}
