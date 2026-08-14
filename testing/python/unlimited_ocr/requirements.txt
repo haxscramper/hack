@@ -10,6 +10,7 @@ loguru
 docling_core
 beartype
 PyMuPDF
+markdown
 transformers<5.0.0
 --extra-index-url https://download.pytorch.org/whl/rocm7.2
 torch

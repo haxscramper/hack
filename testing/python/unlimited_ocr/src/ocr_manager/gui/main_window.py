@@ -2,10 +2,11 @@ import argparse
 import logging
 import os
 from pathlib import Path
+import sys
 from typing import Optional
 from beartype import beartype
 
-from PyQt6.QtWidgets import QMainWindow, QWidget, QHBoxLayout, QSplitter
+from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QHBoxLayout, QSplitter
 from PyQt6.QtCore import Qt, QModelIndex
 from sqlalchemy.orm import sessionmaker
 
@@ -18,7 +19,7 @@ from .right_panel import RightPanel
 
 class MainWindow(QMainWindow):
 
-    def __init__(self, session_factory: Optional[sessionmaker] = None) -> None:
+    def __init__(self, session_factory: sessionmaker) -> None:
         super().__init__()
         self.session_factory = session_factory
         self.setWindowTitle("PDF OCR & Post-Processing Tool")
@@ -55,18 +56,7 @@ class MainWindow(QMainWindow):
 
     def on_update_html_clicked(self) -> None:
         logging.info("MainWindow: Update HTML clicked.")
-        pages = self.center_panel.get_all_pages_data()
-        if pages:
-            output_epub_path = None
-            if hasattr(self, 'current_pdf_path') and self.config:
-                base_name = os.path.splitext(
-                    os.path.basename(self.current_pdf_path))[0]
-                output_epub_path = os.path.join(self.config.output_dir,
-                                                f"{base_name}.epub")
-            self.right_panel.generate_html(pages, output_epub_path)
-        else:
-            logging.warning(
-                "MainWindow: No pages data found for HTML generation.")
+        self.right_panel.generate_markdown(self.session_factory)
 
     def on_pdf_selected(self, current: QModelIndex,
                         previous: QModelIndex) -> None:
@@ -82,7 +72,7 @@ class MainWindow(QMainWindow):
 @beartype
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("db", type=Path)
+    parser.add_argument("db_path", type=Path)
     return parser.parse_args()
 
 
@@ -90,6 +80,9 @@ def main() -> None:
     args = parse_args()
     db_path = args.db_path.resolve()
     session_factory = create_engine_and_tables(db_path)
+    app = QApplication(sys.argv)
+    window = MainWindow()
+    window.show()
 
 
 if __name__ == "__main__":

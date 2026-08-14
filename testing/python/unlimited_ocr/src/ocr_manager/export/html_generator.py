@@ -1,86 +1,88 @@
 import logging
-from typing import List, Optional
 import os
-
-from models import PageData, DocTag
-import ebooklib
-from ebooklib import epub
-
-logger = logging.getLogger(__name__)
-
-import re
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
-SENTENCE_TERMINATORS = {'.', '!', '?', '"', '\'', '\u201d', '\u2019'}
-SKIPPED_TAGS = {"page_footer"}
+from sqlalchemy import select
+from sqlalchemy.orm import sessionmaker
+
+from ocr_manager.ocr_db import DocumentRecord, ElementRecord, InputFileRecord, PageRecord
+
+logger = logging.getLogger(__name__)
+
+SENTENCE_TERMINATORS = {'.', '!', '?', '"', '\'', '”', '’'}
+SKIPPED_LABELS = {"page_footer"}
 
 
 @dataclass
 class MergeState:
-    """Tracks the pending text fragment from the previous page that needs merging."""
     pending_text: Optional[str] = None
     pending_was_hyphenated: bool = False
 
 
-def _get_page_number_str(page: 'PageData') -> Optional[str]:
-    """Extract the page footer text to detect page-number contamination."""
-    for tag in _iter_leaf_tags(page.spatial_tags):
-        if tag.tag_name == "page_footer":
-            t = (tag.user_edited_text if tag.user_edited_text is not None else
-                 tag.text or "").strip()
-            if t:
-                return t
+def _load_pages(session_factory: sessionmaker,
+                absolute_path: str) -> List[Tuple[int, List[ElementRecord]]]:
+    """Load (page_number, elements) pairs ordered by page and element index."""
+    with session_factory() as session:
+        input_rec = session.scalar(
+            select(InputFileRecord).where(
+                InputFileRecord.absolute_path == absolute_path))
+        if not input_rec:
+            logger.warning(f"No input file record for {absolute_path}")
+            return []
+        doc = session.scalar(
+            select(DocumentRecord).where(
+                DocumentRecord.file_sha256 == input_rec.file_sha256))
+        if not doc:
+            logger.warning(f"No document record for {absolute_path}")
+            return []
+
+        pages = list(
+            session.scalars(
+                select(PageRecord).where(
+                    PageRecord.document_id == doc.id).order_by(
+                        PageRecord.page_number)))
+
+        result = []
+        for page in pages:
+            elements = list(
+                session.scalars(
+                    select(ElementRecord).where(
+                        ElementRecord.page_id == page.id).order_by(
+                            ElementRecord.element_index)))
+            for e in elements:
+                session.expunge(e)
+            result.append((page.page_number, elements))
+        return result
+
+
+def _get_page_number_str(elements: List[ElementRecord]) -> Optional[str]:
+    for e in elements:
+        if e.label == "page_footer" and e.text.strip():
+            return e.text.strip()
     return None
 
 
-def _iter_leaf_tags(tags: List['DocTag']):
-    """Yield all leaf DocTags depth-first."""
-    for tag in tags:
-        if tag.children:
-            yield from _iter_leaf_tags(tag.children)
-        else:
-            yield tag
-
-
-def _get_content_tags(page: 'PageData') -> List['DocTag']:
-    """Return the flat list of non-removed, non-footer leaf tags with text, sorted top-to-bottom."""
-    results = []
-    for tag in _iter_leaf_tags(page.spatial_tags):
-        if tag.user_removed:
-            continue
-        raw_name = tag.user_tag_override or tag.tag_name
-        if raw_name in SKIPPED_TAGS:
-            continue
-        text = tag.user_edited_text if tag.user_edited_text is not None else tag.text
-        if not text:
-            continue
-        results.append(tag)
-    # Sort by vertical position
-    results.sort(key=lambda t: (t.bbox.y if t.bbox else 0))
-    return results
+def _get_content_elements(
+        elements: List[ElementRecord]) -> List[ElementRecord]:
+    """Enabled, non-skipped elements with text, in order of appearance."""
+    return [
+        e for e in elements
+        if e.enabled and e.label not in SKIPPED_LABELS and e.text
+    ]
 
 
 def _strip_trailing_page_number(text: str,
                                 page_number_str: Optional[str]) -> str:
-    """Remove a page number that OCR glued onto the end of the last text block."""
     if not page_number_str:
         return text
-    # e.g. "counter-economy which han112" -> "counter-economy which han"
     if text.rstrip().endswith(page_number_str):
         return text.rstrip()[:-len(page_number_str)]
     return text
 
 
 def _detect_continuation(last_text: str, first_text: str) -> Tuple[bool, bool]:
-    """
-    Determine whether two text blocks across a page boundary should be merged.
-    
-    Returns (should_merge, is_word_split).
-    
-    is_word_split means the word itself is broken (no space/hyphen at boundary),
-    so we concatenate directly. Otherwise we join with a space.
-    """
+    """Returns (should_merge, is_word_split)."""
     if not last_text or not first_text:
         return False, False
 
@@ -93,22 +95,14 @@ def _detect_continuation(last_text: str, first_text: str) -> Tuple[bool, bool]:
     last_char = last_stripped[-1]
     first_char = first_stripped[0]
 
-    # Case 1: Word split — last block ends with a letter/digit mid-word,
-    # first block starts with a lowercase letter (e.g., "han" / "dles")
     if last_char.isalpha() and first_char.islower():
-        # Check that it doesn't look like a completed sentence
         if last_char not in SENTENCE_TERMINATORS:
             return True, True
 
-    # Case 2: Hyphenated word split — last block ends with "-"
     if last_char == '-':
-        # Distinguish soft hyphen (word break) from real hyphen (e.g., "semi-hidden")
-        # Heuristic: if first_char is lowercase, it's a word-break hyphen
         if first_char.islower():
-            return True, True  # We'll strip the hyphen during merge
+            return True, True
 
-    # Case 3: Sentence continues — last block doesn't end with sentence-terminal punctuation
-    # and first block starts lowercase
     if last_char not in SENTENCE_TERMINATORS and first_char.islower():
         return True, False
 
@@ -116,173 +110,93 @@ def _detect_continuation(last_text: str, first_text: str) -> Tuple[bool, bool]:
 
 
 def _merge_texts(last_text: str, first_text: str, is_word_split: bool) -> str:
-    """Join two text fragments from across a page break."""
     last_stripped = last_text.rstrip()
     first_stripped = first_text.lstrip()
 
     if is_word_split:
-        # If it ends with hyphen that's a word-break, remove the hyphen
         if last_stripped.endswith('-'):
             return last_stripped[:-1] + first_stripped
-        # Direct concatenation for mid-word splits like "han" + "dles"
         return last_stripped + first_stripped
     else:
-        # Sentence continuation, keep space
         return last_stripped + " " + first_stripped
 
 
-def map_tag_to_html(tag_name: str) -> str:
-    mapping = {
-        "section_header": "h2",
-        "text": "p",
-        "list": "ul",
-        "list_item": "li",
-        "table": "table",
-        "footnote": "p",
-        "formula": "p",
-        "page_footer": "footer",
-        "picture": "div",
-        "root": "div",
-        "unspecified": "div",
-        "h1": "h1",
-        "h2": "h2",
-        "h3": "h3",
-        "p": "p",
-    }
-    return mapping.get(tag_name, "div")
+def map_label_to_markdown(label: str, text: str) -> str:
+    if label in ("h1", "section_header"):
+        return f"## {text}"
+    if label == "h2":
+        return f"### {text}"
+    if label == "h3":
+        return f"#### {text}"
+    if label == "list_item":
+        return f"- {text}"
+    return text
 
 
-def generate_html_content(pages_data: List[PageData],
-                          output_epub_path: Optional[str] = None) -> str:
-    preview_parts = [
-        "<html><head><style>body { font-family: sans-serif; }</style></head><body>"
-    ]
-    epub_parts = [
-        "<html><head><style>body { font-family: sans-serif; }</style></head><body>"
-    ]
+def generate_markdown_content(session_factory: sessionmaker,
+                              absolute_path: str) -> str:
+    pages = _load_pages(session_factory, absolute_path)
 
-    toc_links = []
-    header_counter = 0
+    preview_parts: List[str] = []
+    doc_parts: List[str] = []
 
-    # Cross-page merge state: holds the last text block's info if it might continue
     pending_merge_text: Optional[str] = None
-    pending_merge_html_tag: Optional[str] = None
-    pending_merge_header_id: Optional[str] = None
-
-    def _effective_text(tag: DocTag) -> str:
-        return tag.user_edited_text if tag.user_edited_text is not None else (
-            tag.text or "")
+    pending_merge_label: Optional[str] = None
 
     def flush_pending():
-        """Emit the pending block — it won't be merged with anything."""
-        nonlocal pending_merge_text, pending_merge_html_tag, pending_merge_header_id
+        nonlocal pending_merge_text, pending_merge_label
         if pending_merge_text is not None:
-            id_attr = f' id="{pending_merge_header_id}"' if pending_merge_header_id else ""
-            html = f"<{pending_merge_html_tag}{id_attr}>{pending_merge_text}</{pending_merge_html_tag}>"
-            preview_parts.append(html)
-            epub_parts.append(html)
+            md = map_label_to_markdown(pending_merge_label, pending_merge_text)
+            preview_parts.append(md)
+            doc_parts.append(md)
             pending_merge_text = None
-            pending_merge_html_tag = None
-            pending_merge_header_id = None
+            pending_merge_label = None
 
-    for page_idx, page in enumerate(pages_data):
-        preview_parts.append(f"<hr/><h3>Page {page.page_number}</h3>")
+    for page_number, elements in pages:
+        preview_parts.append(f"\n---\n\n**Page {page_number}**\n")
 
-        page_number_str = _get_page_number_str(page)
-        content_tags = _get_content_tags(page)
+        page_number_str = _get_page_number_str(elements)
+        content = _get_content_elements(elements)
 
-        for tag_idx, tag in enumerate(content_tags):
-            raw_tag_name = tag.user_tag_override or tag.tag_name
-            html_tag = map_tag_to_html(raw_tag_name)
-            text = _effective_text(tag)
+        for idx, element in enumerate(content):
+            text = element.text
+            is_last_on_page = (idx == len(content) - 1)
 
-            is_last_on_page = (tag_idx == len(content_tags) - 1)
-
-            # Clean page number contamination from last block on page
             if is_last_on_page:
                 text = _strip_trailing_page_number(text, page_number_str)
 
-            # If there's a pending block from the previous page, try to merge
-            # with the FIRST content tag on this page
-            if tag_idx == 0 and pending_merge_text is not None:
+            if idx == 0 and pending_merge_text is not None:
                 should_merge, is_word_split = _detect_continuation(
                     pending_merge_text, text)
-                if should_merge and pending_merge_html_tag == html_tag:
+                if should_merge and pending_merge_label == element.label:
                     text = _merge_texts(pending_merge_text, text,
                                         is_word_split)
-                    # Carry over the header id from the pending block if any
-                    header_id = pending_merge_header_id
                     pending_merge_text = None
-                    pending_merge_html_tag = None
-                    pending_merge_header_id = None
+                    pending_merge_label = None
                 else:
-                    # No merge — flush the pending block as-is, then process current
                     flush_pending()
-                    header_id = None
-            else:
-                header_id = None
 
-            # Compute header ID for TOC if needed
-            if html_tag in ("h1", "h2", "h3"):
-                if header_id is None:
-                    header_counter += 1
-                    header_id = f"header_{header_counter}"
-                toc_links.append(
-                    epub.Link("document.xhtml#" + header_id, text, header_id))
-
-            # If this is the last content block on the page, defer emission
-            # so we can try merging with the next page's first block
-            if is_last_on_page and html_tag == "p":
-                # Only defer paragraph blocks for cross-page merge
-                flush_pending(
-                )  # flush any prior pending (shouldn't happen, but safety)
+            # Defer the last paragraph on the page for cross-page merging
+            if is_last_on_page and element.label in ("text", "p"):
+                flush_pending()
                 pending_merge_text = text
-                pending_merge_html_tag = html_tag
-                pending_merge_header_id = header_id
+                pending_merge_label = element.label
             else:
-                id_attr = f' id="{header_id}"' if header_id else ""
-                tag_html = f"<{html_tag}{id_attr}>{text}</{html_tag}>"
-                preview_parts.append(tag_html)
-                epub_parts.append(tag_html)
+                md = map_label_to_markdown(element.label, text)
+                preview_parts.append(md)
+                doc_parts.append(md)
 
-    # Flush any remaining pending block from the last page
     flush_pending()
 
-    preview_parts.append("</body></html>")
-    epub_parts.append("</body></html>")
+    final_preview_md = "\n\n".join(preview_parts)
+    final_doc_md = "\n\n".join(doc_parts)
 
-    final_preview_html = "\n".join(preview_parts)
-    final_epub_html = "\n".join(epub_parts)
-
-    if output_epub_path:
+    if output_md_path:
         try:
-            book = epub.EpubBook()
-            book.set_identifier('id123456')
-            title = os.path.splitext(os.path.basename(output_epub_path))[0]
-            book.set_title(title)
-            book.set_language('en')
-
-            c1 = epub.EpubHtml(title='Document',
-                               file_name='document.xhtml',
-                               lang='en')
-            c1.content = final_epub_html
-
-            book.add_item(c1)
-            book.toc = list(toc_links)
-            book.add_item(epub.EpubNcx())
-            book.add_item(epub.EpubNav())
-
-            style = 'BODY { color: white; }'
-            nav_css = epub.EpubItem(uid="style_nav",
-                                    file_name="style/nav.css",
-                                    media_type="text/css",
-                                    content=style)
-            book.add_item(nav_css)
-
-            book.spine = ['nav', c1]
-            epub.write_epub(output_epub_path, book, {})
-            logger.info(f"EPUB saved to {output_epub_path}")
+            with open(output_md_path, "w", encoding="utf-8") as f:
+                f.write(final_doc_md)
+            logger.info(f"Markdown saved to {output_md_path}")
         except Exception as e:
-            logger.error(f"Failed to generate EPUB: {e}")
+            logger.error(f"Failed to write markdown: {e}")
 
-    return final_preview_html
+    return final_preview_md

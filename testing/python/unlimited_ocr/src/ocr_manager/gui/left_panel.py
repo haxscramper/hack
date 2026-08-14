@@ -50,7 +50,7 @@ class LeftPanel(QWidget):
 
     def __init__(
         self,
-        session_factory: Optional[sessionmaker] = None,
+        session_factory: sessionmaker,
         parent: Optional[QWidget] = None,
     ) -> None:
         super().__init__(parent)

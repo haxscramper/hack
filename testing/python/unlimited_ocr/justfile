@@ -11,3 +11,6 @@ run_gui input_path:
   PYTHONPATH=src uv run \
     --no-project python -m ocr_manager.gui.main_window \
     {{input_path}}
+
+install_requirements: 
+  uv pip install -r requirements.txt
