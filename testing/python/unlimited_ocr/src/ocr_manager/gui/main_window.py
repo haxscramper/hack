@@ -81,8 +81,9 @@ def main() -> None:
     db_path = args.db_path.resolve()
     session_factory = create_engine_and_tables(db_path)
     app = QApplication(sys.argv)
-    window = MainWindow()
+    window = MainWindow(session_factory=session_factory)
     window.show()
+    sys.exit(app.exec())
 
 
 if __name__ == "__main__":

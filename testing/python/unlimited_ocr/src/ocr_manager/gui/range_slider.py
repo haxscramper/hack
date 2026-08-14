@@ -94,7 +94,7 @@ class RangeSlider(QWidget):
 
     def paintEvent(self, event) -> None:
         painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
         groove_rect = self._grooveRect()
         lower_x = self._valueToPos(self._lower)

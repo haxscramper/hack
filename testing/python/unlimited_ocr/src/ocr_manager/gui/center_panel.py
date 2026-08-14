@@ -1,28 +1,37 @@
-import io
 import logging
-from typing import Optional, List, Dict
+from collections import deque
+from pathlib import Path
+from typing import Dict, List, Optional, Set
 
+import numpy as np
+import pymupdf
+from PyQt6.QtCore import QObject, Qt, QRectF, QThread, QTimer, pyqtSignal, pyqtSlot
+from PyQt6.QtGui import QBrush, QColor, QImage, QPen, QPixmap
 from PyQt6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
-    QHBoxLayout,
-    QPushButton,
-    QGraphicsView,
-    QGraphicsScene,
+    QApplication,
+    QCheckBox,
+    QGraphicsItem,
     QGraphicsPixmapItem,
     QGraphicsRectItem,
-    QGraphicsItem,
-    QCheckBox,
+    QGraphicsScene,
+    QGraphicsView,
+    QHBoxLayout,
     QLabel,
     QLineEdit,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
 )
-from PyQt6.QtGui import QPixmap, QPen, QColor, QBrush, QImage
-from PyQt6.QtCore import Qt, QRectF
 from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
 from ocr_manager.gui.range_slider import RangeSlider
 from ocr_manager.ocr_db import DocumentRecord, ElementRecord, InputFileRecord, PageRecord
+
+# Render scale applied to PDF pages (2.0 == 144 DPI). Element bboxes are
+# assumed to be in pixel coordinates of a page rasterised at this scale,
+# matching the DPI the OCR pipeline used when computing element bboxes.
+PDF_RENDER_SCALE: float = 2.0
 
 TAG_COLORS = {
     "footnote": QColor(200, 150, 50, 150),
@@ -41,6 +50,85 @@ TAG_COLORS = {
 USER_REMOVED_COLOR = QColor(128, 128, 128, 150)
 
 
+def _make_overlay_image(image: QImage) -> QImage:
+    """Convert a rendered page into a black-ink alpha mask (white bg -> transparent)."""
+    rgba = image.convertToFormat(QImage.Format.Format_RGBA8888)
+    width = rgba.width()
+    height = rgba.height()
+    ptr = rgba.bits()
+    ptr.setsize(rgba.sizeInBytes())
+    array = np.frombuffer(ptr, dtype=np.uint8).reshape((height, width, 4))
+
+    rgb = array[:, :, :3].astype(np.float32)
+    gray = 0.299 * rgb[:, :, 0] + 0.587 * rgb[:, :, 1] + 0.114 * rgb[:, :, 2]
+
+    contrast = 2.5
+    contrasted = np.clip((gray - 128.0) * contrast + 128.0, 0,
+                         255).astype(np.uint8)
+    alpha = 255 - contrasted
+
+    mask = np.zeros((height, width, 4), dtype=np.uint8)
+    mask[:, :, 3] = alpha
+    return QImage(mask.data, width, height, width * 4,
+                  QImage.Format.Format_RGBA8888).copy()
+
+
+class PdfPageRenderer(QObject):
+    """Lives in a dedicated QThread. Opens one PDF and renders pages on request.
+
+    All rendering and overlay-mask computation happens off the GUI thread;
+    results are delivered as QImage (thread-safe, unlike QPixmap).
+    """
+
+    documentOpened = pyqtSignal(int)  # total page count
+    pageReady = pyqtSignal(int, QImage,
+                           QImage)  # 1-based page, base image, overlay image
+
+    def __init__(self, render_scale: float) -> None:
+        super().__init__()
+        self._render_scale = render_scale
+        self._doc: Optional[pymupdf.Document] = None
+        self._queue: deque[int] = deque()
+        self._queued: Set[int] = set()
+
+    @pyqtSlot(str)
+    def openDocument(self, path: str) -> None:
+        self.closeDocument()
+        self._doc = pymupdf.open(path)
+        self.documentOpened.emit(self._doc.page_count)
+
+    @pyqtSlot()
+    def closeDocument(self) -> None:
+        self._queue.clear()
+        self._queued.clear()
+        if self._doc is not None:
+            self._doc.close()
+            self._doc = None
+
+    @pyqtSlot(int)
+    def requestPage(self, page_number: int) -> None:
+        if self._doc is None or page_number in self._queued:
+            return
+        self._queue.append(page_number)
+        self._queued.add(page_number)
+        QTimer.singleShot(0, self._process_next)
+
+    def _process_next(self) -> None:
+        if self._doc is None or not self._queue:
+            return
+        page_number = self._queue.popleft()
+        self._queued.discard(page_number)
+        page = self._doc.load_page(page_number - 1)
+        matrix = pymupdf.Matrix(self._render_scale, self._render_scale)
+        pix = page.get_pixmap(matrix=matrix, alpha=False)
+        base = QImage(pix.samples, pix.width, pix.height, pix.stride,
+                      QImage.Format.Format_RGB888).copy()
+        overlay = _make_overlay_image(base)
+        self.pageReady.emit(page_number, base, overlay)
+        if self._queue:
+            QTimer.singleShot(0, self._process_next)
+
+
 class CustomGraphicsView(QGraphicsView):
 
     def mousePressEvent(self, event):
@@ -51,6 +139,10 @@ class CustomGraphicsView(QGraphicsView):
 
 
 class CenterPanel(QWidget):
+
+    # Internal cross-thread requests delivered to the renderer worker.
+    _openDocumentRequested = pyqtSignal(str)
+    _pageRenderRequested = pyqtSignal(int)
 
     def __init__(self,
                  session_factory: sessionmaker,
@@ -111,67 +203,88 @@ class CenterPanel(QWidget):
         # State
         self.current_page_idx: int = 1
         self.overlay_mode: bool = False
-        self.overlay_items: List[dict] = []
+        # page_number (1-based) -> {'pixmap_item': ..., 'tag_items': [...]}
+        self.overlay_items: Dict[int, dict] = {}
         self.document_id: Optional[int] = None
         self.total_pages: int = 0
-        # element_id -> QGraphicsRectItem for the current scene
         self.current_elements: List[ElementRecord] = []
+        self.current_pdf_path: Optional[str] = None
+
+        # Rendered page caches (filled by the renderer thread)
+        self._base_images: Dict[int, QImage] = {}
+        self._overlay_images: Dict[int, QImage] = {}
 
         self.btn_prev.clicked.connect(self.load_prev)
         self.btn_next.clicked.connect(self.load_next)
         self.page_input.returnPressed.connect(self.on_page_input_changed)
 
+        # Background PDF renderer
+        self._render_thread = QThread(self)
+        self._renderer = PdfPageRenderer(PDF_RENDER_SCALE)
+        self._renderer.moveToThread(self._render_thread)
+        self._render_thread.finished.connect(self._renderer.closeDocument)
+        self._render_thread.finished.connect(self._renderer.deleteLater)
+        self._openDocumentRequested.connect(self._renderer.openDocument)
+        self._pageRenderRequested.connect(self._renderer.requestPage)
+        self._renderer.documentOpened.connect(self._on_document_opened)
+        self._renderer.pageReady.connect(self._on_page_ready)
+        self._render_thread.start()
+
+        app = QApplication.instance()
+        if app is not None:
+            app.aboutToQuit.connect(self._stop_render_thread)
+
+    def _stop_render_thread(self) -> None:
+        if self._render_thread.isRunning():
+            self._render_thread.quit()
+            self._render_thread.wait()
+
     # ------------------------------------------------------------------ DB access
 
     def _load_document(self, file_path: str) -> None:
         with self.session_factory() as session:
-            input_rec = session.scalar(
-                select(InputFileRecord).where(
-                    InputFileRecord.absolute_path == file_path))
-            if not input_rec:
-                self.document_id = None
-                self.total_pages = 0
+            document_id = session.scalar(
+                select(DocumentRecord.id).join(
+                    InputFileRecord, InputFileRecord.file_sha256 ==
+                    DocumentRecord.file_sha256).where(
+                        InputFileRecord.absolute_path == file_path))
+            if document_id is None:
                 logging.warning(f"CenterPanel: No DB record for {file_path}")
-                return
-            doc = session.scalar(
-                select(DocumentRecord).where(
-                    DocumentRecord.file_sha256 == input_rec.file_sha256))
-            if not doc:
-                self.document_id = None
-                self.total_pages = 0
-                return
-            self.document_id = doc.id
-            self.total_pages = session.query(PageRecord).filter(
-                PageRecord.document_id == doc.id).count()
+            self.document_id = document_id
 
-    def _load_page(
-            self,
-            page_number: int) -> tuple[Optional[QPixmap], List[ElementRecord]]:
-        """Returns (page pixmap, elements). Page image taken from first element blob."""
+    def _load_page_elements(self, page_number: int) -> List[ElementRecord]:
         if self.document_id is None:
-            return None, []
+            return []
         with self.session_factory() as session:
-            page = session.scalar(
-                select(PageRecord).where(
-                    PageRecord.document_id == self.document_id,
-                    PageRecord.page_number == page_number,
-                ))
-            if not page:
-                return None, []
             elements = list(
                 session.scalars(
-                    select(ElementRecord).where(
-                        ElementRecord.page_id == page.id).order_by(
-                            ElementRecord.element_index)))
+                    select(ElementRecord).join(
+                        PageRecord,
+                        ElementRecord.page_id == PageRecord.id).where(
+                            PageRecord.document_id == self.document_id,
+                            PageRecord.page_number == page_number).order_by(
+                                ElementRecord.element_index)))
             for e in elements:
                 session.expunge(e)
+            return elements
 
-            pixmap = None
-            if elements:
-                pixmap = QPixmap()
-                if not pixmap.loadFromData(elements[0].image_blob):
-                    pixmap = None
-            return pixmap, elements
+    def _load_all_elements(self) -> Dict[int, List[ElementRecord]]:
+        """page_number -> elements, for the whole document in one query."""
+        result: Dict[int, List[ElementRecord]] = {}
+        if self.document_id is None:
+            return result
+        with self.session_factory() as session:
+            pairs = session.execute(
+                select(PageRecord.page_number, ElementRecord).join(
+                    ElementRecord,
+                    ElementRecord.page_id == PageRecord.id).where(
+                        PageRecord.document_id == self.document_id).order_by(
+                            PageRecord.page_number,
+                            ElementRecord.element_index)).all()
+            for page_number, element in pairs:
+                session.expunge(element)
+                result.setdefault(page_number, []).append(element)
+        return result
 
     def _save_elements(self, elements: List[ElementRecord]) -> None:
         if not elements:
@@ -193,6 +306,32 @@ class CenterPanel(QWidget):
             session.commit()
         logging.info(f"CenterPanel: Saved {len(elements)} elements to DB.")
 
+    # ------------------------------------------------------------------ renderer callbacks
+
+    def _on_document_opened(self, page_count: int) -> None:
+        self.total_pages = page_count
+        if page_count > 0:
+            self.slider.setRange(1, page_count)
+            self.slider.setLowerValue(5)
+            self.slider.setUpperValue(min(20, page_count))
+        self.load_page_data()
+
+    def _on_page_ready(self, page_number: int, base: QImage,
+                       overlay: QImage) -> None:
+        self._base_images[page_number] = base
+        self._overlay_images[page_number] = overlay
+
+        if self.overlay_mode:
+            entry = self.overlay_items.get(page_number)
+            if entry is not None and entry['pixmap_item'] is None:
+                pixmap_item = QGraphicsPixmapItem(QPixmap.fromImage(overlay))
+                pixmap_item.setZValue(-1)
+                self.scene.addItem(pixmap_item)
+                entry['pixmap_item'] = pixmap_item
+                self.on_overlay_changed()
+        elif page_number == self.current_page_idx:
+            self._show_single_page()
+
     # ------------------------------------------------------------------ UI logic
 
     def on_mode_changed(self, state: int) -> None:
@@ -200,7 +339,7 @@ class CenterPanel(QWidget):
                              or state == 2)
         self.nav_widget.setVisible(not self.overlay_mode)
         self.overlay_widget.setVisible(self.overlay_mode)
-        self.overlay_items = []
+        self.overlay_items = {}
         self.load_page_data()
 
     def on_overlay_changed(self, lower: int = -1, upper: int = -1) -> None:
@@ -214,18 +353,17 @@ class CenterPanel(QWidget):
 
         if self.overlay_mode:
             first_visible = None
-            for i, item_data in enumerate(self.overlay_items):
-                page_num = i + 1
+            for page_num in sorted(self.overlay_items.keys()):
+                entry = self.overlay_items[page_num]
                 is_visible = (start <= page_num <= end)
-                if is_visible and first_visible is None:
-                    first_visible = item_data['pixmap_item']
-
-                if item_data['pixmap_item']:
-                    item_data['pixmap_item'].setVisible(is_visible)
-                for tag_item in item_data['tag_items']:
+                if entry['pixmap_item'] is not None:
+                    entry['pixmap_item'].setVisible(is_visible)
+                    if is_visible and first_visible is None:
+                        first_visible = entry['pixmap_item']
+                for tag_item in entry['tag_items']:
                     tag_item.setVisible(is_visible)
 
-            if first_visible:
+            if first_visible is not None:
                 rect = first_visible.boundingRect()
                 self.scene.setSceneRect(rect)
                 self.view.fitInView(self.scene.sceneRect(),
@@ -359,116 +497,22 @@ class CenterPanel(QWidget):
             self.current_page_idx += 1
             self.load_page_data()
 
-    def load_pdf(self, pdf_path, output_dir=None) -> None:
+    def load_pdf(self, pdf_path) -> None:
         self.current_pdf_path = str(Path(pdf_path).absolute())
         self.current_page_idx = 1
-        self.overlay_items = []
+        self.overlay_items = {}
+        self._base_images.clear()
+        self._overlay_images.clear()
+        self.total_pages = 0
 
-        logging.info(
-            f"CenterPanel: Loading PDF from DB: {self.current_pdf_path}")
+        logging.info(f"CenterPanel: Loading PDF: {self.current_pdf_path}")
         self._load_document(self.current_pdf_path)
 
-        if self.total_pages > 0:
-            self.slider.setRange(1, self.total_pages)
-            self.slider.setLowerValue(5)
-            self.slider.setUpperValue(min(20, self.total_pages))
-
-        self.load_page_data()
-
-    def get_all_pages_data(self) -> List[dict]:
-        """Returns list of {'page_number': int, 'elements': [ElementRecord]} for HTML generation."""
-        pages = []
-        if self.document_id is None:
-            return pages
-        with self.session_factory() as session:
-            page_recs = list(
-                session.scalars(
-                    select(PageRecord).where(
-                        PageRecord.document_id == self.document_id).order_by(
-                            PageRecord.page_number)))
-            for page in page_recs:
-                elements = list(
-                    session.scalars(
-                        select(ElementRecord).where(
-                            ElementRecord.page_id == page.id).order_by(
-                                ElementRecord.element_index)))
-                for e in elements:
-                    session.expunge(e)
-                pages.append({
-                    'page_number': page.page_number,
-                    'elements': elements
-                })
-        return pages
+        self.scene.clear()
+        self.scene.addText("Loading PDF...")
+        self._openDocumentRequested.emit(self.current_pdf_path)
 
     # ------------------------------------------------------------------ rendering
-
-    def _create_transparent_pixmap(self, pixmap: QPixmap) -> QPixmap:
-        import numpy as np
-        from PyQt6.QtGui import QPainter
-
-        image = pixmap.toImage().convertToFormat(QImage.Format.Format_RGBA8888)
-
-        width = image.width()
-        height = image.height()
-        ptr = image.bits()
-        array = np.frombuffer(ptr, dtype=np.uint8).reshape((height, width, 4))
-
-        rgb = array[:, :, :3].astype(np.float32)
-        gray = 0.299 * rgb[:, :, 0] + 0.587 * rgb[:, :, 1] + 0.114 * rgb[:, :,
-                                                                         2]
-
-        contrast = 2.5
-        contrasted = (gray - 128.0) * contrast + 128.0
-        contrasted = np.clip(contrasted, 0, 255).astype(np.uint8)
-
-        alpha = (255 - contrasted).astype(np.uint8)
-
-        mask_data = np.zeros((height, width, 4), dtype=np.uint8)
-        mask_data[:, :, 3] = alpha
-
-        mask = QImage(mask_data.data, width, height, width * 4,
-                      QImage.Format.Format_RGBA8888).copy()
-
-        result = QPixmap(width, height)
-        result.fill(Qt.GlobalColor.transparent)
-
-        painter = QPainter(result)
-        painter.fillRect(result.rect(), QColor(0, 0, 0))
-        painter.setCompositionMode(
-            QPainter.CompositionMode.CompositionMode_DestinationIn)
-        painter.drawImage(0, 0, mask)
-        painter.end()
-
-        return result
-
-    def pre_load_overlays(self) -> None:
-        self.scene.clear()
-        self.overlay_items = []
-
-        logging.info(
-            f"CenterPanel: Preloading {self.total_pages} overlay pages...")
-
-        for p_idx in range(1, self.total_pages + 1):
-            pixmap, elements = self._load_page(p_idx)
-            if pixmap is None or pixmap.isNull():
-                self.overlay_items.append({
-                    'pixmap_item': None,
-                    'tag_items': []
-                })
-                continue
-
-            transparent = self._create_transparent_pixmap(pixmap)
-            pixmap_item = QGraphicsPixmapItem(transparent)
-            pixmap_item.setZValue(-1)
-            self.scene.addItem(pixmap_item)
-
-            tag_items = self.draw_elements(elements)
-            self.overlay_items.append({
-                'pixmap_item': pixmap_item,
-                'tag_items': tag_items
-            })
-
-        self.on_overlay_changed()
 
     def load_page_data(self) -> None:
         if self.document_id is None:
@@ -477,30 +521,58 @@ class CenterPanel(QWidget):
             return
 
         if self.overlay_mode:
-            if not self.overlay_items:
-                self.pre_load_overlays()
-            else:
-                self.on_overlay_changed()
+            self._build_overlay_scene()
         else:
-            self.scene.clear()
-            self.overlay_items = []
-            self.page_input.setText(str(self.current_page_idx))
+            self._show_single_page()
 
-            pixmap, elements = self._load_page(self.current_page_idx)
-            self.current_elements = elements
+    def _show_single_page(self) -> None:
+        self.scene.clear()
+        self.overlay_items = {}
+        self.page_input.setText(str(self.current_page_idx))
 
-            if pixmap is None:
-                self.scene.addText(
-                    f"Page {self.current_page_idx} not found in DB.")
-                return
+        base = self._base_images.get(self.current_page_idx)
+        if base is None:
+            self.scene.addText(f"Rendering page {self.current_page_idx}...")
+            self._pageRenderRequested.emit(self.current_page_idx)
+            return
 
-            pixmap_item = QGraphicsPixmapItem(pixmap)
-            self.scene.addItem(pixmap_item)
-            self.draw_elements(elements)
+        self.current_elements = self._load_page_elements(self.current_page_idx)
 
-            self.scene.setSceneRect(pixmap_item.boundingRect())
-            self.view.fitInView(self.scene.sceneRect(),
-                                Qt.AspectRatioMode.KeepAspectRatio)
+        pixmap_item = QGraphicsPixmapItem(QPixmap.fromImage(base))
+        self.scene.addItem(pixmap_item)
+        self.draw_elements(self.current_elements)
+
+        self.scene.setSceneRect(pixmap_item.boundingRect())
+        self.view.fitInView(self.scene.sceneRect(),
+                            Qt.AspectRatioMode.KeepAspectRatio)
+
+    def _build_overlay_scene(self) -> None:
+        self.scene.clear()
+        self.overlay_items = {}
+
+        if self.total_pages <= 0:
+            return
+
+        all_elements = self._load_all_elements()
+
+        for page_number in range(1, self.total_pages + 1):
+            entry = {'pixmap_item': None, 'tag_items': []}
+
+            overlay_image = self._overlay_images.get(page_number)
+            if overlay_image is not None:
+                pixmap_item = QGraphicsPixmapItem(
+                    QPixmap.fromImage(overlay_image))
+                pixmap_item.setZValue(-1)
+                self.scene.addItem(pixmap_item)
+                entry['pixmap_item'] = pixmap_item
+            else:
+                self._pageRenderRequested.emit(page_number)
+
+            entry['tag_items'] = self.draw_elements(
+                all_elements.get(page_number, []))
+            self.overlay_items[page_number] = entry
+
+        self.on_overlay_changed()
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)

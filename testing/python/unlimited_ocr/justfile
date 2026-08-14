@@ -4,8 +4,8 @@ run_ocr input_path conversion_dir_path db_path:
     {{input_path}} \
     {{conversion_dir_path}} \
     --db-path {{db_path}} \
-    --chunk-size 1 \
-    --engine docling
+    --chunk-size 20 \
+    --engine unlimited
 
 run_gui input_path:
   PYTHONPATH=src uv run \

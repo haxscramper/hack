@@ -209,6 +209,9 @@ def process_file(
             case DoclingChunkOcrResult():
                 save_docling_ocr_to_database(session, document_id, result)
 
+        logger.info(
+            f"Done chunk {chunk_index} * {chunk_size}/{rendered_pages}")
+
     logger.info(f"Finished: {source_file} -> {output_base}")
 
 
