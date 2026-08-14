@@ -1,16 +1,17 @@
-import logging
+from loguru import logger
 from typing import Optional, List
 
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QPushButton, QTextBrowser, QCheckBox, QHBoxLayout
-from PyQt6.QtCore import QThread, Signal
-from html_generator import generate_html_content, map_tag_to_html
+from PyQt6.QtCore import QThread, pyqtSignal
+
+from src.ocr_manager.export.html_generator import generate_html_content
 
 
 class HtmlGeneratorThread(QThread):
-    html_ready = Signal(str)
+    html_ready = pyqtSignal(str)
 
     def __init__(self,
-                 pages_data: List[PageData],
+                 pages_data: List[dict],
                  use_llm: bool,
                  output_epub_path: Optional[str] = None,
                  parent=None):
@@ -43,32 +44,11 @@ class RightPanel(QWidget):
 
         self._layout.addLayout(self.bottom_layout)
 
-        logging.info("RightPanel: Initialized.")
-
-    def map_tag_to_html(self, tag_name: str) -> str:
-        mapping = {
-            "section_header": "h2",
-            "text": "p",
-            "list": "ul",
-            "list_item": "li",
-            "table": "table",
-            "footnote": "p",
-            "formula": "p",
-            "page_footer": "footer",
-            "picture": "div",
-            "root": "div",
-            "unspecified": "div",
-            "h1": "h1",
-            "h2": "h2",
-            "h3": "h3",
-            "p": "p",
-        }
-        return mapping.get(tag_name, "div")
+        logger.info("RightPanel: Initialized.")
 
     def generate_html(self,
-                      pages_data: List[PageData],
+                      pages_data: List[dict],
                       output_epub_path: Optional[str] = None) -> None:
-        """Generates HTML from the parsed blocks in a separate thread."""
         use_llm = self.use_llm_checkbox.isChecked()
         self.update_btn.setEnabled(False)
         self.html_view.setHtml(

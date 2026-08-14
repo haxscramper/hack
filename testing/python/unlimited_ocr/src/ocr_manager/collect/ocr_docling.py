@@ -16,8 +16,8 @@ from docling_core.types.doc.document import (ContentLayer, DoclingDocument,
 from loguru import logger
 from PIL import Image
 
-from ocr_unlimited import render_pdf_pages
-from ocr_unlimited_models import OcrBBox, OcrElement, OcrPage
+from src.ocr_manager.collect.ocr_unlimited import render_pdf_pages
+from src.ocr_manager.collect.ocr_unlimited_models import OcrBBox, OcrElement, OcrPage
 
 DEFAULT_DOCLING_MODEL_ID = "ibm/granite-docling"
 DEFAULT_OLLAMA_URL = "http://localhost:11434"

@@ -3,15 +3,15 @@ from __future__ import annotations
 
 import sys
 
-from PyQt6.QtCore import Qt, QRect, Signal
+from PyQt6.QtCore import Qt, QRect, pyqtSignal
 from PyQt6.QtGui import QMouseEvent, QPainter, QColor, QPen, QBrush
 from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QLabel
 
 
 class RangeSlider(QWidget):
-    lowerValueChanged = Signal(int)
-    upperValueChanged = Signal(int)
-    rangeChanged = Signal(int, int)
+    lowerValueChanged = pyqtSignal(int)
+    upperValueChanged = pyqtSignal(int)
+    rangeChanged = pyqtSignal(int, int)
 
     def __init__(self, parent=None):
         super().__init__(parent)

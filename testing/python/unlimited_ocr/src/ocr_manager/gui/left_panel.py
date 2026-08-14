@@ -2,25 +2,25 @@ import logging
 from pathlib import Path
 from typing import Optional, List, Any
 
-from PyQt6.QtCore import Qt, QAbstractListModel, QModelIndex, QSortFilterProxyModel
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QListView, QLineEdit, QLabel, QMenu
+from PyQt6.QtCore import Qt, QAbstractListModel
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QListView, QLineEdit, QMenu
 from PyQt6.QtGui import QAction
-import shutil
+from PyQt6.QtCore import QSortFilterProxyModel
+from sqlalchemy import select
+from sqlalchemy.orm import sessionmaker
 
-from config import AppConfig
+from src.ocr_manager.ocr_db import InputFileRecord
 
 
 class PdfListModel(QAbstractListModel):
 
     def __init__(
         self,
-        pdf_files: Optional[List[Path]] = None,
-        config: Optional[AppConfig] = None,
+        pdf_files: Optional[List[InputFileRecord]] = None,
         parent: Optional[QWidget] = None,
     ) -> None:
         super().__init__(parent)
-        self.pdf_files: List[Path] = pdf_files or []
-        self.config = config
+        self.pdf_files: List[InputFileRecord] = pdf_files or []
 
     def rowCount(self, parent: Any = None) -> int:
         return len(self.pdf_files)
@@ -36,66 +36,36 @@ class PdfListModel(QAbstractListModel):
         if not index.isValid() or not (0 <= index.row() < len(self.pdf_files)):
             return None
 
-        file_path = self.pdf_files[index.row()]
+        record = self.pdf_files[index.row()]
 
         if role == Qt.ItemDataRole.DisplayRole:
-            return file_path.name
-        elif role == Qt.ItemDataRole.CheckStateRole:
-            if self.config:
-                is_ocr_only = (str(
-                    file_path.absolute()) in self.config.ocr_only_files
-                               or str(file_path) in self.config.ocr_only_files)
-                return Qt.CheckState.Checked if is_ocr_only else Qt.CheckState.Unchecked
+            return Path(record.absolute_path).name
         elif role == Qt.ItemDataRole.ToolTipRole:
             return "Check to mark as OCR only"
 
         return None
 
-    def setData(self,
-                index: Any,
-                value: Any,
-                role: int = Qt.ItemDataRole.EditRole) -> bool:
-        if index.isValid(
-        ) and role == Qt.ItemDataRole.CheckStateRole and self.config:
-            file_path = self.pdf_files[index.row()]
-            abs_path = str(file_path.absolute())
-            if value == Qt.CheckState.Checked.value:
-                if abs_path not in self.config.ocr_only_files:
-                    self.config.ocr_only_files.append(abs_path)
-            else:
-                if abs_path in self.config.ocr_only_files:
-                    self.config.ocr_only_files.remove(abs_path)
-                if str(file_path) in self.config.ocr_only_files:
-                    self.config.ocr_only_files.remove(str(file_path))
-
-            # Save the configuration whenever the checkbox is toggled
-            self.config.save_to_json()
-            self.dataChanged.emit(index, index, [role])
-            return True
-        return False
-
 
 class LeftPanel(QWidget):
 
-    def __init__(self,
-                 config: Optional[AppConfig] = None,
-                 parent: Optional[QWidget] = None) -> None:
+    def __init__(
+        self,
+        session_factory: Optional[sessionmaker] = None,
+        parent: Optional[QWidget] = None,
+    ) -> None:
         super().__init__(parent)
-        self.config = config
+        self.session_factory = session_factory
         layout = QVBoxLayout(self)
 
-        # Search Box
         self.search_input = QLineEdit(self)
         self.search_input.setPlaceholderText("Search PDFs...")
         layout.addWidget(self.search_input)
 
-        # List View
         self.list_view = QListView(self)
-        files = self._get_files_from_config()
-        logging.info(f"LeftPanel: Found {len(files)} PDFs in config.")
-        self.model = PdfListModel(pdf_files=files, config=self.config)
+        files = self._get_files_from_db()
+        logging.info(f"LeftPanel: Found {len(files)} input files in DB.")
+        self.model = PdfListModel(pdf_files=files)
 
-        # Setup Filtering
         self.proxy_model = QSortFilterProxyModel(self)
         self.proxy_model.setSourceModel(self.model)
         self.proxy_model.setFilterCaseSensitivity(
@@ -107,7 +77,6 @@ class LeftPanel(QWidget):
         self.search_input.textChanged.connect(
             self.proxy_model.setFilterWildcard)
 
-        # Context Menu
         self.list_view.setContextMenuPolicy(
             Qt.ContextMenuPolicy.CustomContextMenu)
         self.list_view.customContextMenuRequested.connect(
@@ -119,36 +88,25 @@ class LeftPanel(QWidget):
             return
 
         menu = QMenu()
-        clear_cache_action = QAction("Delete cached pages", self)
-        clear_cache_action.triggered.connect(
-            lambda: self._delete_cached_pages(index))
-        menu.addAction(clear_cache_action)
+        refresh_action = QAction("Refresh from DB", self)
+        refresh_action.triggered.connect(self.refresh_files)
+        menu.addAction(refresh_action)
         menu.exec_(self.list_view.viewport().mapToGlobal(position))
 
-    def _delete_cached_pages(self, proxy_index):
-        source_index = self.proxy_model.mapToSource(proxy_index)
-        if not source_index.isValid() or not self.config:
-            return
+    def refresh_files(self):
+        files = self._get_files_from_db()
+        self.model.beginResetModel()
+        self.model.pdf_files = files
+        self.model.endResetModel()
 
-        file_path = self.model.pdf_files[source_index.row()]
-        pdf_output_dir = self.config.output_dir / file_path.stem
-
-        if pdf_output_dir.exists() and pdf_output_dir.is_dir():
-            try:
-                shutil.rmtree(pdf_output_dir)
-                logging.info(
-                    f"Deleted cached pages directory: {pdf_output_dir}")
-            except Exception as e:
-                logging.error(f"Failed to delete {pdf_output_dir}: {e}")
-        else:
-            logging.info(f"No cached pages found for {file_path.name}")
-
-    def _get_files_from_config(self) -> List[Path]:
-        pdf_files: List[Path] = []
-        if self.config:
-            for path in self.config.input_dirs:
-                if path.is_dir():
-                    pdf_files.extend(list(path.glob("*.pdf")))
-                elif path.is_file() and path.suffix.lower() == ".pdf":
-                    pdf_files.append(path)
-        return pdf_files
+    def _get_files_from_db(self) -> List[InputFileRecord]:
+        if not self.session_factory:
+            return []
+        with self.session_factory() as session:
+            records = list(
+                session.scalars(
+                    select(InputFileRecord).order_by(
+                        InputFileRecord.absolute_path)))
+            for r in records:
+                session.expunge(r)
+            return records

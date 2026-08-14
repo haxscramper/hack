@@ -1,5 +1,7 @@
 pydantic
+PyQt6
 sqlalchemy
+ebooklib
 easydict
 addict 
 matplotlib

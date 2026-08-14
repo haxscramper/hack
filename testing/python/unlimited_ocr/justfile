@@ -1,8 +1,13 @@
 run_ocr input_path conversion_dir_path db_path:
-  uv run \
-    --no-project python ocr_driver.py \
+  PYTHONPATH=src uv run \
+    --no-project python -m ocr_manager.collect.ocr_driver \
     {{input_path}} \
     {{conversion_dir_path}} \
     --db-path {{db_path}} \
     --chunk-size 1 \
     --engine docling
+
+run_gui input_path:
+  PYTHONPATH=src uv run \
+    --no-project python -m ocr_manager.gui.main_window \
+    {{input_path}}
