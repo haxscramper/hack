@@ -1,0 +1,19 @@
+[project]
+name = "subtree-tag-grouping"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "beartype>=0.22.9",
+    "betterproto2[compiler]>=0.10.0",
+    "grpcio-tools>=1.83.0",
+    "loguru>=0.7.3",
+    "pydantic>=2.13.4",
+]
+
+[dependency-groups]
+dev = [
+    "betterproto2-compiler>=0.10.1",
+    "betterproto2[compiler]>=0.10.0",
+]

@@ -1,0 +1,13 @@
+gen_dir := "gen"
+
+gen haxorg_project_root:
+    mkdir -p {{gen_dir}}
+    uv run python -m grpc_tools.protoc \
+        -I {{haxorg_project_root}} \
+        --plugin=protoc-gen-python_betterproto={{justfile_directory()}}/.venv/bin/protoc-gen-python_betterproto2 \
+        --python_betterproto_out={{gen_dir}} \
+        --python_betterproto_opt=GOOGLE_PROTOBUF_SPECIAL_PACKAGE \
+        {{haxorg_project_root}}/src/haxorg/serde/SemOrgProto.proto
+
+run *ARGS:
+    uv run python main.py {{ARGS}}
