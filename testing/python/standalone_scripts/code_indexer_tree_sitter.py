@@ -489,12 +489,94 @@ def cpp_parse_class(
     return entry
 
 
+def cpp_parse_enum(
+    node: Node,
+    source: bytes,
+    qualified_prefix: list[str],
+    doc: DocInfo | None,
+    rel_path: str,
+) -> ParsedEntry | None:
+    name_node = node.child_by_field_name("name")
+    if name_node is None:
+        return None
+
+    enum_name = node_text(name_node, source).strip()
+    start_line, end_line = source_lines(node)
+    base_node = node.child_by_field_name("base")
+
+    entry = ParsedEntry(
+        kind="enum",
+        name=enum_name,
+        language="cpp",
+        qualified_name="::".join(qualified_prefix + [enum_name]),
+        start_line=start_line,
+        end_line=end_line,
+        doc=doc,
+        type_text=node_text(base_node, source).strip()
+        if base_node is not None else None,
+        path=rel_path,
+    )
+
+    body = node.child_by_field_name("body")
+    if body is None:
+        return entry
+
+    for eidx, child in enumerate(body.named_children):
+        if child.type != "enumerator":
+            continue
+        ename_node = child.child_by_field_name("name")
+        if ename_node is None:
+            continue
+        ename = node_text(ename_node, source).strip()
+        value_node = child.child_by_field_name("value")
+        estart, eend = source_lines(child)
+        entry.children.append(
+            ParsedEntry(
+                kind="enum_constant",
+                name=ename,
+                language="cpp",
+                qualified_name="::".join(qualified_prefix +
+                                         [enum_name, ename]),
+                start_line=estart,
+                end_line=eend,
+                doc=extract_leading_cpp_doc(body, eidx, source),
+                type_text=node_text(value_node, source).strip()
+                if value_node is not None else None,
+                path=rel_path,
+            ))
+
+    return entry
+
+
 _SEEN_TYPES = set()
 
 _CPP_PREPROC_BRANCH_TYPES = {
     "preproc_if",
     "preproc_ifdef",
     "preproc_else",
+    "preproc_elif",
+}
+
+_CPP_SCOPE_JUNK_TYPES = {
+    "comment",
+    "preproc_def",
+    "preproc_call",
+    "preproc_include",
+    "preproc_function_def",
+    "expression_statement",
+    "using_declaration",
+    "namespace_alias_definition",
+    "static_assert_declaration",
+    "template_instantiation",
+    "labeled_statement",
+    "return_statement",
+    "for_statement",
+    "if_statement",
+    "compound_statement",
+    "identifier",
+    "unary_expression",
+    "binary_expression",
+    "ERROR",
 }
 
 
@@ -505,107 +587,189 @@ def cpp_parse_scope(
     qualified_prefix: list[str],
     rel_path: str,
 ) -> None:
-
     for idx, child in enumerate(node.named_children):
         child_doc = extract_leading_cpp_doc(node, idx, source)
+        cpp_parse_scope_child(child, child_doc, source, out, qualified_prefix,
+                              rel_path)
 
-        match child.type:
-            case branch if branch in _CPP_PREPROC_BRANCH_TYPES:
+
+def cpp_parse_scope_child(
+    child: Node,
+    child_doc: DocInfo | None,
+    source: bytes,
+    out: list[ParsedEntry],
+    qualified_prefix: list[str],
+    rel_path: str,
+) -> None:
+    match child.type:
+        case branch if branch in _CPP_PREPROC_BRANCH_TYPES:
+            cpp_parse_scope(child,
+                            source,
+                            out,
+                            qualified_prefix,
+                            rel_path=rel_path)
+
+        case "template_declaration":
+            for sub in child.named_children:
+                if sub.type in {
+                        "template_parameter_list", "requires_clause", "comment"
+                }:
+                    continue
+                cpp_parse_scope_child(sub, child_doc, source, out,
+                                      qualified_prefix, rel_path)
+
+        case "linkage_specification":
+            body = child.child_by_field_name("body")
+            if body is None:
+                return
+            if body.type == "declaration_list":
+                cpp_parse_scope(body,
+                                source,
+                                out,
+                                qualified_prefix,
+                                rel_path=rel_path)
+            else:
+                cpp_parse_scope_child(body, child_doc, source, out,
+                                      qualified_prefix, rel_path)
+
+        case "namespace_definition":
+            name_node = child.child_by_field_name("name")
+            if name_node is None:
+                return
+            ns_name = node_text(name_node, source).strip()
+            ns_qn = "::".join(qualified_prefix + [ns_name])
+            ns_start, ns_end = source_lines(child)
+
+            ns_entry = ParsedEntry(
+                kind="namespace",
+                name=ns_name,
+                language="cpp",
+                qualified_name=ns_qn,
+                start_line=ns_start,
+                end_line=ns_end,
+                doc=child_doc,
+                path=rel_path,
+            )
+
+            body = child.child_by_field_name("body")
+            if body is not None:
                 cpp_parse_scope(
-                    child,
+                    body,
                     source,
-                    out,
-                    qualified_prefix,
+                    ns_entry.children,
+                    qualified_prefix + [ns_name],
                     rel_path=rel_path,
                 )
 
-            case "namespace_definition":
-                name_node = child.child_by_field_name("name")
-                if name_node is None:
-                    continue
-                ns_name = node_text(name_node, source).strip()
-                ns_qn = "::".join(qualified_prefix + [ns_name])
-                ns_start, ns_end = source_lines(child)
+            out.append(ns_entry)
 
-                ns_entry = ParsedEntry(
-                    kind="namespace",
-                    name=ns_name,
+        case "class_specifier" | "struct_specifier":
+            cls = cpp_parse_class(
+                child,
+                source,
+                qualified_prefix,
+                child_doc,
+                rel_path=rel_path,
+            )
+            if cls is not None:
+                out.append(cls)
+
+        case "enum_specifier":
+            en = cpp_parse_enum(
+                child,
+                source,
+                qualified_prefix,
+                child_doc,
+                rel_path=rel_path,
+            )
+            if en is not None:
+                out.append(en)
+
+        case "alias_declaration":
+            name_node = child.child_by_field_name("name")
+            if name_node is None:
+                return
+            alias_name = node_text(name_node, source).strip()
+            type_node = child.child_by_field_name("type")
+            start_line, end_line = source_lines(child)
+            out.append(
+                ParsedEntry(
+                    kind="type_alias",
+                    name=alias_name,
                     language="cpp",
-                    qualified_name=ns_qn,
-                    start_line=ns_start,
-                    end_line=ns_end,
+                    qualified_name="::".join(qualified_prefix + [alias_name]),
+                    start_line=start_line,
+                    end_line=end_line,
                     doc=child_doc,
+                    type_text=node_text(type_node, source).strip()
+                    if type_node is not None else None,
+                    signature_source=node_text(child, source).strip(),
                     path=rel_path,
-                )
+                ))
 
-                body = child.child_by_field_name("body")
-                if body is not None:
-                    cpp_parse_scope(
-                        body,
-                        source,
-                        ns_entry.children,
-                        qualified_prefix + [ns_name],
-                        rel_path=rel_path,
-                    )
-
-                out.append(ns_entry)
-
-            case "class_specifier" | "struct_specifier":
-                cls = cpp_parse_class(
-                    child,
-                    source,
-                    qualified_prefix,
-                    child_doc,
-                    rel_path=rel_path,
-                )
-                if cls is not None:
-                    out.append(cls)
-
-            case "function_definition":
-                fn = cpp_parse_function_entry(
-                    child,
-                    source,
-                    "function",
-                    qualified_prefix,
-                    child_doc,
-                    rel_path=rel_path,
-                )
-                if fn is not None:
-                    out.append(fn)
-
-            case "declaration":
-                declarator = child.child_by_field_name("declarator")
-                if declarator is None:
+        case "type_definition":
+            type_node = child.child_by_field_name("type")
+            type_text = node_text(
+                type_node, source).strip() if type_node is not None else None
+            start_line, end_line = source_lines(child)
+            for decl in child.children_by_field_name("declarator"):
+                alias_name = cpp_extract_declarator_name(decl, source)
+                if alias_name is None:
                     continue
-                has_params = find_first_descendant(
-                    declarator, {"parameter_list"}) is not None
-                if not has_params:
-                    continue
-                fn = cpp_parse_function_entry(
-                    child,
-                    source,
-                    "function",
-                    qualified_prefix,
-                    child_doc,
-                    rel_path=rel_path,
-                )
-                if fn is not None:
-                    out.append(fn)
+                out.append(
+                    ParsedEntry(
+                        kind="type_alias",
+                        name=alias_name,
+                        language="cpp",
+                        qualified_name="::".join(qualified_prefix +
+                                                 [alias_name]),
+                        start_line=start_line,
+                        end_line=end_line,
+                        doc=child_doc,
+                        type_text=type_text,
+                        signature_source=node_text(child, source).strip(),
+                        path=rel_path,
+                    ))
 
-            case drop if drop in [
-                "preproc_def",
-                "comment",
-                "preproc_include",
-                "labeled_statement",
-                "return_statement",
-                "for_statement",
-            ]:
-                pass
+        case "function_definition":
+            fn = cpp_parse_function_entry(
+                child,
+                source,
+                "function",
+                qualified_prefix,
+                child_doc,
+                rel_path=rel_path,
+            )
+            if fn is not None:
+                out.append(fn)
 
-            case _:
-                if child.type not in _SEEN_TYPES:
-                    logger.warning(f"unexpected type {child.type}")
-                    _SEEN_TYPES.add(child.type)
+        case "declaration":
+            declarator = child.child_by_field_name("declarator")
+            if declarator is None:
+                return
+            has_params = find_first_descendant(declarator,
+                                               {"parameter_list"}) is not None
+            if not has_params:
+                return
+            fn = cpp_parse_function_entry(
+                child,
+                source,
+                "function",
+                qualified_prefix,
+                child_doc,
+                rel_path=rel_path,
+            )
+            if fn is not None:
+                out.append(fn)
+
+        case junk if junk in _CPP_SCOPE_JUNK_TYPES:
+            pass
+
+        case _:
+            if child.type not in _SEEN_TYPES:
+                logger.warning(f"unexpected type {child.type}")
+                logger.warning(f"{child}")
+                _SEEN_TYPES.add(child.type)
 
 
 def python_extract_function_name(node: Node, source: bytes) -> str | None:
