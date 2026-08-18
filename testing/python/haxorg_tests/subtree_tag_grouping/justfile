@@ -10,4 +10,7 @@ gen haxorg_project_root:
         {{haxorg_project_root}}/src/haxorg/serde/SemOrgProto.proto
 
 run *ARGS:
-    uv run python main.py {{ARGS}}
+    uv run python main.py {{ARGS}} | fjson --max-width 400 --max-inline-complexity 6 --max-table-complexity 6 
+
+run_gui cli input *ARGS:
+    uv run python tree_view_gui.py {{cli}} {{input}} {{ARGS}}

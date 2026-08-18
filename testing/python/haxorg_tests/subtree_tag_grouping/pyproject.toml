@@ -9,7 +9,9 @@ dependencies = [
     "betterproto2[compiler]>=0.10.0",
     "grpcio-tools>=1.83.0",
     "loguru>=0.7.3",
+    "plumbum>=2.0.2",
     "pydantic>=2.13.4",
+    "pyqt6>=6.11.0",
 ]
 
 [dependency-groups]
