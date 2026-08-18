@@ -63,15 +63,15 @@ def paragraph_text(paragraph: proto.Paragraph) -> str:
                 parts.append(value.text)
             case proto.RawText():
                 parts.append(value.text)
-            case proto.Paragraph():
-                for nested in value.subnodes:
-                    walk(nested)
+            case proto.BigIdent():
+                parts.append(value.text)
             case _:
                 for nested in getattr(value, "subnodes", []):
                     walk(nested)
 
     for subnode in paragraph.subnodes:
         walk(subnode)
+
     return "".join(parts).strip()
 
 

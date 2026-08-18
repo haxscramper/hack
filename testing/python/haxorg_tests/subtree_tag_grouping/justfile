@@ -14,3 +14,6 @@ run *ARGS:
 
 run_gui cli input *ARGS:
     uv run python tree_view_gui.py {{cli}} {{input}} {{ARGS}}
+
+run_flat_gui cli input *ARGS:
+    uv run python flat_view_gui.py {{cli}} {{input}} {{ARGS}}
