@@ -20,19 +20,26 @@ from PyQt6.QtCore import (
     QFileSystemWatcher,
     QModelIndex,
     QObject,
+    QSettings,
+    QSignalBlocker,
+    QSortFilterProxyModel,
     QThread,
     QTimer,
     Qt,
     pyqtSignal,
     pyqtSlot,
 )
-from PyQt6.QtGui import QMouseEvent
+from PyQt6.QtGui import QContextMenuEvent, QMouseEvent
 from PyQt6.QtWidgets import (
     QApplication,
     QHeaderView,
+    QLineEdit,
     QMainWindow,
+    QMenu,
     QMessageBox,
     QTreeView,
+    QVBoxLayout,
+    QWidget,
 )
 
 from gen import orgproto as proto
@@ -355,6 +362,8 @@ class OrgTreeModel(QAbstractItemModel):
 
 class OrgTreeView(QTreeView):
     subtree_activated = pyqtSignal(object)
+    expand_all_requested = pyqtSignal()
+    collapse_all_requested = pyqtSignal()
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         index = self.indexAt(event.position().toPoint())
@@ -364,12 +373,26 @@ class OrgTreeView(QTreeView):
                          & Qt.KeyboardModifier.ControlModifier)
                 and index.isValid()):
             model = self.model()
-            if isinstance(model, OrgTreeModel):
-                node = model.node_at(index)
-                if node.kind is NodeKind.SUBTREE:
-                    self.subtree_activated.emit(node)
+            if isinstance(model, QSortFilterProxyModel):
+                source_model = model.sourceModel()
+                source_index = model.mapToSource(index)
+                if isinstance(source_model, OrgTreeModel):
+                    node = source_model.node_at(source_index)
+                    if node.kind is NodeKind.SUBTREE:
+                        self.subtree_activated.emit(node)
 
         super().mousePressEvent(event)
+
+    def contextMenuEvent(self, event: QContextMenuEvent) -> None:
+        menu = QMenu(self)
+        expand_action = menu.addAction("Expand all")
+        collapse_action = menu.addAction("Collapse all")
+
+        selected = menu.exec(event.globalPos())
+        if selected is expand_action:
+            self.expand_all_requested.emit()
+        elif selected is collapse_action:
+            self.collapse_all_requested.emit()
 
 
 class ExportWorker(QObject):
@@ -525,7 +548,17 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.input_path = input_path.resolve()
         self.manager = manager
-        self.expanded_identities: set[str] = set()
+
+        document_key = hashlib.sha256(str(
+            self.input_path).encode()).hexdigest()
+        self.settings = QSettings("haxscramper", "haxorg-tree-view")
+        self.settings.beginGroup(f"documents/{document_key}")
+
+        stored_paths = self.settings.value("expanded_paths", [])
+        if isinstance(stored_paths, str):
+            stored_paths = [stored_paths]
+
+        self.expanded_paths = {str(path) for path in stored_paths}
 
         root = TreeNode(
             kind=NodeKind.ROOT,
@@ -534,23 +567,46 @@ class MainWindow(QMainWindow):
             source_path=self.input_path,
         )
         self.model = OrgTreeModel(root, self)
+
+        self.proxy = QSortFilterProxyModel(self)
+        self.proxy.setSourceModel(self.model)
+        self.proxy.setFilterKeyColumn(1)
+        self.proxy.setFilterCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self.proxy.setRecursiveFilteringEnabled(True)
+
+        self.search = QLineEdit(self)
+        self.search.setPlaceholderText("Search subtree names...")
+        self.search.setClearButtonEnabled(True)
+        self.search.textChanged.connect(self.apply_filter)
+
         self.view = OrgTreeView(self)
-        self.view.setModel(self.model)
+        self.view.setModel(self.proxy)
         self.view.setAlternatingRowColors(True)
         self.view.setUniformRowHeights(True)
         self.view.setSortingEnabled(False)
         self.view.expanded.connect(self.on_expanded)
         self.view.collapsed.connect(self.on_collapsed)
         self.view.subtree_activated.connect(self.open_subtree)
+        self.view.expand_all_requested.connect(self.expand_all)
+        self.view.collapse_all_requested.connect(self.collapse_all)
 
         header = self.view.header()
-        header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(
-            1,
-            QHeaderView.ResizeMode.Stretch,
-        )
+        header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+        header.setStretchLastSection(False)
 
-        self.setCentralWidget(self.view)
+        header_state = self.settings.value("header_state")
+        if header_state is not None:
+            header.restoreState(header_state)
+
+        header.sectionResized.connect(self.on_section_resized)
+
+        central = QWidget(self)
+        layout = QVBoxLayout(central)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self.search)
+        layout.addWidget(self.view)
+        self.setCentralWidget(central)
+
         self.setWindowTitle(f"Org tree: {self.input_path}")
         self.resize(1600, 900)
 
@@ -569,7 +625,7 @@ class MainWindow(QMainWindow):
         document = proto.AnyNode().parse(data)
         root = build_tree(document, self.input_path)
         self.model.replace_root(root)
-        self.restore_expansion(QModelIndex())
+        self.apply_filter(self.search.text())
         self.statusBar().showMessage(
             f"Loaded {len(data)} protobuf bytes",
             3000,
@@ -586,37 +642,111 @@ class MainWindow(QMainWindow):
         )
         self.statusBar().showMessage("Export failed")
 
+    @beartype
+    def node_at(self, index: QModelIndex) -> TreeNode:
+        source_index = self.proxy.mapToSource(index)
+        return self.model.node_at(source_index)
+
+    @beartype
+    def expansion_path(self, node: TreeNode) -> str:
+        names: list[str] = []
+        current = node
+
+        while current.container is not None:
+            names.append(current.name)
+            current = current.container
+
+        names.reverse()
+        return json.dumps(names, ensure_ascii=False)
+
+    @beartype
+    def save_expansion(self) -> None:
+        self.settings.setValue(
+            "expanded_paths",
+            sorted(self.expanded_paths),
+        )
+        self.settings.sync()
+
     @pyqtSlot(QModelIndex)
     @beartype
     def on_expanded(self, index: QModelIndex) -> None:
-        self.expanded_identities.add(self.model.node_at(index).identity)
+        self.expanded_paths.add(self.expansion_path(self.node_at(index)))
+        self.save_expansion()
 
     @pyqtSlot(QModelIndex)
     @beartype
     def on_collapsed(self, index: QModelIndex) -> None:
-        self.expanded_identities.discard(self.model.node_at(index).identity)
+        self.expanded_paths.discard(self.expansion_path(self.node_at(index)))
+        self.save_expansion()
 
     @beartype
     def restore_expansion(self, parent: QModelIndex) -> None:
-        for row in range(self.model.rowCount(parent)):
-            index = self.model.index(row, 0, parent)
-            node = self.model.node_at(index)
+        for row in range(self.proxy.rowCount(parent)):
+            index = self.proxy.index(row, 0, parent)
+            node = self.node_at(index)
 
-            if node.identity in self.expanded_identities:
+            if self.expansion_path(node) in self.expanded_paths:
                 self.view.setExpanded(index, True)
 
             self.restore_expansion(index)
+
+    @pyqtSlot(str)
+    @beartype
+    def apply_filter(self, text: str) -> None:
+        self.proxy.setFilterFixedString(text)
+
+        blocker = QSignalBlocker(self.view)
+        self.view.collapseAll()
+
+        if text:
+            self.view.expandAll()
+        else:
+            self.restore_expansion(QModelIndex())
+
+        del blocker
+
+    @pyqtSlot()
+    @beartype
+    def expand_all(self) -> None:
+        self.view.expandAll()
+
+    @pyqtSlot()
+    @beartype
+    def collapse_all(self) -> None:
+        self.view.collapseAll()
+
+    @pyqtSlot(int, int, int)
+    @beartype
+    def on_section_resized(
+        self,
+        logical_index: int,
+        old_size: int,
+        new_size: int,
+    ) -> None:
+        self.settings.setValue(
+            "header_state",
+            self.view.header().saveState(),
+        )
+        self.settings.sync()
+
+    @beartype
+    def report_missing_location(self, message: str) -> None:
+        logger.error(message)
+        self.statusBar().showMessage(message, 5000)
 
     @pyqtSlot(object)
     @beartype
     def open_subtree(self, node: TreeNode) -> None:
         if node.source_path is None:
-            raise ValueError(
+            self.report_missing_location(
                 f"Subtree {node.name!r} does not have a source file path")
+            return
 
         if node.line is None:
-            raise ValueError(f"Subtree {node.name!r} in {node.source_path} "
-                             "does not have a source line")
+            self.report_missing_location(
+                f"Subtree {node.name!r} in {node.source_path} "
+                "does not have a source line")
+            return
 
         file_expression = json.dumps(str(node.source_path))
         expression = (f"(progn (find-file {file_expression}) "
