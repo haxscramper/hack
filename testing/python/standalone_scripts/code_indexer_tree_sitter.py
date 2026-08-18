@@ -5,17 +5,18 @@
 #   "tree_sitter",
 #   "tree_sitter_cpp",
 #   "tree_sitter_python",
+#   "loguru",
 # ]
 # ///
 
 from __future__ import annotations
 
 import argparse
-import logging
 import subprocess
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+from loguru import logger
 
 from sqlalchemy import ForeignKey, create_engine, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
@@ -488,6 +489,15 @@ def cpp_parse_class(
     return entry
 
 
+_SEEN_TYPES = set()
+
+_CPP_PREPROC_BRANCH_TYPES = {
+    "preproc_if",
+    "preproc_ifdef",
+    "preproc_else",
+}
+
+
 def cpp_parse_scope(
     node: Node,
     source: bytes,
@@ -495,10 +505,20 @@ def cpp_parse_scope(
     qualified_prefix: list[str],
     rel_path: str,
 ) -> None:
+
     for idx, child in enumerate(node.named_children):
         child_doc = extract_leading_cpp_doc(node, idx, source)
 
         match child.type:
+            case branch if branch in _CPP_PREPROC_BRANCH_TYPES:
+                cpp_parse_scope(
+                    child,
+                    source,
+                    out,
+                    qualified_prefix,
+                    rel_path=rel_path,
+                )
+
             case "namespace_definition":
                 name_node = child.child_by_field_name("name")
                 if name_node is None:
@@ -572,11 +592,20 @@ def cpp_parse_scope(
                 if fn is not None:
                     out.append(fn)
 
-            case "preproc_def" | "comment" | "preproc_include":
+            case drop if drop in [
+                "preproc_def",
+                "comment",
+                "preproc_include",
+                "labeled_statement",
+                "return_statement",
+                "for_statement",
+            ]:
                 pass
 
             case _:
-                logging.info(f"unexpected type {child.type}")
+                if child.type not in _SEEN_TYPES:
+                    logger.warning(f"unexpected type {child.type}")
+                    _SEEN_TYPES.add(child.type)
 
 
 def python_extract_function_name(node: Node, source: bytes) -> str | None:
@@ -920,9 +949,6 @@ def create_flat_view(session: Session) -> None:
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO,
-                        format="%(asctime)s %(levelname)s %(message)s")
-
     argp = argparse.ArgumentParser()
     argp.add_argument("root", type=Path)
     argp.add_argument("--output", type=Path, required=False)
@@ -990,8 +1016,8 @@ def main() -> None:
             elapsed = time.monotonic() - start
             avg = elapsed / processed
             eta = avg * remaining
-            logging.info("[%d/%d] ETA %s %s", processed, total,
-                         format_eta(eta), rel)
+            logger.info("[{}/{}] ETA {} {}".format(processed, total,
+                                                   format_eta(eta), rel))
 
         create_flat_view(session)
         session.commit()
