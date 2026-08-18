@@ -498,81 +498,85 @@ def cpp_parse_scope(
     for idx, child in enumerate(node.named_children):
         child_doc = extract_leading_cpp_doc(node, idx, source)
 
-        if child.type == "namespace_definition":
-            name_node = child.child_by_field_name("name")
-            if name_node is None:
-                continue
-            ns_name = node_text(name_node, source).strip()
-            ns_qn = "::".join(qualified_prefix + [ns_name])
-            ns_start, ns_end = source_lines(child)
+        match child.type:
+            case "namespace_definition":
+                name_node = child.child_by_field_name("name")
+                if name_node is None:
+                    continue
+                ns_name = node_text(name_node, source).strip()
+                ns_qn = "::".join(qualified_prefix + [ns_name])
+                ns_start, ns_end = source_lines(child)
 
-            ns_entry = ParsedEntry(
-                kind="namespace",
-                name=ns_name,
-                language="cpp",
-                qualified_name=ns_qn,
-                start_line=ns_start,
-                end_line=ns_end,
-                doc=child_doc,
-                path=rel_path,
-            )
-
-            body = child.child_by_field_name("body")
-            if body is not None:
-                cpp_parse_scope(
-                    body,
-                    source,
-                    ns_entry.children,
-                    qualified_prefix + [ns_name],
-                    rel_path=rel_path,
+                ns_entry = ParsedEntry(
+                    kind="namespace",
+                    name=ns_name,
+                    language="cpp",
+                    qualified_name=ns_qn,
+                    start_line=ns_start,
+                    end_line=ns_end,
+                    doc=child_doc,
+                    path=rel_path,
                 )
 
-            out.append(ns_entry)
-            continue
+                body = child.child_by_field_name("body")
+                if body is not None:
+                    cpp_parse_scope(
+                        body,
+                        source,
+                        ns_entry.children,
+                        qualified_prefix + [ns_name],
+                        rel_path=rel_path,
+                    )
 
-        if child.type in {"class_specifier", "struct_specifier"}:
-            cls = cpp_parse_class(
-                child,
-                source,
-                qualified_prefix,
-                child_doc,
-                rel_path=rel_path,
-            )
-            if cls is not None:
-                out.append(cls)
-            continue
+                out.append(ns_entry)
 
-        if child.type == "function_definition":
-            fn = cpp_parse_function_entry(
-                child,
-                source,
-                "function",
-                qualified_prefix,
-                child_doc,
-                rel_path=rel_path,
-            )
-            if fn is not None:
-                out.append(fn)
-            continue
+            case "class_specifier" | "struct_specifier":
+                cls = cpp_parse_class(
+                    child,
+                    source,
+                    qualified_prefix,
+                    child_doc,
+                    rel_path=rel_path,
+                )
+                if cls is not None:
+                    out.append(cls)
 
-        if child.type == "declaration":
-            declarator = child.child_by_field_name("declarator")
-            if declarator is None:
-                continue
-            has_params = find_first_descendant(declarator,
-                                               {"parameter_list"}) is not None
-            if not has_params:
-                continue
-            fn = cpp_parse_function_entry(
-                child,
-                source,
-                "function",
-                qualified_prefix,
-                child_doc,
-                rel_path=rel_path,
-            )
-            if fn is not None:
-                out.append(fn)
+            case "function_definition":
+                fn = cpp_parse_function_entry(
+                    child,
+                    source,
+                    "function",
+                    qualified_prefix,
+                    child_doc,
+                    rel_path=rel_path,
+                )
+                if fn is not None:
+                    out.append(fn)
+
+            case "declaration":
+                declarator = child.child_by_field_name("declarator")
+                if declarator is None:
+                    continue
+                has_params = find_first_descendant(
+                    declarator, {"parameter_list"}) is not None
+                if not has_params:
+                    continue
+                fn = cpp_parse_function_entry(
+                    child,
+                    source,
+                    "function",
+                    qualified_prefix,
+                    child_doc,
+                    rel_path=rel_path,
+                )
+                if fn is not None:
+                    out.append(fn)
+
+            case "preproc_def" | "comment" | "preproc_include":
+                pass
+
+            case _:
+                logging.info(f"unexpected type {child.type}")
 
 
 def python_extract_function_name(node: Node, source: bytes) -> str | None:

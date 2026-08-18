@@ -210,7 +210,10 @@ def write_snapshot(snapshot: ArchiveSnapshot,
         "overwrite",
     ]
 
-    subprocess.run(command, check=True)
+    logger.info(
+        f"Running conversion for {snapshot.html_path.resolve().as_uri()}")
+
+    subprocess.run(command, check=True, timeout=300)
     return output_path, True
 
 
