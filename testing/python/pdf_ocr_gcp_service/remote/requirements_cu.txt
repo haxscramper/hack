@@ -1,0 +1,20 @@
+fastapi
+uvicorn[standard]
+python-multipart
+pydantic
+transformers<5.0.0
+accelerate
+PyMuPDF
+loguru
+Pillow
+einops
+addict
+hf_transfer
+easydict
+matplotlib
+--extra-index-url https://download.pytorch.org/whl/cu128
+torch
+torchvision
+torchaudio
+
+
