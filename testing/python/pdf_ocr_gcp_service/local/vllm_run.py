@@ -5,13 +5,15 @@ import argparse
 import asyncio
 import re
 import shlex
+import sys
 import tempfile
+import time
 from pathlib import Path
 from urllib.parse import quote
-from loguru import logger
 
-import pymupdf
 import paramiko
+import pymupdf
+from loguru import logger
 from openai import AsyncOpenAI
 from pydantic import BaseModel, Field
 
@@ -88,6 +90,7 @@ class SshConnectionArguments(BaseModel):
 
 def parse_bbox(text: str) -> OcrBBox:
     match = re.fullmatch(BBOX_RE, text.strip())
+
     if match is None:
         raise ValueError(f"Invalid bounding-box syntax: {text}")
 
@@ -105,6 +108,9 @@ def parse_bbox(text: str) -> OcrBBox:
 
 
 def parse_page_content(raw_text: str, page_number: int) -> OcrPage:
+    logger.debug(f"Parsing OCR response for page {page_number}, "
+                 f"response length is {len(raw_text)} characters")
+
     elements: list[OcrElement] = []
     occupied_ranges: list[tuple[int, int]] = []
 
@@ -129,6 +135,9 @@ def parse_page_content(raw_text: str, page_number: int) -> OcrPage:
                 text=match.group("text").strip(),
             ))
 
+    logger.info(
+        f"Parsed page {page_number}: found {len(elements)} OCR elements")
+
     return OcrPage(
         page_number=page_number,
         raw_text=raw_text,
@@ -141,7 +150,15 @@ def render_pdf_pages(
     destination: Path,
     dpi: int,
 ) -> list[Path]:
+    started_at = time.monotonic()
+
+    logger.info(f"Opening PDF file {input_pdf}")
+    logger.info(f"Input PDF size is {input_pdf.stat().st_size}")
+
     destination.mkdir(parents=True, exist_ok=True)
+
+    logger.debug(f"Rendered pages will be stored in {destination}")
+    logger.info(f"Rendering PDF pages at {dpi} DPI")
 
     page_paths: list[Path] = []
     matrix = pymupdf.Matrix(dpi / 72.0, dpi / 72.0)
@@ -150,7 +167,13 @@ def render_pdf_pages(
         if document.page_count == 0:
             raise RuntimeError(f"PDF contains no pages: {input_pdf}")
 
+        logger.info(f"PDF contains {document.page_count} pages")
+
         for page_index, page in enumerate(document, start=1):
+
+            logger.info(
+                f"Rendering page {page_index} of {document.page_count}")
+
             pixmap = page.get_pixmap(
                 matrix=matrix,
                 alpha=False,
@@ -159,6 +182,16 @@ def render_pdf_pages(
             pixmap.save(page_path.as_posix())
             page_paths.append(page_path)
 
+            file_size = page_path.stat().st_size
+
+            logger.info(f"Rendered page {page_index} to {page_path.name}, "
+                        f"dimensions are {pixmap.width} by {pixmap.height}, "
+                        f"size is {file_size}")
+    total_size = sum(path.stat().st_size for path in page_paths)
+
+    logger.info(f"Finished rendering {len(page_paths)} pages, "
+                f"total rendered size is {total_size}")
+
     return page_paths
 
 
@@ -166,11 +199,15 @@ def run_ssh_command(
     ssh: paramiko.SSHClient,
     command: str,
 ) -> str:
+    logger.debug(f"Executing remote command: {command}")
+
     _, stdout, stderr = ssh.exec_command(command)
     status = stdout.channel.recv_exit_status()
 
     output = stdout.read().decode("utf-8")
     error = stderr.read().decode("utf-8")
+
+    logger.debug(f"Remote command completed with status {status}")
 
     if status != 0:
         raise RuntimeError(f"Remote command failed with status {status}: "
@@ -179,22 +216,32 @@ def run_ssh_command(
     return output.strip()
 
 
-def create_remote_job_directory(ssh: paramiko.SSHClient, ) -> str:
-    return run_ssh_command(
+def create_remote_job_directory(ssh: paramiko.SSHClient) -> str:
+    logger.info("Creating remote OCR job directory")
+
+    remote_directory = run_ssh_command(
         ssh,
         "mkdir -p /tmp/unlimited-ocr && "
         "mktemp -d /tmp/unlimited-ocr/job.XXXXXXXXXX",
     )
+
+    logger.info(f"Created remote job directory {remote_directory}")
+
+    return remote_directory
 
 
 def remove_remote_job_directory(
     ssh: paramiko.SSHClient,
     remote_directory: str,
 ) -> None:
+    logger.info(f"Removing remote job directory {remote_directory}")
+
     run_ssh_command(
         ssh,
         f"rm -rf -- {shlex.quote(remote_directory)}",
     )
+
+    logger.info(f"Removed remote job directory {remote_directory}")
 
 
 def remote_file_url(remote_path: str) -> str:
@@ -209,7 +256,24 @@ async def recognize_page(
     max_tokens: int,
     semaphore: asyncio.Semaphore,
 ) -> OcrPage:
+    queued_at = time.monotonic()
+
+    logger.info(f"Page {page_number} is queued for OCR using {remote_path}")
+
+    if semaphore.locked():
+        logger.info(f"Page {page_number} is waiting for an available "
+                    f"OCR request slot")
+
     async with semaphore:
+        logger.info(f"Page {page_number} acquired an OCR request slot")
+        logger.info(f"Sending page {page_number} to model {model_id} "
+                    f"with a maximum of {max_tokens} generated tokens")
+        logger.debug(f"Page {page_number} image URL is "
+                     f"{remote_file_url(remote_path)}")
+        logger.info(f"Waiting for the OCR response for page {page_number}")
+
+        request_started_at = time.monotonic()
+
         response = await client.chat.completions.create(
             model=model_id,
             messages=[{
@@ -239,16 +303,36 @@ async def recognize_page(
             },
         )
 
-    raw_text = response.choices[0].message.content
+    logger.info(f"Received OCR response for page {page_number}")
+    logger.debug(f"Page {page_number} response identifier is {response.id}")
+
+    choice = response.choices[0]
+    raw_text = choice.message.content
+
+    logger.debug(f"Page {page_number} completion finish reason is "
+                 f"{choice.finish_reason}")
+
+    if response.usage is not None:
+        logger.info(f"Page {page_number} token usage: "
+                    f"{response.usage.prompt_tokens} prompt tokens, "
+                    f"{response.usage.completion_tokens} completion tokens, "
+                    f"{response.usage.total_tokens} total tokens")
 
     if raw_text is None or not raw_text.strip():
         raise RuntimeError(
             f"Model returned empty output for page {page_number}")
 
-    return parse_page_content(
+    logger.info(
+        f"Page {page_number} returned {len(raw_text)} characters of OCR text")
+
+    page = parse_page_content(
         raw_text=raw_text,
         page_number=page_number,
     )
+
+    logger.info(f"Finished OCR processing for page {page_number}")
+
+    return page
 
 
 async def process_pdf(
@@ -262,9 +346,24 @@ async def process_pdf(
     concurrency: int,
     max_tokens: int,
 ) -> None:
+    process_started_at = time.monotonic()
+
+    logger.info(f"Starting OCR processing for {input_pdf}")
+    logger.info(f"Output JSON will be written to {output_json}")
+    logger.info(f"Using vLLM endpoint {vllm_url.rstrip('/')}")
+    logger.info(f"Using model {model_id}")
+    logger.info(
+        f"Configuration: DPI is {dpi}, chunk size is {chunk_pages} pages, "
+        f"concurrency is {concurrency}, maximum tokens are {max_tokens}")
+    logger.info(f"Connecting to SSH host {ssh_arguments.user}@"
+                f"{ssh_arguments.host}:{ssh_arguments.port}")
+    logger.debug(f"Using SSH key {ssh_arguments.key_file}")
+
     ssh = paramiko.SSHClient()
     ssh.load_system_host_keys()
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+
+    ssh_started_at = time.monotonic()
 
     ssh.connect(
         hostname=ssh_arguments.host,
@@ -276,50 +375,91 @@ async def process_pdf(
         timeout=30,
     )
 
+    logger.info(f"SSH connection established")
+
     remote_job_directory: str | None = None
 
     try:
+        logger.info("Opening SFTP session")
         sftp = ssh.open_sftp()
+        logger.info("SFTP session opened")
 
         try:
             remote_job_directory = create_remote_job_directory(ssh)
 
             with tempfile.TemporaryDirectory(
                     prefix="unlimited-ocr-") as temporary_directory:
-                rendered_directory = (Path(temporary_directory) / "rendered")
+                logger.debug(
+                    f"Created local temporary directory {temporary_directory}")
+
+                rendered_directory = Path(temporary_directory) / "rendered"
                 page_files = render_pdf_pages(
                     input_pdf=input_pdf,
                     destination=rendered_directory,
                     dpi=dpi,
                 )
 
+                total_chunks = (len(page_files) + chunk_pages -
+                                1) // chunk_pages
+
+                logger.info(f"Processing {len(page_files)} pages in "
+                            f"{total_chunks} chunks")
+
                 chunks: list[OcrChunkResult] = []
                 semaphore = asyncio.Semaphore(concurrency)
+
+                logger.info("Creating vLLM OpenAI client")
 
                 async with AsyncOpenAI(
                         api_key="EMPTY",
                         base_url=vllm_url.rstrip("/"),
                         timeout=3600,
                 ) as client:
+                    logger.info("vLLM OpenAI client is ready")
+
                     for chunk_index, start in enumerate(
                             range(0, len(page_files), chunk_pages)):
+                        chunk_started_at = time.monotonic()
                         chunk = page_files[start:start + chunk_pages]
                         remote_paths: list[str] = []
+                        chunk_number = chunk_index + 1
+                        page_start = start + 1
+                        page_end = start + len(chunk)
 
                         logger.info(
-                            f"Processing pages {start + 1}-"
-                            f"{start + len(chunk)} of {len(page_files)}")
+                            f"Starting chunk {chunk_number} of {total_chunks}, "
+                            f"containing pages {page_start} through {page_end}"
+                        )
 
                         try:
-                            for page_path in chunk:
-                                remote_path = (f"{remote_job_directory}/"
-                                               f"{page_path.name}")
+                            for index, page_path in enumerate(chunk, start=1):
+                                remote_path = (
+                                    f"{remote_job_directory}/{page_path.name}")
+                                file_size = page_path.stat().st_size
+
+                                logger.info(f"Uploading page {start + index} "
+                                            f"for chunk {chunk_number}: "
+                                            f"{page_path.name}, "
+                                            f"size is {file_size}")
+
                                 sftp.put(
                                     str(page_path),
                                     remote_path,
                                     confirm=True,
                                 )
                                 remote_paths.append(remote_path)
+
+                                logger.info(
+                                    f"Uploaded page {start + index} to "
+                                    f"{remote_path}")
+
+                            logger.info(
+                                f"All {len(remote_paths)} files for chunk "
+                                f"{chunk_number} are uploaded")
+                            logger.info(
+                                f"Submitting {len(remote_paths)} OCR requests "
+                                f"for chunk {chunk_number} with concurrency "
+                                f"limited to {concurrency}")
 
                             pages = await asyncio.gather(*(recognize_page(
                                 client=client,
@@ -330,22 +470,41 @@ async def process_pdf(
                                 semaphore=semaphore,
                             ) for index, remote_path in enumerate(remote_paths)
                                                            ))
+
+                            logger.info(f"Received all OCR results for chunk "
+                                        f"{chunk_number}")
                         finally:
+                            if remote_paths:
+                                logger.info(
+                                    f"Removing {len(remote_paths)} uploaded "
+                                    f"files for chunk {chunk_number}")
+
                             for remote_path in remote_paths:
                                 try:
+                                    logger.debug(
+                                        f"Removing remote file {remote_path}")
                                     sftp.remove(remote_path)
+                                    logger.debug(
+                                        f"Removed remote file {remote_path}")
                                 except FileNotFoundError:
-                                    pass
+                                    logger.warning(
+                                        f"Remote file was already absent: "
+                                        f"{remote_path}")
 
                         chunks.append(
                             OcrChunkResult(
                                 chunk_index=chunk_index,
-                                page_start=start + 1,
-                                page_end=start + len(chunk),
+                                page_start=page_start,
+                                page_end=page_end,
                                 raw_text="<PAGE>".join(page.raw_text
                                                        for page in pages),
                                 pages=pages,
                             ))
+
+                        logger.info(
+                            f"Finished chunk {chunk_number} of {total_chunks}")
+
+                logger.info(f"Building final result from {len(chunks)} chunks")
 
                 result = OcrDocumentResult(
                     source_file=str(input_pdf.resolve()),
@@ -353,16 +512,33 @@ async def process_pdf(
                     chunks=chunks,
                 )
 
+                logger.info(f"Creating output directory {output_json.parent}")
+
                 output_json.parent.mkdir(
                     parents=True,
                     exist_ok=True,
                 )
+
+                logger.info(f"Serializing OCR result to {output_json}")
+
+                serialized_result = result.model_dump_json(indent=2)
+
+                logger.info(
+                    f"Writing {len(serialized_result.encode('utf-8'))} "
+                    f"of JSON output")
+
                 output_json.write_text(
-                    result.model_dump_json(indent=2),
+                    serialized_result,
                     encoding="utf-8",
                 )
+
+                logger.info(f"Wrote OCR result to {output_json}, "
+                            f"file size is "
+                            f"{output_json.stat().st_size}")
         finally:
+            logger.info("Closing SFTP session")
             sftp.close()
+            logger.info("SFTP session closed")
     finally:
         if remote_job_directory is not None:
             remove_remote_job_directory(
@@ -370,7 +546,11 @@ async def process_pdf(
                 remote_job_directory,
             )
 
+        logger.info("Closing SSH connection")
         ssh.close()
+        logger.info("SSH connection closed")
+
+    logger.info(f"Completed OCR processing for {input_pdf}")
 
 
 def positive_integer(value: str) -> int:
@@ -442,21 +622,21 @@ def parse_arguments() -> argparse.Namespace:
         "--chunk-pages",
         default=DEFAULT_CHUNK_PAGES,
         type=positive_integer,
-        help=("Number of rendered pages uploaded per chunk; "
+        help=(f"Number of rendered pages uploaded per chunk; "
               f"default: {DEFAULT_CHUNK_PAGES}"),
     )
     parser.add_argument(
         "--concurrency",
         default=DEFAULT_CONCURRENCY,
         type=positive_integer,
-        help=("Maximum concurrent vLLM requests; "
+        help=(f"Maximum concurrent vLLM requests; "
               f"default: {DEFAULT_CONCURRENCY}"),
     )
     parser.add_argument(
         "--max-tokens",
         default=DEFAULT_MAX_TOKENS,
         type=positive_integer,
-        help=("Maximum generated tokens per page; "
+        help=(f"Maximum generated tokens per page; "
               f"default: {DEFAULT_MAX_TOKENS}"),
     )
 
@@ -478,7 +658,20 @@ def parse_arguments() -> argparse.Namespace:
 
 
 def main() -> None:
+    logger.info("Unlimited-OCR PDF processor started")
+
     arguments = parse_arguments()
+
+    logger.debug(f"Input argument is {arguments.input}")
+    logger.debug(f"Output argument is {arguments.output}")
+    logger.debug(f"vLLM URL argument is {arguments.vllm_url}")
+    logger.debug(f"SSH destination is {arguments.ssh_user}@"
+                 f"{arguments.ssh_host}:{arguments.ssh_port}")
+    logger.debug(f"Model argument is {arguments.model}")
+    logger.debug(f"DPI argument is {arguments.dpi}")
+    logger.debug(f"Chunk pages argument is {arguments.chunk_pages}")
+    logger.debug(f"Concurrency argument is {arguments.concurrency}")
+    logger.debug(f"Maximum tokens argument is {arguments.max_tokens}")
 
     ssh_arguments = SshConnectionArguments(
         host=arguments.ssh_host,
@@ -487,18 +680,24 @@ def main() -> None:
         key_file=arguments.ssh_key,
     )
 
-    asyncio.run(
-        process_pdf(
-            input_pdf=arguments.input,
-            output_json=arguments.output,
-            vllm_url=arguments.vllm_url,
-            ssh_arguments=ssh_arguments,
-            model_id=arguments.model,
-            dpi=arguments.dpi,
-            chunk_pages=arguments.chunk_pages,
-            concurrency=arguments.concurrency,
-            max_tokens=arguments.max_tokens,
-        ))
+    try:
+        asyncio.run(
+            process_pdf(
+                input_pdf=arguments.input,
+                output_json=arguments.output,
+                vllm_url=arguments.vllm_url,
+                ssh_arguments=ssh_arguments,
+                model_id=arguments.model,
+                dpi=arguments.dpi,
+                chunk_pages=arguments.chunk_pages,
+                concurrency=arguments.concurrency,
+                max_tokens=arguments.max_tokens,
+            ))
+    except Exception:
+        logger.exception("OCR processing failed")
+        raise
+
+    logger.info("Unlimited-OCR PDF processor finished successfully")
 
 
 if __name__ == "__main__":
