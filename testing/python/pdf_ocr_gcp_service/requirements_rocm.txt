@@ -3,6 +3,7 @@ uvicorn[standard]
 python-multipart
 pydantic
 transformers<5.0.0
+openai
 accelerate
 PyMuPDF
 loguru
@@ -12,6 +13,7 @@ addict
 hf_transfer
 easydict
 matplotlib
+paramiko
 --extra-index-url https://download.pytorch.org/whl/rocm7.2
 torch
 torchvision

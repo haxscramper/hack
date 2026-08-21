@@ -1,0 +1,10 @@
+
+run_vllm_script:
+  uv run --no-project local/vllm_run.py \
+    --input /tmp/input.pdf \
+    --output /tmp/result.json \
+    --vllm-url "$RUNPOD_VLLM_URL" \
+    --ssh-host "$RUNPOD_SSH_HOST" \
+    --ssh-port "$RUNPOD_SSH_PORT" \
+    --ssh-user "$RUNPOD_SSH_USER" \
+    --ssh-key "$RUNPOD_SSH_KEY"
