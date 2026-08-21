@@ -1,8 +1,8 @@
 
-run_vllm_script:
+run_vllm_script infile outfile:
   uv run --no-project local/vllm_run.py \
-    --input /tmp/input.pdf \
-    --output /tmp/result.json \
+    --input {{infile}} \
+    --output {{outfile}} \
     --vllm-url "$RUNPOD_VLLM_URL" \
     --ssh-host "$RUNPOD_SSH_HOST" \
     --ssh-port "$RUNPOD_SSH_PORT" \
