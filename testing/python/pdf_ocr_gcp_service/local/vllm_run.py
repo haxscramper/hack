@@ -19,10 +19,10 @@ from openai import AsyncOpenAI
 from pydantic import BaseModel, Field
 
 DEFAULT_MODEL_ID = "baidu/Unlimited-OCR"
-DEFAULT_CHUNK_PAGES = 16
-DEFAULT_CONCURRENCY = 4
+DEFAULT_CHUNK_PAGES = 8
+DEFAULT_CONCURRENCY = 12
 DEFAULT_DPI = 150
-DEFAULT_MAX_TOKENS = 32768
+DEFAULT_MAX_TOKENS = 8192
 DEFAULT_RASTER_THREADS = os.cpu_count() or 1
 
 BBOX_RE = re.compile(r"\[\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\]")
@@ -274,25 +274,32 @@ def remote_file_url(remote_path: str) -> str:
     return f"file://{quote(remote_path, safe='/')}"
 
 
-def upload_pages(
+async def upload_pages(
     sftp: paramiko.SFTPClient,
     page_files: list[Path],
     remote_job_directory: str,
 ) -> list[str]:
-    remote_paths: list[str] = []
+    loop = asyncio.get_running_loop()
 
-    for page_path in page_files:
+    async def upload_one(page_idx: int, page_path: Path) -> str:
         remote_path = f"{remote_job_directory}/{page_path.name}"
-
-        sftp.put(
+        await loop.run_in_executor(
+            None,
+            sftp.put,
             str(page_path),
             remote_path,
-            confirm=True,
+            True,
         )
-        remote_paths.append(remote_path)
+        logger.debug(f"upload {page_idx}/{len(page_files)}")
+        return remote_path
 
-    logger.info(f"Uploaded {len(remote_paths)} rendered pages "
-                f"to {remote_job_directory}")
+    remote_paths = await asyncio.gather(
+        *(upload_one(page_idx, page_path)
+          for page_idx, page_path in enumerate(page_files)))
+
+    logger.info(
+        f"Uploaded {len(remote_paths)} rendered pages to {remote_job_directory}"
+    )
 
     return remote_paths
 
@@ -505,7 +512,7 @@ async def process_pdf(
             sftp = ssh.open_sftp()
 
             try:
-                remote_paths = upload_pages(
+                remote_paths = await upload_pages(
                     sftp=sftp,
                     page_files=page_files,
                     remote_job_directory=remote_job_directory,
