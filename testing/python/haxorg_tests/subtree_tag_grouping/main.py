@@ -33,30 +33,8 @@ def tag_matches(tag_paths: list[list[str]], query: list[str]) -> bool:
 
 @beartype
 def extract_subtree(subtree: proto.Subtree, now: datetime) -> _SubtreeFacts:
-    tag_paths: list[list[str]] = []
-    for tag in subtree.tags:
-        tag_paths.extend(expand_hashtag(tag.text))
-
-    clocked, last_clocked = clock_stats(subtree.logbook)
-
-    scheduled = user_time_to_datetime(subtree.scheduled)
-    delta = int((scheduled - now).total_seconds()) if scheduled else None
-
-    summary = SubtreeSummary(
-        title=paragraph_text(subtree.title),
-        clocked_seconds=clocked,
-        created=extract_created(subtree.properties),
-        deadline=to_iso(subtree.deadline),
-        closed=to_iso(subtree.closed),
-        tags=tag_paths,
-        last_clocked=last_clocked,
-        todo=subtree.todo or None,
-        effort_minutes=extract_effort(subtree.properties),
-        priority=subtree.priority or None,
-        scheduled=scheduled.isoformat() if scheduled else None,
-        scheduled_delta_seconds=delta,
-    )
-    return _SubtreeFacts(summary=summary, tag_paths=tag_paths)
+    summary = extract_subtree_summary(subtree, now)
+    return _SubtreeFacts(summary=summary, tag_paths=summary.tag_paths)
 
 
 @beartype

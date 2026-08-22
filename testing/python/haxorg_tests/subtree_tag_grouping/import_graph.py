@@ -9,56 +9,46 @@ import igraph
 from beartype import beartype
 from beartype.typing import Iterable
 from google.protobuf import descriptor_pool, message_factory
+import betterproto2
+
 from gen.google.protobuf import Any as GeneratedAny
-from google.protobuf.any_pb2 import Any as ProtobufAny
-from google.protobuf.message import Message
-from google.protobuf.text_format import MessageToString
+from gen.message_pool import default_message_pool
 from loguru import logger
 
 import gen.orgproto as orgproto
 import gen.org.graph.proto as org_graph
 import gen.hstd.ext.graph.proto as hstd_graph
+from datetime import datetime
+
+from dominate.tags import table, td, tr
+
+from utils import extract_subtree_summary
 
 
 @beartype
 def unpack_payload(
     payload: GeneratedAny | None,
     owner: str,
-) -> Message | None:
+) -> betterproto2.Message | None:
     if payload is None or payload.type_url == "":
         return None
 
-    protobuf_payload = ProtobufAny(
-        type_url=payload.type_url,
-        value=payload.value,
-    )
-    message_name = protobuf_payload.TypeName()
+    message_type = default_message_pool.url_to_type.get(payload.type_url)
 
-    try:
-        descriptor = descriptor_pool.Default().FindMessageTypeByName(
-            message_name)
-    except KeyError as exception:
+    if message_type is None:
         raise ValueError(
             f"Cannot unpack payload for {owner}: protobuf message "
-            f"'{message_name}' from '{payload.type_url}' is not registered"
-        ) from exception
+            f"'{payload.type_url}' is not registered in the betterproto2 "
+            "default message pool")
 
-    message_type = message_factory.GetMessageClass(descriptor)
-    message = message_type()
-
-    if not protobuf_payload.Unpack(message):
-        raise ValueError(
-            f"Cannot unpack payload for {owner}: '{payload.type_url}' could "
-            f"not be unpacked as '{message_name}'")
-
-    return message
+    return message_type().parse(payload.value)
 
 
 @beartype
 def unpack_attributes(
     attributes: Iterable[hstd_graph.IAttribute],
     owner: str,
-) -> list[Message | None]:
+) -> list[betterproto2.Message | None]:
     return [
         unpack_payload(attribute.payload,
                        f"{owner} attribute '{attribute.type}'")
@@ -146,30 +136,102 @@ def build_igraph(graph_proto: hstd_graph.IGraphProto) -> igraph.Graph:
 
 
 @beartype
-def payload_label(payload: Message | None) -> str:
+def payload_label(payload: betterproto2.Message | None) -> str:
     if payload is None:
         return ""
 
-    return MessageToString(payload).rstrip()
+    return payload.to_json(indent=2)
 
 
 @beartype
-def build_graphviz(graph: igraph.Graph) -> graphviz.Digraph:
+def subtree_html_label(
+    stable_id: str,
+    subtree: orgproto.Subtree,
+    now: datetime,
+) -> str:
+    summary = extract_subtree_summary(subtree, now)
+    tags = ", ".join("/".join(path) for path in summary.tags)
+
+    rows: list[tuple[str, str | None]] = [
+        ("ID", stable_id),
+        ("TODO", summary.todo),
+        ("Tags", tags if tags != "" else None),
+        ("Priority", summary.priority),
+        ("Created", summary.created),
+        ("Scheduled", summary.scheduled),
+        (
+            "Scheduled delta",
+            str(summary.scheduled_delta_seconds)
+            if summary.scheduled_delta_seconds is not None else None,
+        ),
+        ("Deadline", summary.deadline),
+        ("Closed", summary.closed),
+        ("Last clocked", summary.last_clocked),
+        ("Clocked seconds", str(summary.clocked_seconds)),
+        (
+            "Effort minutes",
+            str(summary.effort_minutes)
+            if summary.effort_minutes is not None else None,
+        ),
+    ]
+
+    label_table = table(
+        border="0",
+        cellborder="1",
+        cellspacing="0",
+        cellpadding="4",
+    )
+
+    with label_table:
+        with tr():
+            td(summary.title, colspan="2", align="left")
+
+        for name, value in rows:
+            if value is not None:
+                with tr():
+                    td(name, align="left")
+                    td(value, align="left")
+
+    return "".join(("<", label_table.render(), ">"))
+
+
+@beartype
+def vertex_label(
+    vertex: igraph.Vertex,
+    now: datetime,
+) -> str:
+    payload = vertex["payload"]
+
+    match payload:
+        case org_graph.MapNodePayload(node=node) if node is not None:
+            kind, node_value = betterproto2.which_one_of(node, "kind")
+
+            if kind == "subtree":
+                return subtree_html_label(
+                    vertex["stable_id"],
+                    node_value,
+                    now,
+                )
+
+        case _:
+            pass
+
+    return vertex["stable_id"]
+
+
+@beartype
+def build_graphviz(
+    graph: igraph.Graph,
+    now: datetime,
+) -> graphviz.Digraph:
     result = graphviz.Digraph("content")
     result.attr(rankdir="LR")
     result.attr("node", shape="rect")
 
     for vertex in graph.vs:
-        label_parts = [vertex["stable_id"]]
-        payload_text = payload_label(vertex["payload"])
-
-        if payload_text != "":
-            label_parts.append(payload_text)
-
-        result.node(
-            vertex["stable_id"],
-            label="\n".join(label_parts),
-        )
+        result.node(vertex["stable_id"],
+                    # label=vertex_label(vertex, now),
+                    )
 
     for edge in graph.es:
         source = graph.vs[edge.source]["stable_id"]
@@ -218,7 +280,11 @@ def main(input_path: Path, output_path: Path) -> None:
 
     graph_proto = load_graph(input_path)
     graph = build_igraph(graph_proto)
-    visualization = build_graphviz(graph)
+    visualization = build_graphviz(
+        graph,
+        datetime.now().astimezone(),
+    )
+
     output_path.write_bytes(visualization.pipe(format=output_format))
 
     logger.info(

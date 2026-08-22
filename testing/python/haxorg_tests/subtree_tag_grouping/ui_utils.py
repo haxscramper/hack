@@ -88,32 +88,6 @@ HEADERS = [
 
 
 @beartype
-def extract_subtree(subtree: proto.Subtree, now: datetime) -> SubtreeSummary:
-    tag_paths: list[list[str]] = []
-    for tag in subtree.tags:
-        tag_paths.extend(expand_hashtag(tag.text))
-
-    clocked, last_clocked = clock_stats(subtree.logbook)
-    scheduled = user_time_to_datetime(subtree.scheduled)
-    delta = int((scheduled - now).total_seconds()) if scheduled else None
-
-    return SubtreeSummary(
-        title=paragraph_text(subtree.title),
-        clocked_seconds=clocked,
-        created=extract_created(subtree.properties),
-        deadline=to_iso(subtree.deadline),
-        closed=to_iso(subtree.closed),
-        tags=tag_paths,
-        last_clocked=last_clocked,
-        todo=subtree.todo or None,
-        effort_minutes=extract_effort(subtree.properties),
-        priority=subtree.priority or None,
-        scheduled=scheduled.isoformat() if scheduled else None,
-        scheduled_delta_seconds=delta,
-    )
-
-
-@beartype
 def location_line(value: Any) -> Optional[int]:
     location = getattr(value, "loc", None)
     return location.line if location is not None else None
@@ -183,7 +157,7 @@ def append_nodes(
                 append_nodes(nested, entry, file_path, now)
 
         case proto.Subtree():
-            summary = extract_subtree(value, now)
+            summary = extract_subtree_summary(value, now)
             line = location_line(value)
             column = location_column(value)
             identity = (f"{container.identity}/subtree:{source_path}:"

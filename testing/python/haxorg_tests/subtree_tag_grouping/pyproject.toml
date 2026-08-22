@@ -8,6 +8,7 @@ dependencies = [
     "beartype>=0.22.9",
     "betterproto2[compiler]>=0.10.0",
     "click>=8.4.2",
+    "dominate>=2.9.1",
     "graphviz>=0.21",
     "grpcio-tools>=1.83.0",
     "igraph>=1.0.0",

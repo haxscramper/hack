@@ -70,6 +70,15 @@ wheels = [
 ]
 
 [[package]]
+name = "dominate"
+version = "2.9.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/fb/f3/1c8088ff19a0fcd9c3234802a0ee47006ea64bd8852f1019194f0e3583ff/dominate-2.9.1.tar.gz", hash = "sha256:558284687d9b8aae1904e3d6051ad132dd4a8c0cf551b37ea4e7e42a31d19dc4", size = 37715, upload-time = "2023-12-24T20:45:19.192Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/58/19/0380af745f151a1648657bbcef0fb49ac28bf09083d94498163ffd9b32dc/dominate-2.9.1-py2.py3-none-any.whl", hash = "sha256:cb7b6b79d33b15ae0a6e87856b984879927c7c2ebb29522df4c75b28ffd9b989", size = 29976, upload-time = "2023-12-24T20:45:17.154Z" },
+]
+
+[[package]]
 name = "graphviz"
 version = "0.21"
 source = { registry = "https://pypi.org/simple" }
@@ -445,6 +454,7 @@ dependencies = [
     { name = "beartype" },
     { name = "betterproto2" },
     { name = "click" },
+    { name = "dominate" },
     { name = "graphviz" },
     { name = "grpcio-tools" },
     { name = "igraph" },
@@ -465,6 +475,7 @@ requires-dist = [
     { name = "beartype", specifier = ">=0.22.9" },
     { name = "betterproto2", extras = ["compiler"], specifier = ">=0.10.0" },
     { name = "click", specifier = ">=8.4.2" },
+    { name = "dominate", specifier = ">=2.9.1" },
     { name = "graphviz", specifier = ">=0.21" },
     { name = "grpcio-tools", specifier = ">=1.83.0" },
     { name = "igraph", specifier = ">=1.0.0" },
