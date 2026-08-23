@@ -1,5 +1,6 @@
-
-
 - run the project :: ~uv run --no-project uvicorn main:app --host 0.0.0.0 --port 8080 --workers 1~
 - install requirements for rocm or cuda :: ~uv pip install -r requirements_rocm.txt~
 
+* dev notes
+
+- `vllm_run.py` works, but the L4 does not provide enough speed for the PDF processing: 237 pages in 25 minutes with one image per request. Trying to send multiple images per page either hangs vLLM, or it becomes unreasonably slow. 
