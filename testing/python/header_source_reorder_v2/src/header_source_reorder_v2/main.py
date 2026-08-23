@@ -103,66 +103,94 @@ def header_ranks(entries: Sequence[HeaderEntry]) -> dict[str, int]:
 
 
 @beartype
+def align_mismatch(
+    header_text: str,
+    source_text: str,
+) -> tuple[str, str]:
+    matcher = SequenceMatcher(
+        None,
+        header_text,
+        source_text,
+        autojunk=False,
+    )
+    aligned_header: list[str] = []
+    aligned_source: list[str] = []
+
+    for operation, header_start, header_end, source_start, source_end in (
+            matcher.get_opcodes()):
+        header_fragment = header_text[header_start:header_end]
+        source_fragment = source_text[source_start:source_end]
+
+        if operation == "equal":
+            aligned_header.append(header_fragment)
+            aligned_source.append(source_fragment)
+        elif operation == "delete":
+            aligned_header.append(header_fragment)
+            aligned_source.append(" " * len(header_fragment))
+        elif operation == "insert":
+            aligned_header.append(" " * len(source_fragment))
+            aligned_source.append(source_fragment)
+        else:
+            width = max(len(header_fragment), len(source_fragment))
+            aligned_header.append(header_fragment.ljust(width))
+            aligned_source.append(source_fragment.ljust(width))
+
+    return "".join(aligned_header), "".join(aligned_source)
+
+
+@beartype
 def render_assumed_mismatch(
     source_name: QualifiedName,
     header_name: QualifiedName,
+    header_line: int,
+    source_path: Path,
+    source_line: int,
+    header_path: Path,
 ) -> str:
-    details: list[str] = []
+    parameter_mismatches = [
+        (index, source_parameter, header_parameter)
+        for index, (source_parameter, header_parameter) in enumerate(
+            zip(source_name.parameters, header_name.parameters),
+            start=1,
+        ) if source_parameter.canonical() != header_parameter.canonical()
+    ]
 
-    for index, (source_parameter,
-                header_parameter) in enumerate(zip(source_name.parameters,
-                                                   header_name.parameters),
-                                               start=1):
-        source_type = source_parameter.canonical()
-        header_type = header_parameter.canonical()
+    rendered: list[str] = []
 
-        if source_type == header_type:
-            continue
-
-        matcher = SequenceMatcher(
-            None,
-            source_type,
-            header_type,
-            autojunk=False,
+    for index, source_parameter, header_parameter in parameter_mismatches:
+        aligned_header, aligned_source = align_mismatch(
+            header_parameter.canonical(),
+            source_parameter.canonical(),
         )
+        title = ("Argument mismatch:" if len(parameter_mismatches) == 1 else
+                 f"Argument {index} mismatch:")
+        rendered.extend([
+            title,
+            f"  header: {aligned_header} on {header_path}:{header_line}",
+            f"  source: {aligned_source} on {source_path}:{source_line}",
+        ])
 
-        for operation, source_start, source_end, header_start, header_end in (
-                matcher.get_opcodes()):
-            if operation == "equal":
-                continue
+    if rendered:
+        return "\n".join(rendered)
 
-            source_fragment = source_type[source_start:source_end].strip()
-            header_fragment = header_type[header_start:header_end].strip()
+    header_scope = " :: ".join([
+        *header_name.parent_scopes,
+        header_name.name,
+    ])
+    source_scope = " :: ".join([
+        *source_name.parent_scopes,
+        source_name.name,
+    ])
+    aligned_header, aligned_source = align_mismatch(
+        header_scope,
+        source_scope,
+    )
 
-            if operation == "insert":
-                remainder = header_type[header_end:]
-                next_name = re.search(r"[A-Za-z_]\w*", remainder)
-                location = (f" before `{next_name.group(0)}`"
-                            if next_name is not None else "")
-                details.append(f"argument {index}: source is missing "
-                               f"`{header_fragment}`{location}")
-            elif operation == "delete":
-                details.append(f"argument {index}: source has unexpected "
-                               f"`{source_fragment}`")
-            else:
-                details.append(
-                    f"argument {index}: source has `{source_fragment}`, "
-                    f"header expects `{header_fragment}`")
-
-    if source_name.qualifiers != header_name.qualifiers:
-        source_qualifiers = ",".join(
-            sorted(qualifier.value for qualifier in source_name.qualifiers))
-        header_qualifiers = ",".join(
-            sorted(qualifier.value for qualifier in header_name.qualifiers))
-        details.append(
-            f"method qualifiers: source has `[{source_qualifiers}]`, "
-            f"header expects `[{header_qualifiers}]`")
-
-    if not details:
-        details.append(f"qualified scope: source has `{source_name.path()}`, "
-                       f"header expects `{header_name.path()}`")
-
-    return "; ".join(details)
+    return "\n".join([
+        "Missing qualified scope:",
+        f"  header: {aligned_header} on {header_path}:{header_line}",
+        f"  source: {aligned_source} on {source_path}:{source_line}",
+    ])
 
 
 @beartype
@@ -170,6 +198,7 @@ def warn_missing_header_methods(
     source_path: Path,
     entries: Sequence[HeaderEntry],
     definitions: Sequence[SourceBlock],
+    header_path: Path,
 ) -> None:
     methods = [
         entry for entry in entries if entry.kind == HeaderEntryKind.METHOD
@@ -220,13 +249,18 @@ def warn_missing_header_methods(
             ).ratio(),
         )
         assumed_name = assumed_entry.qualified_name
-        mismatch = render_assumed_mismatch(source_name, assumed_name)
 
-        logger.warning(f"{source_path}:{block.start_line}-{block.end_line}: "
-                       f"{source_name.signature()} has no exact header match; "
-                       f"possible declaration: {assumed_name.signature()} "
-                       f"at header line {assumed_entry.line}\n"
-                       f"Assumed mismatch: {mismatch}")
+        mismatch = render_assumed_mismatch(
+            source_name=source_name,
+            header_name=assumed_name,
+            header_line=assumed_entry.line,
+            source_path=source_path,
+            source_line=block.start_line,
+            header_path=header_path,
+        )
+
+        logger.warning(f"Could not match {source_name.signature()}\n\n"
+                       f"{mismatch}")
 
 
 @beartype
@@ -384,6 +418,7 @@ def main() -> int:
         arguments.source,
         entries,
         definitions,
+        header_path=Path(arguments.header),
     )
 
     ranks = header_ranks(entries)
