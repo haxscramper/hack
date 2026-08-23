@@ -20,9 +20,10 @@ import gen.org.graph.proto as org_graph
 import gen.hstd.ext.graph.proto as hstd_graph
 from datetime import datetime
 
+from dominate.util import raw
 from dominate.tags import table, td, tr
 
-from utils import extract_subtree_summary
+from utils import extract_subtree_summary, paragraph_text
 
 
 @beartype
@@ -192,7 +193,39 @@ def subtree_html_label(
                     td(name, align="left")
                     td(value, align="left")
 
-    return "".join(("<", label_table.render(), ">"))
+    result = "".join(("<", label_table.render(), ">"))
+    logger.trace(result)
+    return result
+
+
+@beartype
+def paragraph_html_label(
+    stable_id: str,
+    par: orgproto.Paragraph,
+) -> str:
+    import textwrap
+
+    text = "<BR ALIGN=\"LEFT\"/>".join(
+        textwrap.wrap(paragraph_text(par), width=70))
+
+    label_table = table(
+        border="0",
+        cellborder="1",
+        cellspacing="0",
+        cellpadding="4",
+    )
+
+    with label_table:
+        with tr():
+            td("ID", align="left")
+            td(stable_id, align="left")
+
+        with tr():
+            td(raw(text), colspan="2", align="left")
+
+    result = "".join(("<", label_table.render(), ">"))
+    logger.trace(result)
+    return result
 
 
 @beartype
@@ -213,6 +246,16 @@ def vertex_label(
                     now,
                 )
 
+            elif kind == "paragraph":
+                return paragraph_html_label(vertex["stable_id"], node_value)
+
+            else:
+                logger.warning(
+                    f"Unhandled top-level payload node kind '{kind}'")
+
+        case org_graph.MapNodePayload(node=node) if node is None:
+            logger.warning("Empty map node payload")
+
         case _:
             pass
 
@@ -229,9 +272,10 @@ def build_graphviz(
     result.attr("node", shape="rect")
 
     for vertex in graph.vs:
-        result.node(vertex["stable_id"],
-                    # label=vertex_label(vertex, now),
-                    )
+        result.node(
+            vertex["stable_id"],
+            label=vertex_label(vertex, now),
+        )
 
     for edge in graph.es:
         source = graph.vs[edge.source]["stable_id"]
@@ -239,7 +283,7 @@ def build_graphviz(
         result.edge(
             source,
             target,
-            label=edge["stable_id"],
+            # label=edge["stable_id"],
         )
 
     return result
