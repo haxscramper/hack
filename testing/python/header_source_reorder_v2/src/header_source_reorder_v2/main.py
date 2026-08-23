@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from difflib import SequenceMatcher
 import json
 import re
 import sys
@@ -19,7 +20,7 @@ from tree_sitter import Language, Node, Parser, Tree
 from header_source_reorder_v2.common_parse import format_tree
 from header_source_reorder_v2.extract_header_entries import header_entries
 from header_source_reorder_v2.extract_source_entries import source_definition_blocks
-from header_source_reorder_v2.models import HeaderEntry, HeaderEntryKind, SortMismatch, SortResult, SourceBlock, SourceBlockKind, SourceContext
+from header_source_reorder_v2.models import HeaderEntry, HeaderEntryKind, QualifiedName, SortMismatch, SortResult, SourceBlock, SourceBlockKind, SourceContext
 
 
 @beartype
@@ -102,6 +103,69 @@ def header_ranks(entries: Sequence[HeaderEntry]) -> dict[str, int]:
 
 
 @beartype
+def render_assumed_mismatch(
+    source_name: QualifiedName,
+    header_name: QualifiedName,
+) -> str:
+    details: list[str] = []
+
+    for index, (source_parameter,
+                header_parameter) in enumerate(zip(source_name.parameters,
+                                                   header_name.parameters),
+                                               start=1):
+        source_type = source_parameter.canonical()
+        header_type = header_parameter.canonical()
+
+        if source_type == header_type:
+            continue
+
+        matcher = SequenceMatcher(
+            None,
+            source_type,
+            header_type,
+            autojunk=False,
+        )
+
+        for operation, source_start, source_end, header_start, header_end in (
+                matcher.get_opcodes()):
+            if operation == "equal":
+                continue
+
+            source_fragment = source_type[source_start:source_end].strip()
+            header_fragment = header_type[header_start:header_end].strip()
+
+            if operation == "insert":
+                remainder = header_type[header_end:]
+                next_name = re.search(r"[A-Za-z_]\w*", remainder)
+                location = (f" before `{next_name.group(0)}`"
+                            if next_name is not None else "")
+                details.append(f"argument {index}: source is missing "
+                               f"`{header_fragment}`{location}")
+            elif operation == "delete":
+                details.append(f"argument {index}: source has unexpected "
+                               f"`{source_fragment}`")
+            else:
+                details.append(
+                    f"argument {index}: source has `{source_fragment}`, "
+                    f"header expects `{header_fragment}`")
+
+    if source_name.qualifiers != header_name.qualifiers:
+        source_qualifiers = ",".join(
+            sorted(qualifier.value for qualifier in source_name.qualifiers))
+        header_qualifiers = ",".join(
+            sorted(qualifier.value for qualifier in header_name.qualifiers))
+        details.append(
+            f"method qualifiers: source has `[{source_qualifiers}]`, "
+            f"header expects `[{header_qualifiers}]`")
+
+    if not details:
+        details.append(f"qualified scope: source has `{source_name.path()}`, "
+                       f"header expects `{header_name.path()}`")
+
+    return "; ".join(details)
+
+
+@beartype
 def warn_missing_header_methods(
     source_path: Path,
     entries: Sequence[HeaderEntry],
@@ -146,12 +210,23 @@ def warn_missing_header_methods(
         if not candidates:
             continue
 
-        candidate_text = "; ".join(
-            f"{entry.qualified_name.signature()} at header line {entry.line}"
-            for entry in candidates)
+        assumed_entry = max(
+            candidates,
+            key=lambda entry: SequenceMatcher(
+                None,
+                source_name.signature(),
+                entry.qualified_name.signature(),
+                autojunk=False,
+            ).ratio(),
+        )
+        assumed_name = assumed_entry.qualified_name
+        mismatch = render_assumed_mismatch(source_name, assumed_name)
+
         logger.warning(f"{source_path}:{block.start_line}-{block.end_line}: "
                        f"{source_name.signature()} has no exact header match; "
-                       f"possible declaration: {candidate_text}")
+                       f"possible declaration: {assumed_name.signature()} "
+                       f"at header line {assumed_entry.line}\n"
+                       f"Assumed mismatch: {mismatch}")
 
 
 @beartype
