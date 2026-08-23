@@ -102,6 +102,59 @@ def header_ranks(entries: Sequence[HeaderEntry]) -> dict[str, int]:
 
 
 @beartype
+def warn_missing_header_methods(
+    source_path: Path,
+    entries: Sequence[HeaderEntry],
+    definitions: Sequence[SourceBlock],
+) -> None:
+    methods = [
+        entry for entry in entries if entry.kind == HeaderEntryKind.METHOD
+    ]
+    header_signatures = {entry.qualified_name.signature() for entry in methods}
+
+    for block in definitions:
+        source_name = block.qualified_name
+
+        if source_name is None:
+            continue
+
+        if source_name.signature() in header_signatures:
+            continue
+
+        candidates: list[HeaderEntry] = []
+
+        for entry in methods:
+            header_name = entry.qualified_name
+
+            if header_name.name != source_name.name:
+                continue
+
+            if len(header_name.parameters) != len(source_name.parameters):
+                continue
+
+            source_scopes = source_name.parent_scopes
+            header_scopes = header_name.parent_scopes
+
+            if len(source_scopes) > len(header_scopes):
+                continue
+
+            if header_scopes[-len(source_scopes):] != source_scopes:
+                continue
+
+            candidates.append(entry)
+
+        if not candidates:
+            continue
+
+        candidate_text = "; ".join(
+            f"{entry.qualified_name.signature()} at header line {entry.line}"
+            for entry in candidates)
+        logger.warning(f"{source_path}:{block.start_line}-{block.end_line}: "
+                       f"{source_name.signature()} has no exact header match; "
+                       f"possible declaration: {candidate_text}")
+
+
+@beartype
 def sort_source(
     source: bytes,
     definitions: Sequence[SourceBlock],
@@ -250,8 +303,15 @@ def main() -> int:
     source, source_tree = parse_file(parser, arguments.source)
 
     entries = header_entries(header_source, header_tree)
-    ranks = header_ranks(entries)
     definitions = source_definition_blocks(source, source_tree)
+
+    warn_missing_header_methods(
+        arguments.source,
+        entries,
+        definitions,
+    )
+
+    ranks = header_ranks(entries)
 
     if arguments.diagnostics_dir is not None:
         write_diagnostics(
