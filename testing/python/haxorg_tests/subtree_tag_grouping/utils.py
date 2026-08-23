@@ -65,6 +65,8 @@ def paragraph_text(paragraph: proto.Paragraph) -> str:
                 parts.append(value.text)
             case proto.BigIdent():
                 parts.append(value.text)
+            case proto.Link():
+                parts.append(str(value.target))
             case _:
                 for nested in getattr(value, "subnodes", []):
                     walk(nested)

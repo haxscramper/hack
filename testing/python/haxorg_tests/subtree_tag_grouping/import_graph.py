@@ -137,6 +137,20 @@ def build_igraph(graph_proto: hstd_graph.IGraphProto) -> igraph.Graph:
 
 
 @beartype
+def remove_nested_subtree_edges(graph: igraph.Graph) -> igraph.Graph:
+    result = graph.copy()
+
+    nested_subtree_edges = [
+        edge.index for edge in result.es
+        if isinstance(edge["payload"], org_graph.MapEdgePayload) and
+        edge["payload"].kind == org_graph.MapEdgePayloadEdgeKind.NESTED_SUBTREE
+    ]
+
+    result.delete_edges(nested_subtree_edges)
+    return result
+
+
+@beartype
 def payload_label(payload: betterproto2.Message | None) -> str:
     if payload is None:
         return ""
@@ -324,6 +338,7 @@ def main(input_path: Path, output_path: Path) -> None:
 
     graph_proto = load_graph(input_path)
     graph = build_igraph(graph_proto)
+    graph = remove_nested_subtree_edges(graph)
     visualization = build_graphviz(
         graph,
         datetime.now().astimezone(),
