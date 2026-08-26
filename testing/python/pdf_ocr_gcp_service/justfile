@@ -9,15 +9,8 @@ run_vllm_script infile outfile:
     --ssh-user "$RUNPOD_SSH_USER" \
     --ssh-key "$RUNPOD_SSH_KEY"
 
-run_ollama_local infile outfile:
+run_llama infile outfile llama_url:
   uv run --no-project local/llama_run_docling.py \
     --input {{infile}} \
     --output {{outfile}} \
-    --ollama-mode local
-
-run_ollama_remote infile outfile:
-  uv run --no-project local/llama_run_docling.py \
-    --input {{infile}} \
-    --output {{outfile}} \
-    --ollama-mode remote \
-    --ollama-url "$RUNPOD_OLLAMA_URL"
+    --llama-server-url {{llama_url}}

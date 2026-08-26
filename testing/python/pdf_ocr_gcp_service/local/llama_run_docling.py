@@ -5,12 +5,9 @@ import base64
 import io
 import os
 import shutil
-import subprocess
 import tempfile
-import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Literal
 
 import click
 import pymupdf
@@ -26,10 +23,11 @@ from PIL import Image
 from pydantic import BaseModel, Field
 
 DEFAULT_MODEL_ID = "ibm/granite-docling"
-DEFAULT_LOCAL_OLLAMA_URL = "http://127.0.0.1:11434"
 DEFAULT_DPI = 300
 DEFAULT_RASTER_THREADS = os.cpu_count() or 1
+DEFAULT_REQUEST_THREADS = 1
 DEFAULT_REQUEST_TIMEOUT = 600
+DOCLING_PROMPT = "Convert this page to docling."
 
 
 class OcrBBox(BaseModel):
@@ -126,67 +124,17 @@ def render_pdf_pages(
     return page_paths
 
 
-def wait_for_ollama(
-    ollama_url: str,
-    attempts: int = 15,
+def check_llama_server(
+    llama_server_url: str,
+    request_timeout: int,
 ) -> None:
-    tags_url = f"{ollama_url.rstrip('/')}/api/tags"
-
-    for _ in range(attempts):
-        try:
-            response = requests.get(tags_url, timeout=2)
-            response.raise_for_status()
-            return
-        except requests.RequestException:
-            time.sleep(1)
-
-    raise RuntimeError(f"Failed to connect to Ollama at {ollama_url}")
-
-
-def ensure_local_ollama_running(
-    ollama_url: str,
-    model_id: str,
-) -> None:
-    try:
-        response = requests.get(
-            f"{ollama_url.rstrip('/')}/api/tags",
-            timeout=2,
-        )
-        response.raise_for_status()
-    except requests.RequestException:
-        logger.info("Ollama is not running; starting 'ollama serve'")
-
-        subprocess.Popen(
-            ["ollama", "serve"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True,
-        )
-
-        wait_for_ollama(ollama_url)
-
-    model_check = subprocess.run(
-        ["ollama", "show", model_id],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-
-    if model_check.returncode != 0:
-        logger.info(f"Pulling Ollama model {model_id}")
-        subprocess.run(
-            ["ollama", "pull", model_id],
-            check=True,
-        )
-
-
-def ensure_remote_ollama_running(ollama_url: str) -> None:
     response = requests.get(
-        f"{ollama_url.rstrip('/')}/api/tags",
-        timeout=30,
+        f"{llama_server_url.rstrip('/')}/health",
+        timeout=request_timeout,
     )
     response.raise_for_status()
 
-    logger.info(f"Connected to remote Ollama instance at {ollama_url}")
+    logger.info(f"Connected to llama.cpp server at {llama_server_url}")
 
 
 def normalize_bbox(
@@ -287,48 +235,63 @@ class DoclingOcrProcessor:
     def __init__(
         self,
         model_id: str,
-        ollama_url: str,
-        prompt: str,
+        llama_server_url: str,
         request_timeout: int,
     ) -> None:
         self.model_id = model_id
-        self.ollama_url = ollama_url.rstrip("/")
-        self.prompt = prompt
+        self.llama_server_url = llama_server_url.rstrip("/")
         self.request_timeout = request_timeout
-        self.session = requests.Session()
 
-    def close(self) -> None:
-        self.session.close()
-
-    def call_vlm(self, image: Image.Image, page_number: int) -> str:
+    def call_vlm(
+        self,
+        image: Image.Image,
+        page_number: int,
+    ) -> str:
         image_buffer = io.BytesIO()
-        image.save(image_buffer, format="PNG")
+        image.save(
+            image_buffer,
+            format="JPEG",
+            quality=95,
+        )
 
         encoded_image = base64.b64encode(
             image_buffer.getvalue()).decode("ascii")
 
-        response = self.session.post(
-            f"{self.ollama_url}/api/chat",
+        response = requests.post(
+            f"{self.llama_server_url}/v1/chat/completions",
             json={
                 "model":
                 self.model_id,
-                "messages": [{
-                    "role": "user",
-                    "content": self.prompt,
-                    "images": [encoded_image],
-                }],
+                "messages": [
+                    {
+                        "role":
+                        "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": DOCLING_PROMPT,
+                            },
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": ("data:image/jpeg;base64,"
+                                            f"{encoded_image}"),
+                                },
+                            },
+                        ],
+                    },
+                ],
+                "temperature":
+                0,
                 "stream":
                 False,
-                "options": {
-                    "temperature": 0,
-                },
             },
             timeout=self.request_timeout,
         )
         response.raise_for_status()
 
         response_data = response.json()
-        raw_text = response_data["message"]["content"]
+        raw_text = response_data["choices"][0]["message"]["content"]
 
         if not isinstance(raw_text, str) or not raw_text.strip():
             raise RuntimeError(
@@ -390,18 +353,18 @@ class DoclingOcrProcessor:
         logger.info(f"Completed page {page_number}: "
                     f"{len(raw_text)} characters, "
                     f"{len(extracted_images)} extracted images")
+
         return page, extracted_images
 
 
 def process_pdf(
     input_pdf: Path,
     output_json: Path,
-    ollama_mode: Literal["local", "remote"],
-    ollama_url: str,
+    llama_server_url: str,
     model_id: str,
-    prompt: str,
     dpi: int,
     raster_threads: int,
+    request_threads: int,
     request_timeout: int,
 ) -> None:
     output_text = output_json.with_suffix(".txt")
@@ -421,78 +384,81 @@ def process_pdf(
         exist_ok=True,
     )
 
-    if ollama_mode == "local":
-        ensure_local_ollama_running(
-            ollama_url=ollama_url,
-            model_id=model_id,
-        )
-    else:
-        ensure_remote_ollama_running(ollama_url)
+    check_llama_server(
+        llama_server_url=llama_server_url,
+        request_timeout=request_timeout,
+    )
 
     logger.info(f"Processing {input_pdf} with model {model_id} through "
-                f"{ollama_mode} Ollama at {ollama_url}; "
-                f"JSON output: {output_json}; text output: {output_text}")
+                f"llama.cpp at {llama_server_url}; "
+                f"JSON output: {output_json}; text output: {output_text}; "
+                f"parallel requests: {request_threads}")
 
     processor = DoclingOcrProcessor(
         model_id=model_id,
-        ollama_url=ollama_url,
-        prompt=prompt,
+        llama_server_url=llama_server_url,
         request_timeout=request_timeout,
     )
 
     pages: list[OcrPage] = []
     extracted_images: list[OcrExtractedImage] = []
 
-    try:
-        with tempfile.TemporaryDirectory(
-                prefix="docling-ocr-") as temporary_directory:
-            rendered_directory = (Path(temporary_directory) / "rendered")
+    with tempfile.TemporaryDirectory(
+            prefix="docling-ocr-") as temporary_directory:
+        rendered_directory = Path(temporary_directory) / "rendered"
 
-            page_files = render_pdf_pages(
-                input_pdf=input_pdf,
-                destination=rendered_directory,
-                dpi=dpi,
-                raster_threads=raster_threads,
+        page_files = render_pdf_pages(
+            input_pdf=input_pdf,
+            destination=rendered_directory,
+            dpi=dpi,
+            raster_threads=raster_threads,
+        )
+
+        def process_page(
+            page_entry: tuple[int, Path],
+        ) -> tuple[OcrPage, list[OcrExtractedImage]]:
+            page_number, page_file = page_entry
+
+            return processor.process_page(
+                page_file=page_file,
+                page_number=page_number,
+                extracted_images_directory=extracted_images_directory,
             )
 
-            with output_text.open("w", encoding="utf-8") as text_file:
-                for page_number, page_file in enumerate(
-                        page_files,
-                        start=1,
-                ):
-                    page, page_images = processor.process_page(
-                        page_file=page_file,
-                        page_number=page_number,
-                        extracted_images_directory=(
-                            extracted_images_directory),
-                    )
+        page_entries = list(enumerate(page_files, start=1))
 
-                    pages.append(page)
-                    extracted_images.extend(page_images)
+        with (
+                ThreadPoolExecutor(max_workers=request_threads) as executor,
+                output_text.open("w", encoding="utf-8") as text_file,
+        ):
+            for page, page_images in executor.map(
+                    process_page,
+                    page_entries,
+            ):
+                pages.append(page)
+                extracted_images.extend(page_images)
 
-                    if page_number > 1:
-                        text_file.write("\n<PAGE>\n")
+                if page.page_number > 1:
+                    text_file.write("\n<PAGE>\n")
 
-                    text_file.write(page.raw_text)
+                text_file.write(page.raw_text)
 
-                    if not page.raw_text.endswith("\n"):
-                        text_file.write("\n")
+                if not page.raw_text.endswith("\n"):
+                    text_file.write("\n")
 
-                    text_file.flush()
+                text_file.flush()
 
-            result = OcrDocumentResult(
-                source_file=str(input_pdf.resolve()),
-                model=model_id,
-                pages=pages,
-                extracted_images=extracted_images,
-            )
+        result = OcrDocumentResult(
+            source_file=str(input_pdf.resolve()),
+            model=model_id,
+            pages=pages,
+            extracted_images=extracted_images,
+        )
 
-            output_json.write_text(
-                result.model_dump_json(indent=2),
-                encoding="utf-8",
-            )
-    finally:
-        processor.close()
+        output_json.write_text(
+            result.model_dump_json(indent=2),
+            encoding="utf-8",
+        )
 
     logger.info(f"Wrote {len(pages)} OCR pages to {output_json}")
 
@@ -526,30 +492,15 @@ def process_pdf(
     help="Destination JSON path.",
 )
 @click.option(
-    "--ollama-mode",
+    "--llama-server-url",
     required=True,
-    type=click.Choice(
-        ["local", "remote"],
-        case_sensitive=False,
-    ),
-    help=("Use and automatically manage a local Ollama instance, "
-          "or connect to an existing remote instance."),
-)
-@click.option(
-    "--ollama-url",
-    help=("Ollama HTTP base URL. Defaults to "
-          f"{DEFAULT_LOCAL_OLLAMA_URL} in local mode."),
+    help="llama.cpp HTTP server base URL.",
 )
 @click.option(
     "--model",
     "model_id",
     default=DEFAULT_MODEL_ID,
-    help="Ollama Docling model name.",
-)
-@click.option(
-    "--prompt",
-    default="Convert this page to docling.",
-    help="Prompt sent with each page image.",
+    help="Model identifier sent to the llama.cpp server.",
 )
 @click.option(
     "--dpi",
@@ -564,20 +515,25 @@ def process_pdf(
     help="Number of concurrent PDF rasterization threads.",
 )
 @click.option(
+    "--request-threads",
+    default=DEFAULT_REQUEST_THREADS,
+    type=click.IntRange(min=1),
+    help="Number of concurrent llama.cpp requests.",
+)
+@click.option(
     "--request-timeout",
     default=DEFAULT_REQUEST_TIMEOUT,
     type=click.IntRange(min=1),
-    help="Ollama request timeout in seconds.",
+    help="llama.cpp request timeout in seconds.",
 )
 def main(
     input_pdf: Path,
     output_json: Path,
-    ollama_mode: str,
-    ollama_url: str | None,
+    llama_server_url: str,
     model_id: str,
-    prompt: str,
     dpi: int,
     raster_threads: int,
+    request_threads: int,
     request_timeout: int,
 ) -> None:
     if input_pdf.suffix.lower() != ".pdf":
@@ -592,38 +548,21 @@ def main(
             param_hint="--output",
         )
 
-    normalized_mode: Literal["local", "remote"]
-
-    if ollama_mode.casefold() == "local":
-        normalized_mode = "local"
-        effective_ollama_url = (ollama_url or DEFAULT_LOCAL_OLLAMA_URL)
-    else:
-        normalized_mode = "remote"
-
-        if ollama_url is None:
-            raise click.BadParameter(
-                "URL is required in remote mode",
-                param_hint="--ollama-url",
-            )
-
-        effective_ollama_url = ollama_url
-
-    if not effective_ollama_url.startswith(("http://", "https://")):
+    if not llama_server_url.startswith(("http://", "https://")):
         raise click.BadParameter(
             "URL must start with http:// or https://",
-            param_hint="--ollama-url",
+            param_hint="--llama-server-url",
         )
 
     try:
         process_pdf(
             input_pdf=input_pdf,
             output_json=output_json,
-            ollama_mode=normalized_mode,
-            ollama_url=effective_ollama_url,
+            llama_server_url=llama_server_url,
             model_id=model_id,
-            prompt=prompt,
             dpi=dpi,
             raster_threads=raster_threads,
+            request_threads=request_threads,
             request_timeout=request_timeout,
         )
     except Exception:
