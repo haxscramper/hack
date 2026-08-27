@@ -123,7 +123,6 @@ def process_file(
     source_file: Path,
     output_root: Path,
     mirror_from: Path,
-    chunk_size: int,
     overwrite: bool,
     cleared_documents: set[int],
 ) -> None:
@@ -140,41 +139,13 @@ def process_file(
             f"Cleared indexed data for document_id={document_id} hash={file_sha256}"
         )
 
-    rendered_pages = processor.render_pages(source_file,
-                                            output_base / "_rendered_pages")
-
-    for chunk_index, chunk_pages in split_chunks(rendered_pages, chunk_size):
-        chunk_dir = output_base / "chunks" / f"chunk_{chunk_index:04d}"
-
-        if chunk_exists(session,
-                        document_id=document_id,
-                        chunk_index=chunk_index):
-            logger.info(
-                f"Skipping already indexed chunk document_id={document_id} chunk_index={chunk_index}"
-            )
-            continue
-
-        chunk_dir.mkdir(parents=True, exist_ok=True)
-        result = processor.process_chunk(
+        page_indices = set()
+        result = processor.process_file(
             source_file=source_file,
-            chunk_index=chunk_index,
-            chunk_page_files=chunk_pages,
-            page_offset=chunk_index * chunk_size,
-            chunk_dir=chunk_dir,
-        )
-
-        structured_json_path = chunk_dir / "structured_data.json"
-        structured_json_path.write_text(
-            json.dumps([page.model_dump() for page in result.pages],
-                       indent=2,
-                       ensure_ascii=False),
-            encoding="utf-8",
+            page_indices=page_indices,
         )
 
         save_docling_ocr_to_database(session, document_id, result)
-
-        logger.info(
-            f"Done chunk {chunk_index} * {chunk_size}/{rendered_pages}")
 
     logger.info(f"Finished: {source_file} -> {output_base}")
 

@@ -74,20 +74,6 @@ class ElementRecord(Base):
                                           default=True)
 
 
-class ChunkRecord(Base):
-    __tablename__ = "chunks"
-    __table_args__ = (UniqueConstraint("document_id",
-                                       "chunk_index",
-                                       name="uq_chunks_document_index"), )
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    document_id: Mapped[int] = mapped_column(ForeignKey("documents.id"),
-                                             nullable=False)
-    chunk_index: Mapped[int] = mapped_column(nullable=False)
-    raw_output: Mapped[str] = mapped_column(Text, nullable=False)
-    structured_json: Mapped[str] = mapped_column(Text, nullable=False)
-
-
 @beartype
 def create_engine_and_tables(db_path: Path) -> sessionmaker[Session]:
     db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -161,34 +147,7 @@ def clear_document_data(session: Session, document_id: int) -> None:
             delete(ElementRecord).where(ElementRecord.page_id.in_(page_ids)))
     session.execute(
         delete(PageRecord).where(PageRecord.document_id == document_id))
-    session.execute(
-        delete(ChunkRecord).where(ChunkRecord.document_id == document_id))
     session.commit()
-
-
-@beartype
-def chunk_exists(session: Session, document_id: int, chunk_index: int) -> bool:
-    row = session.scalar(
-        select(ChunkRecord.id).where(
-            ChunkRecord.document_id == document_id,
-            ChunkRecord.chunk_index == chunk_index,
-        ))
-    return row is not None
-
-
-@beartype
-def get_chunk_record(session: Session, document_id: int,
-                     chunk_index: int) -> ChunkRecord:
-    row = session.scalar(
-        select(ChunkRecord).where(
-            ChunkRecord.document_id == document_id,
-            ChunkRecord.chunk_index == chunk_index,
-        ))
-    if row is None:
-        raise RuntimeError(
-            f"Chunk row is missing for document_id={document_id}, chunk_index={chunk_index}"
-        )
-    return row
 
 
 @beartype

@@ -285,7 +285,7 @@ class OcrProcessor:
         return page, extracted_images
 
     @beartype
-    def process_chunk(
+    def process_file(
         self,
         source_file: Path,
         page_indices: range | set[int],
