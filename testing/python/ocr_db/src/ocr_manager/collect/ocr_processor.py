@@ -11,10 +11,10 @@ from pathlib import Path
 import requests
 from beartype import beartype
 from docling_core.types.doc.document import (
-    ContentLayer,
-    DoclingDocumentDocument,
-    DocTagsDocument,
-    DocTagsPage,
+    ContentLayer,  # type: ignore
+    DoclingDocumentDocument,  # type: ignore
+    DocTagsDocument,  # type: ignore
+    DocTagsPage,  # type: ignore
 )
 from loguru import logger
 from PIL import Image

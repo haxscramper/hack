@@ -1,4 +1,5 @@
 pydantic
+click
 PyQt6
 sqlalchemy
 ebooklib
@@ -11,8 +12,3 @@ docling_core
 beartype
 PyMuPDF
 markdown
-transformers<5.0.0
---extra-index-url https://download.pytorch.org/whl/rocm7.2
-torch
-torchvision
-torchaudio

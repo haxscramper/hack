@@ -192,7 +192,7 @@ def main() -> None:
     session_factory = create_engine_and_tables(db_path)
 
     processor = OcrProcessor(
-        llama_url=args.llama_url,
+        llama_server_url=args.llama_url,
         dpi=args.dpi,
     )
 
