@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QHBoxLayout, QSp
 from PyQt6.QtCore import Qt, QModelIndex
 from sqlalchemy.orm import sessionmaker
 
-from src.ocr_manager.ocr_db import create_engine_and_tables
+from ocr_db.ocr_db import create_engine_and_tables
 
 from .left_panel import LeftPanel
 from .center_panel import CenterPanel

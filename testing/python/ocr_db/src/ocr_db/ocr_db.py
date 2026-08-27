@@ -12,7 +12,7 @@ from sqlalchemy import (Boolean, ForeignKey, LargeBinary, String, Text,
 from sqlalchemy.orm import (DeclarativeBase, Mapped, Session, mapped_column,
                             sessionmaker)
 
-from ocr_manager.collect.ocr_models import OcrChunkOcrResult, OcrPage
+from ocr_db.collect.ocr_models import OcrChunkOcrResult, OcrPage
 
 
 class Base(DeclarativeBase):

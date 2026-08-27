@@ -4,7 +4,7 @@ from typing import Optional
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QPushButton, QTextBrowser
 from sqlalchemy.orm import sessionmaker
 
-from ocr_manager.export.html_generator import generate_markdown_content
+from ocr_db.export.html_generator import generate_markdown_content
 
 
 class RightPanel(QWidget):

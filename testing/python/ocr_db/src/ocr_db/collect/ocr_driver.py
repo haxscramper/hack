@@ -10,9 +10,9 @@ from beartype.typing import Iterable, Optional
 from loguru import logger
 from sqlalchemy.orm import Session
 
-from ocr_manager.collect.ocr_models import OcrChunkOcrResult
-from ocr_manager.collect.ocr_processor import OcrProcessor
-from ocr_manager.ocr_db import (
+from ocr_db.collect.ocr_models import OcrChunkOcrResult
+from ocr_db.collect.ocr_processor import OcrProcessor
+from ocr_db.ocr_db import (
     chunk_exists,
     clear_document_data,
     create_engine_and_tables,

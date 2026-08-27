@@ -7,7 +7,22 @@ authors = [
     { name = "haxscramper", email = "haxscramper@gmail.com" }
 ]
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "addict>=2.4.0",
+    "beartype>=0.22.9",
+    "click>=8.5.0",
+    "docling-core>=2.92.0",
+    "easydict>=1.13",
+    "ebooklib>=0.20",
+    "einops>=0.8.2",
+    "loguru>=0.7.3",
+    "markdown>=3.10.3",
+    "matplotlib>=3.11.1",
+    "pydantic>=2.13.4",
+    "pymupdf>=1.28.2",
+    "pyqt6>=6.11.0",
+    "sqlalchemy>=2.0.52",
+]
 
 [project.scripts]
 ocr-db = "ocr_db:main"

@@ -6,7 +6,7 @@ from typing import List, Optional, Tuple
 from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
-from ocr_manager.ocr_db import DocumentRecord, ElementRecord, InputFileRecord, PageRecord
+from ocr_db.ocr_db import DocumentRecord, ElementRecord, InputFileRecord, PageRecord
 
 logger = logging.getLogger(__name__)
 

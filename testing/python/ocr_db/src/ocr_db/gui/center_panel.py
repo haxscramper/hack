@@ -25,8 +25,8 @@ from PyQt6.QtWidgets import (
 from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
-from ocr_manager.gui.range_slider import RangeSlider
-from ocr_manager.ocr_db import DocumentRecord, ElementRecord, InputFileRecord, PageRecord
+from ocr_db.gui.range_slider import RangeSlider
+from ocr_db.ocr_db import DocumentRecord, ElementRecord, InputFileRecord, PageRecord
 
 # Render scale applied to PDF pages (2.0 == 144 DPI). Element bboxes are
 # assumed to be in pixel coordinates of a page rasterised at this scale,

@@ -19,8 +19,8 @@ from docling_core.types.doc.document import (
 from loguru import logger
 from PIL import Image
 
-from ocr_manager.collect.pdf_render import pdf_digest, render_pdf_page
-from src.ocr_manager.collect.ocr_models import (
+from ocr_db.collect.pdf_render import pdf_digest, render_pdf_page
+from ocr_db.collect.ocr_models import (
     OcrBBox,
     OcrChunkOcrResult,
     OcrElement,

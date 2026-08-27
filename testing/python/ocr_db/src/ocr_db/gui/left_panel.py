@@ -9,7 +9,7 @@ from PyQt6.QtCore import QSortFilterProxyModel
 from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
-from src.ocr_manager.ocr_db import InputFileRecord
+from ocr_db.ocr_db import InputFileRecord
 
 
 class PdfListModel(QAbstractListModel):
