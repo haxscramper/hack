@@ -282,21 +282,21 @@ class OcrProcessor:
     @beartype
     def process_file(
         self,
-        source_file: Path,
-        page_indices: range | set[int],
+        file: Path,
+        indices: range | set[int],
     ) -> OcrChunkOcrResult:
         """Rasterize and OCR the requested PDF pages."""
 
-        with pymupdf.open(source_file) as document:
+        with pymupdf.open(file) as document:
             page_count = document.page_count
 
-        if isinstance(page_indices, range):
-            start, stop, step = page_indices.indices(page_count)
+        if isinstance(indices, range):
+            start, stop, step = indices.indices(page_count)
             target_pages = set(range(start, stop, step))
         else:
             target_pages = {
                 page_index
-                for page_index in page_indices if 0 <= page_index < page_count
+                for page_index in indices if 0 <= page_index < page_count
             }
 
         if not target_pages:
@@ -305,11 +305,10 @@ class OcrProcessor:
                 extracted_images=[],
             )
 
-        logger.info(
-            f"Rasterizing {len(target_pages)} pages from {source_file}")
+        logger.info(f"Rasterizing {len(target_pages)} pages from {file}")
 
         rasterized_pages = render_pdf_pages(
-            input_pdf=source_file,
+            input_pdf=file,
             dpi=self.dpi,
             raster_threads=self.raster_threads,
             target_pages=target_pages,

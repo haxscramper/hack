@@ -1,14 +1,13 @@
-run_ocr input_path conversion_dir_path db_path *ARGS:
+run_ocr input_path db_path *ARGS:
   PYTHONPATH=src uv run \
-    --no-project python -m ocr_manager.collect.ocr_driver \
+    --no-project python -m ocr_db.collect.ocr_driver \
     {{input_path}} \
-    {{conversion_dir_path}} \
-    --db-path {{db_path}} \
+    {{db_path}} \
     {{ARGS}}
 
 run_gui input_path:
   PYTHONPATH=src uv run \
-    --no-project python -m ocr_manager.gui.main_window \
+    --no-project python -m ocr_db.gui.main_window \
     {{input_path}}
 
 install_requirements: 
