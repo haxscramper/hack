@@ -128,8 +128,6 @@ def parse_doctags_page(
             text=text.strip(),
         ))
 
-    logger.info(f"Parsed page {page_number}: found {len(elements)} elements")
-
     return OcrPage(
         page_number=page_number,
         elements=elements,
@@ -283,30 +281,23 @@ class OcrProcessor:
     def process_file(
         self,
         file: Path,
-        indices: range | set[int],
+        indices: set[int],
     ) -> OcrChunkOcrResult:
         """Rasterize and OCR the requested PDF pages."""
 
         with pymupdf.open(file) as document:
             page_count = document.page_count
 
-        if isinstance(indices, range):
-            start, stop, step = indices.indices(page_count)
-            target_pages = set(range(start, stop, step))
-        else:
-            target_pages = {
-                page_index
-                for page_index in indices if 0 <= page_index < page_count
-            }
+        target_pages = {
+            page_index
+            for page_index in indices if 0 <= page_index < page_count
+        }
 
         if not target_pages:
             return OcrChunkOcrResult(
                 pages=[],
                 extracted_images=[],
             )
-
-        logger.info(f"Rasterizing {len(target_pages)} pages from {file}")
-
         rasterized_pages = render_pdf_pages(
             input_pdf=file,
             dpi=self.dpi,

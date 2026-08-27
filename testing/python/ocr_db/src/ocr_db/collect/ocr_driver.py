@@ -9,12 +9,12 @@ from beartype import beartype
 from beartype.typing import Optional
 from loguru import logger
 from sqlalchemy.orm import Session
+from sqlalchemy import select
 import pymupdf
 
-from ocr_db.collect.ocr_models import OcrChunkOcrResult
 from ocr_db.collect.ocr_processor import OcrProcessor
 from ocr_db.ocr_db import (
-    clear_document_data,
+    PageRecord,
     create_engine_and_tables,
     ensure_document_and_input_file,
     save_result_to_database,
@@ -53,25 +53,10 @@ def collect_inputs(input_path: Path) -> list[Path]:
 
 
 @beartype
-def save_docling_ocr_to_database(
-    session: Session,
-    document_id: int,
-    result: OcrChunkOcrResult,
-) -> None:
-    save_result_to_database(
-        session=session,
-        document_id=document_id,
-        result=result,
-    )
-
-
-@beartype
 def process_file(
     session: Session,
     processor: OcrProcessor,
     file: Path,
-    overwrite: bool,
-    cleared_documents: set[int],
     indices: set[int],
 ) -> None:
     document_id, file_sha256 = ensure_document_and_input_file(
@@ -79,19 +64,20 @@ def process_file(
         file,
     )
 
-    if overwrite and document_id not in cleared_documents:
-        clear_document_data(session, document_id=document_id)
-        cleared_documents.add(document_id)
+    for record in session.scalars(
+            select(PageRecord).where(PageRecord.document_id == document_id)):
+        indices.remove(record.page_number)
 
-        logger.info(f"Cleared indexed data for document_id={document_id} "
-                    f"hash={file_sha256}")
+    result = processor.process_file(
+        file=file,
+        indices=indices,
+    )
 
-        result = processor.process_file(
-            file=file,
-            indices=indices,
-        )
-
-        save_docling_ocr_to_database(session, document_id, result)
+    save_result_to_database(
+        session=session,
+        document_id=document_id,
+        result=result,
+    )
 
     logger.info(f"Finished: {file}")
 
@@ -133,7 +119,6 @@ def parse_page_range(spec: str, page_count: int) -> set[int]:
 )
 @click.option("--model-id", default="ibm/granite-docling")
 @click.option("--dpi", type=int, default=300)
-@click.option("--overwrite", is_flag=True)
 @click.option("--llama-url", default="http://localhost:8080")
 @click.option("--request-threads", type=int, default=1)
 @click.option("--raster-threads", type=int, default=(os.cpu_count() or 4) * 2)
@@ -145,7 +130,6 @@ def main(
     db_path: Path,
     model_id: str,
     dpi: int,
-    overwrite: bool,
     llama_url: str,
     request_threads: int,
     raster_threads: int,
@@ -166,7 +150,6 @@ def main(
     )
 
     failures: list[tuple[Path, Exception]] = []
-    cleared_documents: set[int] = set()
 
     with session_factory() as session:
         for file in files:
@@ -185,13 +168,13 @@ def main(
                     session=session,
                     processor=processor,
                     file=file,
-                    overwrite=overwrite,
-                    cleared_documents=cleared_documents,
                     indices=indices,
                 )
             except Exception as error:
                 failures.append((file, error))
                 logger.exception(f"Failed processing {file}: {error}")
+
+    logger.info(f"Finished writing {db_path}")
 
     if failures:
         lines = "\n".join(f"- {path}: {error}" for path, error in failures)

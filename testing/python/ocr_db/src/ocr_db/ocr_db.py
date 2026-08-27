@@ -7,10 +7,26 @@ from pathlib import Path
 
 from beartype import beartype
 from beartype.typing import Any
-from sqlalchemy import (Boolean, ForeignKey, LargeBinary, String, Text,
-                        UniqueConstraint, create_engine, delete, event, select)
-from sqlalchemy.orm import (DeclarativeBase, Mapped, Session, mapped_column,
-                            sessionmaker)
+from sqlalchemy import (
+    Boolean,
+    ForeignKey,
+    LargeBinary,
+    String,
+    Text,
+    UniqueConstraint,
+    create_engine,
+    delete,
+    event,
+    select,
+)
+
+from sqlalchemy.orm import (
+    DeclarativeBase,
+    Mapped,
+    Session,
+    mapped_column,
+    sessionmaker,
+)
 
 from ocr_db.collect.ocr_models import OcrChunkOcrResult, OcrPage
 
@@ -49,6 +65,8 @@ class PageRecord(Base):
     document_id: Mapped[int] = mapped_column(ForeignKey("documents.id"),
                                              nullable=False)
     page_number: Mapped[int] = mapped_column(nullable=False)
+    raw_text: Mapped[str] = mapped_column(nullable=False)
+    docling_document: Mapped[str] = mapped_column(nullable=False)
 
 
 class ElementRecord(Base):
@@ -137,31 +155,26 @@ def ensure_document_and_input_file(session: Session,
 
 
 @beartype
-def clear_document_data(session: Session, document_id: int) -> None:
-    page_ids = list(
-        session.scalars(
-            select(
-                PageRecord.id).where(PageRecord.document_id == document_id)))
-    if page_ids:
-        session.execute(
-            delete(ElementRecord).where(ElementRecord.page_id.in_(page_ids)))
-    session.execute(
-        delete(PageRecord).where(PageRecord.document_id == document_id))
-    session.commit()
-
-
-@beartype
-def get_or_create_page(session: Session, document_id: int,
-                       page_number: int) -> PageRecord:
-    page = session.scalar(
+def get_or_create_page(
+    session: Session,
+    document_id: int,
+    page: OcrPage,
+) -> PageRecord:
+    page_row = session.scalar(
         select(PageRecord).where(PageRecord.document_id == document_id,
-                                 PageRecord.page_number == page_number))
-    if page is not None:
-        return page
-    page = PageRecord(document_id=document_id, page_number=page_number)
-    session.add(page)
+                                 PageRecord.page_number == page.page_number))
+    if page_row is not None:
+        return page_row
+
+    page_row = PageRecord(
+        document_id=document_id,
+        page_number=page.page_number,
+        raw_text=page.raw_text,
+        docling_document=json.dumps(page.document.export_to_dict()),
+    )
+    session.add(page_row)
     session.flush()
-    return page
+    return page_row
 
 
 @beartype
@@ -180,7 +193,7 @@ def save_result_to_database(
     for page in result.pages:
         page_row = get_or_create_page(session,
                                       document_id=document_id,
-                                      page_number=page.page_number)
+                                      page=page)
 
         for element_index, element in enumerate(page.elements):
             row = ElementRecord(
