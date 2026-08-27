@@ -27,7 +27,7 @@ from ocr_db.collect.ocr_models import (
 )
 from ocr_db.collect.pdf_render import render_pdf_pages
 
-DEFAULT_OCR_MODEL_ID = "ibm/granite-Ocr"
+DEFAULT_OCR_MODEL_ID = "ibm/granite-docling"
 DEFAULT_LLAMA_SERVER_URL = "http://localhost:8080"
 DEFAULT_REQUEST_THREADS = 1
 DEFAULT_RASTER_THREADS = 1

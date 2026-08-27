@@ -1,52 +1,32 @@
 #!/usr/bin/env python
 from __future__ import annotations
 
-import argparse
-import json
 from pathlib import Path
 
+import click
 from beartype import beartype
 from beartype.typing import Iterable, Optional
 from loguru import logger
 from sqlalchemy.orm import Session
 
 from ocr_db.collect.ocr_models import OcrChunkOcrResult
-from ocr_db.collect.ocr_processor import OcrProcessor
+from ocr_db.collect.ocr_processor import DEFAULT_OCR_MODEL_ID, OcrProcessor
 from ocr_db.ocr_db import (
-    chunk_exists,
     clear_document_data,
     create_engine_and_tables,
     ensure_document_and_input_file,
-    get_chunk_record,
     save_result_to_database,
 )
 
-IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff"}
-
-
-@beartype
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("input_path", type=Path)
-    parser.add_argument("output_dir", type=Path)
-    parser.add_argument("--db-path", type=Path, required=True)
-    parser.add_argument(
-        "--mirror-from",
-        type=Path,
-        default=None,
-        help="Base directory used to compute mirrored relative paths.",
-    )
-    parser.add_argument("--model-id", default="baidu/Unlimited-OCR")
-    parser.add_argument("--chunk-size", type=int, default=20)
-    parser.add_argument("--dpi", type=int, default=300)
-    parser.add_argument("--max-length", type=int, default=32768)
-    parser.add_argument("--image-size", type=int, default=1024)
-    parser.add_argument("--prompt-image", default="<image>document parsing.")
-    parser.add_argument("--prompt-pdf", default="<image>Multi page parsing.")
-    parser.add_argument("--overwrite", action="store_true")
-    parser.add_argument("--llama-url", default="http://localhost:8080")
-
-    return parser.parse_args()
+IMAGE_EXTENSIONS = {
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".webp",
+    ".bmp",
+    ".tif",
+    ".tiff",
+}
 
 
 @beartype
@@ -62,9 +42,11 @@ def collect_inputs(input_path: Path) -> list[Path]:
 
     files = sorted(p for p in input_path.rglob("*") if p.is_file() and (
         p.suffix.lower() == ".pdf" or p.suffix.lower() in IMAGE_EXTENSIONS))
+
     if not files:
         raise RuntimeError(
             f"No supported files found in directory: {input_path}")
+
     return files
 
 
@@ -77,27 +59,36 @@ def resolve_mirror_from(input_path: Path, mirror_from: Optional[Path]) -> Path:
 
     if input_path.is_dir():
         return input_path.resolve()
+
     return input_path.resolve().parent
 
 
 @beartype
-def mirrored_output_base(source_file: Path, mirror_from: Path,
-                         output_root: Path) -> Path:
+def mirrored_output_base(
+    source_file: Path,
+    mirror_from: Path,
+    output_root: Path,
+) -> Path:
     source_file = source_file.resolve()
+
     try:
         relative = source_file.relative_to(mirror_from)
     except ValueError as error:
         raise ValueError(
-            f"Cannot mirror {source_file} from base {mirror_from}; pass a correct --mirror-from"
-        ) from error
+            f"Cannot mirror {source_file} from base {mirror_from}; "
+            "pass a correct --mirror-from") from error
+
     return (output_root / relative).with_suffix("")
 
 
 @beartype
-def split_chunks(items: list[Path],
-                 chunk_size: int) -> Iterable[tuple[int, list[Path]]]:
+def split_chunks(
+    items: list[Path],
+    chunk_size: int,
+) -> Iterable[tuple[int, list[Path]]]:
     if chunk_size <= 0:
         raise ValueError(f"chunk_size must be positive, got {chunk_size}")
+
     for i in range(0, len(items), chunk_size):
         yield i // chunk_size, items[i:i + chunk_size]
 
@@ -108,7 +99,6 @@ def save_docling_ocr_to_database(
     document_id: int,
     result: OcrChunkOcrResult,
 ) -> None:
-
     save_result_to_database(
         session=session,
         document_id=document_id,
@@ -130,14 +120,16 @@ def process_file(
     output_base.mkdir(parents=True, exist_ok=True)
 
     document_id, file_sha256 = ensure_document_and_input_file(
-        session, source_file)
+        session,
+        source_file,
+    )
 
     if overwrite and document_id not in cleared_documents:
         clear_document_data(session, document_id=document_id)
         cleared_documents.add(document_id)
-        logger.info(
-            f"Cleared indexed data for document_id={document_id} hash={file_sha256}"
-        )
+
+        logger.info(f"Cleared indexed data for document_id={document_id} "
+                    f"hash={file_sha256}")
 
         page_indices = set()
         result = processor.process_file(
@@ -150,21 +142,54 @@ def process_file(
     logger.info(f"Finished: {source_file} -> {output_base}")
 
 
+@click.command()
+@click.argument(
+    "input_path",
+    type=click.Path(path_type=Path),
+)
+@click.argument(
+    "output_dir",
+    type=click.Path(path_type=Path),
+)
+@click.option(
+    "--db-path",
+    type=click.Path(path_type=Path),
+    required=True,
+)
+@click.option(
+    "--mirror-from",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Base directory used to compute mirrored relative paths.",
+)
+@click.option("--model-id", default=DEFAULT_OCR_MODEL_ID)
+@click.option("--dpi", type=int, default=300)
+@click.option("--overwrite", is_flag=True)
+@click.option("--llama-url", default="http://localhost:8080")
 @beartype
-def main() -> None:
-    args = parse_args()
-    input_path = args.input_path.resolve()
-    output_dir = args.output_dir.resolve()
-    db_path = args.db_path.resolve()
-    mirror_from = resolve_mirror_from(input_path, args.mirror_from)
+def main(
+    input_path: Path,
+    output_dir: Path,
+    db_path: Path,
+    mirror_from: Optional[Path],
+    model_id: str,
+    dpi: int,
+    overwrite: bool,
+    llama_url: str,
+) -> None:
+    input_path = input_path.resolve()
+    output_dir = output_dir.resolve()
+    db_path = db_path.resolve()
+    mirror_from = resolve_mirror_from(input_path, mirror_from)
     files = collect_inputs(input_path)
 
     output_dir.mkdir(parents=True, exist_ok=True)
     session_factory = create_engine_and_tables(db_path)
 
     processor = OcrProcessor(
-        llama_server_url=args.llama_url,
-        dpi=args.dpi,
+        llama_server_url=llama_url,
+        dpi=dpi,
+        model_id=model_id,
     )
 
     failures: list[tuple[Path, Exception]] = []
@@ -179,8 +204,7 @@ def main() -> None:
                     source_file=file_path,
                     output_root=output_dir,
                     mirror_from=mirror_from,
-                    chunk_size=args.chunk_size,
-                    overwrite=args.overwrite,
+                    overwrite=overwrite,
                     cleared_documents=cleared_documents,
                 )
             except Exception as error:
