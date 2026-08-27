@@ -20,8 +20,6 @@ from ocr_manager.ocr_db import (
 )
 
 from ocr_manager.collect.ocr_processor import DEFAULT_DOCLING_MODEL_ID, DoclingChunkOcrResult, DoclingOcrProcessor
-from src.ocr_manager.collect.ocr_unlimited import (UnlimitedChunkOcrResult,
-                                                   UnlimitedOcrProcessor)
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff"}
 
@@ -225,8 +223,6 @@ def main() -> None:
     session_factory = create_engine_and_tables(db_path)
 
     processor = DoclingOcrProcessor(
-        model_id=args.model_id if args.model_id != "baidu/Unlimited-OCR" else
-        DEFAULT_DOCLING_MODEL_ID,
         llama_url=args.llama_url,
         dpi=args.dpi,
     )

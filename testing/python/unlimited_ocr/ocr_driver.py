@@ -20,8 +20,6 @@ from src.ocr_manager.ocr_db import (
 )
 
 from ocr_manager.collect.ocr_processor import DEFAULT_DOCLING_MODEL_ID, DoclingChunkOcrResult, DoclingOcrProcessor
-from src.ocr_manager.collect.ocr_unlimited import (UnlimitedChunkOcrResult,
-                                                   UnlimitedOcrProcessor)
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff"}
 
@@ -38,7 +36,6 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Base directory used to compute mirrored relative paths.",
     )
-    parser.add_argument("--model-id", default="baidu/Unlimited-OCR")
     parser.add_argument("--chunk-size", type=int, default=20)
     parser.add_argument("--dpi", type=int, default=300)
     parser.add_argument("--max-length", type=int, default=32768)
@@ -108,27 +105,6 @@ def split_chunks(items: list[Path],
 
 
 @beartype
-def save_unlimited_ocr_to_database(
-    session: Session,
-    document_id: int,
-    result: UnlimitedChunkOcrResult,
-) -> None:
-    """Map Unlimited-OCR specific chunk data into the sqlite database."""
-    image_blobs = {
-        (item.page_number, item.element_index): item.image_blob
-        for item in result.extracted_images
-    }
-    save_chunk_to_database(
-        session=session,
-        document_id=document_id,
-        chunk_index=result.chunk_index,
-        raw_output=result.raw_text,
-        pages=result.pages,
-        image_blobs=image_blobs,
-    )
-
-
-@beartype
 def save_docling_ocr_to_database(
     session: Session,
     document_id: int,
@@ -151,7 +127,7 @@ def save_docling_ocr_to_database(
 @beartype
 def process_file(
     session: Session,
-    processor: UnlimitedOcrProcessor | DoclingOcrProcessor,
+    processor: DoclingOcrProcessor,
     source_file: Path,
     output_root: Path,
     mirror_from: Path,
@@ -203,11 +179,7 @@ def process_file(
             encoding="utf-8",
         )
 
-        match result:
-            case UnlimitedChunkOcrResult():
-                save_unlimited_ocr_to_database(session, document_id, result)
-            case DoclingChunkOcrResult():
-                save_docling_ocr_to_database(session, document_id, result)
+        save_docling_ocr_to_database(session, document_id, result)
 
     logger.info(f"Finished: {source_file} -> {output_base}")
 
@@ -224,23 +196,12 @@ def main() -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     session_factory = create_engine_and_tables(db_path)
 
-    match args.engine:
-        case "unlimited":
-            processor = UnlimitedOcrProcessor(
-                model_id=args.model_id,
-                image_size=args.image_size,
-                max_length=args.max_length,
-                dpi=args.dpi,
-                prompt_image=args.prompt_image,
-                prompt_pdf=args.prompt_pdf,
-            )
-        case "docling":
-            processor = DoclingOcrProcessor(
-                model_id=args.model_id if args.model_id
-                != "baidu/Unlimited-OCR" else DEFAULT_DOCLING_MODEL_ID,
-                llama_url=args.llama_url,
-                dpi=args.dpi,
-            )
+    processor = DoclingOcrProcessor(
+        model_id=args.model_id if args.model_id != "baidu/Unlimited-OCR" else
+        DEFAULT_DOCLING_MODEL_ID,
+        llama_url=args.llama_url,
+        dpi=args.dpi,
+    )
 
     failures: list[tuple[Path, Exception]] = []
     cleared_documents: set[int] = set()
