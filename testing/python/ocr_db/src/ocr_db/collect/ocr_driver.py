@@ -1,7 +1,9 @@
 #!/usr/bin/env python
 from __future__ import annotations
 
+import os
 from pathlib import Path
+import sys
 
 import click
 from beartype import beartype
@@ -51,49 +53,6 @@ def collect_inputs(input_path: Path) -> list[Path]:
 
 
 @beartype
-def resolve_mirror_from(input_path: Path, mirror_from: Optional[Path]) -> Path:
-    if mirror_from is not None:
-        if not mirror_from.exists():
-            raise ValueError(f"--mirror-from does not exist: {mirror_from}")
-        return mirror_from.resolve()
-
-    if input_path.is_dir():
-        return input_path.resolve()
-
-    return input_path.resolve().parent
-
-
-@beartype
-def mirrored_output_base(
-    source_file: Path,
-    mirror_from: Path,
-    output_root: Path,
-) -> Path:
-    source_file = source_file.resolve()
-
-    try:
-        relative = source_file.relative_to(mirror_from)
-    except ValueError as error:
-        raise ValueError(
-            f"Cannot mirror {source_file} from base {mirror_from}; "
-            "pass a correct --mirror-from") from error
-
-    return (output_root / relative).with_suffix("")
-
-
-@beartype
-def split_chunks(
-    items: list[Path],
-    chunk_size: int,
-) -> Iterable[tuple[int, list[Path]]]:
-    if chunk_size <= 0:
-        raise ValueError(f"chunk_size must be positive, got {chunk_size}")
-
-    for i in range(0, len(items), chunk_size):
-        yield i // chunk_size, items[i:i + chunk_size]
-
-
-@beartype
 def save_docling_ocr_to_database(
     session: Session,
     document_id: int,
@@ -111,14 +70,9 @@ def process_file(
     session: Session,
     processor: OcrProcessor,
     source_file: Path,
-    output_root: Path,
-    mirror_from: Path,
     overwrite: bool,
     cleared_documents: set[int],
 ) -> None:
-    output_base = mirrored_output_base(source_file, mirror_from, output_root)
-    output_base.mkdir(parents=True, exist_ok=True)
-
     document_id, file_sha256 = ensure_document_and_input_file(
         session,
         source_file,
@@ -139,7 +93,7 @@ def process_file(
 
         save_docling_ocr_to_database(session, document_id, result)
 
-    logger.info(f"Finished: {source_file} -> {output_base}")
+    logger.info(f"Finished: {source_file}")
 
 
 @click.command()
@@ -148,11 +102,7 @@ def process_file(
     type=click.Path(path_type=Path),
 )
 @click.argument(
-    "output_dir",
-    type=click.Path(path_type=Path),
-)
-@click.option(
-    "--db-path",
+    "db_path",
     type=click.Path(path_type=Path),
     required=True,
 )
@@ -162,34 +112,36 @@ def process_file(
     default=None,
     help="Base directory used to compute mirrored relative paths.",
 )
-@click.option("--model-id", default=DEFAULT_OCR_MODEL_ID)
+@click.option("--model-id", default="ibm/granite-docling")
 @click.option("--dpi", type=int, default=300)
 @click.option("--overwrite", is_flag=True)
 @click.option("--llama-url", default="http://localhost:8080")
+@click.option("--request-threads", type=int, default=1)
+@click.option("--raster-threads", type=int, default=(os.cpu_count() or 4) * 2)
+@click.option("--request-timeout", type=int, default=300)
 @beartype
 def main(
     input_path: Path,
-    output_dir: Path,
     db_path: Path,
-    mirror_from: Optional[Path],
     model_id: str,
     dpi: int,
     overwrite: bool,
     llama_url: str,
+    request_threads: int,
+    raster_threads: int,
+    request_timeout: int,
 ) -> None:
     input_path = input_path.resolve()
-    output_dir = output_dir.resolve()
     db_path = db_path.resolve()
-    mirror_from = resolve_mirror_from(input_path, mirror_from)
     files = collect_inputs(input_path)
-
-    output_dir.mkdir(parents=True, exist_ok=True)
     session_factory = create_engine_and_tables(db_path)
-
     processor = OcrProcessor(
         llama_server_url=llama_url,
         dpi=dpi,
         model_id=model_id,
+        request_threads=request_threads,
+        raster_threads=raster_threads,
+        request_timeout=request_timeout,
     )
 
     failures: list[tuple[Path, Exception]] = []
@@ -202,8 +154,6 @@ def main(
                     session=session,
                     processor=processor,
                     source_file=file_path,
-                    output_root=output_dir,
-                    mirror_from=mirror_from,
                     overwrite=overwrite,
                     cleared_documents=cleared_documents,
                 )

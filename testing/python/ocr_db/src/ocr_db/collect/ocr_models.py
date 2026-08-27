@@ -3,6 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from pydantic import BaseModel, Field
+from docling_core.types.doc.document import (
+    DoclingDocument,  # type: ignore
+)
 
 
 class OcrBBox(BaseModel):
@@ -22,6 +25,7 @@ class OcrPage(BaseModel):
     page_number: int = Field(ge=1)
     raw_text: str
     elements: list[OcrElement] = Field(default_factory=list)
+    document: DoclingDocument
 
 
 class OcrChunkResult(BaseModel):

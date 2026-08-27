@@ -27,11 +27,6 @@ from ocr_db.collect.ocr_models import (
 )
 from ocr_db.collect.pdf_render import render_pdf_pages
 
-DEFAULT_OCR_MODEL_ID = "ibm/granite-docling"
-DEFAULT_LLAMA_SERVER_URL = "http://localhost:8080"
-DEFAULT_REQUEST_THREADS = 1
-DEFAULT_RASTER_THREADS = 1
-
 
 @beartype
 def check_llama_server(
@@ -94,6 +89,7 @@ def parse_doctags_page(
     doc_tags = DocTagsDocument(pages=[
         DocTagsPage(tokens=content),
     ])
+
     document = DoclingDocument.load_from_doctags(doctag_document=doc_tags, )
 
     elements: list[OcrElement] = []
@@ -138,6 +134,7 @@ def parse_doctags_page(
         page_number=page_number,
         elements=elements,
         raw_text=raw_text,
+        document=document,
     )
 
 
@@ -147,18 +144,16 @@ class OcrProcessor:
     @beartype
     def __init__(
         self,
-        model_id: str = DEFAULT_OCR_MODEL_ID,
-        llama_server_url: str = DEFAULT_LLAMA_SERVER_URL,
-        dpi: int = 300,
-        prompt: str = "Convert this page to Ocr.",
+        request_threads: int,
+        raster_threads: int,
+        model_id: str,
+        llama_server_url: str,
+        dpi: int,
         request_timeout: int = 600,
-        request_threads: int = DEFAULT_REQUEST_THREADS,
-        raster_threads: int = DEFAULT_RASTER_THREADS,
     ) -> None:
         self.model_id = model_id
         self.llama_server_url = llama_server_url.rstrip("/")
         self.dpi = dpi
-        self.prompt = prompt
         self.request_timeout = request_timeout
         self.request_threads = request_threads
         self.raster_threads = raster_threads
@@ -169,7 +164,7 @@ class OcrProcessor:
         )
 
     @beartype
-    def call_vlm(
+    def call_model(
         self,
         image: Image.Image,
         page_number: int,
@@ -196,7 +191,7 @@ class OcrProcessor:
                         "content": [
                             {
                                 "type": "text",
-                                "text": self.prompt,
+                                "text": "Convert this page to docling."
                             },
                             {
                                 "type": "image_url",
@@ -238,7 +233,7 @@ class OcrProcessor:
             image = source_image.convert("RGB")
 
         width, height = image.size
-        raw_text = self.call_vlm(
+        raw_text = self.call_model(
             image=image,
             page_number=page_number,
         )
