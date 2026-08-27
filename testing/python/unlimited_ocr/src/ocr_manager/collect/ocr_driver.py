@@ -10,16 +10,16 @@ from beartype.typing import Iterable, Optional
 from loguru import logger
 from sqlalchemy.orm import Session
 
+from ocr_manager.collect.ocr_models import OcrChunkOcrResult
+from ocr_manager.collect.ocr_processor import OcrProcessor
 from ocr_manager.ocr_db import (
     chunk_exists,
     clear_document_data,
     create_engine_and_tables,
     ensure_document_and_input_file,
     get_chunk_record,
-    save_chunk_to_database,
+    save_result_to_database,
 )
-
-from ocr_manager.collect.ocr_processor import DEFAULT_DOCLING_MODEL_ID, DoclingChunkOcrResult, DoclingOcrProcessor
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff"}
 
@@ -103,50 +103,23 @@ def split_chunks(items: list[Path],
 
 
 @beartype
-def save_unlimited_ocr_to_database(
-    session: Session,
-    document_id: int,
-    result: UnlimitedChunkOcrResult,
-) -> None:
-    """Map Unlimited-OCR specific chunk data into the sqlite database."""
-    image_blobs = {
-        (item.page_number, item.element_index): item.image_blob
-        for item in result.extracted_images
-    }
-    save_chunk_to_database(
-        session=session,
-        document_id=document_id,
-        chunk_index=result.chunk_index,
-        raw_output=result.raw_text,
-        pages=result.pages,
-        image_blobs=image_blobs,
-    )
-
-
-@beartype
 def save_docling_ocr_to_database(
     session: Session,
     document_id: int,
-    result: DoclingChunkOcrResult,
+    result: OcrChunkOcrResult,
 ) -> None:
-    image_blobs = {
-        (item.page_number, item.element_index): item.image_blob
-        for item in result.extracted_images
-    }
-    save_chunk_to_database(
+
+    save_result_to_database(
         session=session,
         document_id=document_id,
-        chunk_index=result.chunk_index,
-        raw_output=result.raw_text,
-        pages=result.pages,
-        image_blobs=image_blobs,
+        result=result,
     )
 
 
 @beartype
 def process_file(
     session: Session,
-    processor: UnlimitedOcrProcessor | DoclingOcrProcessor,
+    processor: OcrProcessor,
     source_file: Path,
     output_root: Path,
     mirror_from: Path,
@@ -198,11 +171,7 @@ def process_file(
             encoding="utf-8",
         )
 
-        match result:
-            case UnlimitedChunkOcrResult():
-                save_unlimited_ocr_to_database(session, document_id, result)
-            case DoclingChunkOcrResult():
-                save_docling_ocr_to_database(session, document_id, result)
+        save_docling_ocr_to_database(session, document_id, result)
 
         logger.info(
             f"Done chunk {chunk_index} * {chunk_size}/{rendered_pages}")
@@ -222,7 +191,7 @@ def main() -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     session_factory = create_engine_and_tables(db_path)
 
-    processor = DoclingOcrProcessor(
+    processor = OcrProcessor(
         llama_url=args.llama_url,
         dpi=args.dpi,
     )

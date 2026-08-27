@@ -12,40 +12,25 @@ import requests
 from beartype import beartype
 from docling_core.types.doc.document import (
     ContentLayer,
-    DoclingDocument,
+    DoclingDocumentDocument,
     DocTagsDocument,
     DocTagsPage,
 )
 from loguru import logger
 from PIL import Image
 
-from ocr_manager.collect.ocr_unlimited import render_pdf_pages
+from ocr_manager.collect.pdf_render import pdf_digest, render_pdf_page
 from src.ocr_manager.collect.ocr_models import (
     OcrBBox,
+    OcrChunkOcrResult,
     OcrElement,
+    OcrExtractedImage,
     OcrPage,
 )
 
-DEFAULT_DOCLING_MODEL_ID = "ibm/granite-docling"
+DEFAULT_Ocr_MODEL_ID = "ibm/granite-Ocr"
 DEFAULT_LLAMA_SERVER_URL = "http://localhost:8080"
 DEFAULT_REQUEST_THREADS = 1
-
-
-@dataclass(frozen=True)
-class DoclingExtractedImage:
-    page_number: int
-    element_index: int
-    image_blob: bytes
-
-
-@dataclass(frozen=True)
-class DoclingChunkOcrResult:
-    """Docling-OCR specific result for one processed chunk."""
-
-    chunk_index: int
-    raw_text: str
-    pages: list[OcrPage]
-    extracted_images: list[DoclingExtractedImage]
 
 
 @beartype
@@ -109,7 +94,7 @@ def parse_doctags_page(
     doc_tags = DocTagsDocument(pages=[
         DocTagsPage(tokens=content),
     ])
-    document = DoclingDocument.load_from_doctags(doctag_document=doc_tags, )
+    document = OcrDocument.load_from_doctags(doctag_document=doc_tags, )
 
     elements: list[OcrElement] = []
 
@@ -152,19 +137,20 @@ def parse_doctags_page(
     return OcrPage(
         page_number=page_number,
         elements=elements,
+        raw_text=raw_text,
     )
 
 
-class DoclingOcrProcessor:
-    """Runs Docling OCR through a remote llama.cpp server."""
+class OcrProcessor:
+    """Runs Ocr OCR through a remote llama.cpp server."""
 
     @beartype
     def __init__(
         self,
-        model_id: str = DEFAULT_DOCLING_MODEL_ID,
+        model_id: str = DEFAULT_Ocr_MODEL_ID,
         llama_server_url: str = DEFAULT_LLAMA_SERVER_URL,
         dpi: int = 300,
-        prompt: str = "Convert this page to docling.",
+        prompt: str = "Convert this page to Ocr.",
         request_timeout: int = 600,
         request_threads: int = DEFAULT_REQUEST_THREADS,
     ) -> None:
@@ -266,12 +252,11 @@ class DoclingOcrProcessor:
         page_number: int,
         pages_dir: Path,
         extracted_images_dir: Path,
-    ) -> tuple[str, OcrPage, list[DoclingExtractedImage]]:
+    ) -> tuple[str, OcrPage, list[OcrExtractedImage]]:
         destination = pages_dir / source_page.name
         shutil.copy2(source_page, destination)
 
-        logger.info(
-            f"Running Docling OCR for page {page_number}, {destination}")
+        logger.info(f"Running Ocr OCR for page {page_number}, {destination}")
 
         with Image.open(destination) as source_image:
             image = source_image.convert("RGB")
@@ -289,7 +274,7 @@ class DoclingOcrProcessor:
             page_height=height,
         )
 
-        extracted_images: list[DoclingExtractedImage] = []
+        extracted_images: list[OcrExtractedImage] = []
         page_image_index = 0
 
         for element_index, element in enumerate(page.elements):
@@ -314,7 +299,7 @@ class DoclingOcrProcessor:
             crop.save(image_buffer, format="PNG")
 
             extracted_images.append(
-                DoclingExtractedImage(
+                OcrExtractedImage(
                     page_number=page_number,
                     element_index=element_index,
                     image_blob=image_buffer.getvalue(),
@@ -332,58 +317,85 @@ class DoclingOcrProcessor:
     def process_chunk(
         self,
         source_file: Path,
-        chunk_index: int,
-        chunk_page_files: list[Path],
-        page_offset: int,
+        page_indices: range | set[int],
+        dpi: int,
         chunk_dir: Path,
-    ) -> DoclingChunkOcrResult:
-        """OCR one chunk of page images through llama.cpp."""
-
-        del source_file
+    ) -> OcrChunkOcrResult:
+        """Rasterize and OCR the requested PDF pages."""
 
         pages_dir = chunk_dir / "pages"
         extracted_images_dir = chunk_dir / "images"
+        cache_dir = Path("/tmp") / pdf_digest(source_file)
 
         pages_dir.mkdir(parents=True, exist_ok=True)
         extracted_images_dir.mkdir(parents=True, exist_ok=True)
+        cache_dir.mkdir(parents=True, exist_ok=True)
 
-        page_entries = [(source_page, page_offset + index + 1)
-                        for index, source_page in enumerate(chunk_page_files)]
+        with pymupdf.open(source_file) as document:
+            page_count = document.page_count
+
+        if isinstance(page_indices, range):
+            start, stop, step = page_indices.indices(page_count)
+            selected_page_indices = list(range(start, stop, step))
+        else:
+            selected_page_indices = sorted(page_index
+                                           for page_index in page_indices
+                                           if 0 <= page_index < page_count)
+
+        cache_paths = {
+            page_index: cache_dir / f"page_{page_index + 1:06d}.png"
+            for page_index in selected_page_indices
+        }
+
+        missing_page_indices = [
+            page_index for page_index, cache_path in cache_paths.items()
+            if not cache_path.is_file()
+        ]
+
+        if missing_page_indices:
+            logger.info(
+                f"Rasterizing {len(missing_page_indices)} missing pages "
+                f"from {source_file}", )
+
+            def rasterize_page(page_index: int) -> Path:
+                return render_pdf_page(
+                    input_pdf=source_file,
+                    destination=cache_dir,
+                    dpi=dpi,
+                    page_index=page_index,
+                )
+
+            with ThreadPoolExecutor(
+                    max_workers=self.request_threads) as executor:
+                list(executor.map(rasterize_page, missing_page_indices))
+
+        page_entries = [(cache_paths[page_index], page_index + 1)
+                        for page_index in selected_page_indices]
 
         def process_page_entry(
-            entry: tuple[Path, int],
-        ) -> tuple[str, OcrPage, list[DoclingExtractedImage]]:
+            entry: tuple[Path,
+                         int], ) -> tuple[OcrPage, list[OcrExtractedImage]]:
             source_page, page_number = entry
 
-            return self.process_page(
+            _, page, page_images = self.process_page(
                 source_page=source_page,
                 page_number=page_number,
                 pages_dir=pages_dir,
                 extracted_images_dir=extracted_images_dir,
             )
 
-        raw_parts: list[str] = []
+            return page, page_images
+
         pages: list[OcrPage] = []
-        extracted_images: list[DoclingExtractedImage] = []
+        extracted_images: list[OcrExtractedImage] = []
 
         with ThreadPoolExecutor(max_workers=self.request_threads) as executor:
-            for raw_text, page, page_images in executor.map(
-                    process_page_entry,
-                    page_entries,
-            ):
-                raw_parts.append(raw_text)
+            for page, page_images in executor.map(process_page_entry,
+                                                  page_entries):
                 pages.append(page)
                 extracted_images.extend(page_images)
 
-        combined_raw_text = "\n<PAGE>\n".join(raw_parts)
-        (chunk_dir / "raw_text.txt").write_text(
-            combined_raw_text,
-            encoding="utf-8",
-        )
-
-        return DoclingChunkOcrResult(
-            chunk_index=chunk_index,
-            raw_text=combined_raw_text,
+        return OcrChunkOcrResult(
             pages=pages,
             extracted_images=extracted_images,
         )

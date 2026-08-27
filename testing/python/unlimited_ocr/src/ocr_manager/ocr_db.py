@@ -12,7 +12,7 @@ from sqlalchemy import (Boolean, ForeignKey, LargeBinary, String, Text,
 from sqlalchemy.orm import (DeclarativeBase, Mapped, Session, mapped_column,
                             sessionmaker)
 
-from ocr_manager.collect.ocr_models import OcrPage
+from ocr_manager.collect.ocr_models import OcrChunkOcrResult, OcrPage
 
 
 class Base(DeclarativeBase):
@@ -206,28 +206,19 @@ def get_or_create_page(session: Session, document_id: int,
 
 
 @beartype
-def save_chunk_to_database(
+def save_result_to_database(
     session: Session,
     document_id: int,
-    chunk_index: int,
-    raw_output: str,
-    pages: list[OcrPage],
-    image_blobs: dict[tuple[int, int], bytes],
+    result: OcrChunkOcrResult,
 ) -> None:
     """Persist one OCR chunk. `image_blobs` maps (page_number, element_index)
     to the cropped image bytes for image elements."""
-    structured_json = json.dumps([page.model_dump() for page in pages],
-                                 ensure_ascii=False)
-    chunk = ChunkRecord(
-        document_id=document_id,
-        chunk_index=chunk_index,
-        raw_output=raw_output,
-        structured_json=structured_json,
-    )
-    session.add(chunk)
-    session.flush()
+    image_blobs = {
+        (item.page_number, item.element_index): item.image_blob
+        for item in result.extracted_images
+    }
 
-    for page in pages:
+    for page in result.pages:
         page_row = get_or_create_page(session,
                                       document_id=document_id,
                                       page_number=page.page_number)

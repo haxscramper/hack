@@ -16,7 +16,7 @@ from src.ocr_manager.ocr_db import (
     create_engine_and_tables,
     ensure_document_and_input_file,
     get_chunk_record,
-    save_chunk_to_database,
+    save_result_to_database,
 )
 
 from ocr_manager.collect.ocr_processor import DEFAULT_DOCLING_MODEL_ID, DoclingChunkOcrResult, DoclingOcrProcessor
@@ -114,7 +114,7 @@ def save_docling_ocr_to_database(
         (item.page_number, item.element_index): item.image_blob
         for item in result.extracted_images
     }
-    save_chunk_to_database(
+    save_result_to_database(
         session=session,
         document_id=document_id,
         chunk_index=result.chunk_index,

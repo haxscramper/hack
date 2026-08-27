@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 from __future__ import annotations
+from dataclasses import dataclass
 
 from pydantic import BaseModel, Field
 
@@ -19,6 +20,7 @@ class OcrElement(BaseModel):
 
 class OcrPage(BaseModel):
     page_number: int = Field(ge=1)
+    raw_text: str
     elements: list[OcrElement] = Field(default_factory=list)
 
 
@@ -39,3 +41,18 @@ class OcrDocumentResult(BaseModel):
     relative_source: str
     output_dir: str
     chunks: list[OcrChunkResult]
+
+
+@dataclass(frozen=True)
+class OcrExtractedImage:
+    page_number: int
+    element_index: int
+    image_blob: bytes
+
+
+@dataclass(frozen=True)
+class OcrChunkOcrResult:
+    """Ocr-OCR specific result for one processed chunk."""
+
+    pages: list[OcrPage]
+    extracted_images: list[OcrExtractedImage]
