@@ -3,23 +3,21 @@ from __future__ import annotations
 
 import base64
 import io
-import shutil
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
 from pathlib import Path
 
+import pymupdf
 import requests
 from beartype import beartype
 from docling_core.types.doc.document import (
     ContentLayer,  # type: ignore
-    DoclingDocumentDocument,  # type: ignore
+    DoclingDocument,  # type: ignore
     DocTagsDocument,  # type: ignore
     DocTagsPage,  # type: ignore
 )
 from loguru import logger
 from PIL import Image
 
-from ocr_db.collect.pdf_render import pdf_digest, render_pdf_page
 from ocr_db.collect.ocr_models import (
     OcrBBox,
     OcrChunkOcrResult,
@@ -27,10 +25,12 @@ from ocr_db.collect.ocr_models import (
     OcrExtractedImage,
     OcrPage,
 )
+from ocr_db.collect.pdf_render import render_pdf_pages
 
-DEFAULT_Ocr_MODEL_ID = "ibm/granite-Ocr"
+DEFAULT_OCR_MODEL_ID = "ibm/granite-Ocr"
 DEFAULT_LLAMA_SERVER_URL = "http://localhost:8080"
 DEFAULT_REQUEST_THREADS = 1
+DEFAULT_RASTER_THREADS = 1
 
 
 @beartype
@@ -94,7 +94,7 @@ def parse_doctags_page(
     doc_tags = DocTagsDocument(pages=[
         DocTagsPage(tokens=content),
     ])
-    document = OcrDocument.load_from_doctags(doctag_document=doc_tags, )
+    document = DoclingDocument.load_from_doctags(doctag_document=doc_tags, )
 
     elements: list[OcrElement] = []
 
@@ -142,17 +142,18 @@ def parse_doctags_page(
 
 
 class OcrProcessor:
-    """Runs Ocr OCR through a remote llama.cpp server."""
+    """Runs OCR through a remote llama.cpp server."""
 
     @beartype
     def __init__(
         self,
-        model_id: str = DEFAULT_Ocr_MODEL_ID,
+        model_id: str = DEFAULT_OCR_MODEL_ID,
         llama_server_url: str = DEFAULT_LLAMA_SERVER_URL,
         dpi: int = 300,
         prompt: str = "Convert this page to Ocr.",
         request_timeout: int = 600,
         request_threads: int = DEFAULT_REQUEST_THREADS,
+        raster_threads: int = DEFAULT_RASTER_THREADS,
     ) -> None:
         self.model_id = model_id
         self.llama_server_url = llama_server_url.rstrip("/")
@@ -160,32 +161,12 @@ class OcrProcessor:
         self.prompt = prompt
         self.request_timeout = request_timeout
         self.request_threads = request_threads
+        self.raster_threads = raster_threads
 
         check_llama_server(
             llama_server_url=self.llama_server_url,
             request_timeout=self.request_timeout,
         )
-
-    @beartype
-    def render_pages(
-        self,
-        source_file: Path,
-        rendered_dir: Path,
-    ) -> list[Path]:
-        extension = source_file.suffix.lower()
-
-        if extension == ".pdf":
-            return render_pdf_pages(
-                source_file,
-                rendered_dir,
-                dpi=self.dpi,
-            )
-
-        rendered_dir.mkdir(parents=True, exist_ok=True)
-        page_copy = rendered_dir / f"page_0001{extension}"
-        shutil.copy2(source_file, page_copy)
-
-        return [page_copy]
 
     @beartype
     def call_vlm(
@@ -250,15 +231,10 @@ class OcrProcessor:
         self,
         source_page: Path,
         page_number: int,
-        pages_dir: Path,
-        extracted_images_dir: Path,
-    ) -> tuple[str, OcrPage, list[OcrExtractedImage]]:
-        destination = pages_dir / source_page.name
-        shutil.copy2(source_page, destination)
+    ) -> tuple[OcrPage, list[OcrExtractedImage]]:
+        logger.info(f"Running OCR for page {page_number}, {source_page}")
 
-        logger.info(f"Running Ocr OCR for page {page_number}, {destination}")
-
-        with Image.open(destination) as source_image:
+        with Image.open(source_page) as source_image:
             image = source_image.convert("RGB")
 
         width, height = image.size
@@ -275,7 +251,6 @@ class OcrProcessor:
         )
 
         extracted_images: list[OcrExtractedImage] = []
-        page_image_index = 0
 
         for element_index, element in enumerate(page.elements):
             if element.label.strip().casefold() not in {
@@ -289,12 +264,10 @@ class OcrProcessor:
             x2 = int(element.bbox.x2 / 999 * width)
             y2 = int(element.bbox.y2 / 999 * height)
 
-            crop = image.crop((x1, y1, x2, y2))
-            image_path = (extracted_images_dir /
-                          (f"page_{page_number:04d}_"
-                           f"image_{page_image_index:04d}.png"))
-            crop.save(image_path, format="PNG")
+            if x2 <= x1 or y2 <= y1:
+                continue
 
+            crop = image.crop((x1, y1, x2, y2))
             image_buffer = io.BytesIO()
             crop.save(image_buffer, format="PNG")
 
@@ -305,93 +278,77 @@ class OcrProcessor:
                     image_blob=image_buffer.getvalue(),
                 ))
 
-            page_image_index += 1
-
         logger.info(f"Completed page {page_number}: "
                     f"{len(raw_text)} characters, "
                     f"{len(extracted_images)} extracted images")
 
-        return raw_text, page, extracted_images
+        return page, extracted_images
 
     @beartype
     def process_chunk(
         self,
         source_file: Path,
         page_indices: range | set[int],
-        dpi: int,
-        chunk_dir: Path,
     ) -> OcrChunkOcrResult:
         """Rasterize and OCR the requested PDF pages."""
-
-        pages_dir = chunk_dir / "pages"
-        extracted_images_dir = chunk_dir / "images"
-        cache_dir = Path("/tmp") / pdf_digest(source_file)
-
-        pages_dir.mkdir(parents=True, exist_ok=True)
-        extracted_images_dir.mkdir(parents=True, exist_ok=True)
-        cache_dir.mkdir(parents=True, exist_ok=True)
 
         with pymupdf.open(source_file) as document:
             page_count = document.page_count
 
         if isinstance(page_indices, range):
             start, stop, step = page_indices.indices(page_count)
-            selected_page_indices = list(range(start, stop, step))
+            target_pages = set(range(start, stop, step))
         else:
-            selected_page_indices = sorted(page_index
-                                           for page_index in page_indices
-                                           if 0 <= page_index < page_count)
+            target_pages = {
+                page_index
+                for page_index in page_indices if 0 <= page_index < page_count
+            }
 
-        cache_paths = {
-            page_index: cache_dir / f"page_{page_index + 1:06d}.png"
-            for page_index in selected_page_indices
-        }
+        if not target_pages:
+            return OcrChunkOcrResult(
+                pages=[],
+                extracted_images=[],
+            )
 
-        missing_page_indices = [
-            page_index for page_index, cache_path in cache_paths.items()
-            if not cache_path.is_file()
-        ]
+        logger.info(
+            f"Rasterizing {len(target_pages)} pages from {source_file}")
 
-        if missing_page_indices:
-            logger.info(
-                f"Rasterizing {len(missing_page_indices)} missing pages "
-                f"from {source_file}", )
+        rasterized_pages = render_pdf_pages(
+            input_pdf=source_file,
+            dpi=self.dpi,
+            raster_threads=self.raster_threads,
+            target_pages=target_pages,
+        )
 
-            def rasterize_page(page_index: int) -> Path:
-                return render_pdf_page(
-                    input_pdf=source_file,
-                    destination=cache_dir,
-                    dpi=dpi,
-                    page_index=page_index,
-                )
+        missing_pages = target_pages.difference(rasterized_pages)
 
-            with ThreadPoolExecutor(
-                    max_workers=self.request_threads) as executor:
-                list(executor.map(rasterize_page, missing_page_indices))
+        if missing_pages:
+            missing_page_numbers = sorted(page_index + 1
+                                          for page_index in missing_pages)
+            raise RuntimeError("PDF rasterization did not return pages "
+                               f"{missing_page_numbers}")
 
-        page_entries = [(cache_paths[page_index], page_index + 1)
-                        for page_index in selected_page_indices]
+        page_entries = [(rasterized_pages[page_index], page_index + 1)
+                        for page_index in sorted(target_pages)]
 
         def process_page_entry(
             entry: tuple[Path,
                          int], ) -> tuple[OcrPage, list[OcrExtractedImage]]:
             source_page, page_number = entry
 
-            _, page, page_images = self.process_page(
+            return self.process_page(
                 source_page=source_page,
                 page_number=page_number,
-                pages_dir=pages_dir,
-                extracted_images_dir=extracted_images_dir,
             )
-
-            return page, page_images
 
         pages: list[OcrPage] = []
         extracted_images: list[OcrExtractedImage] = []
 
         with ThreadPoolExecutor(max_workers=self.request_threads) as executor:
-            for page, page_images in executor.map(process_page_entry,
-                                                  page_entries):
+            for page, page_images in executor.map(
+                    process_page_entry,
+                    page_entries,
+            ):
                 pages.append(page)
                 extracted_images.extend(page_images)
 

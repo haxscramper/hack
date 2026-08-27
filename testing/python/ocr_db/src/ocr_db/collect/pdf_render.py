@@ -45,36 +45,27 @@ def render_pdf_page(
 
 def render_pdf_pages(
     input_pdf: Path,
-    destination: Path,
     dpi: int,
     raster_threads: int,
-    max_pages: int,
-) -> list[Path]:
-    destination.mkdir(parents=True, exist_ok=True)
-
-    cache_directory = Path("/tmp") / pdf_digest(input_pdf)
+    target_pages: set[int],
+) -> dict[int, Path]:
+    cache_directory = Path("/tmp") / pdf_digest(input_pdf) / f"dpi_{dpi}"
     cache_directory.mkdir(parents=True, exist_ok=True)
 
-    with pymupdf.open(input_pdf) as document:
-        page_count = min(document.page_count, max_pages)
+    page_paths = {
+        page_index: cache_directory / f"page_{page_index + 1:06d}.png"
+        for page_index in target_pages
+    }
 
-    if page_count == 0:
-        raise RuntimeError(f"PDF contains no pages: {input_pdf}")
-
-    page_indexes = range(page_count)
-    cache_paths = [
-        cache_directory / f"page_{page_index + 1:06d}.png"
-        for page_index in page_indexes
-    ]
-
-    missed_page_indexes = [
-        page_index for page_index, cache_path in enumerate(cache_paths)
-        if not cache_path.is_file()
-    ]
+    existing_pages = {
+        page_index
+        for page_index, page_path in page_paths.items() if page_path.is_file()
+    }
+    missing_pages = target_pages - existing_pages
 
     logger.info(
         f"Using cache directory {cache_directory}; "
-        f"{len(missed_page_indexes)} of {page_count} pages need rendering", )
+        f"{len(missing_pages)} of {len(target_pages)} pages need rendering", )
 
     with ThreadPoolExecutor(max_workers=raster_threads) as executor:
         list(
@@ -85,21 +76,10 @@ def render_pdf_pages(
                     dpi=dpi,
                     page_index=page_index,
                 ),
-                missed_page_indexes,
-            ), )
+                missing_pages,
+            ))
 
-    page_paths: list[Path] = []
-
-    for cache_path in cache_paths:
-        output_path = destination / cache_path.name
-
-        if output_path.exists():
-            output_path.unlink()
-
-        os.link(cache_path, output_path)
-        page_paths.append(output_path)
-
-    total_size = sum(path.stat().st_size for path in page_paths)
+    total_size = sum(path.stat().st_size for path in page_paths.values())
 
     logger.info(
         f"Prepared {len(page_paths)} pages, total size {total_size} bytes", )
