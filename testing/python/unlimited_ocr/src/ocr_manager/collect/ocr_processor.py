@@ -17,7 +17,7 @@ from loguru import logger
 from PIL import Image
 
 from src.ocr_manager.collect.ocr_unlimited import render_pdf_pages
-from src.ocr_manager.collect.ocr_unlimited_models import OcrBBox, OcrElement, OcrPage
+from ocr_manager.collect.ocr_models import OcrBBox, OcrElement, OcrPage
 
 DEFAULT_DOCLING_MODEL_ID = "ibm/granite-docling"
 DEFAULT_OLLAMA_URL = "http://localhost:11434"
@@ -40,31 +40,30 @@ class DoclingChunkOcrResult:
 
 
 @beartype
-def ensure_ollama_running(ollama_url: str, model_id: str) -> None:
+def ensure_llama_running(llama_url: str, model_id: str) -> None:
     try:
-        requests.get(f"{ollama_url}/api/tags", timeout=2)
+        requests.get(f"{llama_url}/api/tags", timeout=2)
     except requests.exceptions.RequestException:
-        logger.info("Ollama is not running, starting 'ollama serve'")
+        logger.info("Ollama is not running, starting 'llama serve'")
         subprocess.Popen(
-            ["ollama", "serve"],
+            ["llama", "serve"],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
         for _ in range(15):
             try:
-                requests.get(f"{ollama_url}/api/tags", timeout=2)
+                requests.get(f"{llama_url}/api/tags", timeout=2)
                 break
             except requests.exceptions.RequestException:
                 time.sleep(1)
         else:
             raise RuntimeError(
-                f"Failed to start or connect to 'ollama serve' at {ollama_url}"
-            )
+                f"Failed to start or connect to 'llama serve' at {llama_url}")
 
-    result = subprocess.run(["ollama", "list"], capture_output=True, text=True)
+    result = subprocess.run(["llama", "list"], capture_output=True, text=True)
     if model_id not in result.stdout:
         logger.info(f"Model {model_id} not found, pulling")
-        subprocess.run(["ollama", "pull", model_id], check=True)
+        subprocess.run(["llama", "pull", model_id], check=True)
 
 
 @beartype
@@ -121,17 +120,17 @@ class DoclingOcrProcessor:
     def __init__(
         self,
         model_id: str = DEFAULT_DOCLING_MODEL_ID,
-        ollama_url: str = DEFAULT_OLLAMA_URL,
+        llama_url: str = DEFAULT_OLLAMA_URL,
         dpi: int = 300,
         prompt: str = "Convert this page to docling.",
         request_timeout: int = 600,
     ) -> None:
         self.model_id = model_id
-        self.ollama_url = ollama_url
+        self.llama_url = llama_url
         self.dpi = dpi
         self.prompt = prompt
         self.request_timeout = request_timeout
-        ensure_ollama_running(ollama_url, model_id)
+        ensure_llama_running(llama_url, model_id)
 
     @beartype
     def render_pages(self, source_file: Path,
@@ -165,7 +164,7 @@ class DoclingOcrProcessor:
             },
         }
 
-        response = requests.post(f"{self.ollama_url}/api/chat",
+        response = requests.post(f"{self.llama_url}/api/chat",
                                  json=payload,
                                  timeout=self.request_timeout)
         response.raise_for_status()

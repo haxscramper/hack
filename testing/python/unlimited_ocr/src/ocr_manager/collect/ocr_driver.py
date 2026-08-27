@@ -19,7 +19,7 @@ from ocr_manager.ocr_db import (
     save_chunk_to_database,
 )
 
-from src.ocr_manager.collect.ocr_docling import DEFAULT_DOCLING_MODEL_ID, DoclingChunkOcrResult, DoclingOcrProcessor
+from ocr_manager.collect.ocr_processor import DEFAULT_DOCLING_MODEL_ID, DoclingChunkOcrResult, DoclingOcrProcessor
 from src.ocr_manager.collect.ocr_unlimited import (UnlimitedChunkOcrResult,
                                                    UnlimitedOcrProcessor)
 
@@ -46,10 +46,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--prompt-image", default="<image>document parsing.")
     parser.add_argument("--prompt-pdf", default="<image>Multi page parsing.")
     parser.add_argument("--overwrite", action="store_true")
-    parser.add_argument("--engine",
-                        choices=["unlimited", "docling"],
-                        default="unlimited")
-    parser.add_argument("--ollama-url", default="http://localhost:11434")
+    parser.add_argument("--llama-url", default="http://localhost:8080")
 
     return parser.parse_args()
 
@@ -227,23 +224,12 @@ def main() -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     session_factory = create_engine_and_tables(db_path)
 
-    match args.engine:
-        case "unlimited":
-            processor = UnlimitedOcrProcessor(
-                model_id=args.model_id,
-                image_size=args.image_size,
-                max_length=args.max_length,
-                dpi=args.dpi,
-                prompt_image=args.prompt_image,
-                prompt_pdf=args.prompt_pdf,
-            )
-        case "docling":
-            processor = DoclingOcrProcessor(
-                model_id=args.model_id if args.model_id
-                != "baidu/Unlimited-OCR" else DEFAULT_DOCLING_MODEL_ID,
-                ollama_url=args.ollama_url,
-                dpi=args.dpi,
-            )
+    processor = DoclingOcrProcessor(
+        model_id=args.model_id if args.model_id != "baidu/Unlimited-OCR" else
+        DEFAULT_DOCLING_MODEL_ID,
+        llama_url=args.llama_url,
+        dpi=args.dpi,
+    )
 
     failures: list[tuple[Path, Exception]] = []
     cleared_documents: set[int] = set()

@@ -19,7 +19,7 @@ from src.ocr_manager.ocr_db import (
     save_chunk_to_database,
 )
 
-from src.ocr_manager.collect.ocr_docling import DEFAULT_DOCLING_MODEL_ID, DoclingChunkOcrResult, DoclingOcrProcessor
+from ocr_manager.collect.ocr_processor import DEFAULT_DOCLING_MODEL_ID, DoclingChunkOcrResult, DoclingOcrProcessor
 from src.ocr_manager.collect.ocr_unlimited import (UnlimitedChunkOcrResult,
                                                    UnlimitedOcrProcessor)
 
@@ -49,7 +49,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--engine",
                         choices=["unlimited", "docling"],
                         default="unlimited")
-    parser.add_argument("--ollama-url", default="http://localhost:11434")
+    parser.add_argument("--llama-url", default="http://localhost:11434")
 
     return parser.parse_args()
 
@@ -238,7 +238,7 @@ def main() -> None:
             processor = DoclingOcrProcessor(
                 model_id=args.model_id if args.model_id
                 != "baidu/Unlimited-OCR" else DEFAULT_DOCLING_MODEL_ID,
-                ollama_url=args.ollama_url,
+                llama_url=args.llama_url,
                 dpi=args.dpi,
             )
 
