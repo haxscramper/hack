@@ -16,7 +16,7 @@ from docling_core.types.doc.document import (
     DocTagsPage,  # type: ignore
 )
 from loguru import logger
-from PIL import Image
+from PIL import Image as PILImage
 
 from ocr_db.collect.ocr_models import (
     OcrBBox,
@@ -42,6 +42,14 @@ def check_llama_server(
     logger.info(f"Connected to llama.cpp server at {llama_server_url}")
 
 
+def clamp(value, min_val, max_val):
+    if value < min_val:
+        return min_val
+    if value > max_val:
+        return max_val
+    return value
+
+
 @beartype
 def normalize_bbox(
     left: float,
@@ -51,10 +59,10 @@ def normalize_bbox(
     width: int,
     height: int,
 ) -> OcrBBox:
-    x1 = max(0, min(999, int(left / width * 999)))
-    y1 = max(0, min(999, int(top / height * 999)))
-    x2 = max(0, min(999, int(right / width * 999)))
-    y2 = max(0, min(999, int(bottom / height * 999)))
+    x1 = left / float(width)
+    y1 = top / float(height)
+    x2 = right / float(width)
+    y2 = bottom / float(height)
 
     if x2 < x1:
         x1, x2 = x2, x1
@@ -62,6 +70,12 @@ def normalize_bbox(
     if y2 < y1:
         y1, y2 = y2, y1
 
+    x1 = clamp(x1, 0, 1)
+    x2 = clamp(x2, 0, 1)
+    y1 = clamp(y1, 0, 1)
+    y2 = clamp(y2, 0, 1)
+
+    # logger.debug(f"left={left} right={right} top={top} bottom={bottom} width={width} height={height} -> x1={x1} x2={x2} y1={y1} y2={y2}")
     return OcrBBox(
         x1=x1,
         y1=y1,
@@ -76,6 +90,7 @@ def parse_doctags_page(
     page_number: int,
     page_width: int,
     page_height: int,
+    page_image: PILImage.Image,
 ) -> OcrPage:
     content = raw_text.strip()
 
@@ -83,33 +98,30 @@ def parse_doctags_page(
         raise RuntimeError(
             f"Model returned empty output for page {page_number}")
 
-    if not content.startswith("<doctag>"):
-        content = f"<doctag>{content}</doctag>"
+    doc_tags = DocTagsDocument.from_doctags_and_image_pairs(
+        doctags=[content],
+        images=[page_image],
+    )
 
-    doc_tags = DocTagsDocument(pages=[
-        DocTagsPage(tokens=content),
-    ])
-
-    document = DoclingDocument.load_from_doctags(doctag_document=doc_tags, )
-
+    document = DoclingDocument.load_from_doctags(doctag_document=doc_tags)
     elements: list[OcrElement] = []
 
     for item, _ in document.iterate_items(
             included_content_layers=set(ContentLayer),
             with_groups=False,
     ):
-        if hasattr(item, "label") and item.label:
-            label = str(item.label.value)
+        if hasattr(item, "label") and item.label:  # type: ignore
+            label = str(item.label.value)  # type: ignore
         else:
             label = type(item).__name__
 
         text = getattr(item, "text", "") or ""
         bbox: OcrBBox | None = None
 
-        if hasattr(item, "prov") and item.prov:
-            provenance = item.prov[0]
+        if hasattr(item, "prov") and item.prov:  # type: ignore
+            provenance = item.prov[0]  # type: ignore
 
-            if hasattr(provenance, "bbox") and provenance.bbox:
+            if hasattr(provenance, "bbox") and provenance.bbox:  # type: ignore
                 bbox = normalize_bbox(
                     left=provenance.bbox.l,
                     top=provenance.bbox.t,
@@ -164,7 +176,7 @@ class OcrProcessor:
     @beartype
     def call_model(
         self,
-        image: Image.Image,
+        image: PILImage.Image,
         page_number: int,
     ) -> str:
         image_buffer = io.BytesIO()
@@ -227,7 +239,7 @@ class OcrProcessor:
     ) -> tuple[OcrPage, list[OcrExtractedImage]]:
         logger.info(f"Running OCR for page {page_number}, {source_page}")
 
-        with Image.open(source_page) as source_image:
+        with PILImage.open(source_page) as source_image:
             image = source_image.convert("RGB")
 
         width, height = image.size
@@ -241,6 +253,7 @@ class OcrProcessor:
             page_number=page_number,
             page_width=width,
             page_height=height,
+            page_image=image,
         )
 
         extracted_images: list[OcrExtractedImage] = []

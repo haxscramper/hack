@@ -9,8 +9,9 @@ run_vllm_script infile outfile:
     --ssh-user "$RUNPOD_SSH_USER" \
     --ssh-key "$RUNPOD_SSH_KEY"
 
-run_llama infile outfile llama_url:
+run_llama infile outfile llama_url *ARGS:
   uv run --no-project local/llama_run_docling.py \
     --input {{infile}} \
     --output {{outfile}} \
-    --llama-server-url {{llama_url}}
+    --llama-server-url {{llama_url}} \
+    {{ARGS}}

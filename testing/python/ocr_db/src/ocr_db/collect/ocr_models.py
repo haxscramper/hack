@@ -9,10 +9,10 @@ from docling_core.types.doc.document import (
 
 
 class OcrBBox(BaseModel):
-    x1: int = Field(ge=0)
-    y1: int = Field(ge=0)
-    x2: int = Field(ge=0)
-    y2: int = Field(ge=0)
+    x1: float = Field(ge=0, le=1)
+    y1: float = Field(ge=0, le=1)
+    x2: float = Field(ge=0, le=1)
+    y2: float = Field(ge=0, le=1)
 
 
 class OcrElement(BaseModel):

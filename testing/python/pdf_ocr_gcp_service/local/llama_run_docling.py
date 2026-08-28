@@ -21,6 +21,7 @@ from docling_core.types.doc.document import (
 from loguru import logger
 from PIL import Image
 from pydantic import BaseModel, Field
+import sys
 
 DEFAULT_MODEL_ID = "ibm/granite-docling"
 DEFAULT_DPI = 300
@@ -92,11 +93,12 @@ def render_pdf_pages(
     destination: Path,
     dpi: int,
     raster_threads: int,
+    max_pages: int,
 ) -> list[Path]:
     destination.mkdir(parents=True, exist_ok=True)
 
     with pymupdf.open(input_pdf) as document:
-        page_count = document.page_count
+        page_count = min(document.page_count, max_pages)
 
     if page_count == 0:
         raise RuntimeError(f"PDF contains no pages: {input_pdf}")
@@ -366,6 +368,7 @@ def process_pdf(
     raster_threads: int,
     request_threads: int,
     request_timeout: int,
+    max_pages: int,
 ) -> None:
     output_text = output_json.with_suffix(".txt")
     extracted_images_directory = (output_json.parent /
@@ -412,6 +415,7 @@ def process_pdf(
             destination=rendered_directory,
             dpi=dpi,
             raster_threads=raster_threads,
+            max_pages=max_pages,
         )
 
         def process_page(
@@ -526,6 +530,12 @@ def process_pdf(
     type=click.IntRange(min=1),
     help="llama.cpp request timeout in seconds.",
 )
+@click.option(
+    "--max-pages",
+    default=sys.maxsize,
+    type=click.IntRange(min=1),
+    help="llama.cpp request timeout in seconds.",
+)
 def main(
     input_pdf: Path,
     output_json: Path,
@@ -535,6 +545,7 @@ def main(
     raster_threads: int,
     request_threads: int,
     request_timeout: int,
+    max_pages: int,
 ) -> None:
     if input_pdf.suffix.lower() != ".pdf":
         raise click.BadParameter(
@@ -564,6 +575,7 @@ def main(
             raster_threads=raster_threads,
             request_threads=request_threads,
             request_timeout=request_timeout,
+            max_pages=max_pages,
         )
     except Exception:
         logger.exception("OCR processing failed")

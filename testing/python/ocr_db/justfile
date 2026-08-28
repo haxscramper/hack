@@ -1,5 +1,5 @@
 run_ocr input_path db_path *ARGS:
-  rm {{db_path}}
+  rm -f {{db_path}}
   uv run \
     --no-project python -m ocr_db.collect.ocr_driver \
     {{input_path}} \
@@ -7,7 +7,7 @@ run_ocr input_path db_path *ARGS:
     {{ARGS}}
 
 run_gui input_path:
-  PYTHONPATH=src uv run \
+  uv run \
     --no-project python -m ocr_db.gui.main_window \
     {{input_path}}
 
