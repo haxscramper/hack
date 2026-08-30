@@ -265,6 +265,12 @@ wheels = [
 ]
 
 [[package]]
+name = "evdev"
+version = "2.0.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/2e/07/eb30593524303d1367f0dc00c1c66582c994dba412a47751e34bad9fa29b/evdev-2.0.0.tar.gz", hash = "sha256:442fb3f4c8dfc9e61e901133c356220c02d663eca8f34722e0cecdd637eba504", size = 33766, upload-time = "2026-08-23T10:31:26.835Z" }
+
+[[package]]
 name = "fonttools"
 version = "4.63.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1301,6 +1307,7 @@ dependencies = [
     { name = "click" },
     { name = "css-parser" },
     { name = "ebooklib" },
+    { name = "evdev" },
     { name = "graphviz" },
     { name = "html5-parser" },
     { name = "igraph" },
@@ -1335,6 +1342,7 @@ requires-dist = [
     { name = "click", specifier = ">=8.4.1" },
     { name = "css-parser", specifier = ">=1.0.10" },
     { name = "ebooklib", specifier = ">=0.20" },
+    { name = "evdev", specifier = ">=2.0.0" },
     { name = "graphviz", specifier = ">=0.21" },
     { name = "html5-parser", specifier = ">=0.4.12" },
     { name = "igraph", specifier = ">=1.0.0" },

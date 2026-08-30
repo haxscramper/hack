@@ -10,6 +10,7 @@ dependencies = [
     "click>=8.4.1",
     "css-parser>=1.0.10",
     "ebooklib>=0.20",
+    "evdev>=2.0.0",
     "graphviz>=0.21",
     "html5-parser>=0.4.12",
     "igraph>=1.0.0",
