@@ -1,686 +1,1134 @@
 #!/usr/bin/env python
 
 import argparse
+import html
+import math
+import shlex
 import sys
-import xml.etree.ElementTree as ElementTree
-from dataclasses import dataclass
-from enum import Enum
+from dataclasses import dataclass, field
+from html.parser import HTMLParser
 from pathlib import Path
 
 import pydot
-from beartype import beartype
-from beartype.typing import Any, Callable
-from plumbum import local
-from PyQt6.QtCore import (
-    QAbstractTableModel,
-    QByteArray,
-    QModelIndex,
-    QRectF,
-    Qt,
-    QTimer,
-)
+from PyQt6.QtCore import QPointF, QRect, QRectF, Qt, pyqtSignal
 from PyQt6.QtGui import (
     QAction,
-    QBrush,
     QColor,
-    QMouseEvent,
+    QBrush,
+    QFont,
     QPainter,
-    QPaintEvent,
+    QPainterPath,
     QPen,
-    QResizeEvent,
-    QWheelEvent,
+    QPolygonF,
+    QTextDocument,
+    QTextOption,
+    QTransform,
 )
-from PyQt6.QtSvg import QSvgRenderer
-from PyQt6.QtSvgWidgets import QGraphicsSvgItem
 from PyQt6.QtWidgets import (
+    QAbstractItemView,
     QApplication,
     QComboBox,
     QFileDialog,
-    QFrame,
-    QGraphicsRectItem,
+    QFormLayout,
+    QGraphicsItem,
+    QGraphicsPathItem,
+    QGraphicsPolygonItem,
     QGraphicsScene,
-    QGraphicsSceneHoverEvent,
-    QGraphicsSceneMouseEvent,
     QGraphicsView,
     QHeaderView,
     QLabel,
     QMainWindow,
-    QSizePolicy,
+    QMessageBox,
     QSplitter,
-    QTableView,
+    QStyle,
+    QTableWidget,
+    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
 
+NODE_WIDTH = 380.0
+NODE_PADDING = 8.0
+NODE_MINIMUM_HEIGHT = 42.0
+LAYOUT_DPI = 96.0
 
-class RankDirection(Enum):
-    TOP_TO_BOTTOM = "TB"
-    LEFT_TO_RIGHT = "LR"
-    BOTTOM_TO_TOP = "BT"
-    RIGHT_TO_LEFT = "RL"
-
-
-@dataclass(frozen=True)
-class PropertyRecord:
-    name: str
-    value: str
-
-
-@dataclass(frozen=True)
-class NodeRecord:
-    name: str
-    element_id: str
-    properties: list[PropertyRecord]
+NODE_BACKGROUND = QColor("#ffffff")
+NODE_BORDER = QColor("#606770")
+NODE_SELECTED_BORDER = QColor("#1976d2")
+EDGE_COLOR = QColor("#68707a")
+MINIMAP_BACKGROUND = QColor(245, 247, 250, 235)
+MINIMAP_BORDER = QColor("#646b73")
+MINIMAP_NODE = QColor("#59636e")
+MINIMAP_EDGE = QColor("#9aa0a6")
+MINIMAP_VIEWPORT = QColor("#d32f2f")
 
 
-@dataclass(frozen=True)
-class RenderedGraph:
-    svg: bytes
-    nodes: list[NodeRecord]
+def unquote_dot_value(value: str | None) -> str:
+    if value is None:
+        return ""
 
+    value = str(value).strip()
 
-@beartype
-def clean_dot_value(value: str) -> str:
-    if 1 < len(value) and value.startswith("\"") and value.endswith("\""):
-        return value[1:-1].replace("\\\"", "\"").replace("\\n", "\n")
+    if len(value) >= 2 and value[0] == '"' and value[-1] == '"':
+        value = value[1:-1]
+        value = value.replace(r"\"", '"')
+        value = value.replace(r"\\", "\\")
+
     return value
 
 
-@beartype
-def parse_graph(source: str) -> pydot.Dot:
-    graphs = pydot.graph_from_dot_data(source)
-    if graphs is None:
-        raise ValueError("Graphviz input could not be parsed into a graph")
-
-    if len(graphs) != 1:
-        raise ValueError(
-            f"Expected exactly one Graphviz graph, but parsed {len(graphs)} graphs"
-        )
-
-    return graphs[0]
+def normalize_node_name(name: str) -> str:
+    return unquote_dot_value(name).strip()
 
 
-@beartype
-def svg_node_elements(svg: bytes) -> list[PropertyRecord]:
-    root = ElementTree.fromstring(svg)
-    result: list[PropertyRecord] = []
+def display_dot_value(value: str | None) -> str:
+    value = unquote_dot_value(value)
+    return (value.replace(r"\l", "\n").replace(r"\r",
+                                               "\n").replace(r"\n", "\n"))
 
-    for element in root.iter():
-        classes = element.attrib.get("class", "").split()
-        if "node" not in classes:
-            continue
 
-        element_id = element.attrib.get("id")
-        if element_id is None:
-            raise ValueError(
-                "Graphviz SVG node group does not have an id attribute")
+class GraphvizHtmlConverter(HTMLParser):
+    allowed_inline_tags = {
+        "b",
+        "i",
+        "u",
+        "o",
+        "s",
+        "sub",
+        "sup",
+    }
 
-        title = next(
-            (nested for nested in element
-             if nested.tag.rsplit("}", maxsplit=1)[-1] == "title"),
-            None,
-        )
-        if title is None or title.text is None:
-            raise ValueError(
-                f"Graphviz SVG node group {element_id!r} does not have a title"
-            )
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.output: list[str] = []
+        self.table_stack: list[dict[str, str]] = []
+        self.open_tags: list[str | None] = []
 
-        result.append(PropertyRecord(title.text, element_id))
+    @staticmethod
+    def attributes_dict(
+        attributes: list[tuple[str, str | None]], ) -> dict[str, str]:
+        return {key.lower(): value or "" for key, value in attributes}
+
+    @staticmethod
+    def css_color(value: str) -> str:
+        return html.escape(value, quote=True)
+
+    def handle_starttag(
+        self,
+        tag: str,
+        attributes: list[tuple[str, str | None]],
+    ) -> None:
+        tag = tag.lower()
+        attrs = self.attributes_dict(attributes)
+
+        if tag == "table":
+            border = attrs.get("border", "0")
+            cellborder = attrs.get("cellborder", "0")
+            cellspacing = attrs.get("cellspacing", "0")
+            cellpadding = attrs.get("cellpadding", "3")
+
+            styles = [
+                "border-collapse: separate",
+                f"border-spacing: {html.escape(cellspacing)}px",
+            ]
+
+            if border not in {"", "0"}:
+                styles.append(f"border: {html.escape(border)}px solid #606770")
+
+            bgcolor = attrs.get("bgcolor")
+            if bgcolor:
+                styles.append(f"background-color: {self.css_color(bgcolor)}")
+
+            self.output.append(
+                '<table width="100%" '
+                f'cellspacing="{html.escape(cellspacing, quote=True)}" '
+                f'cellpadding="{html.escape(cellpadding, quote=True)}" '
+                f'style="{"; ".join(styles)}">')
+            self.table_stack.append({
+                "cellborder": cellborder,
+            })
+            self.open_tags.append("table")
+            return
+
+        if tag in {"tr", "td"}:
+            if tag == "tr":
+                self.output.append("<tr>")
+                self.open_tags.append("tr")
+                return
+
+            styles: list[str] = []
+            table = self.table_stack[-1] if self.table_stack else {}
+            cellborder = table.get("cellborder", "0")
+
+            if cellborder not in {"", "0"}:
+                styles.append(
+                    f"border: {html.escape(cellborder)}px solid #606770")
+
+            align = attrs.get("align", "").lower()
+            if align in {"left", "right", "center", "justify"}:
+                styles.append(f"text-align: {align}")
+
+            valign = attrs.get("valign", "").lower()
+            if valign in {"top", "middle", "bottom"}:
+                styles.append(f"vertical-align: {valign}")
+
+            bgcolor = attrs.get("bgcolor")
+            if bgcolor:
+                styles.append(f"background-color: {self.css_color(bgcolor)}")
+
+            tag_attributes: list[str] = []
+            for name in ("colspan", "rowspan"):
+                value = attrs.get(name)
+                if value:
+                    tag_attributes.append(
+                        f'{name}="{html.escape(value, quote=True)}"')
+
+            if styles:
+                tag_attributes.append(
+                    f'style="{html.escape("; ".join(styles), quote=True)}"')
+
+            suffix = ""
+            if tag_attributes:
+                suffix = " " + " ".join(tag_attributes)
+
+            self.output.append(f"<td{suffix}>")
+            self.open_tags.append("td")
+            return
+
+        if tag == "br":
+            self.output.append("<br/>")
+            self.open_tags.append(None)
+            return
+
+        if tag == "font":
+            styles: list[str] = []
+
+            color = attrs.get("color")
+            if color:
+                styles.append(f"color: {self.css_color(color)}")
+
+            face = attrs.get("face")
+            if face:
+                styles.append(
+                    f"font-family: '{html.escape(face, quote=True)}'")
+
+            point_size = attrs.get("point-size")
+            if point_size:
+                styles.append(
+                    f"font-size: {html.escape(point_size, quote=True)}pt")
+
+            style = html.escape("; ".join(styles), quote=True)
+            self.output.append(f'<span style="{style}">')
+            self.open_tags.append("span")
+            return
+
+        if tag in self.allowed_inline_tags:
+            qt_tag = "s" if tag == "o" else tag
+            self.output.append(f"<{qt_tag}>")
+            self.open_tags.append(qt_tag)
+            return
+
+        self.open_tags.append(None)
+
+    def handle_startendtag(
+        self,
+        tag: str,
+        attributes: list[tuple[str, str | None]],
+    ) -> None:
+        if tag.lower() == "br":
+            self.output.append("<br/>")
+            return
+
+        self.handle_starttag(tag, attributes)
+        self.handle_endtag(tag)
+
+    def handle_endtag(self, tag: str) -> None:
+        if not self.open_tags:
+            return
+
+        output_tag = self.open_tags.pop()
+
+        if tag.lower() == "table" and self.table_stack:
+            self.table_stack.pop()
+
+        if output_tag is not None:
+            self.output.append(f"</{output_tag}>")
+
+    def handle_data(self, data: str) -> None:
+        self.output.append(html.escape(data))
+
+    def result(self) -> str:
+        while self.open_tags:
+            output_tag = self.open_tags.pop()
+            if output_tag is not None:
+                self.output.append(f"</{output_tag}>")
+
+        return "".join(self.output)
+
+
+def graphviz_label_to_qt_html(label: str | None) -> str:
+    raw_label = str(label or "").strip()
+
+    if raw_label.startswith("<<") and raw_label.endswith(">>"):
+        graphviz_html = raw_label[1:-1]
+        converter = GraphvizHtmlConverter()
+        converter.feed(graphviz_html)
+        converter.close()
+        body = converter.result()
+    else:
+        plain_text = display_dot_value(raw_label)
+        body = html.escape(plain_text).replace("\n", "<br/>")
+
+    return ("<html>"
+            "<head>"
+            "<style>"
+            "body { color: #202124; font-family: sans-serif; }"
+            "table { width: 100%; }"
+            "td { padding: 3px; }"
+            "</style>"
+            "</head>"
+            f"<body>{body}</body>"
+            "</html>")
+
+
+def create_text_document(qt_html: str, width: float) -> QTextDocument:
+    document = QTextDocument()
+    document.setDocumentMargin(0.0)
+
+    text_option = document.defaultTextOption()
+    text_option.setWrapMode(QTextOption.WrapMode.WrapAtWordBoundaryOrAnywhere)
+    document.setDefaultTextOption(text_option)
+
+    document.setHtml(qt_html)
+    document.setTextWidth(width)
+    document.adjustSize()
+    document.setTextWidth(width)
+    return document
+
+
+@dataclass
+class NodeModel:
+    layout_id: str
+    name: str
+    attributes: dict[str, str]
+    qt_html: str
+    width: float
+    height: float
+    center: QPointF = field(default_factory=lambda: QPointF())
+
+
+@dataclass
+class EdgeModel:
+    source_id: str
+    destination_id: str
+    attributes: dict[str, str]
+    points: list[QPointF]
+
+
+def collect_graph_nodes(graph: pydot.Graph) -> list[pydot.Node]:
+    result = list(graph.get_nodes())
+
+    for subgraph in graph.get_subgraphs():
+        result.extend(collect_graph_nodes(subgraph))
 
     return result
 
 
-@beartype
-def render_graph(graph: Any) -> RenderedGraph:
-    source = graph.to_string()
-    command = local["dot"]["-Tsvg"] << source
-    return_code, stdout, stderr = command.run(retcode=None)
+def collect_graph_edges(graph: pydot.Graph) -> list[pydot.Edge]:
+    result = list(graph.get_edges())
 
-    if return_code != 0:
-        raise RuntimeError(
-            f"Graphviz exited with code {return_code}: {stderr.strip()}")
+    for subgraph in graph.get_subgraphs():
+        result.extend(collect_graph_edges(subgraph))
 
-    svg = stdout.encode("utf-8")
-    element_records = svg_node_elements(svg)
-    attributes_by_name: dict[str, list[PropertyRecord]] = {}
-
-    for node in graph.get_nodes():
-        name = clean_dot_value(node.get_name())
-        attributes = [
-            PropertyRecord(attribute_name, clean_dot_value(attribute_value))
-            for attribute_name, attribute_value in
-            node.get_attributes().items()
-        ]
-        attributes_by_name[name] = attributes
-
-    records: list[NodeRecord] = []
-    for element_record in element_records:
-        name = element_record.name
-        properties = [PropertyRecord("name", name)]
-        properties.extend(attributes_by_name.get(name, []))
-        records.append(
-            NodeRecord(
-                name=name,
-                element_id=element_record.value,
-                properties=properties,
-            ))
-
-    return RenderedGraph(svg=svg, nodes=records)
+    return result
 
 
-class PropertyModel(QAbstractTableModel):
+def parse_plain_layout(
+    plain_text: str,
+) -> tuple[dict[str, QPointF], list[tuple[str, str, list[QPointF]]]]:
+    positions: dict[str, QPointF] = {}
+    edges: list[tuple[str, str, list[QPointF]]] = []
 
-    @beartype
-    def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self.properties: list[PropertyRecord] = []
+    for line in plain_text.splitlines():
+        tokens = shlex.split(line)
 
-    @beartype
-    def set_properties(self, properties: list[PropertyRecord]) -> None:
-        self.beginResetModel()
-        self.properties = properties
-        self.endResetModel()
+        if not tokens:
+            continue
 
-    @beartype
-    def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:
-        if parent.isValid():
-            return 0
-        return len(self.properties)
+        if tokens[0] == "node" and len(tokens) >= 4:
+            node_id = tokens[1]
+            x = float(tokens[2]) * LAYOUT_DPI
+            y = -float(tokens[3]) * LAYOUT_DPI
+            positions[node_id] = QPointF(x, y)
+            continue
 
-    @beartype
-    def columnCount(self, parent: QModelIndex = QModelIndex()) -> int:
-        if parent.isValid():
-            return 0
-        return 2
+        if tokens[0] == "edge" and len(tokens) >= 5:
+            source_id = tokens[1]
+            destination_id = tokens[2]
+            point_count = int(tokens[3])
+            coordinates = tokens[4:4 + point_count * 2]
 
-    @beartype
-    def data(
-            self,
-            index: QModelIndex,
-            role: int = int(Qt.ItemDataRole.DisplayRole),
-    ) -> Any:
-        if not index.isValid() or role != int(Qt.ItemDataRole.DisplayRole):
-            return None
+            points = [
+                QPointF(
+                    float(coordinates[index]) * LAYOUT_DPI,
+                    -float(coordinates[index + 1]) * LAYOUT_DPI,
+                ) for index in range(0, len(coordinates), 2)
+            ]
 
-        record = self.properties[index.row()]
-        match index.column():
-            case 0:
-                return record.name
-            case 1:
-                return record.value
-            case _:
-                return None
+            edges.append((source_id, destination_id, points))
 
-    @beartype
-    def headerData(
-            self,
-            section: int,
-            orientation: Qt.Orientation,
-            role: int = int(Qt.ItemDataRole.DisplayRole),
-    ) -> Any:
-        if (orientation != Qt.Orientation.Horizontal
-                or role != int(Qt.ItemDataRole.DisplayRole)):
-            return None
-
-        match section:
-            case 0:
-                return "Property"
-            case 1:
-                return "Value"
-            case _:
-                return None
-
-    @beartype
-    def flags(self, index: QModelIndex) -> Qt.ItemFlag:
-        if not index.isValid():
-            return Qt.ItemFlag.NoItemFlags
-
-        return Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
+    return positions, edges
 
 
-class NodeHitItem(QGraphicsRectItem):
+class NodeItem(QGraphicsItem):
+    clicked = pyqtSignal(object)
 
-    @beartype
-    def __init__(
-        self,
-        rectangle: QRectF,
-        node: NodeRecord,
-        selected: Callable[[NodeRecord, "NodeHitItem"], None],
-    ) -> None:
-        super().__init__(rectangle)
-        self.node = node
-        self.selected = selected
-        self.active = False
-        self.setAcceptHoverEvents(True)
-        self.setPen(QPen(Qt.PenStyle.NoPen))
-        self.setBrush(QBrush(Qt.BrushStyle.NoBrush))
+    def __init__(self, model: NodeModel) -> None:
+        super().__init__()
+        self.model = model
+
+        content_width = model.width - NODE_PADDING * 2.0
+        self.document = create_text_document(model.qt_html, content_width)
+
+        self.setFlag(
+            QGraphicsItem.GraphicsItemFlag.ItemIsSelectable,
+            True,
+        )
+        self.setAcceptedMouseButtons(Qt.MouseButton.LeftButton)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setZValue(10.0)
 
-    @beartype
-    def set_active(self, active: bool) -> None:
-        self.active = active
-        if active:
-            self.setPen(QPen(QColor(40, 130, 220), 2.0))
-            self.setBrush(QBrush(QColor(40, 130, 220, 35)))
-        else:
-            self.setPen(QPen(Qt.PenStyle.NoPen))
-            self.setBrush(QBrush(Qt.BrushStyle.NoBrush))
+    def boundingRect(self) -> QRectF:
+        return QRectF(0.0, 0.0, self.model.width, self.model.height)
 
-    @beartype
-    def hoverEnterEvent(self, event: QGraphicsSceneHoverEvent) -> None:
-        if not self.active:
-            self.setPen(QPen(QColor(80, 160, 240), 1.5))
-            self.setBrush(QBrush(QColor(80, 160, 240, 20)))
-        super().hoverEnterEvent(event)
+    def paint(self, painter, option, widget=None) -> None:
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-    @beartype
-    def hoverLeaveEvent(self, event: QGraphicsSceneHoverEvent) -> None:
-        if not self.active:
-            self.setPen(QPen(Qt.PenStyle.NoPen))
-            self.setBrush(QBrush(Qt.BrushStyle.NoBrush))
-        super().hoverLeaveEvent(event)
+        selected = bool(option.state & QStyle.StateFlag.State_Selected)
+        border_color = (NODE_SELECTED_BORDER if selected else NODE_BORDER)
+        border_width = 2.5 if selected else 1.0
 
-    @beartype
-    def mousePressEvent(self, event: QGraphicsSceneMouseEvent) -> None:
-        if event.button() == Qt.MouseButton.LeftButton:
-            self.selected(self.node, self)
-            event.accept()
-            return
+        painter.setBrush(QBrush(NODE_BACKGROUND))
+        painter.setPen(QPen(border_color, border_width))
+        painter.drawRoundedRect(
+            self.boundingRect(),
+            3.0,
+            3.0,
+        )
 
-        super().mousePressEvent(event)
+        painter.save()
+        painter.translate(NODE_PADDING, NODE_PADDING)
+
+        clip_rect = QRectF(
+            0.0,
+            0.0,
+            self.model.width - NODE_PADDING * 2.0,
+            self.model.height - NODE_PADDING * 2.0,
+        )
+        painter.setClipRect(clip_rect)
+        self.document.drawContents(painter, clip_rect)
+        painter.restore()
+
+    def mousePressEvent(self, event) -> None:
+        scene = self.scene()
+        if scene is not None:
+            scene.clearSelection()
+
+        self.setSelected(True)
+
+        view = self.scene().views()[0] if self.scene().views() else None
+        if isinstance(view, GraphView):
+            view.nodeClicked.emit(self.model)
+
+        event.accept()
 
 
-class MinimapView(QGraphicsView):
+class EdgeItem(QGraphicsPathItem):
 
-    @beartype
     def __init__(
         self,
-        scene: QGraphicsScene,
-        canvas: "GraphView",
-        parent: QWidget,
+        points: list[QPointF],
+        attributes: dict[str, str],
     ) -> None:
-        super().__init__(scene, parent)
-        self.canvas = canvas
-        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
-        self.setHorizontalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.setFrameShape(QFrame.Shape.Box)
-        self.setBackgroundBrush(QBrush(QColor(250, 250, 250)))
-        self.setRenderHint(QPainter.RenderHint.Antialiasing)
-        self.timer = QTimer(self)
-        self.timer.timeout.connect(self.refresh)
-        self.timer.start(50)
+        super().__init__()
 
-    @beartype
-    def refresh(self) -> None:
-        scene = self.scene()
-        if scene is not None and not scene.sceneRect().isEmpty():
-            self.fitInView(
-                scene.sceneRect(),
-                Qt.AspectRatioMode.KeepAspectRatio,
-            )
-        self.viewport().update()
+        path = QPainterPath()
 
-    @beartype
-    def paintEvent(self, event: QPaintEvent) -> None:
-        super().paintEvent(event)
+        if points:
+            path.moveTo(points[0])
 
-        scene = self.scene()
-        if scene is None or scene.sceneRect().isEmpty():
+            if len(points) >= 4 and (len(points) - 1) % 3 == 0:
+                index = 1
+                while index + 2 < len(points):
+                    path.cubicTo(
+                        points[index],
+                        points[index + 1],
+                        points[index + 2],
+                    )
+                    index += 3
+            else:
+                for point in points[1:]:
+                    path.lineTo(point)
+
+        color = QColor(unquote_dot_value(attributes.get("color", "")))
+        if not color.isValid():
+            color = EDGE_COLOR
+
+        pen = QPen(color, 1.5)
+        pen.setCosmetic(True)
+        self.setPen(pen)
+        self.setBrush(QBrush(Qt.BrushStyle.NoBrush))
+        self.setPath(path)
+        self.setZValue(-10.0)
+
+        if len(points) >= 2:
+            self.add_arrowhead(points, color)
+
+    def add_arrowhead(
+        self,
+        points: list[QPointF],
+        color: QColor,
+    ) -> None:
+        end = points[-1]
+        previous = points[-2]
+
+        direction = end - previous
+        length = math.hypot(direction.x(), direction.y())
+
+        if length == 0.0:
             return
 
-        visible_scene = self.canvas.mapToScene(
-            self.canvas.viewport().rect()).boundingRect()
-        visible_polygon = self.mapFromScene(visible_scene)
+        unit_x = direction.x() / length
+        unit_y = direction.y() / length
 
-        painter = QPainter(self.viewport())
+        arrow_length = 12.0
+        arrow_half_width = 5.0
+
+        base = QPointF(
+            end.x() - unit_x * arrow_length,
+            end.y() - unit_y * arrow_length,
+        )
+        perpendicular = QPointF(
+            -unit_y * arrow_half_width,
+            unit_x * arrow_half_width,
+        )
+
+        polygon = QPolygonF([
+            end,
+            base + perpendicular,
+            base - perpendicular,
+        ])
+
+        arrow = QGraphicsPolygonItem(polygon, self)
+        arrow.setPen(QPen(color, 1.0))
+        arrow.setBrush(QBrush(color))
+
+
+class MinimapWidget(QWidget):
+
+    def __init__(self, graph_view: "GraphView") -> None:
+        super().__init__(graph_view)
+        self.graph_view = graph_view
+        self.setFixedSize(220, 150)
+        self.setCursor(Qt.CursorShape.CrossCursor)
+        self.setAttribute(
+            Qt.WidgetAttribute.WA_OpaquePaintEvent,
+            False,
+        )
+        self.raise_()
+
+    def content_rect(self) -> QRectF:
+        return QRectF(
+            8.0,
+            8.0,
+            self.width() - 16.0,
+            self.height() - 16.0,
+        )
+
+    def scene_bounds(self) -> QRectF:
+        bounds = self.graph_view.scene().itemsBoundingRect()
+
+        if bounds.isNull() or bounds.width() <= 0.0 or bounds.height() <= 0.0:
+            return QRectF(-1.0, -1.0, 2.0, 2.0)
+
+        return bounds.adjusted(-20.0, -20.0, 20.0, 20.0)
+
+    def scene_to_widget_transform(self) -> QTransform:
+        source = self.scene_bounds()
+        destination = self.content_rect()
+
+        scale = min(
+            destination.width() / source.width(),
+            destination.height() / source.height(),
+        )
+
+        rendered_width = source.width() * scale
+        rendered_height = source.height() * scale
+        offset_x = destination.left() + (destination.width() -
+                                         rendered_width) / 2.0
+        offset_y = destination.top() + (destination.height() -
+                                        rendered_height) / 2.0
+
+        transform = QTransform()
+        transform.translate(offset_x, offset_y)
+        transform.scale(scale, scale)
+        transform.translate(-source.left(), -source.top())
+        return transform
+
+    def paintEvent(self, event) -> None:
+        painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.setPen(QPen(self.palette().highlight().color(), 2.0))
-        painter.setBrush(QBrush(Qt.BrushStyle.NoBrush))
-        painter.drawPolygon(visible_polygon)
-        painter.end()
+
+        painter.setPen(QPen(MINIMAP_BORDER, 1.0))
+        painter.setBrush(QBrush(MINIMAP_BACKGROUND))
+        painter.drawRoundedRect(
+            self.rect().adjusted(0, 0, -1, -1),
+            4.0,
+            4.0,
+        )
+
+        transform = self.scene_to_widget_transform()
+        painter.setTransform(transform)
+
+        scene_pen_width = max(
+            self.scene_bounds().width() / self.width(),
+            self.scene_bounds().height() / self.height(),
+        )
+
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.setPen(QPen(MINIMAP_EDGE, scene_pen_width))
+
+        for edge_item in self.graph_view.edge_items:
+            painter.drawPath(edge_item.path())
+
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QBrush(MINIMAP_NODE))
+
+        for node_item in self.graph_view.node_items:
+            painter.drawRect(node_item.sceneBoundingRect())
+
+        viewport_polygon = self.graph_view.mapToScene(
+            self.graph_view.viewport().rect())
+        viewport_rect = viewport_polygon.boundingRect()
+
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.setPen(QPen(
+            MINIMAP_VIEWPORT,
+            scene_pen_width * 2.0,
+        ))
+        painter.drawRect(viewport_rect)
+
+    def mousePressEvent(self, event) -> None:
+        inverse, invertible = self.scene_to_widget_transform().inverted()
+
+        if invertible:
+            scene_position = inverse.map(event.position())
+            self.graph_view.centerOn(scene_position)
+            self.update()
+
+        event.accept()
+
+    def mouseMoveEvent(self, event) -> None:
+        if event.buttons() & Qt.MouseButton.LeftButton:
+            inverse, invertible = (self.scene_to_widget_transform().inverted())
+
+            if invertible:
+                scene_position = inverse.map(event.position())
+                self.graph_view.centerOn(scene_position)
+                self.update()
+
+        event.accept()
 
 
 class GraphView(QGraphicsView):
+    nodeClicked = pyqtSignal(object)
 
-    @beartype
-    def __init__(
-        self,
-        node_selected: Callable[[NodeRecord], None],
-        parent: QWidget | None = None,
-    ) -> None:
-        self.graph_scene = QGraphicsScene()
-        super().__init__(self.graph_scene, parent)
-        self.node_selected = node_selected
-        self.renderer: QSvgRenderer | None = None
-        self.selected_item: NodeHitItem | None = None
-        self.pan_start: QPoint | None = None
-        self.pan_last: QPoint | None = None
-        self.pan_moved = False
+    def __init__(self) -> None:
+        scene = QGraphicsScene()
+        super().__init__(scene)
+
+        self.node_items: list[NodeItem] = []
+        self.edge_items: list[EdgeItem] = []
+
         self.setRenderHints(QPainter.RenderHint.Antialiasing
                             | QPainter.RenderHint.TextAntialiasing
                             | QPainter.RenderHint.SmoothPixmapTransform)
-        self.setDragMode(QGraphicsView.DragMode.NoDrag)
+        self.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
         self.setTransformationAnchor(
             QGraphicsView.ViewportAnchor.AnchorUnderMouse)
         self.setResizeAnchor(QGraphicsView.ViewportAnchor.AnchorViewCenter)
-        self.setBackgroundBrush(QBrush(QColor(245, 245, 245)))
-        self.minimap = MinimapView(self.graph_scene, self, self)
-        self.position_minimap()
+        self.setBackgroundBrush(QBrush(QColor("#f3f4f6")))
 
-    @beartype
-    def position_minimap(self) -> None:
-        width = 240
-        height = 170
-        margin = 12
-        y = self.height() - height - margin
+        self.minimap = MinimapWidget(self)
 
-        if y < margin:
-            y = margin
+        self.horizontalScrollBar().valueChanged.connect(self.minimap.update)
+        self.verticalScrollBar().valueChanged.connect(self.minimap.update)
 
-        self.minimap.setGeometry(margin, y, width, height)
-        self.minimap.raise_()
+    def set_graph_items(
+        self,
+        node_items: list[NodeItem],
+        edge_items: list[EdgeItem],
+    ) -> None:
+        self.scene().clear()
 
-    @beartype
-    def resizeEvent(self, event: QResizeEvent) -> None:
-        super().resizeEvent(event)
-        self.position_minimap()
+        self.node_items = node_items
+        self.edge_items = edge_items
 
-    @beartype
-    def wheelEvent(self, event: QWheelEvent) -> None:
-        delta = event.angleDelta().y()
+        for edge_item in edge_items:
+            self.scene().addItem(edge_item)
 
-        if delta == 0:
-            event.accept()
-            return
+        for node_item in node_items:
+            self.scene().addItem(node_item)
 
-        factor = 1.2 if 0 < delta else 1.0 / 1.2
-        next_scale = self.transform().m11() * factor
+        bounds = self.scene().itemsBoundingRect()
+        self.scene().setSceneRect(bounds.adjusted(-100.0, -100.0, 100.0,
+                                                  100.0))
 
-        if 0.01 < next_scale and next_scale < 12.0:
-            self.scale(factor, factor)
-
-        event.accept()
-
-    @beartype
-    def mousePressEvent(self, event: QMouseEvent) -> None:
-        if event.button() != Qt.MouseButton.LeftButton:
-            super().mousePressEvent(event)
-            return
-
-        position = event.position().toPoint()
-        self.pan_start = position
-        self.pan_last = position
-        self.pan_moved = False
-        self.viewport().setCursor(Qt.CursorShape.ClosedHandCursor)
-        event.accept()
-
-    @beartype
-    def mouseMoveEvent(self, event: QMouseEvent) -> None:
-        if self.pan_start is None or self.pan_last is None:
-            super().mouseMoveEvent(event)
-            return
-
-        position = event.position().toPoint()
-        movement = position - self.pan_last
-        total_movement = position - self.pan_start
-
-        if 4 < total_movement.manhattanLength():
-            self.pan_moved = True
-
-        self.horizontalScrollBar().setValue(
-            self.horizontalScrollBar().value() - movement.x())
-        self.verticalScrollBar().setValue(self.verticalScrollBar().value() -
-                                          movement.y())
-        self.pan_last = position
-        event.accept()
-
-    @beartype
-    def mouseReleaseEvent(self, event: QMouseEvent) -> None:
-        if (event.button() != Qt.MouseButton.LeftButton
-                or self.pan_start is None):
-            super().mouseReleaseEvent(event)
-            return
-
-        position = event.position().toPoint()
-        was_moved = self.pan_moved
-        self.pan_start = None
-        self.pan_last = None
-        self.pan_moved = False
-        self.viewport().unsetCursor()
-
-        if not was_moved:
-            item = self.itemAt(position)
-
-            match item:
-                case NodeHitItem():
-                    self.select_node(item.node, item)
-
-        event.accept()
-
-    @beartype
-    def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:
-        if event.button() == Qt.MouseButton.LeftButton:
-            self.fit_graph()
-            event.accept()
-            return
-
-        super().mouseDoubleClickEvent(event)
-
-    @beartype
-    def display_graph(self, graph: RenderedGraph) -> None:
-        previous_renderer = self.renderer
-        self.graph_scene.clear()
-        self.selected_item = None
-
-        if previous_renderer is not None:
-            previous_renderer.deleteLater()
-
-        self.renderer = QSvgRenderer(QByteArray(graph.svg), self)
-        if not self.renderer.isValid():
-            raise ValueError("Graphviz produced SVG that Qt could not render")
-
-        svg_item = QGraphicsSvgItem()
-        svg_item.setSharedRenderer(self.renderer)
-        svg_item.setZValue(0.0)
-        self.graph_scene.addItem(svg_item)
-
-        scene_rectangle = self.renderer.viewBoxF()
-        if scene_rectangle.isEmpty():
-            raise ValueError("Graphviz SVG has an empty view box")
-
-        self.graph_scene.setSceneRect(scene_rectangle)
-
-        for node in graph.nodes:
-            bounds = self.renderer.boundsOnElement(node.element_id)
-            transform = self.renderer.transformForElement(node.element_id)
-            rectangle = transform.mapRect(bounds)
-
-            if rectangle.isEmpty():
-                raise ValueError(
-                    f"Graphviz SVG node {node.name!r} has empty rendered bounds"
-                )
-
-            hit_item = NodeHitItem(rectangle, node, self.select_node)
-            self.graph_scene.addItem(hit_item)
-
-        QTimer.singleShot(0, self.fit_graph)
-        self.minimap.refresh()
-
-    @beartype
-    def select_node(self, node: NodeRecord, item: NodeHitItem) -> None:
-        if self.selected_item is not None:
-            self.selected_item.set_active(False)
-
-        self.selected_item = item
-        item.set_active(True)
-        self.node_selected(node)
-
-    @beartype
-    def fit_graph(self) -> None:
-        if not self.graph_scene.sceneRect().isEmpty():
+        if not bounds.isNull():
             self.fitInView(
-                self.graph_scene.sceneRect(),
+                bounds.adjusted(-30.0, -30.0, 30.0, 30.0),
                 Qt.AspectRatioMode.KeepAspectRatio,
             )
+
+        self.position_minimap()
+        self.minimap.update()
+
+    def position_minimap(self) -> None:
+        margin = 12
+        self.minimap.move(
+            margin,
+            self.height() - self.minimap.height() - margin,
+        )
+        self.minimap.raise_()
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self.position_minimap()
+        self.minimap.update()
+
+    def scrollContentsBy(self, dx: int, dy: int) -> None:
+        super().scrollContentsBy(dx, dy)
+        self.minimap.update()
+
+    def wheelEvent(self, event) -> None:
+        if event.angleDelta().y() == 0:
+            super().wheelEvent(event)
+            return
+
+        zoom_factor = 1.15
+        if event.angleDelta().y() < 0:
+            zoom_factor = 1.0 / zoom_factor
+
+        current_scale = self.transform().m11()
+        target_scale = current_scale * zoom_factor
+
+        if 0.03 <= target_scale <= 20.0:
+            self.scale(zoom_factor, zoom_factor)
+
+        self.minimap.update()
+        event.accept()
+
+
+class PropertyPanel(QWidget):
+    rankDirectionChanged = pyqtSignal(str)
+
+    def __init__(self) -> None:
+        super().__init__()
+
+        layout = QVBoxLayout(self)
+
+        title = QLabel("Graph configuration")
+        title_font = QFont(title.font())
+        title_font.setBold(True)
+        title.setFont(title_font)
+        layout.addWidget(title)
+
+        form_layout = QFormLayout()
+        self.rank_direction = QComboBox()
+        self.rank_direction.addItems(["TB", "BT", "LR", "RL"])
+        self.rank_direction.currentTextChanged.connect(
+            self.rankDirectionChanged)
+        form_layout.addRow("Rank direction", self.rank_direction)
+        layout.addLayout(form_layout)
+
+        properties_title = QLabel("Node properties")
+        properties_font = QFont(properties_title.font())
+        properties_font.setBold(True)
+        properties_title.setFont(properties_font)
+        layout.addWidget(properties_title)
+
+        self.properties = QTableWidget(0, 2)
+        self.properties.setHorizontalHeaderLabels(["Property", "Value"])
+        self.properties.setEditTriggers(
+            QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.properties.setSelectionMode(
+            QAbstractItemView.SelectionMode.SingleSelection)
+        self.properties.setWordWrap(True)
+        self.properties.verticalHeader().setVisible(False)
+        self.properties.horizontalHeader().setSectionResizeMode(
+            0,
+            QHeaderView.ResizeMode.ResizeToContents,
+        )
+        self.properties.horizontalHeader().setSectionResizeMode(
+            1,
+            QHeaderView.ResizeMode.Stretch,
+        )
+        layout.addWidget(self.properties, 1)
+
+    def set_rank_direction(self, direction: str) -> None:
+        index = self.rank_direction.findText(direction)
+
+        if index < 0:
+            index = self.rank_direction.findText("TB")
+
+        self.rank_direction.blockSignals(True)
+        self.rank_direction.setCurrentIndex(index)
+        self.rank_direction.blockSignals(False)
+
+    def show_node(self, model: NodeModel) -> None:
+        rows = [("name", model.name)]
+        rows.extend((
+            key,
+            display_dot_value(value),
+        ) for key, value in sorted(model.attributes.items()))
+
+        self.properties.setRowCount(len(rows))
+
+        for row, (key, value) in enumerate(rows):
+            self.properties.setItem(
+                row,
+                0,
+                QTableWidgetItem(key),
+            )
+            self.properties.setItem(
+                row,
+                1,
+                QTableWidgetItem(value),
+            )
+
+        self.properties.resizeRowsToContents()
+
+    def clear_node(self) -> None:
+        self.properties.setRowCount(0)
+
+
+class GraphDocument:
+
+    def __init__(self, graph: pydot.Dot) -> None:
+        self.graph = graph
+        self.nodes: list[NodeModel] = []
+        self.edges: list[EdgeModel] = []
+        self.rank_direction = unquote_dot_value(graph.get_attributes().get(
+            "rankdir", "TB")).upper()
+
+        if self.rank_direction not in {"TB", "BT", "LR", "RL"}:
+            self.rank_direction = "TB"
+
+        self.build_node_models()
+
+    def build_node_models(self) -> None:
+        raw_nodes = collect_graph_nodes(self.graph)
+        raw_edges = collect_graph_edges(self.graph)
+
+        node_attributes: dict[str, dict[str, str]] = {}
+        node_order: list[str] = []
+
+        for raw_node in raw_nodes:
+            name = normalize_node_name(raw_node.get_name())
+
+            if name in {"", "graph", "node", "edge", r"\n"}:
+                continue
+
+            if name not in node_attributes:
+                node_order.append(name)
+                node_attributes[name] = {}
+
+            node_attributes[name].update({
+                key: str(value)
+                for key, value in raw_node.get_attributes().items()
+            })
+
+        for raw_edge in raw_edges:
+            source = normalize_node_name(raw_edge.get_source())
+            destination = normalize_node_name(raw_edge.get_destination())
+
+            for name in (source, destination):
+                if name and name not in node_attributes:
+                    node_order.append(name)
+                    node_attributes[name] = {}
+
+        self.nodes.clear()
+
+        for index, name in enumerate(node_order):
+            attributes = node_attributes[name]
+            qt_html = graphviz_label_to_qt_html(attributes.get("label", name))
+            document = create_text_document(
+                qt_html,
+                NODE_WIDTH - NODE_PADDING * 2.0,
+            )
+            height = max(
+                NODE_MINIMUM_HEIGHT,
+                document.size().height() + NODE_PADDING * 2.0,
+            )
+
+            self.nodes.append(
+                NodeModel(
+                    layout_id=f"n{index}",
+                    name=name,
+                    attributes=attributes,
+                    qt_html=qt_html,
+                    width=NODE_WIDTH,
+                    height=height,
+                ))
+
+    def compute_layout(self, rank_direction: str) -> None:
+        node_by_name = {node.name: node for node in self.nodes}
+
+        temporary = pydot.Dot(
+            graph_type=self.graph.get_type(),
+            strict=False,
+        )
+        temporary.set_rankdir(rank_direction)
+        temporary.set("outputorder", "edgesfirst")
+
+        source_graph_attributes = self.graph.get_attributes()
+        for key in ("ranksep", "nodesep", "concentrate"):
+            if key in source_graph_attributes:
+                temporary.set(key, source_graph_attributes[key])
+
+        for node in self.nodes:
+            temporary.add_node(
+                pydot.Node(
+                    node.layout_id,
+                    label="",
+                    shape="box",
+                    fixedsize="true",
+                    width=f"{node.width / LAYOUT_DPI:.6f}",
+                    height=f"{node.height / LAYOUT_DPI:.6f}",
+                ))
+
+        raw_edges = collect_graph_edges(self.graph)
+        edge_attributes_by_pair: dict[tuple[str, str], list[dict[str,
+                                                                 str]]] = {}
+
+        for raw_edge in raw_edges:
+            source_name = normalize_node_name(raw_edge.get_source())
+            destination_name = normalize_node_name(raw_edge.get_destination())
+
+            source = node_by_name.get(source_name)
+            destination = node_by_name.get(destination_name)
+
+            if source is None or destination is None:
+                continue
+
+            source_attributes = {
+                key: str(value)
+                for key, value in raw_edge.get_attributes().items()
+            }
+            layout_attributes = {
+                key: value
+                for key, value in source_attributes.items()
+                if key in {"constraint", "minlen", "weight"}
+            }
+
+            temporary.add_edge(
+                pydot.Edge(
+                    source.layout_id,
+                    destination.layout_id,
+                    **layout_attributes,
+                ))
+
+            key = (source.layout_id, destination.layout_id)
+            edge_attributes_by_pair.setdefault(key,
+                                               []).append(source_attributes)
+
+        plain_data = temporary.create(
+            format="plain",
+            prog="dot",
+        )
+        plain_text = plain_data.decode("utf-8")
+        positions, layout_edges = parse_plain_layout(plain_text)
+
+        for node in self.nodes:
+            node.center = positions.get(
+                node.layout_id,
+                QPointF(),
+            )
+
+        edge_pair_indices: dict[tuple[str, str], int] = {}
+        self.edges.clear()
+
+        for source_id, destination_id, points in layout_edges:
+            key = (source_id, destination_id)
+            pair_index = edge_pair_indices.get(key, 0)
+            pair_attributes = edge_attributes_by_pair.get(key, [])
+            attributes = (pair_attributes[pair_index]
+                          if pair_index < len(pair_attributes) else {})
+            edge_pair_indices[key] = pair_index + 1
+
+            self.edges.append(
+                EdgeModel(
+                    source_id=source_id,
+                    destination_id=destination_id,
+                    attributes=attributes,
+                    points=points,
+                ))
 
 
 class MainWindow(QMainWindow):
 
-    @beartype
-    def __init__(self, input_path: Path | None) -> None:
+    def __init__(self, initial_path: Path | None) -> None:
         super().__init__()
-        self.graph: Any | None = None
-        self.input_path = input_path
-        self.directions = list(RankDirection)
-        self.property_model = PropertyModel(self)
-        self.property_table = QTableView()
-        self.property_table.setModel(self.property_model)
-        self.property_table.setWordWrap(True)
-        self.property_table.setAlternatingRowColors(True)
-        self.property_table.verticalHeader().setSectionResizeMode(
-            QHeaderView.ResizeMode.ResizeToContents)
-        self.property_table.horizontalHeader().setSectionResizeMode(
-            0,
-            QHeaderView.ResizeMode.ResizeToContents,
-        )
-        self.property_table.horizontalHeader().setSectionResizeMode(
-            1,
-            QHeaderView.ResizeMode.Stretch,
-        )
 
-        self.node_title = QLabel("No node selected")
-        self.node_title.setTextInteractionFlags(
-            Qt.TextInteractionFlag.TextSelectableByMouse)
-
-        property_panel = QWidget()
-        property_layout = QVBoxLayout(property_panel)
-        property_layout.addWidget(self.node_title)
-        property_layout.addWidget(self.property_table)
-
-        self.graph_view = GraphView(self.node_selected)
-        self.rank_combo = QComboBox()
-        for direction in self.directions:
-            self.rank_combo.addItem(
-                f"{direction.name.replace('_', ' ').title()} ({direction.value})"
-            )
-        self.rank_combo.currentIndexChanged.connect(self.rank_changed)
-
-        controls = QWidget()
-        controls_layout = QVBoxLayout(controls)
-        controls_layout.setContentsMargins(0, 0, 0, 0)
-        controls_layout.addWidget(QLabel("Rank direction"))
-        controls_layout.addWidget(self.rank_combo)
-        controls.setSizePolicy(
-            QSizePolicy.Policy.Preferred,
-            QSizePolicy.Policy.Fixed,
-        )
-
-        graph_panel = QWidget()
-        graph_layout = QVBoxLayout(graph_panel)
-        graph_layout.addWidget(controls)
-        graph_layout.addWidget(self.graph_view)
-
-        splitter = QSplitter(Qt.Orientation.Horizontal)
-        splitter.addWidget(property_panel)
-        splitter.addWidget(graph_panel)
-        splitter.setSizes([380, 1200])
-
-        self.setCentralWidget(splitter)
-        self.create_actions()
-        self.setWindowTitle("Graphviz Explorer")
+        self.setWindowTitle("Graphviz Qt Viewer")
         self.resize(1500, 900)
 
-        if input_path is not None:
-            self.load_path(input_path)
+        self.document: GraphDocument | None = None
+        self.current_path: Path | None = None
 
-    @beartype
-    def create_actions(self) -> None:
-        open_action = QAction("Open", self)
+        self.property_panel = PropertyPanel()
+        self.graph_view = GraphView()
+
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        splitter.addWidget(self.property_panel)
+        splitter.addWidget(self.graph_view)
+        splitter.setSizes([350, 1150])
+        splitter.setStretchFactor(0, 0)
+        splitter.setStretchFactor(1, 1)
+        self.setCentralWidget(splitter)
+
+        self.property_panel.rankDirectionChanged.connect(
+            self.set_rank_direction)
+        self.graph_view.nodeClicked.connect(self.property_panel.show_node)
+
+        open_action = QAction("&Open…", self)
         open_action.setShortcut("Ctrl+O")
-        open_action.triggered.connect(self.open_graph)
-        self.menuBar().addMenu("File").addAction(open_action)
+        open_action.triggered.connect(self.open_graph_dialog)
 
-    @beartype
-    def open_graph(self, checked: bool = False) -> None:
-        selected_path, selected_filter = QFileDialog.getOpenFileName(
+        quit_action = QAction("&Quit", self)
+        quit_action.setShortcut("Ctrl+Q")
+        quit_action.triggered.connect(self.close)
+
+        file_menu = self.menuBar().addMenu("&File")
+        file_menu.addAction(open_action)
+        file_menu.addSeparator()
+        file_menu.addAction(quit_action)
+
+        if initial_path is not None:
+            self.load_graph(initial_path)
+
+    def open_graph_dialog(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
             self,
-            "Open Graphviz document",
-            str(self.input_path.parent if self.
-                input_path is not None else Path.cwd()),
-            "Graphviz documents (*.dot *.gv);;All files (*)",
+            "Open Graphviz graph",
+            str(self.current_path.parent if self.current_path else Path.cwd()),
+            "Graphviz DOT files (*.dot *.gv);;All files (*)",
         )
-        if selected_path == "":
+
+        if path:
+            self.load_graph(Path(path))
+
+    def load_graph(self, path: Path) -> None:
+        try:
+            dot_data = path.read_text(encoding="utf-8")
+            parsed_graphs = pydot.graph_from_dot_data(dot_data)
+
+            if not parsed_graphs:
+                raise ValueError("The input did not contain a graph")
+
+            graph = parsed_graphs[0]
+
+            if not isinstance(graph, pydot.Dot):
+                raise TypeError("pydot did not return a pydot.Dot graph")
+
+            document = GraphDocument(graph)
+            document.compute_layout(document.rank_direction)
+        except Exception as error:
+            QMessageBox.critical(
+                self,
+                "Unable to load graph",
+                str(error),
+            )
             return
 
-        self.load_path(Path(selected_path))
+        self.document = document
+        self.current_path = path
+        self.property_panel.set_rank_direction(document.rank_direction)
+        self.property_panel.clear_node()
+        self.render_document()
 
-    @beartype
-    def load_path(self, path: Path) -> None:
-        source = path.read_text(encoding="utf-8")
-        self.graph = parse_graph(source)
-        self.input_path = path
-        self.setWindowTitle(f"Graphviz Explorer — {path.name}")
+        self.setWindowTitle(f"Graphviz Qt Viewer — {path.name}")
 
-        rank_value = self.graph.get_rankdir()
-        if rank_value is not None:
-            cleaned_rank = clean_dot_value(rank_value)
-            for index, direction in enumerate(self.directions):
-                if direction.value == cleaned_rank:
-                    self.rank_combo.blockSignals(True)
-                    self.rank_combo.setCurrentIndex(index)
-                    self.rank_combo.blockSignals(False)
-                    break
-
-        self.render_current_graph()
-
-    @beartype
-    def rank_changed(self, index: int) -> None:
-        if self.graph is None:
+    def set_rank_direction(self, direction: str) -> None:
+        if self.document is None:
             return
 
-        direction = self.directions[index]
-        self.graph.set("rankdir", direction.value)
-        self.render_current_graph()
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
 
-    @beartype
-    def render_current_graph(self) -> None:
-        if self.graph is None:
-            raise RuntimeError(
-                "Cannot render a graph because no Graphviz document is loaded")
+        try:
+            self.document.compute_layout(direction)
+            self.document.rank_direction = direction
+            self.property_panel.clear_node()
+            self.render_document()
+        except Exception as error:
+            QMessageBox.critical(
+                self,
+                "Unable to compute layout",
+                str(error),
+            )
+        finally:
+            QApplication.restoreOverrideCursor()
 
-        self.property_model.set_properties([])
-        self.node_title.setText("No node selected")
-        self.graph_view.display_graph(render_graph(self.graph))
+    def render_document(self) -> None:
+        if self.document is None:
+            return
 
-    @beartype
-    def node_selected(self, node: NodeRecord) -> None:
-        self.node_title.setText(node.name)
-        self.property_model.set_properties(node.properties)
+        node_items: list[NodeItem] = []
+        edge_items: list[EdgeItem] = []
+
+        for edge in self.document.edges:
+            edge_items.append(EdgeItem(
+                edge.points,
+                edge.attributes,
+            ))
+
+        for node in self.document.nodes:
+            item = NodeItem(node)
+            item.setPos(
+                node.center.x() - node.width / 2.0,
+                node.center.y() - node.height / 2.0,
+            )
+            node_items.append(item)
+
+        self.graph_view.set_graph_items(
+            node_items,
+            edge_items,
+        )
 
 
-@beartype
-def parse_arguments(arguments: list[str]) -> argparse.Namespace:
+def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Interactively visualize a Graphviz document")
+        description="Interactive PyQt6 Graphviz graph viewer")
     parser.add_argument(
-        "input",
+        "graph",
         nargs="?",
         type=Path,
-        help="Graphviz DOT document to open",
+        help="Graphviz DOT input file",
     )
-    return parser.parse_args(arguments)
+    return parser.parse_args()
 
 
-@beartype
-def main(arguments: list[str]) -> int:
-    options = parse_arguments(arguments)
+def main() -> int:
+    arguments = parse_arguments()
+
     application = QApplication(sys.argv)
-    window = MainWindow(options.input)
+    application.setApplicationName("Graphviz Qt Viewer")
+
+    window = MainWindow(arguments.graph)
     window.show()
+
     return application.exec()
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(sys.argv[1:]))
+    raise SystemExit(main())
