@@ -5,12 +5,12 @@ import sys
 from beartype import beartype
 from PyQt6.QtWidgets import QApplication, QMainWindow, QTabWidget
 
-from graphviz_viewer.task_graph_input import collect_input
-from graphviz_viewer.task_graph_layout import layout_views
-from graphviz_viewer.task_graph_model import TaskGraphModel
-from graphviz_viewer.task_graph_scene import VisualizationPanel
-from graphviz_viewer.task_graph_semantic_placement import build_semantic_views
-from graphviz_viewer.task_graph_types import PipelineResult
+from graphviz_viewer.task_graph_v1.task_graph_input import collect_input
+from graphviz_viewer.task_graph_v1.task_graph_layout import layout_views
+from graphviz_viewer.task_graph_v1.task_graph_model import TaskGraphModel
+from graphviz_viewer.task_graph_v1.task_graph_scene import VisualizationPanel
+from graphviz_viewer.task_graph_v1.task_graph_semantic_placement import build_semantic_views
+from graphviz_viewer.task_graph_v1.task_graph_types import PipelineResult
 
 
 @beartype

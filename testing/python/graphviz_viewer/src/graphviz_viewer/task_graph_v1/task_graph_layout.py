@@ -8,7 +8,7 @@ from beartype import beartype
 from beartype.typing import Optional
 import pydot
 
-from graphviz_viewer.task_graph_types import (
+from graphviz_viewer.task_graph_v1.task_graph_types import (
     EdgeKind,
     Group,
     GroupKind,

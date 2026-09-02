@@ -11,6 +11,7 @@ dependencies = [
     "beartype>=0.22.9",
     "plumbum>=2.0.2",
     "pydot>=4.0.1",
+    "pygraphviz>=2.0.1",
     "pyqt6>=6.11.0",
 ]
 

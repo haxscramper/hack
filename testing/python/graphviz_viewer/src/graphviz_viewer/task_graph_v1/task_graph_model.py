@@ -13,7 +13,7 @@ from PyQt6.QtCore import (
 )
 from PyQt6.QtGui import QTextDocument
 
-from graphviz_viewer.task_graph_types import (
+from graphviz_viewer.task_graph_v1.task_graph_types import (
     ElementKind,
     Group,
     InputCollection,

@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 from beartype import beartype
 from PyQt6.QtGui import QTextDocument
 
-from graphviz_viewer.task_graph_types import (
+from graphviz_viewer.task_graph_v1.task_graph_types import (
     Admonition,
     CalendarAllocation,
     EdgeKind,

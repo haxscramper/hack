@@ -25,8 +25,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from graphviz_viewer.task_graph_model import PropertyModel, TaskGraphModel, TaskGraphRole
-from graphviz_viewer.task_graph_types import ElementKind, Point, Rect
+from graphviz_viewer.task_graph_v1.task_graph_model import PropertyModel, TaskGraphModel, TaskGraphRole
+from graphviz_viewer.task_graph_v1.task_graph_types import ElementKind, Point, Rect
 
 
 def qrect(rect: Rect) -> QRectF:
