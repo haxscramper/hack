@@ -12,7 +12,7 @@ from PyQt6.QtCore import (
     Qt,
 )
 
-from graphviz_viewer.graph_viewer_v2.graph_viewer_layout import LayoutCluster, LayoutEdge, LayoutElement, LayoutNode
+from graphviz_viewer.graph_viewer_v2.layout_mapper import LayoutCluster, LayoutEdge, LayoutElement, LayoutNode
 
 
 class GraphRole(IntEnum):

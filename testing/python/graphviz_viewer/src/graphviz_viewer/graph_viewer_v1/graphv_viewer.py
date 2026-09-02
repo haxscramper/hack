@@ -401,7 +401,7 @@ class NodeItem(QGraphicsItem):
     def boundingRect(self) -> QRectF:
         return QRectF(0.0, 0.0, self.model.width, self.model.height)
 
-    def paint(self, painter, option, widget=None) -> None:
+    def paint(self, painter: QPainter, option, widget=None) -> None:
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
         selected = bool(option.state & QStyle.StateFlag.State_Selected)

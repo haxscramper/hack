@@ -28,9 +28,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from graph_viewer_model import GraphLayoutModel, GraphRole
-
-NODE_PADDING = 8.0
+from graphviz_viewer.graph_viewer_v2.constants import NODE_PADDING
+from graphviz_viewer.graph_viewer_v2.model import GraphLayoutModel, GraphRole
 
 
 def create_document(

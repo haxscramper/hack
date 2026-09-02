@@ -6,11 +6,11 @@ from pathlib import Path
 
 from PyQt6.QtWidgets import QApplication
 
-from graphviz_viewer.graph_viewer_v2.graph_viewer_executor import GraphvizLayoutExecutor
-from graphviz_viewer.graph_viewer_v2.graph_viewer_graph import GraphvizGraphProvider
-from graphviz_viewer.graph_viewer_v2.graph_viewer_layout import EdgeLabelLayoutHierarchyMapper
-from graphviz_viewer.graph_viewer_v2.graph_viewer_model import GraphLayoutModel, GraphRole
-from graphviz_viewer.graph_viewer_v2.graph_viewer_window import MainWindow
+from graphviz_viewer.graph_viewer_v2.executor import GraphvizLayoutExecutor
+from graphviz_viewer.graph_viewer_v2.graph import GraphvizGraphProvider
+from graphviz_viewer.graph_viewer_v2.layout_mapper_label_nodes import EdgeLabelLayoutHierarchyMapper
+from graphviz_viewer.graph_viewer_v2.model import GraphLayoutModel, GraphRole
+from graphviz_viewer.graph_viewer_v2.window import MainWindow
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -45,17 +45,6 @@ def main() -> int:
 
     executor.execute(layout_hierarchy, rank_direction)
     model = GraphLayoutModel(layout_hierarchy)
-    print(f"source root: {source_hierarchy.unique_id}")
-    print(f"source nodes: {len(source_hierarchy.nodes)}")
-    print(f"source edges: {len(source_hierarchy.edges)}")
-    print(f"source clusters: {len(source_hierarchy.clusters)}")
-    print(f"layout nodes: {len(layout_hierarchy.nodes)}")
-    print(f"layout edges: {len(layout_hierarchy.edges)}")
-    print(f"layout clusters: {len(layout_hierarchy.clusters)}")
-    print(f"model root rows: {model.rowCount()}")
-    print(f"root index valid: {model.index(0, 0).isValid()}")
-    print(f"root rectangle: {layout_hierarchy.rectangle}")
-
     window = MainWindow(
         model,
         executor,
@@ -63,15 +52,6 @@ def main() -> int:
     )
 
     root_index = model.index(0, 0)
-
-    print(f"root display: {model.data(root_index)}")
-    print(f"root kind: {model.data(root_index, GraphRole.ElementKind)}")
-    print(f"root child rows: {model.rowCount(root_index)}")
-    print(f"scene items: {len(window.graph_view.scene().items())}")
-    print(f"node items: {len(window.graph_view.node_items)}")
-    print(f"edge items: {len(window.graph_view.edge_items)}")
-    print(f"scene bounds: {window.graph_view.scene().itemsBoundingRect()}")
-
     window.configuration.rank_direction.setCurrentText(rank_direction)
     window.show()
 
