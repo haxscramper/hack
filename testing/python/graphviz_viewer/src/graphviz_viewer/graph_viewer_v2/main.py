@@ -8,6 +8,7 @@ from PyQt6.QtWidgets import QApplication
 
 from graphviz_viewer.graph_viewer_v2.executor import GraphvizLayoutExecutor
 from graphviz_viewer.graph_viewer_v2.graph import GraphvizGraphProvider
+from graphviz_viewer.graph_viewer_v2.layout_mapper_components import ConnectedComponentLayoutHierarchyMapper
 from graphviz_viewer.graph_viewer_v2.layout_mapper_label_nodes import EdgeLabelLayoutHierarchyMapper
 from graphviz_viewer.graph_viewer_v2.model import GraphLayoutModel, GraphRole
 from graphviz_viewer.graph_viewer_v2.window import MainWindow
@@ -33,7 +34,7 @@ def main() -> int:
     provider = GraphvizGraphProvider()
     source_hierarchy = provider.read(arguments.graph)
 
-    mapper = EdgeLabelLayoutHierarchyMapper()
+    mapper = ConnectedComponentLayoutHierarchyMapper()
     layout_hierarchy = mapper.map(source_hierarchy)
 
     executor = GraphvizLayoutExecutor()
