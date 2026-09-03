@@ -28,8 +28,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from graphviz_viewer.graph_viewer_v2.constants import NODE_PADDING
-from graphviz_viewer.graph_viewer_v2.model import GraphLayoutModel, GraphRole
+from graphviz_viewer.constants import NODE_PADDING
+from graphviz_viewer.model import GraphLayoutModel, GraphRole
 
 
 def create_document(

@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 
-from graphviz_viewer.graph_viewer_v2.graph import (
+from graphviz_viewer.graph import (
     GraphCluster,
     GraphElement,
 )
-from graphviz_viewer.graph_viewer_v2.layout_mapper import LayoutHierarchyMapper, LayoutCluster, LayoutEdge, LayoutNode
-from graphviz_viewer.graph_viewer_v2.layout_mapper_direct import DirectLayoutHierarchyMapper
+from graphviz_viewer.layout_mapper import LayoutHierarchyMapper, LayoutCluster, LayoutEdge, LayoutNode
+from graphviz_viewer.layout_mapper_direct import DirectLayoutHierarchyMapper
 
 
 class SyntheticGraphElement(GraphElement):

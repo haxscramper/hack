@@ -9,7 +9,7 @@ from collections.abc import Iterator
 import pydot
 from PyQt6.QtCore import QPointF, QRectF
 
-from graphviz_viewer.graph_viewer_v2.layout_mapper import LayoutCluster, LayoutNode, LayoutEdge
+from graphviz_viewer.layout_mapper import LayoutCluster, LayoutNode, LayoutEdge
 
 LAYOUT_DPI = 96.0
 CLUSTER_PADDING = 40.0

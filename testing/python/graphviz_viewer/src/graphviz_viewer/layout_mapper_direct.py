@@ -1,9 +1,9 @@
 from PyQt6.QtCore import QRectF
 
-from graphviz_viewer.graph_viewer_v2.graph import GraphCluster, GraphNode
-from graphviz_viewer.graph_viewer_v2.layout_mapper import LayoutHierarchyMapper, LayoutCluster, LayoutNode, LayoutEdge
-from graphviz_viewer.graph_viewer_v2.constants import NODE_WIDTH, NODE_MINIMUM_HEIGHT, NODE_PADDING
-from graphviz_viewer.graph_viewer_v2.utils import create_text_document
+from graphviz_viewer.graph import GraphCluster, GraphNode
+from graphviz_viewer.layout_mapper import LayoutHierarchyMapper, LayoutCluster, LayoutNode, LayoutEdge
+from graphviz_viewer.constants import NODE_WIDTH, NODE_MINIMUM_HEIGHT, NODE_PADDING
+from graphviz_viewer.utils import create_text_document
 
 
 class DirectLayoutHierarchyMapper(LayoutHierarchyMapper):

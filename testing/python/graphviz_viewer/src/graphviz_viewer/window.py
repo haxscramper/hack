@@ -21,8 +21,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from graphviz_viewer.graph_viewer_v2.model import GraphRole
-from graphviz_viewer.graph_viewer_v2.view import GraphView
+from graphviz_viewer.model import GraphRole
+from graphviz_viewer.view import GraphView
 
 
 class PropertyPanel(QWidget):

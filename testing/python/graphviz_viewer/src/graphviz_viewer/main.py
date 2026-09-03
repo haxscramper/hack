@@ -6,12 +6,12 @@ from pathlib import Path
 
 from PyQt6.QtWidgets import QApplication
 
-from graphviz_viewer.graph_viewer_v2.executor import GraphvizLayoutExecutor
-from graphviz_viewer.graph_viewer_v2.graph import GraphvizGraphProvider
-from graphviz_viewer.graph_viewer_v2.layout_mapper_components import ConnectedComponentLayoutHierarchyMapper
-from graphviz_viewer.graph_viewer_v2.layout_mapper_label_nodes import EdgeLabelLayoutHierarchyMapper
-from graphviz_viewer.graph_viewer_v2.model import GraphLayoutModel, GraphRole
-from graphviz_viewer.graph_viewer_v2.window import MainWindow
+from graphviz_viewer.executor import GraphvizLayoutExecutor
+from graphviz_viewer.graph import GraphvizGraphProvider
+from graphviz_viewer.layout_mapper_components import ConnectedComponentLayoutHierarchyMapper
+from graphviz_viewer.layout_mapper_label_nodes import EdgeLabelLayoutHierarchyMapper
+from graphviz_viewer.model import GraphLayoutModel, GraphRole
+from graphviz_viewer.window import MainWindow
 
 
 def parse_arguments() -> argparse.Namespace:

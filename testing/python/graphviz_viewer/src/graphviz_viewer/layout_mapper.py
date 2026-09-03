@@ -8,7 +8,7 @@ from typing import Mapping
 
 from PyQt6.QtCore import QPointF, QRectF
 
-from graphviz_viewer.graph_viewer_v2.graph import GraphCluster, GraphElement, GraphNode
+from graphviz_viewer.graph import GraphCluster, GraphElement, GraphNode
 
 
 @dataclass
