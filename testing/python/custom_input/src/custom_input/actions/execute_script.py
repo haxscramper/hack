@@ -5,18 +5,18 @@ from plumbum import local
 from pydantic import BaseModel
 
 from custom_input.actions.action import Action, ActionCreateContext, ActionTriggerContext
-from custom_input.types import ActionKind
 from custom_input.text_input import type_text
 
 
 class ExecuteScriptActionConfig(BaseModel):
-    type: Literal[ActionKind.EXECUTE_SCRIPT]
     script: str
     insert_output: bool = False
 
 
 @beartype
 class ExecuteScriptAction(Action[ExecuteScriptActionConfig]):
+    schema = ExecuteScriptActionConfig
+    action_name = "execute_script"
 
     def __init__(self, cfg: ExecuteScriptActionConfig,
                  create_ctx: ActionCreateContext) -> None:

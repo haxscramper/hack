@@ -1,6 +1,8 @@
-decks:
-  - device_type: "Stream Deck Neo"
-    pages:
+devices:
+  - type: "streamdeck"
+    model: "Stream Deck Neo"
+    id: neo-1
+    layers:
       - name: "Page 5"
         buttons:
           0:
@@ -187,8 +189,10 @@ decks:
               direction: "backward"
 
 
-  - device_type: "Stream Deck Original"
-    pages:
+  - type: "streamdeck"
+    model: "Stream Deck Original"
+    id: original-1
+    layers:
       - name: "Main"
         buttons:
           0:

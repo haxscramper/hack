@@ -1,11 +1,13 @@
 from pathlib import Path
 from beartype import beartype
+from loguru import logger
 from beartype.typing import List
 from StreamDeck.DeviceManager import DeviceManager
 from StreamDeck.Devices.StreamDeck import StreamDeck
-import yaml
 
+from custom_input.actions.action import ActionCreateContext
 from custom_input.application import ApplicationConfig
+from custom_input.config_loader import load_yaml
 from custom_input.devices.device import InputDevice
 from custom_input.devices.evdev_device import EvdevDeviceConfig, EvdevInputDevice
 from custom_input.devices.streamdeck_device import StreamDeckDeviceConfig, StreamDeckInputDevice
@@ -14,10 +16,7 @@ from custom_input.devices.streamdeck_device import StreamDeckDeviceConfig, Strea
 @beartype
 def load_devices(config_path: Path) -> List[InputDevice]:
     resolved_path = config_path.expanduser().resolve()
-    with resolved_path.open("r") as file:
-        data = yaml.safe_load(file)
-
-    config = ApplicationConfig.model_validate(data)
+    config = load_yaml(ApplicationConfig, config_path)
     config_directory = resolved_path.parent
     devices: List[InputDevice] = []
     streamdeck_configs = [
@@ -26,6 +25,8 @@ def load_devices(config_path: Path) -> List[InputDevice]:
     ]
     streamdecks: List[StreamDeck] = DeviceManager().enumerate()
     used_streamdecks: set[int] = set()
+
+    action_create_context = ActionCreateContext(config_dir=config_path.parent)
 
     for streamdeck in streamdecks:
         streamdeck.open()
@@ -36,7 +37,7 @@ def load_devices(config_path: Path) -> List[InputDevice]:
                 devices.append(
                     EvdevInputDevice.create(
                         device_config,
-                        config_directory,
+                        action_create_context,
                     ))
             case StreamDeckDeviceConfig():
                 matching_index = find_streamdeck(
@@ -44,12 +45,16 @@ def load_devices(config_path: Path) -> List[InputDevice]:
                     streamdecks,
                     used_streamdecks,
                 )
+
+                if matching_index is None:
+                    continue
+
                 used_streamdecks.add(matching_index)
                 devices.append(
                     StreamDeckInputDevice.create(
                         device_config,
                         streamdecks[matching_index],
-                        config_directory,
+                        action_create_context,
                     ))
 
     for index, streamdeck in enumerate(streamdecks):
@@ -75,13 +80,13 @@ def find_streamdeck(
     config: StreamDeckDeviceConfig,
     decks: List[StreamDeck],
     used_indices: set[int],
-) -> int:
+) -> int | None:
     available: List[str] = []
 
     for index, deck in enumerate(decks):
         model = deck.deck_type()
         serial = deck.get_serial_number()
-        available.append(f"{model} serial={serial}")
+        available.append(f"model={model!r} serial={serial!r}")
 
         if index in used_indices:
             continue
@@ -91,6 +96,6 @@ def find_streamdeck(
         if model_matches and serial_matches:
             return index
 
-    raise ValueError(f"No StreamDeck matches device {config.id!r}, model "
-                     f"{config.model!r}, serial {config.serial!r}. "
-                     f"Available devices: {available}")
+    logger.warning(f"No StreamDeck matches device {config.id!r}, model "
+                   f"{config.model!r}, serial {config.serial!r}. "
+                   f"Available devices: {available}")

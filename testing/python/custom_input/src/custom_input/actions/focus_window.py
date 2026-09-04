@@ -7,7 +7,6 @@ from beartype.typing import Optional, List
 from loguru import logger
 
 from custom_input.actions.action import Action, ActionTriggerContext
-from custom_input.types import ActionKind
 
 
 @beartype
@@ -54,7 +53,6 @@ def focus_window(window_name: str) -> None:
 
 
 class FocusWindowActionConfig(BaseModel):
-    type: Literal[ActionKind.FOCUS_WINDOW]
     text: str
 
 

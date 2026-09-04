@@ -4,11 +4,10 @@ from beartype.typing import Literal
 from pydantic import BaseModel
 
 from custom_input.actions.action import Action, ActionTriggerContext
-from custom_input.types import ActionKind
 
 
 class QuitActionConfig(BaseModel):
-    type: Literal[ActionKind.QUIT]
+    pass
 
 
 @beartype

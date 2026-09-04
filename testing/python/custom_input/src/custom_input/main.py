@@ -6,6 +6,7 @@ from beartype import beartype
 
 from custom_input.application import Application
 from custom_input.config import load_devices
+from custom_input.actions import registry
 
 
 @beartype
@@ -19,7 +20,8 @@ def main() -> None:
     )
     arguments = parser.parse_args()
 
-    application = Application(load_devices(arguments.config))
+    devices = load_devices(arguments.config)
+    application = Application(devices)
     application.run()
 
 

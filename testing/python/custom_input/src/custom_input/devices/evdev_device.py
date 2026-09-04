@@ -5,6 +5,7 @@ from beartype.typing import Iterator, List, Literal, Set, Any
 from evdev import InputDevice as EvdevDevice
 from evdev import ecodes
 
+from custom_input.actions.action import ActionCreateContext, create_action
 from custom_input.devices.device import (
     DeviceBinding,
     DeviceEvent,
@@ -71,10 +72,11 @@ class EvdevInputDevice(InputDevice):
     def create(
         cls,
         config: EvdevDeviceConfig,
-        config_directory: Path,
+        action_create_context: ActionCreateContext,
     ) -> "EvdevInputDevice":
         path = (config.path if config.path.is_absolute() else
-                config_directory / config.path).expanduser().resolve()
+                action_create_context.config_dir /
+                config.path).expanduser().resolve()
 
         layers: List[DeviceLayer] = []
         for layer_config in config.layers:
@@ -93,7 +95,7 @@ class EvdevInputDevice(InputDevice):
                     values=binding.values,
                     action=create_action(
                         binding.action,
-                        config_directory,
+                        action_create_context,
                     ),
                 ) for binding in layer_config.bindings
             ]

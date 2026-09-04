@@ -4,11 +4,10 @@ from beartype.typing import Literal
 from pydantic import BaseModel
 
 from custom_input.actions.action import Action, ActionTriggerContext
-from custom_input.types import ActionKind, LayerDirection
+from custom_input.devices.device import LayerDirection
 
 
 class ChangeLayerActionConfig(BaseModel):
-    type: Literal[ActionKind.CHANGE_LAYER]
     direction: LayerDirection
 
 

@@ -4,12 +4,10 @@ from beartype.typing import Literal
 from pydantic import BaseModel
 
 from custom_input.actions.action import Action, ActionTriggerContext
-from custom_input.types import ActionKind
 from custom_input.text_input import type_text
 
 
 class TypeTextActionConfig(BaseModel):
-    type: Literal[ActionKind.TYPE_TEXT]
     text: str
 
 

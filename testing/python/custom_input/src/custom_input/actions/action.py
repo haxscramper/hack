@@ -6,6 +6,7 @@ from beartype.typing import TYPE_CHECKING, Any, Generic, TypeVar, ClassVar
 from pydantic import BaseModel
 
 from custom_input.devices.device import DeviceEvent
+from loguru import logger
 
 if TYPE_CHECKING:
     from custom_input.application import Application
@@ -36,10 +37,12 @@ class Action(ABC, Generic[ActionConfigType]):
     config: ActionConfigType
     create_ctx: ActionCreateContext
 
-    IMPLEMENTATIONS: ClassVar[dict[str, type["Action[Any]"]]] = []
+    IMPLEMENTATIONS: ClassVar[dict[str, type["Action[Any]"]]] = dict()
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)
+        logger.info(
+            f"Registered action name {cls.action_name!r} to type {cls}")
         Action.IMPLEMENTATIONS[cls.action_name] = cls
 
     def __init__(self, config: ActionConfigType,
@@ -55,14 +58,6 @@ class Action(ABC, Generic[ActionConfigType]):
             create_ctx=create_ctx,
         )
 
-    @classmethod
-    @abstractmethod
-    def create(
-        cls,
-        ctx: ActionTriggerContext,
-    ) -> "Action[Any]":
-        raise NotImplementedError
-
     @abstractmethod
     def execute(self, context: ActionTriggerContext) -> None:
         raise NotImplementedError
@@ -70,4 +65,5 @@ class Action(ABC, Generic[ActionConfigType]):
 
 def create_action(config: dict[str, Any],
                   context: ActionCreateContext) -> Action[Any]:
-    return Action.IMPLEMENTATIONS[config["type"]](config, context)
+    impl_type = Action.IMPLEMENTATIONS[config["type"]]
+    return impl_type(impl_type.schema.model_validate(config), context)
