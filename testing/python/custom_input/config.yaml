@@ -265,3 +265,118 @@ devices:
               type: "focus_window"
               text: "okular"
             image_path: "~/defaultdirs/images/streamdeck/okular_log.png"
+
+  - type: "evdev"
+    id: "evdev-1"
+    path: "/dev/input/by-id/usb-1189_USB_Composite_Device_CD70134330393538-if01-event-kbd"
+    layers: 
+      - name: "Main"
+        bindings:
+          # top +/-
+          - code: "KEY_O" # +
+            action:
+              type: "show_notification"
+              summary: "VOL+"
+          - code: "KEY_M" # -
+            action:
+              type: "show_notification"
+              summary: "VOL-"
+          - code: "KEY_N" # click
+            action:
+              type: "show_notification"
+              summary: "VOL MUTE"
+
+          # middle +/-
+          - code: "KEY_9" # +
+            action:
+              type: "show_notification"
+              summary: "KEY_9"
+          - code: "KEY_7" # -
+            action:
+              type: "show_notification"
+              summary: "KEY_7"
+          - code: "KEY_8" # click
+            action:
+              type: "show_notification"
+              summary: "KEY_8"
+          # bottom left +/-
+          - code: "KEY_6" # +
+            action:
+              type: "show_notification"
+              summary: "KEY_6"
+          - code: "KEY_4" # -
+            action:
+              type: "show_notification"
+              summary: "KEY_4"
+          - code: "KEY_5" # click
+            action:
+              type: "show_notification"
+              summary: "KEY_5"
+          # bottom right +/-
+          - code: "KEY_3" # +
+            action:
+              type: "show_notification"
+              summary: "KEY_3"
+          - code: "KEY_1" # -
+            action:
+              type: "show_notification"
+              summary: "KEY_1"
+          - code: "KEY_2" # click
+            action:
+              type: "show_notification"
+              summary: "KEY_2"
+
+          # top row
+          - code: "KEY_L" 
+            action:
+              type: "show_notification"
+              summary: "KEY_L"
+          - code: "KEY_K" 
+            action:
+              type: "show_notification"
+              summary: "KEY_K"
+          - code: "KEY_J" 
+            action:
+              type: "show_notification"
+              summary: "KEY_J"
+          - code: "KEY_I" 
+            action:
+              type: "show_notification"
+              summary: "KEY_I"
+
+          # middle row
+          - code: "KEY_H" 
+            action:
+              type: "show_notification"
+              summary: "KEY_H"
+          - code: "KEY_G" 
+            action:
+              type: "show_notification"
+              summary: "KEY_G"
+          - code: "KEY_F" 
+            action:
+              type: "show_notification"
+              summary: "KEY_F"
+          - code: "KEY_E" 
+            action:
+              type: "show_notification"
+              summary: "KEY_E"
+
+          # bottom row
+          - code: "KEY_D" 
+            action:
+              type: "show_notification"
+              summary: "KEY_D"
+          - code: "KEY_C" 
+            action:
+              type: "show_notification"
+              summary: "KEY_C"
+          - code: "KEY_B" 
+            action:
+              type: "show_notification"
+              summary: "KEY_B"
+          - code: "KEY_A" 
+            action:
+              type: "show_notification"
+              summary: "KEY_A"
+

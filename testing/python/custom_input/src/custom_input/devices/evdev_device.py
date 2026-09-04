@@ -48,7 +48,7 @@ class EvdevDeviceConfig(BaseModel):
     type: Literal["evdev"]
     id: str
     path: Path
-    grab: bool = False
+    grab: bool = True
     layers: List[EvdevLayerConfig]
 
 

@@ -70,4 +70,4 @@ def load_yaml(model_type: type[ModelT], path: Path) -> ModelT:
             messages.append(
                 f"{path}:{line}:{column}: {field}: {detail['msg']}")
 
-        raise YamlValidationError("\n".join(messages)) from None
+        raise YamlValidationError("\n" + "\n".join(messages)) from None

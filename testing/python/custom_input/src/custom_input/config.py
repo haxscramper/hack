@@ -6,30 +6,22 @@ from StreamDeck.DeviceManager import DeviceManager
 from StreamDeck.Devices.StreamDeck import StreamDeck
 
 from custom_input.actions.action import ActionCreateContext
-from custom_input.application import ApplicationConfig
+from custom_input.application import ApplicationConfig, DeviceConfig
 from custom_input.config_loader import load_yaml
 from custom_input.devices.device import InputDevice
 from custom_input.devices.evdev_device import EvdevDeviceConfig, EvdevInputDevice
 from custom_input.devices.streamdeck_device import StreamDeckDeviceConfig, StreamDeckInputDevice
 
 
-@beartype
-def load_devices(config_path: Path) -> List[InputDevice]:
-    resolved_path = config_path.expanduser().resolve()
-    config = load_yaml(ApplicationConfig, config_path)
-    config_directory = resolved_path.parent
-    devices: List[InputDevice] = []
-    streamdeck_configs = [
-        device for device in config.devices
-        if isinstance(device, StreamDeckDeviceConfig)
-    ]
-    streamdecks: List[StreamDeck] = DeviceManager().enumerate()
-    used_streamdecks: set[int] = set()
-
+def init_devices(
+    config: ApplicationConfig,
+    config_path: Path,
+    streamdecks: List[StreamDeck],
+    used_streamdecks: set[int],
+) -> List[InputDevice]:
     action_create_context = ActionCreateContext(config_dir=config_path.parent)
 
-    for streamdeck in streamdecks:
-        streamdeck.open()
+    devices: List[InputDevice] = list()
 
     for device_config in config.devices:
         match device_config:
@@ -56,6 +48,34 @@ def load_devices(config_path: Path) -> List[InputDevice]:
                         streamdecks[matching_index],
                         action_create_context,
                     ))
+
+    return devices
+
+
+@beartype
+def load_devices(config_path: Path) -> List[InputDevice]:
+    config = load_yaml(ApplicationConfig, config_path)
+    devices: List[InputDevice] = []
+    streamdecks: List[StreamDeck] = DeviceManager().enumerate()
+    used_streamdecks: set[int] = set()
+
+    for streamdeck in streamdecks:
+        streamdeck.open()
+        streamdeck.reset()
+
+    try:
+        devices = init_devices(
+            config,
+            config_path=config_path,
+            streamdecks=streamdecks,
+            used_streamdecks=used_streamdecks,
+        )
+
+    except Exception as e:
+        for deck in streamdecks:
+            deck.close()
+
+        raise e from None
 
     for index, streamdeck in enumerate(streamdecks):
         if index not in used_streamdecks:
