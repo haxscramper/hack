@@ -12,6 +12,9 @@ from custom_input.devices.device import (
     DeviceLayer,
     InputControl,
     InputDevice,
+    PhysicalButton,
+    PhysicalButtonConfig,
+    PhysicalPosition,
 )
 
 
@@ -50,6 +53,7 @@ class EvdevDeviceConfig(BaseModel):
     path: Path
     grab: bool = True
     layers: List[EvdevLayerConfig]
+    physical: List[PhysicalButtonConfig] = Field(default_factory=list)
 
 
 @beartype
@@ -60,8 +64,13 @@ class EvdevInputDevice(InputDevice):
         config: EvdevDeviceConfig,
         device: EvdevDevice,
         layers: List[DeviceLayer],
+        physical_buttons: List[PhysicalButton],
     ) -> None:
-        super().__init__(config.id, layers)
+        super().__init__(
+            config.id,
+            layers=layers,
+            physical_buttons=physical_buttons,
+        )
         self.device = device
         self.grabbed = config.grab
 
@@ -105,10 +114,31 @@ class EvdevInputDevice(InputDevice):
                     bindings=bindings,
                 ))
 
+        physical_buttons = [
+            PhysicalButton(
+                identifier=physical.button_id,
+                control_event_type=resolve_evdev_code(
+                    physical.event_type,
+                    "physical event type",
+                ),
+                control_code=resolve_evdev_code(
+                    physical.button_id,
+                    "physical button code",
+                ),
+                position=PhysicalPosition(
+                    x=physical.pos.x,
+                    y=physical.pos.y,
+                    width=physical.pos.width,
+                    height=physical.pos.height,
+                ),
+            ) for physical in config.physical
+        ]
+
         return cls(
             config=config,
             device=EvdevDevice(path),
             layers=layers,
+            physical_buttons=physical_buttons,
         )
 
     def events(self) -> Iterator[DeviceEvent]:

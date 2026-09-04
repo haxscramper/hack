@@ -15,7 +15,7 @@ from beartype.typing import (
     Literal,
     Any,
 )
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from custom_input.actions.action import ActionCreateContext, create_action
 from custom_input.devices.device import (
@@ -24,6 +24,9 @@ from custom_input.devices.device import (
     DeviceLayer,
     InputControl,
     InputDevice,
+    PhysicalButton,
+    PhysicalButtonConfig,
+    PhysicalPosition,
 )
 
 
@@ -52,6 +55,7 @@ class StreamDeckDeviceConfig(BaseModel):
     serial: str | None = None
     idle_seconds: float = 60.0
     layers: List[StreamDeckLayerConfig]
+    physical: List[PhysicalButtonConfig] = Field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -68,9 +72,14 @@ class StreamDeckInputDevice(InputDevice):
         deck: StreamDeck,
         layers: List[DeviceLayer],
         visuals: List[StreamDeckLayerVisuals],
+        physical_buttons: List[PhysicalButton],
         action_create_context: ActionCreateContext,
     ) -> None:
-        super().__init__(config.id, layers)
+        super().__init__(
+            config.id,
+            layers=layers,
+            physical_buttons=physical_buttons,
+        )
         self.deck = deck
         self.visuals = visuals
         self.action_create_context = action_create_context
@@ -107,6 +116,7 @@ class StreamDeckInputDevice(InputDevice):
                     ),
                 ) for key, button in layer_config.buttons.items()
             ]
+
             layers.append(
                 DeviceLayer(
                     name=layer_config.name,
@@ -115,12 +125,41 @@ class StreamDeckInputDevice(InputDevice):
             visuals.append(
                 StreamDeckLayerVisuals(buttons=layer_config.buttons, ))
 
+        physical_buttons: List[PhysicalButton] = []
+
+        for physical in config.physical:
+            if not isinstance(physical.button_id, int):
+                raise ValueError(
+                    f"StreamDeck device {config.id!r} uses non-integer physical "
+                    f"button identifier {physical.button_id!r}")
+
+            if physical.button_id < 0 or deck.key_count(
+            ) <= physical.button_id:
+                raise ValueError(
+                    f"StreamDeck device {config.id!r} physical button "
+                    f"{physical.button_id} is outside the available range "
+                    f"0..{deck.key_count() - 1}")
+
+            physical_buttons.append(
+                PhysicalButton(
+                    identifier=physical.button_id,
+                    control_event_type=0,
+                    control_code=physical.button_id,
+                    position=PhysicalPosition(
+                        x=physical.pos.x,
+                        y=physical.pos.y,
+                        width=physical.pos.width,
+                        height=physical.pos.height,
+                    ),
+                ))
+
         return cls(
             config=config,
             deck=deck,
             layers=layers,
             visuals=visuals,
             action_create_context=action_create_context,
+            physical_buttons=physical_buttons,
         )
 
     def key_callback(

@@ -5,3 +5,4 @@ from .quit import QuitAction
 from .type_text import TypeTextAction
 from .execute_script import ExecuteScriptAction
 from .show_notification import ShowNotificationAction
+from .show_device_layers import ShowDeviceLayersAction

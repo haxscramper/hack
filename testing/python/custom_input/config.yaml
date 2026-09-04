@@ -192,6 +192,32 @@ devices:
   - type: "streamdeck"
     model: "Stream Deck Original"
     id: original-1
+    physical: 
+      - button_id: 0
+        pos: { x: 0, y: 0, width: 2, height: 2 }
+      - button_id: 1
+        pos: { x: 2.5, y: 0, width: 2, height: 2 }
+      - button_id: 2
+        pos: { x: 5, y: 0, width: 2, height: 2 }
+      - button_id: 3
+        pos: { x: 7.5, y: 0, width: 2, height: 2 }
+      - button_id: 4
+        pos: { x: 0, y: 2.5, width: 2, height: 2 }
+      - button_id: 5
+        pos: { x: 2.5, y: 2.5, width: 2, height: 2 }
+      - button_id: 6
+        pos: { x: 5, y: 2.5, width: 2, height: 2 }
+      - button_id: 7
+        pos: { x: 7.5, y: 2.5, width: 2, height: 2 }
+      - button_id: 8
+        pos: { x: 0, y: 5, width: 2, height: 2 }
+      - button_id: 9
+        pos: { x: 2.5, y: 5, width: 2, height: 2 }
+      - button_id: 10
+        pos: { x: 5, y: 5, width: 2, height: 2 }
+      - button_id: 11
+        pos: { x: 7.5, y: 5, width: 2, height: 2 }
+        
     layers:
       - name: "Main"
         buttons:
@@ -269,6 +295,15 @@ devices:
   - type: "evdev"
     id: "evdev-1"
     path: "/dev/input/by-id/usb-1189_USB_Composite_Device_CD70134330393538-if01-event-kbd"
+
+    physical: 
+      - button_id: "KEY_O"
+        pos: { x: 0, y: 1, width: 2, height: 2 }
+      - button_id: "KEY_M"
+        pos: { x: 2, y: 0, width: 2, height: 2 }
+      - button_id: "KEY_N"
+        pos: { x: 4, y: 1, width: 2, height: 2 }
+        
     layers: 
       - name: "Main"
         bindings:
@@ -377,6 +412,5 @@ devices:
               summary: "KEY_B"
           - code: "KEY_A" 
             action:
-              type: "show_notification"
-              summary: "KEY_A"
+              type: "show_device_layers"
 
