@@ -62,6 +62,16 @@ class Action(ABC, Generic[ActionConfigType]):
     def execute(self, context: ActionTriggerContext) -> None:
         raise NotImplementedError
 
+    def format(self) -> str:
+        values = self.config.model_dump(exclude_none=True)
+        configuration = ", ".join(f"{name}={value}"
+                                  for name, value in values.items())
+
+        if configuration:
+            return f"{self.action_name}\n{configuration}"
+
+        return self.action_name
+
 
 def create_action(config: dict[str, Any],
                   context: ActionCreateContext) -> Action[Any]:

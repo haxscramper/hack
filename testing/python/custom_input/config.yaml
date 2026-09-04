@@ -408,7 +408,7 @@ devices:
               summary: "KEY_C"
           - code: "KEY_B" 
             action:
-              type: "show_notification"
+              type: "quit"
               summary: "KEY_B"
           - code: "KEY_A" 
             action:

@@ -1,5 +1,14 @@
+import hashlib
+import math
+import re
+import subprocess
+import tkinter
+import tkinter.font
+from pathlib import Path
+
 from beartype import beartype
-from beartype.typing import List, Optional
+from beartype.typing import List, Optional, Tuple
+from PIL import Image, ImageTk
 from pydantic import BaseModel, Field
 
 from custom_input.actions.action import (
@@ -7,15 +16,10 @@ from custom_input.actions.action import (
     ActionCreateContext,
     ActionTriggerContext,
 )
-
-import hashlib
-import tkinter
-from pathlib import Path
-from beartype import beartype
-from beartype.typing import List, Tuple
-from PIL import Image, ImageTk
-
 from custom_input.devices.device import ActionDisplay, DeviceDisplay, LayerDisplay
+
+BUTTON_UNIT_SIZE = 40
+MAXIMUM_MONITOR_FRACTION = 0.8
 
 
 @beartype
@@ -31,7 +35,7 @@ def action_color(actions: List[ActionDisplay]) -> str:
 
 
 @beartype
-def layer_bounds(layer: LayerDisplay, ) -> Tuple[float, float, float, float]:
+def layer_bounds(layer: LayerDisplay) -> Tuple[float, float, float, float]:
     if not layer.buttons:
         raise ValueError(
             f"Layer {layer.name!r} has no physical buttons to display")
@@ -44,6 +48,36 @@ def layer_bounds(layer: LayerDisplay, ) -> Tuple[float, float, float, float]:
                     for button in layer.buttons)
 
     return minimum_x, minimum_y, maximum_x, maximum_y
+
+
+@beartype
+def active_monitor_bounds(root: tkinter.Tk, ) -> Tuple[int, int, int, int]:
+    pointer_x = root.winfo_pointerx()
+    pointer_y = root.winfo_pointery()
+    output = subprocess.run(
+        ["xrandr", "--listactivemonitors"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+
+    geometry_pattern = re.compile(r"(\d+)/\d+x(\d+)/\d+([+-]\d+)([+-]\d+)")
+
+    for line in output.splitlines()[1:]:
+        match = geometry_pattern.search(line)
+        if match is None:
+            continue
+
+        width = int(match.group(1))
+        height = int(match.group(2))
+        x = int(match.group(3))
+        y = int(match.group(4))
+
+        if (x <= pointer_x < x + width and y <= pointer_y < y + height):
+            return x, y, width, height
+
+    raise RuntimeError(f"Could not find the monitor containing pointer "
+                       f"position ({pointer_x}, {pointer_y})")
 
 
 @beartype
@@ -68,75 +102,153 @@ def show_device_overlay(display: DeviceDisplay) -> None:
             f"Device {display.identifier!r} has no layers to display")
 
     root = tkinter.Tk()
+    root.withdraw()
     root.title(f"Input layout: {display.identifier}")
-    root.attributes("-fullscreen", True)
     root.attributes("-topmost", True)
     root.configure(background="white")
+    root.update_idletasks()
 
     def close_overlay(event: tkinter.Event) -> None:
         root.destroy()
 
     root.bind("<Escape>", close_overlay)
-    root.focus_force()
-    root.update_idletasks()
 
-    screen_width = root.winfo_screenwidth()
-    screen_height = root.winfo_screenheight()
+    monitor_x, monitor_y, monitor_width, monitor_height = (
+        active_monitor_bounds(root))
+    maximum_window_width = int(monitor_width * MAXIMUM_MONITOR_FRACTION)
+    maximum_window_height = int(monitor_height * MAXIMUM_MONITOR_FRACTION)
+
+    margin = 40
+    device_title_height = 40
+    layer_title_height = 40
+    layer_gap = 24
+
+    device_title_font = tkinter.font.Font(
+        root=root,
+        family="Sans",
+        size=20,
+        weight="bold",
+    )
+    layer_title_font = tkinter.font.Font(
+        root=root,
+        family="Sans",
+        size=17,
+        weight="bold",
+    )
+    button_font = tkinter.font.Font(
+        root=root,
+        family="Sans",
+        size=10,
+    )
+
+    layer_geometry: List[Tuple[LayerDisplay, float, float, float, float]] = []
+    maximum_layout_width = 0.0
+    total_layout_height = 0.0
+
+    for layer in display.layers:
+        minimum_x, minimum_y, maximum_x, maximum_y = (layer_bounds(layer))
+        layout_width = maximum_x - minimum_x
+        layout_height = maximum_y - minimum_y
+        maximum_layout_width = max(
+            maximum_layout_width,
+            layout_width,
+        )
+        total_layout_height += layout_height
+        layer_geometry.append((
+            layer,
+            minimum_x,
+            minimum_y,
+            maximum_x,
+            maximum_y,
+        ))
+
+    fixed_width = margin * 2
+    fixed_height = (margin * 2 + device_title_height +
+                    layer_title_height * len(display.layers) + layer_gap *
+                    (len(display.layers) - 1))
+
+    available_layout_width = maximum_window_width - fixed_width
+    available_layout_height = maximum_window_height - fixed_height
+    if available_layout_width <= 0 or available_layout_height <= 0:
+        raise ValueError(
+            "The active monitor is too small to display the overlay")
+
+    scale = min(
+        BUTTON_UNIT_SIZE,
+        available_layout_width / maximum_layout_width,
+        available_layout_height / total_layout_height,
+    )
+
+    widest_title = max(
+        device_title_font.measure(display.identifier),
+        max(layer_title_font.measure(layer.name) for layer in display.layers),
+    )
+    content_width = max(
+        maximum_layout_width * scale,
+        float(widest_title),
+    )
+
+    window_width = min(
+        maximum_window_width,
+        math.ceil(fixed_width + content_width),
+    )
+    window_height = min(
+        maximum_window_height,
+        math.ceil(fixed_height + total_layout_height * scale),
+    )
+    window_x = monitor_x + (monitor_width - window_width) // 2
+    window_y = monitor_y + (monitor_height - window_height) // 2
+
+    root.geometry(f"{window_width}x{window_height}"
+                  f"{window_x:+d}{window_y:+d}")
+
     canvas = tkinter.Canvas(
         root,
-        width=screen_width,
-        height=screen_height,
+        width=window_width,
+        height=window_height,
         background="white",
         highlightthickness=0,
     )
     canvas.pack(fill=tkinter.BOTH, expand=True)
 
-    margin = 40
-    title_height = 40
-    layer_gap = 24
-    available_height = (screen_height - margin * 2 - title_height - layer_gap *
-                        (len(display.layers) - 1))
-    panel_height = available_height / len(display.layers)
     image_references: List[ImageTk.PhotoImage] = []
 
     canvas.create_text(
-        screen_width / 2,
-        margin / 2,
+        window_width / 2,
+        margin + device_title_height / 2,
         text=display.identifier,
         fill="black",
-        font=("Sans", 20, "bold"),
+        font=device_title_font,
     )
 
-    for layer_index, layer in enumerate(display.layers):
-        minimum_x, minimum_y, maximum_x, maximum_y = layer_bounds(layer)
-        layout_width = maximum_x - minimum_x
-        layout_height = maximum_y - minimum_y
-        panel_top = (margin + title_height + layer_index *
-                     (panel_height + layer_gap))
-        content_top = panel_top + title_height
-        content_height = panel_height - title_height
-        content_width = screen_width - margin * 2
-        scale = min(
-            content_width / layout_width,
-            content_height / layout_height,
-        )
-        rendered_width = layout_width * scale
-        rendered_height = layout_height * scale
-        origin_x = (screen_width - rendered_width) / 2
-        origin_y = (content_top + (content_height - rendered_height) / 2)
+    current_y = margin + device_title_height
+
+    for layer_index, (
+            layer,
+            minimum_x,
+            minimum_y,
+            maximum_x,
+            maximum_y,
+    ) in enumerate(layer_geometry):
+        layout_width = (maximum_x - minimum_x) * scale
+        layout_height = (maximum_y - minimum_y) * scale
 
         canvas.create_text(
-            screen_width / 2,
-            panel_top + title_height / 2,
+            window_width / 2,
+            current_y + layer_title_height / 2,
             text=layer.name,
             fill="black",
-            font=("Sans", 17, "bold"),
+            font=layer_title_font,
         )
+
+        origin_x = (window_width - layout_width) / 2
+        origin_y = current_y + layer_title_height
+
         canvas.create_rectangle(
             origin_x - 8,
             origin_y - 8,
-            origin_x + rendered_width + 8,
-            origin_y + rendered_height + 8,
+            origin_x + layout_width + 8,
+            origin_y + layout_height + 8,
             outline="#b0b0b0",
             width=2,
         )
@@ -204,9 +316,15 @@ def show_device_overlay(display: DeviceDisplay) -> None:
                 width=max(1, int(right - left - 12)),
                 justify=tkinter.CENTER,
                 anchor=tkinter.N,
-                font=("Sans", 10),
+                font=button_font,
             )
 
+        current_y = origin_y + layout_height
+        if layer_index < len(display.layers) - 1:
+            current_y += layer_gap
+
+    root.deiconify()
+    root.focus_force()
     root.mainloop()
 
 

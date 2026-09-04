@@ -235,7 +235,7 @@ class InputDevice(ABC):
             actions = [
                 ActionDisplay(
                     name=binding.action.action_name,
-                    configuration=self.format_action(binding.action),
+                    configuration=binding.action.format(),
                     image_path=None,
                 ) for binding in bindings
             ]
@@ -250,13 +250,3 @@ class InputDevice(ABC):
             name=layer.name,
             buttons=buttons,
         )
-
-    def format_action(self, action) -> str:
-        values = action.config.model_dump(exclude_none=True)
-        configuration = ", ".join(f"{name}={value}"
-                                  for name, value in values.items())
-
-        if configuration:
-            return f"{action.action_name}\n{configuration}"
-
-        return action.action_name
