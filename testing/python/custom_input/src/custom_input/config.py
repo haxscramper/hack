@@ -7,9 +7,8 @@ import yaml
 
 from custom_input.application import ApplicationConfig
 from custom_input.devices.device import InputDevice
-from custom_input.devices.device_schema import EvdevDeviceConfig, StreamDeckDeviceConfig
-from custom_input.devices.evdev_device import EvdevInputDevice
-from custom_input.devices.streamdeck_device import StreamDeckInputDevice
+from custom_input.devices.evdev_device import EvdevDeviceConfig, EvdevInputDevice
+from custom_input.devices.streamdeck_device import StreamDeckDeviceConfig, StreamDeckInputDevice
 
 
 @beartype

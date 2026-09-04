@@ -5,7 +5,7 @@ import pyautogui
 from pydantic import BaseModel, field_validator
 
 from custom_input.actions.action import Action, ActionCreateContext, ActionTriggerContext
-from custom_input.models import ActionKind
+from custom_input.types import ActionKind
 
 
 class EmulateShortcutActionConfig(BaseModel):

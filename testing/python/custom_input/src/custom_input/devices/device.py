@@ -1,11 +1,9 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from enum import StrEnum
 from threading import Lock
 from beartype import beartype
 from beartype.typing import Any, Iterator, List, Optional, Set
-
-from custom_input.actions.action import Action
-from custom_input.models import LayerDirection
 
 
 @dataclass(frozen=True)
@@ -24,7 +22,12 @@ class DeviceEvent:
 class DeviceBinding:
     control: InputControl
     values: Set[int]
-    action: Action[Any]
+    action: Any
+
+
+class LayerDirection(StrEnum):
+    FORWARD = "forward"
+    BACKWARD = "backward"
 
 
 @dataclass(frozen=True)
@@ -63,7 +66,7 @@ class InputDevice(ABC):
     def close(self) -> None:
         raise NotImplementedError
 
-    def action_for(self, event: DeviceEvent) -> Optional[Action[Any]]:
+    def action_for(self, event: DeviceEvent) -> Optional[Any]:
         with self.layer_lock:
             layer = self.layers[self.layer_index]
 

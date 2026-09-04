@@ -9,10 +9,15 @@ from loguru import logger
 
 from beartype.typing import (List)
 from pydantic import BaseModel
-from custom_input.devices.device_schema import DeviceConfig
+from enum import StrEnum
+from pathlib import Path
+from beartype.typing import (Annotated, List, Union)
+from pydantic import BaseModel, Field
 
 from custom_input.actions.action import ActionTriggerContext
 from custom_input.devices.device import DeviceEvent, InputDevice
+from custom_input.devices.evdev_device import EvdevDeviceConfig
+from custom_input.devices.streamdeck_device import StreamDeckDeviceConfig
 
 
 class DeviceMessageKind(StrEnum):
@@ -27,6 +32,15 @@ class DeviceMessage:
     device: InputDevice
     event: Optional[DeviceEvent] = None
     error: Optional[Exception] = None
+
+
+DeviceConfig = Annotated[
+    Union[
+        StreamDeckDeviceConfig,
+        EvdevDeviceConfig,
+    ],
+    Field(discriminator="type"),
+]
 
 
 class ApplicationConfig(BaseModel):

@@ -36,11 +36,11 @@ class Action(ABC, Generic[ActionConfigType]):
     config: ActionConfigType
     create_ctx: ActionCreateContext
 
-    IMPLEMENTATIONS: ClassVar[list[type["Action[Any]"]]] = []
+    IMPLEMENTATIONS: ClassVar[dict[str, type["Action[Any]"]]] = []
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)
-        Action.IMPLEMENTATIONS.append(cls)
+        Action.IMPLEMENTATIONS[cls.action_name] = cls
 
     def __init__(self, config: ActionConfigType,
                  create_ctx: ActionCreateContext):
@@ -66,3 +66,8 @@ class Action(ABC, Generic[ActionConfigType]):
     @abstractmethod
     def execute(self, context: ActionTriggerContext) -> None:
         raise NotImplementedError
+
+
+def create_action(config: dict[str, Any],
+                  context: ActionCreateContext) -> Action[Any]:
+    return Action.IMPLEMENTATIONS[config["type"]](config, context)

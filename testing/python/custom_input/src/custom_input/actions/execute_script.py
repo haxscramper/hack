@@ -5,7 +5,7 @@ from plumbum import local
 from pydantic import BaseModel
 
 from custom_input.actions.action import Action, ActionCreateContext, ActionTriggerContext
-from custom_input.models import ActionKind
+from custom_input.types import ActionKind
 from custom_input.text_input import type_text
 
 

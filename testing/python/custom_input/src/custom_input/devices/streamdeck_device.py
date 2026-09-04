@@ -8,7 +8,16 @@ from beartype.typing import Dict, Iterator, List, Optional
 from PIL import Image, ImageDraw, ImageFont
 from StreamDeck.Devices.StreamDeck import StreamDeck
 from StreamDeck.ImageHelpers import PILHelper
+from pathlib import Path
+from beartype.typing import (
+    Dict,
+    List,
+    Literal,
+    Any,
+)
+from pydantic import BaseModel
 
+from custom_input.actions.action import ActionCreateContext, create_action
 from custom_input.devices.device import (
     DeviceBinding,
     DeviceEvent,
@@ -16,7 +25,33 @@ from custom_input.devices.device import (
     InputControl,
     InputDevice,
 )
-from custom_input.devices.device_schema import StreamDeckButtonConfig, StreamDeckDeviceConfig
+
+
+class TextConfig(BaseModel):
+    text: str
+    font_size: int = 14
+    color: str = "white"
+    background_color: str = "black"
+
+
+class StreamDeckButtonConfig(BaseModel):
+    action: dict[str, Any]
+    image_path: Path | None = None
+    title_text: str | TextConfig | None = None
+
+
+class StreamDeckLayerConfig(BaseModel):
+    name: str
+    buttons: Dict[int, StreamDeckButtonConfig]
+
+
+class StreamDeckDeviceConfig(BaseModel):
+    type: Literal["streamdeck"]
+    id: str
+    model: str
+    serial: str | None = None
+    idle_seconds: float = 60.0
+    layers: List[StreamDeckLayerConfig]
 
 
 @dataclass(frozen=True)
@@ -33,12 +68,12 @@ class StreamDeckInputDevice(InputDevice):
         deck: StreamDeck,
         layers: List[DeviceLayer],
         visuals: List[StreamDeckLayerVisuals],
-        config_directory: Path,
+        action_create_context: ActionCreateContext,
     ) -> None:
         super().__init__(config.id, layers)
         self.deck = deck
         self.visuals = visuals
-        self.config_directory = config_directory
+        self.action_create_context = action_create_context
         self.idle_seconds = config.idle_seconds
         self.event_queue: Queue[Optional[DeviceEvent]] = Queue()
         self.image_cache: Dict[int, Dict[int, bytes]] = {}
@@ -56,7 +91,7 @@ class StreamDeckInputDevice(InputDevice):
         cls,
         config: StreamDeckDeviceConfig,
         deck: StreamDeck,
-        config_directory: Path,
+        action_create_context: ActionCreateContext,
     ) -> "StreamDeckInputDevice":
         layers: List[DeviceLayer] = []
         visuals: List[StreamDeckLayerVisuals] = []
@@ -68,7 +103,7 @@ class StreamDeckInputDevice(InputDevice):
                     values={1},
                     action=create_action(
                         button.action,
-                        config_directory,
+                        action_create_context,
                     ),
                 ) for key, button in layer_config.buttons.items()
             ]
@@ -85,7 +120,7 @@ class StreamDeckInputDevice(InputDevice):
             deck=deck,
             layers=layers,
             visuals=visuals,
-            config_directory=config_directory,
+            action_create_context=action_create_context,
         )
 
     def key_callback(
@@ -167,7 +202,7 @@ class StreamDeckInputDevice(InputDevice):
         key: int,
     ) -> bytes:
         if button.image_path is not None:
-            path = (self.config_directory /
+            path = (self.action_create_context.config_dir /
                     button.image_path).expanduser().resolve()
 
             if not path.exists():

@@ -1,10 +1,10 @@
 from pathlib import Path
 from beartype import beartype
-from beartype.typing import Iterator, List
+from pydantic import BaseModel, Field
+from beartype.typing import Iterator, List, Literal, Set, Any
 from evdev import InputDevice as EvdevDevice
 from evdev import ecodes
 
-from custom_input.action_factory import create_action
 from custom_input.devices.device import (
     DeviceBinding,
     DeviceEvent,
@@ -12,7 +12,6 @@ from custom_input.devices.device import (
     InputControl,
     InputDevice,
 )
-from custom_input.schema import EvdevDeviceConfig
 
 
 @beartype
@@ -30,6 +29,26 @@ def resolve_evdev_code(value: int | str, field_name: str) -> int:
             f"codes: {resolved}")
 
     return resolved
+
+
+class EvdevBindingConfig(BaseModel):
+    event_type: int | str = "EV_KEY"
+    code: int | str
+    values: Set[int] = Field(default_factory=lambda: {1})
+    action: dict[str, Any]
+
+
+class EvdevLayerConfig(BaseModel):
+    name: str
+    bindings: List[EvdevBindingConfig]
+
+
+class EvdevDeviceConfig(BaseModel):
+    type: Literal["evdev"]
+    id: str
+    path: Path
+    grab: bool = False
+    layers: List[EvdevLayerConfig]
 
 
 @beartype

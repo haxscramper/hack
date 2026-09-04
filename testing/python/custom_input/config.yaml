@@ -1,0 +1,263 @@
+decks:
+  - device_type: "Stream Deck Neo"
+    pages:
+      - name: "Page 5"
+        buttons:
+          0:
+            title_text:
+              text: "-120"
+              font_size: 36
+            action:
+              type: "execute_script"
+              script: "playerctl_wrap.py --window firefox rel-position -120"
+          1:
+            title_text:
+              text: "+120"
+              font_size: 36
+            action:
+              type: "execute_script"
+              script: "playerctl_wrap.py --window firefox rel-position +120"
+          2:
+            title_text:
+              text: "+300"
+              font_size: 36
+            action:
+              type: "execute_script"
+              script: "playerctl_wrap.py --window firefox rel-position +300"
+          3:
+            title_text:
+              text: "X clang++"
+              font_size: 36
+            action:
+              type: "execute_script"
+              script: "killall clang"
+          4:
+            title_text:
+              text: "=/>>"
+              font_size: 36
+            action:
+              type: "execute_script"
+              script: "playerctl_wrap.py --window firefox play-pause"
+          5:
+            title_text:
+              text: "<"
+              font_size: 48
+            action:
+              type: "execute_script"
+              script: "playerctl_wrap.py --window firefox previous"
+          6:
+            title_text:
+              text: ">"
+              font_size: 48
+            action:
+              type: "execute_script"
+              script: "playerctl_wrap.py --window firefox next"
+          9:
+             action:
+              type: "change_page"
+              direction: "forward"
+          8:
+             action:
+              type: "change_page"
+              direction: "backward"
+      - name: "Page 2"
+        buttons:
+          0:
+            title_text:
+              text: "Move 1"
+              font_size: 28
+            action:
+              type: "emulate_shortcut"
+              shortcut: "ctrl+1"
+          1:
+            title_text:
+              text: "Move 2"
+              font_size: 28
+            action:
+              type: "emulate_shortcut"
+              shortcut: "ctrl+2"
+          2:
+            title_text:
+              text: "Move 3"
+              font_size: 28
+            action:
+              type: "emulate_shortcut"
+              shortcut: "ctrl+3"
+          3:
+            title_text:
+              text: "Move 4"
+              font_size: 28
+            action:
+              type: "emulate_shortcut"
+              shortcut: "ctrl+4"
+          4:
+            title_text:
+              text: "Move 5"
+              font_size: 28
+            action:
+              type: "emulate_shortcut"
+              shortcut: "ctrl+5"
+          5:
+            title_text:
+              text: "Move 6"
+              font_size: 28
+            action:
+              type: "emulate_shortcut"
+              shortcut: "ctrl+6"
+          6:
+            title_text:
+              text: "ESC"
+              font_size: 28
+            action:
+              type: "emulate_shortcut"
+              shortcut: "esc"
+          7:
+            title_text:
+              text: "OK"
+              font_size: 28
+            action:
+              type: "emulate_shortcut"
+              shortcut: "enter"
+          8:
+             action:
+              type: "change_page"
+              direction: "backward"
+          9:
+             action:
+              type: "change_page"
+              direction: "forward"
+
+      - name: "Page 3"
+        buttons:
+          0:
+            action:
+              type: "execute_script"
+              script: "positional_emacs_focus.py left-upper left"
+            image_path: "~/defaultdirs/images/streamdeck/split_left_upper_left.png"
+          1:
+            action:
+              type: "execute_script"
+              script: "positional_emacs_focus.py left-upper right"
+            image_path: "~/defaultdirs/images/streamdeck/split_left_upper_right.png"
+          4:
+            action:
+              type: "execute_script"
+              script: "positional_emacs_focus.py left-lower left"
+            image_path: "~/defaultdirs/images/streamdeck/split_left_lower_left.png"
+          5:
+            action:
+              type: "execute_script"
+              script: "positional_emacs_focus.py left-lower right"
+            image_path: "~/defaultdirs/images/streamdeck/split_left_lower_right.png"
+          6:
+            action:
+              type: "execute_script"
+              script: "positional_emacs_focus.py right left"
+            image_path: "~/defaultdirs/images/streamdeck/split_right_left.png"
+          7:
+            action:
+              type: "execute_script"
+              script: "positional_emacs_focus.py right right"
+            image_path: "~/defaultdirs/images/streamdeck/split_right_right.png"
+
+          9:
+             action:
+              type: "change_page"
+              direction: "forward"
+          8:
+             action:
+              type: "change_page"
+              direction: "backward"
+      - name: "Page 4"
+        buttons:
+          4:
+            title_text:
+              text: "WACOM"
+              font_size: 28
+            action:
+              type: "execute_script"
+              script: "fixwacom.py"
+          9:
+             action:
+              type: "change_page"
+              direction: "forward"
+          8:
+             action:
+              type: "change_page"
+              direction: "backward"
+
+
+  - device_type: "Stream Deck Original"
+    pages:
+      - name: "Main"
+        buttons:
+          0:
+            action:
+              type: "focus_window"
+              text: "Qt Creator"
+            image_path: "~/defaultdirs/images/streamdeck/Qt_logo_neon_2022.svg.png"
+          1:
+            action:
+              type: "focus_window"
+              text: "emacs"
+            image_path: "~/defaultdirs/images/streamdeck/emacs_logo.jpg"
+          2:
+            action:
+              type: "focus_window"
+              text: "Chromium"
+            image_path: "~/defaultdirs/images/streamdeck/Google_Chrome_icon_(February_2022).svg.png"
+          3:
+            action:
+              type: "focus_window"
+              text: "Firefox"
+            image_path: "~/defaultdirs/images/streamdeck/firefox_logo.jpg"
+          4:
+            action:
+              type: "focus_window"
+              text: "Telegram"
+            image_path: "~/defaultdirs/images/streamdeck/telegram_logo.jpg"
+          5:
+            action:
+              type: "focus_window"
+              text: "Visual Studio Code"
+            image_path: "~/defaultdirs/images/streamdeck/code-stable.png"
+          6:
+            action:
+              type: "focus_window"
+              text: "kitty.kitty"
+            image_path: "~/defaultdirs/images/streamdeck/kitty_termina.png"
+          7:
+            action:
+              type: "execute_script"
+              script: "gammaray"
+            image_path: "~/defaultdirs/images/streamdeck/gammaray.png"
+          8:
+            action:
+              type: "focus_window"
+              text: "zed"
+            image_path: "~/defaultdirs/images/streamdeck/zed_logo.png"
+          9:
+            action:
+              type: "focus_window"
+              text: "dolphin"
+            image_path: "~/defaultdirs/images/streamdeck/dolphin_logo.jpg"
+          11:
+            action:
+              type: "focus_window"
+              text: "calibre"
+            image_path: "~/defaultdirs/images/streamdeck/Calibre_logo_2.png"
+          12:
+            action:
+              type: "focus_window"
+              text: "pycharm"
+            image_path: "~/defaultdirs/images/streamdeck/pycharm.png"
+          13:
+            action:
+              type: "focus_window"
+              text: "doublecmd"
+            image_path: "~/defaultdirs/images/streamdeck/doublecmd_logo.jpg"
+          14:
+            action:
+              type: "focus_window"
+              text: "okular"
+            image_path: "~/defaultdirs/images/streamdeck/okular_log.png"
