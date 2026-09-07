@@ -1,12 +1,13 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
+
 from beartype import beartype
-from beartype.typing import TYPE_CHECKING, Any, Generic, TypeVar, ClassVar
+from beartype.typing import TYPE_CHECKING, Any, ClassVar, Generic, TypeVar
+from loguru import logger
 from pydantic import BaseModel
 
 from custom_input.devices.device import DeviceEvent
-from loguru import logger
 
 if TYPE_CHECKING:
     from custom_input.application import Application
@@ -23,7 +24,7 @@ class ActionTriggerContext:
 
 
 @dataclass
-class ActionCreateContext():
+class ActionCreateContext:
     config_dir: Path
 
 
@@ -51,8 +52,11 @@ class Action(ABC, Generic[ActionConfigType]):
         self.create_ctx = create_ctx
 
     @staticmethod
-    def from_config(cls_type: type["Action"], config: dict[str, Any],
-                    create_ctx: ActionCreateContext) -> "Action":
+    def from_config(
+        cls_type: type["Action"],
+        config: dict[str, Any],
+        create_ctx: ActionCreateContext,
+    ) -> "Action":
         return cls_type(
             config=cls_type.schema.model_validate(config),
             create_ctx=create_ctx,

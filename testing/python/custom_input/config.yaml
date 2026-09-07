@@ -235,6 +235,7 @@ devices:
             action:
               type: "focus_window"
               text: "Chromium"
+              startup_command: ["chromium"]
             image_path: "~/defaultdirs/images/streamdeck/Google_Chrome_icon_(February_2022).svg.png"
           3:
             action:
@@ -400,7 +401,7 @@ devices:
           # bottom row
           - code: "KEY_D" 
             action:
-              type: "show_notification"
+              type: "quit"
               summary: "KEY_D"
           - code: "KEY_C" 
             action:
@@ -408,7 +409,7 @@ devices:
               summary: "KEY_C"
           - code: "KEY_B" 
             action:
-              type: "quit"
+              type: "show_notification"
               summary: "KEY_B"
           - code: "KEY_A" 
             action:
