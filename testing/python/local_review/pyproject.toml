@@ -1,0 +1,22 @@
+[project]
+name = "local-review"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "haxscramper", email = "haxscramper@gmail.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "beartype>=0.22.9",
+    "pydantic>=2.13.5",
+    "pygit2>=1.20.0",
+    "pyqt6>=6.11.0",
+]
+
+[project.scripts]
+local-review = "local_review:main"
+
+[build-system]
+requires = ["uv_build>=0.9.27,<0.10.0"]
+build-backend = "uv_build"

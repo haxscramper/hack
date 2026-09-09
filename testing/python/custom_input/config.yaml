@@ -225,6 +225,7 @@ devices:
             action:
               type: "focus_window"
               text: "Qt Creator"
+              startup_command: ["qtcreator"]
             image_path: "~/defaultdirs/images/streamdeck/Qt_logo_neon_2022.svg.png"
           1:
             action:
