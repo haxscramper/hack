@@ -27,6 +27,7 @@ dependencies = [
     "plotly>=6.8.0",
     "plumbum>=1.10.0",
     "pydantic>=2.13.4",
+    "pygit2>=1.20.0",
     "pyqt6>=6.11.0",
     "pyside6>=6.11.1",
     "pytest>=9.0.3",

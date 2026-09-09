@@ -1,623 +1,1427 @@
 #!/usr/bin/env python
 
-from __future__ import annotations
-
 import argparse
-import difflib
-import hashlib
-from datetime import UTC, datetime
+import bisect
+import sys
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from uuid import uuid4
 
+import pygit2
 from beartype import beartype
-from beartype.typing import Any, Literal
-from git import Repo
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
-from PyQt6.QtCore import (
-    QAbstractListModel,
-    QAbstractTableModel,
-    QModelIndex,
-    QObject,
-    QStandardPaths,
-    Qt,
-)
+from beartype.typing import Callable, Sequence
+from pydantic import BaseModel, Field
+from PyQt6.QtCore import QModelIndex, QPoint, QRect, QSize, Qt, QTimer
 from PyQt6.QtGui import (
-    QBrush,
+    QAction,
+    QCloseEvent,
     QColor,
-    QFontDatabase,
+    QFont,
+    QFontMetrics,
+    QMouseEvent,
+    QPainter,
+    QPaintEvent,
+    QPen,
+    QResizeEvent,
     QStandardItem,
     QStandardItemModel,
 )
 from PyQt6.QtWidgets import (
+    QAbstractScrollArea,
     QApplication,
-    QComboBox,
-    QHeaderView,
-    QLabel,
-    QListView,
+    QButtonGroup,
+    QFrame,
+    QHBoxLayout,
     QMainWindow,
-    QMessageBox,
-    QPushButton,
     QPlainTextEdit,
+    QPushButton,
+    QSizePolicy,
     QSplitter,
-    QTableView,
     QTreeView,
     QVBoxLayout,
     QWidget,
 )
 
 
-class ChangeKind(Enum):
-    ADDED = "A"
-    MODIFIED = "M"
-    DELETED = "D"
-    RENAMED = "R"
-    COPIED = "C"
-    TYPE_CHANGED = "T"
-
-    @property
-    def title(self) -> str:
-        match self:
-            case ChangeKind.ADDED:
-                return "Added"
-            case ChangeKind.MODIFIED:
-                return "Modified"
-            case ChangeKind.DELETED:
-                return "Removed"
-            case ChangeKind.RENAMED:
-                return "Renamed"
-            case ChangeKind.COPIED:
-                return "Copied"
-            case ChangeKind.TYPE_CHANGED:
-                return "Type changed"
+class DiffSide(str, Enum):
+    OLD = "old"
+    NEW = "new"
 
 
-class CommentScope(Enum):
-    SELECTED_LINE = "selected-line"
-    CURRENT_FILE = "current-file"
+class DiffLineKind(str, Enum):
+    CONTEXT = "context"
+    ADDITION = "addition"
+    DELETION = "deletion"
+    HUNK = "hunk"
 
 
-class FileChange(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    kind: ChangeKind
-    old_path: str | None
-    current_path: str | None
-
-    @property
-    def display_path(self) -> str:
-        path = self.current_path if self.current_path is not None else self.old_path
-        if path is None:
-            raise RuntimeError(
-                f"Change {self.kind.value} has neither an old nor current path"
-            )
-        return path
+class DiffPresentation(str, Enum):
+    UNIFIED = "unified"
+    SPLIT = "split"
 
 
-class FileContent(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    lines: list[str]
-    exists: bool
-    binary: bool
+class CommentPlacement(str, Enum):
+    INLINE = "inline"
+    MARGIN = "margin"
 
 
-class Annotation(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    identifier: str
+class AnnotationAnchor(BaseModel):
     path: str
-    commit: str
-    line: int
-    line_text: str
-    before: list[str]
-    after: list[str]
-    text: str
-    created_at: datetime
+    side: DiffSide
+    line_start: int
+    line_end: int
+    snapshot_commit_oid: str | None
+    blob_oid: str
+    selected_text: str
+    context_before: list[str] = Field(default_factory=list)
+    context_after: list[str] = Field(default_factory=list)
 
 
-class AnnotationDocument(BaseModel):
-    version: Literal[1] = 1
-    annotations: list[Annotation] = Field(default_factory=list)
+class ReviewComment(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid4()))
+    text: str = ""
 
 
-class ResolvedAnnotation(BaseModel):
-    model_config = ConfigDict(frozen=True)
+class AnnotationThread(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid4()))
+    anchor: AnnotationAnchor
+    comments: list[ReviewComment] = Field(
+        default_factory=lambda: [ReviewComment()])
 
-    annotation: Annotation
-    line: int
+
+class ReviewDocument(BaseModel):
+    version: int = 1
+    repository_path: str
+    base_revision: str
+    base_commit_oid: str
+    threads: list[AnnotationThread] = Field(default_factory=list)
 
 
-class CodeLine(BaseModel):
-    model_config = ConfigDict(frozen=True)
+@dataclass(frozen=True)
+class DiffRow:
+    kind: DiffLineKind
+    old_line_number: int | None
+    new_line_number: int | None
+    old_text: str | None
+    new_text: str | None
+    header: str | None = None
 
-    number: int
-    text: str
-    changed: bool
-    annotation_count: int
+
+@dataclass(frozen=True)
+class DiffFile:
+    display_path: str
+    old_path: str
+    new_path: str
+    additions: int
+    deletions: int
+    rows: tuple[DiffRow, ...]
+
+
+@dataclass(frozen=True)
+class LayoutBlock:
+    row_index: int | None
+    thread_id: str | None
+    top: int
+    height: int
+
+
+@dataclass(frozen=True)
+class MarginPlacement:
+    thread_id: str
+    anchor_y: int
+    top: int
+    height: int
+
+
+@beartype
+def decode_blob(blob: pygit2.Blob) -> str:
+    return bytes(blob.data).decode("utf-8", errors="replace")
+
+
+@beartype
+def normalize_diff_content(content: str | bytes) -> str:
+    match content:
+        case bytes():
+            value = content.decode("utf-8", errors="replace")
+        case str():
+            value = content
+    return value.rstrip("\r\n")
+
+
+@beartype
+def resolve_commit(
+    repository: pygit2.Repository,
+    revision: str,
+) -> pygit2.Commit:
+    try:
+        value = repository.revparse_single(revision)
+    except KeyError as error:
+        raise ValueError(
+            f"Git revision {revision!r} does not exist in {repository.workdir!r}"
+        ) from error
+
+    try:
+        return value.peel(pygit2.Commit)
+    except ValueError as error:
+        raise ValueError(
+            f"Git revision {revision!r} does not resolve to a commit"
+        ) from error
+
+
+@beartype
+def repository_head(repository: pygit2.Repository) -> pygit2.Commit:
+    if repository.head_is_unborn:
+        raise ValueError(
+            f"Repository {repository.workdir!r} has an unborn HEAD")
+
+    value = repository[repository.head.target]
+    if not isinstance(value, pygit2.Commit):
+        raise TypeError(
+            f"Repository HEAD {repository.head.target} is not a commit")
+
+    return value
+
+
+@beartype
+def tree_blob(
+    repository: pygit2.Repository,
+    commit: pygit2.Commit,
+    path: str,
+) -> pygit2.Blob:
+    try:
+        entry = commit.tree[path]
+    except KeyError as error:
+        raise ValueError(
+            f"Path {path!r} does not exist in commit {commit.id}") from error
+
+    value = repository[entry.id]
+    if not isinstance(value, pygit2.Blob):
+        raise TypeError(
+            f"Path {path!r} in commit {commit.id} is not a file blob")
+
+    return value
+
+
+@beartype
+def line_context(
+    lines: Sequence[str],
+    line_start: int,
+    line_end: int,
+) -> tuple[list[str], list[str]]:
+    before_start = max(0, line_start - 4)
+    before = list(lines[before_start:line_start - 1])
+    after = list(lines[line_end:line_end + 3])
+    return before, after
 
 
 @beartype
 class AnnotationStore:
 
-    def __init__(self, path: Path) -> None:
+    def __init__(
+        self,
+        path: Path,
+        document: ReviewDocument,
+    ) -> None:
         self.path = path
-        self.annotations = self.load()
-
-    def load(self) -> list[Annotation]:
-        if not self.path.exists():
-            return []
-
-        try:
-            document = AnnotationDocument.model_validate_json(
-                self.path.read_text(encoding="utf-8"))
-        except ValidationError as error:
-            raise ValueError(
-                f"Annotation cache {self.path} contains invalid data: {error}"
-            ) from error
-
-        return list(document.annotations)
-
-    def add(self, annotation: Annotation) -> None:
-        self.annotations.append(annotation)
-        self.save()
-
-    def update(self, annotation: Annotation) -> None:
-        for index, existing in enumerate(self.annotations):
-            if existing.identifier == annotation.identifier:
-                self.annotations[index] = annotation
-                self.save()
-                return
-
-        raise ValueError(
-            f"Cannot update annotation {annotation.identifier!r} because it is "
-            f"not present in {self.path}")
+        self.document = document
 
     def save(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        document = AnnotationDocument(annotations=self.annotations)
-        self.path.write_text(
-            document.model_dump_json(indent=2) + "\n",
-            encoding="utf-8",
-        )
+        temporary_path = self.path.with_suffix(f"{self.path.suffix}.temporary")
+        data = self.document.model_dump_json(indent=2)
+        temporary_path.write_text(f"{data}\n", encoding="utf-8")
+        temporary_path.replace(self.path)
+
+    def find_thread(self, thread_id: str) -> AnnotationThread:
+        for thread in self.document.threads:
+            if thread.id == thread_id:
+                return thread
+
+        raise ValueError(f"Annotation thread {thread_id!r} does not exist")
+
+    def find_comment(
+        self,
+        thread_id: str,
+        comment_id: str,
+    ) -> ReviewComment:
+        thread = self.find_thread(thread_id)
+        for comment in thread.comments:
+            if comment.id == comment_id:
+                return comment
+
+        raise ValueError(
+            f"Comment {comment_id!r} does not exist in thread {thread_id!r}")
+
+    def update_comment(
+        self,
+        thread_id: str,
+        comment_id: str,
+        text: str,
+    ) -> None:
+        comment = self.find_comment(thread_id, comment_id)
+        comment.text = text
+        self.save()
+
+    def append_reply(self, thread_id: str) -> ReviewComment:
+        thread = self.find_thread(thread_id)
+        comment = ReviewComment()
+        thread.comments.append(comment)
+        self.save()
+        return comment
+
+    def remove_thread(self, thread_id: str) -> None:
+        matching = [
+            index for index, thread in enumerate(self.document.threads)
+            if thread.id == thread_id
+        ]
+        if not matching:
+            raise ValueError(f"Annotation thread {thread_id!r} does not exist")
+
+        self.document.threads.pop(matching[0])
+        self.save()
 
 
 @beartype
-class ReviewRepository:
+class GitReviewRepository:
 
     def __init__(
         self,
-        repository_path: Path,
-        target_reference: str,
-        current_reference: str | None,
+        path: Path,
+        base_revision: str,
+        stored_base_oid: str | None,
     ) -> None:
-        self.repository_path = repository_path.resolve()
-        self.repo = Repo(str(self.repository_path))
+        repository_path = pygit2.discover_repository(str(path))
+        if repository_path is None:
+            raise ValueError(f"Path {path} is not inside a Git repository")
 
-        if self.repo.bare:
+        self.repository = pygit2.Repository(repository_path)
+        if self.repository.workdir is None:
             raise ValueError(
-                f"Repository {self.repository_path} is bare and cannot display files"
+                f"Repository {repository_path!r} has no working tree")
+
+        self.worktree_path = Path(self.repository.workdir).resolve()
+        self.base_revision = base_revision
+        head = repository_head(self.repository)
+
+        if stored_base_oid is None:
+            configured_base = resolve_commit(
+                self.repository,
+                base_revision,
             )
+            merge_base_oid = self.repository.merge_base(
+                configured_base.id,
+                head.id,
+            )
+            if merge_base_oid is None:
+                raise ValueError(
+                    f"Revision {base_revision!r} and HEAD {head.id} have no merge base"
+                )
+            self.base_commit_oid = merge_base_oid
+        else:
+            self.base_commit_oid = pygit2.Oid(hex=stored_base_oid)
 
-        self.target_reference = target_reference
-        self.target_commit = self.repo.commit(target_reference)
-        self.current_commit = self.repo.commit(current_reference or "HEAD")
-        self.current_reference = current_reference or self.current_name()
+        base_value = self.repository[self.base_commit_oid]
+        if not isinstance(base_value, pygit2.Commit):
+            raise TypeError(
+                f"Stored base object {self.base_commit_oid} is not a commit")
 
-        merge_bases = self.repo.merge_base(self.target_commit,
-                                           self.current_commit)
-        if len(merge_bases) == 0:
-            raise ValueError(
-                f"Target {target_reference!r} and current revision "
-                f"{self.current_reference!r} have no common ancestor")
+        self.base_commit = base_value
+        self.head_oid = head.id
 
-        self.base_commit = merge_bases[0]
+    def refresh_head(self) -> bool:
+        head = repository_head(self.repository)
+        if head.id == self.head_oid:
+            return False
 
-    def current_name(self) -> str:
-        if self.repo.head.is_detached:
-            return self.repo.head.commit.hexsha[:12]
-        return self.repo.active_branch.name
+        self.head_oid = head.id
+        return True
 
-    def annotation_path(self) -> Path:
-        cache_location = QStandardPaths.writableLocation(
-            QStandardPaths.StandardLocation.CacheLocation)
-        if cache_location == "":
-            raise RuntimeError(
-                f"Qt did not provide a cache directory for repository "
-                f"{self.repository_path}")
+    def status_is_current(self, path: str) -> bool:
+        status = self.repository.status_file(path)
+        return status == pygit2.enums.FileStatus.CURRENT
 
-        repository_key = hashlib.sha256(
-            str(self.repository_path).encode("utf-8")).hexdigest()
-        return Path(cache_location) / f"{repository_key}.json"
+    def load_diff(self) -> list[DiffFile]:
+        flags = (pygit2.enums.DiffOption.INCLUDE_UNTRACKED
+                 | pygit2.enums.DiffOption.RECURSE_UNTRACKED_DIRS)
+        diff = self.repository.diff(
+            self.base_commit.tree,
+            None,
+            flags=flags,
+            context_lines=3,
+            interhunk_lines=0,
+        )
 
-    def changes(self) -> list[FileChange]:
-        result: list[FileChange] = []
+        files: list[DiffFile] = []
+        for patch in diff:
+            rows: list[DiffRow] = []
+            additions = 0
+            deletions = 0
 
-        for difference in self.base_commit.diff(self.current_commit, M=True):
-            kind = self.change_kind(difference.change_type)
-            old_path = difference.a_path
-            current_path = difference.b_path
+            for hunk in patch.hunks:
+                rows.append(
+                    DiffRow(
+                        kind=DiffLineKind.HUNK,
+                        old_line_number=None,
+                        new_line_number=None,
+                        old_text=None,
+                        new_text=None,
+                        header=hunk.header.rstrip("\r\n"),
+                    ))
 
-            match kind:
-                case ChangeKind.ADDED:
-                    old_path = None
-                case ChangeKind.DELETED:
-                    current_path = None
-                case ChangeKind.MODIFIED | ChangeKind.TYPE_CHANGED:
-                    if old_path is None or current_path is None:
-                        raise RuntimeError(
-                            f"Change {kind.value} has incomplete paths: "
-                            f"old={old_path!r}, current={current_path!r}")
-                case ChangeKind.RENAMED | ChangeKind.COPIED:
-                    if old_path is None or current_path is None:
-                        raise RuntimeError(
-                            f"Change {kind.value} has incomplete paths: "
-                            f"old={old_path!r}, current={current_path!r}")
+                for line in hunk.lines:
+                    text = normalize_diff_content(line.content)
+                    match line.origin:
+                        case "+":
+                            kind = DiffLineKind.ADDITION
+                            additions += 1
+                            old_text = None
+                            new_text = text
+                        case "-":
+                            kind = DiffLineKind.DELETION
+                            deletions += 1
+                            old_text = text
+                            new_text = None
+                        case " ":
+                            kind = DiffLineKind.CONTEXT
+                            old_text = text
+                            new_text = text
+                        case _:
+                            continue
 
-            result.append(
-                FileChange(
-                    kind=kind,
+                    old_line_number = line.old_lineno if 0 < line.old_lineno else None
+                    new_line_number = line.new_lineno if 0 < line.new_lineno else None
+                    rows.append(
+                        DiffRow(
+                            kind=kind,
+                            old_line_number=old_line_number,
+                            new_line_number=new_line_number,
+                            old_text=old_text,
+                            new_text=new_text,
+                        ))
+
+            old_path = patch.delta.old_file.path
+            new_path = patch.delta.new_file.path
+            display_path = new_path or old_path
+            files.append(
+                DiffFile(
+                    display_path=display_path,
                     old_path=old_path,
-                    current_path=current_path,
+                    new_path=new_path,
+                    additions=additions,
+                    deletions=deletions,
+                    rows=tuple(rows),
                 ))
 
-        return sorted(result, key=lambda change: change.display_path)
+        return sorted(files, key=lambda value: value.display_path)
 
-    def change_kind(self, value: str | None) -> ChangeKind:
-        match value:
-            case "A":
-                return ChangeKind.ADDED
-            case "M":
-                return ChangeKind.MODIFIED
-            case "D":
-                return ChangeKind.DELETED
-            case "R":
-                return ChangeKind.RENAMED
-            case "C":
-                return ChangeKind.COPIED
-            case "T":
-                return ChangeKind.TYPE_CHANGED
-            case _:
-                raise ValueError(
-                    f"Git returned unsupported change type {value!r}")
-
-    def base_content(self, change: FileChange) -> FileContent:
-        return self.read_content(self.base_commit, change.old_path)
-
-    def current_content(self, change: FileChange) -> FileContent:
-        return self.read_content(self.current_commit, change.current_path)
-
-    def read_content(self, commit: Any, path: str | None) -> FileContent:
-        if path is None:
-            return FileContent(lines=[], exists=False, binary=False)
-
-        try:
-            item = commit.tree / path
-        except KeyError:
-            return FileContent(lines=[], exists=False, binary=False)
-
-        if item.type != "blob":
-            return FileContent(lines=[], exists=True, binary=True)
-
-        content: bytes = item.data_stream.read()
-        if b"\x00" in content:
-            return FileContent(lines=[], exists=True, binary=True)
-
-        text = content.decode("utf-8")
-        return FileContent(
-            lines=text.splitlines(),
-            exists=True,
-            binary=False,
-        )
-
-    def changed_lines(
+    def source_for_anchor(
         self,
-        base_content: FileContent,
-        current_content: FileContent,
-    ) -> set[int]:
-        if not current_content.exists or current_content.binary:
-            return set()
+        diff_file: DiffFile,
+        side: DiffSide,
+    ) -> tuple[str, str, str | None, list[str]]:
+        match side:
+            case DiffSide.OLD:
+                path = diff_file.old_path
+                blob = tree_blob(
+                    self.repository,
+                    self.base_commit,
+                    path,
+                )
+                text = decode_blob(blob)
+                return path, str(blob.id), str(
+                    self.base_commit.id), (text.splitlines())
+            case DiffSide.NEW:
+                path = diff_file.new_path
+                worktree_file = self.worktree_path / path
+                if worktree_file.exists():
+                    data = worktree_file.read_bytes()
+                    blob_oid = str(pygit2.hash(data))
+                    snapshot_oid = (str(self.head_oid)
+                                    if self.status_is_current(path) else None)
+                    return (
+                        path,
+                        blob_oid,
+                        snapshot_oid,
+                        data.decode(
+                            "utf-8",
+                            errors="replace",
+                        ).splitlines(),
+                    )
 
-        if not base_content.exists or base_content.binary:
-            return set(range(1, len(current_content.lines) + 1))
+                head = repository_head(self.repository)
+                blob = tree_blob(self.repository, head, path)
+                return (
+                    path,
+                    str(blob.id),
+                    str(head.id),
+                    decode_blob(blob).splitlines(),
+                )
 
-        matcher = difflib.SequenceMatcher(
-            None,
-            base_content.lines,
-            current_content.lines,
-            autojunk=False,
-        )
-        result: set[int] = set()
+    def reconcile_pending(
+        self,
+        document: ReviewDocument,
+    ) -> bool:
+        head = repository_head(self.repository)
+        changed = False
 
-        for operation, base_start, base_end, current_start, current_end in matcher.get_opcodes(
-        ):
-            match operation:
-                case "replace" | "insert":
-                    result.update(range(current_start + 1, current_end + 1))
-                case "equal" | "delete":
-                    pass
-                case _:
-                    raise RuntimeError(
-                        f"Sequence matcher returned unsupported operation {operation!r} "
-                        f"for ranges {base_start}:{base_end} and "
-                        f"{current_start}:{current_end}")
+        for thread in document.threads:
+            anchor = thread.anchor
+            if anchor.snapshot_commit_oid is not None:
+                continue
+            if anchor.side != DiffSide.NEW:
+                continue
+
+            try:
+                blob = tree_blob(
+                    self.repository,
+                    head,
+                    anchor.path,
+                )
+            except ValueError:
+                continue
+
+            if str(blob.id) == anchor.blob_oid:
+                anchor.snapshot_commit_oid = str(head.id)
+                changed = True
+                continue
+
+            lines = decode_blob(blob).splitlines()
+            selected_lines = anchor.selected_text.splitlines()
+            candidate_lines = self.find_relocation_candidates(
+                lines,
+                selected_lines,
+            )
+            relocated = self.select_relocation(
+                lines,
+                candidate_lines,
+                selected_lines,
+                anchor.context_before,
+                anchor.context_after,
+            )
+            if relocated is None:
+                continue
+
+            anchor.line_start = relocated
+            anchor.line_end = relocated + len(selected_lines) - 1
+            anchor.blob_oid = str(blob.id)
+            anchor.snapshot_commit_oid = str(head.id)
+            before, after = line_context(
+                lines,
+                anchor.line_start,
+                anchor.line_end,
+            )
+            anchor.context_before = before
+            anchor.context_after = after
+            changed = True
+
+        return changed
+
+    def find_relocation_candidates(
+        self,
+        lines: Sequence[str],
+        selected_lines: Sequence[str],
+    ) -> list[int]:
+        if not selected_lines:
+            return []
+
+        width = len(selected_lines)
+        result: list[int] = []
+        limit = len(lines) - width + 1
+        for index in range(max(0, limit)):
+            if list(lines[index:index + width]) == list(selected_lines):
+                result.append(index + 1)
 
         return result
 
+    def select_relocation(
+        self,
+        lines: Sequence[str],
+        candidates: Sequence[int],
+        selected_lines: Sequence[str],
+        context_before: Sequence[str],
+        context_after: Sequence[str],
+    ) -> int | None:
+        if len(candidates) == 1:
+            return candidates[0]
+        if not candidates:
+            return None
 
-@beartype
-def resolve_annotation(
-    annotation: Annotation,
-    path: str,
-    lines: list[str],
-) -> ResolvedAnnotation | None:
-    if annotation.path != path:
-        return None
-
-    candidates = [
-        index for index, line_text in enumerate(lines)
-        if line_text == annotation.line_text
-    ]
-    if len(candidates) == 0:
-        return None
-
-    best_index: int | None = None
-    best_key: tuple[int, int, int] | None = None
-
-    for candidate in candidates:
-        score = 0
-
-        for offset, expected in enumerate(reversed(annotation.before),
-                                          start=1):
-            source_index = candidate - offset
-            if 0 <= source_index < len(
-                    lines) and lines[source_index] == expected:
+        scores: list[tuple[int, int]] = []
+        width = len(selected_lines)
+        for candidate in candidates:
+            before_start = max(0, candidate - 1 - len(context_before))
+            before = list(lines[before_start:candidate - 1])
+            after_start = candidate - 1 + width
+            after = list(lines[after_start:after_start + len(context_after)])
+            score = 0
+            for expected, actual in zip(
+                    reversed(context_before),
+                    reversed(before),
+            ):
+                if expected != actual:
+                    break
                 score += 1
-
-        for offset, expected in enumerate(annotation.after, start=1):
-            source_index = candidate + offset
-            if 0 <= source_index < len(
-                    lines) and lines[source_index] == expected:
+            for expected, actual in zip(context_after, after):
+                if expected != actual:
+                    break
                 score += 1
+            scores.append((score, candidate))
 
-        distance = abs(candidate + 1 - annotation.line)
-        key = (score, -distance, -candidate)
-
-        if best_key is None or best_key < key:
-            best_key = key
-            best_index = candidate
-
-    if best_index is None:
-        raise RuntimeError(f"Could not select a candidate line for annotation "
-                           f"{annotation.identifier}")
-
-    return ResolvedAnnotation(
-        annotation=annotation,
-        line=best_index + 1,
-    )
+        scores.sort(reverse=True)
+        if len(scores) == 1:
+            return scores[0][1]
+        if scores[1][0] < scores[0][0]:
+            return scores[0][1]
+        return None
 
 
 @beartype
 class FileTreeModel(QStandardItemModel):
+    PATH_ROLE = int(Qt.ItemDataRole.UserRole) + 1
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.setHorizontalHeaderLabels(["File", "+", "-"])
+
+    def replace_files(self, files: Sequence[DiffFile]) -> None:
+        self.clear()
+        self.setHorizontalHeaderLabels(["File", "+", "-"])
+        root = self.invisibleRootItem()
+        directories: dict[str, tuple[QStandardItem, QStandardItem,
+                                     QStandardItem]] = {}
+
+        for diff_file in files:
+            parts = Path(diff_file.display_path).parts
+            parent = root
+            accumulated: list[str] = []
+
+            for part in parts[:-1]:
+                accumulated.append(part)
+                directory_path = "/".join(accumulated)
+                existing = directories.get(directory_path)
+                if existing is None:
+                    name_item = QStandardItem(part)
+                    additions_item = QStandardItem("0")
+                    deletions_item = QStandardItem("0")
+                    name_item.setEditable(False)
+                    additions_item.setEditable(False)
+                    deletions_item.setEditable(False)
+                    parent.appendRow(
+                        [name_item, additions_item, deletions_item])
+                    existing = (
+                        name_item,
+                        additions_item,
+                        deletions_item,
+                    )
+                    directories[directory_path] = existing
+
+                additions_item = existing[1]
+                deletions_item = existing[2]
+                additions_item.setText(
+                    str(int(additions_item.text()) + diff_file.additions))
+                deletions_item.setText(
+                    str(int(deletions_item.text()) + diff_file.deletions))
+                parent = existing[0]
+
+            name_item = QStandardItem(parts[-1])
+            additions_item = QStandardItem(str(diff_file.additions))
+            deletions_item = QStandardItem(str(diff_file.deletions))
+            name_item.setData(
+                diff_file.display_path,
+                self.PATH_ROLE,
+            )
+            name_item.setEditable(False)
+            additions_item.setEditable(False)
+            deletions_item.setEditable(False)
+            parent.appendRow([name_item, additions_item, deletions_item])
+
+
+@beartype
+class ThreadWidget(QFrame):
 
     def __init__(
         self,
-        changes: list[FileChange],
-        annotations: list[Annotation],
-        parent: QObject | None = None,
+        thread: AnnotationThread,
+        update_callback: Callable[[str, str, str], None],
+        reply_callback: Callable[[str], None],
+        remove_callback: Callable[[str], None],
+        layout_callback: Callable[[], None],
+        parent: QWidget,
     ) -> None:
         super().__init__(parent)
-        self.changes = changes
-        self.file_items: dict[str, QStandardItem] = {}
-        self.comment_items: dict[str, QStandardItem] = {}
-        self.setHorizontalHeaderLabels(["Path", "State", "Comments"])
-        self.build()
-        self.update_comment_counts(annotations)
+        self.thread = thread
+        self.update_callback = update_callback
+        self.reply_callback = reply_callback
+        self.remove_callback = remove_callback
+        self.layout_callback = layout_callback
 
-    def build(self) -> None:
-        directory_items: dict[str, QStandardItem] = {}
-        root = self.invisibleRootItem()
+        self.setFrameShape(QFrame.Shape.StyledPanel)
+        self.setAutoFillBackground(True)
+        self.setSizePolicy(
+            QSizePolicy.Policy.Fixed,
+            QSizePolicy.Policy.Fixed,
+        )
 
-        for change in self.changes:
-            parts = Path(change.display_path).parts
-            parent_item = root
-            directory_path = ""
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(6)
 
-            for part in parts[:-1]:
-                directory_path = (part if directory_path == "" else
-                                  f"{directory_path}/{part}")
+        for comment in thread.comments:
+            editor = QPlainTextEdit(self)
+            editor.setPlaceholderText("Write a review comment")
+            editor.setPlainText(comment.text)
+            editor.setFixedHeight(self.editor_height(comment.text))
+            editor.textChanged.connect(
+                lambda editor=editor, comment_id=comment.id: self.
+                editor_changed(editor, comment_id))
+            layout.addWidget(editor)
 
-                if directory_path not in directory_items:
-                    path_item = QStandardItem(part)
-                    state_item = QStandardItem()
-                    comment_item = QStandardItem()
+        action_layout = QHBoxLayout()
+        action_layout.addStretch(1)
 
-                    for item in (path_item, state_item, comment_item):
-                        item.setEditable(False)
+        reply_button = QPushButton("Reply", self)
+        reply_button.clicked.connect(self.reply_clicked)
+        action_layout.addWidget(reply_button)
 
-                    parent_item.appendRow(
-                        [path_item, state_item, comment_item])
-                    directory_items[directory_path] = path_item
+        remove_button = QPushButton("Delete thread", self)
+        remove_button.clicked.connect(self.remove_clicked)
+        action_layout.addWidget(remove_button)
 
-                parent_item = directory_items[directory_path]
+        layout.addLayout(action_layout)
 
-            path_item = QStandardItem(parts[-1])
-            state_item = QStandardItem(change.kind.title)
-            comment_item = QStandardItem()
+    def editor_height(self, text: str) -> int:
+        line_count = max(1, len(text.splitlines()))
+        return max(72, min(220, 34 + line_count * 20))
 
-            for item in (path_item, state_item, comment_item):
-                item.setEditable(False)
-                item.setData(change, int(Qt.ItemDataRole.UserRole))
-                item.setToolTip(change.display_path)
+    def preferred_height(self) -> int:
+        editor_height = sum(
+            self.editor_height(comment.text)
+            for comment in self.thread.comments)
+        spacing = 6 * len(self.thread.comments)
+        return 54 + editor_height + spacing
 
-            self.apply_change_color(
-                change.kind,
-                [path_item, state_item, comment_item],
-            )
-            parent_item.appendRow([path_item, state_item, comment_item])
-            self.file_items[change.display_path] = path_item
-            self.comment_items[change.display_path] = comment_item
-
-    def apply_change_color(
+    def editor_changed(
         self,
-        kind: ChangeKind,
-        items: list[QStandardItem],
+        editor: QPlainTextEdit,
+        comment_id: str,
     ) -> None:
-        match kind:
-            case ChangeKind.ADDED:
-                foreground = QColor(25, 125, 55)
-                background = QColor(60, 180, 90, 40)
-            case ChangeKind.DELETED:
-                foreground = QColor(190, 45, 45)
-                background = QColor(220, 60, 60, 40)
-            case ChangeKind.MODIFIED | ChangeKind.TYPE_CHANGED:
-                foreground = QColor(185, 120, 15)
-                background = QColor(230, 170, 40, 40)
-            case ChangeKind.RENAMED | ChangeKind.COPIED:
-                foreground = QColor(55, 105, 190)
-                background = QColor(70, 125, 220, 40)
+        text = editor.toPlainText()
+        editor.setFixedHeight(self.editor_height(text))
+        self.update_callback(
+            self.thread.id,
+            comment_id,
+            text,
+        )
+        self.setFixedHeight(self.preferred_height())
+        self.layout_callback()
 
-        for item in items:
-            item.setForeground(QBrush(foreground))
-            item.setBackground(QBrush(background))
+    def reply_clicked(self, checked: bool) -> None:
+        self.reply_callback(self.thread.id)
 
-    def update_comment_counts(self, annotations: list[Annotation]) -> None:
-        counts: dict[str, int] = {}
-        for annotation in annotations:
-            counts[annotation.path] = counts.get(annotation.path, 0) + 1
-
-        for path, path_item in self.file_items.items():
-            count = counts.get(path, 0)
-            comment_item = self.comment_items[path]
-            comment_item.setText(str(count) if 0 < count else "")
-
-            font = path_item.font()
-            font.setBold(0 < count)
-            path_item.setFont(font)
+    def remove_clicked(self, checked: bool) -> None:
+        self.remove_callback(self.thread.id)
 
 
-class CodeModel(QAbstractTableModel):
+@beartype
+class DiffView(QAbstractScrollArea):
+    line_height = 24
+    hunk_height = 30
+    line_number_width = 58
+    margin_gap = 10
+    margin_width = 410
 
-    def __init__(self, parent: QObject | None = None) -> None:
+    def __init__(
+        self,
+        repository: GitReviewRepository,
+        store: AnnotationStore,
+        parent: QWidget | None = None,
+    ) -> None:
         super().__init__(parent)
-        self.lines: list[CodeLine] = []
+        self.repository = repository
+        self.store = store
+        self.diff_file: DiffFile | None = None
+        self.presentation = DiffPresentation.UNIFIED
+        self.placement = CommentPlacement.INLINE
+        self.blocks: list[LayoutBlock] = []
+        self.block_tops: list[int] = []
+        self.row_tops: dict[int, int] = {}
+        self.margin_placements: dict[str, MarginPlacement] = {}
+        self.visible_widgets: dict[str, ThreadWidget] = {}
+        self.selected_row: int | None = None
+        self.selected_side = DiffSide.NEW
+        self.hovered_row: int | None = None
 
-    def set_lines(self, lines: list[CodeLine]) -> None:
-        self.beginResetModel()
-        self.lines = lines
-        self.endResetModel()
+        self.font_value = QFont("monospace")
+        self.font_value.setStyleHint(QFont.StyleHint.Monospace)
+        self.viewport().setFont(self.font_value)
+        self.viewport().setMouseTracking(True)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
+        self.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.verticalScrollBar().valueChanged.connect(self.scroll_changed)
 
-    def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:
-        if parent.isValid():
-            return 0
-        return len(self.lines)
+    def sizeHint(self) -> QSize:
+        return QSize(1100, 800)
 
-    def columnCount(self, parent: QModelIndex = QModelIndex()) -> int:
-        if parent.isValid():
-            return 0
-        return 3
+    def set_diff_file(self, diff_file: DiffFile | None) -> None:
+        self.diff_file = diff_file
+        self.selected_row = None
+        self.hovered_row = None
+        self.verticalScrollBar().setValue(0)
+        self.rebuild_layout()
 
-    def data(
-            self,
-            index: QModelIndex,
-            role: int = int(Qt.ItemDataRole.DisplayRole),
-    ) -> Any:
-        if not index.isValid() or not 0 <= index.row() < len(self.lines):
+    def set_presentation(
+        self,
+        presentation: DiffPresentation,
+    ) -> None:
+        self.presentation = presentation
+        self.rebuild_layout()
+
+    def set_placement(self, placement: CommentPlacement) -> None:
+        self.placement = placement
+        self.rebuild_layout()
+
+    def threads_for_file(self) -> list[AnnotationThread]:
+        if self.diff_file is None:
+            return []
+
+        paths = {
+            self.diff_file.old_path,
+            self.diff_file.new_path,
+        }
+        return [
+            thread for thread in self.store.document.threads
+            if thread.anchor.path in paths
+        ]
+
+    def matching_threads(
+        self,
+        row: DiffRow,
+    ) -> list[AnnotationThread]:
+        result: list[AnnotationThread] = []
+        for thread in self.threads_for_file():
+            anchor = thread.anchor
+            match anchor.side:
+                case DiffSide.OLD:
+                    line_number = row.old_line_number
+                case DiffSide.NEW:
+                    line_number = row.new_line_number
+
+            if line_number is None:
+                continue
+            if anchor.line_start <= line_number <= anchor.line_end:
+                result.append(thread)
+
+        return result
+
+    def thread_height(self, thread: AnnotationThread) -> int:
+        editor_height = sum(
+            max(
+                72,
+                min(
+                    220,
+                    34 + max(1, len(comment.text.splitlines())) * 20,
+                ),
+            ) for comment in thread.comments)
+        return 54 + editor_height + 6 * len(thread.comments)
+
+    def rebuild_layout(self) -> None:
+        self.blocks.clear()
+        self.block_tops.clear()
+        self.row_tops.clear()
+        self.margin_placements.clear()
+
+        if self.diff_file is None:
+            self.verticalScrollBar().setRange(0, 0)
+            self.update_visible_widgets()
+            self.viewport().update()
+            return
+
+        top = 0
+        for row_index, row in enumerate(self.diff_file.rows):
+            height = (self.hunk_height
+                      if row.kind == DiffLineKind.HUNK else self.line_height)
+            self.row_tops[row_index] = top
+            self.blocks.append(
+                LayoutBlock(
+                    row_index=row_index,
+                    thread_id=None,
+                    top=top,
+                    height=height,
+                ))
+            self.block_tops.append(top)
+            top += height
+
+            if self.placement == CommentPlacement.INLINE:
+                for thread in self.matching_threads(row):
+                    thread_height = self.thread_height(thread)
+                    self.blocks.append(
+                        LayoutBlock(
+                            row_index=None,
+                            thread_id=thread.id,
+                            top=top,
+                            height=thread_height + self.margin_gap,
+                        ))
+                    self.block_tops.append(top)
+                    top += thread_height + self.margin_gap
+
+        if self.placement == CommentPlacement.MARGIN:
+            margin_top = 0
+            placed: set[str] = set()
+            for row_index, row in enumerate(self.diff_file.rows):
+                for thread in self.matching_threads(row):
+                    if thread.id in placed:
+                        continue
+                    placed.add(thread.id)
+                    anchor_y = self.row_tops[row_index]
+                    thread_height = self.thread_height(thread)
+                    thread_top = max(anchor_y, margin_top)
+                    self.margin_placements[thread.id] = MarginPlacement(
+                        thread_id=thread.id,
+                        anchor_y=anchor_y,
+                        top=thread_top,
+                        height=thread_height,
+                    )
+                    margin_top = thread_top + thread_height + self.margin_gap
+            top = max(top, margin_top)
+
+        maximum = max(0, top - self.viewport().height())
+        self.verticalScrollBar().setRange(0, maximum)
+        self.verticalScrollBar().setPageStep(self.viewport().height())
+        self.update_visible_widgets()
+        self.viewport().update()
+
+    def thread_by_id(self, thread_id: str) -> AnnotationThread:
+        return self.store.find_thread(thread_id)
+
+    def update_visible_widgets(self) -> None:
+        scroll = self.verticalScrollBar().value()
+        viewport_height = self.viewport().height()
+        visible_ids: set[str] = set()
+        rectangles: dict[str, QRect] = {}
+
+        if self.placement == CommentPlacement.INLINE:
+            for block in self.blocks:
+                if block.thread_id is None:
+                    continue
+                viewport_top = block.top - scroll
+                if viewport_top + block.height < 0:
+                    continue
+                if viewport_height < viewport_top:
+                    continue
+
+                width = max(
+                    200,
+                    self.viewport().width() - self.line_number_width - 24,
+                )
+                rectangles[block.thread_id] = QRect(
+                    self.line_number_width + 12,
+                    viewport_top + 4,
+                    width,
+                    block.height - self.margin_gap,
+                )
+                visible_ids.add(block.thread_id)
+        else:
+            left = max(
+                0,
+                self.viewport().width() - self.margin_width,
+            )
+            width = max(
+                200,
+                self.viewport().width() - left - 10,
+            )
+            for placement in self.margin_placements.values():
+                viewport_top = placement.top - scroll
+                if viewport_top + placement.height < 0:
+                    continue
+                if viewport_height < viewport_top:
+                    continue
+
+                rectangles[placement.thread_id] = QRect(
+                    left + 5,
+                    viewport_top,
+                    width,
+                    placement.height,
+                )
+                visible_ids.add(placement.thread_id)
+
+        stale_ids = set(self.visible_widgets) - visible_ids
+        for thread_id in stale_ids:
+            widget = self.visible_widgets.pop(thread_id)
+            widget.hide()
+            widget.deleteLater()
+
+        for thread_id in visible_ids:
+            widget = self.visible_widgets.get(thread_id)
+            if widget is None:
+                thread = self.thread_by_id(thread_id)
+                widget = ThreadWidget(
+                    thread=thread,
+                    update_callback=self.update_comment,
+                    reply_callback=self.append_reply,
+                    remove_callback=self.remove_thread,
+                    layout_callback=self.rebuild_layout,
+                    parent=self.viewport(),
+                )
+                self.visible_widgets[thread_id] = widget
+                widget.show()
+
+            rectangle = rectangles[thread_id]
+            widget.setGeometry(rectangle)
+            widget.raise_()
+
+    def update_comment(
+        self,
+        thread_id: str,
+        comment_id: str,
+        text: str,
+    ) -> None:
+        self.store.update_comment(
+            thread_id,
+            comment_id,
+            text,
+        )
+
+    def append_reply(self, thread_id: str) -> None:
+        self.store.append_reply(thread_id)
+        widget = self.visible_widgets.pop(thread_id, None)
+        if widget is not None:
+            widget.hide()
+            widget.deleteLater()
+        self.rebuild_layout()
+
+    def remove_thread(self, thread_id: str) -> None:
+        self.store.remove_thread(thread_id)
+        widget = self.visible_widgets.pop(thread_id, None)
+        if widget is not None:
+            widget.hide()
+            widget.deleteLater()
+        self.rebuild_layout()
+
+    def scroll_changed(self, value: int) -> None:
+        self.update_visible_widgets()
+        self.viewport().update()
+
+    def resizeEvent(self, event: QResizeEvent) -> None:
+        super().resizeEvent(event)
+        self.rebuild_layout()
+
+    def block_at_viewport_y(self, viewport_y: int) -> LayoutBlock | None:
+        if not self.block_tops:
             return None
 
-        line = self.lines[index.row()]
-
-        match role:
-            case value if value == int(Qt.ItemDataRole.DisplayRole):
-                match index.column():
-                    case 0:
-                        return line.number
-                    case 1:
-                        return line.text
-                    case 2:
-                        return line.annotation_count if 0 < line.annotation_count else ""
-                    case _:
-                        return None
-            case value if value == int(Qt.ItemDataRole.TextAlignmentRole):
-                if index.column() in (0, 2):
-                    return int(Qt.AlignmentFlag.AlignRight
-                               | Qt.AlignmentFlag.AlignVCenter)
-                return int(Qt.AlignmentFlag.AlignLeft
-                           | Qt.AlignmentFlag.AlignVCenter)
-            case value if value == int(Qt.ItemDataRole.BackgroundRole):
-                if 0 < line.annotation_count:
-                    return QColor(80, 140, 255, 55)
-                if line.changed:
-                    return QColor(255, 190, 40, 55)
-                return None
-            case value if value == int(Qt.ItemDataRole.UserRole):
-                return line.number
-            case _:
-                return None
-
-    def headerData(
-            self,
-            section: int,
-            orientation: Qt.Orientation,
-            role: int = int(Qt.ItemDataRole.DisplayRole),
-    ) -> Any:
-        if role != int(Qt.ItemDataRole.DisplayRole):
+        absolute_y = viewport_y + self.verticalScrollBar().value()
+        index = bisect.bisect_right(self.block_tops, absolute_y) - 1
+        if index < 0:
+            return None
+        if len(self.blocks) <= index:
             return None
 
-        if orientation != Qt.Orientation.Horizontal:
+        block = self.blocks[index]
+        if block.top + block.height <= absolute_y:
             return None
+        return block
 
-        match section:
-            case 0:
-                return "Line"
-            case 1:
-                return "Code"
-            case 2:
-                return "Comments"
-            case _:
-                return None
+    def side_at_x(self, x: int) -> DiffSide:
+        if self.presentation == DiffPresentation.UNIFIED:
+            if self.selected_row is not None and self.diff_file is not None:
+                row = self.diff_file.rows[self.selected_row]
+                if row.kind == DiffLineKind.DELETION:
+                    return DiffSide.OLD
+            return DiffSide.NEW
 
+        code_width = self.code_width()
+        if x < code_width // 2:
+            return DiffSide.OLD
+        return DiffSide.NEW
 
-class AnnotationModel(QAbstractListModel):
+    def mousePressEvent(self, event: QMouseEvent) -> None:
+        if event.button() != Qt.MouseButton.LeftButton:
+            super().mousePressEvent(event)
+            return
 
-    def __init__(self, parent: QObject | None = None) -> None:
-        super().__init__(parent)
-        self.annotations: list[ResolvedAnnotation] = []
+        block = self.block_at_viewport_y(int(event.position().y()))
+        if block is None or block.row_index is None:
+            return
 
-    def set_annotations(self, annotations: list[ResolvedAnnotation]) -> None:
-        self.beginResetModel()
-        self.annotations = annotations
-        self.endResetModel()
+        row = self.diff_file.rows[block.row_index] if self.diff_file else None
+        if row is None or row.kind == DiffLineKind.HUNK:
+            return
 
-    def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:
-        if parent.isValid():
-            return 0
-        return len(self.annotations)
+        self.selected_row = block.row_index
+        self.selected_side = self.side_at_x(int(event.position().x()))
 
-    def data(
-            self,
-            index: QModelIndex,
-            role: int = int(Qt.ItemDataRole.DisplayRole),
-    ) -> Any:
-        if not index.isValid() or not 0 <= index.row() < len(self.annotations):
-            return None
+        if int(event.position().x()) < 30:
+            self.add_comment_for_selection()
 
-        resolved = self.annotations[index.row()]
-        annotation = resolved.annotation
-        created_at = annotation.created_at.isoformat(timespec="seconds")
+        self.viewport().update()
 
-        match role:
-            case value if value == int(Qt.ItemDataRole.DisplayRole):
-                return (f"Line {resolved.line} · {annotation.commit[:12]} · "
-                        f"{created_at}\n{annotation.text}")
-            case value if value == int(Qt.ItemDataRole.ToolTipRole):
-                return (f"Commit: {annotation.commit}\n"
-                        f"Original line: {annotation.line}\n"
-                        f"Current line: {resolved.line}")
-            case value if value == int(Qt.ItemDataRole.UserRole):
-                return resolved
-            case _:
-                return None
+    def mouseMoveEvent(self, event: QMouseEvent) -> None:
+        block = self.block_at_viewport_y(int(event.position().y()))
+        hovered = (block.row_index if block is not None
+                   and block.row_index is not None else None)
+        if hovered != self.hovered_row:
+            self.hovered_row = hovered
+            self.viewport().update()
+
+    def leaveEvent(self, event) -> None:
+        self.hovered_row = None
+        self.viewport().update()
+
+    def add_comment_for_selection(self) -> None:
+        if self.diff_file is None or self.selected_row is None:
+            return
+
+        row = self.diff_file.rows[self.selected_row]
+        side = self.selected_side
+        match side:
+            case DiffSide.OLD:
+                line_number = row.old_line_number
+            case DiffSide.NEW:
+                line_number = row.new_line_number
+
+        if line_number is None:
+            side = DiffSide.NEW if row.new_line_number is not None else DiffSide.OLD
+            line_number = (row.new_line_number
+                           if side == DiffSide.NEW else row.old_line_number)
+
+        if line_number is None:
+            return
+
+        path, blob_oid, snapshot_oid, lines = self.repository.source_for_anchor(
+            self.diff_file,
+            side,
+        )
+        if len(lines) < line_number:
+            raise ValueError(
+                f"Line {line_number} is outside {path!r}, which has {len(lines)} lines"
+            )
+
+        selected_text = lines[line_number - 1]
+        before, after = line_context(
+            lines,
+            line_number,
+            line_number,
+        )
+        thread = AnnotationThread(anchor=AnnotationAnchor(
+            path=path,
+            side=side,
+            line_start=line_number,
+            line_end=line_number,
+            snapshot_commit_oid=snapshot_oid,
+            blob_oid=blob_oid,
+            selected_text=selected_text,
+            context_before=before,
+            context_after=after,
+        ))
+        self.store.document.threads.append(thread)
+        self.store.save()
+        self.rebuild_layout()
+
+    def code_width(self) -> int:
+        if self.placement == CommentPlacement.MARGIN:
+            return max(
+                300,
+                self.viewport().width() - self.margin_width,
+            )
+        return self.viewport().width()
+
+    def paintEvent(self, event: QPaintEvent) -> None:
+        painter = QPainter(self.viewport())
+        painter.setRenderHint(
+            QPainter.RenderHint.TextAntialiasing,
+            True,
+        )
+        palette = self.viewport().palette()
+        painter.fillRect(
+            self.viewport().rect(),
+            palette.base(),
+        )
+        painter.setFont(self.font_value)
+
+        if self.diff_file is None:
+            painter.setPen(palette.text().color())
+            painter.drawText(
+                self.viewport().rect(),
+                Qt.AlignmentFlag.AlignCenter,
+                "Select a changed file",
+            )
+            return
+
+        scroll = self.verticalScrollBar().value()
+        viewport_height = self.viewport().height()
+        if self.block_tops:
+            index = max(
+                0,
+                bisect.bisect_right(self.block_tops, scroll) - 1,
+            )
+        else:
+            index = 0
+
+        while index < len(self.blocks):
+            block = self.blocks[index]
+            viewport_top = block.top - scroll
+            if viewport_height < viewport_top:
+                break
+            if block.row_index is not None:
+                self.paint_row(
+                    painter,
+                    block.row_index,
+                    viewport_top,
+                    block.height,
+                )
+            index += 1
+
+        if self.placement == CommentPlacement.MARGIN:
+            self.paint_margin_connectors(painter, scroll)
+
+    def paint_row(
+        self,
+        painter: QPainter,
+        row_index: int,
+        top: int,
+        height: int,
+    ) -> None:
+        if self.diff_file is None:
+            return
+
+        row = self.diff_file.rows[row_index]
+        code_width = self.code_width()
+        rectangle = QRect(0, top, code_width, height)
+        palette = self.viewport().palette()
+        dark = palette.base().color().lightness() < 128
+
+        if row.kind == DiffLineKind.HUNK:
+            color = QColor(44, 62, 80) if dark else QColor(221, 235, 247)
+            painter.fillRect(rectangle, color)
+            painter.setPen(palette.text().color())
+            painter.drawText(
+                rectangle.adjusted(10, 0, -10, 0),
+                Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+                row.header or "",
+            )
+            return
+
+        if row_index == self.selected_row:
+            selection = palette.highlight().color()
+            selection.setAlpha(70)
+            painter.fillRect(rectangle, selection)
+        else:
+            match row.kind:
+                case DiffLineKind.ADDITION:
+                    color = QColor(25, 60, 40) if dark else QColor(
+                        230, 255, 237)
+                    painter.fillRect(rectangle, color)
+                case DiffLineKind.DELETION:
+                    color = QColor(72, 35, 38) if dark else QColor(
+                        255, 235, 233)
+                    painter.fillRect(rectangle, color)
+                case DiffLineKind.CONTEXT:
+                    pass
+
+        if row_index == self.hovered_row:
+            painter.setPen(palette.highlight().color())
+            painter.drawEllipse(QRect(6, top + 3, 18, 18))
+            painter.drawLine(11, top + 12, 19, top + 12)
+            painter.drawLine(15, top + 8, 15, top + 16)
+
+        match self.presentation:
+            case DiffPresentation.UNIFIED:
+                self.paint_unified_row(
+                    painter,
+                    row,
+                    top,
+                    height,
+                    code_width,
+                )
+            case DiffPresentation.SPLIT:
+                self.paint_split_row(
+                    painter,
+                    row,
+                    top,
+                    height,
+                    code_width,
+                )
+
+    def paint_unified_row(
+        self,
+        painter: QPainter,
+        row: DiffRow,
+        top: int,
+        height: int,
+        width: int,
+    ) -> None:
+        palette = self.viewport().palette()
+        painter.setPen(palette.mid().color())
+        number_rectangle = QRect(28, top, 94, height)
+        old_number = str(
+            row.old_line_number) if row.old_line_number is not None else ""
+        new_number = str(
+            row.new_line_number) if row.new_line_number is not None else ""
+        painter.drawText(
+            number_rectangle.adjusted(0, 0, -48, 0),
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+            old_number,
+        )
+        painter.drawText(
+            number_rectangle.adjusted(48, 0, 0, 0),
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+            new_number,
+        )
+
+        match row.kind:
+            case DiffLineKind.ADDITION:
+                marker = "+"
+                text = row.new_text or ""
+            case DiffLineKind.DELETION:
+                marker = "-"
+                text = row.old_text or ""
+            case DiffLineKind.CONTEXT:
+                marker = " "
+                text = row.new_text or ""
+
+        painter.setPen(palette.text().color())
+        painter.drawText(
+            QRect(128, top, 16, height),
+            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+            marker,
+        )
+        metrics = QFontMetrics(self.font_value)
+        visible_text = metrics.elidedText(
+            text.expandtabs(4),
+            Qt.TextElideMode.ElideRight,
+            max(0, width - 152),
+        )
+        painter.drawText(
+            QRect(146, top, max(0, width - 152), height),
+            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+            visible_text,
+        )
+
+    def paint_split_row(
+        self,
+        painter: QPainter,
+        row: DiffRow,
+        top: int,
+        height: int,
+        width: int,
+    ) -> None:
+        half = width // 2
+        palette = self.viewport().palette()
+        painter.setPen(palette.mid().color())
+        painter.drawLine(half, top, half, top + height)
+
+        self.paint_split_cell(
+            painter,
+            QRect(0, top, half, height),
+            row.old_line_number,
+            row.old_text,
+            row.kind == DiffLineKind.DELETION,
+            "-",
+        )
+        self.paint_split_cell(
+            painter,
+            QRect(half, top, width - half, height),
+            row.new_line_number,
+            row.new_text,
+            row.kind == DiffLineKind.ADDITION,
+            "+",
+        )
+
+    def paint_split_cell(
+        self,
+        painter: QPainter,
+        rectangle: QRect,
+        line_number: int | None,
+        text: str | None,
+        changed: bool,
+        marker: str,
+    ) -> None:
+        palette = self.viewport().palette()
+        number_width = self.line_number_width
+        painter.setPen(palette.mid().color())
+        painter.drawText(
+            QRect(
+                rectangle.left() + 26,
+                rectangle.top(),
+                number_width - 30,
+                rectangle.height(),
+            ),
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+            str(line_number) if line_number is not None else "",
+        )
+
+        if text is None:
+            return
+
+        painter.setPen(palette.text().color())
+        painter.drawText(
+            QRect(
+                rectangle.left() + number_width + 4,
+                rectangle.top(),
+                14,
+                rectangle.height(),
+            ),
+            Qt.AlignmentFlag.AlignVCenter,
+            marker if changed else " ",
+        )
+        available = rectangle.width() - number_width - 24
+        metrics = QFontMetrics(self.font_value)
+        visible_text = metrics.elidedText(
+            text.expandtabs(4),
+            Qt.TextElideMode.ElideRight,
+            max(0, available),
+        )
+        painter.drawText(
+            QRect(
+                rectangle.left() + number_width + 20,
+                rectangle.top(),
+                max(0, available),
+                rectangle.height(),
+            ),
+            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+            visible_text,
+        )
+
+    def paint_margin_connectors(
+        self,
+        painter: QPainter,
+        scroll: int,
+    ) -> None:
+        code_width = self.code_width()
+        palette = self.viewport().palette()
+        pen = QPen(palette.mid().color())
+        pen.setWidth(1)
+        painter.setPen(pen)
+
+        for placement in self.margin_placements.values():
+            anchor_y = placement.anchor_y - scroll + self.line_height // 2
+            thread_y = placement.top - scroll + 16
+            if anchor_y < 0 and thread_y < 0:
+                continue
+            if (self.viewport().height() < anchor_y
+                    and self.viewport().height() < thread_y):
+                continue
+
+            painter.drawLine(
+                code_width - 8,
+                anchor_y,
+                code_width + 16,
+                anchor_y,
+            )
+            painter.drawLine(
+                code_width + 16,
+                anchor_y,
+                code_width + 16,
+                thread_y,
+            )
+            painter.drawLine(
+                code_width + 16,
+                thread_y,
+                code_width + 28,
+                thread_y,
+            )
 
 
 @beartype
@@ -625,465 +1429,251 @@ class ReviewWindow(QMainWindow):
 
     def __init__(
         self,
-        repository: ReviewRepository,
+        repository: GitReviewRepository,
         store: AnnotationStore,
     ) -> None:
         super().__init__()
         self.repository = repository
         self.store = store
-        self.changes = repository.changes()
-        self.current_change: FileChange | None = None
-        self.current_content = FileContent(
-            lines=[],
-            exists=False,
-            binary=False,
-        )
-        self.current_resolved: list[ResolvedAnnotation] = []
-        self.selected_line: int | None = None
-        self.editing_identifier: str | None = None
+        self.files: list[DiffFile] = []
+        self.files_by_path: dict[str, DiffFile] = {}
 
-        self.file_model = FileTreeModel(
-            self.changes,
-            self.store.annotations,
-            self,
-        )
-        self.code_model = CodeModel(self)
-        self.annotation_model = AnnotationModel(self)
-
-        self.file_view = QTreeView()
-        self.file_view.setModel(self.file_model)
-        self.file_view.setAlternatingRowColors(True)
-        self.file_view.setUniformRowHeights(True)
-        self.file_view.setSelectionBehavior(
-            QTreeView.SelectionBehavior.SelectRows)
-        self.file_view.header().setSectionResizeMode(
-            0,
-            QHeaderView.ResizeMode.Stretch,
-        )
-        self.file_view.header().setSectionResizeMode(
-            1,
-            QHeaderView.ResizeMode.ResizeToContents,
-        )
-        self.file_view.header().setSectionResizeMode(
-            2,
-            QHeaderView.ResizeMode.ResizeToContents,
-        )
-
-        self.path_label = QLabel()
-        self.path_label.setTextInteractionFlags(
-            Qt.TextInteractionFlag.TextSelectableByMouse)
-
-        fixed_font = QFontDatabase.systemFont(
-            QFontDatabase.SystemFont.FixedFont)
-
-        self.code_view = QTableView()
-        self.code_view.setModel(self.code_model)
-        self.code_view.setFont(fixed_font)
-        self.code_view.setSelectionBehavior(
-            QTableView.SelectionBehavior.SelectRows)
-        self.code_view.setSelectionMode(
-            QTableView.SelectionMode.SingleSelection)
-        self.code_view.setWordWrap(False)
-        self.code_view.setShowGrid(False)
-        self.code_view.setStyleSheet(
-            "QTableView::item { padding: 0px 4px; margin: 0px; }")
-        self.code_view.verticalHeader().setVisible(False)
-        self.code_view.verticalHeader().setSectionResizeMode(
-            QHeaderView.ResizeMode.Fixed)
-        self.code_view.verticalHeader().setMinimumSectionSize(
-            self.code_view.fontMetrics().height() + 2)
-        self.code_view.verticalHeader().setDefaultSectionSize(
-            self.code_view.fontMetrics().height() + 2)
-        self.code_view.horizontalHeader().setSectionResizeMode(
-            0,
-            QHeaderView.ResizeMode.ResizeToContents,
-        )
-        self.code_view.horizontalHeader().setSectionResizeMode(
-            1,
-            QHeaderView.ResizeMode.Stretch,
-        )
-        self.code_view.horizontalHeader().setSectionResizeMode(
-            2,
-            QHeaderView.ResizeMode.ResizeToContents,
-        )
-
-        self.scope_box = QComboBox()
-        self.scope_box.addItem(
-            "Selected line",
-            CommentScope.SELECTED_LINE,
-        )
-        self.scope_box.addItem(
-            "All annotations on current lines",
-            CommentScope.CURRENT_FILE,
-        )
-
-        self.annotation_view = QListView()
-        self.annotation_view.setModel(self.annotation_model)
-        self.annotation_view.setWordWrap(True)
-
-        self.annotation_editor = QPlainTextEdit()
-        self.annotation_editor.setPlaceholderText(
-            "Write an annotation for the selected line")
-
-        self.new_button = QPushButton("New annotation")
-        self.save_button = QPushButton("Add annotation")
-        self.new_button.setEnabled(False)
-        self.save_button.setEnabled(False)
-
-        center_widget = QWidget()
-        center_layout = QVBoxLayout(center_widget)
-        center_layout.setContentsMargins(4, 4, 4, 4)
-        center_layout.setSpacing(2)
-        center_layout.addWidget(self.path_label)
-        center_layout.addWidget(self.code_view)
-
-        right_widget = QWidget()
-        right_layout = QVBoxLayout(right_widget)
-        right_layout.setContentsMargins(4, 4, 4, 4)
-        right_layout.setSpacing(4)
-        right_layout.addWidget(self.scope_box)
-        right_layout.addWidget(self.annotation_view, 1)
-        right_layout.addWidget(self.annotation_editor)
-        right_layout.addWidget(self.new_button)
-        right_layout.addWidget(self.save_button)
-
-        splitter = QSplitter(Qt.Orientation.Horizontal)
-        splitter.addWidget(self.file_view)
-        splitter.addWidget(center_widget)
-        splitter.addWidget(right_widget)
-        splitter.setSizes([320, 900, 360])
-
-        self.setCentralWidget(splitter)
-        self.setWindowTitle(
-            f"Git Review — {repository.current_reference} against "
-            f"{repository.target_reference}")
+        self.setWindowTitle(f"Local Review — {repository.worktree_path}")
         self.resize(1500, 900)
 
-        self.file_view.clicked.connect(self.open_file)
-        self.code_view.clicked.connect(self.select_line)
-        self.annotation_view.clicked.connect(self.edit_annotation)
-        self.scope_box.currentIndexChanged.connect(self.change_scope)
-        self.new_button.clicked.connect(self.start_new_annotation)
-        self.save_button.clicked.connect(self.save_annotation)
+        central = QWidget(self)
+        central_layout = QVBoxLayout(central)
+        central_layout.setContentsMargins(0, 0, 0, 0)
+        central_layout.setSpacing(0)
 
-        self.open_first_file()
+        controls = QHBoxLayout()
+        controls.setContentsMargins(8, 6, 8, 6)
 
-    def open_first_file(self) -> None:
-        if len(self.changes) == 0:
-            self.path_label.setText(
-                f"No changes between {self.repository.target_reference} and "
-                f"{self.repository.current_reference}")
-            return
+        presentation_group = QButtonGroup(self)
+        presentation_group.setExclusive(True)
 
-        first_path = self.changes[0].display_path
-        item = self.file_model.file_items[first_path]
-        index = item.index()
-        self.file_view.setCurrentIndex(index)
-        self.file_view.scrollTo(index)
-        self.open_file(index)
+        unified_button = QPushButton("Unified", central)
+        unified_button.setCheckable(True)
+        unified_button.setChecked(True)
+        unified_button.clicked.connect(self.unified_clicked)
+        presentation_group.addButton(unified_button)
+        controls.addWidget(unified_button)
 
-    def open_file(self, index: QModelIndex) -> None:
-        path_index = index.sibling(index.row(), 0)
-        change = self.file_model.data(
-            path_index,
-            int(Qt.ItemDataRole.UserRole),
+        split_button = QPushButton("Split", central)
+        split_button.setCheckable(True)
+        split_button.clicked.connect(self.split_clicked)
+        presentation_group.addButton(split_button)
+        controls.addWidget(split_button)
+
+        placement_group = QButtonGroup(self)
+        placement_group.setExclusive(True)
+
+        inline_button = QPushButton("Inline comments", central)
+        inline_button.setCheckable(True)
+        inline_button.setChecked(True)
+        inline_button.clicked.connect(self.inline_clicked)
+        placement_group.addButton(inline_button)
+        controls.addWidget(inline_button)
+
+        margin_button = QPushButton("Margin comments", central)
+        margin_button.setCheckable(True)
+        margin_button.clicked.connect(self.margin_clicked)
+        placement_group.addButton(margin_button)
+        controls.addWidget(margin_button)
+
+        add_comment_button = QPushButton("Add comment", central)
+        add_comment_button.clicked.connect(self.add_comment_clicked)
+        controls.addWidget(add_comment_button)
+        controls.addStretch(1)
+
+        central_layout.addLayout(controls)
+
+        splitter = QSplitter(Qt.Orientation.Horizontal, central)
+        self.tree_model = FileTreeModel()
+        self.tree_view = QTreeView(splitter)
+        self.tree_view.setModel(self.tree_model)
+        self.tree_view.setAlternatingRowColors(True)
+        self.tree_view.setUniformRowHeights(True)
+        self.tree_view.setColumnWidth(0, 280)
+        self.tree_view.setColumnWidth(1, 55)
+        self.tree_view.setColumnWidth(2, 55)
+        self.tree_view.currentChanged = self.tree_view.currentChanged
+
+        self.diff_view = DiffView(
+            repository,
+            store,
+            splitter,
         )
+        splitter.addWidget(self.tree_view)
+        splitter.addWidget(self.diff_view)
+        splitter.setStretchFactor(0, 0)
+        splitter.setStretchFactor(1, 1)
+        splitter.setSizes([360, 1140])
+        central_layout.addWidget(splitter)
 
-        if change is None:
-            self.file_view.expand(path_index)
+        self.setCentralWidget(central)
+        self.reload_files()
+
+        selection_model = self.tree_view.selectionModel()
+        selection_model.currentChanged.connect(self.file_selection_changed)
+
+        self.head_timer = QTimer(self)
+        self.head_timer.setInterval(1500)
+        self.head_timer.timeout.connect(self.check_head)
+        self.head_timer.start()
+
+        add_action = QAction(self)
+        add_action.setShortcut("Ctrl+Enter")
+        add_action.triggered.connect(self.add_comment_action)
+        self.addAction(add_action)
+
+    def reload_files(self) -> None:
+        selected_path = (self.diff_view.diff_file.display_path
+                         if self.diff_view.diff_file is not None else None)
+        self.files = self.repository.load_diff()
+        self.files_by_path = {
+            diff_file.display_path: diff_file
+            for diff_file in self.files
+        }
+        self.tree_model.replace_files(self.files)
+        self.tree_view.expandAll()
+
+        if selected_path is not None:
+            diff_file = self.files_by_path.get(selected_path)
+            self.diff_view.set_diff_file(diff_file)
+
+    def file_selection_changed(
+        self,
+        current: QModelIndex,
+        previous: QModelIndex,
+    ) -> None:
+        path = current.data(FileTreeModel.PATH_ROLE)
+        if path is None:
             return
 
-        if not isinstance(change, FileChange):
-            raise TypeError(f"File tree row {index.row()} returned "
-                            f"{type(change).__name__}, expected FileChange")
+        diff_file = self.files_by_path.get(path)
+        if diff_file is None:
+            raise ValueError(f"Selected diff path {path!r} is not loaded")
+        self.diff_view.set_diff_file(diff_file)
 
-        self.current_change = change
-        self.reload_current_file(None)
-
-    def reload_current_file(self, selected_line: int | None) -> None:
-        if self.current_change is None:
-            raise RuntimeError(
-                "Cannot reload file content because no changed file is selected"
-            )
-
-        self.current_content = self.repository.current_content(
-            self.current_change)
-        base_content = self.repository.base_content(self.current_change)
-        self.selected_line = None
-        self.cancel_editing()
-        self.path_label.setText(self.current_change.display_path)
-
-        if not self.current_content.exists:
-            self.path_label.setText(
-                f"{self.current_change.display_path} — removed")
-            self.code_model.set_lines([])
-            self.current_resolved = []
-            self.annotation_model.set_annotations([])
-            self.save_button.setEnabled(False)
-            return
-
-        if self.current_content.binary:
-            self.path_label.setText(
-                f"{self.current_change.display_path} — binary file")
-            self.code_model.set_lines([])
-            self.current_resolved = []
-            self.annotation_model.set_annotations([])
-            self.save_button.setEnabled(False)
-            return
-
-        changed_lines = self.repository.changed_lines(
-            base_content,
-            self.current_content,
-        )
-        self.resolve_current_annotations()
-
-        annotation_counts: dict[int, int] = {}
-        for resolved in self.current_resolved:
-            annotation_counts[resolved.line] = (
-                annotation_counts.get(resolved.line, 0) + 1)
-
-        code_lines = [
-            CodeLine(
-                number=index + 1,
-                text=line,
-                changed=index + 1 in changed_lines,
-                annotation_count=annotation_counts.get(index + 1, 0),
-            ) for index, line in enumerate(self.current_content.lines)
-        ]
-        self.code_model.set_lines(code_lines)
-
-        if len(code_lines) == 0:
-            self.refresh_annotation_view()
-            self.save_button.setEnabled(False)
-            return
-
-        line = selected_line if selected_line is not None else 1
-        line = min(max(line, 1), len(code_lines))
-        selected_index = self.code_model.index(line - 1, 0)
-        self.code_view.setCurrentIndex(selected_index)
-        self.code_view.scrollTo(selected_index)
-        self.select_line(selected_index)
-
-    def resolve_current_annotations(self) -> None:
-        if (self.current_change is None
-                or self.current_change.current_path is None):
-            self.current_resolved = []
-            return
-
-        resolved: list[ResolvedAnnotation] = []
-        for annotation in self.store.annotations:
-            current = resolve_annotation(
-                annotation,
-                self.current_change.current_path,
-                self.current_content.lines,
-            )
-            if current is not None:
-                resolved.append(current)
-
-        self.current_resolved = sorted(
-            resolved,
-            key=lambda current: (
-                current.line,
-                current.annotation.created_at,
-                current.annotation.identifier,
-            ),
-        )
-
-    def select_line(self, index: QModelIndex) -> None:
-        line = self.code_model.data(
-            index,
-            int(Qt.ItemDataRole.UserRole),
-        )
-        if not isinstance(line, int):
-            raise TypeError(f"Code model row {index.row()} returned "
-                            f"{type(line).__name__}, expected int line number")
-
-        self.selected_line = line
-        self.cancel_editing()
-        self.save_button.setEnabled(True)
-        self.refresh_annotation_view()
-
-    def change_scope(self, index: int) -> None:
-        if not 0 <= index < self.scope_box.count():
-            raise ValueError(
-                f"Comment scope index {index} is outside the available "
-                f"range 0:{self.scope_box.count()}")
-
-        self.cancel_editing()
-        self.refresh_annotation_view()
-
-    def refresh_annotation_view(self) -> None:
-        scope = self.scope_box.currentData()
-
-        match scope:
-            case CommentScope.SELECTED_LINE:
-                if self.selected_line is None:
-                    annotations: list[ResolvedAnnotation] = []
-                else:
-                    annotations = [
-                        resolved for resolved in self.current_resolved
-                        if resolved.line == self.selected_line
-                    ]
-            case CommentScope.CURRENT_FILE:
-                annotations = self.current_resolved
-            case _:
-                raise ValueError(f"Unsupported annotation scope {scope!r}")
-
-        self.annotation_model.set_annotations(annotations)
-
-    def edit_annotation(self, index: QModelIndex) -> None:
-        resolved = self.annotation_model.data(
-            index,
-            int(Qt.ItemDataRole.UserRole),
-        )
-        if not isinstance(resolved, ResolvedAnnotation):
-            raise TypeError(
-                f"Annotation model row {index.row()} returned "
-                f"{type(resolved).__name__}, expected ResolvedAnnotation")
-
-        self.editing_identifier = resolved.annotation.identifier
-        self.annotation_editor.setPlainText(resolved.annotation.text)
-        self.save_button.setText("Save changes")
-        self.save_button.setEnabled(True)
-        self.new_button.setEnabled(True)
-
-    def start_new_annotation(self, checked: bool) -> None:
+    def unified_clicked(self, checked: bool) -> None:
         if checked:
-            self.new_button.setChecked(False)
+            self.diff_view.set_presentation(DiffPresentation.UNIFIED)
 
-        self.cancel_editing()
-        self.annotation_editor.setFocus()
-
-    def cancel_editing(self) -> None:
-        self.editing_identifier = None
-        self.annotation_editor.clear()
-        self.save_button.setText("Add annotation")
-        self.new_button.setEnabled(False)
-        self.save_button.setEnabled(self.selected_line is not None)
-
-    def save_annotation(self, checked: bool) -> None:
+    def split_clicked(self, checked: bool) -> None:
         if checked:
-            self.save_button.setChecked(False)
+            self.diff_view.set_presentation(DiffPresentation.SPLIT)
 
-        text = self.annotation_editor.toPlainText().strip()
-        if text == "":
-            QMessageBox.warning(
-                self,
-                "Empty annotation",
-                "Enter annotation text before saving it.",
-            )
+    def inline_clicked(self, checked: bool) -> None:
+        if checked:
+            self.diff_view.set_placement(CommentPlacement.INLINE)
+
+    def margin_clicked(self, checked: bool) -> None:
+        if checked:
+            self.diff_view.set_placement(CommentPlacement.MARGIN)
+
+    def add_comment_clicked(self, checked: bool) -> None:
+        self.diff_view.add_comment_for_selection()
+
+    def add_comment_action(self, checked: bool) -> None:
+        self.diff_view.add_comment_for_selection()
+
+    def check_head(self) -> None:
+        if not self.repository.refresh_head():
             return
 
-        if self.editing_identifier is not None:
-            self.update_annotation(text)
-            return
+        if self.repository.reconcile_pending(self.store.document):
+            self.store.save()
 
-        self.add_annotation(text)
+        self.reload_files()
 
-    def add_annotation(self, text: str) -> None:
-        if (self.current_change is None
-                or self.current_change.current_path is None):
-            raise RuntimeError(
-                "Cannot add an annotation without a current file")
+    def closeEvent(self, event: QCloseEvent) -> None:
+        self.store.save()
+        event.accept()
 
-        if self.selected_line is None:
-            raise RuntimeError(
-                "Cannot add an annotation without a selected line")
 
-        line_index = self.selected_line - 1
-        if not 0 <= line_index < len(self.current_content.lines):
-            raise IndexError(
-                f"Selected line {self.selected_line} is outside file "
-                f"{self.current_change.current_path}, which has "
-                f"{len(self.current_content.lines)} lines")
-
-        context_size = 3
-        before_start = max(0, line_index - context_size)
-        after_end = min(
-            len(self.current_content.lines),
-            line_index + context_size + 1,
-        )
-
-        annotation = Annotation(
-            identifier=str(uuid4()),
-            path=self.current_change.current_path,
-            commit=self.repository.current_commit.hexsha,
-            line=self.selected_line,
-            line_text=self.current_content.lines[line_index],
-            before=self.current_content.lines[before_start:line_index],
-            after=self.current_content.lines[line_index + 1:after_end],
-            text=text,
-            created_at=datetime.now(UTC),
-        )
-        selected_line = self.selected_line
-        self.store.add(annotation)
-        self.file_model.update_comment_counts(self.store.annotations)
-        self.reload_current_file(selected_line)
-
-    def update_annotation(self, text: str) -> None:
-        identifier = self.editing_identifier
-        if identifier is None:
-            raise RuntimeError(
-                "Cannot update an annotation without an editing identifier")
-
-        existing = next(
-            (annotation for annotation in self.store.annotations
-             if annotation.identifier == identifier),
-            None,
-        )
-        if existing is None:
-            raise ValueError(
-                f"Cannot update annotation {identifier!r} because it is "
-                f"not present in the annotation cache")
-
-        updated = existing.model_copy(update={"text": text})
-        selected_line = self.selected_line
-        self.store.update(updated)
-        self.file_model.update_comment_counts(self.store.annotations)
-        self.reload_current_file(selected_line)
+@dataclass(frozen=True)
+class Arguments:
+    repository: Path
+    annotations: Path
+    base: str | None
 
 
 @beartype
-def parse_arguments() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description=(
-        "Review branch changes and attach persistent line annotations"))
+def parse_arguments() -> Arguments:
+    parser = argparse.ArgumentParser(
+        description="Review local Git changes with editable annotations")
     parser.add_argument(
         "repository",
         type=Path,
-        help="Path to the Git repository",
+        help="Path inside the Git repository",
     )
     parser.add_argument(
-        "--target",
-        default="master",
-        help="Target branch or revision",
+        "annotations",
+        type=Path,
+        help="Path to the annotation JSON document",
     )
     parser.add_argument(
-        "--current",
-        default=None,
-        help="Current branch or revision; defaults to HEAD",
+        "--base",
+        help="Base revision, defaulting to master for new reviews",
     )
-    return parser.parse_args()
+    namespace = parser.parse_args()
+    return Arguments(
+        repository=namespace.repository.resolve(),
+        annotations=namespace.annotations.resolve(),
+        base=namespace.base,
+    )
+
+
+@beartype
+def load_review(
+    arguments: Arguments, ) -> tuple[GitReviewRepository, AnnotationStore]:
+    if arguments.annotations.exists():
+        document = ReviewDocument.model_validate_json(
+            arguments.annotations.read_text(encoding="utf-8"))
+        if arguments.base is not None and arguments.base != document.base_revision:
+            raise ValueError(
+                f"Annotation document uses base revision "
+                f"{document.base_revision!r}, but --base specified "
+                f"{arguments.base!r}")
+
+        repository = GitReviewRepository(
+            arguments.repository,
+            document.base_revision,
+            document.base_commit_oid,
+        )
+        expected_path = str(repository.worktree_path)
+        if Path(document.repository_path).resolve() != Path(expected_path):
+            raise ValueError(
+                f"Annotation document belongs to repository "
+                f"{document.repository_path!r}, not {expected_path!r}")
+    else:
+        base_revision = arguments.base or "master"
+        repository = GitReviewRepository(
+            arguments.repository,
+            base_revision,
+            None,
+        )
+        document = ReviewDocument(
+            repository_path=str(repository.worktree_path),
+            base_revision=base_revision,
+            base_commit_oid=str(repository.base_commit_oid),
+        )
+
+    store = AnnotationStore(arguments.annotations, document)
+    store.save()
+    return repository, store
 
 
 @beartype
 def main() -> int:
     arguments = parse_arguments()
-
-    application = QApplication([])
-    application.setOrganizationName("haxscramper")
-    application.setApplicationName("git-review")
-
-    repository = ReviewRepository(
-        repository_path=arguments.repository,
-        target_reference=arguments.target,
-        current_reference=arguments.current,
-    )
-    store = AnnotationStore(repository.annotation_path())
+    repository, store = load_review(arguments)
+    application = QApplication(sys.argv)
     window = ReviewWindow(repository, store)
     window.show()
-
     return application.exec()
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    sys.exit(main())

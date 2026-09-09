@@ -767,9 +767,98 @@ def cpp_parse_scope_child(
 
         case _:
             if child.type not in _SEEN_TYPES:
-                logger.warning(f"unexpected type {child.type}")
-                logger.warning(f"{child}")
+                # logger.warning(f"unexpected type {child.type}")
+                # logger.warning(f"{child}")
                 _SEEN_TYPES.add(child.type)
+
+
+_PYTHON_CONTAINER_TYPES = {
+    "if_statement",
+    "elif_clause",
+    "else_clause",
+    "try_statement",
+    "except_clause",
+    "finally_clause",
+    "with_statement",
+    "for_statement",
+    "while_statement",
+    "match_statement",
+    "case_clause",
+    "block",
+}
+
+_PYTHON_IGNORED_TYPES = {
+    "comment",
+    "expression_statement",
+    "future_import_statement",
+    "import_from_statement",
+    "import_statement",
+    "print_statement",
+}
+
+
+def python_unwrap_decorated_definition(node: Node) -> Node | None:
+    if node.type != "decorated_definition":
+        return node
+
+    return node.child_by_field_name("definition")
+
+
+def python_parse_module_scope(
+    node: Node,
+    source: bytes,
+    output: list[ParsedEntry],
+    qualified_prefix: list[str],
+    rel_path: str,
+) -> None:
+    for child in node.named_children:
+        definition = python_unwrap_decorated_definition(child)
+        if definition is None:
+            continue
+
+        if definition.type in {
+                "function_definition",
+                "async_function_definition",
+        }:
+            fn = python_parse_function(
+                definition,
+                source,
+                "function",
+                qualified_prefix,
+                rel_path=rel_path,
+            )
+            if fn is not None:
+                output.append(fn)
+            continue
+
+        if definition.type == "class_definition":
+            cls = python_parse_class(
+                definition,
+                source,
+                qualified_prefix,
+                rel_path=rel_path,
+            )
+            if cls is not None:
+                output.append(cls)
+            continue
+
+        if child.type in _PYTHON_CONTAINER_TYPES:
+            python_parse_module_scope(
+                child,
+                source,
+                output,
+                qualified_prefix,
+                rel_path,
+            )
+            continue
+
+        if child.type in _PYTHON_IGNORED_TYPES:
+            continue
+
+        if child.type not in _SEEN_TYPES_PY:
+            logger.warning(f"unexpected type {child.type}")
+            logger.warning(f"{child}")
+            _SEEN_TYPES_PY.add(child.type)
 
 
 def python_extract_function_name(node: Node, source: bytes) -> str | None:
@@ -901,9 +990,16 @@ def python_parse_class(
         return cls
 
     for child in body.named_children:
-        if child.type in {"function_definition", "async_function_definition"}:
+        definition = python_unwrap_decorated_definition(child)
+        if definition is None:
+            continue
+
+        if definition.type in {
+                "function_definition",
+                "async_function_definition",
+        }:
             method = python_parse_function(
-                child,
+                definition,
                 source,
                 "method",
                 qualified_prefix + [name],
@@ -913,36 +1009,43 @@ def python_parse_class(
                 cls.children.append(method)
             continue
 
-        if child.type in {"assignment", "typed_assignment"}:
-            left = child.child_by_field_name("left")
-            tnode = child.child_by_field_name("type")
-            type_text = node_text(tnode, source) if tnode is not None else None
-            if left is None:
+        statement = child
+        if child.type == "expression_statement":
+            if len(child.named_children) != 1:
                 continue
+            statement = child.named_children[0]
 
-            targets: list[str] = []
-            if left.type == "identifier":
-                targets.append(node_text(left, source))
-            elif left.type in {"pattern_list", "tuple_pattern"}:
-                for sub in left.named_children:
-                    if sub.type == "identifier":
-                        targets.append(node_text(sub, source))
+        if statement.type not in {"assignment", "typed_assignment"}:
+            continue
 
-            fstart, fend = source_lines(child)
-            for target in targets:
-                cls.children.append(
-                    ParsedEntry(
-                        kind="field",
-                        name=target,
-                        language="python",
-                        qualified_name=".".join(qualified_prefix +
-                                                [name, target]),
-                        start_line=fstart,
-                        end_line=fend,
-                        doc=None,
-                        type_text=type_text,
-                        path=rel_path,
-                    ))
+        left = statement.child_by_field_name("left")
+        tnode = statement.child_by_field_name("type")
+        type_text = node_text(tnode, source) if tnode is not None else None
+        if left is None:
+            continue
+
+        targets: list[str] = []
+        if left.type == "identifier":
+            targets.append(node_text(left, source))
+        elif left.type in {"pattern_list", "tuple_pattern"}:
+            for sub in left.named_children:
+                if sub.type == "identifier":
+                    targets.append(node_text(sub, source))
+
+        fstart, fend = source_lines(statement)
+        for target in targets:
+            cls.children.append(
+                ParsedEntry(
+                    kind="field",
+                    name=target,
+                    language="python",
+                    qualified_name=".".join(qualified_prefix + [name, target]),
+                    start_line=fstart,
+                    end_line=fend,
+                    doc=None,
+                    type_text=type_text,
+                    path=rel_path,
+                ))
 
     return cls
 
@@ -967,6 +1070,9 @@ def index_cpp_file(path: Path, rel_path: str, parser: Parser) -> ParsedEntry:
     return file_entry
 
 
+_SEEN_TYPES_PY = set()
+
+
 def index_python_file(path: Path, rel_path: str,
                       parser: Parser) -> ParsedEntry:
     source = path.read_bytes()
@@ -986,20 +1092,13 @@ def index_python_file(path: Path, rel_path: str,
         if root.type == "module" else None,
     )
 
-    for child in root.named_children:
-        if child.type in {"function_definition", "async_function_definition"}:
-            fn = python_parse_function(child,
-                                       source,
-                                       "function", [],
-                                       rel_path=rel_path)
-            if fn is not None:
-                file_entry.children.append(fn)
-            continue
-
-        if child.type == "class_definition":
-            cls = python_parse_class(child, source, [], rel_path=rel_path)
-            if cls is not None:
-                file_entry.children.append(cls)
+    python_parse_module_scope(
+        root,
+        source,
+        file_entry.children,
+        [],
+        rel_path,
+    )
 
     return file_entry
 
@@ -1180,8 +1279,8 @@ def main() -> None:
             elapsed = time.monotonic() - start
             avg = elapsed / processed
             eta = avg * remaining
-            logger.info("[{}/{}] ETA {} {}".format(processed, total,
-                                                   format_eta(eta), rel))
+            # logger.info("[{}/{}] ETA {} {}".format(processed, total,
+            #                                        format_eta(eta), rel))
 
         create_flat_view(session)
         session.commit()

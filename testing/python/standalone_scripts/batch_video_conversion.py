@@ -1,37 +1,46 @@
 #!/usr/bin/env python
 
 from __future__ import annotations
+
 import json
 import logging
 import queue
+import shlex
+import subprocess
 import sys
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
-import subprocess
-import time
-import shlex
 
 import click
 from beartype import beartype
 from plumbum import local
 from plumbum.commands.processes import ProcessExecutionError
 from pydantic import BaseModel, Field
-from PySide6.QtCore import QAbstractItemModel, QModelIndex, QObject, QSortFilterProxyModel, Qt, Signal, Slot
-from PySide6.QtGui import QColor, QMouseEvent, QBrush
+from PySide6.QtCore import (
+    QAbstractItemModel,
+    QModelIndex,
+    QObject,
+    QSortFilterProxyModel,
+    Qt,
+    Signal,
+    Slot,
+)
+from PySide6.QtGui import QBrush, QColor, QMouseEvent
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
     QDialog,
-    QHeaderView,
     QHBoxLayout,
+    QHeaderView,
     QPlainTextEdit,
     QPushButton,
     QSpinBox,
-    QStyledItemDelegate,
     QStyle,
+    QStyledItemDelegate,
     QStyleOptionViewItem,
     QTreeView,
     QVBoxLayout,
@@ -379,9 +388,10 @@ def run_ffprobe(path: Path) -> ProbeInfoModel | None:
         video_stream.get("width")) if video_stream is not None else None
     height = parse_int(
         video_stream.get("height")) if video_stream is not None else None
-    resolution = f"{width}x{height}" if width is not None and height is not None else None
-    fps = parse_fps(video_stream.get(
-        "avg_frame_rate")) if video_stream is not None else None
+    resolution = (f"{width}x{height}"
+                  if width is not None and height is not None else None)
+    fps = (parse_fps(video_stream.get("avg_frame_rate"))
+           if video_stream is not None else None)
 
     return ProbeInfoModel(
         duration_seconds=parse_float(format_raw.get("duration")),
@@ -427,9 +437,11 @@ def cache_path(input_root: Path) -> Path:
 
 @beartype
 def save_cache(input_root: Path, root_entry: TreeEntryModel) -> None:
-    payload = CacheModel(input_root=str(input_root.resolve()),
-                         generated_ts=datetime.now().timestamp(),
-                         root_entry=root_entry)
+    payload = CacheModel(
+        input_root=str(input_root.resolve()),
+        generated_ts=datetime.now().timestamp(),
+        root_entry=root_entry,
+    )
     cache_path(input_root).write_text(payload.model_dump_json(indent=2),
                                       encoding="utf-8")
 
@@ -585,8 +597,13 @@ class ActionButtonDelegate(QStyledItemDelegate):
         self._action_name = action_name
 
     @beartype
-    def editorEvent(self, event: Any, model: QAbstractItemModel,
-                    option: QStyleOptionViewItem, index: QModelIndex) -> bool:
+    def editorEvent(
+        self,
+        event: Any,
+        model: QAbstractItemModel,
+        option: QStyleOptionViewItem,
+        index: QModelIndex,
+    ) -> bool:
         if isinstance(event, QMouseEvent):
             if event.type() == event.Type.MouseButtonRelease:
                 target_model = model
@@ -635,9 +652,15 @@ class VideoTreeModel(QAbstractItemModel):
     COL_FFMPEG = 12
     COL_CONVERT = 13
 
-    def __init__(self, root_entry: TreeEntryModel, input_root: Path,
-                 output_root: Path, enqueue_callback: Any, save_callback: Any,
-                 show_ffmpeg_callback: Any) -> None:
+    def __init__(
+        self,
+        root_entry: TreeEntryModel,
+        input_root: Path,
+        output_root: Path,
+        enqueue_callback: Any,
+        save_callback: Any,
+        show_ffmpeg_callback: Any,
+    ) -> None:
         super().__init__()
         self._root = root_entry
         self._input_root = input_root
@@ -689,11 +712,14 @@ class VideoTreeModel(QAbstractItemModel):
         return self.createIndex(parent_node.row_in_parent, 0, parent_node)
 
     @beartype
-    def headerData(self,
-                   section: int,
-                   orientation: Qt.Orientation,
-                   role: int = Qt.ItemDataRole.DisplayRole) -> Any:
-        if orientation == Qt.Orientation.Horizontal and role == Qt.ItemDataRole.DisplayRole:
+    def headerData(
+        self,
+        section: int,
+        orientation: Qt.Orientation,
+        role: int = Qt.ItemDataRole.DisplayRole,
+    ) -> Any:
+        if (orientation == Qt.Orientation.Horizontal
+                and role == Qt.ItemDataRole.DisplayRole):
             return self.HEADERS[section]
         return None
 
@@ -759,8 +785,12 @@ class VideoTreeModel(QAbstractItemModel):
                 return node.action.preset
 
         if role == Qt.ItemDataRole.TextAlignmentRole and col in (
-                self.COL_SIZE, self.COL_SHARE, self.COL_SET_PRESET,
-                self.COL_OUTPUT_SIZE, self.COL_REDUCTION):
+                self.COL_SIZE,
+                self.COL_SHARE,
+                self.COL_SET_PRESET,
+                self.COL_OUTPUT_SIZE,
+                self.COL_REDUCTION,
+        ):
             return int(Qt.AlignmentFlag.AlignRight
                        | Qt.AlignmentFlag.AlignVCenter)
 
@@ -781,7 +811,8 @@ class VideoTreeModel(QAbstractItemModel):
             return node.row_in_parent
 
         if role == Qt.ItemDataRole.BackgroundRole and not node.is_dir:
-            if col == self.COL_BITRATE and node.probe is not None and node.probe.bitrate_bps is not None:
+            if (col == self.COL_BITRATE and node.probe is not None
+                    and node.probe.bitrate_bps is not None):
                 if node.probe.bitrate_bps > 5_000_000:
                     return QColor("#FFE0B2")  # pale orange
             if col == self.COL_OUTPUT_SIZE and node.output is not None:
@@ -802,10 +833,13 @@ class VideoTreeModel(QAbstractItemModel):
             if not node.is_dir and col == self.COL_PLAY_INPUT:
                 return style.standardIcon(QStyle.StandardPixmap.SP_MediaPlay)
 
-            if not node.is_dir and col == self.COL_PLAY_OUTPUT and node.output is not None:
+            if (not node.is_dir and col == self.COL_PLAY_OUTPUT
+                    and node.output is not None):
                 return style.standardIcon(QStyle.StandardPixmap.SP_MediaPlay)
 
-            if not node.is_dir and col == self.COL_FFMPEG and node.output is not None and node.output.ffmpeg_command:
+            if (not node.is_dir and col == self.COL_FFMPEG
+                    and node.output is not None
+                    and node.output.ffmpeg_command):
                 return style.standardIcon(
                     QStyle.StandardPixmap.SP_FileDialogDetailedView)
 
@@ -907,10 +941,16 @@ class VideoTreeModel(QAbstractItemModel):
                               idx_row.parent())
             right = self.index(idx_row.row(), self.COL_FFMPEG,
                                idx_row.parent())
-            self.dataChanged.emit(left, right, [
-                Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.UserRole,
-                Qt.ItemDataRole.BackgroundRole, Qt.ItemDataRole.DecorationRole
-            ])
+            self.dataChanged.emit(
+                left,
+                right,
+                [
+                    Qt.ItemDataRole.DisplayRole,
+                    Qt.ItemDataRole.UserRole,
+                    Qt.ItemDataRole.BackgroundRole,
+                    Qt.ItemDataRole.DecorationRole,
+                ],
+            )
         self._save_callback()
 
     @beartype
@@ -1064,13 +1104,15 @@ class ConversionWorker(QObject):
 
         probe = run_ffprobe(dst)
         stat = dst.stat()
-        output = OutputVideoModel(output_path=str(dst.resolve()),
-                                  file_size_bytes=stat.st_size,
-                                  created_ts=stat.st_ctime,
-                                  probe=probe,
-                                  action=task.action,
-                                  ffmpeg_stdout="\n".join(ffmpeg_stdout),
-                                  ffmpeg_command=cmd)
+        output = OutputVideoModel(
+            output_path=str(dst.resolve()),
+            file_size_bytes=stat.st_size,
+            created_ts=stat.st_ctime,
+            probe=probe,
+            action=task.action,
+            ffmpeg_stdout="\n".join(ffmpeg_stdout),
+            ffmpeg_command=cmd,
+        )
         return ConversionResultModel(source_path=str(src.resolve()),
                                      output=output)
 
@@ -1117,10 +1159,12 @@ class MainWindow(QWidget):
                                             ShareHighlightDelegate(self._tree))
         self._tree.setItemDelegateForColumn(
             VideoTreeModel.COL_PLAY_INPUT,
-            ActionButtonDelegate("play_input", self._tree))
+            ActionButtonDelegate("play_input", self._tree),
+        )
         self._tree.setItemDelegateForColumn(
             VideoTreeModel.COL_PLAY_OUTPUT,
-            ActionButtonDelegate("play_output", self._tree))
+            ActionButtonDelegate("play_output", self._tree),
+        )
         self._tree.setItemDelegateForColumn(
             VideoTreeModel.COL_FFMPEG,
             ActionButtonDelegate("show_ffmpeg", self._tree))
@@ -1242,9 +1286,11 @@ probe:
 
 
 @click.command()
-@click.option("--input-root",
-              type=click.Path(path_type=Path, exists=True, file_okay=False),
-              required=True)
+@click.option(
+    "--input-root",
+    type=click.Path(path_type=Path, exists=True, file_okay=False),
+    required=True,
+)
 @click.option("--output-root",
               type=click.Path(path_type=Path, file_okay=False),
               required=True)
