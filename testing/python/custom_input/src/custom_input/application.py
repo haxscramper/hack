@@ -1,19 +1,16 @@
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from enum import StrEnum
+from pathlib import Path
 from queue import Empty, Queue
 from threading import Event, Thread
-from beartype import beartype
-from beartype.typing import Callable, List, Optional
-from loguru import logger
 
-from beartype.typing import (List)
-from pydantic import BaseModel
-from enum import StrEnum
-from pathlib import Path
-from beartype.typing import (Annotated, List, Union)
+from beartype import beartype
+from beartype.typing import Annotated, Callable, List, Optional, Union
+from loguru import logger
 from pydantic import BaseModel, Field
 
+from custom_input.actions import show_notification
 from custom_input.actions.action import ActionTriggerContext
 from custom_input.devices.device import DeviceEvent, InputDevice
 from custom_input.devices.evdev_device import EvdevDeviceConfig
@@ -119,18 +116,31 @@ class Application:
                         f"{message.device.identifier!r}, control "
                         f"{message.event.control}, value "
                         f"{message.event.value}")
-                    action.execute(
-                        ActionTriggerContext(
-                            application=self,
-                            device=message.device,
-                            event=message.event,
-                        ))
+
+                    try:
+                        action.execute(
+                            ActionTriggerContext(
+                                application=self,
+                                device=message.device,
+                                event=message.event,
+                            ))
+
+                    except Exception as e:  # noqa
+                        show_notification.show_notification(
+                            show_notification.ShowNotificationActionConfig(
+                                summary=f"{type(e)}",
+                                body=str(e),
+                                urgency=show_notification.NotificationUrgency.
+                                CRITICAL,
+                            ))
+
             case DeviceMessageKind.ERROR:
                 if message.error is None:
                     raise RuntimeError(
                         f"Device {message.device.identifier!r} emitted an "
                         f"error message without an exception")
                 raise message.error
+
             case DeviceMessageKind.ENDED:
                 raise RuntimeError(
                     f"Device {message.device.identifier!r} stopped "

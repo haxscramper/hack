@@ -339,25 +339,25 @@ devices:
           # bottom left +/-
           - code: "KEY_6" # +
             action:
-              type: "show_notification"
-              summary: "KEY_6"
+              type: "execute_script"
+              script: "strawberry --seek-by 5"
           - code: "KEY_4" # -
             action:
-              type: "show_notification"
-              summary: "KEY_4"
+              type: "execute_script"
+              script: "strawberry --seek-by -5"
           - code: "KEY_5" # click
             action:
-              type: "show_notification"
-              summary: "KEY_5"
+              type: "execute_script"
+              script: "strawberry --restart-or-previous"
           # bottom right +/-
           - code: "KEY_3" # +
             action:
-              type: "show_notification"
-              summary: "KEY_3"
+              type: "execute_script"
+              script: "pactl set-sink-volume @DEFAULT_SINK@ +2%"
           - code: "KEY_1" # -
             action:
-              type: "show_notification"
-              summary: "KEY_1"
+              type: "execute_script"
+              script: "pactl set-sink-volume @DEFAULT_SINK@ -2%"
           - code: "KEY_2" # click
             action:
               type: "show_notification"
@@ -366,8 +366,7 @@ devices:
           # top row
           - code: "KEY_L" 
             action:
-              type: "show_notification"
-              summary: "KEY_L"
+              type: "convert_clipboard_to_png"
           - code: "KEY_K" 
             action:
               type: "show_notification"
