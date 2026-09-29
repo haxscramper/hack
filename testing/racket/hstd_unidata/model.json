@@ -1,0 +1,916 @@
+{
+  "types"  : [
+    {
+      "cases"  : [
+        {"name": "Modify", "value": 0},
+        {"name": "Delete", "value": 1},
+        {"name": "Rename", "value": 2},
+        {"name": "Add",    "value": 3}
+      ],
+      "escapes": [],
+      "kind"   : "integer-enum",
+      "meta"   : [],
+      "name"   : {
+        "kind"  : "type",
+        "name"  : "ActionKind",
+        "params": [],
+        "scope" : {"kind": "type", "name": "demo", "params": [], "scope": null}
+      }
+    },
+    {
+      "escapes": [],
+      "extends": null,
+      "fields" : [
+        {
+          "default"    : null,
+          "escapes"    : [],
+          "has_default": false,
+          "meta"       : [],
+          "name"       : "hash",
+          "rules"      : [],
+          "type"       : {"kind": "type", "name": "String", "params": [], "scope": null}
+        },
+        {
+          "default"    : null,
+          "escapes"    : [],
+          "has_default": false,
+          "meta"       : [],
+          "name"       : "author",
+          "rules"      : [],
+          "type"       : {"kind": "type", "name": "String", "params": [], "scope": null}
+        },
+        {
+          "default"    : null,
+          "escapes"    : [],
+          "has_default": false,
+          "meta"       : [],
+          "name"       : "time",
+          "rules"      : [],
+          "type"       : {"kind": "type", "name": "I64", "params": [], "scope": null}
+        },
+        {
+          "default"    : null,
+          "escapes"    : [],
+          "has_default": false,
+          "meta"       : [],
+          "name"       : "status",
+          "rules"      : [],
+          "type"       : {
+            "kind"  : "type",
+            "name"  : "Status",
+            "params": [],
+            "scope" : {
+              "kind"  : "type",
+              "name"  : "Commit",
+              "params": [],
+              "scope" : {"kind": "type", "name": "demo", "params": [], "scope": null}
+            }
+          }
+        },
+        {
+          "default"    : [],
+          "escapes"    : [],
+          "has_default": true,
+          "meta"       : [],
+          "name"       : "actions",
+          "rules"      : [],
+          "type"       : {
+            "kind": "type",
+            "name": "List",
+            "params": [
+              {
+                "kind"  : "type",
+                "name"  : "Action",
+                "params": [],
+                "scope" : {
+                  "kind"  : "type",
+                  "name"  : "Commit",
+                  "params": [],
+                  "scope" : {"kind": "type", "name": "demo", "params": [], "scope": null}
+                }
+              }
+            ],
+            "scope": null
+          }
+        },
+        {
+          "default"    : null,
+          "escapes"    : [],
+          "has_default": false,
+          "meta"       : [],
+          "name"       : "change",
+          "rules"      : [],
+          "type"       : {
+            "kind": "type",
+            "name": "Optional",
+            "params": [
+              {
+                "kind"  : "type",
+                "name"  : "Change",
+                "params": [],
+                "scope" : {
+                  "kind"  : "type",
+                  "name"  : "Commit",
+                  "params": [],
+                  "scope" : {"kind": "type", "name": "demo", "params": [], "scope": null}
+                }
+              }
+            ],
+            "scope": null
+          }
+        }
+      ],
+      "kind": "record",
+      "meta"   : [
+        { "attrs": {"primary_key": "hash", "table": "GitCommit"}, "backend": "sql" }
+      ],
+      "name"   : {
+        "kind"  : "type",
+        "name"  : "Commit",
+        "params": [],
+        "scope" : {"kind": "type", "name": "demo", "params": [], "scope": null}
+      },
+      "rules": []
+    },
+    {
+      "escapes": [
+        {
+          "backend" : "sql",
+          "code"    : "kind <> 0 OR (added IS NOT NULL AND removed IS NOT NULL)",
+          "purpose" : "validation",
+          "severity": "error"
+        }
+      ],
+      "extends": null,
+      "fields" : [
+        {
+          "default"    : null,
+          "escapes"    : [],
+          "has_default": false,
+          "meta"       : [],
+          "name"       : "kind",
+          "rules"      : [],
+          "type"       : {
+            "kind"  : "type",
+            "name"  : "ActionKind",
+            "params": [],
+            "scope" : {"kind": "type", "name": "demo", "params": [], "scope": null}
+          }
+        },
+        {
+          "default"    : null,
+          "escapes"    : [],
+          "has_default": false,
+          "meta"       : [],
+          "name"       : "track",
+          "rules"      : [],
+          "type"       : {"kind": "type", "name": "U64", "params": [], "scope": null}
+        },
+        {
+          "default"    : null,
+          "escapes"    : [],
+          "has_default": false,
+          "meta"       : [],
+          "name"       : "old_path",
+          "rules"      : [],
+          "type"       : {
+            "kind"  : "type",
+            "name"  : "Optional",
+            "params": [
+              {"kind": "type", "name": "String", "params": [], "scope": null}
+            ],
+            "scope" : null
+          }
+        },
+        {
+          "default"    : null,
+          "escapes"    : [],
+          "has_default": false,
+          "meta"       : [],
+          "name"       : "new_path",
+          "rules"      : [],
+          "type"       : {
+            "kind"  : "type",
+            "name"  : "Optional",
+            "params": [
+              {"kind": "type", "name": "String", "params": [], "scope": null}
+            ],
+            "scope" : null
+          }
+        },
+        {
+          "default"    : 0,
+          "escapes"    : [],
+          "has_default": true,
+          "meta"       : [],
+          "name"       : "added",
+          "rules"      : [],
+          "type"       : {"kind": "type", "name": "I32", "params": [], "scope": null}
+        },
+        {
+          "default"    : 0,
+          "escapes"    : [],
+          "has_default": true,
+          "meta"       : [],
+          "name"       : "removed",
+          "rules"      : [],
+          "type"       : {"kind": "type", "name": "I32", "params": [], "scope": null}
+        }
+      ],
+      "kind"   : "record",
+      "meta"   : [],
+      "name"   : {
+        "kind"  : "type",
+        "name"  : "Action",
+        "params": [],
+        "scope" : {
+          "kind"  : "type",
+          "name"  : "Commit",
+          "params": [],
+          "scope" : {"kind": "type", "name": "demo", "params": [], "scope": null}
+        }
+      },
+      "rules"  : [
+        {
+          "expr"    : {
+            "args": [ {"name": "added", "op": "field"}, {"op": "literal", "value": 0} ],
+            "op"  : "ge"
+          },
+          "id"      : "nonnegative_added",
+          "message" : "Added-line count cannot be negative",
+          "severity": "error"
+        },
+        {
+          "expr"    : {
+            "args": [
+              {"name": "removed", "op": "field"              },
+              {                   "op": "literal", "value": 0}
+            ],
+            "op"  : "ge"
+          },
+          "id"      : "nonnegative_removed",
+          "message" : "Removed-line count cannot be negative",
+          "severity": "error"
+        }
+      ]
+    },
+    {
+      "escapes": [],
+      "kind"   : "sum",
+      "meta"   : [],
+      "name"   : {
+        "kind"  : "type",
+        "name"  : "Change",
+        "params": [],
+        "scope" : {
+          "kind"  : "type",
+          "name"  : "Commit",
+          "params": [],
+          "scope" : {"kind": "type", "name": "demo", "params": [], "scope": null}
+        }
+      },
+      "rules": [],
+      "tags"   : [
+        {
+          "escapes": [],
+          "fields" : [
+            {
+              "default"    : null,
+              "escapes"    : [],
+              "has_default": false,
+              "meta"       : [],
+              "name"       : "path",
+              "rules"      : [],
+              "type"       : {
+                "kind"  : "type",
+                "name"  : "String",
+                "params": [],
+                "scope" : null
+              }
+            },
+            {
+              "default"    : null,
+              "escapes"    : [],
+              "has_default": false,
+              "meta"       : [],
+              "name"       : "lines",
+              "rules"      : [],
+              "type"       : {"kind": "type", "name": "U32", "params": [], "scope": null}
+            }
+          ],
+          "meta"   : [],
+          "name"   : "Addition",
+          "rules"  : []
+        },
+        {
+          "escapes": [],
+          "fields" : [
+            {
+              "default"    : null,
+              "escapes"    : [],
+              "has_default": false,
+              "meta"       : [],
+              "name"       : "path",
+              "rules"      : [],
+              "type"       : {
+                "kind"  : "type",
+                "name"  : "String",
+                "params": [],
+                "scope" : null
+              }
+            }
+          ],
+          "meta"   : [],
+          "name"   : "Deletion",
+          "rules"  : []
+        },
+        {
+          "escapes": [],
+          "fields" : [
+            {
+              "default"    : null,
+              "escapes"    : [],
+              "has_default": false,
+              "meta"       : [],
+              "name"       : "old_path",
+              "rules"      : [],
+              "type"       : {
+                "kind"  : "type",
+                "name"  : "String",
+                "params": [],
+                "scope" : null
+              }
+            },
+            {
+              "default"    : null,
+              "escapes"    : [],
+              "has_default": false,
+              "meta"       : [],
+              "name"       : "new_path",
+              "rules"      : [],
+              "type"       : {
+                "kind"  : "type",
+                "name"  : "String",
+                "params": [],
+                "scope" : null
+              }
+            }
+          ],
+          "meta"   : [],
+          "name"   : "Rename",
+          "rules"  : []
+        }
+      ]
+    },
+    {
+      "cases"  : [ {"name": "Draft", "value": 0}, {"name": "Published", "value": 1} ],
+      "escapes": [],
+      "kind"   : "integer-enum",
+      "meta"   : [],
+      "name"   : {
+        "kind"  : "type",
+        "name"  : "Status",
+        "params": [],
+        "scope" : {
+          "kind"  : "type",
+          "name"  : "Commit",
+          "params": [],
+          "scope" : {"kind": "type", "name": "demo", "params": [], "scope": null}
+        }
+      }
+    },
+    {
+      "escapes": [],
+      "extends": {
+        "kind"  : "type",
+        "name"  : "Org",
+        "params": [],
+        "scope" : {"kind": "type", "name": "demo", "params": [], "scope": null}
+      },
+      "fields" : [
+        {
+          "default"    : null,
+          "escapes"    : [],
+          "has_default": false,
+          "meta"       : [],
+          "name"       : "title",
+          "rules"      : [],
+          "type"       : {
+            "kind": "type",
+            "name": "Optional",
+            "params": [
+              {
+                "kind"  : "type",
+                "name"  : "Paragraph",
+                "params": [],
+                "scope" : {"kind": "type", "name": "demo", "params": [], "scope": null}
+              }
+            ],
+            "scope": null
+          }
+        },
+        {
+          "default"    : null,
+          "escapes"    : [],
+          "has_default": false,
+          "meta"       : [],
+          "name"       : "options",
+          "rules"      : [],
+          "type"       : {
+            "kind"  : "type",
+            "name"  : "DocumentOptions",
+            "params": [],
+            "scope" : {"kind": "type", "name": "demo", "params": [], "scope": null}
+          }
+        },
+        {
+          "default"    : [],
+          "escapes"    : [],
+          "has_default": true,
+          "meta"       : [],
+          "name"       : "tags",
+          "rules"      : [],
+          "type"       : {
+            "kind"  : "type",
+            "name"  : "List",
+            "params": [
+              {"kind": "type", "name": "String", "params": [], "scope": null}
+            ],
+            "scope" : null
+          }
+        }
+      ],
+      "kind": "record",
+      "meta"   : [
+        {
+          "attrs"  : { "reflection": {"enabled": true, "kind": "Document"} },
+          "backend": "cpp"
+        }
+      ],
+      "name"   : {
+        "kind"  : "type",
+        "name"  : "Document",
+        "params": [],
+        "scope" : {"kind": "type", "name": "demo", "params": [], "scope": null}
+      },
+      "rules"  : [
+        {
+          "expr"    : {
+            "args": [
+              {"name": "subnodes", "op": "field"},
+              {
+                "name": {
+                  "kind"  : "type",
+                  "name"  : "Paragraph",
+                  "params": [],
+                  "scope" : {"kind": "type", "name": "demo", "params": [], "scope": null}
+                },
+                "op": "type-ref"
+              },
+              {
+                "name": {
+                  "kind"  : "type",
+                  "name"  : "Time",
+                  "params": [],
+                  "scope" : {"kind": "type", "name": "demo", "params": [], "scope": null}
+                },
+                "op": "type-ref"
+              }
+            ],
+            "op": "allowed-kinds"
+          },
+          "id"      : "document_children",
+          "message" : "Documents contain paragraphs and times",
+          "severity": "error"
+        }
+      ]
+    },
+    {
+      "escapes": [],
+      "extends": null,
+      "fields" : [
+        {
+          "default"    : null,
+          "escapes"    : [],
+          "has_default": false,
+          "meta"       : [],
+          "name"       : "export_file",
+          "rules"      : [],
+          "type"       : {
+            "kind"  : "type",
+            "name"  : "Optional",
+            "params": [
+              {"kind": "type", "name": "String", "params": [], "scope": null}
+            ],
+            "scope" : null
+          }
+        },
+        {
+          "default"    : "en",
+          "escapes"    : [],
+          "has_default": true,
+          "meta"       : [],
+          "name"       : "language",
+          "rules"      : [],
+          "type"       : {"kind": "type", "name": "String", "params": [], "scope": null}
+        }
+      ],
+      "kind"   : "record",
+      "meta"   : [],
+      "name"   : {
+        "kind"  : "type",
+        "name"  : "DocumentOptions",
+        "params": [],
+        "scope" : {"kind": "type", "name": "demo", "params": [], "scope": null}
+      },
+      "rules": []
+    },
+    {
+      "escapes": [],
+      "extends": {
+        "kind"  : "type",
+        "name"  : "Org",
+        "params": [],
+        "scope" : {"kind": "type", "name": "demo", "params": [], "scope": null}
+      },
+      "fields" : [
+        {
+          "default"    : null,
+          "escapes"    : [],
+          "has_default": false,
+          "meta"       : [],
+          "name"       : "path",
+          "rules"      : [],
+          "type"       : {"kind": "type", "name": "String", "params": [], "scope": null}
+        }
+      ],
+      "kind"   : "record",
+      "meta"   : [],
+      "name"   : {
+        "kind"  : "type",
+        "name"  : "File",
+        "params": [],
+        "scope" : {"kind": "type", "name": "demo", "params": [], "scope": null}
+      },
+      "rules"  : [
+        {
+          "expr"    : {
+            "args": [
+              {"name": "subnodes", "op": "field"},
+              {
+                "name": {
+                  "kind"  : "type",
+                  "name"  : "Document",
+                  "params": [],
+                  "scope" : {"kind": "type", "name": "demo", "params": [], "scope": null}
+                },
+                "op": "type-ref"
+              }
+            ],
+            "op": "allowed-kinds"
+          },
+          "id"      : "file_children",
+          "message" : "A file contains documents",
+          "severity": "error"
+        }
+      ]
+    },
+    {
+      "escapes": [],
+      "extends": null,
+      "fields" : [
+        {
+          "default"    : [],
+          "escapes"    : [],
+          "has_default": true,
+          "meta"       : [],
+          "name"       : "subnodes",
+          "rules"      : [],
+          "type"       : {
+            "kind": "type",
+            "name": "List",
+            "params": [
+              {
+                "kind"  : "type",
+                "name"  : "Org",
+                "params": [],
+                "scope" : {"kind": "type", "name": "demo", "params": [], "scope": null}
+              }
+            ],
+            "scope": null
+          }
+        },
+        {
+          "default"    : null,
+          "escapes"    : [],
+          "has_default": false,
+          "meta"       : [],
+          "name"       : "source",
+          "rules"      : [],
+          "type"       : {
+            "kind"  : "type",
+            "name"  : "Optional",
+            "params": [
+              {"kind": "type", "name": "String", "params": [], "scope": null}
+            ],
+            "scope" : null
+          }
+        }
+      ],
+      "kind": "record",
+      "meta"   : [ { "attrs": {"abstract": true}, "backend": "cpp" } ],
+      "name"   : {
+        "kind"  : "type",
+        "name"  : "Org",
+        "params": [],
+        "scope" : {"kind": "type", "name": "demo", "params": [], "scope": null}
+      },
+      "rules": []
+    },
+    {
+      "escapes": [],
+      "extends": {
+        "kind"  : "type",
+        "name"  : "Org",
+        "params": [],
+        "scope" : {"kind": "type", "name": "demo", "params": [], "scope": null}
+      },
+      "fields" : [
+        {
+          "default"    : null,
+          "escapes"    : [],
+          "has_default": false,
+          "meta"       : [],
+          "name"       : "text",
+          "rules"      : [
+            {
+              "expr"    : {
+                "args": [
+                  { "args": [ {"name": "text", "op": "field"} ], "op": "size" },
+                  {"op": "literal", "value": 0}
+                ],
+                "op": "gt"
+              },
+              "id"      : "paragraph_text",
+              "message" : "Paragraph text must not be empty",
+              "severity": "error"
+            }
+          ],
+          "type": {"kind": "type", "name": "String", "params": [], "scope": null}
+        }
+      ],
+      "kind"   : "record",
+      "meta"   : [],
+      "name"   : {
+        "kind"  : "type",
+        "name"  : "Paragraph",
+        "params": [],
+        "scope" : {"kind": "type", "name": "demo", "params": [], "scope": null}
+      },
+      "rules"  : [
+        {
+          "expr"    : {
+            "args": [
+              { "args": [ {"name": "subnodes", "op": "field"} ], "op": "size" },
+              {"op": "literal", "value": 0}
+            ],
+            "op": "eq"
+          },
+          "id"      : "paragraph_children",
+          "message" : "Paragraphs cannot have subnodes",
+          "severity": "error"
+        }
+      ]
+    },
+    {
+      "escapes": [],
+      "extends": {
+        "kind"  : "type",
+        "name"  : "Org",
+        "params": [],
+        "scope" : {"kind": "type", "name": "demo", "params": [], "scope": null}
+      },
+      "fields" : [
+        {
+          "default"    : null,
+          "escapes"    : [],
+          "has_default": false,
+          "meta"       : [],
+          "name"       : "unix_seconds",
+          "rules"      : [],
+          "type"       : {"kind": "type", "name": "I64", "params": [], "scope": null}
+        }
+      ],
+      "kind"   : "record",
+      "meta"   : [],
+      "name"   : {
+        "kind"  : "type",
+        "name"  : "Time",
+        "params": [],
+        "scope" : {"kind": "type", "name": "demo", "params": [], "scope": null}
+      },
+      "rules"  : [
+        {
+          "expr"    : {
+            "args": [
+              { "args": [ {"name": "subnodes", "op": "field"} ], "op": "size" },
+              {"op": "literal", "value": 0}
+            ],
+            "op": "eq"
+          },
+          "id"      : "time_children",
+          "message" : "Time nodes cannot have subnodes",
+          "severity": "error"
+        }
+      ]
+    },
+    {
+      "escapes": [],
+      "extends": null,
+      "fields" : [
+        {
+          "default"    : null,
+          "escapes"    : [],
+          "has_default": false,
+          "meta"       : [],
+          "name"       : "signed8",
+          "rules"      : [],
+          "type"       : {"kind": "type", "name": "I8", "params": [], "scope": null}
+        },
+        {
+          "default"    : null,
+          "escapes"    : [],
+          "has_default": false,
+          "meta"       : [],
+          "name"       : "signed16",
+          "rules"      : [],
+          "type"       : {"kind": "type", "name": "I16", "params": [], "scope": null}
+        },
+        {
+          "default"    : null,
+          "escapes"    : [],
+          "has_default": false,
+          "meta"       : [],
+          "name"       : "signed32",
+          "rules"      : [],
+          "type"       : {"kind": "type", "name": "I32", "params": [], "scope": null}
+        },
+        {
+          "default"    : null,
+          "escapes"    : [],
+          "has_default": false,
+          "meta"       : [],
+          "name"       : "unsigned8",
+          "rules"      : [],
+          "type"       : {"kind": "type", "name": "U8", "params": [], "scope": null}
+        },
+        {
+          "default"    : null,
+          "escapes"    : [],
+          "has_default": false,
+          "meta"       : [],
+          "name"       : "unsigned16",
+          "rules"      : [],
+          "type"       : {"kind": "type", "name": "U16", "params": [], "scope": null}
+        },
+        {
+          "default"    : null,
+          "escapes"    : [],
+          "has_default": false,
+          "meta"       : [],
+          "name"       : "unsigned32",
+          "rules"      : [],
+          "type"       : {"kind": "type", "name": "U32", "params": [], "scope": null}
+        },
+        {
+          "default"    : null,
+          "escapes"    : [],
+          "has_default": false,
+          "meta"       : [],
+          "name"       : "unsigned64",
+          "rules"      : [],
+          "type"       : {"kind": "type", "name": "U64", "params": [], "scope": null}
+        },
+        {
+          "default"    : null,
+          "escapes"    : [],
+          "has_default": false,
+          "meta"       : [],
+          "name"       : "float32",
+          "rules"      : [],
+          "type"       : {"kind": "type", "name": "F32", "params": [], "scope": null}
+        },
+        {
+          "default"    : null,
+          "escapes"    : [],
+          "has_default": false,
+          "meta"       : [],
+          "name"       : "float64",
+          "rules"      : [],
+          "type"       : {"kind": "type", "name": "F64", "params": [], "scope": null}
+        },
+        {
+          "default"    : null,
+          "escapes"    : [],
+          "has_default": false,
+          "meta"       : [],
+          "name"       : "enabled",
+          "rules"      : [],
+          "type"       : {"kind": "type", "name": "Bool", "params": [], "scope": null}
+        },
+        {
+          "default"    : null,
+          "escapes"    : [],
+          "has_default": false,
+          "meta"       : [],
+          "name"       : "initial",
+          "rules"      : [],
+          "type"       : {"kind": "type", "name": "Char", "params": [], "scope": null}
+        },
+        {
+          "default"    : null,
+          "escapes"    : [],
+          "has_default": false,
+          "meta"       : [],
+          "name"       : "grid",
+          "rules"      : [],
+          "type"       : {
+            "kind": "type",
+            "name": "Map",
+            "params": [
+              {
+                "kind": "type",
+                "name": "Tuple",
+                "params": [
+                  {"kind": "type", "name": "I32", "params": [], "scope": null},
+                  {"kind": "type", "name": "I32", "params": [], "scope": null}
+                ],
+                "scope": null
+              },
+              {
+                "kind": "type",
+                "name": "Array",
+                "params": [
+                  {"kind": "value", "name": 16,     "params": [], "scope": null},
+                  {"kind": "type",  "name": "Char", "params": [], "scope": null}
+                ],
+                "scope": null
+              }
+            ],
+            "scope": null
+          }
+        },
+        {
+          "default"    : null,
+          "escapes"    : [],
+          "has_default": false,
+          "meta"       : [],
+          "name"       : "maybe_grid",
+          "rules"      : [],
+          "type"       : {
+            "kind": "type",
+            "name": "Optional",
+            "params": [
+              {
+                "kind": "type",
+                "name": "Map",
+                "params": [
+                  {
+                    "kind": "type",
+                    "name": "Tuple",
+                    "params": [
+                      {"kind": "type", "name": "I32", "params": [], "scope": null},
+                      {"kind": "type", "name": "I32", "params": [], "scope": null}
+                    ],
+                    "scope": null
+                  },
+                  {
+                    "kind": "type",
+                    "name": "Array",
+                    "params": [
+                      {"kind": "value", "name": 16,     "params": [], "scope": null},
+                      {"kind": "type",  "name": "Char", "params": [], "scope": null}
+                    ],
+                    "scope": null
+                  }
+                ],
+                "scope": null
+              }
+            ],
+            "scope": null
+          }
+        }
+      ],
+      "kind"   : "record",
+      "meta"   : [],
+      "name"   : {
+        "kind"  : "type",
+        "name"  : "TypeSampler",
+        "params": [],
+        "scope" : {"kind": "type", "name": "demo", "params": [], "scope": null}
+      },
+      "rules": []
+    }
+  ],
+  "version": "0.0.1"
+}
