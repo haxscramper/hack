@@ -1,0 +1,6 @@
+build:
+  cmake -S . -B build
+  cmake --build build
+
+get_dirs activity: build
+  ./build/activity-directories {{activity}}
