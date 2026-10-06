@@ -2,116 +2,197 @@
 
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["textual", "PyYAML", "Jinja2", "beartype"]
+# dependencies = ["textual", "PyYAML", "Jinja2", "pydantic>=2"]
 # ///
 
 import argparse
-from dataclasses import dataclass
+import random
+from decimal import Decimal
 from pathlib import Path
+from typing import Self
 
 import yaml
-from beartype import beartype
 from jinja2 import Environment, StrictUndefined, Template
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from textual.app import App, ComposeResult
-from textual.widgets import Footer, Header, Label, Select, Static
+from textual.widgets import Button, Footer, Header, Label, Select, Static
 
 
-@beartype
-@dataclass(frozen=True)
-class Character:
-    name: str
-    clothes: list[str]
-    appearances: list[str]
+SAMPLES_PER_PROMPT = 2
 
 
-@beartype
-@dataclass(frozen=True)
-class Configuration:
-    templates: list[str]
-    characters: list[Character]
+class StrictModel(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        strict=True,
+        allow_inf_nan=False,
+    )
 
 
-@beartype
-def read_choices(value: object, character: str, field: str) -> list[str]:
-    match value:
-        case None:
-            return [""]
-        case str():
-            return [value]
-        case list():
-            if not value:
+class Choice(StrictModel):
+    value: str
+    chance: float | None = Field(default=None, ge=0, le=100)
+
+
+class Choices(StrictModel):
+    clothes: list[Choice] = Field(default_factory=list)
+    appearance: list[Choice] = Field(default_factory=list)
+
+
+class Character(Choices):
+    character: str = Field(min_length=1)
+
+
+def choice_weights(
+    choices: list[Choice],
+    *,
+    context: str,
+) -> list[float]:
+    """Resolve percentage weights for a combined common/character pool."""
+    if not choices:
+        return []
+
+    specified_total = sum(
+        (
+            Decimal(str(choice.chance))
+            for choice in choices
+            if choice.chance is not None
+        ),
+        start=Decimal(0),
+    )
+
+    if specified_total > 100:
+        raise ValueError(
+            f"{context}: explicitly specified chances sum to "
+            f"{specified_total}%, exceeding 100%."
+        )
+
+    unspecified_count = sum(
+        choice.chance is None for choice in choices
+    )
+    remaining = Decimal(100) - specified_total
+
+    if unspecified_count == 0 and remaining != 0:
+        raise ValueError(
+            f"{context}: all entries specify a chance, but their sum is "
+            f"{specified_total}%. Either make the sum 100% or omit a chance "
+            "from at least one entry to receive the remaining probability."
+        )
+
+    unspecified_weight = (
+        float(remaining / unspecified_count)
+        if unspecified_count
+        else 0.0
+    )
+
+    return [
+        choice.chance
+        if choice.chance is not None
+        else unspecified_weight
+        for choice in choices
+    ]
+
+
+class Configuration(StrictModel):
+    templates: list[str] = Field(min_length=1)
+    common: Choices = Field(default_factory=Choices)
+    characters: list[Character] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_choice_pools(self) -> Self:
+        names: set[str] = set()
+
+        for character in self.characters:
+            if character.character in names:
                 raise ValueError(
-                    f"Character {character!r} has an empty {field!r} list."
+                    f"Duplicate character name: {character.character!r}."
                 )
+            names.add(character.character)
 
-            for index, item in enumerate(value):
-                if not isinstance(item, str):
-                    raise ValueError(
-                        f"Character {character!r}, field {field!r}, item "
-                        f"{index}: expected a string, received {item!r}."
-                    )
-
-            return value
-        case _:
-            raise ValueError(
-                f"Character {character!r}, field {field!r}: expected a "
-                f"string or list of strings, received {value!r}."
+            choice_weights(
+                self.common.clothes + character.clothes,
+                context=f"Character {character.character!r}, clothes",
+            )
+            choice_weights(
+                self.common.appearance + character.appearance,
+                context=f"Character {character.character!r}, appearance",
             )
 
+        return self
 
-@beartype
+
 def load_configuration(path: Path) -> Configuration:
     with path.open(encoding="utf-8") as stream:
         document = yaml.safe_load(stream)
 
-    match document:
-        case {"templates": list() as templates, "characters": list() as entries}:
-            pass
-        case _:
-            raise ValueError(
-                f"{path}: expected 'templates' and 'characters' lists."
+    return Configuration.model_validate(document)
+
+
+def compile_templates(sources: list[str]) -> list[Template]:
+    environment = Environment(
+        undefined=StrictUndefined,
+        autoescape=False,
+        keep_trailing_newline=True,
+    )
+    result = [environment.from_string(source) for source in sources]
+    random.shuffle(result)
+    return result
+
+
+def sample_choice(choices: list[Choice], *, context: str) -> str:
+    # Missing both common and character-specific entries means no value.
+    if not choices:
+        return ""
+
+    weights = choice_weights(choices, context=context)
+    return random.choices(choices, weights=weights, k=1)[0].value
+
+
+def generate_prompts(
+    configuration: Configuration,
+    templates: list[Template],
+    character_index: int,
+) -> str:
+    character = configuration.characters[character_index]
+    clothes_pool = configuration.common.clothes + character.clothes
+    appearance_pool = (
+        configuration.common.appearance + character.appearance
+    )
+
+    prompts: list[str] = []
+
+    for template in templates:
+        for _ in range(SAMPLES_PER_PROMPT):
+            clothes = sample_choice(
+                clothes_pool,
+                context=f"Character {character.character!r}, clothes",
+            )
+            appearance = sample_choice(
+                appearance_pool,
+                context=f"Character {character.character!r}, appearance",
             )
 
-    if not templates:
-        raise ValueError(f"{path}: 'templates' must contain at least one entry.")
+            prompt = template.render(
+                character=character.character,
+                clothes=clothes,
+                appearance=appearance,
+                # Compatibility with templates using the original typo.
+                appearnace=appearance,
+            ).strip()
 
-    for index, template in enumerate(templates):
-        if not isinstance(template, str):
-            raise ValueError(
-                f"{path}: template {index} must be a string, "
-                f"received {template!r}."
-            )
+            prompts.append(prompt)
 
-    if not entries:
-        raise ValueError(f"{path}: 'characters' must contain at least one entry.")
-
-    characters: list[Character] = []
-
-    for index, entry in enumerate(entries):
-        match entry:
-            case {"character": str() as name}:
-                characters.append(
-                    Character(
-                        name=name,
-                        clothes=read_choices(entry.get("clothes"), name, "clothes"),
-                        appearances=read_choices(
-                            entry.get("appearance"), name, "appearance"
-                        ),
-                    )
-                )
-            case _:
-                raise ValueError(
-                    f"{path}: character entry {index} must contain a string "
-                    f"'character' field, received {entry!r}."
-                )
-
-    return Configuration(templates=templates, characters=characters)
+    return "\n".join(f"- {prompt}" for prompt in prompts) + "\n"
 
 
-@beartype
 class PromptApp(App[None]):
-    TITLE = "Character prompts"
-    BINDINGS = [("q", "quit", "Quit")]
+    TITLE = "Random character prompts"
+
+    BINDINGS = [
+        ("r", "resample", "Resample"),
+        ("q", "quit", "Quit"),
+    ]
+
     CSS = """
     Screen {
         padding: 1 2;
@@ -125,6 +206,10 @@ class PromptApp(App[None]):
         width: 100%;
     }
 
+    #resample {
+        margin-top: 1;
+    }
+
     #preview {
         height: 1fr;
         overflow-y: auto;
@@ -136,180 +221,179 @@ class PromptApp(App[None]):
 
     def __init__(self, template_path: Path, output: Path) -> None:
         super().__init__()
+
         self.template_path = template_path
-        self.template_modified = template_path.stat().st_mtime_ns
-        self.configuration = load_configuration(template_path)
         self.output = output
+        self.template_modified = template_path.stat().st_mtime_ns
+
+        self.configuration = load_configuration(template_path)
+        self.templates = compile_templates(self.configuration.templates)
         self.character_index = 0
-        self.clothes_index = 0
-        self.appearance_index = 0
-        self.templates = self.compile_templates(self.configuration.templates)
 
-    def compile_templates(self, sources: list[str]) -> list[Template]:
-        environment = Environment(
-            undefined=StrictUndefined,
-            autoescape=False,
-            keep_trailing_newline=True,
-        )
-        return [environment.from_string(source) for source in sources]
+        # Avoid repeating the same notification every polling interval.
+        self.last_reload_error: str | None = None
 
-    def reload_templates(self) -> None:
-        modified = self.template_path.stat().st_mtime_ns
-
-        if modified == self.template_modified:
-            return
-
-        configuration = load_configuration(self.template_path)
-        templates = self.compile_templates(configuration.templates)
-        selected_name = self.configuration.characters[self.character_index].name
-
-        selected_index = next(
-            (
-                index
-                for index, character in enumerate(configuration.characters)
-                if character.name == selected_name
-            ),
-            0,
-        )
-
-        self.configuration = configuration
-        self.templates = templates
-
-        selector = self.query_one("#character", Select)
-        selector.set_options(
-            [
-                (character.name, index)
-                for index, character in enumerate(configuration.characters)
-            ]
-        )
-        selector.value = selected_index
-        self.update_character(selected_index)
-        self.save_output()
-        self.template_modified = modified
-
-        
     def compose(self) -> ComposeResult:
-        character = self.configuration.characters[0]
-
         yield Header()
         yield Label("Character")
         yield Select[int](
             [
-                (entry.name, index)
-                for index, entry in enumerate(self.configuration.characters)
+                (character.character, index)
+                for index, character in enumerate(
+                    self.configuration.characters
+                )
             ],
-            value=0,
+            value=self.character_index,
             allow_blank=False,
             id="character",
         )
-        yield Label("Clothes")
-        yield Select[int](
-            [
-                (value or "(none)", index)
-                for index, value in enumerate(character.clothes)
-            ],
-            value=0,
-            allow_blank=False,
-            disabled=len(character.clothes) == 1,
-            id="clothes",
-        )
-        yield Label("Appearance")
-        yield Select[int](
-            [
-                (value or "(none)", index)
-                for index, value in enumerate(character.appearances)
-            ],
-            value=0,
-            allow_blank=False,
-            disabled=len(character.appearances) == 1,
-            id="appearance",
-        )
+        yield Button("Resample", id="resample", variant="primary")
         yield Static("", markup=False, id="preview")
         yield Footer()
 
     def on_mount(self) -> None:
-        self.save_output()
+        self.action_resample()
         self.set_interval(0.5, self.reload_templates)
 
-    def update_character(self, index: int) -> None:
-        self.character_index = index
-        self.clothes_index = 0
-        self.appearance_index = 0
-        character = self.configuration.characters[index]
+    def save_output(self, text: str) -> None:
+        self.output.write_text(text, encoding="utf-8")
+        self.query_one("#preview", Static).update(text)
 
-        clothes = self.query_one("#clothes", Select)
-        clothes.set_options(
-            [
-                (value or "(none)", position)
-                for position, value in enumerate(character.clothes)
-            ]
-        )
-        clothes.value = 0
-        clothes.disabled = len(character.clothes) == 1
+    def action_resample(self) -> None:
+        try:
+            text = generate_prompts(
+                self.configuration,
+                self.templates,
+                self.character_index,
+            )
+            self.save_output(text)
+        except Exception as error:
+            self.notify(
+                str(error),
+                title="Could not generate prompts",
+                severity="error",
+                timeout=10,
+            )
 
-        appearance = self.query_one("#appearance", Select)
-        appearance.set_options(
-            [
-                (value or "(none)", position)
-                for position, value in enumerate(character.appearances)
-            ]
-        )
-        appearance.value = 0
-        appearance.disabled = len(character.appearances) == 1
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "resample":
+            self.action_resample()
 
     def on_select_changed(self, event: Select.Changed) -> None:
-        value = event.select.value
+        if event.select.id != "character":
+            return
+
+        value = event.value
 
         if value is Select.BLANK:
             return
 
+        # Ignore queued events for a selection that has since changed.
+        if value != event.select.value:
+            return
+
         if not isinstance(value, int):
             raise TypeError(
-                f"Selector {event.select.id!r} returned {value!r}; "
-                f"expected an integer option index."
+                f"Character selector returned {value!r}; "
+                "expected an integer option index."
             )
 
-        match event.select.id:
-            case "character":
-                if value != self.character_index:
-                    self.update_character(value)
-            case "clothes":
-                self.clothes_index = value
-            case "appearance":
-                self.appearance_index = value
+        if value == self.character_index:
+            return
 
-        self.save_output()
+        self.character_index = value
+        self.action_resample()
 
-    def save_output(self) -> None:
-        character = self.configuration.characters[self.character_index]
-        appearance = character.appearances[self.appearance_index]
-        clothes = character.clothes[self.clothes_index]
+    def reload_templates(self) -> None:
+        try:
+            modified = self.template_path.stat().st_mtime_ns
 
-        prompts = [
-            template.render(
-                character=character.name,
-                clothes=clothes,
-                appearance=appearance,
-                appearnace=appearance,
-            ).strip()
-            for template in self.templates
-        ]
-        text = "\n".join(f"- {prompt}" for prompt in prompts) + "\n"
+            if modified == self.template_modified:
+                self.last_reload_error = None
+                return
 
-        self.output.write_text(text, encoding="utf-8")
-        self.query_one("#preview", Static).update(text)
+            configuration = load_configuration(self.template_path)
+            templates = compile_templates(configuration.templates)
+
+            selected_name = self.configuration.characters[
+                self.character_index
+            ].character
+
+            selected_index = next(
+                (
+                    index
+                    for index, character in enumerate(
+                        configuration.characters
+                    )
+                    if character.character == selected_name
+                ),
+                0,
+            )
+
+            # Validate rendering and write the new output before replacing
+            # the currently working configuration.
+            text = generate_prompts(
+                configuration,
+                templates,
+                selected_index,
+            )
+            self.save_output(text)
+
+            self.configuration = configuration
+            self.templates = templates
+            self.character_index = selected_index
+
+            selector = self.query_one("#character", Select)
+            selector.set_options(
+                [
+                    (character.character, index)
+                    for index, character in enumerate(
+                        configuration.characters
+                    )
+                ]
+            )
+            selector.value = selected_index
+
+            self.template_modified = modified
+            self.last_reload_error = None
+
+        except Exception as error:
+            message = str(error)
+
+            if message != self.last_reload_error:
+                self.notify(
+                    message,
+                    title="Could not reload configuration",
+                    severity="error",
+                    timeout=10,
+                )
+                self.last_reload_error = message
 
 
-@beartype
 def main() -> None:
+    if (
+        isinstance(SAMPLES_PER_PROMPT, bool)
+        or not isinstance(SAMPLES_PER_PROMPT, int)
+        or SAMPLES_PER_PROMPT < 1
+    ):
+        raise ValueError("SAMPLES_PER_PROMPT must be a positive integer.")
+
     parser = argparse.ArgumentParser(
-        description="Interactively select character prompts and save every change."
+        description=(
+            "Generate random prompt combinations for a selected character "
+            "and save every resample."
+        )
     )
     parser.add_argument("templates", type=Path)
     parser.add_argument("output", type=Path)
     arguments = parser.parse_args()
 
-    PromptApp(arguments.templates, arguments.output).run()
+    try:
+        app = PromptApp(arguments.templates, arguments.output)
+    except Exception as error:
+        parser.exit(1, f"Error: {error}\n")
+
+    app.run()
 
 
 if __name__ == "__main__":
