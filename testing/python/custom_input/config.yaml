@@ -258,11 +258,6 @@ devices:
               type: "focus_window"
               text: "kitty.kitty"
             image_path: "~/defaultdirs/images/streamdeck/kitty_termina.png"
-          7:
-            action:
-              type: "execute_script"
-              script: "gammaray"
-            image_path: "~/defaultdirs/images/streamdeck/gammaray.png"
           8:
             action:
               type: "focus_window"
@@ -326,16 +321,16 @@ devices:
           # middle +/-
           - code: "KEY_9" # +
             action:
-              type: "show_notification"
-              summary: "KEY_9"
+              type: "execute_script"
+              script: "strawberry --next"
           - code: "KEY_7" # -
             action:
-              type: "show_notification"
-              summary: "KEY_7"
+              type: "execute_script"
+              script: "strawberry --previous"
           - code: "KEY_8" # click
             action:
-              type: "show_notification"
-              summary: "KEY_8"
+              type: "execute_script"
+              script: "strawberry --play-pause"
           # bottom left +/-
           - code: "KEY_6" # +
             action:
@@ -369,16 +364,17 @@ devices:
               type: "convert_clipboard_to_png"
           - code: "KEY_K" 
             action:
-              type: "show_notification"
-              summary: "KEY_K"
+              type: "execute_script"
+              script: "kitty @ --to unix:@kitty-control send-key --match 'title:repeat-target' up enter"
           - code: "KEY_J" 
             action:
-              type: "show_notification"
-              summary: "KEY_J"
+              type: "execute_script"
+              script: "kitty_at_center.py -e aichat --role develop --save-session --session $(date -Is) --model openrouter:openai/gpt-6.1-sol"
           - code: "KEY_I" 
             action:
-              type: "show_notification"
-              summary: "KEY_I"
+              # `Copy selection as Markdown` action in vscode
+              type: "emulate_shortcut"
+              shortcut: "Ctrl+Shift+Alt+Insert"
 
           # middle row
           - code: "KEY_H" 

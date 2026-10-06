@@ -1,10 +1,15 @@
 from pathlib import Path
+
+import pyautogui
 from beartype import beartype
 from beartype.typing import List, Literal
-import pyautogui
 from pydantic import BaseModel, field_validator
 
-from custom_input.actions.action import Action, ActionCreateContext, ActionTriggerContext
+from custom_input.actions.action import (
+    Action,
+    ActionCreateContext,
+    ActionTriggerContext,
+)
 
 
 class EmulateShortcutActionConfig(BaseModel):
@@ -27,7 +32,7 @@ class EmulateShortcutAction(Action[EmulateShortcutActionConfig]):
 
     def __init__(self, config: EmulateShortcutActionConfig,
                  create_ctx: ActionCreateContext) -> None:
-        super().__init__(config=config, create_ctx=self.create_ctx)
+        super().__init__(config=config, create_ctx=create_ctx)
         self.keys = [key.strip() for key in config.shortcut.split("+")]
 
     def execute(self, context: ActionTriggerContext) -> None:
