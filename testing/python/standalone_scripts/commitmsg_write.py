@@ -92,39 +92,115 @@ def diff_line_counts(diff: str) -> tuple[int, int]:
     return added, removed
 
 
-def side_by_side_rows(
-    hunk: str, ) -> tuple[list[tuple[str, bool]], list[tuple[str, bool]]]:
-    left = []
-    right = []
-    deleted = []
-    added = []
+DiffRow = tuple[str, bool, int | None]
+
+
+def side_by_side_rows(hunk: str) -> tuple[list[DiffRow], list[DiffRow]]:
+    lines = hunk.splitlines()
+    header = re.match(
+        r"^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@",
+        lines[0],
+    )
+    if header is None:
+        raise ValueError(f"Invalid hunk header: {lines[0]}")
+
+    old_number = int(header.group(1))
+    new_number = int(header.group(2))
+
+    left: list[DiffRow] = []
+    right: list[DiffRow] = []
+    deleted: list[tuple[str, int]] = []
+    added: list[tuple[str, int]] = []
 
     def flush_changes() -> None:
         for old, new in zip_longest(deleted, added, fillvalue=None):
-            left.append((old or "", old is not None))
-            right.append((new or "", new is not None))
+            if old is None:
+                left.append(("", False, None))
+            else:
+                left.append((old[0], True, old[1]))
+
+            if new is None:
+                right.append(("", False, None))
+            else:
+                right.append((new[0], True, new[1]))
+
         deleted.clear()
         added.clear()
 
-    for line in hunk.splitlines()[1:]:
+    for line in lines[1:]:
         if line.startswith("-"):
-            deleted.append(line[1:])
+            deleted.append((line[1:], old_number))
+            old_number += 1
         elif line.startswith("+"):
-            added.append(line[1:])
+            added.append((line[1:], new_number))
+            new_number += 1
         elif line.startswith(" "):
             flush_changes()
-            left.append((line[1:], False))
-            right.append((line[1:], False))
+            left.append((line[1:], False, old_number))
+            right.append((line[1:], False, new_number))
+            old_number += 1
+            new_number += 1
         elif line.startswith("\\"):
-            # Git's "No newline at end of file" annotation is retained
-            # in the referenced hunk, but is not a source-code row.
             continue
 
     flush_changes()
     return left, right
 
 
-def configure_diff_guides(editor: QsciScintilla) -> None:
+def make_diff_editor(rows: list[tuple[str, bool, int | None]],
+                     added: bool) -> QsciScintilla:
+    editor = QsciScintilla()
+    configure_editor(editor)
+
+    editor.setContentsMargins(0, 0, 0, 0)
+    editor.setWrapMode(QsciScintilla.WrapMode.WrapNone)
+    editor.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+
+    # Replace Scintilla's default scroll width with content-width tracking.
+    editor.SendScintilla(QsciScintilla.SCI_SETSCROLLWIDTH, 1)
+    editor.SendScintilla(QsciScintilla.SCI_SETSCROLLWIDTHTRACKING, 1)
+
+    editor.setText("\n".join(text for text, changed, number in rows))
+    editor.setReadOnly(True)
+
+    editor.setMarginType(
+        0,
+        QsciScintilla.MarginType.TextMarginRightJustified,
+    )
+    largest_number = max(
+        (number for text, changed, number in rows if number is not None),
+        default=0,
+    )
+    editor.setMarginWidth(0, f" {largest_number} ")
+    editor.setMarginsForegroundColor(editor.palette().text().color())
+    editor.setMarginsBackgroundColor(editor.palette().base().color())
+
+    for row_index, (text, changed, number) in enumerate(rows):
+        if number is not None:
+            editor.setMarginText(row_index, str(number), 0)
+
+    base = editor.palette().base().color()
+    tint = QColor("#32a852" if added else "#e05252")
+    background = QColor(
+        round(base.red() * 0.82 + tint.red() * 0.18),
+        round(base.green() * 0.82 + tint.green() * 0.18),
+        round(base.blue() * 0.82 + tint.blue() * 0.18),
+    )
+
+    marker = editor.markerDefine(QsciScintilla.MarkerSymbol.Background)
+    editor.setMarkerBackgroundColor(background, marker)
+
+    for row_index, (text, changed, number) in enumerate(rows):
+        if changed:
+            editor.markerAdd(row_index, marker)
+
+    line_height = editor.fontMetrics().height()
+    editor.setFixedHeight(min(460, max(80,
+                                       (len(rows) + 1) * line_height + 20)))
+    return editor
+
+
+def configure_column_guides(editor: QsciScintilla) -> None:
     guide_color = editor.palette().mid().color()
     scintilla_color = (guide_color.red() | (guide_color.green() << 8) |
                        (guide_color.blue() << 16))
@@ -139,40 +215,6 @@ def configure_diff_guides(editor: QsciScintilla) -> None:
             column,
             scintilla_color,
         )
-
-
-def make_diff_editor(
-    rows: list[tuple[str, bool]],
-    added: bool,
-) -> QsciScintilla:
-    editor = QsciScintilla()
-    configure_editor(editor)
-    configure_diff_guides(editor)
-
-    editor.setContentsMargins(0, 0, 0, 0)
-    editor.setWrapMode(QsciScintilla.WrapMode.WrapNone)
-    editor.setText("\n".join(text for text, changed in rows))
-    editor.setReadOnly(True)
-
-    base = editor.palette().base().color()
-    tint = QColor("#32a852" if added else "#e05252")
-    background = QColor(
-        round(base.red() * 0.82 + tint.red() * 0.18),
-        round(base.green() * 0.82 + tint.green() * 0.18),
-        round(base.blue() * 0.82 + tint.blue() * 0.18),
-    )
-
-    marker = editor.markerDefine(QsciScintilla.MarkerSymbol.Background)
-    editor.setMarkerBackgroundColor(background, marker)
-
-    for line_number, (text, changed) in enumerate(rows):
-        if changed:
-            editor.markerAdd(line_number, marker)
-
-    line_height = editor.fontMetrics().height()
-    editor.setFixedHeight(min(460, max(80,
-                                       (len(rows) + 1) * line_height + 20)))
-    return editor
 
 
 def make_side_by_side_preview(hunk: str) -> QWidget:
@@ -192,10 +234,6 @@ def make_side_by_side_preview(hunk: str) -> QWidget:
         right.verticalScrollBar().setValue)
     right.verticalScrollBar().valueChanged.connect(
         left.verticalScrollBar().setValue)
-    left.horizontalScrollBar().valueChanged.connect(
-        right.horizontalScrollBar().setValue)
-    right.horizontalScrollBar().valueChanged.connect(
-        left.horizontalScrollBar().setValue)
 
     return widget
 
@@ -423,6 +461,8 @@ class CommitWindow(QMainWindow):
         self.resize(1550, 950)
 
         self.build_ui()
+        configure_editor(self.message)
+        configure_column_guides(self.message)
 
         self.save_timer = QTimer(self)
         self.save_timer.setSingleShot(True)
