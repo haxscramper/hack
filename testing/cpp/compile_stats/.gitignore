@@ -1,5 +1,0 @@
-.conan_install
-input.json
-CMakeUserPresets.json
-!build_stats.code-workspace
-perf.data*
