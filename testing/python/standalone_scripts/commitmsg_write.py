@@ -16,6 +16,10 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from itertools import zip_longest
+
+from PyQt6.QtGui import QColor
+from PyQt6.QtWidgets import QMenu
 
 from PyQt6.Qsci import QsciLexerDiff, QsciLexerMarkdown, QsciScintilla
 from PyQt6.QtCore import Qt, QThread, QTimer, pyqtSignal
@@ -72,6 +76,128 @@ class FileDiff:
     @property
     def key(self) -> tuple[str, str]:
         return self.section, self.path
+
+
+def diff_line_counts(diff: str) -> tuple[int, int]:
+    added = 0
+    removed = 0
+
+    for hunk in extract_hunks(diff):
+        for line in hunk.splitlines()[1:]:
+            if line.startswith("+"):
+                added += 1
+            elif line.startswith("-"):
+                removed += 1
+
+    return added, removed
+
+
+def side_by_side_rows(
+    hunk: str, ) -> tuple[list[tuple[str, bool]], list[tuple[str, bool]]]:
+    left = []
+    right = []
+    deleted = []
+    added = []
+
+    def flush_changes() -> None:
+        for old, new in zip_longest(deleted, added, fillvalue=None):
+            left.append((old or "", old is not None))
+            right.append((new or "", new is not None))
+        deleted.clear()
+        added.clear()
+
+    for line in hunk.splitlines()[1:]:
+        if line.startswith("-"):
+            deleted.append(line[1:])
+        elif line.startswith("+"):
+            added.append(line[1:])
+        elif line.startswith(" "):
+            flush_changes()
+            left.append((line[1:], False))
+            right.append((line[1:], False))
+        elif line.startswith("\\"):
+            # Git's "No newline at end of file" annotation is retained
+            # in the referenced hunk, but is not a source-code row.
+            continue
+
+    flush_changes()
+    return left, right
+
+
+def configure_diff_guides(editor: QsciScintilla) -> None:
+    guide_color = editor.palette().mid().color()
+    scintilla_color = (guide_color.red() | (guide_color.green() << 8) |
+                       (guide_color.blue() << 16))
+
+    # Scintilla EDGE_MULTILINE = 3.
+    editor.SendScintilla(QsciScintilla.SCI_SETEDGEMODE, 3)
+    editor.SendScintilla(QsciScintilla.SCI_MULTIEDGECLEARALL)
+
+    for column in (50, 75):
+        editor.SendScintilla(
+            QsciScintilla.SCI_MULTIEDGEADDLINE,
+            column,
+            scintilla_color,
+        )
+
+
+def make_diff_editor(
+    rows: list[tuple[str, bool]],
+    added: bool,
+) -> QsciScintilla:
+    editor = QsciScintilla()
+    configure_editor(editor)
+    configure_diff_guides(editor)
+
+    editor.setContentsMargins(0, 0, 0, 0)
+    editor.setWrapMode(QsciScintilla.WrapMode.WrapNone)
+    editor.setText("\n".join(text for text, changed in rows))
+    editor.setReadOnly(True)
+
+    base = editor.palette().base().color()
+    tint = QColor("#32a852" if added else "#e05252")
+    background = QColor(
+        round(base.red() * 0.82 + tint.red() * 0.18),
+        round(base.green() * 0.82 + tint.green() * 0.18),
+        round(base.blue() * 0.82 + tint.blue() * 0.18),
+    )
+
+    marker = editor.markerDefine(QsciScintilla.MarkerSymbol.Background)
+    editor.setMarkerBackgroundColor(background, marker)
+
+    for line_number, (text, changed) in enumerate(rows):
+        if changed:
+            editor.markerAdd(line_number, marker)
+
+    line_height = editor.fontMetrics().height()
+    editor.setFixedHeight(min(460, max(80,
+                                       (len(rows) + 1) * line_height + 20)))
+    return editor
+
+
+def make_side_by_side_preview(hunk: str) -> QWidget:
+    left_rows, right_rows = side_by_side_rows(hunk)
+
+    widget = QWidget()
+    layout = QHBoxLayout(widget)
+    layout.setContentsMargins(0, 0, 0, 0)
+    layout.setSpacing(2)
+
+    left = make_diff_editor(left_rows, added=False)
+    right = make_diff_editor(right_rows, added=True)
+    layout.addWidget(left, 1)
+    layout.addWidget(right, 1)
+
+    left.verticalScrollBar().valueChanged.connect(
+        right.verticalScrollBar().setValue)
+    right.verticalScrollBar().valueChanged.connect(
+        left.verticalScrollBar().setValue)
+    left.horizontalScrollBar().valueChanged.connect(
+        right.horizontalScrollBar().setValue)
+    right.horizontalScrollBar().valueChanged.connect(
+        left.horizontalScrollBar().setValue)
+
+    return widget
 
 
 class Repository:
@@ -334,7 +460,10 @@ class CommitWindow(QMainWindow):
         files_layout.addLayout(files_toolbar)
 
         self.tree = QTreeWidget()
-        self.tree.setHeaderLabels(["Files", "Status"])
+        self.tree.setHeaderLabels(["Files", "Status", "+", "−"])
+        self.tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.tree.customContextMenuRequested.connect(self.show_staging_menu)
+
         self.tree.setSelectionMode(
             QAbstractItemView.SelectionMode.ExtendedSelection)
         self.tree.currentItemChanged.connect(self.selected_file_changed)
@@ -354,18 +483,18 @@ class CommitWindow(QMainWindow):
         # Read-only, individually referenceable diff hunks.
         hunks_panel = QWidget()
         hunks_layout = QVBoxLayout(hunks_panel)
-        self.hunks_title = QLabel("All changes")
-        hunks_layout.addWidget(self.hunks_title)
+        hunks_layout.setContentsMargins(0, 0, 0, 0)
+        hunks_layout.setSpacing(0)
 
         self.hunks_scroll = QScrollArea()
         self.hunks_scroll.setWidgetResizable(True)
+        self.hunks_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
         hunks_layout.addWidget(self.hunks_scroll)
         self.splitter.addWidget(hunks_panel)
 
         # Markdown commit message.
         message_panel = QWidget()
         message_layout = QVBoxLayout(message_panel)
-        message_layout.addWidget(QLabel("Commit message"))
 
         self.message = QsciScintilla()
         configure_editor(self.message)
@@ -440,6 +569,11 @@ class CommitWindow(QMainWindow):
         self.tree.blockSignals(True)
         self.tree.clear()
 
+        counts = {
+            file_diff.key: diff_line_counts(file_diff.text)
+            for file_diff in self.file_diffs
+        }
+
         for section in ("Staged", "Unstaged"):
             matching = [
                 change for change in self.changes
@@ -460,8 +594,18 @@ class CommitWindow(QMainWindow):
 
                 status = (change.index_status
                           if section == "Staged" else change.worktree_status)
-                item = QTreeWidgetItem(parent, [parts[-1], status])
+
                 key = section, change.path
+                added, removed = counts.get(key, (0, 0))
+
+                item = QTreeWidgetItem(
+                    parent,
+                    [parts[-1], status,
+                     str(added), str(removed)],
+                )
+                item.setTextAlignment(2, Qt.AlignmentFlag.AlignRight)
+                item.setTextAlignment(3, Qt.AlignmentFlag.AlignRight)
+
                 item.setData(0, Qt.ItemDataRole.UserRole, key)
                 item.setToolTip(0, change.path)
 
@@ -469,7 +613,9 @@ class CommitWindow(QMainWindow):
                     self.tree.setCurrentItem(item)
 
         self.tree.expandAll()
-        self.tree.resizeColumnToContents(0)
+        for column in range(self.tree.columnCount()):
+            self.tree.resizeColumnToContents(column)
+
         self.tree.blockSignals(False)
 
     def selected_file_changed(
@@ -505,6 +651,28 @@ class CommitWindow(QMainWindow):
 
         return sorted(paths)
 
+    def show_staging_menu(self, position) -> None:
+        item = self.tree.itemAt(position)
+        if item is None:
+            return
+
+        if not item.isSelected():
+            self.tree.clearSelection()
+            self.tree.setCurrentItem(item)
+            item.setSelected(True)
+
+        menu = QMenu(self)
+
+        stage_action = menu.addAction("Stage")
+        stage_action.setEnabled(bool(self.selected_paths("Unstaged")))
+        stage_action.triggered.connect(self.stage_selected)
+
+        unstage_action = menu.addAction("Unstage")
+        unstage_action.setEnabled(bool(self.selected_paths("Staged")))
+        unstage_action.triggered.connect(self.unstage_selected)
+
+        menu.exec(self.tree.viewport().mapToGlobal(position))
+
     def stage_selected(self) -> None:
         self.change_staging(staged=True)
 
@@ -535,17 +703,13 @@ class CommitWindow(QMainWindow):
 
         content = QWidget()
         layout = QVBoxLayout(content)
+        layout.setContentsMargins(2, 2, 2, 2)
+        layout.setSpacing(3)
 
         visible = [
             item for item in self.file_diffs
             if self.filter_key is None or item.key == self.filter_key
         ]
-
-        if self.filter_key is None:
-            self.hunks_title.setText("All changes")
-        else:
-            section, path = self.filter_key
-            self.hunks_title.setText(f"{section}: {path}")
 
         if not visible:
             layout.addWidget(QLabel("No changes."))
@@ -567,6 +731,9 @@ class CommitWindow(QMainWindow):
 
             for hunk in hunks:
                 toolbar = QHBoxLayout()
+                toolbar.setContentsMargins(0, 0, 0, 0)
+                toolbar.setSpacing(3)
+
                 header = QLabel(hunk.splitlines()[0])
                 header.setWordWrap(True)
                 toolbar.addWidget(header, 1)
@@ -578,25 +745,9 @@ class CommitWindow(QMainWindow):
                 toolbar.addWidget(reference_button)
                 layout.addLayout(toolbar)
 
-                editor = QsciScintilla()
-                configure_editor(editor)
+                layout.addWidget(make_side_by_side_preview(hunk))
 
-                lexer = QsciLexerDiff(editor)
-                lexer.setDefaultFont(editor.font())
-                editor.setLexer(lexer)
-                editor.setText(hunk)
-                editor.setReadOnly(True)
-                editor.setWrapMode(QsciScintilla.WrapMode.WrapNone)
-
-                line_height = editor.fontMetrics().height()
-                height = min(
-                    460,
-                    max(90, (len(hunk.splitlines()) + 2) * line_height + 24),
-                )
-                editor.setFixedHeight(height)
-                layout.addWidget(editor)
-
-            layout.addSpacing(18)
+            layout.addSpacing(6)
 
         layout.addStretch()
         self.hunks_scroll.setWidget(content)
