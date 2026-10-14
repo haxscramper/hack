@@ -15,22 +15,24 @@ import re
 import subprocess
 import sys
 from dataclasses import dataclass
-from pathlib import Path
 from itertools import zip_longest
-
-from PyQt6.QtGui import QColor
-from PyQt6.QtWidgets import QMenu
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from PyQt6.Qsci import QsciLexerDiff, QsciLexerMarkdown, QsciScintilla
 from PyQt6.QtCore import Qt, QThread, QTimer, pyqtSignal
-from PyQt6.QtGui import QFontDatabase
+from PyQt6.QtGui import QColor, QFontDatabase
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QApplication,
+    QDialog,
+    QDialogButtonBox,
     QHBoxLayout,
     QLabel,
     QMainWindow,
+    QMenu,
     QMessageBox,
+    QPlainTextEdit,
     QPushButton,
     QScrollArea,
     QSplitter,
@@ -90,6 +92,39 @@ def diff_line_counts(diff: str) -> tuple[int, int]:
                 removed += 1
 
     return added, removed
+
+
+def remove_template_comments(message: str) -> str:
+    result = []
+    fence_character = None
+    fence_length = 0
+
+    for line in message.splitlines(keepends=True):
+        match = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", line)
+
+        if fence_character is not None:
+            result.append(line)
+
+            if match is not None:
+                delimiter, remainder = match.groups()
+                if (delimiter[0] == fence_character
+                        and len(delimiter) >= fence_length
+                        and not remainder.strip()):
+                    fence_character = None
+                    fence_length = 0
+
+            continue
+
+        if match is not None:
+            delimiter, remainder = match.groups()
+            fence_character = delimiter[0]
+            fence_length = len(delimiter)
+            result.append(line)
+        elif not line.startswith("#"):
+            result.append(line)
+
+    cleaned = "".join(result).rstrip()
+    return cleaned + "\n" if cleaned else ""
 
 
 DiffRow = tuple[str, bool, int | None]
@@ -241,7 +276,7 @@ def make_side_by_side_preview(hunk: str) -> QWidget:
 class Repository:
 
     def __init__(self, path: Path):
-        result = subprocess.run(
+        result = subprocess.run(  # noqa
             ["git", "-C",
              str(path), "rev-parse", "--show-toplevel"],
             stdout=subprocess.PIPE,
@@ -255,6 +290,65 @@ class Repository:
         self.message_path = Path(os.fsdecode(git_path.rstrip(b"\n")))
         if not self.message_path.is_absolute():
             self.message_path = self.root / self.message_path
+
+    def prepare_message(self) -> str:
+        self.save_message("")
+        self.run([
+            "hook",
+            "run",
+            "--ignore-missing",
+            "prepare-commit-msg",
+            "--",
+            str(self.message_path),
+            "message",
+        ])
+
+        prepared = self.message_path.read_text(encoding="utf-8")
+        cleaned = remove_template_comments(prepared)
+        self.save_message(cleaned)
+        return cleaned
+
+    def load_prepared_message(self) -> str:
+        if self.message_path.exists():
+            draft = self.message_path.read_text(encoding="utf-8")
+            cleaned = remove_template_comments(draft)
+
+            if cleaned.strip():
+                self.save_message(cleaned)
+                return cleaned
+
+        return self.prepare_message()
+
+    def commit_process(self) -> subprocess.CompletedProcess:
+        output = self.run([
+            "rev-parse",
+            "--path-format=absolute",
+            "--git-path",
+            "hooks",
+        ])
+        hooks_path = Path(os.fsdecode(output.rstrip(b"\n")))
+
+        with TemporaryDirectory(prefix="commitmsg-hooks-") as directory:
+            temporary_hooks = Path(directory)
+
+            if hooks_path.is_dir():
+                for hook in hooks_path.iterdir():
+                    if hook.name == "prepare-commit-msg":
+                        continue
+
+                    (temporary_hooks / hook.name).symlink_to(
+                        hook,
+                        target_is_directory=hook.is_dir(),
+                    )
+
+            return self.process([
+                "-c",
+                f"core.hooksPath={temporary_hooks}",
+                "commit",
+                "--cleanup=verbatim",
+                "--file",
+                str(self.message_path),
+            ])
 
     def process(self, arguments: list[str]) -> subprocess.CompletedProcess:
         return subprocess.run(
@@ -416,12 +510,7 @@ class CommitWorker(QThread):
             for attempt in range(1, 5):
                 self.progress.emit(f"Committing: attempt {attempt}/4")
 
-                result = self.repository.process([
-                    "commit",
-                    "--cleanup=verbatim",
-                    "--file",
-                    str(self.repository.message_path),
-                ])
+                result = self.repository.commit_process()
                 output = result.stdout.decode("utf-8", errors="replace")
                 transcript.append(
                     f"=== Commit attempt {attempt}/4 ===\n{output}")
@@ -469,9 +558,7 @@ class CommitWindow(QMainWindow):
         self.save_timer.setInterval(250)
         self.save_timer.timeout.connect(self.save_message)
 
-        if repository.message_path.exists():
-            self.message.setText(
-                repository.message_path.read_text(encoding="utf-8"))
+        self.message.setText(repository.load_prepared_message())
         self.message.textChanged.connect(self.message_changed)
         self.update_commit_button()
 
@@ -839,20 +926,38 @@ class CommitWindow(QMainWindow):
 
     def commit_completed(self, success: bool, output: str) -> None:
         if success:
-            self.message.clear()
             self.save_timer.stop()
-            self.save_message()
+            prepared_message = self.repository.prepare_message()
+            self.message.setText(prepared_message)
+            self.save_timer.stop()
             self.statusBar().showMessage("Commit created.", 10000)
+
         else:
             self.statusBar().showMessage("Commit failed.")
-            dialog = QMessageBox(self)
-            dialog.setIcon(QMessageBox.Icon.Critical)
+
+            dialog = QDialog(self)
             dialog.setWindowTitle("Commit failed")
-            dialog.setText(
-                "The commit failed. The commit message has been preserved.")
-            dialog.setInformativeText(
-                "Git and pre-commit output is available below.")
-            dialog.setDetailedText(output)
+            dialog.setSizeGripEnabled(True)
+            dialog.resize(900, 650)
+
+            layout = QVBoxLayout(dialog)
+            layout.addWidget(
+                QLabel(
+                    "The commit failed. The commit message has been preserved."
+                ))
+
+            output_view = QPlainTextEdit()
+            output_view.setReadOnly(True)
+            output_view.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
+            output_view.setFont(
+                QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont))
+            output_view.setPlainText(output)
+            layout.addWidget(output_view, 1)
+
+            buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+            buttons.rejected.connect(dialog.reject)
+            layout.addWidget(buttons)
+
             dialog.exec()
 
     def worker_finished(self) -> None:
