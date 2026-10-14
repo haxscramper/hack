@@ -293,13 +293,62 @@ devices:
     id: "evdev-1"
     path: "/dev/input/by-id/usb-1189_USB_Composite_Device_CD70134330393538-if01-event-kbd"
 
-    physical: 
-      - button_id: "KEY_O"
-        pos: { x: 0, y: 1, width: 2, height: 2 }
+    physical:
       - button_id: "KEY_M"
-        pos: { x: 2, y: 0, width: 2, height: 2 }
+        pos: { x: 6, y: 1.5, width: 3, height: 3 }
       - button_id: "KEY_N"
-        pos: { x: 4, y: 1, width: 2, height: 2 }
+        pos: { x: 9, y: 0, width: 3, height: 3 }
+      - button_id: "KEY_O"
+        pos: { x: 12, y: 1.5, width: 3, height: 3 }
+
+      - button_id: "KEY_7"
+        pos: { x: 6, y: 7.5, width: 3, height: 3 }
+      - button_id: "KEY_8"
+        pos: { x: 9, y: 6, width: 3, height: 3 }
+      - button_id: "KEY_9"
+        pos: { x: 12, y: 7.5, width: 3, height: 3 }
+
+      - button_id: "KEY_4"
+        pos: { x: 0, y: 13.5, width: 3, height: 3 }
+      - button_id: "KEY_5"
+        pos: { x: 3, y: 12, width: 3, height: 3 }
+      - button_id: "KEY_6"
+        pos: { x: 6, y: 13.5, width: 3, height: 3 }
+
+      - button_id: "KEY_1"
+        pos: { x: 12, y: 13.5, width: 3, height: 3 }
+      - button_id: "KEY_2"
+        pos: { x: 15, y: 12, width: 3, height: 3 }
+      - button_id: "KEY_3"
+        pos: { x: 18, y: 13.5, width: 3, height: 3 }
+
+      - button_id: "KEY_L"
+        pos: { x: 24, y: 3, width: 3, height: 3 }
+      - button_id: "KEY_K"
+        pos: { x: 27, y: 3, width: 3, height: 3 }
+      - button_id: "KEY_J"
+        pos: { x: 30, y: 3, width: 3, height: 3 }
+      - button_id: "KEY_I"
+        pos: { x: 33, y: 3, width: 3, height: 3 }
+
+      - button_id: "KEY_H"
+        pos: { x: 24, y: 6, width: 3, height: 3 }
+      - button_id: "KEY_G"
+        pos: { x: 27, y: 6, width: 3, height: 3 }
+      - button_id: "KEY_F"
+        pos: { x: 30, y: 6, width: 3, height: 3 }
+      - button_id: "KEY_E"
+        pos: { x: 33, y: 6, width: 3, height: 3 }
+
+      - button_id: "KEY_D"
+        pos: { x: 24, y: 9, width: 3, height: 3 }
+      - button_id: "KEY_C"
+        pos: { x: 27, y: 9, width: 3, height: 3 }
+      - button_id: "KEY_B"
+        pos: { x: 30, y: 9, width: 3, height: 3 }
+      - button_id: "KEY_A"
+        pos: { x: 33, y: 9, width: 3, height: 3 }
+
         
     layers: 
       - name: "Main"
@@ -379,8 +428,9 @@ devices:
           # middle row
           - code: "KEY_H" 
             action:
-              type: "show_notification"
-              summary: "KEY_H"
+              type: "execute_script"
+              script: "playerctl_wrap.py --window chrom next"
+              fault_tolerant: true
           - code: "KEY_G" 
             action:
               type: "show_notification"

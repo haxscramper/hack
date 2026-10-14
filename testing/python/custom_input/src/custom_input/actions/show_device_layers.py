@@ -123,23 +123,15 @@ def show_device_overlay(display: DeviceDisplay) -> None:
     layer_title_height = 40
     layer_gap = 24
 
-    device_title_font = tkinter.font.Font(
-        root=root,
-        family="Sans",
-        size=20,
-        weight="bold",
-    )
-    layer_title_font = tkinter.font.Font(
-        root=root,
-        family="Sans",
-        size=17,
-        weight="bold",
-    )
-    button_font = tkinter.font.Font(
-        root=root,
-        family="Sans",
-        size=10,
-    )
+    device_title_font = tkinter.font.Font(root=root,
+                                          family="Sans",
+                                          size=20,
+                                          weight="bold")
+    layer_title_font = tkinter.font.Font(root=root,
+                                         family="Sans",
+                                         size=17,
+                                         weight="bold")
+    button_font = tkinter.font.Font(root=root, family="Sans", size=10)
 
     layer_geometry: List[Tuple[LayerDisplay, float, float, float, float]] = []
     maximum_layout_width = 0.0
