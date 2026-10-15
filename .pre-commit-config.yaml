@@ -7,13 +7,24 @@ repos:
         language: system
         types: [python]
         pass_filenames: true
-  - repo: local
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.6
     hooks:
-      - id: yapf
-        name: Format python code
-        entry: yapf -i
-        language: system
-        types: [python]
+      - id: ruff-check
+        name: ruff fix imports
+        # I: sort and organize imports
+        # F401: remove unused impots
+        # UP035: import Sequence/Mapping from collections.abc instead of the typing
+        #        -- was removed, this option cannot be used for automatic fixes as
+        #        it fails to convert import of `Dict` to `dict` -- bad desing, a
+        #        diagnostic that is auto-fixable is mixed with one that cannot be
+        #        auto-fixed.
+        args:
+          - "--fix"
+          - "--select=I,I001,F401"
+          - "--fixable=I,I001,F401"
+
+      - id: ruff-format
   - repo: local
     hooks:
       - id: clang-format

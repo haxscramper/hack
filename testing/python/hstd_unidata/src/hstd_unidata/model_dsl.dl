@@ -1,0 +1,264 @@
+.decl record(id: symbol, kind: symbol, file: symbol, line: number)
+.decl inheritance(sub: symbol, sup: symbol)
+.decl field(rec: symbol, name: symbol, type_id: symbol, required: symbol, has_default: symbol, file: symbol, line: number)
+.decl field_default_key(rec: symbol, field_name: symbol, key_name: symbol, file: symbol, line: number)
+.decl variant_case(rec: symbol, case_type: symbol)
+.decl inline_variant_case(rec: symbol, field_name: symbol, case_type: symbol)
+.decl enum_entry(rec: symbol, name: symbol)
+
+.decl type_info(type_id: symbol, category: symbol, elem1: symbol, elem2: symbol)
+.decl tuple_elem(type_id: symbol, idx: number, elem_type: symbol)
+
+.decl expr(id: number, op: symbol, str_val: symbol, int_val: number, type_val: symbol, file: symbol, line: number)
+.decl expr_arg(parent: number, idx: number, arg_id: number)
+.decl root_check(rec: symbol, expr_id: number, expected_cat: symbol)
+.decl field_check(rec: symbol, field_name: symbol, expr_id: number)
+
+.input record
+.input inheritance
+.input field
+.input field_default_key
+.input variant_case
+.input inline_variant_case
+.input enum_entry
+.input type_info
+.input tuple_elem
+.input expr
+.input expr_arg
+.input root_check
+.input field_check
+
+.decl derived_from(sub: symbol, sup: symbol)
+derived_from(X, X) :- record(X, _, _, _).
+derived_from(X, Z) :- inheritance(X, Y), derived_from(Y, Z).
+
+.decl effective_field(rec: symbol, name: symbol, type_id: symbol)
+effective_field(R, N, T) :- field(R, N, T, _, _, _, _).
+effective_field(R, N, T) :- derived_from(R, Base), field(Base, N, T, _, _, _, _).
+
+.decl effective_variant_case(var_type: symbol, case_name: symbol, case_type: symbol)
+effective_variant_case(R, FName, FType) :-
+    variant_case(R, C),
+    effective_field(C, FName, FType).
+effective_variant_case(R, C, C) :-
+    variant_case(R, C).
+effective_variant_case(VarT, FName, FType) :-
+    inline_variant_case(R, FieldN, C),
+    effective_field(R, FieldN, VarT),
+    effective_field(C, FName, FType).
+effective_variant_case(VarT, ShortName, C) :-
+    inline_variant_case(R, FieldN, C),
+    effective_field(R, FieldN, VarT),
+    record(C, "case", _, _),
+    ShortName = C.
+
+.decl expr_scope(id: number, this_type: symbol, iter_type: symbol)
+expr_scope(E, R, "none") :- root_check(R, E, _).
+expr_scope(E, FT, "none") :- field_check(R, FN, E), effective_field(R, FN, FT).
+
+expr_scope(Arg, ThisT, IterT) :-
+    expr_scope(P, ThisT, IterT),
+    expr(P, Op, _, _, _, _, _),
+    Op != "all",
+    Op != "map",
+    expr_arg(P, _, Arg).
+
+expr_scope(CollArg, ThisT, IterT) :-
+    expr_scope(P, ThisT, IterT),
+    expr(P, Op, _, _, _, _, _),
+    (Op = "all" ; Op = "map"),
+    expr_arg(P, 0, CollArg).
+
+expr_scope(BodyArg, ThisT, ElemT) :-
+    expr_scope(P, ThisT, _),
+    expr(P, Op, _, _, _, _, _),
+    (Op = "all" ; Op = "map"),
+    expr_arg(P, 0, CollArg),
+    expr_type(CollArg, CollT),
+    type_info(CollT, "list", ElemT, _),
+    expr_arg(P, 1, BodyArg).
+
+.decl expr_type(id: number, type_id: symbol)
+
+expr_type(E, ThisT) :- expr(E, "this", _, _, _, _, _), expr_scope(E, ThisT, _).
+expr_type(E, IterT) :- expr(E, "iter", _, _, _, _, _), expr_scope(E, _, IterT), IterT != "none".
+expr_type(E, "int64") :- expr(E, "const_int", _, _, _, _, _).
+expr_type(E, "float64") :- expr(E, "const_float", _, _, _, _, _).
+expr_type(E, "string") :- expr(E, "const_str", _, _, _, _, _).
+expr_type(E, "bool") :- expr(E, "const_bool", _, _, _, _, _).
+
+expr_type(E, FT) :-
+    expr(E, "get_field", FName, _, _, _, _),
+    expr_arg(E, 0, ObjE),
+    expr_type(ObjE, ObjT),
+    effective_field(ObjT, FName, FT).
+
+expr_type(E, "bool") :-
+    expr(E, Op, _, _, _, _, _),
+    (Op = "eq" ; Op = "ne"),
+    expr_arg(E, 0, A1),
+    expr_arg(E, 1, A2),
+    expr_type(A1, T1),
+    expr_type(A2, T2),
+    T1 = T2.
+
+expr_type(E, "bool") :-
+    expr(E, Op, _, _, _, _, _),
+    (Op = "lt" ; Op = "le"),
+    expr_arg(E, 0, A1),
+    expr_arg(E, 1, A2),
+    expr_type(A1, T1),
+    expr_type(A2, T2),
+    type_info(T1, Cat, _, _),
+    type_info(T2, Cat, _, _),
+    (Cat = "int" ; Cat = "float").
+
+expr_type(E, "bool") :-
+    expr(E, Op, _, _, _, _, _),
+    (Op = "and" ; Op = "or"),
+    expr_arg(E, 0, A1),
+    expr_arg(E, 1, A2),
+    expr_type(A1, "bool"),
+    expr_type(A2, "bool").
+
+expr_type(E, "bool") :-
+    expr(E, "not", _, _, _, _, _),
+    expr_arg(E, 0, A1),
+    expr_type(A1, "bool").
+
+expr_type(E, "int64") :-
+    expr(E, "str_size", _, _, _, _, _),
+    expr_arg(E, 0, A1),
+    expr_type(A1, "string").
+
+expr_type(E, "bool") :-
+    expr(E, "str_regex", _, _, _, _, _),
+    expr_arg(E, 0, A1),
+    expr_type(A1, "string").
+
+expr_type(E, "string") :-
+    expr(E, "str_format", _, _, _, _, _),
+    expr_arg(E, 0, A1),
+    expr_type(A1, "string").
+
+expr_type(E, "int64") :-
+    expr(E, "list_size", _, _, _, _, _),
+    expr_arg(E, 0, A1),
+    expr_type(A1, T1),
+    (type_info(T1, "list", _, _) ; type_info(T1, "array", _, _)).
+
+expr_type(E, "int64") :-
+    expr(E, "map_size", _, _, _, _, _),
+    expr_arg(E, 0, A1),
+    expr_type(A1, T1),
+    type_info(T1, "map", _, _).
+
+expr_type(E, "bool") :-
+    expr(E, "map_contains", _, _, _, _, _),
+    expr_arg(E, 0, A1),
+    expr_arg(E, 1, A2),
+    expr_type(A1, MapT),
+    expr_type(A2, KeyT),
+    type_info(MapT, "map", KeyT, _).
+
+expr_type(E, "bool") :-
+    expr(E, "opt_has_value", _, _, _, _, _),
+    expr_arg(E, 0, A1),
+    expr_type(A1, OptT),
+    type_info(OptT, "optional", _, _).
+
+expr_type(E, InnerT) :-
+    expr(E, "opt_value", _, _, _, _, _),
+    expr_arg(E, 0, A1),
+    expr_type(A1, OptT),
+    type_info(OptT, "optional", InnerT, _).
+
+expr_type(E, "bool") :-
+    expr(E, "case_is", CaseName, _, _, _, _),
+    expr_arg(E, 0, A1),
+    expr_type(A1, VarT),
+    effective_variant_case(VarT, CaseName, _).
+
+expr_type(E, "string") :-
+    expr(E, "case_which", _, _, _, _, _),
+    expr_arg(E, 0, A1),
+    expr_type(A1, VarT),
+    effective_variant_case(VarT, _, _).
+
+expr_type(E, "bool") :-
+    expr(E, "enum_is", EnumVal, _, _, _, _),
+    expr_arg(E, 0, A1),
+    expr_type(A1, EnumT),
+    enum_entry(EnumT, EnumVal).
+
+expr_type(E, ElemT) :-
+    expr(E, "nth_get", _, Idx, _, _, _),
+    expr_arg(E, 0, A1),
+    expr_type(A1, TupT),
+    tuple_elem(TupT, Idx, ElemT).
+
+expr_type(E, "bool") :-
+    expr(E, "is_derived", _, _, TargetT, _, _),
+    expr_arg(E, 0, A1),
+    expr_type(A1, ObjT),
+    (derived_from(ObjT, TargetT) ; derived_from(TargetT, ObjT)).
+
+expr_type(E, "bool") :-
+    expr(E, "all", _, _, _, _, _),
+    expr_arg(E, 0, CollE),
+    expr_arg(E, 1, PredE),
+    expr_type(CollE, CollT),
+    type_info(CollT, "list", _, _),
+    expr_type(PredE, "bool").
+
+expr_type(E, "list<any>") :-
+    expr(E, "map", _, _, _, _, _),
+    expr_arg(E, 0, CollE),
+    expr_arg(E, 1, BodyE),
+    expr_type(CollE, CollT),
+    type_info(CollT, "list", _, _),
+    expr_type(BodyE, _).
+
+.decl validation_error(file: symbol, line: number, msg: symbol)
+.output validation_error
+
+validation_error(File, Line, cat("Field '", FName, "' in '", ObjT, "' does not exist")) :-
+    expr(E, "get_field", FName, _, _, File, Line),
+    expr_arg(E, 0, ObjE),
+    expr_type(ObjE, ObjT),
+    !effective_field(ObjT, FName, _).
+
+validation_error(File, Line, cat("Invalid variant case '", CaseName, "' on type '", VarT, "'")) :-
+    expr(E, "case_is", CaseName, _, _, File, Line),
+    expr_arg(E, 0, ObjE),
+    expr_type(ObjE, VarT),
+    !effective_variant_case(VarT, CaseName, _).
+
+validation_error(File, Line, cat("Invalid enum value '", EnumVal, "' on enum '", EnumT, "'")) :-
+    expr(E, "enum_is", EnumVal, _, _, File, Line),
+    expr_arg(E, 0, ObjE),
+    expr_type(ObjE, EnumT),
+    !enum_entry(EnumT, EnumVal).
+
+validation_error(File, Line, cat("Tuple index out of bounds on type '", TupT, "'")) :-
+    expr(E, "nth_get", _, Idx, _, File, Line),
+    expr_arg(E, 0, ObjE),
+    expr_type(ObjE, TupT),
+    !tuple_elem(TupT, Idx, _).
+
+validation_error(File, Line, cat("Type error or invalid operand in expression op '", Op, "'")) :-
+    expr(E, Op, _, _, _, File, Line),
+    expr_scope(E, _, _),
+    !expr_type(E, _).
+
+validation_error(File, Line, cat("Root check expression expected type '", ExpCat, "' but evaluated to '", ActualT, "'")) :-
+    root_check(_, E, ExpCat),
+    expr(E, _, _, _, _, File, Line),
+    expr_type(E, ActualT),
+    ActualT != ExpCat.
+
+validation_error(File, Line, cat("Default dict key '", Key, "' for field '", FN, "' is not a valid field of '", FT, "'")) :-
+    field(R, FN, FT, _, "true", _, _),
+    field_default_key(R, FN, Key, File, Line),
+    record(FT, "class", _, _),
+    !effective_field(FT, Key, _).
