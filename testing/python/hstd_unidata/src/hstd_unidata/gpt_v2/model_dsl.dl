@@ -1,0 +1,567 @@
+.type ExprId <: number
+.type BindingId <: number
+.type Position <: number
+.type OperationName <: symbol
+.type BehaviorName <: symbol
+.type DeclarationId <: symbol
+.type FieldName <: symbol
+.type CaseName <: symbol
+.type DiagnosticCode <: symbol
+
+.type Type
+    = I8 {}
+    | I16 {}
+    | I32 {}
+    | I64 {}
+    | U8 {}
+    | U16 {}
+    | U32 {}
+    | U64 {}
+    | F32 {}
+    | F64 {}
+    | String {}
+    | Bool {}
+    | NoneValue {}
+    | AnyValue {}
+    | PathValue {}
+    | TypeValue {}
+    | Named { id: DeclarationId }
+    | Param { name: symbol }
+    | List { element: Type }
+    | Array { element: Type, size: number }
+    | Map { key: Type, value: Type }
+    | TupleValue { elements: TypeList }
+    | OptionalValue { element: Type }
+    | Variant { cases: TypeList }
+    | Located { value: Type }
+    | Tree { root: Type }
+
+.type TypeList
+    = TNil {}
+    | TCons { head: Type, tail: TypeList }
+
+.decl operation(name: OperationName, behavior: BehaviorName)
+.decl expression(id: ExprId, op: OperationName, text: symbol, value: number, target: Type)
+.decl argument(owner: ExprId, position: Position, value: ExprId)
+.decl arity(owner: ExprId, cnt: Position)
+.decl this_type(id: ExprId, value: Type)
+.decl reference(id: ExprId, binding: BindingId)
+.decl collection_binding(binding: BindingId, owner: ExprId)
+.decl case_binding(binding: BindingId, owner: ExprId)
+.decl case_source(owner: ExprId, source: ExprId)
+.decl expected(id: ExprId, value: Type)
+.decl known_type(value: Type)
+.decl record(id: DeclarationId)
+.decl inheritance(sub: DeclarationId, sup: DeclarationId)
+.decl field(owner: Type, name: FieldName, value: Type)
+.decl variant_case(owner: Type, tag: CaseName, value: Type, enum_type: Type)
+.decl enum_entry(owner: Type, name: CaseName)
+.decl tuple_element(owner: Type, position: Position, value: Type)
+
+.input operation
+.input expression
+.input argument
+.input arity
+.input this_type
+.input reference
+.input collection_binding
+.input case_binding
+.input case_source
+.input expected
+.input known_type
+.input record
+.input inheritance
+.input field
+.input variant_case
+.input enum_entry
+.input tuple_element
+
+.decl expr_type(id: ExprId, value: Type)
+.decl used_type(value: Type)
+.decl type_kind(value: Type, kind: symbol)
+.decl unlocated(original: Type, value: Type)
+.decl view_type(id: ExprId, value: Type)
+.decl numeric(value: Type)
+.decl comparable(left: Type, right: Type)
+.decl element(collection: Type, value: Type)
+.decl sequence(value: TypeList)
+.decl sequence_member(sequence: TypeList, value: Type)
+.decl argument_types(owner: ExprId, position: Position, values: TypeList)
+.decl boolean_sequence(values: TypeList)
+.decl uniform_sequence(values: TypeList, value: Type)
+.decl derived(sub: DeclarationId, sup: DeclarationId)
+.decl contained(root: Type, value: Type)
+.decl can_match(source: Type, target: Type)
+.decl binding_type(binding: BindingId, value: Type)
+.decl match_alternative(owner: ExprId, value: Type)
+.decl match_covered(owner: ExprId, value: Type)
+
+used_type(T) :- known_type(T).
+used_type(T) :- expr_type(_, T).
+used_type(T) :- expression(_, _, _, _, T).
+used_type(T) :- field(_, _, T).
+used_type(T) :- used_type($List(T)).
+used_type(T) :- used_type($Array(T, _)).
+used_type(T) :- used_type($OptionalValue(T)).
+used_type(T) :- used_type($Located(T)).
+used_type(T) :- used_type($Tree(T)).
+used_type(K) :- used_type($Map(K, _)).
+used_type(V) :- used_type($Map(_, V)).
+used_type(T) :- used_type($TupleValue(S)), sequence_member(S, T).
+used_type(T) :- used_type($Variant(S)), sequence_member(S, T).
+
+type_kind($I8(), "plain").
+type_kind($I16(), "plain").
+type_kind($I32(), "plain").
+type_kind($I64(), "plain").
+type_kind($U8(), "plain").
+type_kind($U16(), "plain").
+type_kind($U32(), "plain").
+type_kind($U64(), "plain").
+type_kind($F32(), "plain").
+type_kind($F64(), "plain").
+type_kind($String(), "plain").
+type_kind($Bool(), "plain").
+type_kind($NoneValue(), "plain").
+type_kind($AnyValue(), "plain").
+type_kind($PathValue(), "plain").
+type_kind($TypeValue(), "plain").
+type_kind(T, "plain") :- used_type(T), T = $Named(_).
+type_kind(T, "plain") :- used_type(T), T = $Param(_).
+type_kind(T, "plain") :- used_type(T), T = $List(_).
+type_kind(T, "plain") :- used_type(T), T = $Array(_, _).
+type_kind(T, "plain") :- used_type(T), T = $Map(_, _).
+type_kind(T, "plain") :- used_type(T), T = $TupleValue(_).
+type_kind(T, "plain") :- used_type(T), T = $OptionalValue(_).
+type_kind(T, "plain") :- used_type(T), T = $Variant(_).
+type_kind(T, "plain") :- used_type(T), T = $Tree(_).
+type_kind(T, "located") :- used_type(T), T = $Located(_).
+
+unlocated(T, T) :- type_kind(T, "plain").
+unlocated($Located(T), T) :- used_type($Located(T)).
+view_type(E, T) :- expr_type(E, Original), unlocated(Original, T).
+
+numeric($I8()).
+numeric($I16()).
+numeric($I32()).
+numeric($I64()).
+numeric($U8()).
+numeric($U16()).
+numeric($U32()).
+numeric($U64()).
+numeric($F32()).
+numeric($F64()).
+
+comparable(T, T) :- used_type(T).
+comparable(A, B) :- numeric(A), numeric(B).
+
+element($List(T), T) :- used_type($List(T)).
+element($Array(T, N), T) :- used_type($Array(T, N)).
+
+sequence(S) :- argument_types(_, _, S).
+sequence(S) :- used_type($TupleValue(S)).
+sequence(S) :- used_type($Variant(S)).
+sequence(Tail) :- sequence($TCons(_, Tail)).
+sequence_member($TCons(T, _), T) :- sequence($TCons(T, _)).
+sequence_member($TCons(_, Tail), T) :-
+    sequence($TCons(_, Tail)),
+    sequence_member(Tail, T).
+
+argument_types(E, N, $TNil()) :- arity(E, N).
+argument_types(E, I, $TCons(T, Rest)) :-
+    argument(E, I, A),
+    expr_type(A, T),
+    argument_types(E, I + 1, Rest).
+
+boolean_sequence($TNil()).
+boolean_sequence($TCons($Bool(), Tail)) :-
+    sequence($TCons($Bool(), Tail)),
+    boolean_sequence(Tail).
+
+uniform_sequence($TCons(T, $TNil()), T) :-
+    sequence($TCons(T, $TNil())).
+uniform_sequence($TCons(T, Tail), T) :-
+    sequence($TCons(T, Tail)),
+    uniform_sequence(Tail, T).
+
+derived(R, R) :- record(R).
+derived(A, C) :- inheritance(A, B), derived(B, C).
+
+contained(T, T) :- used_type(T).
+contained(R, T) :- contained(R, Owner), field(Owner, _, T).
+contained(R, T) :- contained(R, $List(T)).
+contained(R, T) :- contained(R, $Array(T, _)).
+contained(R, T) :- contained(R, $OptionalValue(T)).
+contained(R, T) :- contained(R, $Located(T)).
+contained(R, K) :- contained(R, $Map(K, _)).
+contained(R, V) :- contained(R, $Map(_, V)).
+contained(R, T) :-
+    contained(R, $TupleValue(S)),
+    sequence_member(S, T).
+contained(R, T) :-
+    contained(R, $Variant(S)),
+    sequence_member(S, T).
+contained(R, $Named(Sub)) :-
+    contained(R, $Named(Base)),
+    derived(Sub, Base).
+
+can_match(T, T) :- used_type(T).
+can_match($AnyValue(), T) :- used_type(T).
+can_match($Named(A), $Named(B)) :- derived(A, B).
+can_match($Named(A), $Named(B)) :- derived(B, A).
+can_match($Variant(S), T) :-
+    used_type($Variant(S)),
+    sequence_member(S, Alternative),
+    can_match(Alternative, T).
+can_match($Tree(R), T) :-
+    used_type($Tree(R)),
+    contained(R, Alternative),
+    can_match(Alternative, T).
+
+binding_type(B, T) :-
+    collection_binding(B, E),
+    argument(E, 0, Collection),
+    view_type(Collection, CollectionT),
+    element(CollectionT, T).
+
+binding_type(B, T) :-
+    case_binding(B, E),
+    case_source(E, Source),
+    expr_type(Source, SourceT),
+    type_kind(SourceT, "plain"),
+    expression(E, _, _, _, T).
+
+binding_type(B, $Located(T)) :-
+    case_binding(B, E),
+    case_source(E, Source),
+    expr_type(Source, $Located(_)),
+    expression(E, _, _, _, T).
+
+expr_type(E, T) :-
+    expression(E, Op, _, _, _),
+    operation(Op, "this"),
+    this_type(E, T).
+
+expr_type(E, T) :-
+    expression(E, Op, _, _, _),
+    operation(Op, "reference"),
+    reference(E, B),
+    binding_type(B, T).
+
+expr_type(E, $I64()) :- expression(E, Op, _, _, _), operation(Op, "int").
+expr_type(E, $F64()) :- expression(E, Op, _, _, _), operation(Op, "float").
+expr_type(E, $String()) :- expression(E, Op, _, _, _), operation(Op, "string").
+expr_type(E, $Bool()) :- expression(E, Op, _, _, _), operation(Op, "bool").
+expr_type(E, $NoneValue()) :- expression(E, Op, _, _, _), operation(Op, "none").
+expr_type(E, $TypeValue()) :- expression(E, Op, _, _, _), operation(Op, "type").
+
+expr_type(E, $TypeValue()) :-
+    expression(E, Op, _, _, _),
+    operation(Op, "typeof"),
+    argument(E, 0, A),
+    expr_type(A, _).
+
+expr_type(E, T) :-
+    expression(E, Op, Name, _, _),
+    operation(Op, "field"),
+    argument(E, 0, A),
+    view_type(A, Owner),
+    field(Owner, Name, T).
+
+expr_type(E, $Bool()) :-
+    expression(E, Op, _, _, _),
+    operation(Op, "equality"),
+    argument(E, 0, A),
+    argument(E, 1, B),
+    view_type(A, AT),
+    view_type(B, BT),
+    comparable(AT, BT).
+
+expr_type(E, $Bool()) :-
+    expression(E, Op, _, _, _),
+    operation(Op, "ordering"),
+    argument(E, 0, A),
+    argument(E, 1, B),
+    view_type(A, AT),
+    view_type(B, BT),
+    numeric(AT),
+    numeric(BT).
+
+expr_type(E, $Bool()) :-
+    expression(E, Op, _, _, _),
+    operation(Op, "logical"),
+    argument_types(E, 0, Types),
+    boolean_sequence(Types).
+
+expr_type(E, $Bool()) :-
+    expression(E, Op, _, _, _),
+    operation(Op, "not"),
+    argument(E, 0, A),
+    view_type(A, $Bool()).
+
+expr_type(E, $I64()) :-
+    expression(E, Op, _, _, _),
+    operation(Op, "str_size"),
+    argument(E, 0, A),
+    view_type(A, $String()).
+
+expr_type(E, $Bool()) :-
+    expression(E, Op, _, _, _),
+    operation(Op, "str_regex"),
+    argument(E, 0, A),
+    view_type(A, $String()).
+
+expr_type(E, $String()) :-
+    expression(E, Op, _, _, _),
+    operation(Op, "str_format"),
+    argument(E, 0, A),
+    view_type(A, $String()),
+    argument_types(E, 0, _).
+
+expr_type(E, $I64()) :-
+    expression(E, Op, _, _, _),
+    operation(Op, "list_size"),
+    argument(E, 0, A),
+    view_type(A, T),
+    element(T, _).
+
+expr_type(E, $I64()) :-
+    expression(E, Op, _, _, _),
+    operation(Op, "map_size"),
+    argument(E, 0, A),
+    view_type(A, $Map(_, _)).
+
+expr_type(E, $Bool()) :-
+    expression(E, Op, _, _, _),
+    operation(Op, "map_contains"),
+    argument(E, 0, A),
+    argument(E, 1, B),
+    view_type(A, $Map(K, _)),
+    view_type(B, K).
+
+expr_type(E, V) :-
+    expression(E, Op, _, _, _),
+    operation(Op, "map_get"),
+    argument(E, 0, A),
+    argument(E, 1, B),
+    view_type(A, $Map(K, V)),
+    view_type(B, K).
+
+expr_type(E, $List(K)) :-
+    expression(E, Op, _, _, _),
+    operation(Op, "map_keys"),
+    argument(E, 0, A),
+    view_type(A, $Map(K, _)).
+
+expr_type(E, $List(V)) :-
+    expression(E, Op, _, _, _),
+    operation(Op, "map_values"),
+    argument(E, 0, A),
+    view_type(A, $Map(_, V)).
+
+expr_type(E, $Bool()) :-
+    expression(E, Op, _, _, _),
+    operation(Op, "opt_has"),
+    argument(E, 0, A),
+    view_type(A, $OptionalValue(_)).
+
+expr_type(E, T) :-
+    expression(E, Op, _, _, _),
+    operation(Op, "opt_value"),
+    argument(E, 0, A),
+    view_type(A, $OptionalValue(T)).
+
+expr_type(E, $Bool()) :-
+    expression(E, Op, Tag, _, _),
+    operation(Op, "case_is"),
+    argument(E, 0, A),
+    view_type(A, T),
+    variant_case(T, Tag, _, _).
+
+expr_type(E, Enum) :-
+    expression(E, Op, _, _, _),
+    operation(Op, "case_kind"),
+    argument(E, 0, A),
+    view_type(A, T),
+    variant_case(T, _, _, Enum).
+
+expr_type(E, $Bool()) :-
+    expression(E, Op, Name, _, _),
+    operation(Op, "enum_is"),
+    argument(E, 0, A),
+    view_type(A, T),
+    enum_entry(T, Name).
+
+expr_type(E, T) :-
+    expression(E, Op, _, Index, _),
+    operation(Op, "nth"),
+    argument(E, 0, A),
+    view_type(A, Owner),
+    tuple_element(Owner, Index, T).
+
+expr_type(E, $Bool()) :-
+    expression(E, Op, _, _, Target),
+    operation(Op, "derived"),
+    argument(E, 0, A),
+    view_type(A, Source),
+    can_match(Source, Target).
+
+expr_type(E, $TupleValue(Types)) :-
+    expression(E, Op, _, _, _),
+    operation(Op, "tuple"),
+    argument_types(E, 0, Types).
+
+expr_type(E, $List($Located($Tree(T)))) :-
+    expression(E, Op, _, _, _),
+    operation(Op, "walk"),
+    argument(E, 0, A),
+    view_type(A, T).
+
+expr_type(E, $PathValue()) :-
+    expression(E, Op, _, _, _),
+    operation(Op, "path"),
+    argument(E, 0, A),
+    expr_type(A, $Located(_)).
+
+expr_type(E, T) :-
+    expression(E, Op, _, _, _),
+    operation(Op, "value"),
+    argument(E, 0, A),
+    expr_type(A, $Located(T)).
+
+expr_type(E, $List(T)) :-
+    expression(E, Op, _, _, _),
+    operation(Op, "slice"),
+    argument(E, 0, A),
+    argument(E, 1, Start),
+    argument(E, 2, Stop),
+    view_type(A, Collection),
+    element(Collection, T),
+    view_type(Start, StartT),
+    view_type(Stop, StopT),
+    numeric(StartT),
+    numeric(StopT),
+    StartT != $F32(),
+    StartT != $F64(),
+    StopT != $F32(),
+    StopT != $F64().
+
+expr_type(E, $Bool()) :-
+    expression(E, Op, _, _, _),
+    operation(Op, "quantifier"),
+    argument(E, 0, Collection),
+    argument(E, 1, Body),
+    view_type(Collection, CollectionT),
+    element(CollectionT, _),
+    view_type(Body, $Bool()).
+
+expr_type(E, $List(T)) :-
+    expression(E, Op, _, _, _),
+    operation(Op, "map"),
+    argument(E, 0, Collection),
+    argument(E, 1, Body),
+    view_type(Collection, CollectionT),
+    element(CollectionT, _),
+    expr_type(Body, T).
+
+expr_type(E, $List(T)) :-
+    expression(E, Op, _, _, _),
+    operation(Op, "filter"),
+    argument(E, 0, Collection),
+    argument(E, 1, Body),
+    view_type(Collection, CollectionT),
+    element(CollectionT, T),
+    view_type(Body, $Bool()).
+
+expr_type(E, $List(T)) :-
+    expression(E, Op, _, _, _),
+    operation(Op, "filter_map"),
+    argument(E, 0, Collection),
+    argument(E, 1, Body),
+    view_type(Collection, CollectionT),
+    element(CollectionT, _),
+    expr_type(Body, $OptionalValue(T)).
+
+expr_type(E, $Map(K, $List(T))) :-
+    expression(E, Op, _, _, _),
+    operation(Op, "group_by"),
+    argument(E, 0, Collection),
+    argument(E, 1, Body),
+    view_type(Collection, CollectionT),
+    element(CollectionT, T),
+    view_type(Body, K).
+
+expr_type(E, T) :-
+    expression(E, Op, _, _, Target),
+    operation(Op, "type_case"),
+    case_source(E, Source),
+    view_type(Source, SourceT),
+    can_match(SourceT, Target),
+    argument(E, 0, Body),
+    expr_type(Body, T).
+
+expr_type(E, $OptionalValue(T)) :-
+    expression(E, Op, "ignore", _, _),
+    operation(Op, "type_match"),
+    argument_types(E, 0, $TCons(_, Cases)),
+    uniform_sequence(Cases, T).
+
+expr_type(E, T) :-
+    expression(E, Op, "total", _, _),
+    operation(Op, "type_match"),
+    argument_types(E, 0, $TCons(_, Cases)),
+    uniform_sequence(Cases, T).
+
+match_alternative(E, T) :-
+    expression(E, Op, _, _, _),
+    operation(Op, "type_match"),
+    argument(E, 0, Source),
+    view_type(Source, T),
+    type_kind(T, "plain"),
+    T != $AnyValue(),
+    T != $Tree(_),
+    T != $Variant(_).
+
+match_alternative(E, T) :-
+    expression(E, Op, _, _, _),
+    operation(Op, "type_match"),
+    argument(E, 0, Source),
+    view_type(Source, $Variant(Cases)),
+    sequence_member(Cases, T).
+
+match_alternative(E, T) :-
+    expression(E, Op, _, _, _),
+    operation(Op, "type_match"),
+    argument(E, 0, Source),
+    view_type(Source, $Tree(Root)),
+    contained(Root, T).
+
+match_covered(E, T) :-
+    match_alternative(E, T),
+    argument(E, Position, Case),
+    0 < Position,
+    expression(Case, _, _, _, Target),
+    can_match(T, Target).
+
+.decl problem(id: ExprId, code: DiagnosticCode, position: Position)
+.output problem
+
+problem(E, "invalid_operands", -1) :-
+    expression(E, _, _, _, _),
+    argument_types(E, 0, _),
+    !expr_type(E, _).
+
+problem(E, "unexpected_result", -1) :-
+    expected(E, Expected),
+    expr_type(E, Actual),
+    Actual != Expected.
+
+problem(E, "unhandled_type", -1) :-
+    expression(E, Op, "total", _, _),
+    operation(Op, "type_match"),
+    match_alternative(E, T),
+    !match_covered(E, T).
+
+.decl inferred(id: ExprId, value: Type)
+inferred(E, T) :- expr_type(E, T).
+.output inferred

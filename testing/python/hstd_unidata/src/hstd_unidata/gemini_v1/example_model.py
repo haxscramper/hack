@@ -5,6 +5,7 @@ from pathlib import Path
 from beartype.typing import Annotated, Any, Dict, List, Optional, Tuple
 from loguru import logger
 from model_dsl import (
+    CheckLevel,
     EnFieldAnnotation,
     FixedArray,
     Float32,
@@ -26,6 +27,9 @@ from model_dsl import (
     op_map,
     op_not,
     op_or,
+    op_rec_nodes,
+    type_case,
+    type_cond,
 )
 
 GvModel = get_dsl_model("graphviz.pkg")
@@ -58,7 +62,8 @@ class ScalarShowcase(M.Class):
     __check__(
         id="scalar-constraints",
         cond=op_and(
-            M.This["coords"]._Nth.get(0) <= 100,
+            # Numeric widening permits comparing Int32 tuple element with float literal 100.5
+            M.This["coords"]._Nth.get(0) <= 100.5,
             M.This["metadata"]._Map.contains("version"),
             M.This["status"]._Enum.is_val("PENDING"),
         ),
@@ -91,27 +96,31 @@ class ColumnView(M.Class):
                 ] = 4
 
             kind: Kind
-            formatDigits: Optional[Int32] = M.Field(default=None, required=False)
-            formatPrecision: Optional[Int32] = M.Field(default=None, required=False)
+            formatDigits: Optional[Int32] = M.Field(default=None)
+            formatPrecision: Optional[Int32] = M.Field(default=None)
 
+        # Synthesizes `data` field and `Summary.Kind` enum
         __variant__(CheckboxAggregate, MathAggregate)
 
         def __eq__(self, other: "Summary") -> bool: ...
 
     class Column(M.Class):
-        summary: Optional["ColumnView.Summary"] = M.Field(default=None, required=False)
+        summary: Optional["ColumnView.Summary"] = M.Field(default=None)
         width: Optional[Int32] = M.Field(
             default=None,
-            required=False,
             check=op_or(
                 op_not(M.This._Opt.has_value()),
                 0 < M.This._Opt.value(),
             ),
         )
-        property: Optional[str] = M.Field(default=None, required=False)
-        propertyTitle: Optional[str] = M.Field(default=None, required=False)
+        property: Optional[str] = M.Field(default=None)
+        propertyTitle: Optional[str] = M.Field(default=None)
 
-        def __eq__(self, other: "Column") -> bool: ...
+        def __eq__(self, other: "Column") -> bool:
+            return (self.width, self.property) == (other.width, other.property)
+
+        def __hash__(self) -> int:
+            return hash((self.width, self.property))
 
     columns: List[Column] = M.Field(default=[])
 
@@ -123,12 +132,14 @@ class DiaElement(M.Class):
         no_algorithm: None
 
     class Graphviz(M.Case):
+        engine: str = M.Field(default="dot")
         graphviz: GvModel._T["GroupAttributePayload"]
         graphviz2: GvModel._T["some.Nested.Thing"]
 
     class Kiwi(M.Case):
         kiwi: KwModel._T["KiwiThing"]
 
+    id: str = M.Field(default="")
     data: Annotated[NoAlgo | Graphviz | Kiwi, M.Variant()] = M.Field()
 
 
@@ -137,10 +148,12 @@ class DiaNode(DiaElement, M.Class):
 
 
 class DiaEdge(DiaElement, M.Class):
-    weight: Int32 = M.Field(default=1)
+    source: str = M.Field(default="")
+    target: str = M.Field(default="")
+    weight: Optional[Int32] = M.Field(default=None)
 
 
-class DiaCluster(M.Class):
+class DiaCluster(DiaElement, M.Class):
     field: str = M.Field(
         doc="Cluster identifier",
         check=op_and(
@@ -153,33 +166,85 @@ class DiaCluster(M.Class):
         default={"label": "root_node"},
     )
 
-    data: Annotated[
-        DiaElement.NoAlgo | DiaElement.Graphviz | DiaElement.Kiwi,
-        M.Variant(),
-    ] = M.Field()
+    nodes: List[DiaNode] = M.Field(default=[])
+    edges: List[DiaEdge] = M.Field(default=[])
+    subclusters: List["DiaCluster"] = M.Field(default=[])
 
-    nodes: List[DiaNode]
-    edges: List[DiaEdge]
-
+    # 1. Algorithm consistency check (using explicit named binders and Case tags)
     __check__(
         id="unified-algorithm",
-        message="All nodes and edges must use Kiwi when cluster uses no_algorithm",
+        message="All nodes and edges must use Kiwi when cluster uses NoAlgo",
         cond=op_or(
-            op_not(M.This["data"]._Case.is_case("no_algorithm")),
+            op_not(M.This["data"]._Case.is_case("NoAlgo")),
             op_and(
-                op_all(M.This["edges"], M.Iter["data"]._Case.is_case("kiwi")),
-                op_all(M.This["nodes"], M.Iter["data"]._Case.is_case("kiwi")),
+                op_all(
+                    M.This["edges"],
+                    "edge",
+                    M.Iter("edge")["data"]._Case.is_case("Kiwi"),
+                ),
+                op_all(
+                    M.This["nodes"],
+                    "node",
+                    M.Iter("node")["data"]._Case.is_case("Kiwi"),
+                ),
             ),
         ),
     )
 
+    # 2. Globally unique IDs across recursive tree using type_cond + group_by
+    __check__(
+        id="unique-global-ids",
+        message="All node, edge, and cluster IDs must be globally unique",
+        cond=op_all(
+            op_map(
+                op_rec_nodes(M.This),
+                "rec_item",
+                type_cond(
+                    M.Iter("rec_item"),
+                    type_case(DiaNode, "n", M.Iter("n")["id"]),
+                    type_case(DiaEdge, "e", M.Iter("e")["id"]),
+                    type_case(DiaCluster, "c", M.Iter("c")["id"]),
+                    unhandled_ignore=True,
+                ),
+            )._List.filter_some(),
+            "id_str",
+            M.Iter("id_str")._Str.size() > 0,
+        ),
+    )
+
+    # 3. Warning-level diagnostic when edge weight is set under non-neato/twopi Graphviz engine
+    __check__(
+        id="graphviz-weight-ignored-warning",
+        level=CheckLevel.WARNING,
+        message="Edge weight is ignored when Graphviz engine is not 'neato' or 'twopi'",
+        cond=op_or(
+            op_not(M.This["data"]._Case.is_case("Graphviz")),
+            M.This["data"]["Graphviz"]["engine"] == "neato",
+            M.This["data"]["Graphviz"]["engine"] == "twopi",
+            op_all(
+                M.This["edges"],
+                "e",
+                op_not(M.Iter("e")["weight"]._Opt.has_value()),
+            ),
+        ),
+    )
+
+    # 4. Format check with preserved concrete map result type
     __check__(
         id="test-format",
-        cond=op_all(M.This["nodes"], M.Iter.is_derived_from(DiaElement)),
+        cond=op_all(
+            M.This["nodes"],
+            "n",
+            M.Iter("n").is_derived_from(DiaElement),
+        ),
         message=M._Str.format(
             [
                 "edges=[%s]",
-                op_map(M.This["edges"], M.Iter["data"]._Case.which_case()),
+                op_map(
+                    M.This["edges"],
+                    "e",
+                    M.Iter("e")["data"]._Case.which_case(),
+                ),
             ]
         ),
     )
@@ -233,5 +298,5 @@ class Text(Org, M.Class):
 
 if __name__ == "__main__":
     M.validate_with_souffle()
-    logger.info("Souffle Datalog validation passed")
+    logger.info("Soufflé Datalog validation passed")
     Path("/tmp/result.json").write_text(json.dumps(M.to_dict(), indent=2))

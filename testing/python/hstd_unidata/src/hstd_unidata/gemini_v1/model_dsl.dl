@@ -1,0 +1,761 @@
+.type RecordId <: symbol
+.type FieldName <: symbol
+.type EnumValName <: symbol
+.type VarName <: symbol
+.type OpName <: symbol
+.type PackageName <: symbol
+.type CheckId <: symbol
+.type FilePath <: symbol
+.type DiagCode <: symbol
+.type LineNum <: number
+.type ExprId <: number
+.type OccId <: number
+.type ArgIdx <: number
+.type BoolFlag <: number
+
+.type PrimKind
+    = PrimInt8 {}
+    | PrimInt16 {}
+    | PrimInt32 {}
+    | PrimInt64 {}
+    | PrimUInt8 {}
+    | PrimUInt16 {}
+    | PrimUInt32 {}
+    | PrimUInt64 {}
+    | PrimFloat32 {}
+    | PrimFloat64 {}
+    | PrimString {}
+    | PrimBool {}
+    | PrimNone {}
+    | PrimAny {}
+    | PrimPath {}
+
+.type QName = QNameValue {
+    pkg: PackageName,
+    name: symbol,
+    scope: OptionalQName
+}
+
+.type OptionalQName
+    = NoScope {}
+    | SomeScope { value: QName }
+
+.type TypeList
+    = TNil {}
+    | TCons { head: Type, tail: TypeList }
+
+.type Type
+    = Primitive { kind: PrimKind }
+    | List { elem: Type }
+    | Array { elem: Type, size: number }
+    | Map { key: Type, val: Type }
+    | Optional { elem: Type }
+    | Tuple { elems: TypeList }
+    | Variant { cases: TypeList }
+    | Located { inner: Type }
+    | MetaType { inner: Type }
+    | Named { qname: QName, id: RecordId }
+
+.type EnvList
+    = EnvNil {}
+    | EnvCons { name: VarName, var_type: Type, tail: EnvList }
+
+// --- Model Input Facts ---
+.decl record(id: RecordId, kind: symbol, qname: QName, file: FilePath, line: LineNum)
+.decl record_type(id: RecordId, t: Type)
+.decl inheritance(sub: RecordId, sup: RecordId)
+.decl field(rec: RecordId, name: FieldName, field_type: Type, has_default: BoolFlag, is_null_default: BoolFlag, file: FilePath, line: LineNum)
+.decl field_default_key(rec: RecordId, field_name: FieldName, key_name: FieldName, file: FilePath, line: LineNum)
+.decl enum_entry(rec: RecordId, name: EnumValName)
+.decl variant_decl(owner: RecordId, field_name: FieldName, enum_id: RecordId, variant_type: Type, file: FilePath, line: LineNum)
+.decl variant_case_map(variant_type: Type, tag_name: EnumValName, case_rec: RecordId, case_type: Type)
+.decl name_collision(rec: RecordId, name: symbol, file: FilePath, line: LineNum)
+
+// --- Operator Registry Input Facts ---
+.decl op_def(op: OpName, category: symbol, min_args: number, max_args: number)
+
+// --- Expression IR Input Facts ---
+.decl expr(id: ExprId, op: OpName, str_val: symbol, int_val: number, type_val: Type, file: FilePath, line: LineNum)
+.decl expr_arg(parent: ExprId, idx: ArgIdx, child: ExprId)
+.decl type_case_branch(expr_id: ExprId, idx: ArgIdx, match_type: Type, var_name: VarName, body_id: ExprId)
+
+.decl check_def(check_id: CheckId, owner: RecordId, level: symbol, cond_id: ExprId, msg_id: ExprId, file: FilePath, line: LineNum)
+.decl field_check_def(check_id: CheckId, owner: RecordId, field_name: FieldName, cond_id: ExprId, file: FilePath, line: LineNum)
+
+.input record
+.input record_type
+.input inheritance
+.input field
+.input field_default_key
+.input enum_entry
+.input variant_decl
+.input variant_case_map
+.input name_collision
+.input op_def
+.input expr
+.input expr_arg
+.input type_case_branch
+.input check_def
+.input field_check_def
+
+// --- Helper & Structural Rules ---
+.decl derived_from(sub: RecordId, sup: RecordId)
+derived_from(X, X) :- record(X, _, _, _, _).
+derived_from(X, Z) :- inheritance(X, Y), derived_from(Y, Z).
+
+.decl effective_field(rec: RecordId, name: FieldName, field_type: Type)
+effective_field(R, N, T) :- field(R, N, T, _, _, _, _).
+effective_field(R, N, T) :- derived_from(R, Base), field(Base, N, T, _, _, _, _).
+
+.decl is_numeric_type(t: Type)
+is_numeric_type($Primitive($PrimInt8())).
+is_numeric_type($Primitive($PrimInt16())).
+is_numeric_type($Primitive($PrimInt32())).
+is_numeric_type($Primitive($PrimInt64())).
+is_numeric_type($Primitive($PrimUInt8())).
+is_numeric_type($Primitive($PrimUInt16())).
+is_numeric_type($Primitive($PrimUInt32())).
+is_numeric_type($Primitive($PrimUInt64())).
+is_numeric_type($Primitive($PrimFloat32())).
+is_numeric_type($Primitive($PrimFloat64())).
+
+.decl is_nullable_type(t: Type)
+is_nullable_type($Primitive($PrimNone())).
+is_nullable_type($Primitive($PrimAny())).
+is_nullable_type($Optional(_)).
+
+.decl types_comparable_eq(t1: Type, t2: Type)
+types_comparable_eq(T, T) :- expr_occ_type(_, _, T).
+types_comparable_eq(T1, T2) :- is_numeric_type(T1), is_numeric_type(T2).
+types_comparable_eq($Named(_, R1), $Named(_, R2)) :- derived_from(R1, R2) ; derived_from(R2, R1).
+
+// Extract tuple elements from recursive TypeList
+.decl active_tuple_type(t: Type)
+active_tuple_type(T) :- field(_, _, T, _, _, _, _), T = $Tuple(_).
+active_tuple_type(T) :- expr_occ_type(_, _, T), T = $Tuple(_).
+
+.decl tuple_type_suffix(tup: Type, idx: number, list: TypeList)
+tuple_type_suffix(T, 0, L) :- active_tuple_type(T), T = $Tuple(L).
+tuple_type_suffix(T, Idx + 1, Tail) :- tuple_type_suffix(T, Idx, $TCons(_, Tail)).
+
+.decl tuple_elem_at(tup: Type, idx: number, elem: Type)
+tuple_elem_at(T, Idx, Elem) :- tuple_type_suffix(T, Idx, $TCons(Elem, _)).
+
+// Extract variant cases
+.decl active_variant_type(t: Type)
+active_variant_type(T) :- variant_case_map(T, _, _, _).
+active_variant_type(T) :- field(_, _, T, _, _, _, _), T = $Variant(_).
+active_variant_type(T) :- expr_occ_type(_, _, T), T = $Variant(_).
+
+// --- Scope & Environment Propagation (Contextual Occurrences) ---
+// An occurrence is uniquely identified by (CheckId, ExprId, ThisType, EnvList)
+.decl expr_scope(check_id: CheckId, expr_id: ExprId, this_type: Type, env: EnvList)
+
+expr_scope(CId, CondE, RecT, $EnvNil()) :-
+    check_def(CId, R, _, CondE, _, _, _),
+    record_type(R, RecT).
+
+expr_scope(CId, MsgE, RecT, $EnvNil()) :-
+    check_def(CId, R, _, _, MsgE, _, _),
+    record_type(R, RecT).
+
+expr_scope(CId, CondE, FT, $EnvNil()) :-
+    field_check_def(CId, R, FN, CondE, _, _),
+    effective_field(R, FN, FT).
+
+// Standard non-binding operators pass scope unchanged to all arguments
+expr_scope(CId, ChildE, ThisT, Env) :-
+    expr_scope(CId, P, ThisT, Env),
+    expr(P, Op, _, _, _, _, _),
+    op_def(Op, Cat, _, _),
+    Cat != "quantifier",
+    Cat != "transform",
+    Cat != "type_cond",
+    Cat != "fold",
+    expr_arg(P, _, ChildE).
+
+// Quantifiers & transforms (all, exists, exists_one, map, filter, group_by, all_rec):
+// arg 0 is collection, evaluated in parent scope
+expr_scope(CId, CollE, ThisT, Env) :-
+    expr_scope(CId, P, ThisT, Env),
+    expr(P, Op, _, _, _, _, _),
+    op_def(Op, Cat, _, _),
+    (Cat = "quantifier" ; Cat = "transform"),
+    expr_arg(P, 0, CollE).
+
+// Quantifiers & transforms (non-recursive): arg 1 is body, binds str_val to element type
+expr_scope(CId, BodyE, ThisT, $EnvCons(VarN, ElemT, Env)) :-
+    expr_scope(CId, P, ThisT, Env),
+    expr(P, Op, VarN, _, _, _, _),
+    (Op = "all" ; Op = "exists" ; Op = "exists_one" ; Op = "map" ; Op = "filter" ; Op = "group_by"),
+    expr_arg(P, 0, CollE),
+    expr_occ_type(CId, CollE, CollT),
+    (CollT = $List(ElemT) ; CollT = $Array(ElemT, _)),
+    expr_arg(P, 1, BodyE).
+
+// Recursive traversal quantifier/collection (all_rec, rec_nodes):
+// binds VarN to Located(Any)
+expr_scope(CId, BodyE, ThisT, $EnvCons(VarN, $Located($Primitive($PrimAny())), Env)) :-
+    expr_scope(CId, P, ThisT, Env),
+    expr(P, "all_rec", VarN, _, _, _, _),
+    expr_arg(P, 0, RootE),
+    expr_occ_type(CId, RootE, _),
+    expr_arg(P, 1, BodyE).
+
+// Fold (lfold): arg 0 = coll, arg 1 = init_acc, arg 2 = body
+// str_val holds "iter_var:acc_var" or we use expr_arg(0)=coll, expr_arg(1)=init, expr_arg(2)=body
+expr_scope(CId, CollE, ThisT, Env) :-
+    expr_scope(CId, P, ThisT, Env),
+    expr(P, "lfold", _, _, _, _, _),
+    expr_arg(P, 0, CollE).
+
+expr_scope(CId, InitE, ThisT, Env) :-
+    expr_scope(CId, P, ThisT, Env),
+    expr(P, "lfold", _, _, _, _, _),
+    expr_arg(P, 1, InitE).
+
+expr_scope(CId, BodyE, ThisT, $EnvCons(AccVar, AccT, $EnvCons(IterVar, ElemT, Env))) :-
+    expr_scope(CId, P, ThisT, Env),
+    expr(P, "lfold",IterVar, _, _, _, _),
+    expr_arg(P, 0, CollE),
+    expr_arg(P, 1, InitE),
+    expr_arg(P, 2, BodyE),
+    expr_arg(P, 3, AccNameNode),
+    expr(AccNameNode, "var_name", AccVar, _, _, _, _),
+    expr_occ_type(CId, CollE, $List(ElemT)),
+    expr_occ_type(CId, InitE, AccT).
+
+// Type condition: arg 0 is target expression
+expr_scope(CId, TargetE, ThisT, Env) :-
+    expr_scope(CId, P, ThisT, Env),
+    expr(P, "type_cond", _, _, _, _, _),
+    expr_arg(P, 0, TargetE).
+
+// Type condition branches: bind VarN to branch MatchT (or Located(MatchT) if target is Located)
+expr_scope(CId, BodyE, ThisT, $EnvCons(VarN, BoundT, Env)) :-
+    expr_scope(CId, P, ThisT, Env),
+    expr(P, "type_cond", _, _, _, _, _),
+    expr_arg(P, 0, TargetE),
+    expr_occ_type(CId, TargetE, TargetT),
+    type_case_branch(P, _, MatchT, VarN, BodyE),
+    (
+        (TargetT = $Located(_), BoundT = $Located(MatchT)) ;
+        (TargetT != $Located(_), BoundT = MatchT)
+    ).
+
+// Environment lookup
+.decl active_env(env: EnvList)
+active_env(Env) :- expr_scope(_, _, _, Env).
+active_env(Tail) :- active_env($EnvCons(_, _, Tail)).
+
+.decl env_lookup(env: EnvList, name: VarName, var_type: Type)
+env_lookup($EnvCons(N, T, _), N, T) :- active_env($EnvCons(N, T, _)).
+env_lookup($EnvCons(N2, _, Tail), N, T) :-
+    active_env($EnvCons(N2, _, Tail)),
+    N != N2,
+    env_lookup(Tail, N, T).
+
+// --- Expression Type Inference ---
+.decl expr_occ_type(check_id: CheckId, expr_id: ExprId, result_type: Type)
+
+// Context & Literals
+expr_occ_type(CId, E, ThisT) :-
+    expr_scope(CId, E, ThisT, _),
+    expr(E, "this", _, _, _, _, _).
+
+expr_occ_type(CId, E, VarT) :-
+    expr_scope(CId, E, _, Env),
+    expr(E, "iter", VarN, _, _, _, _),
+    env_lookup(Env, VarN, VarT).
+
+expr_occ_type(CId, E, $Primitive($PrimInt64())) :-
+    expr_scope(CId, E, _, _),
+    expr(E, "const_int", _, _, _, _, _).
+
+expr_occ_type(CId, E, $Primitive($PrimFloat64())) :-
+    expr_scope(CId, E, _, _),
+    expr(E, "const_float", _, _, _, _, _).
+
+expr_occ_type(CId, E, $Primitive($PrimString())) :-
+    expr_scope(CId, E, _, _),
+    expr(E, "const_str", _, _, _, _, _).
+
+expr_occ_type(CId, E, $Primitive($PrimBool())) :-
+    expr_scope(CId, E, _, _),
+    expr(E, "const_bool", _, _, _, _, _).
+
+// Typeof & Located accessors
+expr_occ_type(CId, E, $MetaType(InnerT)) :-
+    expr_scope(CId, E, _, _),
+    expr(E, "typeof", _, _, _, _, _),
+    expr_arg(E, 0, A1),
+    expr_occ_type(CId, A1, InnerT).
+
+expr_occ_type(CId, E, $Primitive($PrimPath())) :-
+    expr_scope(CId, E, _, _),
+    expr(E, "loc_path", _, _, _, _, _),
+    expr_arg(E, 0, A1),
+    expr_occ_type(CId, A1, $Located(_)).
+
+expr_occ_type(CId, E, InnerT) :-
+    expr_scope(CId, E, _, _),
+    expr(E, "loc_val", _, _, _, _, _),
+    expr_arg(E, 0, A1),
+    expr_occ_type(CId, A1, $Located(InnerT)).
+
+// Field Access (supports direct Named record or Located(Named))
+expr_occ_type(CId, E, FT) :-
+    expr_scope(CId, E, _, _),
+    expr(E, "get_field", FName, _, _, _, _),
+    expr_arg(E, 0, ObjE),
+    expr_occ_type(CId, ObjE, ObjT),
+    (ObjT = $Named(_, RecId) ; ObjT = $Located($Named(_, RecId))),
+    effective_field(RecId, FName, FT).
+
+// Variant Case Field Access: .data.CaseName -> CaseType
+expr_occ_type(CId, E, CaseT) :-
+    expr_scope(CId, E, _, _),
+    expr(E, "get_field", CaseTag, _, _, _, _),
+    expr_arg(E, 0, ObjE),
+    expr_occ_type(CId, ObjE, VarT),
+    variant_case_map(VarT, CaseTag, _, CaseT).
+
+// Comparisons (eq, ne) with numeric widening
+expr_occ_type(CId, E, $Primitive($PrimBool())) :-
+    expr_scope(CId, E, _, _),
+    expr(E, Op, _, _, _, _, _),
+    (Op = "eq" ; Op = "ne"),
+    expr_arg(E, 0, A1),
+    expr_arg(E, 1, A2),
+    expr_occ_type(CId, A1, T1),
+    expr_occ_type(CId, A2, T2),
+    types_comparable_eq(T1, T2).
+
+// Ordered Comparisons (lt, le) with numeric widening across int/float
+expr_occ_type(CId, E, $Primitive($PrimBool())) :-
+    expr_scope(CId, E, _, _),
+    expr(E, Op, _, _, _, _, _),
+    (Op = "lt" ; Op = "le"),
+    expr_arg(E, 0, A1),
+    expr_arg(E, 1, A2),
+    expr_occ_type(CId, A1, T1),
+    expr_occ_type(CId, A2, T2),
+    is_numeric_type(T1),
+    is_numeric_type(T2).
+
+// Variadic AND / OR: all arguments must be bool
+.decl variadic_bool_args_ok(check_id: CheckId, expr_id: ExprId, upto_idx: number)
+variadic_bool_args_ok(CId, E, 0) :-
+    expr_scope(CId, E, _, _),
+    expr(E, Op, _, _, _, _, _),
+    (Op = "and" ; Op = "or"),
+    expr_arg(E, 0, A0),
+    expr_occ_type(CId, A0, $Primitive($PrimBool())).
+
+variadic_bool_args_ok(CId, E, Idx) :-
+    variadic_bool_args_ok(CId, E, Idx - 1),
+    expr_arg(E, Idx, AI),
+    expr_occ_type(CId, AI, $Primitive($PrimBool())).
+
+.decl expr_arity(expr_id: ExprId, count: number)
+expr_arity(E, C) :- expr(E, _, _, _, _, _, _), C = count : { expr_arg(E, _, _) }.
+
+expr_occ_type(CId, E, $Primitive($PrimBool())) :-
+    expr_scope(CId, E, _, _),
+    expr(E, Op, _, _, _, _, _),
+    (Op = "and" ; Op = "or"),
+    expr_arity(E, Count),
+    Count > 0,
+    variadic_bool_args_ok(CId, E, Count - 1).
+
+// Unary NOT
+expr_occ_type(CId, E, $Primitive($PrimBool())) :-
+    expr_scope(CId, E, _, _),
+    expr(E, "not", _, _, _, _, _),
+    expr_arg(E, 0, A1),
+    expr_occ_type(CId, A1, $Primitive($PrimBool())).
+
+// String Ops
+expr_occ_type(CId, E, $Primitive($PrimInt64())) :-
+    expr_scope(CId, E, _, _),
+    expr(E, "str_size", _, _, _, _, _),
+    expr_arg(E, 0, A1),
+    expr_occ_type(CId, A1, $Primitive($PrimString())).
+
+expr_occ_type(CId, E, $Primitive($PrimBool())) :-
+    expr_scope(CId, E, _, _),
+    expr(E, "str_regex", _, _, _, _, _),
+    expr_arg(E, 0, A1),
+    expr_occ_type(CId, A1, $Primitive($PrimString())).
+
+// str_format: arg 0 is string, all subsequent arguments must be well-typed
+.decl format_args_ok(check_id: CheckId, expr_id: ExprId, upto_idx: number)
+format_args_ok(CId, E, 0) :-
+    expr_scope(CId, E, _, _),
+    expr(E, "str_format", _, _, _, _, _),
+    expr_arg(E, 0, A0),
+    expr_occ_type(CId, A0, $Primitive($PrimString())).
+
+format_args_ok(CId, E, Idx) :-
+    format_args_ok(CId, E, Idx - 1),
+    expr_arg(E, Idx, AI),
+    expr_occ_type(CId, AI, _).
+
+expr_occ_type(CId, E, $Primitive($PrimString())) :-
+    expr_scope(CId, E, _, _),
+    expr(E, "str_format", _, _, _, _, _),
+    expr_arity(E, Count),
+    Count > 0,
+    format_args_ok(CId, E, Count - 1).
+
+// Collection Ops
+expr_occ_type(CId, E, $Primitive($PrimInt64())) :-
+    expr_scope(CId, E, _, _),
+    expr(E, "list_size", _, _, _, _, _),
+    expr_arg(E, 0, A1),
+    expr_occ_type(CId, A1, T1),
+    (T1 = $List(_) ; T1 = $Array(_, _)).
+
+expr_occ_type(CId, E, $List(ElemT)) :-
+    expr_scope(CId, E, _, _),
+    expr(E, "list_slice", _, _, _, _, _),
+    expr_arg(E, 0, A1),
+    expr_arg(E, 1, A2),
+    expr_arg(E, 2, A3),
+    expr_occ_type(CId, A1, $List(ElemT)),
+    is_numeric_type(T2), expr_occ_type(CId, A2, T2),
+    is_numeric_type(T3), expr_occ_type(CId, A3, T3).
+
+// Map Ops
+expr_occ_type(CId, E, $Primitive($PrimInt64())) :-
+    expr_scope(CId, E, _, _),
+    expr(E, "map_size", _, _, _, _, _),
+    expr_arg(E, 0, A1),
+    expr_occ_type(CId, A1, $Map(_, _)).
+
+expr_occ_type(CId, E, $Primitive($PrimBool())) :-
+    expr_scope(CId, E, _, _),
+    expr(E, "map_contains", _, _, _, _, _),
+    expr_arg(E, 0, A1),
+    expr_arg(E, 1, A2),
+    expr_occ_type(CId, A1, $Map(KeyT, _)),
+    expr_occ_type(CId, A2, QueryT),
+    types_comparable_eq(KeyT, QueryT).
+
+expr_occ_type(CId, E, ValT) :-
+    expr_scope(CId, E, _, _),
+    expr(E, "map_get", _, _, _, _, _),
+    expr_arg(E, 0, A1),
+    expr_arg(E, 1, A2),
+    expr_occ_type(CId, A1, $Map(KeyT, ValT)),
+    expr_occ_type(CId, A2, QueryT),
+    types_comparable_eq(KeyT, QueryT).
+
+// Optional Ops
+expr_occ_type(CId, E, $Primitive($PrimBool())) :-
+    expr_scope(CId, E, _, _),
+    expr(E, "opt_has_value", _, _, _, _, _),
+    expr_arg(E, 0, A1),
+    expr_occ_type(CId, A1, $Optional(_)).
+
+expr_occ_type(CId, E, InnerT) :-
+    expr_scope(CId, E, _, _),
+    expr(E, "opt_value", _, _, _, _, _),
+    expr_arg(E, 0, A1),
+    expr_occ_type(CId, A1, $Optional(InnerT)).
+
+// Variant Case Ops
+expr_occ_type(CId, E, $Primitive($PrimBool())) :-
+    expr_scope(CId, E, _, _),
+    expr(E, "case_is", TagName, _, _, _, _),
+    expr_arg(E, 0, A1),
+    expr_occ_type(CId, A1, VarT),
+    variant_case_map(VarT, TagName, _, _).
+
+expr_occ_type(CId, E, $Primitive($PrimString())) :-
+    expr_scope(CId, E, _, _),
+    expr(E, "case_which", _, _, _, _, _),
+    expr_arg(E, 0, A1),
+    expr_occ_type(CId, A1, VarT),
+    active_variant_type(VarT).
+
+// Enum Ops
+expr_occ_type(CId, E, $Primitive($PrimBool())) :-
+    expr_scope(CId, E, _, _),
+    expr(E, "enum_is", EnumVal, _, _, _, _),
+    expr_arg(E, 0, A1),
+    expr_occ_type(CId, A1, $Named(_, EnumRecId)),
+    enum_entry(EnumRecId, EnumVal).
+
+// Tuple Nth Access
+expr_occ_type(CId, E, ElemT) :-
+    expr_scope(CId, E, _, _),
+    expr(E, "nth_get", _, Idx, _, _, _),
+    expr_arg(E, 0, A1),
+    expr_occ_type(CId, A1, TupT),
+    tuple_elem_at(TupT, Idx, ElemT).
+
+// Subtype / Derivation Check
+expr_occ_type(CId, E, $Primitive($PrimBool())) :-
+    expr_scope(CId, E, _, _),
+    expr(E, "is_derived", _, _, TargetT, _, _),
+    TargetT = $Named(_, TargetId),
+    expr_arg(E, 0, A1),
+    expr_occ_type(CId, A1, ObjT),
+    (
+        (ObjT = $Named(_, ObjId), (derived_from(ObjId, TargetId) ; derived_from(TargetId, ObjId))) ;
+        ObjT = $Primitive($PrimAny()) ;
+        ObjT = $Located($Primitive($PrimAny()))
+    ).
+
+// Quantifiers: all, exists, exists_one -> bool
+expr_occ_type(CId, E, $Primitive($PrimBool())) :-
+    expr_scope(CId, E, _, _),
+    expr(E, Op, _, _, _, _, _),
+    (Op = "all" ; Op = "exists" ; Op = "exists_one"),
+    expr_arg(E, 0, CollE),
+    expr_arg(E, 1, PredE),
+    expr_occ_type(CId, CollE, CollT),
+    (CollT = $List(_) ; CollT = $Array(_, _)),
+    expr_occ_type(CId, PredE, $Primitive($PrimBool())).
+
+// Transform: map -> preserves concrete mapped element type List(BodyT)
+expr_occ_type(CId, E, $List(BodyT)) :-
+    expr_scope(CId, E, _, _),
+    expr(E, "map", _, _, _, _, _),
+    expr_arg(E, 0, CollE),
+    expr_arg(E, 1, BodyE),
+    expr_occ_type(CId, CollE, CollT),
+    (CollT = $List(_) ; CollT = $Array(_, _)),
+    expr_occ_type(CId, BodyE, BodyT).
+
+// Transform: filter -> preserves collection element type List(ElemT)
+expr_occ_type(CId, E, $List(ElemT)) :-
+    expr_scope(CId, E, _, _),
+    expr(E, "filter", _, _, _, _, _),
+    expr_arg(E, 0, CollE),
+    expr_arg(E, 1, PredE),
+    expr_occ_type(CId, CollE, CollT),
+    (CollT = $List(ElemT) ; CollT = $Array(ElemT, _)),
+    expr_occ_type(CId, PredE, $Primitive($PrimBool())).
+
+// Transform: group_by -> Map(KeyT, List(ElemT))
+expr_occ_type(CId, E, $Map(KeyT, $List(ElemT))) :-
+    expr_scope(CId, E, _, _),
+    expr(E, "group_by", _, _, _, _, _),
+    expr_arg(E, 0, CollE),
+    expr_arg(E, 1, KeyE),
+    expr_occ_type(CId, CollE, $List(ElemT)),
+    expr_occ_type(CId, KeyE, KeyT).
+
+// Fold: lfold -> AccT
+expr_occ_type(CId, E, AccT) :-
+    expr_scope(CId, E, _, _),
+    expr(E, "lfold", _, _, _, _, _),
+    expr_arg(E, 0, CollE),
+    expr_arg(E, 1, InitE),
+    expr_arg(E, 2, BodyE),
+    expr_occ_type(CId, CollE, $List(_)),
+    expr_occ_type(CId, InitE, AccT),
+    expr_occ_type(CId, BodyE, AccT).
+
+// Recursive tree nodes: rec_nodes -> List(Located(Any))
+expr_occ_type(CId, E, $List($Located($Primitive($PrimAny())))) :-
+    expr_scope(CId, E, _, _),
+    expr(E, "rec_nodes", _, _, _, _, _),
+    expr_arg(E, 0, RootE),
+    expr_occ_type(CId, RootE, _).
+
+// Recursive quantifier: all_rec -> bool
+expr_occ_type(CId, E, $Primitive($PrimBool())) :-
+    expr_scope(CId, E, _, _),
+    expr(E, "all_rec", _, _, _, _, _),
+    expr_arg(E, 0, RootE),
+    expr_arg(E, 1, BodyE),
+    expr_occ_type(CId, RootE, _),
+    expr_occ_type(CId, BodyE, $Primitive($PrimBool())).
+
+// Type Condition: all branches must evaluate to the same type BranchT
+.decl type_cond_branch_type(check_id: CheckId, expr_id: ExprId, idx: ArgIdx, branch_type: Type)
+type_cond_branch_type(CId, E, Idx, BT) :-
+    expr_scope(CId, E, _, _),
+    expr(E, "type_cond", _, _, _, _, _),
+    type_case_branch(E, Idx, _, _, BodyE),
+    expr_occ_type(CId, BodyE, BT).
+
+.decl type_cond_mismatch(check_id: CheckId, expr_id: ExprId)
+type_cond_mismatch(CId, E) :-
+    type_cond_branch_type(CId, E, _, T1),
+    type_cond_branch_type(CId, E, _, T2),
+    T1 != T2.
+
+.decl type_cond_all_branches_typed(check_id: CheckId, expr_id: ExprId)
+type_cond_all_branches_typed(CId, E) :-
+    expr_scope(CId, E, _, _),
+    expr(E, "type_cond", _, _, _, _, _),
+    BranchCount = count : { type_case_branch(E, _, _, _, _) },
+    TypedCount = count : { type_cond_branch_type(CId, E, _, _) },
+    BranchCount > 0,
+    BranchCount = TypedCount.
+
+// int_val = 1 means unhandled_ignore=True -> Optional(BranchT), else BranchT
+expr_occ_type(CId, E, $Optional(BT)) :-
+    type_cond_all_branches_typed(CId, E),
+    !type_cond_mismatch(CId, E),
+    expr(E, "type_cond", _, 1, _, _, _),
+    type_cond_branch_type(CId, E, 0, BT).
+
+expr_occ_type(CId, E, BT) :-
+    type_cond_all_branches_typed(CId, E),
+    !type_cond_mismatch(CId, E),
+    expr(E, "type_cond", _, 0, _, _, _),
+    type_cond_branch_type(CId, E, 0, BT).
+
+// Filter-map over recursive nodes via type_cond: collect_type_cond -> List(BT)
+expr_occ_type(CId, E, $List(BT)) :-
+    expr_scope(CId, E, _, _),
+    expr(E, "filter_some", _, _, _, _, _),
+    expr_arg(E, 0, CollE),
+    expr_occ_type(CId, CollE, $List($Optional(BT))).
+
+// --- Structured Diagnostics ---
+// Instead of emitting a cascade of generic errors for every ancestor, we distinguish
+// primary errors (where children are valid, or leaf failure) from caused-by chains.
+.decl child_failed(check_id: CheckId, expr_id: ExprId)
+child_failed(CId, E) :-
+    expr_scope(CId, E, _, _),
+    expr_arg(E, _, ChildE),
+    expr_scope(CId, ChildE, _, _),
+    !expr_occ_type(CId, ChildE, _).
+
+child_failed(CId, E) :-
+    expr_scope(CId, E, _, _),
+    type_case_branch(E, _, _, _, BodyE),
+    expr_scope(CId, BodyE, _, _),
+    !expr_occ_type(CId, BodyE, _).
+
+.decl diagnostic(
+    code: DiagCode,
+    check_id: CheckId,
+    expr_id: ExprId,
+    arg_idx: number,
+    file: FilePath,
+    line: LineNum,
+    detail: symbol
+)
+.output diagnostic
+
+// 1. Model-level diagnostics
+diagnostic("NAME_COLLISION", "model", -1, -1, File, Line,
+    cat("Generated name '", Name, "' collides with an existing declaration in '", RecId, "'")) :-
+    name_collision(RecId, Name, File, Line).
+
+diagnostic("INVALID_NULL_DEFAULT", "model", -1, -1, File, Line,
+    cat("Field '", FN, "' on '", RecId, "' has default None but its type is not nullable")) :-
+    field(RecId, FN, FT, 1, 1, File, Line),
+    !is_nullable_type(FT).
+
+diagnostic("INVALID_DEFAULT_KEY", "model", -1, -1, File, Line,
+    cat("Default dict key '", Key, "' for field '", FN, "' is not a valid field of '", TargetRec, "'")) :-
+    field(R, FN, $Named(_, TargetRec), 1, _, _, _),
+    field_default_key(R, FN, Key, File, Line),
+    record(TargetRec, "class", _, _, _),
+    !effective_field(TargetRec, Key, _).
+
+// 2. Specific Primary Expression Diagnostics
+diagnostic("UNBOUND_ITER_VAR", CId, E, 0, File, Line,
+    cat("Unbound iteration/binder variable '", VarN, "'")) :-
+    expr_scope(CId, E, _, Env),
+    expr(E, "iter", VarN, _, _, File, Line),
+    !env_lookup(Env, VarN, _).
+
+diagnostic("MISSING_FIELD", CId, E, 0, File, Line,
+    cat("Field '", FName, "' does not exist on record '", RecId, "'")) :-
+    expr_scope(CId, E, _, _),
+    expr(E, "get_field", FName, _, _, File, Line),
+    expr_arg(E, 0, ObjE),
+    expr_occ_type(CId, ObjE, ObjT),
+    (ObjT = $Named(_, RecId) ; ObjT = $Located($Named(_, RecId))),
+    !effective_field(RecId, FName, _).
+
+diagnostic("INVALID_VARIANT_CASE", CId, E, 0, File, Line,
+    cat("Invalid variant case '", CaseName, "'")) :-
+    expr_scope(CId, E, _, _),
+    expr(E, "case_is", CaseName, _, _, File, Line),
+    expr_arg(E, 0, ObjE),
+    expr_occ_type(CId, ObjE, VarT),
+    !variant_case_map(VarT, CaseName, _, _).
+
+diagnostic("INVALID_ENUM_VAL", CId, E, 0, File, Line,
+    cat("Invalid enum value '", EnumVal, "' on enum '", EnumRecId, "'")) :-
+    expr_scope(CId, E, _, _),
+    expr(E, "enum_is", EnumVal, _, _, File, Line),
+    expr_arg(E, 0, ObjE),
+    expr_occ_type(CId, ObjE, $Named(_, EnumRecId)),
+    !enum_entry(EnumRecId, EnumVal).
+
+diagnostic("TUPLE_INDEX_OOB", CId, E, 0, File, Line,
+    cat("Tuple index ", to_string(Idx), " is out of bounds")) :-
+    expr_scope(CId, E, _, _),
+    expr(E, "nth_get", _, Idx, _, File, Line),
+    expr_arg(E, 0, ObjE),
+    expr_occ_type(CId, ObjE, TupT),
+    TupT = $Tuple(_),
+    !tuple_elem_at(TupT, Idx, _).
+
+diagnostic("VARIADIC_BOOL_ARG_TYPE", CId, E, Idx, File, Line,
+    cat("Argument ", to_string(Idx), " of '", Op, "' must evaluate to 'bool'")) :-
+    expr_scope(CId, E, _, _),
+    expr(E, Op, _, _, _, File, Line),
+    (Op = "and" ; Op = "or"),
+    expr_arg(E, Idx, ArgE),
+    expr_occ_type(CId, ArgE, ArgT),
+    ArgT != $Primitive($PrimBool()).
+
+diagnostic("TYPE_COND_BRANCH_MISMATCH", CId, E, 0, File, Line,
+    "All branches of type_cond must evaluate to the same type") :-
+    type_cond_all_branches_typed(CId, E),
+    type_cond_mismatch(CId, E),
+    expr(E, "type_cond", _, _, _, File, Line).
+
+// Generic fallback for primary expression type errors (only when all children succeeded)
+diagnostic("TYPE_MISMATCH", CId, E, -1, File, Line,
+    cat("Type mismatch in operator '", Op, "'")) :-
+    expr_scope(CId, E, _, _),
+    expr(E, Op, _, _, _, File, Line),
+    !expr_occ_type(CId, E, _),
+    !child_failed(CId, E),
+    Op != "iter",
+    Op != "get_field",
+    Op != "case_is",
+    Op != "enum_is",
+    Op != "nth_get",
+    Op != "type_cond".
+
+// Root expected type check (condition -> bool, message -> string)
+diagnostic("ROOT_COND_NOT_BOOL", CId, CondE, -1, File, Line,
+    "Check condition root must evaluate to 'bool'") :-
+    check_def(CId, _, _, CondE, _, _, _),
+    expr(CondE, _, _, _, _, File, Line),
+    expr_occ_type(CId, CondE, ActualT),
+    ActualT != $Primitive($PrimBool()).
+
+diagnostic("ROOT_MSG_NOT_STRING", CId, MsgE, -1, File, Line,
+    "Check message root must evaluate to 'string'") :-
+    check_def(CId, _, _, _, MsgE, _, _),
+    expr(MsgE, _, _, _, _, File, Line),
+    expr_occ_type(CId, MsgE, ActualT),
+    ActualT != $Primitive($PrimString()).
+
+diagnostic("FIELD_CHECK_NOT_BOOL", CId, CondE, -1, File, Line,
+    "Field check expression must evaluate to 'bool'") :-
+    field_check_def(CId, _, _, CondE, _, _),
+    expr(CondE, _, _, _, _, File, Line),
+    expr_occ_type(CId, CondE, ActualT),
+    ActualT != $Primitive($PrimBool()).
+
+// Export inferred types for Python IR hydration
+.decl exported_occ_type(check_id: CheckId, expr_id: ExprId, type_str: symbol)
+.output exported_occ_type
+
+exported_occ_type(CId, E, "typed") :- expr_occ_type(CId, E, _).
