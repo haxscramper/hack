@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 from __future__ import annotations
 
 import ast
@@ -103,25 +102,25 @@ from model_value import Value, decode_json, encode_json
 DIRECTIVE_NAMES = ("__check__", "__variant__", "__config__")
 
 __all__ = [
-    "__check__",
-    "__config__",
-    "__variant__",
+    "DslModel",
     "EnFieldAnnotation",
     "FixedArray",
     "Float32",
     "Float64",
+    "GenConfig",
     "Int8",
     "Int16",
     "Int32",
     "Int64",
+    "ReduceConfig",
+    "Severity",
     "UInt8",
     "UInt16",
     "UInt32",
     "UInt64",
-    "Severity",
-    "GenConfig",
-    "ReduceConfig",
-    "DslModel",
+    "__check__",
+    "__config__",
+    "__variant__",
     "get_dsl_model",
     "op_all",
     "op_all_rec",

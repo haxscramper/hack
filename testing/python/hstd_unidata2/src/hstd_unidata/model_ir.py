@@ -99,39 +99,39 @@ def numeric_join(left: PrimKind, right: PrimKind) -> PrimKind:
 
 @beartype
 class PrimT(FrozenModel):
-    kind: Literal["prim"] = "prim"
+    kind: Literal["prim"] = "prim"  # noqa
     prim: PrimKind
 
 
 @beartype
 class ListT(FrozenModel):
-    kind: Literal["list"] = "list"
+    kind: Literal["list"] = "list"  # noqa
     elem: TypeRef
 
 
 @beartype
 class ArrayT(FrozenModel):
-    kind: Literal["array"] = "array"
+    kind: Literal["array"] = "array"  # noqa
     elem: TypeRef
     size: int
 
 
 @beartype
 class MapT(FrozenModel):
-    kind: Literal["map"] = "map"
+    kind: Literal["map"] = "map"  # noqa
     key: TypeRef
     value: TypeRef
 
 
 @beartype
 class OptT(FrozenModel):
-    kind: Literal["optional"] = "optional"
+    kind: Literal["optional"] = "optional"  # noqa
     elem: TypeRef
 
 
 @beartype
 class TupleT(FrozenModel):
-    kind: Literal["tuple"] = "tuple"
+    kind: Literal["tuple"] = "tuple"  # noqa
     elems: Tuple[TypeRef, ...]
 
 
@@ -139,7 +139,7 @@ class TupleT(FrozenModel):
 class NamedT(FrozenModel):
     """Reference to a record or enum declared in the model."""
 
-    kind: Literal["named"] = "named"
+    kind: Literal["named"] = "named"  # noqa
     qname: QName
 
 
@@ -147,7 +147,7 @@ class NamedT(FrozenModel):
 class ExternalT(FrozenModel):
     """Opaque type provided by another package, the model never inspects its content."""
 
-    kind: Literal["external"] = "external"
+    kind: Literal["external"] = "external"  # noqa
     package: str
     qname: QName
 
@@ -156,7 +156,7 @@ class ExternalT(FrozenModel):
 class VariantT(FrozenModel):
     """Variant created by `__variant__` on the owner record and stored in the named field."""
 
-    kind: Literal["variant"] = "variant"
+    kind: Literal["variant"] = "variant"  # noqa
     owner: QName
     field: str
 
@@ -165,13 +165,13 @@ class VariantT(FrozenModel):
 class DynT(FrozenModel):
     """Any value reachable from a value of the root type, produced by recursive traversal."""
 
-    kind: Literal["dyn"] = "dyn"
+    kind: Literal["dyn"] = "dyn"  # noqa
     root: TypeRef
 
 
 @beartype
 class TypeParamT(FrozenModel):
-    kind: Literal["param"] = "param"
+    kind: Literal["param"] = "param"  # noqa
     name: str
 
 
@@ -179,7 +179,7 @@ class TypeParamT(FrozenModel):
 class UnresolvedT(FrozenModel):
     """Annotation text that is resolved against the lexical scope during model finalization."""
 
-    kind: Literal["unresolved"] = "unresolved"
+    kind: Literal["unresolved"] = "unresolved"  # noqa
     text: str
 
 
@@ -439,13 +439,13 @@ class ModelDef(FrozenModel):
 
 @beartype
 class FieldSeg(FrozenModel):
-    kind: Literal["field"] = "field"
+    kind: Literal["field"] = "field"  # noqa
     name: str
 
 
 @beartype
 class IndexSeg(FrozenModel):
-    kind: Literal["index"] = "index"
+    kind: Literal["index"] = "index"  # noqa
     index: int
 
 
@@ -453,7 +453,7 @@ class IndexSeg(FrozenModel):
 class KeySeg(FrozenModel):
     """Map entry segment, the entry position identifies the entry and the key text is for display."""
 
-    kind: Literal["key"] = "key"
+    kind: Literal["key"] = "key"  # noqa
     key: str
     entry: int
 
