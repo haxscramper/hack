@@ -1,0 +1,65 @@
+import example_dia
+import pytest
+from beartype.typing import List
+from model_dsl import GenConfig, __check__, get_dsl_model, op_all
+from model_eval import errors_only
+from model_gen import GenerationError
+
+
+@pytest.mark.parametrize("seed", range(5))
+def test_generated_diagrams_are_valid(seed: int) -> None:
+    value = example_dia.generate_diagram(seed)
+    assert errors_only(example_dia.M.validate(example_dia.Diagram, value)) == []
+
+
+def test_generation_is_deterministic_for_a_seed() -> None:
+    first = example_dia.generate_diagram(3)
+    second = example_dia.generate_diagram(3)
+    assert example_dia.M.encode(example_dia.Diagram, first) == example_dia.M.encode(
+        example_dia.Diagram, second
+    )
+
+
+def test_generation_repairs_failing_checks_without_overrides() -> None:
+    M = get_dsl_model("test.gen.repair")
+
+    class Bounded(M.Class):
+        values: List[int]
+
+        __check__(
+            cond=op_all(
+                M.This["values"],
+                "value",
+                (0 <= M.Iter("value")) & (M.Iter("value") < 5),
+            ),
+            message="range",
+        )
+
+    for seed in range(5):
+        value = M.generate(Bounded, GenConfig(seed=seed))
+        assert M.validate(Bounded, value) == []
+
+
+def test_missing_external_generator_is_reported() -> None:
+    Ext = get_dsl_model("test.gen.external")
+    M = get_dsl_model("test.gen.uses.external")
+
+    class Holder(M.Class):
+        payload: Ext._T["Payload"]
+
+    with pytest.raises(GenerationError, match="@test.gen.external:Payload"):
+        M.generate(Holder)
+
+
+def test_unsatisfiable_check_is_reported() -> None:
+    M = get_dsl_model("test.gen.impossible")
+
+    class Impossible(M.Class):
+        value: int
+
+        __check__(
+            id="never", cond=M.This["value"] < M.This["value"], message="never holds"
+        )
+
+    with pytest.raises(GenerationError, match="'never' failed"):
+        M.generate(Impossible, GenConfig(repair_attempts=5, restarts=2))
