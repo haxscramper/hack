@@ -6,6 +6,7 @@ import json
 
 from beartype import beartype
 from beartype.typing import Any
+from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field
 
 __all__ = [
@@ -363,9 +364,10 @@ class TypeParser:
 
     def string(self) -> str:
         self.spaces()
+        logger.info(self.text)
         value, length = json.JSONDecoder().raw_decode(self.text[self.position :])
         if not isinstance(value, str):
-            raise ValueError(
+            raise TypeError(
                 f"Expected a string in Soufflé type {self.text!r}, got {value!r}"
             )
         self.position += length

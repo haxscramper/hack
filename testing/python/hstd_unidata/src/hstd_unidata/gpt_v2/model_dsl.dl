@@ -162,9 +162,9 @@ sequence(S) :- argument_types(_, _, S).
 sequence(S) :- used_type($TupleValue(S)).
 sequence(S) :- used_type($Variant(S)).
 sequence(Tail) :- sequence($TCons(_, Tail)).
-sequence_member($TCons(T, _), T) :- sequence($TCons(T, _)).
-sequence_member($TCons(_, Tail), T) :-
-    sequence($TCons(_, Tail)),
+sequence_member($TCons(T, Tail), T) :- sequence($TCons(T, Tail)).
+sequence_member($TCons(Head, Tail), T) :- 
+    sequence($TCons(Head, Tail)),
     sequence_member(Tail, T).
 
 argument_types(E, N, $TNil()) :- arity(E, N).
@@ -512,15 +512,20 @@ expr_type(E, T) :-
     argument_types(E, 0, $TCons(_, Cases)),
     uniform_sequence(Cases, T).
 
+
+.decl match_excluded_type(T: Type)
+
+match_excluded_type($AnyValue()) :- view_type(_, $AnyValue()).
+match_excluded_type($Tree(Root)) :- view_type(_, $Tree(Root)).
+match_excluded_type($Variant(Cases)) :- view_type(_, $Variant(Cases)).
+
 match_alternative(E, T) :-
     expression(E, Op, _, _, _),
     operation(Op, "type_match"),
     argument(E, 0, Source),
     view_type(Source, T),
     type_kind(T, "plain"),
-    T != $AnyValue(),
-    T != $Tree(_),
-    T != $Variant(_).
+    !match_excluded_type(T).
 
 match_alternative(E, T) :-
     expression(E, Op, _, _, _),
