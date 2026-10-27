@@ -7,6 +7,7 @@ from beartype.typing import Annotated
 
 from hstd_unidata.model_dsl import __variant__, get_dsl_model
 from hstd_unidata.model_frontend import EnFieldAnnotation
+from hstd_unidata.model_index import ModelIndex
 
 M = get_dsl_model("org.sem")
 
@@ -57,6 +58,11 @@ class OrgDiagnostics(M.Class):
 
 def test_example_model_main():
     M.type_check()
-    Path("/tmp/test_example_model_main.json").write_text(
-        M.finalize().model_dump_json(indent=2)
-    )
+
+    res = M.finalize()
+
+    idx = ModelIndex(res)
+
+    assert len(idx.enum_by_id("OrgDiagnostics::Kind").enum_values) == 2
+
+    Path("/tmp/test_example_model_main.json").write_text(res.model_dump_json(indent=2))

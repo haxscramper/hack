@@ -67,7 +67,7 @@ def test_none_default_requires_optional_field() -> None:
     M = get_dsl_model("test.none.default")
 
     class Bad(M.Class):
-        count: int = None
+        count: int = None  # type: ignore
 
     with pytest.raises(DslModelError, match="only optional fields accept None"):
         M.finalize()
