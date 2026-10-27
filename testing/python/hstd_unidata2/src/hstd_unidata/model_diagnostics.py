@@ -195,8 +195,10 @@ class DiagnosticBuilder:
                 return f"'{op}' requires a variant operand (a field created by __variant__), but the operand has type '{row.actual}'"
             case DiagCode.INVALID_ENUM_VALUE:
                 names = ", ".join(
-                    ev.name for ev in self.index.record_by_id(row.subject).enum_values
+                    ev.name
+                    for ev in self.index.enum_values(self.index.by_id[row.subject])
                 )
+
                 return f"'{row.detail}' is not a value of enum '{row.actual}'; expected one of: {names}"
             case DiagCode.NOT_AN_ENUM:
                 return f"'{op}' requires an enum operand, but the operand has type '{row.actual}'"

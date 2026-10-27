@@ -579,6 +579,10 @@ class DslModel:
         lookup = NameLookup()
         for rec in index.model.records:
             lookup.add(rec.qname)
+
+        for enum_def in index.model.enums:
+            lookup.add(enum_def.qname)
+
         return AnnotationResolver(lookup, self.package).resolve(target)
 
     def decode(self, target: Any, data: Any) -> Value:

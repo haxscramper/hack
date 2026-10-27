@@ -226,6 +226,14 @@ class Lowering:
         external: Set[QName] = set()
         for rec in self.index.model.records:
             self.lower_record(rec, external)
+
+        for enum_def in self.index.model.enums:
+            q = qname_term(enum_def.qname)
+            self.emit("record", q, sym("enum"))
+            self.emit("qname_text", q, sym(enum_def.qname.to_id()))
+            for value in enum_def.enum_values:
+                self.emit("enum_value", q, sym(value.name))
+
         for q in sorted(external, key=lambda q: q.to_id()):
             self.emit("qname_text", qname_term(q), sym(q.to_id()))
         for rec in self.index.model.records:
@@ -276,8 +284,6 @@ class Lowering:
         for f in rec.fields:
             self.emit("field", q, sym(f.name), type_term(f.type))
             collect_external_qnames(f.type, external)
-        for ev in rec.enum_values:
-            self.emit("enum_value", q, sym(ev.name))
         for v in rec.variants:
             self.emit("variant_kind", q, sym(v.field), qname_term(v.kind_enum))
             for c in v.cases:

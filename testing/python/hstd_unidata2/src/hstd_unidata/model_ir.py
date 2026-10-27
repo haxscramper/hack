@@ -412,13 +412,22 @@ class CheckDef(FrozenModel):
 
 
 @beartype
+class EnumDef(FrozenModel):
+    qname: QName
+    kind: Literal[RecordKind.ENUM] = RecordKind.ENUM
+    doc: str = ""
+    enum_values: Tuple[EnumValueDef, ...] = ()
+    backend: Dict[str, Any] = Field(default_factory=dict)
+    loc: SourceLoc
+
+
+@beartype
 class RecordDef(FrozenModel):
-    kind: RecordKind
+    kind: Literal[RecordKind.CLASS, RecordKind.CASE]
     qname: QName
     doc: str = ""
     bases: Tuple[QName, ...] = ()
     fields: Tuple[FieldDef, ...] = ()
-    enum_values: Tuple[EnumValueDef, ...] = ()
     nested: Tuple[QName, ...] = ()
     variants: Tuple[VariantDef, ...] = ()
     methods: Tuple[MethodDef, ...] = ()
@@ -429,12 +438,12 @@ class RecordDef(FrozenModel):
     loc: SourceLoc
 
 
-@beartype
 class ModelDef(FrozenModel):
     """Finalized, backend-independent model with every name and type resolved."""
 
     package: str
     records: Tuple[RecordDef, ...]
+    enums: Tuple[EnumDef, ...] = ()
 
 
 @beartype

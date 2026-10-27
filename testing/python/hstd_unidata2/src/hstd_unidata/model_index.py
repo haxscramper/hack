@@ -7,6 +7,7 @@ from hstd_unidata.model_ir import (
     ArrayT,
     CheckDef,
     DynT,
+    EnumDef,
     EnumValueDef,
     ExternalT,
     FieldDef,
@@ -36,8 +37,14 @@ class ModelIndex:
     def __init__(self, model: ModelDef) -> None:
         self.model = model
         self.records: Dict[QName, RecordDef] = {r.qname: r for r in model.records}
-        self.by_id: Dict[str, QName] = {r.qname.to_id(): r.qname for r in model.records}
-        self.order: Dict[QName, int] = {r.qname: i for i, r in enumerate(model.records)}
+        self.enums: Dict[QName, EnumDef] = {e.qname: e for e in model.enums}
+        declarations = model.records + model.enums
+        self.by_id: Dict[str, QName] = {
+            declaration.qname.to_id(): declaration.qname for declaration in declarations
+        }
+        self.order: Dict[QName, int] = {
+            declaration.qname: i for i, declaration in enumerate(declarations)
+        }
         self.field_cache: Dict[QName, Tuple[FieldDef, ...]] = {}
         self.ancestor_cache: Dict[QName, Tuple[QName, ...]] = {}
 
@@ -53,15 +60,25 @@ class ModelIndex:
         return self.records[qname]
 
     def record_by_id(self, text: str) -> RecordDef:
-        if text not in self.by_id:
-            known = ", ".join(sorted(self.by_id)[:30])
+        qname = self.by_id.get(text)
+        if qname is None or qname not in self.records:
+            known = ", ".join(sorted(q.to_id() for q in self.records)[:30])
             raise KeyError(
-                f"Record id '{text}' is not declared in model '{self.model.package}'; known records: {known}"
+                f"Record id '{text}' is not a record in model '{self.model.package}'; known records: {known}"
             )
-        return self.records[self.by_id[text]]
+        return self.records[qname]
+
+    def enum_by_id(self, text: str) -> EnumDef:
+        qname = self.by_id.get(text)
+        if qname is None or qname not in self.enums:
+            known = ", ".join(sorted(q.to_id() for q in self.enums)[:30])
+            raise KeyError(
+                f"Enum id '{text}' is not a enum in model '{self.model.package}'; known enums: {known}"
+            )
+        return self.enums[qname]
 
     def is_enum(self, qname: QName) -> bool:
-        return qname in self.records and self.records[qname].kind == RecordKind.ENUM
+        return qname in self.enums
 
     def ancestors(self, qname: QName) -> Tuple[QName, ...]:
         """The record itself followed by all transitive bases, each listed once."""
@@ -129,7 +146,12 @@ class ModelIndex:
         )
 
     def enum_values(self, qname: QName) -> Tuple[EnumValueDef, ...]:
-        return self.record(qname).enum_values
+        if qname not in self.enums:
+            known = ", ".join(sorted(q.to_id() for q in self.enums)[:30])
+            raise KeyError(
+                f"Enum '{qname.to_id()}' is not declared in model '{self.model.package}'; known enums: {known}"
+            )
+        return self.enums[qname].enum_values
 
     def checks_for(self, qname: QName) -> List[Tuple[QName, CheckDef]]:
         """Checks that apply to an instance of the record, inherited checks first."""

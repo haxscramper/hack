@@ -23,7 +23,7 @@ def test_variant_creates_data_field_and_kind_enum() -> None:
     assert isinstance(shape, NamedT)
     data = index.field(shape.qname, "data")
     assert data is not None and isinstance(data.type, VariantT)
-    kind = index.record_by_id("Shape::Kind")
+    kind = index.enum_by_id("Shape::Kind")
     assert kind.kind == RecordKind.ENUM
     assert [v.name for v in kind.enum_values] == ["Circle", "Square"]
 
@@ -44,7 +44,7 @@ def test_variant_field_and_kind_names_are_configurable() -> None:
     qname = M.type_of(Element).qname
     assert index.field(qname, "algo") is not None
     assert index.field(qname, "data") is None
-    assert index.record_by_id("Element::AlgoKind").kind == RecordKind.ENUM
+    assert index.enum_by_id("Element::AlgoKind").kind == RecordKind.ENUM
 
 
 def test_variant_kind_clash_is_a_model_error() -> None:

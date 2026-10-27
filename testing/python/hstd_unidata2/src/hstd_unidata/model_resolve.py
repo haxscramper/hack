@@ -50,6 +50,7 @@ from hstd_unidata.model_ir import (
     CheckContext,
     CheckDef,
     DynT,
+    EnumDef,
     EnumValueDef,
     ExplicitDefault,
     ExprNode,
@@ -568,33 +569,92 @@ class ModelFinalizer:
                 continue
             self.by_qname[raw.qname] = raw
             self.lookup.add(raw.qname)
-        variant_records: Dict[QName, List[RecordDef]] = {}
+        variant_records: Dict[QName, List[EnumDef]] = {}
         variant_defs: Dict[QName, List[VariantDef]] = {}
         variant_fields: Dict[QName, List[FieldDef]] = {}
         for raw in self.raws:
-            self.resolve_variants(raw, variant_records, variant_defs, variant_fields)
-        records: List[RecordDef] = []
-        for raw in self.raws:
-            records.append(
-                self.resolve_record(
-                    raw,
-                    variant_defs.get(raw.qname, []),
-                    variant_fields.get(raw.qname, []),
+            if raw.kind != RecordKind.ENUM:
+                self.resolve_variants(
+                    raw, variant_records, variant_defs, variant_fields
                 )
-            )
-            records.extend(variant_records.get(raw.qname, []))
+        records: List[RecordDef] = []
+        enums: List[EnumDef] = []
+        for raw in self.raws:
+            if raw.kind == RecordKind.ENUM:
+                enums.append(self.resolve_enum(raw))
+            else:
+                records.append(
+                    self.resolve_record(
+                        raw,
+                        variant_defs.get(raw.qname, []),
+                        variant_fields.get(raw.qname, []),
+                    )
+                )
+                enums.extend(variant_records.get(raw.qname, []))
         if self.issues:
             raise DslModelError(self.package, self.issues)
-        model = ModelDef(package=self.package, records=tuple(records))
+        model = ModelDef(
+            package=self.package,
+            records=tuple(records),
+            enums=tuple(enums),
+        )
         model = self.verify_with_index(model)
         if self.issues:
             raise DslModelError(self.package, self.issues)
         return model
 
+    def resolve_enum(self, raw: RawRecord) -> EnumDef:
+        name = raw.qname.to_id()
+        if raw.bases:
+            bases = ", ".join(base.to_id() for base in raw.bases)
+            self.issue(
+                raw.loc,
+                f"enum '{name}' cannot inherit from {bases} because enum declarations do not support bases",
+            )
+        for check in raw.checks:
+            self.issue(
+                check.loc,
+                f"enum '{name}' cannot declare check '{check.id}' because checks apply to records and fields",
+            )
+        for variant in raw.variants:
+            self.issue(
+                variant.loc,
+                f"enum '{name}' cannot declare variant field '{variant.field}' because variants belong to records",
+            )
+        for method in raw.methods:
+            self.issue(
+                method.loc,
+                f"enum '{name}' cannot declare method '{method.name}' because enum declarations only contain values",
+            )
+        if raw.hash_func is not None:
+            self.issue(
+                raw.loc,
+                f"enum '{name}' cannot declare '__hash__' because structural hash fields apply to records",
+            )
+        if raw.eq_func is not None:
+            self.issue(
+                raw.loc,
+                f"enum '{name}' cannot declare '__eq__' because structural equality fields apply to records",
+            )
+        nested = self.lookup.members.get(raw.qname, {})
+        if nested:
+            names = ", ".join(sorted(nested))
+            self.issue(
+                raw.loc,
+                f"enum '{name}' cannot contain nested declarations because enums only contain values; nested declarations: {names}",
+            )
+        return EnumDef(
+            qname=raw.qname,
+            doc=raw.doc,
+            enum_values=tuple(raw.enum_values),
+            backend=raw.backend,
+            loc=raw.loc,
+        )
+
     def resolve_variants(
         self,
         raw: RawRecord,
-        variant_records: Dict[QName, List[RecordDef]],
+        variant_records: Dict[QName, List[EnumDef]],
         variant_defs: Dict[QName, List[VariantDef]],
         variant_fields: Dict[QName, List[FieldDef]],
     ) -> None:
@@ -658,8 +718,7 @@ class ModelFinalizer:
                 continue
             self.lookup.add(kind_q)
             variant_records.setdefault(raw.qname, []).append(
-                RecordDef(
-                    kind=RecordKind.ENUM,
+                EnumDef(
                     qname=kind_q,
                     doc=f"Case tags of variant field '{rv.field}' in '{raw.qname.to_id()}'.",
                     enum_values=tuple(
@@ -669,6 +728,7 @@ class ModelFinalizer:
                     loc=rv.loc,
                 )
             )
+
             variant_defs.setdefault(raw.qname, []).append(
                 VariantDef(
                     field=rv.field, kind_enum=kind_q, cases=tuple(cases), loc=rv.loc
@@ -753,7 +813,6 @@ class ModelFinalizer:
             doc=raw.doc,
             bases=raw.bases,
             fields=tuple(fields),
-            enum_values=tuple(raw.enum_values),
             nested=nested,
             variants=tuple(variants),
             methods=tuple(methods),
@@ -916,7 +975,9 @@ class ModelFinalizer:
                     f"because container values carry no runtime element type; match the element type instead",
                 )
             case OpId.IS_DERIVED if not (
-                isinstance(type_val, NamedT) and type_val.qname in self.by_qname
+                isinstance(type_val, NamedT)
+                and type_val.qname in self.by_qname
+                and self.by_qname[type_val.qname].kind != RecordKind.ENUM
             ):
                 self.issue(
                     node.loc,
@@ -991,7 +1052,11 @@ class ModelFinalizer:
             records.append(rec.model_copy(update={"fields": tuple(fields)}))
         if self.issues:
             return model
-        normalized_model = ModelDef(package=model.package, records=tuple(records))
+        normalized_model = ModelDef(
+            package=model.package,
+            records=tuple(records),
+            enums=model.enums,
+        )
         normalized_index = ModelIndex(normalized_model)
         for rec in normalized_model.records:
             if rec.kind != RecordKind.ENUM:
