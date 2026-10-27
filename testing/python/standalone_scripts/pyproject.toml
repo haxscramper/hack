@@ -9,6 +9,7 @@ dependencies = [
     "bs4>=0.0.2",
     "click>=8.4.1",
     "css-parser>=1.0.10",
+    "deepdiff>=9.1.0",
     "ebooklib>=0.20",
     "evdev>=2.0.0",
     "gitpython>=3.1.61",
