@@ -209,7 +209,7 @@ class DiagnosticBuilder:
                 expected = " or ".join(sorted({r.detail for r in rows}))
                 return f"argument '{self.table[o.node.op].role(row.arg)}' of '{op}' must be {expected}, but has type '{row.actual}'"
             case DiagCode.INCOMPATIBLE_OPERANDS:
-                return f"operands of '{op}' have incompatible types '{row.detail}' and '{row.actual}' because {self.operand_rule(o.node.op)}"
+                return f"operands of '{op}' have incompatible types '{row.detail}' and '{row.actual}' because {self.operand_type_rule(o.node.op)}"
             case DiagCode.BRANCH_MISMATCH:
                 match o.node.op:
                     case OpId.FOLD:
@@ -239,7 +239,7 @@ class DiagnosticBuilder:
             case DiagCode.UNTYPED:
                 return self.describe_untyped(row.expr)
 
-    def operand_rule(self, op: OpId) -> str:
+    def operand_type_rule(self, op: OpId) -> str:
         match op:
             case OpId.EQ | OpId.NE:
                 return "equality requires equal types or two numeric types"

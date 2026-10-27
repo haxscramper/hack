@@ -53,6 +53,7 @@ from model_ir import (
     ExprNode,
     ExternalT,
     FieldDef,
+    ItemPath,
     ListT,
     MapT,
     MethodArgDef,
@@ -61,7 +62,6 @@ from model_ir import (
     NamedT,
     OpId,
     OptT,
-    Path,
     PrimKind,
     PrimT,
     QName,
@@ -953,7 +953,7 @@ class ModelFinalizer:
                     continue
                 try:
                     decoded = decode_json(
-                        index, f.type, f.default.value, Path().field(f.name)
+                        index, f.type, f.default.value, ItemPath().field(f.name)
                     )
                     normalized = ExplicitDefault(
                         value=encode_json(index, f.type, decoded)

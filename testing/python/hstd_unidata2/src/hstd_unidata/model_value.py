@@ -15,12 +15,12 @@ from model_ir import (
     ExternalT,
     FieldSeg,
     IndexSeg,
+    ItemPath,
     KeySeg,
     ListT,
     MapT,
     NamedT,
     OptT,
-    Path,
     PathSeg,
     PrimKind,
     PrimT,
@@ -38,7 +38,7 @@ from model_ir import (
 class ScalarValue:
     prim: PrimKind
     value: Union[bool, int, float, str, None]
-    path: Optional[Path] = field(default=None, compare=False)
+    path: Optional[ItemPath] = field(default=None, compare=False)
 
 
 @beartype
@@ -48,14 +48,14 @@ class RecordValue:
 
     qname: QName
     fields: Dict[str, Value]
-    path: Optional[Path] = field(default=None, compare=False)
+    path: Optional[ItemPath] = field(default=None, compare=False)
 
 
 @beartype
 @dataclass(frozen=True)
 class ListValue:
     items: Tuple[Value, ...]
-    path: Optional[Path] = field(default=None, compare=False)
+    path: Optional[ItemPath] = field(default=None, compare=False)
 
 
 @beartype
@@ -64,21 +64,21 @@ class MapValue:
     """Map with unique keys under structural equality, entries keep insertion order."""
 
     entries: Tuple[Tuple[Value, Value], ...]
-    path: Optional[Path] = field(default=None, compare=False)
+    path: Optional[ItemPath] = field(default=None, compare=False)
 
 
 @beartype
 @dataclass(frozen=True)
 class OptValue:
     value: Optional[Value]
-    path: Optional[Path] = field(default=None, compare=False)
+    path: Optional[ItemPath] = field(default=None, compare=False)
 
 
 @beartype
 @dataclass(frozen=True)
 class TupleValue:
     items: Tuple[Value, ...]
-    path: Optional[Path] = field(default=None, compare=False)
+    path: Optional[ItemPath] = field(default=None, compare=False)
 
 
 @beartype
@@ -86,7 +86,7 @@ class TupleValue:
 class EnumValue:
     enum: QName
     name: str
-    path: Optional[Path] = field(default=None, compare=False)
+    path: Optional[ItemPath] = field(default=None, compare=False)
 
 
 @beartype
@@ -95,7 +95,7 @@ class VariantValue:
     variant: VariantT
     tag: str
     case: RecordValue
-    path: Optional[Path] = field(default=None, compare=False)
+    path: Optional[ItemPath] = field(default=None, compare=False)
 
 
 @beartype
@@ -105,7 +105,7 @@ class ExternalValue:
 
     type: ExternalT
     payload: Any
-    path: Optional[Path] = field(default=None, compare=False)
+    path: Optional[ItemPath] = field(default=None, compare=False)
 
 
 @beartype
@@ -114,7 +114,7 @@ class AnyValue:
     """Payload of a field declared with the `any` type, stored without interpretation."""
 
     payload: Any
-    path: Optional[Path] = field(default=None, compare=False)
+    path: Optional[ItemPath] = field(default=None, compare=False)
 
 
 @beartype
@@ -122,11 +122,11 @@ class AnyValue:
 class PathValue:
     """Occurrence path produced by `path_of`, it is not storable in instance data."""
 
-    target: Path
-    path: Optional[Path] = field(default=None, compare=False)
+    target: ItemPath
+    path: Optional[ItemPath] = field(default=None, compare=False)
 
 
-Value = Union[
+type Value = Union[
     ScalarValue,
     RecordValue,
     ListValue,
@@ -145,7 +145,7 @@ Value = Union[
 class ValueDecodeError(Exception):
     """Instance data does not match the declared model type at the given path."""
 
-    def __init__(self, path: Path, message: str) -> None:
+    def __init__(self, path: ItemPath, message: str) -> None:
         super().__init__(f"{path.render()}: {message}")
         self.path = path
         self.message = message
@@ -156,7 +156,7 @@ class ValueDecodeError(Exception):
 class Position:
     """Value occurrence inside a tree together with its declared type."""
 
-    path: Path
+    path: ItemPath
     type: TypeRef
     value: Value
     rebuild: Callable[[Value], Value]
@@ -311,7 +311,9 @@ def values_equal(index: ModelIndex, left: Value, right: Value) -> bool:
     """Numeric values compare by value across widths, everything else structurally."""
     if is_numeric_value(left) and is_numeric_value(right):
         return left.value == right.value
-    return value_key(index, left) == value_key(index, right)
+
+    else:
+        return value_key(index, left) == value_key(index, right)
 
 
 @beartype
@@ -402,7 +404,7 @@ def record_default(
     for f in index.effective_fields(qname):
         if f.default is not None:
             fields[f.name] = decode_json(
-                index, f.type, f.default.value, Path().field(f.name)
+                index, f.type, f.default.value, ItemPath().field(f.name)
             )
         else:
             fields[f.name] = default_value(index, f.type, stack + (qname,))
@@ -410,7 +412,7 @@ def record_default(
 
 
 @beartype
-def decode_prim(prim: PrimKind, data: Any, path: Path) -> Value:
+def decode_prim(prim: PrimKind, data: Any, path: ItemPath) -> Value:
     match prim:
         case p if p in INTEGER_RANGES:
             if isinstance(data, bool) or not isinstance(data, int):
@@ -459,7 +461,9 @@ def decode_prim(prim: PrimKind, data: Any, path: Path) -> Value:
 
 
 @beartype
-def decode_json(index: ModelIndex, t: TypeRef, data: Any, path: Path = Path()) -> Value:
+def decode_json(
+    index: ModelIndex, t: TypeRef, data: Any, path: ItemPath = ItemPath()
+) -> Value:
     """Decodes JSON-compatible data; polymorphic record slots use the `$type` key."""
     match t:
         case PrimT():
@@ -514,7 +518,7 @@ def decode_json(index: ModelIndex, t: TypeRef, data: Any, path: Path = Path()) -
 
 
 @beartype
-def decode_map(index: ModelIndex, t: MapT, data: Any, path: Path) -> MapValue:
+def decode_map(index: ModelIndex, t: MapT, data: Any, path: ItemPath) -> MapValue:
     pairs: List[Tuple[Any, Any]]
     if t.key == PrimT(prim=PrimKind.STRING) and isinstance(data, dict):
         pairs = list(data.items())
@@ -545,7 +549,9 @@ def decode_map(index: ModelIndex, t: MapT, data: Any, path: Path) -> MapValue:
 
 
 @beartype
-def decode_enum(index: ModelIndex, qname: QName, data: Any, path: Path) -> EnumValue:
+def decode_enum(
+    index: ModelIndex, qname: QName, data: Any, path: ItemPath
+) -> EnumValue:
     values = index.enum_values(qname)
     for ev in values:
         if (isinstance(data, str) and data == ev.name) or (
@@ -561,7 +567,7 @@ def decode_enum(index: ModelIndex, qname: QName, data: Any, path: Path) -> EnumV
 
 @beartype
 def decode_record(
-    index: ModelIndex, declared: QName, data: Any, path: Path
+    index: ModelIndex, declared: QName, data: Any, path: ItemPath
 ) -> RecordValue:
     if not isinstance(data, dict):
         raise ValueDecodeError(
@@ -600,7 +606,7 @@ def decode_record(
 
 @beartype
 def decode_variant(
-    index: ModelIndex, t: VariantT, data: Any, path: Path
+    index: ModelIndex, t: VariantT, data: Any, path: ItemPath
 ) -> VariantValue:
     vdef = index.variant(t)
     tags = ", ".join(c.tag for c in vdef.cases)
@@ -743,7 +749,7 @@ def value_size(index: ModelIndex, value: Value) -> Tuple[int, int]:
 
 @beartype
 def positions(
-    index: ModelIndex, t: TypeRef, value: Value, path: Path = Path()
+    index: ModelIndex, t: TypeRef, value: Value, path: ItemPath = ItemPath()
 ) -> Iterator[Position]:
     """Pre-order occurrences of the tree; optional and variant wrappers do not add path segments."""
     yield from positions_rec(index, t, value, path, identity, False)
@@ -754,7 +760,7 @@ def positions_rec(
     index: ModelIndex,
     t: TypeRef,
     value: Value,
-    path: Path,
+    path: ItemPath,
     rebuild: Callable[[Value], Value],
     is_case_record: bool,
 ) -> Iterator[Position]:
@@ -814,13 +820,15 @@ def positions_rec(
 
 
 @beartype
-def replace_at(root: Value, path: Path, new: Value) -> Value:
+def replace_at(root: Value, path: ItemPath, new: Value) -> Value:
     """Immutable update of the outermost value stored at the path."""
     return replace_rec(root, path.segments, new, path)
 
 
 @beartype
-def replace_rec(cur: Value, segs: Tuple[PathSeg, ...], new: Value, full: Path) -> Value:
+def replace_rec(
+    cur: Value, segs: Tuple[PathSeg, ...], new: Value, full: ItemPath
+) -> Value:
     if len(segs) == 0:
         return new
     seg = segs[0]
@@ -854,7 +862,7 @@ def replace_rec(cur: Value, segs: Tuple[PathSeg, ...], new: Value, full: Path) -
 
 
 @beartype
-def locate(value: Value, path: Path = Path()) -> Value:
+def locate(value: Value, path: ItemPath = ItemPath()) -> Value:
     """Copy of the tree where every value carries its occurrence path."""
     match value:
         case RecordValue():

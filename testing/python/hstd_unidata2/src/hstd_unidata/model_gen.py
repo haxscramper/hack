@@ -16,12 +16,12 @@ from model_ir import (
     ArrayT,
     ExprNode,
     ExternalT,
+    ItemPath,
     ListT,
     MapT,
     NamedT,
     OpId,
     OptT,
-    Path,
     PrimKind,
     PrimT,
     QName,
@@ -321,8 +321,8 @@ class ValueGenerator:
         )
 
     def repair_target(
-        self, failure: CheckFailure, attempt: int, by_path: Dict[Path, Position]
-    ) -> Path:
+        self, failure: CheckFailure, attempt: int, by_path: Dict[ItemPath, Position]
+    ) -> ItemPath:
         """A position nested in the failing one, or the failing position and progressively farther ancestors."""
         nested = [
             p for p in by_path if failure.path.is_prefix_of(p) and p != failure.path
@@ -330,7 +330,9 @@ class ValueGenerator:
         if nested and self.rng.random() < 0.5:
             return self.rng.choice(nested)
         segments = failure.path.segments
-        prefixes = [Path(segments=segments[:i]) for i in range(len(segments), -1, -1)]
+        prefixes = [
+            ItemPath(segments=segments[:i]) for i in range(len(segments), -1, -1)
+        ]
         prefixes = [p for p in prefixes if p in by_path]
         escalation = min(len(prefixes) - 1, attempt // 10)
         return prefixes[self.rng.randint(0, escalation)]
@@ -348,7 +350,7 @@ class ValueGenerator:
                             f"Generated a valid '{type_text(root)}' after {restart} restart(s) and {attempt} repair(s)"
                         )
                     return value
-                by_path: Dict[Path, Position] = {}
+                by_path: Dict[ItemPath, Position] = {}
                 for pos in positions(self.index, root, value):
                     by_path.setdefault(pos.path, pos)
                 target = self.repair_target(self.rng.choice(last), attempt, by_path)

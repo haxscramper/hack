@@ -219,7 +219,7 @@ def external_generators() -> Dict[ExternalT, Callable[[GenContext], Value]]:
     return {t: payload(t, data) for t, data in types}
 
 
-if __name__ == "__main__":
+def test_example_model_main():
     M.type_check()
     logger.info("Souffle type check passed")
     for cls in (ScalarShowcase, ColumnView, LayoutPayload, Text):

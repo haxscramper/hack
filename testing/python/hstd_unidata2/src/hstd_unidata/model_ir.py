@@ -183,7 +183,7 @@ class UnresolvedT(FrozenModel):
     text: str
 
 
-TypeRef = Annotated[
+type TypeRef = Annotated[
     Union[
         PrimT,
         ListT,
@@ -458,25 +458,25 @@ class KeySeg(FrozenModel):
     entry: int
 
 
-PathSeg = Annotated[Union[FieldSeg, IndexSeg, KeySeg], Field(discriminator="kind")]
+type PathSeg = Annotated[Union[FieldSeg, IndexSeg, KeySeg], Field(discriminator="kind")]
 
 
 @beartype
-class Path(FrozenModel):
+class ItemPath(FrozenModel):
     """Occurrence path of a value inside a tree-shaped instance, used for diagnostics context."""
 
     segments: Tuple[PathSeg, ...] = ()
 
-    def field(self, name: str) -> Path:
-        return Path(segments=self.segments + (FieldSeg(name=name),))
+    def field(self, name: str) -> ItemPath:
+        return ItemPath(segments=self.segments + (FieldSeg(name=name),))
 
-    def index(self, index: int) -> Path:
-        return Path(segments=self.segments + (IndexSeg(index=index),))
+    def index(self, index: int) -> ItemPath:
+        return ItemPath(segments=self.segments + (IndexSeg(index=index),))
 
-    def key(self, key: str, entry: int) -> Path:
-        return Path(segments=self.segments + (KeySeg(key=key, entry=entry),))
+    def key(self, key: str, entry: int) -> ItemPath:
+        return ItemPath(segments=self.segments + (KeySeg(key=key, entry=entry),))
 
-    def is_prefix_of(self, other: Path) -> bool:
+    def is_prefix_of(self, other: ItemPath) -> bool:
         return other.segments[: len(self.segments)] == self.segments
 
     def render(self) -> str:
@@ -507,6 +507,6 @@ for model_cls in (
     CheckDef,
     RecordDef,
     ModelDef,
-    Path,
+    ItemPath,
 ):
     model_cls.model_rebuild()

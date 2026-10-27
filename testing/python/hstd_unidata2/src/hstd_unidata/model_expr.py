@@ -5,6 +5,7 @@ import re
 import sys
 import types
 from contextvars import ContextVar
+from pathlib import Path
 
 from beartype import beartype
 from beartype.typing import Any, Callable, Optional, Tuple, TypeVar
@@ -12,25 +13,17 @@ from model_ir import ExprNode, OpId, SourceLoc, TypeRef
 from model_ops import parse_format
 from model_resolve import AnnotationResolver
 
-IMPLEMENTATION_MODULES = frozenset(
-    {
-        "model_dsl",
-        "model_expr",
-        "model_frontend",
-        "model_resolve",
-        "model_ops",
-        "model_ir",
-        "model_index",
-        "model_value",
-        "model_eval",
-        "model_gen",
-        "model_reduce",
-        "model_souffle",
-        "model_diagnostics",
-    }
+IMPLEMENTATION_FILES = frozenset(
+    path.resolve() for path in Path(__file__).resolve().parent.rglob("*.py")
 )
 
-LIBRARY_PREFIXES = ("beartype", "pydantic", "functools", "contextlib", "typing")
+LIBRARY_PREFIXES = (
+    "beartype",
+    "pydantic",
+    "functools",
+    "contextlib",
+    "typing",
+)
 
 CAPTURED_LOC: ContextVar[Optional[SourceLoc]] = ContextVar("CAPTURED_LOC", default=None)
 
@@ -42,11 +35,11 @@ UNRESOLVED_TYPES = AnnotationResolver(None)
 @beartype
 def is_implementation_frame(frame: types.FrameType) -> bool:
     module = str(frame.f_globals.get("__name__", ""))
-    short = module.rsplit(".", 1)[-1]
+    filename = frame.f_code.co_filename
     return (
-        short in IMPLEMENTATION_MODULES
+        filename.startswith("<")
         or module.startswith(LIBRARY_PREFIXES)
-        or frame.f_code.co_filename.startswith("<")
+        or Path(filename).resolve() in IMPLEMENTATION_FILES
     )
 
 
@@ -64,7 +57,7 @@ def user_frame_loc() -> SourceLoc:
         frame = frame.f_back
     raise RuntimeError(
         "Could not locate user code on the call stack: every frame belongs to the DSL implementation modules "
-        f"{sorted(IMPLEMENTATION_MODULES)} or to libraries {LIBRARY_PREFIXES}"
+        f"{sorted(IMPLEMENTATION_FILES)} or to libraries {LIBRARY_PREFIXES}"
     )
 
 

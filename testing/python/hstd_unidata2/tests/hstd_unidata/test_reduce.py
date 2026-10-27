@@ -1,5 +1,5 @@
-import example_dia
 import pytest
+import test_example_dia as test_example_dia
 from beartype.typing import List
 from model_dsl import __check__, get_dsl_model, op_all
 from model_eval import errors_only
@@ -53,18 +53,19 @@ def test_rejects_input_failing_the_predicate() -> None:
 def test_reduced_diagram_stays_valid() -> None:
     diagram = next(
         d
-        for d in map(example_dia.generate_diagram, range(100))
-        if example_dia.has_weighted_edge(d)
+        for d in map(test_example_dia.generate_diagram, range(100))
+        if test_example_dia.has_weighted_edge(d)
     )
     seen: List[Value] = []
 
     def predicate(value: Value) -> bool:
         seen.append(value)
-        return example_dia.has_weighted_edge(value)
+        return test_example_dia.has_weighted_edge(value)
 
-    result = example_dia.M.reduce(example_dia.Diagram, diagram, predicate)
-    assert example_dia.has_weighted_edge(result.value)
+    result = test_example_dia.M.reduce(test_example_dia.Diagram, diagram, predicate)
+    assert test_example_dia.has_weighted_edge(result.value)
     assert all(
-        errors_only(example_dia.M.validate(example_dia.Diagram, v)) == [] for v in seen
+        errors_only(test_example_dia.M.validate(test_example_dia.Diagram, v)) == []
+        for v in seen
     )
     assert result.size_after < result.size_before

@@ -1,5 +1,5 @@
-import example_dia
 import pytest
+import test_example_dia as test_example_dia
 from beartype.typing import List
 from model_dsl import GenConfig, __check__, get_dsl_model, op_all
 from model_eval import errors_only
@@ -8,16 +8,18 @@ from model_gen import GenerationError
 
 @pytest.mark.parametrize("seed", range(5))
 def test_generated_diagrams_are_valid(seed: int) -> None:
-    value = example_dia.generate_diagram(seed)
-    assert errors_only(example_dia.M.validate(example_dia.Diagram, value)) == []
+    value = test_example_dia.generate_diagram(seed)
+    assert (
+        errors_only(test_example_dia.M.validate(test_example_dia.Diagram, value)) == []
+    )
 
 
 def test_generation_is_deterministic_for_a_seed() -> None:
-    first = example_dia.generate_diagram(3)
-    second = example_dia.generate_diagram(3)
-    assert example_dia.M.encode(example_dia.Diagram, first) == example_dia.M.encode(
-        example_dia.Diagram, second
-    )
+    first = test_example_dia.generate_diagram(3)
+    second = test_example_dia.generate_diagram(3)
+    assert test_example_dia.M.encode(
+        test_example_dia.Diagram, first
+    ) == test_example_dia.M.encode(test_example_dia.Diagram, second)
 
 
 def test_generation_repairs_failing_checks_without_overrides() -> None:

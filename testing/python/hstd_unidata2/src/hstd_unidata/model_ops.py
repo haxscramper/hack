@@ -18,6 +18,7 @@ from beartype.typing import (
     Sequence,
     Tuple,
     Union,
+    cast,
 )
 from model_index import ModelIndex
 from model_ir import (
@@ -229,11 +230,11 @@ def apply_format(fmt: str, values: Sequence[Value]) -> str:
                 parts.append(format(number, "b"))
             case "f":
                 parts.append(
-                    f"{float(number):.{6 if spec.precision is None else spec.precision}f}"
+                    f"{float(cast(float, number)):.{6 if spec.precision is None else spec.precision}f}"
                 )
             case "e":
                 parts.append(
-                    f"{float(number):.{6 if spec.precision is None else spec.precision}e}"
+                    f"{float(cast(float, number)):.{6 if spec.precision is None else spec.precision}e}"
                 )
         pos = spec.end
     parts.append(fmt[pos:].replace("%%", "%"))
@@ -544,6 +545,8 @@ class LtOp(CompareOp):
         self, host: EvalHost, node: ExprNode, left: Value, right: Value
     ) -> bool:
         lv, rv = ordered_operands(host, node, left, right)
+        assert isinstance(lv, (int, float))
+        assert isinstance(rv, (int, float))
         return lv < rv
 
 
@@ -555,6 +558,8 @@ class LeOp(CompareOp):
         self, host: EvalHost, node: ExprNode, left: Value, right: Value
     ) -> bool:
         lv, rv = ordered_operands(host, node, left, right)
+        assert isinstance(lv, (int, float))
+        assert isinstance(rv, (int, float))
         return lv <= rv
 
 
@@ -910,6 +915,8 @@ class ExtremumOp(Operator):
         best = items[0]
         for item in items[1:]:
             lv, rv = ordered_operands(host, node, best, item)
+            assert isinstance(lv, (int, float))
+            assert isinstance(rv, (int, float))
             if (lv < rv) if self.pick_max else (rv < lv):
                 best = item
         return best

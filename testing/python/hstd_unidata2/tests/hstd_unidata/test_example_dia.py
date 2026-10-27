@@ -303,7 +303,7 @@ def has_weighted_edge(value: Value) -> bool:
     return False
 
 
-if __name__ == "__main__":
+def test_example_dia_main():
     M.type_check()
     logger.info("Souffle type check passed")
     for seed in range(100):

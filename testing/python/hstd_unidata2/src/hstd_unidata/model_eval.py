@@ -9,9 +9,9 @@ from model_ir import (
     CheckContext,
     CheckDef,
     ExprNode,
+    ItemPath,
     NamedT,
     OpId,
-    Path,
     PrimT,
     QName,
     Severity,
@@ -31,7 +31,7 @@ class CheckFailure:
     level: Severity
     owner: QName
     """Record declaring the check, which can be a base of the instance record."""
-    path: Path
+    path: ItemPath
     message: str
     loc: SourceLoc
 
@@ -72,7 +72,7 @@ class Evaluator(EvalHost):
                 return False
 
     def run_check(
-        self, owner: QName, check: CheckDef, this: Value, path: Path
+        self, owner: QName, check: CheckDef, this: Value, path: ItemPath
     ) -> Optional[CheckFailure]:
         env = Env(this=this)
         if expect_bool(self, check.cond, self.eval(check.cond, env)):
