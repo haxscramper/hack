@@ -1,5 +1,5 @@
 #pragma once 
-#include "../model_base.dl"
+#include "logic_model/model_base.dl"
 
 
 expr_type(E, $TPrim($PBool())) :- expr(E, "map_contains"), key_matches(E).

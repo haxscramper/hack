@@ -1,5 +1,5 @@
 #pragma once 
-#include "../model_base.dl"
+#include "logic_model/model_base.dl"
 
 expr_type(E, $TPrim($PBool())) :- expr(E, "list_contains"), coll_elem(E, T), operand(E, 1, T).
 expr_type(E, $TPrim($PBool())) :-

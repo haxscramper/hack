@@ -1,5 +1,5 @@
 #pragma once 
-#include "model_types.dl"
+#include "logic_model/model_types.dl"
 
 .decl record(qname: QName, kind: RecordKind)
 .decl inherits(sub: QName, sup: QName)

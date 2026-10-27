@@ -381,7 +381,7 @@ def read_rows(path: Path, width: int) -> List[List[str]]:
 @beartype
 def render_program(program: LoweredProgram) -> str:
     """Complete Soufflé program: the shared rules followed by the model-specific facts."""
-    return '#include "model_dsl.dl"\n' + "\n".join(program.facts) + "\n"
+    return '#include "logic_model/model_dsl.dl"\n' + "\n".join(program.facts) + "\n"
 
 
 @beartype
