@@ -102,6 +102,9 @@ class EnFieldAnnotation(BaseModel):
 
     doc: str = ""
 
+    def __hash__(self) -> int:
+        return hash((self.doc,))
+
 
 @beartype
 class ExternalTypeLookup:

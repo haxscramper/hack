@@ -102,7 +102,7 @@ class ColumnView(M.Class):
 
     class Column(M.Class):
         summary: Optional["ColumnView.Summary"] = None
-        width: Optional[Int32] = M.Field(
+        width: Optional[Int32] = M.Field(  # type: ignore
             default=None,
             check=op_or(
                 op_not(M.This._Opt.has_value()),
@@ -117,7 +117,10 @@ class ColumnView(M.Class):
             return hash((self.property, self.propertyTitle))
 
         def __eq__(self, other: "ColumnView.Column") -> bool:
-            return (self.property, self.propertyTitle) == (
+            return (
+                self.property,
+                self.propertyTitle,
+            ) == (
                 other.property,
                 other.propertyTitle,
             )

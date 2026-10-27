@@ -412,5 +412,8 @@ def run_type_check(index: ModelIndex, table: Dict[OpId, Operator]) -> TypeCheckO
                 f"Diagnostic {d} refers to expression {d.expr} that was never lowered"
             )
     return TypeCheckOutput(
-        program=program, diags=diags, untyped=untyped, typed_as=typed_as
+        program=program,
+        diags=diags,
+        untyped=untyped,
+        typed_as=typed_as,
     )

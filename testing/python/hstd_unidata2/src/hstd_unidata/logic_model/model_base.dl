@@ -167,16 +167,6 @@ expr_type(E, $TPrim(P)) :-
     prim_class(P, $COrdered()).
 
 
-.decl map_operand(e: ExprId, k: Type, v: Type)
-map_operand(E, K, V) :- operand(E, 0, $TMap(K, V)).
-
-.decl key_matches(e: ExprId)
-key_matches(E) :- map_operand(E, K, _), operand(E, 1, K).
-key_matches(E) :-
-    map_operand(E, $TPrim(P), _),
-    prim_class(P, $CNumeric()),
-    expr_arg(E, 1, X),
-    has_class(X, $CNumeric()).
 
 expr_type(E, T) :- expr(E, "opt_value"), operand(E, 0, $TOpt(T)).
 

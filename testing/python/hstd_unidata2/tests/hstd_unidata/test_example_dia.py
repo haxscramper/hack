@@ -4,7 +4,7 @@ Clusters cannot contain themselves because instance data is a tree, so that cons
 
 import json
 
-from beartype.typing import Annotated, Dict, List, Optional
+from beartype.typing import Annotated, Dict, List, Optional, cast
 from loguru import logger
 
 from hstd_unidata.model_dsl import (
@@ -32,6 +32,7 @@ from hstd_unidata.model_dsl import (
 )
 from hstd_unidata.model_expr import Expr
 from hstd_unidata.model_gen import GenContext
+from hstd_unidata.model_ir import NamedT
 from hstd_unidata.model_value import (
     ListValue,
     OptValue,
@@ -250,12 +251,12 @@ def fresh_id(ctx: GenContext) -> Value:
 
 def generate_cluster(ctx: GenContext) -> Value:
     """Edges connect distinct nodes of the same cluster, kiwi clusters keep their elements off graphviz."""
-    algo_type = M.index.field(M.type_of(DiaElement).qname, "algo").type
+    algo_type = M.index.field(cast(NamedT, M.type_of(DiaElement)).qname, "algo").type
     algo = ctx.generate(algo_type)
     node_fixed: Dict[str, Value] = {}
     if isinstance(algo, VariantValue) and algo.tag == "Kiwi":
         node_fixed["algo"] = ctx.decode(algo_type, {"kind": "NoAlgo"})
-    node_qname = M.type_of(DiaNode).qname
+    node_qname = cast(NamedT, M.type_of(DiaNode)).qname
     nodes = [
         ctx.generate_record(node_qname, dict(node_fixed))
         for _ in range(ctx.rng.randint(0, 4) if ctx.depth < 4 else 0)
@@ -266,7 +267,8 @@ def generate_cluster(ctx: GenContext) -> Value:
         source, target = ctx.rng.sample(ids, 2)
         edges.append(
             ctx.generate_record(
-                M.type_of(DiaEdge).qname, dict(node_fixed, source=source, target=target)
+                cast(NamedT, M.type_of(DiaEdge)).qname,
+                dict(node_fixed, source=source, target=target),
             )
         )
     clusters = (
@@ -275,7 +277,7 @@ def generate_cluster(ctx: GenContext) -> Value:
         else ListValue(items=())
     )
     return ctx.generate_record(
-        M.type_of(DiaCluster).qname,
+        cast(NamedT, M.type_of(DiaCluster)).qname,
         {
             "algo": algo,
             "nodes": ListValue(items=tuple(nodes)),

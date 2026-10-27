@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import enum
 import inspect
 import sys
 import types
@@ -379,21 +380,34 @@ class DslMeta(type):
             backend=state.backend,
         )
         annotations = inspect.get_annotations(cls)
+        enum_auto_counter = 0
         for fname, ann in annotations.items():
             if is_class_var(ann):
                 continue
             value = ns.get(fname, NO_DEFAULT)
             if kind == RecordKind.ENUM:
-                if isinstance(value, bool) or not isinstance(value, int):
+                if isinstance(value, (int, enum.auto)):
+                    if isinstance(value, int):
+                        field_value = value
+                    else:
+                        field_value = enum_auto_counter
+                        enum_auto_counter += 1
+
+                    raw.enum_values.append(
+                        EnumValueDef(
+                            name=fname,
+                            value=field_value,
+                            doc=enum_value_doc(ann),
+                            loc=loc,
+                        )
+                    )
+                else:
                     raise TypeError(
-                        f"Enum value {qname.to_id()}.{fname} at {loc.render()} must be assigned an integer, got {value!r}"
+                        f"Enum value {qname.to_id()}.{fname} at {loc.render()} must be assigned an integer or `enum.auto()`, got {value!r}"
                     )
-                raw.enum_values.append(
-                    EnumValueDef(
-                        name=fname, value=value, doc=enum_value_doc(ann), loc=loc
-                    )
-                )
+
                 continue
+
             match value:
                 case FieldSpec():
                     raw.fields.append(
@@ -532,7 +546,9 @@ class DslModel:
     def finalize(self) -> ModelDef:
         if self.cached_model is None:
             self.cached_model = ModelFinalizer(
-                self.package, self.raws, self.table
+                self.package,
+                self.raws,
+                self.table,
             ).finalize()
             self.cached_index = ModelIndex(self.cached_model)
         return self.cached_model

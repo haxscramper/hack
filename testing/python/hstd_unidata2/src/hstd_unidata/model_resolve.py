@@ -23,6 +23,7 @@ from beartype.typing import (
     get_args,
     get_origin,
 )
+from loguru import logger
 
 from hstd_unidata.model_frontend import (
     NO_DEFAULT,
@@ -279,8 +280,10 @@ class AnnotationResolver:
         args = get_args(ann)
         if origin is Annotated:
             return self.resolve(args[0], scope, globals_map, type_params)
+
         if origin is list or origin is List:
             return ListT(elem=self.resolve(args[0], scope, globals_map, type_params))
+
         if origin is dict or origin is Dict:
             return MapT(
                 key=self.resolve(args[0], scope, globals_map, type_params),
@@ -340,6 +343,7 @@ class AnnotationResolver:
         type_params: Sequence[str],
     ) -> Any:
         assert self.lookup is not None
+        logger.info(f"{ast.unparse(node)}, {type(node)}")
         match node:
             case ast.Name():
                 if node.id in type_params:
@@ -358,6 +362,7 @@ class AnnotationResolver:
                 raise AnnotationError(
                     f"name '{node.id}' is not defined; searched declaration scopes {searched}, then builtin type names and module globals"
                 )
+
             case ast.Attribute():
                 base = self.eval_ast(node.value, scope, module_globals, type_params)
                 if isinstance(base, NamedT):
@@ -376,6 +381,7 @@ class AnnotationResolver:
                         f"object {base!r} has no attribute '{node.attr}' used in annotation '{ast.unparse(node)}'"
                     )
                 return getattr(base, node.attr)
+
             case ast.Subscript():
                 base = self.eval_ast(node.value, scope, module_globals, type_params)
                 elts = (
@@ -389,19 +395,25 @@ class AnnotationResolver:
                 return self.apply_generic(
                     base, args, node, scope, module_globals, type_params
                 )
+
             case ast.Constant():
                 if isinstance(node.value, str):
                     return self.resolve_text(
                         node.value, scope, module_globals, type_params
                     )
                 return node.value
+
             case ast.BinOp() if isinstance(node.op, ast.BitOr):
                 left = self.eval_ast(node.left, scope, module_globals, type_params)
                 right = self.eval_ast(node.right, scope, module_globals, type_params)
                 return self.resolve_union(
                     [left, right], scope, module_globals, type_params
                 )
-        raise AnnotationError(f"unsupported annotation syntax '{ast.unparse(node)}'")
+
+        assert False
+        raise AnnotationError(
+            f"unsupported annotation syntax '{ast.unparse(node)}, node type: {type(node)}'"
+        )
 
     def apply_generic(
         self,
