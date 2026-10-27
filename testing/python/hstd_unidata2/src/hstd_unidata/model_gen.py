@@ -8,9 +8,10 @@ from dataclasses import dataclass, field
 from beartype import beartype
 from beartype.typing import Any, Callable, Dict, List, Optional, Tuple
 from loguru import logger
-from model_eval import CheckFailure, errors_only, validate
-from model_index import ModelIndex
-from model_ir import (
+
+from hstd_unidata.model_eval import CheckFailure, errors_only, validate
+from hstd_unidata.model_index import ModelIndex
+from hstd_unidata.model_ir import (
     FLOAT_PRIMS,
     INTEGER_RANGES,
     ArrayT,
@@ -30,8 +31,8 @@ from model_ir import (
     VariantT,
     type_text,
 )
-from model_ops import Operator
-from model_value import (
+from hstd_unidata.model_ops import Operator
+from hstd_unidata.model_value import (
     AnyValue,
     EnumValue,
     ListValue,

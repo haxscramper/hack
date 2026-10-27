@@ -6,10 +6,11 @@ from dataclasses import dataclass, field
 
 from beartype import beartype
 from beartype.typing import Dict, List, Sequence, Set, Tuple
-from model_index import ModelIndex
-from model_ir import NamedT, OpId, QName, SourceLoc, VariantT, type_text
-from model_ops import Operator, render_expr
-from model_souffle import DiagRow, Occurrence, TypeCheckOutput
+
+from hstd_unidata.model_index import ModelIndex
+from hstd_unidata.model_ir import NamedT, OpId, QName, SourceLoc, VariantT, type_text
+from hstd_unidata.model_ops import Operator, render_expr
+from hstd_unidata.model_souffle import DiagRow, Occurrence, TypeCheckOutput
 
 
 class DiagCode(enum.StrEnum):

@@ -18,7 +18,7 @@ dev = [
 package = false
 
 [tool.pytest.ini_options]
-pythonpath = ["src/hstd_unidata"]
+pythonpath = ["src"]
 testpaths = ["tests"]
 
 [tool.ruff.lint]

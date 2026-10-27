@@ -6,7 +6,8 @@ import json
 
 from beartype.typing import Annotated, Dict, List, Optional
 from loguru import logger
-from model_dsl import (
+
+from hstd_unidata.model_dsl import (
     EnFieldAnnotation,
     Float64,
     GenConfig,
@@ -29,9 +30,9 @@ from model_dsl import (
     type_case,
     type_cond,
 )
-from model_expr import Expr
-from model_gen import GenContext
-from model_value import (
+from hstd_unidata.model_expr import Expr
+from hstd_unidata.model_gen import GenContext
+from hstd_unidata.model_value import (
     ListValue,
     OptValue,
     RecordValue,

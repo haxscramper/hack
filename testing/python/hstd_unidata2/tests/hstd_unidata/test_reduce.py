@@ -1,10 +1,11 @@
 import pytest
 import test_example_dia as test_example_dia
 from beartype.typing import List
-from model_dsl import __check__, get_dsl_model, op_all
-from model_eval import errors_only
-from model_reduce import ReductionInputError
-from model_value import ListValue, RecordValue, ScalarValue, Value
+
+from hstd_unidata.model_dsl import __check__, get_dsl_model, op_all
+from hstd_unidata.model_eval import errors_only
+from hstd_unidata.model_reduce import ReductionInputError
+from hstd_unidata.model_value import ListValue, RecordValue, ScalarValue, Value
 
 
 def make_model():

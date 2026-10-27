@@ -1,8 +1,9 @@
 import pytest
 from beartype.typing import List, Optional
-from model_dsl import Int32, __check__, __variant__, get_dsl_model, op_all
-from model_ir import NamedT, RecordKind, VariantT
-from model_resolve import DslModelError
+
+from hstd_unidata.model_dsl import Int32, __check__, __variant__, get_dsl_model, op_all
+from hstd_unidata.model_ir import NamedT, RecordKind, VariantT
+from hstd_unidata.model_resolve import DslModelError
 
 
 def test_variant_creates_data_field_and_kind_enum() -> None:

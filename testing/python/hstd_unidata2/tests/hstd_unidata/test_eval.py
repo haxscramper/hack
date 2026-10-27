@@ -1,6 +1,7 @@
 import pytest
 from beartype.typing import Dict, List, Optional
-from model_dsl import (
+
+from hstd_unidata.model_dsl import (
     __check__,
     get_dsl_model,
     op_all,
@@ -12,7 +13,7 @@ from model_dsl import (
     op_or,
     op_path_of,
 )
-from model_ops import EvalError
+from hstd_unidata.model_ops import EvalError
 
 
 def test_short_circuit_guards_empty_optional() -> None:

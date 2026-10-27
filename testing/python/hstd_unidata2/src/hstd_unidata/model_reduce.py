@@ -6,11 +6,20 @@ from dataclasses import dataclass
 from beartype import beartype
 from beartype.typing import Callable, Dict, Iterator, List, Tuple
 from loguru import logger
-from model_eval import errors_only, validate
-from model_index import ModelIndex
-from model_ir import INTEGER_RANGES, ListT, MapT, NamedT, OpId, TypeRef, type_text
-from model_ops import Operator
-from model_value import (
+
+from hstd_unidata.model_eval import errors_only, validate
+from hstd_unidata.model_index import ModelIndex
+from hstd_unidata.model_ir import (
+    INTEGER_RANGES,
+    ListT,
+    MapT,
+    NamedT,
+    OpId,
+    TypeRef,
+    type_text,
+)
+from hstd_unidata.model_ops import Operator
+from hstd_unidata.model_value import (
     EnumValue,
     ListValue,
     MapValue,

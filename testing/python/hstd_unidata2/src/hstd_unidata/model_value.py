@@ -7,8 +7,9 @@ from dataclasses import dataclass, field
 
 from beartype import beartype
 from beartype.typing import Any, Callable, Dict, Iterator, List, Optional, Tuple, Union
-from model_index import ModelIndex
-from model_ir import (
+
+from hstd_unidata.model_index import ModelIndex
+from hstd_unidata.model_ir import (
     FLOAT_PRIMS,
     INTEGER_RANGES,
     ArrayT,

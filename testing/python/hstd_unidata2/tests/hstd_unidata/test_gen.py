@@ -1,9 +1,10 @@
 import pytest
 import test_example_dia as test_example_dia
 from beartype.typing import List
-from model_dsl import GenConfig, __check__, get_dsl_model, op_all
-from model_eval import errors_only
-from model_gen import GenerationError
+
+from hstd_unidata.model_dsl import GenConfig, __check__, get_dsl_model, op_all
+from hstd_unidata.model_eval import errors_only
+from hstd_unidata.model_gen import GenerationError
 
 
 @pytest.mark.parametrize("seed", range(5))

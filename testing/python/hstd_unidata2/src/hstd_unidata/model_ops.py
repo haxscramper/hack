@@ -20,8 +20,9 @@ from beartype.typing import (
     Union,
     cast,
 )
-from model_index import ModelIndex
-from model_ir import (
+
+from hstd_unidata.model_index import ModelIndex
+from hstd_unidata.model_ir import (
     INTEGER_RANGES,
     ExprNode,
     NamedT,
@@ -32,7 +33,7 @@ from model_ir import (
     numeric_join,
     type_text,
 )
-from model_value import (
+from hstd_unidata.model_value import (
     EnumValue,
     ListValue,
     MapValue,
@@ -45,7 +46,6 @@ from model_value import (
     VariantValue,
     concrete_type_text,
     is_numeric_value,
-    make_map,
     value_key,
     value_text,
     values_equal,
@@ -306,17 +306,6 @@ def expect_items(host: EvalHost, node: ExprNode, value: Value) -> Tuple[Value, .
     host.fail(
         node,
         f"expected a list operand, got {concrete_type_text(value)} {value_text(value)}",
-        value,
-    )
-
-
-@beartype
-def expect_map(host: EvalHost, node: ExprNode, value: Value) -> MapValue:
-    if isinstance(value, MapValue):
-        return value
-    host.fail(
-        node,
-        f"expected a map operand, got {concrete_type_text(value)} {value_text(value)}",
         value,
     )
 
@@ -1097,134 +1086,6 @@ class ListEmptyOp(Operator):
         return ListValue(items=())
 
 
-class MapSizeOp(Operator):
-    op_id = OpId.MAP_SIZE
-    roles = ("map",)
-    arg_classes = ((TypeClass.MAP,),)
-    fixed_result = INT64_T
-
-    def render(self, node: ExprNode, args: List[str]) -> str:
-        return f"{args[0]}._Map.size()"
-
-    def evaluate(self, host: EvalHost, node: ExprNode, env: Env) -> Value:
-        return make_int(
-            host,
-            node,
-            PrimKind.INT64,
-            len(expect_map(host, node, host.eval(node.args[0], env)).entries),
-        )
-
-
-@beartype
-def find_entry(
-    host: EvalHost, mapping: MapValue, key: Value
-) -> Optional[Tuple[Value, Value]]:
-    kk = value_key(host.index, key)
-    for k, v in mapping.entries:
-        if value_key(host.index, k) == kk:
-            return (k, v)
-    return None
-
-
-class MapContainsOp(Operator):
-    op_id = OpId.MAP_CONTAINS
-    roles = ("map", "key")
-    arg_classes = ((TypeClass.MAP,), ())
-    binary_operands = True
-
-    def render(self, node: ExprNode, args: List[str]) -> str:
-        return f"{args[0]}._Map.contains({args[1]})"
-
-    def evaluate(self, host: EvalHost, node: ExprNode, env: Env) -> Value:
-        mapping = expect_map(host, node, host.eval(node.args[0], env))
-        return make_bool(
-            find_entry(host, mapping, host.eval(node.args[1], env)) is not None
-        )
-
-
-class MapGetOp(Operator):
-    op_id = OpId.MAP_GET
-    roles = ("map", "key")
-    arg_classes = ((TypeClass.MAP,), ())
-    binary_operands = True
-
-    def render(self, node: ExprNode, args: List[str]) -> str:
-        return f"{args[0]}._Map.get({args[1]})"
-
-    def evaluate(self, host: EvalHost, node: ExprNode, env: Env) -> Value:
-        mapping = expect_map(host, node, host.eval(node.args[0], env))
-        key = host.eval(node.args[1], env)
-        entry = find_entry(host, mapping, key)
-        if entry is None:
-            present = ", ".join(value_text(k) for k, _ in mapping.entries[:10])
-            host.fail(
-                node,
-                f"key {value_text(key)} is not present in the map, present keys: {present or '(none)'}",
-                mapping,
-            )
-        return entry[1]
-
-
-class MapInsertOp(Operator):
-    op_id = OpId.MAP_INSERT
-    roles = ("map", "key", "value")
-    arg_classes = ((TypeClass.MAP,), (), ())
-    binary_operands = True
-
-    def render(self, node: ExprNode, args: List[str]) -> str:
-        return f"{args[0]}._Map.insert({args[1]}, {args[2]})"
-
-    def evaluate(self, host: EvalHost, node: ExprNode, env: Env) -> Value:
-        mapping = expect_map(host, node, host.eval(node.args[0], env))
-        key = host.eval(node.args[1], env)
-        value = host.eval(node.args[2], env)
-        return make_map(host.index, list(mapping.entries) + [(key, value)])
-
-
-class MapKeysOp(Operator):
-    op_id = OpId.MAP_KEYS
-    roles = ("map",)
-    arg_classes = ((TypeClass.MAP,),)
-
-    def render(self, node: ExprNode, args: List[str]) -> str:
-        return f"{args[0]}._Map.keys()"
-
-    def evaluate(self, host: EvalHost, node: ExprNode, env: Env) -> Value:
-        return ListValue(
-            items=tuple(
-                k
-                for k, _ in expect_map(host, node, host.eval(node.args[0], env)).entries
-            )
-        )
-
-
-class MapValuesOp(Operator):
-    op_id = OpId.MAP_VALUES
-    roles = ("map",)
-    arg_classes = ((TypeClass.MAP,),)
-
-    def render(self, node: ExprNode, args: List[str]) -> str:
-        return f"{args[0]}._Map.values()"
-
-    def evaluate(self, host: EvalHost, node: ExprNode, env: Env) -> Value:
-        return ListValue(
-            items=tuple(
-                v
-                for _, v in expect_map(host, node, host.eval(node.args[0], env)).entries
-            )
-        )
-
-
-class MapEmptyOp(Operator):
-    op_id = OpId.MAP_EMPTY
-
-    def render(self, node: ExprNode, args: List[str]) -> str:
-        return f"op_empty_map({type_arg_text(node)})"
-
-    def evaluate(self, host: EvalHost, node: ExprNode, env: Env) -> Value:
-        return MapValue(entries=())
-
-
 class OptHasValueOp(Operator):
     op_id = OpId.OPT_HAS_VALUE
     roles = ("optional",)
@@ -1426,6 +1287,8 @@ class TypeOfOp(Operator):
 @beartype
 def default_operators() -> List[Operator]:
     """Core operator set; pass a modified list to `get_dsl_model` to customize the language."""
+    from hstd_unidata.type_impls import type_map
+
     return [
         ThisOp(),
         VarOp(),
@@ -1469,13 +1332,13 @@ def default_operators() -> List[Operator]:
         ListSliceOp(),
         ListConcatOp(),
         ListEmptyOp(),
-        MapSizeOp(),
-        MapContainsOp(),
-        MapGetOp(),
-        MapInsertOp(),
-        MapKeysOp(),
-        MapValuesOp(),
-        MapEmptyOp(),
+        type_map.MapSizeOp(),
+        type_map.MapContainsOp(),
+        type_map.MapGetOp(),
+        type_map.MapInsertOp(),
+        type_map.MapKeysOp(),
+        type_map.MapValuesOp(),
+        type_map.MapEmptyOp(),
         OptHasValueOp(),
         OptValueOp(),
         CaseIsOp(),

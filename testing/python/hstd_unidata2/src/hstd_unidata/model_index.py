@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from beartype import beartype
 from beartype.typing import Dict, List, Optional, Set, Tuple
-from model_ir import (
+
+from hstd_unidata.model_ir import (
     ArrayT,
     CheckDef,
     DynT,
