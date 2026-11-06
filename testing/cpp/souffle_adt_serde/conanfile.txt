@@ -1,0 +1,7 @@
+[requires]
+nlohmann_json/3.12.0
+fmt/[>=12 <13]
+
+[generators]
+CMakeDeps
+CMakeToolchain

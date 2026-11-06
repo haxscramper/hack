@@ -1,0 +1,9 @@
+[project]
+name = "souffle-adt-serde-example"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "beartype>=0.22",
+    "loguru>=0.7.3",
+    "plumbum>=1.9",
+]

@@ -1,0 +1,9 @@
+default: run
+
+build:
+    conan install . --output-folder=build/conan --settings=build_type=Release --settings=compiler.cppstd=23 --build=missing
+    cmake -S . -B build --toolchain=build/conan/conan_toolchain.cmake -DCMAKE_BUILD_TYPE=Release
+    cmake --build build --parallel
+
+run: build
+    uv run example.py

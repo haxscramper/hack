@@ -1,0 +1,62 @@
+.type FieldName <: symbol
+
+.type Prim
+    = PInt8 {}
+    | PInt16 {}
+    | PInt32 {}
+    | PInt64 {}
+    | PUInt8 {}
+    | PUInt16 {}
+    | PUInt32 {}
+    | PUInt64 {}
+    | PFloat32 {}
+    | PFloat64 {}
+    | PString {}
+    | PBool {}
+    | PAny {}
+    | PNone {}
+    | PPath {}
+
+.type QName = QNameValue { name: symbol, scope: OptQName }
+.type OptQName = NoScope {} | SomeScope { value: QName }
+.type TypeList = TypeNil {} | TypeCons { first: Type, rest: TypeList }
+
+.type Type
+    = TPrim { prim: Prim }
+    | TList { elem: Type }
+    | TArray { elem: Type, size: number }
+    | TMap { key: Type, value: Type }
+    | TOpt { elem: Type }
+    | TTuple { elems: TypeList }
+    | TNamed { qname: QName }
+    | TExternal { package: symbol, qname: QName }
+    | TVariant { owner: QName, field: FieldName }
+    | TDyn { root: Type }
+    | TParam { name: symbol }
+    | TUnresolved { text: symbol }
+
+.functor hstd_init_souffle_analysis(schema: symbol): symbol stateful
+.functor hstd_from_json(schema: symbol, root: symbol, payload: symbol): Type stateful
+.functor hstd_to_json(schema: symbol, root: symbol, value: Type): symbol stateful
+
+.decl SerdeSchema(schema: symbol)
+.input SerdeSchema(IO="sqlite", filename="exchange.sqlite")
+
+.decl Input(id: number, payload: symbol)
+.input Input(IO="sqlite", filename="exchange.sqlite")
+
+.decl Decoded(id: number, value: Type)
+Decoded(id, @hstd_from_json(@hstd_init_souffle_analysis(schema), "Type", payload)) :-
+    Input(id, payload), SerdeSchema(schema).
+
+.decl Processed(id: number, value: Type)
+Processed(id, $TOpt(value)) :- Decoded(id, value).
+
+.decl ArraySize(id: number, size: number)
+ArraySize(id, size) :- Decoded(id, $TArray(_, size)).
+.output ArraySize(IO="sqlite", filename="exchange.sqlite")
+
+.decl Output(id: number, payload: symbol)
+Output(id, @hstd_to_json(@hstd_init_souffle_analysis(schema), "Type", value)) :-
+    Processed(id, value), SerdeSchema(schema).
+.output Output(IO="sqlite", filename="exchange.sqlite")
