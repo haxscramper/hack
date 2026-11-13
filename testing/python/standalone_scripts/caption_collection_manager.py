@@ -15,12 +15,27 @@ from PyQt6.QtCore import (
     QEvent,
     QModelIndex,
     QObject,
+    QRectF,
     QRegularExpression,
     QSize,
     Qt,
     pyqtSignal,
 )
-from PyQt6.QtGui import QCloseEvent, QColor, QFocusEvent, QFont, QImageReader, QPixmap, QSyntaxHighlighter, QTextCharFormat, QTextDocument, QWheelEvent
+from PyQt6.QtGui import (
+    QCloseEvent,
+    QColor,
+    QFocusEvent,
+    QFont,
+    QImageReader,
+    QPainter,
+    QPaintEvent,
+    QPen,
+    QPixmap,
+    QSyntaxHighlighter,
+    QTextCharFormat,
+    QTextDocument,
+    QWheelEvent,
+)
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -34,11 +49,11 @@ from PyQt6.QtWidgets import (
 )
 
 SCALE = 2.0
+_CAPTION_BOX_COLOR_PROPERTY = 0x100001
 
 
 @beartype
 class DatasetModel(QAbstractTableModel):
-
     def __init__(self, directory: Path, parent: QObject | None = None) -> None:
         super().__init__(parent)
 
@@ -47,8 +62,11 @@ class DatasetModel(QAbstractTableModel):
             for image_format in QImageReader.supportedImageFormats()
         }
         self.images = sorted(
-            (path for path in directory.iterdir()
-             if path.is_file() and path.suffix.lower() in extensions),
+            (
+                path
+                for path in directory.iterdir()
+                if path.is_file() and path.suffix.lower() in extensions
+            ),
             key=lambda path: path.name.casefold(),
         )
         self.captions: dict[Path, str] = {}
@@ -57,8 +75,15 @@ class DatasetModel(QAbstractTableModel):
 
         for image in self.images:
             caption = image.with_suffix(".txt")
-            self.captions[image] = (caption.read_text(
-                encoding="utf-8") if caption.exists() else "")
+            fail_caption = image.with_suffix(".txt.failed")
+            if caption.exists():
+                self.captions[image] = caption.read_text()
+
+            elif fail_caption.exists():
+                self.captions[image] = fail_caption.read_text()
+
+            else:
+                self.captions[image] = ""
 
     def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:
         return 0 if parent.isValid() else len(self.images)
@@ -92,8 +117,7 @@ class DatasetModel(QAbstractTableModel):
 
         match role:
             case Qt.ItemDataRole.ToolTipRole:
-                return str(image if index.column() ==
-                           0 else image.with_suffix(".txt"))
+                return str(image if index.column() == 0 else image.with_suffix(".txt"))
 
             case Qt.ItemDataRole.DecorationRole:
                 if index.column() == 0:
@@ -119,12 +143,12 @@ class DatasetModel(QAbstractTableModel):
                     size.scaled(
                         self.preview_size,
                         Qt.AspectRatioMode.KeepAspectRatio,
-                    ))
+                    )
+                )
 
             decoded = reader.read()
             if decoded.isNull():
-                raise ValueError(
-                    f"Cannot decode image {image}: {reader.errorString()}")
+                raise ValueError(f"Cannot decode image {image}: {reader.errorString()}")
 
             self.previews[image] = QPixmap.fromImage(decoded).scaled(
                 self.preview_size,
@@ -150,16 +174,21 @@ class DatasetModel(QAbstractTableModel):
         value: Any,
         role: int = Qt.ItemDataRole.EditRole,
     ) -> bool:
-        if (not index.isValid() or index.column() != 1
-                or role != Qt.ItemDataRole.EditRole):
+        if (
+            not index.isValid()
+            or index.column() != 1
+            or role != Qt.ItemDataRole.EditRole
+        ):
             return False
 
         image = self.images[index.row()]
         caption = image.with_suffix(".txt")
 
         if not isinstance(value, str):
-            raise TypeError(f"Caption for {caption} must be a string, "
-                            f"received {type(value).__name__}")
+            raise TypeError(
+                f"Caption for {caption} must be a string, "
+                f"received {type(value).__name__}"
+            )
 
         if value == self.captions[image]:
             return True
@@ -182,10 +211,70 @@ class CaptionEditor(QPlainTextEdit):
         super().focusOutEvent(event)
         self.editingFinished.emit()
 
+    def paintEvent(self, event: QPaintEvent) -> None:
+        super().paintEvent(event)
+
+        painter = QPainter(self.viewport())
+        painter.setClipRect(event.rect())
+
+        block = self.firstVisibleBlock()
+        viewport_bottom = self.viewport().height()
+
+        while block.isValid():
+            block_rect = self.blockBoundingGeometry(block).translated(
+                self.contentOffset()
+            )
+
+            if block_rect.top() > viewport_bottom:
+                break
+
+            if block.isVisible() and block_rect.bottom() >= 0:
+                layout = block.layout()
+
+                for format_range in layout.formats():
+                    color = format_range.format.property(_CAPTION_BOX_COLOR_PROPERTY)
+                    if color is None:
+                        continue
+
+                    pen = QPen(color)
+                    pen.setWidth(2)
+                    painter.setPen(pen)
+
+                    match_start = format_range.start
+                    match_end = match_start + format_range.length
+
+                    for line_index in range(layout.lineCount()):
+                        line = layout.lineAt(line_index)
+                        start = max(match_start, line.textStart())
+                        end = min(
+                            match_end,
+                            line.textStart() + line.textLength(),
+                        )
+
+                        if start >= end:
+                            continue
+
+                        start_x = line.cursorToX(start)[0]
+                        end_x = line.cursorToX(end)[0]
+
+                        rect = QRectF(
+                            block_rect.left() + min(start_x, end_x),
+                            block_rect.top() + line.y(),
+                            abs(end_x - start_x),
+                            line.height(),
+                        )
+
+                        # Keep the 2-pixel stroke inside the line's bounds.
+                        if rect.width() > 2 and rect.height() > 2:
+                            painter.drawRect(rect.adjusted(1, 1, -1, -1))
+
+            block = block.next()
+
+        painter.end()
+
 
 @beartype
 class CaptionHighlighter(QSyntaxHighlighter):
-
     def __init__(
         self,
         document: QTextDocument,
@@ -196,19 +285,24 @@ class CaptionHighlighter(QSyntaxHighlighter):
 
     def highlightBlock(self, text: str) -> None:
         for expression, text_format in self.patterns:
+            boxed_format = QTextCharFormat(text_format)
+            boxed_format.setProperty(
+                _CAPTION_BOX_COLOR_PROPERTY,
+                text_format.foreground().color(),
+            )
+
             matches = expression.globalMatch(text)
             while matches.hasNext():
                 match = matches.next()
                 self.setFormat(
                     match.capturedStart(),
                     match.capturedLength(),
-                    text_format,
+                    boxed_format,
                 )
 
 
 @beartype
 class CaptionDelegate(QStyledItemDelegate):
-
     def __init__(
         self,
         patterns: list[tuple[QRegularExpression, QTextCharFormat]],
@@ -271,7 +365,6 @@ class CaptionDelegate(QStyledItemDelegate):
 
 @beartype
 class DatasetTable(QTableView):
-
     def wheelEvent(self, event: QWheelEvent) -> None:
         delta = event.angleDelta().y() or event.pixelDelta().y()
         scrollbar = self.verticalScrollBar()
@@ -286,7 +379,6 @@ class DatasetTable(QTableView):
 
 @beartype
 class DatasetWindow(QMainWindow):
-
     def __init__(
         self,
         directory: Path,
@@ -299,8 +391,7 @@ class DatasetWindow(QMainWindow):
 
         self.model = DatasetModel(directory, self)
         self.table = DatasetTable(self)
-        self.table.setVerticalScrollMode(
-            QAbstractItemView.ScrollMode.ScrollPerItem)
+        self.table.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerItem)
         self.delegate = CaptionDelegate(patterns, self.table)
 
         self.table.setModel(self.model)
@@ -332,7 +423,8 @@ class DatasetWindow(QMainWindow):
 @beartype
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Edit image captions with automatic saving on focus loss.")
+        description="Edit image captions with automatic saving on focus loss."
+    )
     parser.add_argument("directory", type=Path)
     parser.add_argument(
         "--pattern",
@@ -348,13 +440,11 @@ def main() -> int:
     for specification in arguments.pattern:
         color_name, separator, expression_text = specification.partition("=")
         if not separator:
-            parser.error(
-                f"Invalid pattern {specification!r}: expected COLOR=REGEXP")
+            parser.error(f"Invalid pattern {specification!r}: expected COLOR=REGEXP")
 
         color = QColor(color_name)
         if not color.isValid():
-            parser.error(
-                f"Invalid color {color_name!r} in pattern {specification!r}")
+            parser.error(f"Invalid color {color_name!r} in pattern {specification!r}")
 
         expression = QRegularExpression(expression_text)
         if not expression.isValid():
@@ -370,8 +460,7 @@ def main() -> int:
     directory = arguments.directory.expanduser().resolve()
 
     if not directory.is_dir():
-        raise NotADirectoryError(
-            f"Dataset directory does not exist: {directory}")
+        raise NotADirectoryError(f"Dataset directory does not exist: {directory}")
 
     application = QApplication([sys.argv[0]])
     window = DatasetWindow(directory, patterns)
