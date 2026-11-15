@@ -995,6 +995,91 @@ def add_graph_vertex(
 
 
 @beartype
+def _add_file_level_vertices(
+    dot: Digraph,
+    graph: igraph.Graph,
+    directory_clusters: bool,
+) -> None:
+    package_names = sorted(
+        {vertex["package"] for vertex in graph.vs if vertex["internal"]}
+    )
+
+    for package_index, package_name in enumerate(package_names):
+        package_vertices = [
+            vertex
+            for vertex in graph.vs
+            if vertex["internal"] and vertex["package"] == package_name
+        ]
+        package_dot = Digraph(name=f"cluster_package_{package_index}")
+        package_dot.attr(label=package_name)
+
+        if directory_clusters:
+            directories: set[tuple[str, ...]] = {()}
+
+            for vertex in package_vertices:
+                directory = tuple(vertex["directory"])
+                for length in range(1, len(directory) + 1):
+                    directories.add(directory[:length])
+
+            directory_graphs: dict[tuple[str, ...], Digraph] = {(): package_dot}
+
+            for directory_index, directory in enumerate(
+                sorted(
+                    directories - {()},
+                    key=lambda value: (len(value), value),
+                )
+            ):
+                directory_dot = Digraph(
+                    name=f"cluster_directory_{package_index}_{directory_index}"
+                )
+                directory_dot.attr(label=directory[-1])
+                directory_graphs[directory] = directory_dot
+
+            for vertex in package_vertices:
+                add_graph_vertex(
+                    directory_graphs[tuple(vertex["directory"])],
+                    vertex,
+                    directory_clusters=True,
+                )
+
+            for directory in sorted(
+                directories - {()},
+                key=lambda value: (-len(value), value),
+            ):
+                directory_graphs[directory[:-1]].subgraph(directory_graphs[directory])
+        else:
+            for vertex in package_vertices:
+                add_graph_vertex(
+                    package_dot,
+                    vertex,
+                    directory_clusters=False,
+                )
+
+        dot.subgraph(package_dot)
+
+    for vertex in graph.vs:
+        if not vertex["internal"]:
+            add_graph_vertex(
+                dot,
+                vertex,
+                directory_clusters=False,
+            )
+
+
+@beartype
+def _add_non_file_level_vertices(
+    dot: Digraph,
+    graph: igraph.Graph,
+) -> None:
+    for vertex in graph.vs:
+        add_graph_vertex(
+            dot,
+            vertex,
+            directory_clusters=False,
+        )
+
+
+@beartype
 def write_graph(
     graph: igraph.Graph,
     output: Path,
@@ -1013,79 +1098,13 @@ def write_graph(
     dot.attr("edge", fontname="DejaVu Sans")
 
     if graph["file_level"]:
-        package_names = sorted(
-            {vertex["package"] for vertex in graph.vs if vertex["internal"]}
+        _add_file_level_vertices(
+            dot,
+            graph,
+            directory_clusters=directory_clusters,
         )
-
-        for package_index, package_name in enumerate(package_names):
-            package_vertices = [
-                vertex
-                for vertex in graph.vs
-                if vertex["internal"] and vertex["package"] == package_name
-            ]
-            package_dot = Digraph(name=f"cluster_package_{package_index}")
-            package_dot.attr(label=package_name)
-
-            if directory_clusters:
-                directories: set[tuple[str, ...]] = {()}
-
-                for vertex in package_vertices:
-                    directory = tuple(vertex["directory"])
-                    for length in range(1, len(directory) + 1):
-                        directories.add(directory[:length])
-
-                directory_graphs: dict[tuple[str, ...], Digraph] = {(): package_dot}
-
-                for directory_index, directory in enumerate(
-                    sorted(
-                        directories - {()},
-                        key=lambda value: (len(value), value),
-                    )
-                ):
-                    directory_dot = Digraph(
-                        name=(f"cluster_directory_{package_index}_{directory_index}")
-                    )
-                    directory_dot.attr(label=directory[-1])
-                    directory_graphs[directory] = directory_dot
-
-                for vertex in package_vertices:
-                    add_graph_vertex(
-                        directory_graphs[tuple(vertex["directory"])],
-                        vertex,
-                        directory_clusters=True,
-                    )
-
-                for directory in sorted(
-                    directories - {()},
-                    key=lambda value: (-len(value), value),
-                ):
-                    directory_graphs[directory[:-1]].subgraph(
-                        directory_graphs[directory]
-                    )
-            else:
-                for vertex in package_vertices:
-                    add_graph_vertex(
-                        package_dot,
-                        vertex,
-                        directory_clusters=False,
-                    )
-
-            dot.subgraph(package_dot)
-
-        for vertex in graph.vs:
-            if not vertex["internal"]:
-                add_graph_vertex(
-                    dot,
-                    vertex,
-                    directory_clusters=False,
-                )
     else:
-        for vertex in graph.vs:
-            add_graph_vertex(
-                dot,
-                vertex,
-                directory_clusters=False,
-            )
+        _add_non_file_level_vertices(dot, graph)
 
     for edge in graph.es:
         weight = edge["weight"]
@@ -1093,16 +1112,13 @@ def write_graph(
         dot.edge(
             tail_name=f"v{edge.source}",
             head_name=f"v{edge.target}",
-            label=(f"U: {edge['unconditional']}, C: {edge['conditional']}"),
+            label=f"U: {edge['unconditional']}, C: {edge['conditional']}",
             color=cycle_color(edge["cycle"]),
             weight=str(weight),
             penwidth=f"{1.0 + math.log2(weight + 1):.2f}",
         )
 
-    dot.render(
-        outfile=output,
-        cleanup=True,
-    )
+    dot.render(outfile=output, cleanup=True)
 
 
 @beartype
