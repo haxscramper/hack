@@ -59,7 +59,7 @@ def main() -> None:
                         {"role": "system", "content": prompt},
                         {"role": "user", "content": input_path.read_text()},
                     ],
-                    "chat_template_kwargs": {"enable_thinking": False},
+                    "chat_template_kwargs": {"enable_thinking": True},
                     # Copied from the llama.cpp web UI request
                     "thinking_budget_tokens": 512,
                     "reasoning_control": True,

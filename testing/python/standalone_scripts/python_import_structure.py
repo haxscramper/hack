@@ -4,11 +4,11 @@ import argparse
 import ast
 import math
 import re
-import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
 import igraph
+import tomllib
 from beartype import beartype
 from beartype.typing import Iterable
 from graphviz import Digraph
@@ -55,7 +55,6 @@ class ImportCount:
 
 @beartype
 class ImportVisitor(ast.NodeVisitor):
-
     def __init__(self, source: PackageSource) -> None:
         self.source = source
         self.conditional_depth = 0
@@ -67,7 +66,8 @@ class ImportVisitor(ast.NodeVisitor):
                 ImportUse(
                     module=module,
                     conditional=0 < self.conditional_depth,
-                ))
+                )
+            )
 
     def visit_conditional(self, nodes: Iterable[ast.AST]) -> None:
         self.conditional_depth += 1
@@ -85,7 +85,8 @@ class ImportVisitor(ast.NodeVisitor):
         if len(package_parts) < remove_count:
             raise ValueError(
                 f"Relative import level {node.level} escapes module "
-                f"{self.source.module!r} in {self.source.path}")
+                f"{self.source.module!r} in {self.source.path}"
+            )
 
         if remove_count:
             package_parts = package_parts[:-remove_count]
@@ -179,8 +180,7 @@ def find_package_name(data: dict[str, object], path: Path) -> str:
             if isinstance(name, str) and name:
                 return name
 
-    raise ValueError(
-        f"Neither project.name nor tool.poetry.name is defined in {path}")
+    raise ValueError(f"Neither project.name nor tool.poetry.name is defined in {path}")
 
 
 @beartype
@@ -198,8 +198,7 @@ def find_git_files(
     ]().strip()
 
     if inside_worktree != "true":
-        raise ValueError(
-            f"Target directory is not inside a Git worktree: {target}")
+        raise ValueError(f"Target directory is not inside a Git worktree: {target}")
 
     result = git[
         "-C",
@@ -215,10 +214,14 @@ def find_git_files(
 
     return tuple(
         sorted(
-            {(target / relative).resolve()
-             for relative in result.split("\0") if relative},
+            {
+                (target / relative).resolve()
+                for relative in result.split("\0")
+                if relative
+            },
             key=str,
-        ))
+        )
+    )
 
 
 @beartype
@@ -240,8 +243,10 @@ def contains_python(
     python_files: tuple[Path, ...],
 ) -> bool:
     resolved = path.resolve()
-    return any(candidate == resolved or resolved in candidate.parents
-               for candidate in python_files)
+    return any(
+        candidate == resolved or resolved in candidate.parents
+        for candidate in python_files
+    )
 
 
 @beartype
@@ -291,7 +296,8 @@ def find_poetry_package_paths(
         if not isinstance(entry, dict):
             raise ValueError(
                 f"Poetry package entry in {root / 'pyproject.toml'} is not "
-                f"a table: {entry!r}")
+                f"a table: {entry!r}"
+            )
 
         include = entry.get("include")
         source = entry.get("from", ".")
@@ -299,12 +305,14 @@ def find_poetry_package_paths(
         if not isinstance(include, str) or not isinstance(source, str):
             raise ValueError(
                 f"Poetry package entry in {root / 'pyproject.toml'} must "
-                f"contain string include and from values: {entry!r}")
+                f"contain string include and from values: {entry!r}"
+            )
 
         if any(character in include for character in "*?["):
             raise ValueError(
                 f"Globbed Poetry package include {include!r} is not supported "
-                f"in {root / 'pyproject.toml'}")
+                f"in {root / 'pyproject.toml'}"
+            )
 
         source_root = (root / source).resolve()
         package_path = (source_root / include).resolve()
@@ -358,10 +366,10 @@ def find_candidate_package_paths(
     if not candidates:
         raise ValueError(
             f"No non-ignored Python package sources were found for "
-            f"{package_name!r} under {source_root}")
+            f"{package_name!r} under {source_root}"
+        )
 
-    return [(candidate, source_root)
-            for candidate in sorted(candidates, key=str)]
+    return [(candidate, source_root) for candidate in sorted(candidates, key=str)]
 
 
 @beartype
@@ -384,7 +392,8 @@ def list_worktree_files(target: Path) -> tuple[Path, ...]:
                 if relative and (target / relative).is_file()
             },
             key=str,
-        ))
+        )
+    )
 
 
 @beartype
@@ -416,12 +425,12 @@ def discover_packages(target: Path) -> tuple[Package, ...]:
     pyprojects = [path for path in files if path.name == "pyproject.toml"]
     if not pyprojects:
         raise ValueError(
-            f"No non-ignored pyproject.toml files were found under {target}")
+            f"No non-ignored pyproject.toml files were found under {target}"
+        )
 
     project_roots = {pyproject.parent for pyproject in pyprojects}
     sources_by_root: dict[Path, list[PackageSource]] = {
-        root: []
-        for root in project_roots
+        root: [] for root in project_roots
     }
 
     for path in files:
@@ -441,7 +450,8 @@ def discover_packages(target: Path) -> tuple[Package, ...]:
                 path=path,
                 module=".".join(parts),
                 is_package=path.name == "__init__.py",
-            ))
+            )
+        )
 
     packages: list[Package] = []
 
@@ -450,11 +460,14 @@ def discover_packages(target: Path) -> tuple[Package, ...]:
         name = find_package_name(read_pyproject(pyproject), pyproject)
         sources = tuple(sources_by_root[root])
         module_roots = tuple(
-            sorted({
-                source.module.split(".")[0]
-                for source in sources
-                if source.is_package or "." in source.module
-            }))
+            sorted(
+                {
+                    source.module.split(".")[0]
+                    for source in sources
+                    if source.is_package or "." in source.module
+                }
+            )
+        )
 
         packages.append(
             Package(
@@ -463,7 +476,8 @@ def discover_packages(target: Path) -> tuple[Package, ...]:
                 pyproject=pyproject,
                 sources=sources,
                 module_roots=module_roots,
-            ))
+            )
+        )
 
     package_paths: dict[str, Path] = {}
 
@@ -472,7 +486,8 @@ def discover_packages(target: Path) -> tuple[Package, ...]:
         if previous:
             raise ValueError(
                 f"Package name {package.name!r} is defined by both "
-                f"{previous} and {package.pyproject}")
+                f"{previous} and {package.pyproject}"
+            )
 
         package_paths[package.name] = package.pyproject
 
@@ -484,7 +499,8 @@ def discover_packages(target: Path) -> tuple[Package, ...]:
             if previous and previous != package.name:
                 raise ValueError(
                     f"Import root {imported_root!r} is owned by both "
-                    f"{previous!r} and {package.name!r}")
+                    f"{previous!r} and {package.name!r}"
+                )
 
             module_owners[imported_root] = package.name
 
@@ -506,7 +522,8 @@ def parse_imports(source: PackageSource) -> tuple[ImportUse, ...]:
 
 @beartype
 def collect_import_counts(
-    packages: tuple[Package, ...], ) -> tuple[ImportCount, ...]:
+    packages: tuple[Package, ...],
+) -> tuple[ImportCount, ...]:
     module_owners: dict[str, str] = {}
 
     for package in packages:
@@ -544,11 +561,13 @@ def collect_import_counts(
             target_internal=target_internal,
             unconditional=values[0],
             conditional=values[1],
-        ) for (
+        )
+        for (
             source,
             target,
             target_internal,
-        ), values in sorted(counts.items()))
+        ), values in sorted(counts.items())
+    )
 
 
 @beartype
@@ -557,23 +576,18 @@ def build_graph(
     counts: tuple[ImportCount, ...],
 ) -> igraph.Graph:
     internal_names = {package.name for package in packages}
-    external_names = {
-        count.target
-        for count in counts if not count.target_internal
-    }
+    external_names = {count.target for count in counts if not count.target_internal}
 
-    vertices = [(f"internal:{name}", name, True)
-                for name in sorted(internal_names)]
+    vertices = [(f"internal:{name}", name, True) for name in sorted(internal_names)]
     vertices.extend(
-        (f"external:{name}", name, False) for name in sorted(external_names))
+        (f"external:{name}", name, False) for name in sorted(external_names)
+    )
 
     graph = igraph.Graph(directed=True)
     graph.add_vertices(len(vertices))
     graph.vs["name"] = [identifier for identifier, label, internal in vertices]
     graph.vs["label"] = [label for identifier, label, internal in vertices]
-    graph.vs["internal"] = [
-        internal for identifier, label, internal in vertices
-    ]
+    graph.vs["internal"] = [internal for identifier, label, internal in vertices]
 
     vertex_indices = {vertex["name"]: vertex.index for vertex in graph.vs}
 
@@ -588,9 +602,7 @@ def build_graph(
     graph.add_edges(edges)
     graph.es["unconditional"] = [count.unconditional for count in counts]
     graph.es["conditional"] = [count.conditional for count in counts]
-    graph.es["weight"] = [
-        count.unconditional + count.conditional for count in counts
-    ]
+    graph.es["weight"] = [count.unconditional + count.conditional for count in counts]
 
     return graph
 
@@ -602,8 +614,7 @@ def write_tree(
     output: Path,
 ) -> None:
     imports_by_source: dict[str, list[ImportCount]] = {
-        package.name: []
-        for package in packages
+        package.name: [] for package in packages
     }
 
     for count in counts:
@@ -631,9 +642,11 @@ def write_tree(
             else:
                 target = f"[yellow]{escape(imported.target)}[/yellow]"
 
-            branch.add(f"{target} "
-                       f"[dim](unconditional={imported.unconditional}, "
-                       f"conditional={imported.conditional})[/dim]")
+            branch.add(
+                f"{target} "
+                f"[dim](unconditional={imported.unconditional}, "
+                f"conditional={imported.conditional})[/dim]"
+            )
 
     with output.open("w", encoding="utf-8") as stream:
         console = Console(
@@ -650,24 +663,10 @@ def write_graph(
     graph: igraph.Graph,
     output: Path,
 ) -> None:
-    dot = Digraph(
-        name="imports",
-        engine="dot",
-        format="png",
-    )
-    dot.attr(
-        "graph",
-        overlap="false",
-        rankdir="LR",
-    )
-    dot.attr(
-        "node",
-        fontname="DejaVu Sans",
-    )
-    dot.attr(
-        "edge",
-        fontname="DejaVu Sans",
-    )
+    dot = Digraph(name="imports", engine="dot", format="png")
+    dot.attr("graph", overlap="false", rankdir="LR")
+    dot.attr("node", fontname="DejaVu Sans")
+    dot.attr("edge", fontname="DejaVu Sans")
 
     for vertex in graph.vs:
         dot.node(
@@ -698,20 +697,20 @@ def write_graph(
 @beartype
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description=("Analyze syntax-level imports between Python packages."))
+        description=("Analyze syntax-level imports between Python packages.")
+    )
     parser.add_argument(
         "target_directory",
         type=Path,
-        help=
-        ("Git worktree directory recursively containing pyproject.toml files."
-         ),
+        help=("Git worktree directory recursively containing pyproject.toml files."),
     )
     arguments = parser.parse_args()
 
     target = arguments.target_directory.resolve()
     if not target.is_dir():
         raise ValueError(
-            f"Target directory does not exist or is not a directory: {target}")
+            f"Target directory does not exist or is not a directory: {target}"
+        )
 
     packages = discover_packages(target)
     counts = collect_import_counts(packages)
