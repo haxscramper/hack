@@ -1,17 +1,25 @@
 #!/usr/bin/env python
 
+
 import argparse
 import ast
+import json
 import math
 import re
+import xml.etree.ElementTree as ET
+from copy import deepcopy
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
+import cairosvg
 import igraph
+import pandas as pd
 import tomllib
 from beartype import beartype
 from beartype.typing import Iterable
+from datashader.bundling import hammer_bundle
 from graphviz import Digraph
 from plumbum import local
 from rich.console import Console
@@ -1080,12 +1088,308 @@ def _add_non_file_level_vertices(
 
 
 @beartype
+def _trim_bundle_endpoint(
+    points: list[tuple[float, float]],
+    center: tuple[float, float],
+    half_width: float,
+    half_height: float,
+    edge_index: int,
+) -> list[tuple[float, float]]:
+    """Trim an endpoint to the node's rectangular bounding box."""
+    for index, point in enumerate(points):
+        offset_x = point[0] - center[0]
+        offset_y = point[1] - center[1]
+
+        if abs(offset_x) <= half_width and abs(offset_y) <= half_height:
+            continue
+
+        previous = points[index - 1] if index else center
+        delta_x = point[0] - previous[0]
+        delta_y = point[1] - previous[1]
+        fractions: list[float] = []
+
+        if delta_x != 0:
+            boundary_x = center[0] + math.copysign(half_width, delta_x)
+            fractions.append((boundary_x - previous[0]) / delta_x)
+
+        if delta_y != 0:
+            boundary_y = center[1] + math.copysign(half_height, delta_y)
+            fractions.append((boundary_y - previous[1]) / delta_y)
+
+        fraction = min(fractions)
+        boundary = (
+            previous[0] + fraction * delta_x,
+            previous[1] + fraction * delta_y,
+        )
+        return [boundary, *points[index:]]
+
+    raise ValueError(
+        f"Cannot trim bundled edge {edge_index}: its entire route lies inside "
+        f"the node bounds centered at {center}, with half-width {half_width} "
+        f"and half-height {half_height}."
+    )
+
+
+@beartype
+def _bundle_label_position(
+    points: list[tuple[float, float]],
+) -> tuple[float, float]:
+    """Find the midpoint by distance rather than by sample count."""
+    lengths = [math.dist(start, end) for start, end in zip(points, points[1:])]
+    remaining = sum(lengths) / 2
+
+    for start, end, length in zip(points, points[1:], lengths):
+        if remaining <= length and length != 0:
+            fraction = remaining / length
+            return (
+                start[0] + fraction * (end[0] - start[0]),
+                start[1] + fraction * (end[1] - start[1]),
+            )
+
+        remaining -= length
+
+    return points[-1]
+
+
+@beartype
+def _render_bundled_graph(
+    dot: Digraph,
+    graph: igraph.Graph,
+    output: Path,
+) -> None:
+    svg_namespace = "http://www.w3.org/2000/svg"
+    namespaces = {"svg": svg_namespace}
+    ET.register_namespace("", svg_namespace)
+    ET.register_namespace("xlink", "http://www.w3.org/1999/xlink")
+
+    with TemporaryDirectory(prefix="import-graph-") as temporary:
+        directory = Path(temporary)
+        layout_path = directory / "layout.json"
+        svg_path = directory / "graph.svg"
+
+        # Both outputs come from the same FDP layout.
+        command = local["fdp"][
+            "-Tjson",
+            "-o",
+            str(layout_path),
+            "-Tsvg",
+            "-o",
+            str(svg_path),
+        ]
+        (command << dot.source)()
+
+        layout = json.loads(layout_path.read_text())
+        root = ET.fromstring(svg_path.read_bytes())
+
+    positions: dict[int, tuple[float, float]] = {}
+    dimensions: dict[int, tuple[float, float]] = {}
+    layout_nodes = {
+        item["name"]: item
+        for item in layout.get("objects", [])
+        if "pos" in item and "width" in item and "height" in item
+    }
+
+    for vertex in graph.vs:
+        node = layout_nodes[f"v{vertex.index}"]
+        x, y = node["pos"].rstrip("!").split(",")
+        positions[vertex.index] = (float(x), float(y))
+
+        # Graphviz stores dimensions in inches and positions in points.
+        dimensions[vertex.index] = (
+            float(node["width"]) * 36,
+            float(node["height"]) * 36,
+        )
+
+    bundle_edges = [edge for edge in graph.es if edge.source != edge.target]
+
+    if bundle_edges:
+        nodes = pd.DataFrame.from_dict(
+            positions,
+            orient="index",
+            columns=["x", "y"],
+        )
+        edges = pd.DataFrame(
+            [
+                {
+                    "source": edge.source,
+                    "target": edge.target,
+                }
+                for edge in bundle_edges
+            ],
+            index=pd.Index([edge.index for edge in bundle_edges], name="edge_id"),
+        )
+
+        bundled = hammer_bundle(
+            nodes,
+            edges,
+            include_edge_id=True,
+        )
+
+        edge_groups = {
+            element.attrib["id"]: element
+            for element in root.findall(".//svg:g", namespaces)
+            if element.attrib.get("class") == "edge"
+        }
+
+        definitions = ET.SubElement(root, f"{{{svg_namespace}}}defs")
+
+        # NaN rows separate individual bundled polylines.
+        segments = bundled.groupby(
+            bundled["x"].isna().cumsum(),
+            sort=False,
+        )
+
+        for _, segment in segments:
+            segment = segment.dropna(subset=["x", "y"])
+            if segment.empty:
+                continue
+
+            edge_index = int(segment["edge_id"].dropna().iloc[0])
+            edge = graph.es[edge_index]
+            points = [(float(row.x), float(row.y)) for row in segment.itertuples()]
+
+            points = _trim_bundle_endpoint(
+                points,
+                positions[edge.source],
+                *dimensions[edge.source],
+                edge_index,
+            )
+            points = list(
+                reversed(
+                    _trim_bundle_endpoint(
+                        list(reversed(points)),
+                        positions[edge.target],
+                        *dimensions[edge.target],
+                        edge_index,
+                    )
+                )
+            )
+
+            group = edge_groups[f"dependency_{edge_index}"]
+            path = group.find("svg:path", namespaces)
+            if path is None:
+                raise ValueError(
+                    f"Cannot replace SVG route for dependency {edge_index} "
+                    f"({edge.source} -> {edge.target}): "
+                    "FDP emitted no path element for this edge."
+                )
+
+            # Graphviz SVG uses negative Y coordinates inside its graph group.
+            path.set(
+                "d",
+                "M " + " L ".join(f"{x:.3f},{-y:.3f}" for x, y in points),
+            )
+            path.set("fill", "none")
+            path.set("stroke-linejoin", "round")
+            path.set("stroke-linecap", "round")
+
+            for polygon in list(group.findall("svg:polygon", namespaces)):
+                group.remove(polygon)
+
+            marker_id = f"bundle_arrow_{edge_index}"
+            marker = ET.SubElement(
+                definitions,
+                f"{{{svg_namespace}}}marker",
+                {
+                    "id": marker_id,
+                    "viewBox": "0 0 8 6",
+                    "refX": "8",
+                    "refY": "3",
+                    "markerWidth": "8",
+                    "markerHeight": "6",
+                    "markerUnits": "userSpaceOnUse",
+                    "orient": "auto",
+                },
+            )
+            ET.SubElement(
+                marker,
+                f"{{{svg_namespace}}}path",
+                {
+                    "d": "M 0,0 L 8,3 L 0,6 Z",
+                    "fill": path.attrib.get("stroke", "black"),
+                },
+            )
+            path.set("marker-end", f"url(#{marker_id})")
+
+            label_x, label_y = _bundle_label_position(points)
+            for label_index, label in enumerate(group.findall("svg:text", namespaces)):
+                font_size = float(label.attrib.get("font-size", "14"))
+                label.set("x", f"{label_x:.3f}")
+                label.set(
+                    "y",
+                    f"{-label_y - 4 + label_index * font_size:.3f}",
+                )
+                label.set("text-anchor", "middle")
+
+    graph_group = next(
+        element
+        for element in root.findall("svg:g", namespaces)
+        if element.attrib.get("class") == "graph"
+    )
+
+    # Draw opaque nodes after every edge.
+    for node_group in list(graph_group.findall("svg:g[@class='node']", namespaces)):
+        graph_group.remove(node_group)
+
+        for shape in node_group:
+            if shape.tag in {
+                f"{{{svg_namespace}}}polygon",
+                f"{{{svg_namespace}}}ellipse",
+                f"{{{svg_namespace}}}rect",
+                f"{{{svg_namespace}}}path",
+            }:
+                shape.set("fill", "white")
+
+        graph_group.append(node_group)
+
+    label_layer = ET.SubElement(
+        graph_group,
+        f"{{{svg_namespace}}}g",
+        {"id": "edge_labels"},
+    )
+
+    outline_layer = ET.SubElement(
+        label_layer,
+        f"{{{svg_namespace}}}g",
+    )
+    text_layer = ET.SubElement(
+        label_layer,
+        f"{{{svg_namespace}}}g",
+    )
+
+    for edge_group in graph_group.findall(
+        ".//svg:g[@class='edge']",
+        namespaces,
+    ):
+        for label in list(edge_group.findall("svg:text", namespaces)):
+            edge_group.remove(label)
+            label.attrib.pop("paint-order", None)
+
+            outline = deepcopy(label)
+            outline.attrib.pop("id", None)
+            outline.set("fill", "none")
+            outline.set("stroke", "white")
+            outline.set("stroke-width", "3")
+            outline.set("stroke-linejoin", "round")
+            outline_layer.append(outline)
+
+            label.set("stroke", "none")
+            label.set("fill", "black")
+            text_layer.append(label)
+
+    cairosvg.svg2png(
+        bytestring=ET.tostring(root),
+        write_to=str(output),
+    )
+
+
+@beartype
 def write_graph(
     graph: igraph.Graph,
     output: Path,
     directory_clusters: bool = False,
 ) -> None:
-    dot = Digraph(name="imports", engine="fdp", format="png")
+    dot = Digraph(name="imports", engine="fdp", format="svg")
     dot.attr(
         "graph",
         overlap="false",
@@ -1094,7 +1398,13 @@ def write_graph(
         newrank="true",
     )
 
-    dot.attr("node", fontname="DejaVu Sans")
+    dot.attr(
+        "node",
+        fontname="DejaVu Sans",
+        style="filled",
+        fillcolor="white",
+    )
+
     dot.attr("edge", fontname="DejaVu Sans")
 
     if graph["file_level"]:
@@ -1112,13 +1422,16 @@ def write_graph(
         dot.edge(
             tail_name=f"v{edge.source}",
             head_name=f"v{edge.target}",
-            label=f"U: {edge['unconditional']}, C: {edge['conditional']}",
+            id=f"dependency_{edge.index}",
+            label=None
+            if graph["file_level"]
+            else f"U: {edge['unconditional']}, C: {edge['conditional']}",
             color=cycle_color(edge["cycle"]),
             weight=str(weight),
             penwidth=f"{1.0 + math.log2(weight + 1):.2f}",
         )
 
-    dot.render(outfile=output, cleanup=True)
+    _render_bundled_graph(dot, graph, output)
 
 
 @beartype
