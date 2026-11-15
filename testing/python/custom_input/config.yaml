@@ -281,8 +281,8 @@ devices:
           13:
             action:
               type: "focus_window"
-              text: "doublecmd"
-            image_path: "~/defaultdirs/images/streamdeck/doublecmd_logo.jpg"
+              text: "klogg"
+            image_path: "~/defaultdirs/images/streamdeck/klogg.png"
           14:
             action:
               type: "focus_window"

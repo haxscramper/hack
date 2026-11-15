@@ -5,6 +5,7 @@ import ast
 import math
 import re
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 
 import igraph
@@ -41,6 +42,13 @@ class Package:
 class ImportUse:
     module: str
     conditional: bool
+    names: tuple[str, ...] = ()
+
+
+class CycleKind(Enum):
+    NONE = "none"
+    FILE = "file"
+    PACKAGE = "package"
 
 
 @beartype
@@ -60,12 +68,17 @@ class ImportVisitor(ast.NodeVisitor):
         self.conditional_depth = 0
         self.imports: list[ImportUse] = []
 
-    def record(self, module: str) -> None:
+    def record(
+        self,
+        module: str,
+        names: tuple[str, ...] = (),
+    ) -> None:
         if module:
             self.imports.append(
                 ImportUse(
                     module=module,
                     conditional=0 < self.conditional_depth,
+                    names=names,
                 )
             )
 
@@ -101,10 +114,12 @@ class ImportVisitor(ast.NodeVisitor):
             self.record(alias.name)
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        names = tuple(alias.name for alias in node.names)
+
         if node.level:
-            self.record(self.resolve_relative(node))
+            self.record(self.resolve_relative(node), names)
         elif node.module:
-            self.record(node.module)
+            self.record(node.module, names)
 
     def visit_If(self, node: ast.If) -> None:
         self.visit(node.test)
@@ -571,23 +586,269 @@ def collect_import_counts(
 
 
 @beartype
+def resolve_import_source(
+    module: str,
+    package: Package,
+    sources: dict[tuple[str, str], list[PackageSource]],
+    importing_source: PackageSource,
+    allow_prefix: bool,
+) -> PackageSource | None:
+    parts = module.split(".")
+
+    while parts:
+        candidate = ".".join(parts)
+        matches = sources.get((package.name, candidate), [])
+
+        if 1 < len(matches):
+            paths = ", ".join(str(match.path) for match in matches)
+            raise ValueError(
+                f"Cannot resolve import {module!r} in {importing_source.path}: "
+                f"module {candidate!r} has multiple sources in package "
+                f"{package.name!r}: {paths}"
+            )
+
+        if matches:
+            return matches[0]
+
+        if not allow_prefix:
+            return None
+
+        parts.pop()
+
+    return None
+
+
+@beartype
+def collect_file_import_counts(
+    packages: tuple[Package, ...],
+    ignore_external: bool,
+) -> tuple[ImportCount, ...]:
+    module_owners: dict[str, Package] = {}
+    sources: dict[tuple[str, str], list[PackageSource]] = {}
+
+    for package in packages:
+        for imported_root in package.module_roots:
+            module_owners[imported_root] = package
+
+        for source in package.sources:
+            sources.setdefault((package.name, source.module), []).append(source)
+
+    counts: dict[tuple[str, str, bool], list[int]] = {}
+
+    for package in packages:
+        for source in package.sources:
+            for imported in parse_imports(source):
+                imported_root = imported.module.split(".")[0]
+                owner = module_owners.get(imported_root)
+                targets: set[str] = set()
+
+                if owner is None:
+                    if ignore_external:
+                        continue
+
+                    targets.add(imported_root)
+                else:
+                    base_source = resolve_import_source(
+                        imported.module,
+                        owner,
+                        sources,
+                        source,
+                        allow_prefix=True,
+                    )
+
+                    if imported.names:
+                        for name in imported.names:
+                            nested_source = None
+
+                            if name != "*":
+                                nested_source = resolve_import_source(
+                                    f"{imported.module}.{name}",
+                                    owner,
+                                    sources,
+                                    source,
+                                    allow_prefix=False,
+                                )
+
+                            resolved = nested_source or base_source
+
+                            if resolved is None:
+                                raise ValueError(
+                                    f"Cannot map import "
+                                    f"'from {imported.module} import {name}' "
+                                    f"in {source.path} to a file: package "
+                                    f"{owner.name!r} owns the import root, but "
+                                    f"no matching module or package initializer "
+                                    f"was discovered"
+                                )
+
+                            targets.add(str(resolved.path))
+                    elif base_source is not None:
+                        targets.add(str(base_source.path))
+                    else:
+                        raise ValueError(
+                            f"Cannot map import {imported.module!r} in "
+                            f"{source.path} to a file: package {owner.name!r} "
+                            f"owns the import root, but no matching module "
+                            f"or package initializer was discovered"
+                        )
+
+                for target in targets:
+                    key = (
+                        str(source.path),
+                        target,
+                        owner is not None,
+                    )
+                    values = counts.setdefault(key, [0, 0])
+                    values[1 if imported.conditional else 0] += 1
+
+    return tuple(
+        ImportCount(
+            source=source,
+            target=target,
+            target_internal=target_internal,
+            unconditional=values[0],
+            conditional=values[1],
+        )
+        for (
+            source,
+            target,
+            target_internal,
+        ), values in sorted(counts.items())
+    )
+
+
+@beartype
+def cyclic_components(graph: igraph.Graph) -> dict[int, int]:
+    """Map vertices in directed cycles to their strongly connected component."""
+    result: dict[int, int] = {}
+
+    for component_index, component in enumerate(
+        graph.connected_components(mode="strong")
+    ):
+        if 1 < len(component):
+            for vertex_index in component:
+                result[vertex_index] = component_index
+        else:
+            vertex_index = component[0]
+            if graph.are_adjacent(vertex_index, vertex_index):
+                result[vertex_index] = component_index
+
+    return result
+
+
+@beartype
+def mark_cycles(graph: igraph.Graph, file_level: bool) -> None:
+    package_names = sorted(
+        {vertex["package"] for vertex in graph.vs if vertex["internal"]}
+    )
+    package_indices = {name: index for index, name in enumerate(package_names)}
+
+    package_graph = igraph.Graph(directed=True)
+    package_graph.add_vertices(len(package_names))
+
+    package_edges: set[tuple[int, int]] = set()
+
+    for edge in graph.es:
+        source = graph.vs[edge.source]
+        target = graph.vs[edge.target]
+
+        if not source["internal"] or not target["internal"]:
+            continue
+
+        if source["package"] != target["package"]:
+            package_edges.add(
+                (
+                    package_indices[source["package"]],
+                    package_indices[target["package"]],
+                )
+            )
+
+    package_graph.add_edges(sorted(package_edges))
+    package_components = cyclic_components(package_graph)
+    file_components = cyclic_components(graph) if file_level else {}
+
+    for vertex in graph.vs:
+        cycle = CycleKind.NONE
+
+        if vertex["internal"]:
+            package_index = package_indices[vertex["package"]]
+
+            if package_index in package_components:
+                cycle = CycleKind.PACKAGE
+
+            if vertex.index in file_components:
+                cycle = CycleKind.FILE
+
+        vertex["cycle"] = cycle
+
+    for edge in graph.es:
+        cycle = CycleKind.NONE
+        source = graph.vs[edge.source]
+        target = graph.vs[edge.target]
+
+        if source["internal"] and target["internal"]:
+            source_package = package_indices[source["package"]]
+            target_package = package_indices[target["package"]]
+
+            if (
+                source_package != target_package
+                and source_package in package_components
+                and package_components.get(source_package)
+                == package_components.get(target_package)
+            ):
+                cycle = CycleKind.PACKAGE
+
+            if edge.source in file_components and file_components.get(
+                edge.source
+            ) == file_components.get(edge.target):
+                cycle = CycleKind.FILE
+
+        edge["cycle"] = cycle
+
+
+@beartype
 def build_graph(
     packages: tuple[Package, ...],
     counts: tuple[ImportCount, ...],
+    file_level: bool = False,
 ) -> igraph.Graph:
-    internal_names = {package.name for package in packages}
-    external_names = {count.target for count in counts if not count.target_internal}
+    graph = igraph.Graph(directed=True)
 
-    vertices = [(f"internal:{name}", name, True) for name in sorted(internal_names)]
-    vertices.extend(
-        (f"external:{name}", name, False) for name in sorted(external_names)
+    for package in sorted(packages, key=lambda value: value.name):
+        if file_level:
+            for source in sorted(package.sources, key=lambda value: str(value.path)):
+                relative = source.path.relative_to(package.root)
+                graph.add_vertex(
+                    name=f"internal:{source.path}",
+                    label=relative.as_posix(),
+                    internal=True,
+                    package=package.name,
+                    directory=relative.parent.parts,
+                    filename=relative.name,
+                )
+        else:
+            graph.add_vertex(
+                name=f"internal:{package.name}",
+                label=package.name,
+                internal=True,
+                package=package.name,
+                directory=(),
+                filename="",
+            )
+
+    external_names = sorted(
+        {count.target for count in counts if not count.target_internal}
     )
 
-    graph = igraph.Graph(directed=True)
-    graph.add_vertices(len(vertices))
-    graph.vs["name"] = [identifier for identifier, label, internal in vertices]
-    graph.vs["label"] = [label for identifier, label, internal in vertices]
-    graph.vs["internal"] = [internal for identifier, label, internal in vertices]
+    for name in external_names:
+        graph.add_vertex(
+            name=f"external:{name}",
+            label=name,
+            internal=False,
+            package="",
+            directory=(),
+            filename="",
+        )
 
     vertex_indices = {vertex["name"]: vertex.index for vertex in graph.vs}
 
@@ -604,51 +865,99 @@ def build_graph(
     graph.es["conditional"] = [count.conditional for count in counts]
     graph.es["weight"] = [count.unconditional + count.conditional for count in counts]
 
+    mark_cycles(graph, file_level)
     return graph
 
 
 @beartype
-def write_tree(
-    packages: tuple[Package, ...],
-    counts: tuple[ImportCount, ...],
-    output: Path,
+def cycle_color(cycle: CycleKind) -> str:
+    match cycle:
+        case CycleKind.FILE:
+            return "red"
+        case CycleKind.PACKAGE:
+            return "orange"
+        case CycleKind.NONE:
+            return "black"
+
+    raise ValueError(f"Unsupported dependency cycle kind: {cycle!r}")
+
+
+@beartype
+def add_tree_imports(
+    branch: Tree,
+    graph: igraph.Graph,
+    source_index: int,
 ) -> None:
-    imports_by_source: dict[str, list[ImportCount]] = {
-        package.name: [] for package in packages
-    }
+    edges = sorted(
+        graph.es.select(_source=source_index),
+        key=lambda edge: (
+            not graph.vs[edge.target]["internal"],
+            graph.vs[edge.target]["label"],
+        ),
+    )
 
-    for count in counts:
-        imports_by_source[count.source].append(count)
+    if not edges:
+        branch.add("[dim](no imports)[/dim]")
+        return
 
-    tree = Tree("[bold]Package imports[/bold]")
+    for edge in edges:
+        target = graph.vs[edge.target]
+        label = target["label"]
 
-    for package in sorted(packages, key=lambda value: value.name):
-        branch = tree.add(f"[bold cyan]{escape(package.name)}[/bold cyan]")
-        imports = sorted(
-            imports_by_source[package.name],
-            key=lambda value: (
-                not value.target_internal,
-                value.target,
-            ),
+        if graph["file_level"] and target["internal"]:
+            label = f"{target['package']}/{label}"
+
+        match edge["cycle"]:
+            case CycleKind.FILE:
+                color = "red"
+                annotation = ", file cycle"
+            case CycleKind.PACKAGE:
+                color = "dark_orange"
+                annotation = ", package cycle"
+            case CycleKind.NONE:
+                color = "cyan" if target["internal"] else "yellow"
+                annotation = ""
+
+        branch.add(
+            f"[{color}]{escape(label)}[/{color}] "
+            f"[dim](unconditional={edge['unconditional']}, "
+            f"conditional={edge['conditional']}{annotation})[/dim]"
         )
 
-        if not imports:
-            branch.add("[dim](no package imports)[/dim]")
-            continue
 
-        for imported in imports:
-            if imported.target_internal:
-                target = f"[cyan]{escape(imported.target)}[/cyan]"
-            else:
-                target = f"[yellow]{escape(imported.target)}[/yellow]"
+@beartype
+def write_tree(
+    graph: igraph.Graph,
+    output: Path,
+) -> None:
+    tree = Tree("[bold]Imports[/bold]")
+    internal_vertices = [vertex for vertex in graph.vs if vertex["internal"]]
 
-            branch.add(
-                f"{target} "
-                f"[dim](unconditional={imported.unconditional}, "
-                f"conditional={imported.conditional})[/dim]"
-            )
+    if graph["file_level"]:
+        package_names = sorted({vertex["package"] for vertex in internal_vertices})
 
-    with output.open("w", encoding="utf-8") as stream:
+        for package_name in package_names:
+            package_branch = tree.add(f"[bold cyan]{escape(package_name)}[/bold cyan]")
+
+            for vertex in sorted(
+                (
+                    vertex
+                    for vertex in internal_vertices
+                    if vertex["package"] == package_name
+                ),
+                key=lambda value: value["label"],
+            ):
+                branch = package_branch.add(escape(vertex["label"]))
+                add_tree_imports(branch, graph, vertex.index)
+    else:
+        for vertex in sorted(
+            internal_vertices,
+            key=lambda value: value["label"],
+        ):
+            branch = tree.add(f"[bold cyan]{escape(vertex['label'])}[/bold cyan]")
+            add_tree_imports(branch, graph, vertex.index)
+
+    with output.open("w") as stream:
         console = Console(
             file=stream,
             force_terminal=False,
@@ -659,33 +968,135 @@ def write_tree(
 
 
 @beartype
+def add_graph_vertex(
+    dot: Digraph,
+    vertex: igraph.Vertex,
+    directory_clusters: bool,
+) -> None:
+    label = vertex["label"]
+
+    if directory_clusters and vertex["internal"]:
+        label = vertex["filename"]
+
+    color = cycle_color(vertex["cycle"])
+    attributes = {
+        "color": color,
+        "shape": "box" if vertex["internal"] else "ellipse",
+    }
+
+    if vertex["cycle"] != CycleKind.NONE:
+        attributes["penwidth"] = "2.5"
+
+    dot.node(
+        name=f"v{vertex.index}",
+        label=label,
+        **attributes,
+    )
+
+
+@beartype
 def write_graph(
     graph: igraph.Graph,
     output: Path,
+    directory_clusters: bool = False,
 ) -> None:
-    dot = Digraph(name="imports", engine="dot", format="png")
-    dot.attr("graph", overlap="false", rankdir="LR")
+    dot = Digraph(name="imports", engine="fdp", format="png")
+    dot.attr(
+        "graph",
+        overlap="false",
+        rankdir="LR",
+        compound="true",
+        newrank="true",
+    )
+
     dot.attr("node", fontname="DejaVu Sans")
     dot.attr("edge", fontname="DejaVu Sans")
 
-    for vertex in graph.vs:
-        dot.node(
-            name=f"v{vertex.index}",
-            label=vertex["label"],
-            shape=("box" if vertex["internal"] else "ellipse"),
+    if graph["file_level"]:
+        package_names = sorted(
+            {vertex["package"] for vertex in graph.vs if vertex["internal"]}
         )
 
+        for package_index, package_name in enumerate(package_names):
+            package_vertices = [
+                vertex
+                for vertex in graph.vs
+                if vertex["internal"] and vertex["package"] == package_name
+            ]
+            package_dot = Digraph(name=f"cluster_package_{package_index}")
+            package_dot.attr(label=package_name)
+
+            if directory_clusters:
+                directories: set[tuple[str, ...]] = {()}
+
+                for vertex in package_vertices:
+                    directory = tuple(vertex["directory"])
+                    for length in range(1, len(directory) + 1):
+                        directories.add(directory[:length])
+
+                directory_graphs: dict[tuple[str, ...], Digraph] = {(): package_dot}
+
+                for directory_index, directory in enumerate(
+                    sorted(
+                        directories - {()},
+                        key=lambda value: (len(value), value),
+                    )
+                ):
+                    directory_dot = Digraph(
+                        name=(f"cluster_directory_{package_index}_{directory_index}")
+                    )
+                    directory_dot.attr(label=directory[-1])
+                    directory_graphs[directory] = directory_dot
+
+                for vertex in package_vertices:
+                    add_graph_vertex(
+                        directory_graphs[tuple(vertex["directory"])],
+                        vertex,
+                        directory_clusters=True,
+                    )
+
+                for directory in sorted(
+                    directories - {()},
+                    key=lambda value: (-len(value), value),
+                ):
+                    directory_graphs[directory[:-1]].subgraph(
+                        directory_graphs[directory]
+                    )
+            else:
+                for vertex in package_vertices:
+                    add_graph_vertex(
+                        package_dot,
+                        vertex,
+                        directory_clusters=False,
+                    )
+
+            dot.subgraph(package_dot)
+
+        for vertex in graph.vs:
+            if not vertex["internal"]:
+                add_graph_vertex(
+                    dot,
+                    vertex,
+                    directory_clusters=False,
+                )
+    else:
+        for vertex in graph.vs:
+            add_graph_vertex(
+                dot,
+                vertex,
+                directory_clusters=False,
+            )
+
     for edge in graph.es:
-        unconditional = edge["unconditional"]
-        conditional = edge["conditional"]
         weight = edge["weight"]
 
         dot.edge(
             tail_name=f"v{edge.source}",
             head_name=f"v{edge.target}",
-            label=(f"U: {unconditional}, C: {conditional}"),
+            label=(f"U: {edge['unconditional']}, C: {edge['conditional']}"),
+            color=cycle_color(edge["cycle"]),
             weight=str(weight),
-            penwidth=(f"{1.0 + math.log2(weight + 1):.2f}"),
+            penwidth=f"{1.0 + math.log2(weight + 1):.2f}",
         )
 
     dot.render(
@@ -695,16 +1106,54 @@ def write_graph(
 
 
 @beartype
+def parse_bool(value: str) -> bool:
+    match value.casefold():
+        case "true":
+            return True
+        case "false":
+            return False
+        case _:
+            raise argparse.ArgumentTypeError(f"Expected True or False, got {value!r}")
+
+
+@beartype
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description=("Analyze syntax-level imports between Python packages.")
+        description="Analyze syntax-level imports between Python packages or files."
     )
     parser.add_argument(
         "target_directory",
         type=Path,
-        help=("Git worktree directory recursively containing pyproject.toml files."),
+        help="Git worktree directory recursively containing pyproject.toml files.",
+    )
+    parser.add_argument(
+        "--ignore-external",
+        type=parse_bool,
+        default=False,
+        metavar="{True,False}",
+        help="Exclude dependencies whose import roots belong to no discovered package.",
+    )
+    parser.add_argument(
+        "--file-level",
+        type=parse_bool,
+        default=False,
+        metavar="{True,False}",
+        help="Show individual files grouped into package clusters.",
+    )
+    parser.add_argument(
+        "--directory-clusters",
+        type=parse_bool,
+        default=False,
+        metavar="{True,False}",
+        help="Nest directory clusters inside package clusters; requires --file-level=True.",
     )
     arguments = parser.parse_args()
+
+    if arguments.directory_clusters and not arguments.file_level:
+        parser.error(
+            "--directory-clusters=True requires --file-level=True "
+            "because directory clusters group individual source files"
+        )
 
     target = arguments.target_directory.resolve()
     if not target.is_dir():
@@ -713,19 +1162,38 @@ def main() -> None:
         )
 
     packages = discover_packages(target)
-    counts = collect_import_counts(packages)
-    graph = build_graph(packages, counts)
 
-    write_tree(
+    if arguments.file_level:
+        counts = collect_file_import_counts(
+            packages,
+            ignore_external=arguments.ignore_external,
+        )
+    else:
+        counts = collect_import_counts(packages)
+
+        if arguments.ignore_external:
+            counts = tuple(count for count in counts if count.target_internal)
+
+    graph = build_graph(
         packages,
         counts,
+        file_level=arguments.file_level,
+    )
+    graph["file_level"] = arguments.file_level
+
+    write_tree(
+        graph,
         Path("/tmp/imports.txt"),
     )
     write_graph(
         graph,
         Path("/tmp/imports.dot.png"),
+        directory_clusters=arguments.directory_clusters,
     )
 
+
+if __name__ == "__main__":
+    main()
 
 if __name__ == "__main__":
     main()
